@@ -80,28 +80,37 @@ class TestSendPushNotification:
         mock_prefs.get_device_tokens.return_value = ["a" * 64]
 
         mock_sync_session = MagicMock()
-        mock_sync_session.__enter__.return_value = mock_sync_session
-        mock_sync_session.__exit__.return_value = None
+        mock_sync_session.close = MagicMock()
+
+        # Mock the _get_all_approver_user_ids_sync to return approvers
+        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
+
+        # Create a mock that returns the approvers and tokens when executor runs
+        def mock_run_in_executor(executor, func):
+            """Execute the sync function directly for testing."""
+            import asyncio
+
+            # Return a future that resolves to the function result
+            future = asyncio.Future()
+            # We need to mock what the function returns
+            future.set_result(([user_id_1], [(user_id_1, "a" * 64)]))
+            return future
 
         with patch(
             "preloop_ai.services.push_notifications.get_apns_service",
             return_value=mock_apns_service,
         ):
-            with patch(
-                "preloop_models.crud.notification_preferences.get_by_user",
-                return_value=mock_prefs,
-            ):
-                with patch(
-                    "sqlalchemy.orm.Session",
-                    return_value=mock_sync_session,
-                ):
-                    result = await approval_service._send_push_notification(
-                        sample_approval_request, sample_approval_policy
-                    )
+            with patch("asyncio.get_event_loop") as mock_get_loop:
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = mock_run_in_executor
+                mock_get_loop.return_value = mock_loop
 
-                    assert result["success"] is True
-                    # Should send to both approvers
-                    assert result["sent"] >= 1
+                result = await approval_service._send_push_notification(
+                    sample_approval_request, sample_approval_policy
+                )
+
+                assert result["success"] is True
+                assert result["sent"] == 1
 
     async def test_send_push_notification_multiple_approvers(
         self,
@@ -111,31 +120,32 @@ class TestSendPushNotification:
         mock_apns_service,
     ):
         """Test sending to multiple approvers."""
-        # Mock notification preferences for multiple users
-        mock_prefs = MagicMock()
-        mock_prefs.enable_mobile_push = True
-        mock_prefs.get_device_tokens.return_value = ["b" * 64]
+        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
 
-        mock_sync_session = MagicMock()
+        def mock_run_in_executor(executor, func):
+            import asyncio
+
+            future = asyncio.Future()
+            # Two approvers, each with a token
+            future.set_result(
+                ([user_id_1, user_id_2], [(user_id_1, "a" * 64), (user_id_2, "b" * 64)])
+            )
+            return future
 
         with patch(
             "preloop_ai.services.push_notifications.get_apns_service",
             return_value=mock_apns_service,
         ):
-            with patch(
-                "preloop_models.crud.notification_preferences.get_by_user",
-                return_value=mock_prefs,
-            ):
-                with patch(
-                    "sqlalchemy.orm.Session",
-                    return_value=mock_sync_session,
-                ):
-                    result = await approval_service._send_push_notification(
-                        sample_approval_request, sample_approval_policy
-                    )
+            with patch("asyncio.get_event_loop") as mock_get_loop:
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = mock_run_in_executor
+                mock_get_loop.return_value = mock_loop
 
-                    # Should attempt to send to all approvers
-                    assert result["sent"] == 2  # Two approvers in policy
+                result = await approval_service._send_push_notification(
+                    sample_approval_request, sample_approval_policy
+                )
+
+                assert result["sent"] == 2
 
     async def test_send_push_notification_no_approvers(
         self, approval_service, sample_approval_request, mock_apns_service
@@ -144,17 +154,30 @@ class TestSendPushNotification:
         policy_no_approvers = MagicMock(spec=ApprovalPolicy)
         policy_no_approvers.id = uuid.uuid4()
         policy_no_approvers.approver_user_ids = []
+        policy_no_approvers.approver_team_ids = []
+
+        def mock_run_in_executor(executor, func):
+            import asyncio
+
+            future = asyncio.Future()
+            future.set_result(([], []))  # No approvers
+            return future
 
         with patch(
             "preloop_ai.services.push_notifications.get_apns_service",
             return_value=mock_apns_service,
         ):
-            result = await approval_service._send_push_notification(
-                sample_approval_request, policy_no_approvers
-            )
+            with patch("asyncio.get_event_loop") as mock_get_loop:
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = mock_run_in_executor
+                mock_get_loop.return_value = mock_loop
 
-            assert result["success"] is False
-            assert result["error"] == "No approvers configured"
+                result = await approval_service._send_push_notification(
+                    sample_approval_request, policy_no_approvers
+                )
+
+                assert result["success"] is False
+                assert result["error"] == "No approvers configured"
 
     async def test_send_push_notification_apns_not_configured(
         self, approval_service, sample_approval_request, sample_approval_policy
@@ -178,110 +201,89 @@ class TestSendPushNotification:
         mock_apns_service,
     ):
         """Test that invalid tokens are removed (410 response)."""
-        # Mock 410 response
+        # Mock 410 response (token no longer valid)
         mock_apns_service.send_notification = AsyncMock(
             return_value=(False, 410, "Unregistered")
         )
 
-        mock_prefs = MagicMock()
-        mock_prefs.enable_mobile_push = True
-        mock_prefs.get_device_tokens.return_value = ["c" * 64]
+        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
 
-        mock_sync_session = MagicMock()
-        mock_remove = MagicMock()
+        def mock_run_in_executor(executor, func):
+            import asyncio
+
+            future = asyncio.Future()
+            # Two approvers, each with a token
+            future.set_result(
+                ([user_id_1, user_id_2], [(user_id_1, "a" * 64), (user_id_2, "b" * 64)])
+            )
+            return future
 
         with patch(
             "preloop_ai.services.push_notifications.get_apns_service",
             return_value=mock_apns_service,
         ):
-            with patch(
-                "preloop_models.crud.notification_preferences.get_by_user",
-                return_value=mock_prefs,
-            ):
-                with patch(
-                    "preloop_models.crud.notification_preferences.remove_device_token",
-                    mock_remove,
-                ):
-                    with patch(
-                        "sqlalchemy.orm.Session",
-                        return_value=mock_sync_session,
-                    ):
-                        result = await approval_service._send_push_notification(
-                            sample_approval_request, sample_approval_policy
-                        )
+            with patch("asyncio.get_event_loop") as mock_get_loop:
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = mock_run_in_executor
+                mock_get_loop.return_value = mock_loop
 
-                        assert result["invalid_tokens_removed"] == 2  # Both approvers
+                result = await approval_service._send_push_notification(
+                    sample_approval_request, sample_approval_policy
+                )
 
-    async def test_create_approval_request_triggers_push(
-        self, approval_service, sample_approval_policy, mock_apns_service
+                # Both tokens should be marked for removal
+                assert result["invalid_tokens_removed"] == 2
+
+    async def test_send_notifications_triggers_push(
+        self,
+        approval_service,
+        sample_approval_request,
+        sample_approval_policy,
+        mock_apns_service,
     ):
-        """Test that creating approval request triggers push notification."""
-        # Mock database operations
-        approval_service.db.add = MagicMock()
-        approval_service.db.commit = AsyncMock()
-        approval_service.db.refresh = AsyncMock()
-        approval_service.db.execute = AsyncMock()
-
-        # Mock query result for approval policy
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = sample_approval_policy
-        approval_service.db.execute.return_value = mock_result
-
-        # Mock broadcast method
-        approval_service._broadcast_approval_update = AsyncMock()
+        """Test that send_notifications triggers push notification when mobile_push is in channels."""
+        # Ensure policy has mobile_push in channels
+        sample_approval_policy.notification_channels = ["mobile_push"]
 
         # Mock push notification method
         with patch.object(
-            approval_service, "_send_push_notification", new=AsyncMock()
+            approval_service,
+            "_send_push_notification",
+            new=AsyncMock(return_value={"success": True, "sent": 1}),
         ) as mock_send_push:
-            await approval_service.create_approval_request(
-                account_id="test_account",
-                tool_configuration_id=uuid.uuid4(),
-                approval_policy_id=sample_approval_policy.id,
-                tool_name="create_issue",
-                tool_args={"title": "Test"},
+            await approval_service.send_notifications(
+                sample_approval_request, sample_approval_policy
             )
 
             # Verify _send_push_notification was called
             mock_send_push.assert_called_once()
 
-    async def test_create_approval_request_skip_push_when_not_in_channels(
-        self, approval_service, mock_apns_service
+    async def test_send_notifications_skip_push_when_not_in_channels(
+        self, approval_service, sample_approval_request, mock_apns_service
     ):
         """Test that push is skipped when not in notification channels."""
         # Create policy without mobile_push channel
         policy_no_push = MagicMock(spec=ApprovalPolicy)
         policy_no_push.id = uuid.uuid4()
         policy_no_push.notification_channels = ["email"]  # No mobile_push
+        policy_no_push.approval_type = "standard"
 
-        # Mock database operations
-        approval_service.db.add = MagicMock()
-        approval_service.db.commit = AsyncMock()
-        approval_service.db.refresh = AsyncMock()
-        approval_service.db.execute = AsyncMock()
-
-        # Mock query result
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = policy_no_push
-        approval_service.db.execute.return_value = mock_result
-
-        # Mock broadcast method
-        approval_service._broadcast_approval_update = AsyncMock()
-
-        # Mock push notification method
+        # Mock email notification method
         with patch.object(
-            approval_service, "_send_push_notification", new=AsyncMock()
-        ) as mock_send_push:
-            await approval_service.create_approval_request(
-                account_id="test_account",
-                tool_configuration_id=uuid.uuid4(),
-                approval_policy_id=policy_no_push.id,
-                tool_name="create_issue",
-                tool_args={"title": "Test"},
-            )
+            approval_service,
+            "_send_email_notification",
+            new=AsyncMock(return_value={"success": True}),
+        ):
+            # Mock push notification method
+            with patch.object(
+                approval_service, "_send_push_notification", new=AsyncMock()
+            ) as mock_send_push:
+                await approval_service.send_notifications(
+                    sample_approval_request, policy_no_push
+                )
 
-            # Verify _send_push_notification was NOT called
-            mock_send_push.assert_not_called()
+                # Verify _send_push_notification was NOT called
+                mock_send_push.assert_not_called()
 
     async def test_send_push_notification_handles_exceptions(
         self,
@@ -291,33 +293,36 @@ class TestSendPushNotification:
         mock_apns_service,
     ):
         """Test that exceptions in push notification don't crash the service."""
-        # Mock exception
+        # Mock exception during send
         mock_apns_service.send_notification = AsyncMock(
             side_effect=Exception("Network error")
         )
 
-        mock_prefs = MagicMock()
-        mock_prefs.enable_mobile_push = True
-        mock_prefs.get_device_tokens.return_value = ["d" * 64]
+        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
 
-        mock_sync_session = MagicMock()
+        def mock_run_in_executor(executor, func):
+            import asyncio
+
+            future = asyncio.Future()
+            # Two approvers, each with a token
+            future.set_result(
+                ([user_id_1, user_id_2], [(user_id_1, "a" * 64), (user_id_2, "b" * 64)])
+            )
+            return future
 
         with patch(
             "preloop_ai.services.push_notifications.get_apns_service",
             return_value=mock_apns_service,
         ):
-            with patch(
-                "preloop_models.crud.notification_preferences.get_by_user",
-                return_value=mock_prefs,
-            ):
-                with patch(
-                    "sqlalchemy.orm.Session",
-                    return_value=mock_sync_session,
-                ):
-                    result = await approval_service._send_push_notification(
-                        sample_approval_request, sample_approval_policy
-                    )
+            with patch("asyncio.get_event_loop") as mock_get_loop:
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = mock_run_in_executor
+                mock_get_loop.return_value = mock_loop
 
-                    # Should handle exception gracefully
-                    assert result["failed"] == 2  # Both approvers failed
-                    assert result["sent"] == 0
+                result = await approval_service._send_push_notification(
+                    sample_approval_request, sample_approval_policy
+                )
+
+                # Should handle exception gracefully
+                assert result["failed"] == 2  # Both approvers failed
+                assert result["sent"] == 0

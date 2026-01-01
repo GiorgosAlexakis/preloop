@@ -1,11 +1,12 @@
 """Service for managing approval requests and webhook posting."""
 
 import asyncio
+import concurrent.futures
 import json
 import uuid
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Set
 from urllib.parse import urljoin
 
 import httpx
@@ -19,6 +20,9 @@ from preloop_models.crud.approval_request import get_approval_request_async
 from preloop_sync.services.event_bus import get_task_publisher
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for running sync database operations
+_sync_db_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
 class ApprovalService:
@@ -129,23 +133,8 @@ class ApprovalService:
         # Broadcast creation event
         await self._broadcast_approval_update(approval_request, "created")
 
-        # Send notifications if policy specifies mobile_push
-        # Get the approval policy to check notification channels
-        from sqlalchemy import select
-
-        result = await self.db.execute(
-            select(ApprovalPolicy).where(ApprovalPolicy.id == approval_policy_id)
-        )
-        approval_policy = result.scalar_one_or_none()
-
-        if approval_policy and "mobile_push" in (
-            approval_policy.notification_channels or []
-        ):
-            try:
-                await self._send_push_notification(approval_request, approval_policy)
-            except Exception as e:
-                logger.error(f"Failed to send push notification: {e}", exc_info=True)
-                # Don't fail request creation if notification fails
+        # Note: Notifications are sent via send_notifications() which is called
+        # by create_and_notify(). Do NOT send notifications here to avoid duplicates.
 
         return approval_request
 
@@ -500,6 +489,39 @@ class ApprovalService:
 
         return results
 
+    async def _get_all_approver_user_ids(
+        self, approval_policy: ApprovalPolicy
+    ) -> List[uuid.UUID]:
+        """Get all approver user IDs, expanding team memberships (async version).
+
+        Args:
+            approval_policy: The approval policy
+
+        Returns:
+            List of user IDs who can approve
+        """
+        from preloop_models.models.team import TeamMembership
+        from sqlalchemy import select
+
+        user_ids: Set[uuid.UUID] = set()
+
+        # Add direct user approvers
+        if approval_policy.approver_user_ids:
+            user_ids.update(approval_policy.approver_user_ids)
+
+        # Expand team approvers to individual users
+        if approval_policy.approver_team_ids:
+            for team_id in approval_policy.approver_team_ids:
+                result = await self.db.execute(
+                    select(TeamMembership.user_id).where(
+                        TeamMembership.team_id == team_id
+                    )
+                )
+                team_member_ids = result.scalars().all()
+                user_ids.update(team_member_ids)
+
+        return list(user_ids)
+
     async def _send_email_notification(
         self,
         approval_request: ApprovalRequest,
@@ -518,12 +540,12 @@ class ApprovalService:
         from preloop_models.models.user import User
         from sqlalchemy import select
 
-        # Get approver user IDs from policy
-        approver_user_ids = approval_policy.approver_user_ids or []
+        # Get all approver user IDs (including team members)
+        approver_user_ids = await self._get_all_approver_user_ids(approval_policy)
 
         if not approver_user_ids:
             logger.warning(
-                f"No approver_user_ids configured for approval policy {approval_policy.id}"
+                f"No approvers configured for approval policy {approval_policy.id}"
             )
             return {"success": False, "error": "No approvers configured"}
 
@@ -572,6 +594,38 @@ class ApprovalService:
             "failed": failed_count,
         }
 
+    def _get_all_approver_user_ids_sync(
+        self, approval_policy: ApprovalPolicy, sync_db
+    ) -> List[uuid.UUID]:
+        """Get all approver user IDs, expanding team memberships (sync version).
+
+        Args:
+            approval_policy: The approval policy
+            sync_db: Synchronous database session
+
+        Returns:
+            List of user IDs who can approve
+        """
+        from preloop_models.models.team import TeamMembership
+
+        user_ids: Set[uuid.UUID] = set()
+
+        # Add direct user approvers
+        if approval_policy.approver_user_ids:
+            user_ids.update(approval_policy.approver_user_ids)
+
+        # Expand team approvers to individual users
+        if approval_policy.approver_team_ids:
+            for team_id in approval_policy.approver_team_ids:
+                team_members = (
+                    sync_db.query(TeamMembership.user_id)
+                    .filter(TeamMembership.team_id == team_id)
+                    .all()
+                )
+                user_ids.update(member.user_id for member in team_members)
+
+        return list(user_ids)
+
     async def _send_push_notification(
         self,
         approval_request: ApprovalRequest,
@@ -597,78 +651,120 @@ class ApprovalService:
             logger.warning("APNs service not configured")
             return {"success": False, "error": "APNs not configured"}
 
-        # Get approver user IDs from policy
-        approver_user_ids = approval_policy.approver_user_ids or []
+        # Run sync database operations in thread pool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+
+        def _get_approvers_and_tokens():
+            """Sync function to get approvers and their device tokens."""
+            from sqlalchemy.orm import Session
+
+            sync_db = Session(bind=self.db.bind.sync_engine)
+            try:
+                # Get all approver user IDs (including team members)
+                approver_user_ids = self._get_all_approver_user_ids_sync(
+                    approval_policy, sync_db
+                )
+
+                if not approver_user_ids:
+                    return [], []
+
+                # Collect user tokens
+                user_tokens = []
+                for user_id in approver_user_ids:
+                    prefs = notification_preferences.get_by_user(sync_db, user_id)
+                    if not prefs or not prefs.enable_mobile_push:
+                        continue
+
+                    ios_tokens = prefs.get_device_tokens(platform="ios")
+                    if ios_tokens:
+                        for token in ios_tokens:
+                            user_tokens.append((user_id, token))
+
+                return approver_user_ids, user_tokens
+            finally:
+                sync_db.close()
+
+        approver_user_ids, user_tokens = await loop.run_in_executor(
+            _sync_db_executor, _get_approvers_and_tokens
+        )
 
         if not approver_user_ids:
-            logger.warning(f"No approver_user_ids in policy {approval_policy.id}")
+            logger.warning(f"No approvers configured for policy {approval_policy.id}")
             return {"success": False, "error": "No approvers configured"}
+
+        if not user_tokens:
+            logger.info(
+                f"No push-enabled devices for approvers in policy {approval_policy.id}"
+            )
+            return {"success": True, "sent": 0, "failed": 0, "no_devices": True}
+
+        # Derive priority safely - ApprovalRequest doesn't have a priority field
+        # Default to "medium" for normal requests
+        priority_str = getattr(approval_request, "priority", None) or "medium"
+
+        # Build notification payload
+        payload = NotificationPayloadBuilder.new_approval_request(
+            request_id=str(approval_request.id),
+            tool_name=approval_request.tool_name,
+            priority=priority_str,
+            expires_at=approval_request.expires_at,
+            agent_reasoning=approval_request.agent_reasoning,
+        )
+
+        apns_priority = 10 if priority_str in ["urgent", "high"] else 5
 
         sent_count = 0
         failed_count = 0
         invalid_tokens = []
 
-        # Convert async db session to sync for crud operations
-        # (ApprovalService uses AsyncSession, crud uses Session)
-        from sqlalchemy.orm import Session
-
-        sync_db = Session(bind=self.db.bind.sync_engine)
-
-        try:
-            for user_id in approver_user_ids:
-                # Get notification preferences
-                prefs = notification_preferences.get_by_user(sync_db, user_id)
-                if not prefs or not prefs.enable_mobile_push:
-                    continue
-
-                # Get iOS tokens
-                ios_tokens = prefs.get_device_tokens(platform="ios")
-                if not ios_tokens:
-                    continue
-
-                # Build payload
-                priority_str = approval_request.priority or "medium"
-                payload = NotificationPayloadBuilder.new_approval_request(
-                    request_id=str(approval_request.id),
-                    tool_name=approval_request.tool_name,
-                    priority=priority_str,
-                    expires_at=approval_request.expires_at,
-                    agent_reasoning=approval_request.agent_reasoning,
+        # Send to each device
+        for user_id, token in user_tokens:
+            try:
+                (
+                    success,
+                    status_code,
+                    error_reason,
+                ) = await apns_service.send_notification(
+                    device_token=token, payload=payload, priority=apns_priority
                 )
 
-                apns_priority = 10 if priority_str in ["urgent", "high"] else 5
+                if success:
+                    sent_count += 1
+                elif status_code == 410:
+                    # Token is no longer valid
+                    invalid_tokens.append((user_id, token))
+                else:
+                    logger.warning(
+                        f"Push notification failed: status={status_code}, reason={error_reason}"
+                    )
+                    failed_count += 1
 
-                # Send to each device
-                for token in ios_tokens:
-                    try:
-                        (
-                            success,
-                            status_code,
-                            error_reason,
-                        ) = await apns_service.send_notification(
-                            device_token=token, payload=payload, priority=apns_priority
+            except Exception as e:
+                logger.error(f"Push notification error for token {token[:8]}...: {e}")
+                failed_count += 1
+
+        # Remove invalid tokens in background
+        if invalid_tokens:
+
+            def _remove_invalid_tokens():
+                from sqlalchemy.orm import Session
+
+                sync_db = Session(bind=self.db.bind.sync_engine)
+                try:
+                    for user_id, token in invalid_tokens:
+                        notification_preferences.remove_device_token(
+                            sync_db, user_id, token
                         )
+                    sync_db.commit()
+                    logger.info(f"Removed {len(invalid_tokens)} invalid device tokens")
+                except Exception as e:
+                    logger.error(f"Failed to remove invalid tokens: {e}")
+                    sync_db.rollback()
+                finally:
+                    sync_db.close()
 
-                        if success:
-                            sent_count += 1
-                        elif status_code == 410:
-                            invalid_tokens.append((user_id, token))
-                        else:
-                            failed_count += 1
-
-                    except Exception as e:
-                        logger.error(f"Push notification error: {e}")
-                        failed_count += 1
-
-            # Remove invalid tokens
-            for user_id, token in invalid_tokens:
-                notification_preferences.remove_device_token(sync_db, user_id, token)
-
-            if invalid_tokens:
-                sync_db.commit()
-
-        finally:
-            sync_db.close()
+            # Run token cleanup in background
+            loop.run_in_executor(_sync_db_executor, _remove_invalid_tokens)
 
         return {
             "success": failed_count == 0,
