@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn[standard]>=0.36.0",
     "fastapi>=0.115.13",
     "sqlalchemy>=2.0.0",
+    "greenlet>=3.0.0",  # Required for SQLAlchemy async operations
     "psycopg[binary]>=3.1.12",
     "pgvector>=0.2.0",
     "pydantic>=2.4.0",

@@ -1,5 +1,6 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
@@ -12,6 +13,7 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import * as api from '../../api';
+import { isSaaS } from '../../brand-config';
 import { AuthedElement } from '../../api';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import { parseUTCDate } from '../../utils/date';
@@ -25,6 +27,7 @@ import {
   DEFAULT_SIMILARITY_THRESHOLD_CHARTS,
 } from '../../config';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import type { Tool } from '../../components/tool-card';
 
 interface Tracker {
   id: string;
@@ -59,14 +62,6 @@ interface MCPServer {
   transport: string;
   last_scan_at: string | null;
   last_error: string | null;
-}
-
-interface Tool {
-  name: string;
-  source: string; // 'builtin' or 'mcp'
-  is_enabled: boolean;
-  requires_approval: boolean;
-  source_id?: string;
 }
 
 interface FlowExecution {
@@ -386,12 +381,22 @@ export class DashboardView extends AuthedElement {
           this.fetchData('/api/v1/approval-requests?status=pending'),
           []
         ),
-        catchWith403Handling(api.getUsers(), {
-          users: [],
-          total: 0,
-          skip: 0,
-          limit: 0,
-        }),
+        catchWith403Handling(
+          isSaaS()
+            ? api.getUsers()
+            : Promise.resolve({
+                users: [],
+                total: 0,
+                skip: 0,
+                limit: 0,
+              }),
+          {
+            users: [],
+            total: 0,
+            skip: 0,
+            limit: 0,
+          }
+        ),
         catchWith403Handling(api.getAIModels(), []),
         catchWith403Handling(
           this.fetchData('/api/v1/approval-requests?limit=100'),
@@ -544,6 +549,9 @@ export class DashboardView extends AuthedElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
+      .column-layout {
+        grid-template-columns: 2fr 1fr;
+      }
       /* Dashboard-specific styles only */
       sl-icon {
         font-size: 1rem;
@@ -881,8 +889,7 @@ export class DashboardView extends AuthedElement {
               <div class="step-title">Create Event-Driven Agentic Flows</div>
               <div class="step-description">
                 Automate your most time-consuming tasks with AI agents that
-                respond to events from your trackers. Start with a preset or
-                build from scratch.
+                respond to events. Start with a preset or build from scratch.
               </div>
               ${!hasFlows
                 ? html`<sl-button
@@ -914,8 +921,8 @@ export class DashboardView extends AuthedElement {
               <div class="step-title">Connect Trackers & AI Models</div>
               <div class="step-description">
                 Link your issue trackers (Jira, GitHub, GitLab) and AI models to
-                power your flows, detect duplicate issues, assess compliance,
-                and identify unmapped dependencies.
+                power your flows, detect duplicate issues, and assess
+                compliance.
               </div>
               ${!hasTrackersAndModels
                 ? html`
@@ -1282,7 +1289,9 @@ export class DashboardView extends AuthedElement {
                         style="color: var(--sl-color-success-600);"
                       ></sl-icon>
                       <div class="tool-count-value">
-                        ${this.tools.filter((t) => t.is_enabled).length}
+                        ${this.tools.filter(
+                          (t) => t.is_enabled && t.is_supported !== false
+                        ).length}
                       </div>
                       <div class="tool-count-label">enabled</div>
                     </div>
@@ -1292,7 +1301,12 @@ export class DashboardView extends AuthedElement {
                         style="color: var(--sl-color-warning-600);"
                       ></sl-icon>
                       <div class="tool-count-value">
-                        ${this.tools.filter((t) => t.requires_approval).length}
+                        ${this.tools.filter(
+                          (t) =>
+                            (t.approval_policy_id != null ||
+                              t.has_approval_condition === true) &&
+                            t.is_supported !== false
+                        ).length}
                       </div>
                       <div class="tool-count-label">require approval</div>
                     </div>
@@ -1435,10 +1449,14 @@ export class DashboardView extends AuthedElement {
                   >${this.tools.filter((t) => t.is_enabled).length}</strong
                 >
               </li>
-              <li class="summary-item">
-                <a href="/console/settings/users">Enabled Users</a>
-                <strong>${this.enabledUsersCount}</strong>
-              </li>
+              ${isSaaS()
+                ? html`
+                    <li class="summary-item">
+                      <a href="/console/settings/users">Enabled Users</a>
+                      <strong>${this.enabledUsersCount}</strong>
+                    </li>
+                  `
+                : ''}
               <li class="summary-item">
                 <a href="/console/flows">Active Flows</a>
                 <strong

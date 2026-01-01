@@ -73,6 +73,9 @@ from pydantic import BaseModel
 from preloop_ai.services.flow_presets_service import (
     create_default_presets_for_account_background,
 )
+from preloop_ai.services.approval_policy_service import (
+    create_default_approval_policy_background,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -227,6 +230,14 @@ async def register(
                 account_id=new_account.id,
             )
             logger.info("[REGISTER] Flow presets creation scheduled")
+
+            # Create default approval policy for the new account
+            logger.info("[REGISTER] Scheduling default approval policy creation")
+            background_tasks.add_task(
+                create_default_approval_policy_background,
+                account_id=new_account.id,
+            )
+            logger.info("[REGISTER] Default approval policy creation scheduled")
 
             # Send product notification email
             logger.info("[REGISTER] Sending product notification email")
@@ -653,7 +664,7 @@ async def change_current_user_password(
 )
 async def create_api_key(
     key_data: ApiKeyCreate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: UserModel = Depends(get_current_active_user),
 ) -> ApiKeyResponse:
     """Create a new API key.
 
@@ -671,12 +682,27 @@ async def create_api_key(
     session_generator = get_db_session()
     session = next(session_generator)
 
+    def _is_duplicate_name_for_account_error(err: IntegrityError) -> bool:
+        orig = getattr(err, "orig", None)
+        diag = getattr(orig, "diag", None)
+        constraint_name = getattr(diag, "constraint_name", None)
+        if constraint_name == "uix_api_key_account_id_name":
+            return True
+
+        msg = str(orig) if orig is not None else str(err)
+        return (
+            "uix_api_key_account_id_name" in msg
+            or "UNIQUE constraint failed: api_key.account_id, api_key.name" in msg
+            or ("api_key.account_id" in msg and "api_key.name" in msg)
+        )
+
     try:
         # Create a new API key
         new_key = ApiKey(
             name=key_data.name,
             key=key_value,
             scopes=key_data.scopes,
+            account_id=current_user.account_id,
             user_id=current_user.id,
             expires_at=key_data.expires_at,
         )
@@ -695,11 +721,18 @@ async def create_api_key(
             user_id=new_key.user_id,
             last_used_at=new_key.last_used_at,
         )
-    except IntegrityError:
+    except IntegrityError as e:
         session.rollback()
+        if _is_duplicate_name_for_account_error(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="API key with this name already exists",
+            )
+
+        logger.error(f"Integrity error creating API key: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="API key with this name already exists",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error creating API key",
         )
     except Exception as e:
         session.rollback()

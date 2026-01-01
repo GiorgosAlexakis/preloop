@@ -413,7 +413,6 @@ export class PublicPricingView extends LitElement {
               </h1>
               <p class="lead">
                 Start your 30-day free trial today. No credit card required.
-                After your trial, choose the plan that fits your team.
               </p>
             </div>
           </div>

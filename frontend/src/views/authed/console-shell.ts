@@ -208,16 +208,16 @@ export class ConsoleShell extends LitElement {
                 Tools
               </sl-menu-item>
             </a>
-            <a href="/console/flows">
-              <sl-menu-item>
-                <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
-                Flows
-              </sl-menu-item>
-            </a>
             <a href="/console/approvals">
               <sl-menu-item>
                 <sl-icon name="shield-check" slot="prefix"></sl-icon>
                 Approvals
+              </sl-menu-item>
+            </a>
+            <a href="/console/flows">
+              <sl-menu-item>
+                <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
+                Flows
               </sl-menu-item>
             </a>
             <a href="/console/trackers">
@@ -279,11 +279,12 @@ export class ConsoleShell extends LitElement {
                       <sl-menu-item>Invitations</sl-menu-item>
                     </a>`
                   : ''}
+                <a href="/console/settings/ai-models">
+                  <sl-menu-item>AI Models</sl-menu-item>
+                </a>
+
                 <a href="/console/settings/api-keys">
                   <sl-menu-item>API Keys</sl-menu-item>
-                </a>
-                <a href="/console/settings/ai-models">
-                  <sl-menu-item>Models</sl-menu-item>
                 </a>
               </sl-menu>
             </sl-details>

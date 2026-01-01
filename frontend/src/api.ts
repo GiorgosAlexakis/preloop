@@ -14,6 +14,7 @@ import type {
   IssueComplianceResult,
   CompliancePromptMetadata,
   ComplianceSuggestion,
+  DependencyPair,
   DependencyResponse,
 } from './types';
 
@@ -475,7 +476,8 @@ export async function createApiKey(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error('Failed to create API key');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(errorData, 'Failed to create API key'));
   }
   return response.json();
 }

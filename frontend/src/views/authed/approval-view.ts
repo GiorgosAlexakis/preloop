@@ -434,6 +434,8 @@ export class ApprovalView extends AuthedElement {
         ? 'TIMED OUT'
         : this.approvalRequest.status.toUpperCase();
 
+    const toolArgs = this.formatToolArgs(this.approvalRequest.tool_args);
+
     return html`
       <div class="header">
         <h1>
@@ -525,9 +527,7 @@ export class ApprovalView extends AuthedElement {
 
         <div class="content-section">
           <h2>Tool Arguments</h2>
-          <div class="code-block">
-            ${this.formatToolArgs(this.approvalRequest.tool_args)}
-          </div>
+          <div class="code-block">${toolArgs}</div>
         </div>
 
         ${isResolved

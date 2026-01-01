@@ -685,23 +685,25 @@ export class LandingView extends LitElement {
                     >
                   </div>
 
-                  <div class="feature-grid three-col">
-                    ${this._getStartedFeatures.map(
-                      (feature) => html`
-                        <div class="feature-box">
-                          <div class="feature-icon">
-                            <sl-icon name="${feature.icon}"></sl-icon>
-                          </div>
-                          <h3>${feature.title}</h3>
-                          <p>${feature.text}</p>
-                        </div>
-                      `
-                    )}
-                  </div>
-                  <h3>
-                    ${this._mcpSetupTitle ||
-                    'Get Started with ' + getBrandConfig().name + ' MCP'}
-                  </h3>
+                  ${this._getStartedFeatures.length > 0
+                    ? html`<div class="feature-grid three-col">
+                        ${this._getStartedFeatures.map(
+                          (feature) => html`
+                            <div class="feature-box">
+                              <div class="feature-icon">
+                                <sl-icon name="${feature.icon}"></sl-icon>
+                              </div>
+                              <h3>${feature.title}</h3>
+                              <p>${feature.text}</p>
+                            </div>
+                          `
+                        )}
+                      </div>`
+                    : ``}
+                  ${this._mcpSetupTitle
+                    ? html` <h3>${this._mcpSetupTitle}</h3> `
+                    : ``}
+
                   <div class="get-started-container">
                     <div class="ide-tabs">
                       ${this._mcpConfigs.length > 0

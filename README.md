@@ -10,6 +10,12 @@ Preloop is an open-source, event-driven automation platform with built-in human-
 
 > **Looking for Enterprise features?** Preloop Enterprise Edition adds RBAC, team-based approvals, advanced audit logging, and more. See [Enterprise Features](#enterprise-features) below.
 
+### Open Source vs Enterprise (important)
+
+- **Open Source**: single-user approvals with **email + mobile app notifications**.
+- **Enterprise**: adds **advanced conditions (CEL)**, **team-based approvals (quorum)**, **escalation**, and **Slack & Mattermost** notifications.
+- **Mobile & Watch apps**: the iOS/Watch and Android apps can be used with **self-hosted / open-source** Preloop AI deployments.
+
 ## Key Features
 
 ### Core Platform (Open Source)
@@ -22,7 +28,7 @@ Preloop is an open-source, event-driven automation platform with built-in human-
   - StreamableHTTP transport for Claude Code and other MCP clients
 - **Tool Management**: Configure and manage tool access
   - Support for external MCP servers and tool proxying
-  - Basic approval workflows with email notifications
+  - Basic approval workflows (single-user) with email + mobile app notifications
 - **Agentic Flows**: Event-driven workflows triggered by issue tracker events
 - **Issue Tracker Integration**: Jira, GitHub, GitLab support with continuous sync
 - **Vector Search**: Intelligent similarity search using embeddings
@@ -497,6 +503,7 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | MCP Server with 6 built-in tools | ✅ | ✅ |
 | Basic approval workflows | ✅ | ✅ |
 | Email notifications | ✅ | ✅ |
+| Mobile app notifications (iOS/Watch; Android) | ✅ | ✅ |
 | Issue tracker integration | ✅ | ✅ |
 | Vector search & duplicate detection | ✅ | ✅ |
 | Agentic flows | ✅ | ✅ |
@@ -506,7 +513,8 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | **CEL conditional approval policies** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
-| **Multi-channel notifications** (Slack, Mattermost, mobile push) | ❌ | ✅ |
+| **Slack notifications** | ❌ | ✅ |
+| **Mattermost notifications** | ❌ | ✅ |
 | **Admin dashboard** | ❌ | ✅ |
 | **Audit logging & impersonation tracking** | ❌ | ✅ |
 | **Billing & subscription management** | ❌ | ✅ |

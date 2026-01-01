@@ -108,6 +108,12 @@ def test_create_api_key_success(db_session_mock, mock_current_user):
             "user_id must match current user's id"
         )
 
+        # Account scoping
+        assert hasattr(added_key, "account_id"), "ApiKey must have account_id attribute"
+        assert added_key.account_id == mock_current_user.account_id, (
+            "account_id must match current user's account_id"
+        )
+
         # Ensure deprecated field is not used
         assert not hasattr(added_key, "created_by") or added_key.user_id is not None, (
             "ApiKey should use user_id, not created_by"
@@ -205,7 +211,11 @@ def test_api_key_model_compatibility():
     # Verify we can create an ApiKey with user_id
     try:
         test_key = ApiKey(
-            name="test", key="test_key_123", user_id=uuid.uuid4(), scopes=[]
+            name="test",
+            key="test_key_123",
+            account_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            scopes=[],
         )
         # If we get here, user_id is accepted
         assert test_key.user_id is not None

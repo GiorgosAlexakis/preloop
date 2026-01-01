@@ -21,6 +21,7 @@ from preloop_ai.services.mcp_client_pool import get_mcp_client_pool
 from preloop_ai.services.mcp_tool_discovery import get_all_enabled_proxied_tools
 from preloop_models.crud import crud_mcp_server
 from preloop_models.db.session import get_db_session as get_db
+from preloop_ai.api.endpoints.tools import BUILTIN_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -88,43 +89,45 @@ class DynamicFastMCP(FastMCP):
         # Start with empty list
         available_tools = []
 
-        # Add default tools if user has tracker
-        if user_context.has_tracker:
-            default_tools = await super()._list_tools(context)
-            # Filter out internal proxied tool names (they start with "account_")
-            builtin_tools = [
-                t for t in default_tools if not t.name.startswith("account_")
-            ]
+        # Add built-in tools (filtered by tracker requirements metadata)
+        default_tools = await super()._list_tools(context)
+        # Filter out internal proxied tool names (they start with "account_")
+        builtin_tools = [t for t in default_tools if not t.name.startswith("account_")]
 
-            # Further filter based on tracker types
-            filtered_tools = []
-            for tool in builtin_tools:
-                # GitHub-only tools
-                if tool.name in ["get_pull_request", "update_pull_request"]:
-                    if "github" in user_context.tracker_types:
-                        filtered_tools.append(tool)
-                    else:
-                        logger.info(
-                            f"Skipping GitHub-only tool '{tool.name}' (no GitHub tracker)"
-                        )
-                # GitLab-only tools
-                elif tool.name in ["get_merge_request", "update_merge_request"]:
-                    if "gitlab" in user_context.tracker_types:
-                        filtered_tools.append(tool)
-                    else:
-                        logger.info(
-                            f"Skipping GitLab-only tool '{tool.name}' (no GitLab tracker)"
-                        )
-                # All other tools (including add_comment) - available if any tracker exists
-                else:
-                    filtered_tools.append(tool)
+        builtin_meta = {t["name"]: t for t in BUILTIN_TOOLS}
 
-            available_tools.extend(filtered_tools)
-            logger.info(
-                f"Added {len(filtered_tools)} default tools after tracker-type filtering "
-                f"(filtered out {len(builtin_tools) - len(filtered_tools)} tracker-specific tools, "
-                f"{len(default_tools) - len(builtin_tools)} internal names)"
-            )
+        filtered_tools = []
+        for tool in builtin_tools:
+            meta = builtin_meta.get(tool.name)
+            if not meta:
+                filtered_tools.append(tool)
+                continue
+
+            required_types = meta.get("required_tracker_types") or []
+            requires_tracker = meta.get("requires_tracker", False)
+
+            if requires_tracker and not user_context.has_tracker:
+                logger.info(
+                    f"Skipping tool '{tool.name}' (requires tracker but none configured)"
+                )
+                continue
+
+            if required_types and not any(
+                t in user_context.tracker_types for t in required_types
+            ):
+                logger.info(
+                    f"Skipping tool '{tool.name}' (requires tracker types {required_types}, have {user_context.tracker_types})"
+                )
+                continue
+
+            filtered_tools.append(tool)
+
+        available_tools.extend(filtered_tools)
+        logger.info(
+            f"Added {len(filtered_tools)} default tools after tracker-type filtering "
+            f"(filtered out {len(builtin_tools) - len(filtered_tools)} tracker-specific tools, "
+            f"{len(default_tools) - len(builtin_tools)} internal names)"
+        )
 
         # Add proxied tools from external MCP servers (Phase 1B)
         # Now with dynamic registration for streaming approval support
@@ -578,8 +581,8 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         if api_key and api_key.context_data:
             flow_execution_id = api_key.context_data.get("flow_execution_id")
             # Combine allowed_mcp_tools with tool names from allowed_mcp_servers
-            allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools", [])
-            if allowed_mcp_tools:
+            allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools")
+            if allowed_mcp_tools is not None:
                 # Extract tool names from the allowed_mcp_tools list
                 # This could be a list of strings or a list of dicts with "name" or "tool_name" key
                 allowed_flow_tools = []

@@ -106,6 +106,8 @@ export class FlowView extends LitElement {
       :host {
         display: block;
         padding: var(--sl-spacing-large);
+        max-width: 80rem;
+        margin: 0 auto;
       }
       /* Flow-specific styles */
       .form-grid {
@@ -354,9 +356,9 @@ export class FlowView extends LitElement {
       this.availableTools = await getAllTools();
       this.mcpServers = await getMCPServers();
 
-      // Initialize with preloop-mcp server and all enabled tools selected
+      // Initialize with preloop-mcp server but no tools selected by default
       this.flow.allowed_mcp_servers = ['preloop-mcp'];
-      this.flow.allowed_mcp_tools = this.getDefaultSelectedTools();
+      this.flow.allowed_mcp_tools = [];
       this.creationMode = 'scratch';
     }
   }
@@ -1140,10 +1142,11 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             Tools
           </div>
 
-          <p style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);">
-            Select which tools the agent can use during flow execution. All
-            enabled tools are selected by default.
-          </p>
+          <span
+            style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);"
+          >
+            Select which tools the agent can use during flow execution.
+          </span>
 
           ${this.renderToolSelection()}
         </sl-card>
@@ -1675,13 +1678,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   getDefaultSelectedTools(): { server_name: string; tool_name: string }[] {
-    // Select all enabled built-in tools by default
-    return this.availableTools
-      .filter((tool) => tool.source === 'builtin' && tool.is_enabled)
-      .map((tool) => ({
-        server_name: 'preloop-mcp',
-        tool_name: tool.name,
-      }));
+    return [];
   }
 
   renderToolSelection() {
@@ -1698,6 +1695,12 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     // Group tools by source
     const builtinTools = this.availableTools.filter(
       (tool) => tool.source === 'builtin'
+    );
+    const supportedBuiltinTools = builtinTools.filter(
+      (tool) => tool.is_supported !== false
+    );
+    const unsupportedBuiltinTools = builtinTools.filter(
+      (tool) => tool.is_supported === false
     );
     const mcpTools = this.availableTools.filter(
       (tool) => tool.source === 'mcp'
@@ -1716,7 +1719,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 <div
                   style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem;"
                 >
-                  ${builtinTools.map(
+                  ${supportedBuiltinTools.map(
                     (tool) => html`
                       <sl-checkbox
                         .checked=${this.isToolSelected(
@@ -1729,7 +1732,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                             tool.name,
                             e.target.checked
                           )}
-                        ?disabled=${!tool.is_enabled}
+                        ?disabled=${!tool.is_enabled ||
+                        tool.is_supported === false}
                       >
                         ${tool.name}
                         ${!tool.is_enabled
@@ -1768,12 +1772,18 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                             tool.name,
                             e.target.checked
                           )}
-                        ?disabled=${!tool.is_enabled}
+                        ?disabled=${!tool.is_enabled ||
+                        tool.is_supported === false}
                       >
                         ${tool.name}
                         <sl-badge variant="primary" size="small"
                           >${tool.source_name}</sl-badge
                         >
+                        ${tool.is_supported === false
+                          ? html`<sl-badge variant="warning" size="small"
+                              >Unsupported</sl-badge
+                            >`
+                          : ''}
                         ${!tool.is_enabled
                           ? html`<sl-badge variant="neutral" size="small"
                               >Disabled</sl-badge

@@ -58,7 +58,8 @@ class Settings(BaseSettings):
     nats_url: str = Field("nats://localhost:4222", description="NATS server URL")
     preloop_url: str = Field("http://localhost:8000", description="Preloop AI URL")
     PROMPTS_FILE: str = Field(
-        "preloop-ai/prompts.yaml", description="Path to the prompts YAML file"
+        "backend/preloop-ai/preloop_ai/prompts.yaml",
+        description="Path to the prompts YAML file",
     )
 
     # Feature flags for self-hosted deployments

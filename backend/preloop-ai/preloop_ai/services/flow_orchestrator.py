@@ -326,6 +326,7 @@ class FlowExecutionOrchestrator:
             api_key = ApiKey(
                 name=f"Flow Execution {self.execution_log.id if self.execution_log else 'temp'}",
                 key=token_key,
+                account_id=self.flow.account_id,
                 user_id=first_user.id,
                 expires_at=expires_at,
                 is_active=True,

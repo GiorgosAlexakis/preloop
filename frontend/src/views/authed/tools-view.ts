@@ -13,6 +13,7 @@ import {
   getApprovalPolicies,
   createApprovalPolicy,
   updateApprovalPolicy,
+  getFeatures,
 } from '../../api';
 import '../../components/mcp-server-form';
 import '../../components/mcp-server-card';
@@ -61,9 +62,15 @@ export class ToolsView extends LitElement {
   @state()
   private showSetupDialog = false;
 
+  @state()
+  private features: { [key: string]: boolean } = {};
+
   static styles = [
     unsafeCSS(consoleStyles),
     css`
+      mcp-setup-dialog {
+        display: contents;
+      }
       .tabs {
         display: flex;
         gap: 0.5rem;
@@ -257,11 +264,15 @@ export class ToolsView extends LitElement {
     this.error = null;
 
     try {
-      const [tools, servers, policies] = await Promise.all([
+      const [tools, servers, policies, featuresResponse] = await Promise.all([
         getTools(),
         getMCPServers(),
         getApprovalPolicies(),
+        getFeatures(),
       ]);
+
+      // Store features for passing to child components
+      this.features = featuresResponse.features || {};
 
       // Count enabled tools per server
       const toolCounts = new Map<string, number>();
@@ -504,6 +515,100 @@ export class ToolsView extends LitElement {
     }
   }
 
+  private async handleUseDefaultPolicy(event: CustomEvent) {
+    const { tool } = event.detail;
+
+    // Save scroll position
+    const scrollY = window.scrollY;
+
+    try {
+      // Find default policy or create one
+      let defaultPolicy = this.approvalPolicies.find((p) => p.is_default);
+
+      if (!defaultPolicy && this.approvalPolicies.length > 0) {
+        // Use first policy as fallback
+        defaultPolicy = this.approvalPolicies[0];
+      }
+
+      if (!defaultPolicy) {
+        // Create a default policy
+        defaultPolicy = (await createApprovalPolicy({
+          name: 'Default Approval Policy',
+          description: 'Default policy for tool approval requests',
+          approval_type: 'standard',
+          is_default: true,
+        })) as ApprovalPolicy;
+        this.approvalPolicies = [...this.approvalPolicies, defaultPolicy];
+      }
+
+      if (!defaultPolicy) {
+        throw new Error('Failed to determine default approval policy');
+      }
+
+      const policyToUse = defaultPolicy;
+
+      // Update local state immediately for instant feedback
+      const updatedTools = this.tools.map((t) => {
+        if (
+          t.name === tool.name &&
+          t.source === tool.source &&
+          t.source_id === tool.source_id
+        ) {
+          return {
+            ...t,
+            approval_policy_id: policyToUse.id,
+          };
+        }
+        return t;
+      });
+      this.tools = updatedTools;
+
+      // Assign the policy on server
+      if (tool.config_id) {
+        await updateToolConfiguration(tool.config_id, {
+          approval_policy_id: policyToUse.id,
+        });
+      } else {
+        const newConfig = await createToolConfiguration({
+          tool_name: tool.name,
+          tool_source: tool.source,
+          mcp_server_id: tool.source_id,
+          approval_policy_id: policyToUse.id,
+          account_id: '',
+        });
+
+        tool.config_id = newConfig.id;
+
+        // Update local tool with new config_id so conditions can be added immediately
+        const updatedToolsWithConfig = this.tools.map((t) => {
+          if (
+            t.name === tool.name &&
+            t.source === tool.source &&
+            t.source_id === tool.source_id
+          ) {
+            return { ...t, config_id: newConfig.id };
+          }
+          return t;
+        });
+        this.tools = updatedToolsWithConfig;
+      }
+
+      // Restore scroll position
+      window.scrollTo(0, scrollY);
+
+      console.log(
+        'Using default policy:',
+        policyToUse.name,
+        'for tool:',
+        tool.name
+      );
+    } catch (err: any) {
+      this.error = err.message || 'Failed to apply default policy';
+      // Reload on error to revert optimistic update
+      await this.loadData();
+    }
+  }
+
   private async handleUpdatePolicy(event: CustomEvent) {
     const { policyId, policy } = event.detail;
 
@@ -632,16 +737,32 @@ export class ToolsView extends LitElement {
   }
 
   private getFilteredTools(): Tool[] {
+    let tools: Tool[];
     if (this.activeTab === 'all') {
-      return this.tools;
+      tools = this.tools;
     } else if (this.activeTab === 'builtin') {
-      return this.tools.filter((t) => t.source === 'builtin');
+      tools = this.tools.filter((t) => t.source === 'builtin');
     } else {
       // activeTab is a server ID
-      return this.tools.filter(
+      tools = this.tools.filter(
         (t) => t.source === 'mcp' && t.source_id === this.activeTab
       );
     }
+
+    return [...tools].sort((a, b) => {
+      const aUnsupported = a.is_supported === false;
+      const bUnsupported = b.is_supported === false;
+
+      if (aUnsupported !== bUnsupported) {
+        return aUnsupported ? 1 : -1;
+      }
+
+      if (a.is_enabled !== b.is_enabled) {
+        return a.is_enabled ? -1 : 1;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
   }
 
   private renderBuiltinMCPCard() {
@@ -660,7 +781,7 @@ export class ToolsView extends LitElement {
         <div class="builtin-card-content">
           <div class="builtin-server-header">
             <h3 class="builtin-server-name">Preloop AI MCP Server</h3>
-            <sl-badge variant="success" size="small">Built-in</sl-badge>
+            <sl-badge variant="primary" size="small">Built-in</sl-badge>
           </div>
           <p class="builtin-server-url" title=${mcpUrl}>${mcpUrl}</p>
           <div class="server-meta">
@@ -702,6 +823,34 @@ export class ToolsView extends LitElement {
     const filteredTools = this.getFilteredTools();
     const builtinTools = this.tools.filter((t) => t.source === 'builtin');
 
+    const availableTools = filteredTools.filter(
+      (t) => t.is_supported !== false
+    );
+    const unavailableTools = filteredTools.filter(
+      (t) => t.is_supported === false
+    );
+
+    const sortAvailable = (tools: Tool[]) =>
+      [...tools].sort((a, b) => {
+        // Built-in first
+        if (a.source !== b.source) {
+          if (a.source === 'builtin') return -1;
+          if (b.source === 'builtin') return 1;
+        }
+
+        // Enabled first
+        if (a.is_enabled !== b.is_enabled) {
+          return a.is_enabled ? -1 : 1;
+        }
+
+        return a.name.localeCompare(b.name);
+      });
+
+    const sortedAvailableTools = sortAvailable(availableTools);
+    const sortedUnavailableTools = [...unavailableTools].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+
     return html`
       <view-header headerText="Tools">
         <div slot="main-column">
@@ -715,7 +864,7 @@ export class ToolsView extends LitElement {
         </div>
       </view-header>
 
-      <div class="column-layout">
+      <div>
         <div class="main-column">
           ${this.isAddingMCPServer
             ? html`<mcp-server-form
@@ -739,8 +888,8 @@ export class ToolsView extends LitElement {
           <div class="proxy-notice">
             <div class="proxy-notice-text">
               Tools from external MCP servers are proxied through the Preloop AI
-              MCP server. Any tool (built-in or external) can be "prelooped"
-              with a human approval policy, requiring review and approval by the
+              MCP server. Any tool (built-in or external) can be prelooped with
+              a human approval policy, requiring review and approval by the
               appropriate users before allowing tool executions to run.
             </div>
           </div>
@@ -799,22 +948,75 @@ export class ToolsView extends LitElement {
                   : html`
                       <div class="tools-grid">
                         ${repeat(
-                          filteredTools,
+                          sortedAvailableTools,
                           (tool) =>
                             `${tool.name}-${tool.source}-${tool.source_id}`,
                           (tool) =>
                             html`<tool-card
                               .tool=${tool}
                               .policies=${this.approvalPolicies}
+                              .features=${this.features}
                               @toggle-enabled=${this.handleToggleEnabled}
                               @toggle-approval=${this.handleToggleApproval}
                               @policy-selected=${this.handlePolicySelected}
                               @create-policy=${this.handleCreatePolicy}
                               @update-policy=${this.handleUpdatePolicy}
                               @save-condition=${this.handleSaveCondition}
+                              @use-default-policy=${this.handleUseDefaultPolicy}
                             ></tool-card>`
                         )}
                       </div>
+
+                      ${sortedUnavailableTools.length > 0
+                        ? html`
+                            <div style="margin-top: var(--sl-spacing-large);">
+                              <sl-divider></sl-divider>
+                              <sl-alert variant="neutral" open>
+                                <sl-icon
+                                  slot="icon"
+                                  name="info-circle"
+                                ></sl-icon>
+                                <strong
+                                  >${sortedUnavailableTools.length}</strong
+                                >
+                                tool${sortedUnavailableTools.length === 1
+                                  ? ''
+                                  : 's'}
+                                unavailable until you add the required
+                                tracker(s).
+                                <a href="/console/trackers">Manage trackers</a>
+                              </sl-alert>
+                              <div
+                                class="tools-grid"
+                                style="margin-top: var(--sl-spacing-medium);"
+                              >
+                                ${repeat(
+                                  sortedUnavailableTools,
+                                  (tool) =>
+                                    `${tool.name}-${tool.source}-${tool.source_id}`,
+                                  (tool) =>
+                                    html`<tool-card
+                                      .tool=${tool}
+                                      .policies=${this.approvalPolicies}
+                                      .features=${this.features}
+                                      @toggle-enabled=${this
+                                        .handleToggleEnabled}
+                                      @toggle-approval=${this
+                                        .handleToggleApproval}
+                                      @policy-selected=${this
+                                        .handlePolicySelected}
+                                      @create-policy=${this.handleCreatePolicy}
+                                      @update-policy=${this.handleUpdatePolicy}
+                                      @save-condition=${this
+                                        .handleSaveCondition}
+                                      @use-default-policy=${this
+                                        .handleUseDefaultPolicy}
+                                    ></tool-card>`
+                                )}
+                              </div>
+                            </div>
+                          `
+                        : ''}
                     `}
               `}
         </div>

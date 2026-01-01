@@ -89,6 +89,7 @@ def test_key_expiration(db_session, create_account, create_user):
     key = ApiKey(
         name="Expired key",
         key="test-expired-key",
+        account_id=user.account_id,
         user_id=user.id,
         expires_at=expires_at,
         scopes=[],

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 # Use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, Boolean, DateTime, String
 
@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from .base import Base
 
 if TYPE_CHECKING:
+    from .account import Account
     from .user import User
 
 
@@ -34,6 +35,9 @@ class ApiKey(Base):
     """
 
     __tablename__ = "api_key"
+    __table_args__ = (
+        UniqueConstraint("account_id", "name", name="uix_api_key_account_id_name"),
+    )
 
     # Key details
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -46,6 +50,13 @@ class ApiKey(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Security fields
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="The account this API key belongs to",
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("user.id", ondelete="CASCADE"),
@@ -62,6 +73,7 @@ class ApiKey(Base):
     )
 
     # Relationships
+    account: Mapped["Account"] = relationship("Account")
     creator: Mapped["User"] = relationship("User", back_populates="api_keys")
 
     def __repr__(self) -> str:
