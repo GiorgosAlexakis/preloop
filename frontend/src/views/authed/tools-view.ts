@@ -113,9 +113,21 @@ export class ToolsView extends LitElement {
 
       .servers-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        grid-template-columns: repeat(3, 1fr);
         gap: 28px;
         margin-bottom: 2rem;
+      }
+
+      @media (max-width: 1400px) {
+        .servers-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .servers-grid {
+          grid-template-columns: 1fr;
+        }
       }
 
       .tools-grid > tool-card,
