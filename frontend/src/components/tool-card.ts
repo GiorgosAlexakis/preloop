@@ -483,8 +483,14 @@ export class ToolCard extends LitElement {
       text-decoration: underline;
     }
 
+    :host {
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
+
     .tool-card {
-      width: 280px;
+      width: 100%;
       display: flex;
       flex-direction: column;
       height: 100%;

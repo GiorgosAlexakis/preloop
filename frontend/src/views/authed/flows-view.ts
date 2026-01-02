@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
@@ -16,6 +16,7 @@ import {
   triggerFlowExecution,
 } from '../../api';
 import { parseUTCDate, formatLocalDateTime } from '../../utils/date';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface Flow {
   id: string;
@@ -35,131 +36,155 @@ interface FlowExecution {
 
 @customElement('flows-view')
 export class FlowsView extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      padding: 16px;
-    }
-    .flows-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 20px;
-      margin-bottom: 32px;
-    }
-    .presets-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 16px;
-    }
-    .flow-card {
-      cursor: pointer;
-      transition:
-        transform 0.2s,
-        box-shadow 0.2s;
-    }
-    .flow-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-    }
-    .flow-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-    .flow-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 1.2rem;
-      font-weight: 600;
-    }
-    .flow-description {
-      color: var(--sl-color-neutral-600);
-      margin-bottom: 12px;
-      font-size: 0.9rem;
-    }
-    .flow-stats {
-      display: flex;
-      gap: 16px;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--sl-color-neutral-200);
-    }
-    .stat-item {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.85rem;
-      color: var(--sl-color-neutral-600);
-    }
-    .active-executions {
-      margin-bottom: 32px;
-    }
-    .executions-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .execution-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px;
-      background: var(--sl-color-neutral-50);
-      border-radius: 4px;
-      transition: background 0.2s;
-    }
-    .execution-item:hover {
-      background: var(--sl-color-neutral-100);
-    }
-    .execution-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 1;
-    }
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin: 24px 0 16px 0;
-    }
-    .empty-state {
-      text-align: center;
-      padding: 48px 16px;
-      color: var(--sl-color-neutral-500);
-    }
-    .proxy-notice {
-      background: var(--sl-color-primary-50);
-      border-left: 3px solid var(--sl-color-primary-600);
-      padding: 1rem;
-      margin-bottom: 1.5rem;
-      border-radius: 4px;
-    }
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
+      }
+      .flows-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+        margin-bottom: 32px;
+      }
 
-    .proxy-notice-title {
-      font-weight: 600;
-      color: var(--sl-color-primary-900);
-      margin-bottom: 0.5rem;
-    }
+      @media (max-width: 1400px) {
+        .flows-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
 
-    .proxy-notice-text {
-      color: var(--sl-color-primary-800);
-      font-size: 0.9rem;
-      line-height: 1.5;
-    }
+      @media (max-width: 900px) {
+        .flows-grid {
+          grid-template-columns: 1fr;
+        }
+      }
 
-    .presets-collapsed {
-      text-align: center;
-      padding: 24px 16px;
-      color: var(--sl-color-neutral-500);
-      font-size: 0.95rem;
-      background: var(--sl-color-neutral-50);
-      border-radius: 4px;
-    }
-  `;
+      .presets-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+      }
+
+      @media (max-width: 1400px) {
+        .presets-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .presets-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .flows-grid > sl-card,
+      .presets-grid > sl-card {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+      }
+      .flow-card {
+        cursor: pointer;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+      }
+      .flow-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+      }
+      .flow-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .flow-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: var(--sl-font-size-large);
+        font-weight: 600;
+      }
+      .flow-description {
+        color: var(--sl-color-neutral-600);
+        margin-bottom: 12px;
+        font-size: var(--sl-font-size-small);
+      }
+      .flow-stats {
+        display: flex;
+        gap: 16px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--sl-color-neutral-200);
+      }
+      .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+      }
+      .flow-footer {
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .flow-footer-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .active-executions {
+        margin-bottom: 32px;
+      }
+      .executions-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .execution-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        background: var(--sl-color-neutral-50);
+        border-radius: 4px;
+        transition: background 0.2s;
+      }
+      .execution-item:hover {
+        background: var(--sl-color-neutral-100);
+      }
+      .execution-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+      }
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 24px 0 16px 0;
+      }
+      .empty-state {
+        text-align: center;
+        padding: 48px 16px;
+        color: var(--sl-color-neutral-500);
+      }
+      .presets-collapsed {
+        text-align: center;
+        padding: 24px 16px;
+        color: var(--sl-color-neutral-500);
+        font-size: var(--sl-font-size-medium);
+        background: var(--sl-color-neutral-50);
+        border-radius: 4px;
+      }
+    `,
+  ];
 
   @state()
   private flows: Flow[] = [];
@@ -277,7 +302,7 @@ export class FlowsView extends LitElement {
   render() {
     if (this.isLoading) {
       return html`
-        <view-header headerText="Flows"></view-header>
+        <view-header headerText="Flows" width="extra-wide"></view-header>
         <div style="display: flex; justify-content: center; padding: 48px;">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
         </div>
@@ -289,7 +314,7 @@ export class FlowsView extends LitElement {
     );
 
     return html`
-      <view-header headerText="Flows">
+      <view-header headerText="Flows" width="extra-wide">
         <div slot="main-column">
           <sl-button
             variant="primary"
@@ -300,7 +325,7 @@ export class FlowsView extends LitElement {
           </sl-button>
         </div>
       </view-header>
-      <div class="column-layout">
+      <div class="column-layout extra-wide">
         <div class="main-column">
           <div class="proxy-notice">
             <div class="proxy-notice-text">
@@ -309,77 +334,77 @@ export class FlowsView extends LitElement {
               by exploring the presets below, or create a new flow from scratch.
             </div>
           </div>
+
+          ${activeExecutions.length > 0
+            ? html`
+                <div class="active-executions">
+                  <div class="section-header">
+                    <h2>
+                      <sl-icon name="lightning-fill"></sl-icon>
+                      Active Executions
+                    </h2>
+                    <sl-button
+                      size="small"
+                      href=${router.urlForPath('/console/flows/executions')}
+                    >
+                      View All
+                    </sl-button>
+                  </div>
+                  <div class="executions-list">
+                    ${activeExecutions
+                      .slice(0, 5)
+                      .map((exec) => this.renderExecutionItem(exec))}
+                  </div>
+                </div>
+              `
+            : ''}
+          ${this.flows.length > 0
+            ? html`
+                <div class="flows-grid">
+                  ${this.flows.map((flow) => this.renderFlowCard(flow))}
+                </div>
+              `
+            : html`
+                <div class="empty-state">
+                  <sl-icon
+                    name="inbox"
+                    style="font-size: 3rem; opacity: 0.3;"
+                  ></sl-icon>
+                  <p>
+                    No flows yet. Create your first flow or clone a preset
+                    below.
+                  </p>
+                </div>
+              `}
+
+          <sl-divider></sl-divider>
+
+          <div class="section-header">
+            <h2>Presets</h2>
+            ${this.flows.length > 0
+              ? html`
+                  <sl-button size="small" @click=${this.togglePresets}>
+                    <sl-icon
+                      slot="prefix"
+                      name=${this.showPresets ? 'chevron-up' : 'chevron-down'}
+                    ></sl-icon>
+                    ${this.showPresets ? 'Hide presets' : 'Show presets'}
+                  </sl-button>
+                `
+              : ''}
+          </div>
+          ${this.showPresets
+            ? html`
+                <div class="presets-grid">
+                  ${this.presets.map((preset) => this.renderPresetCard(preset))}
+                </div>
+              `
+            : html`<div class="presets-collapsed">
+                Presets are hidden. Use "Show presets" to explore starter
+                workflows.
+              </div>`}
         </div>
       </div>
-      ${activeExecutions.length > 0
-        ? html`
-            <div class="active-executions">
-              <div class="section-header">
-                <h2>
-                  <sl-icon name="lightning-fill"></sl-icon>
-                  Active Executions
-                </h2>
-                <sl-button
-                  size="small"
-                  href=${router.urlForPath('/console/flows/executions')}
-                >
-                  View All
-                </sl-button>
-              </div>
-              <div class="executions-list">
-                ${activeExecutions
-                  .slice(0, 5)
-                  .map((exec) => this.renderExecutionItem(exec))}
-              </div>
-            </div>
-          `
-        : ''}
-      ${this.flows.length > 0
-        ? html`
-            <div class="section-header">
-              <h2>Your Flows</h2>
-            </div>
-            <div class="flows-grid">
-              ${this.flows.map((flow) => this.renderFlowCard(flow))}
-            </div>
-          `
-        : html`
-            <div class="empty-state">
-              <sl-icon
-                name="inbox"
-                style="font-size: 3rem; opacity: 0.3;"
-              ></sl-icon>
-              <p>
-                No flows yet. Create your first flow or clone a preset below.
-              </p>
-            </div>
-          `}
-
-      <sl-divider></sl-divider>
-
-      <div class="section-header">
-        <h2>Presets</h2>
-        ${this.flows.length > 0
-          ? html`
-              <sl-button size="small" @click=${this.togglePresets}>
-                <sl-icon
-                  slot="prefix"
-                  name=${this.showPresets ? 'chevron-up' : 'chevron-down'}
-                ></sl-icon>
-                ${this.showPresets ? 'Hide presets' : 'Show presets'}
-              </sl-button>
-            `
-          : ''}
-      </div>
-      ${this.showPresets
-        ? html`
-            <div class="presets-grid">
-              ${this.presets.map((preset) => this.renderPresetCard(preset))}
-            </div>
-          `
-        : html`<div class="presets-collapsed">
-            Presets are hidden. Use "Show presets" to explore starter workflows.
-          </div>`}
     `;
   }
 
@@ -415,11 +440,8 @@ export class FlowsView extends LitElement {
           </div>
         </div>
 
-        <div
-          slot="footer"
-          style="display: flex; gap: 8px; justify-content: space-between; align-items: center;"
-        >
-          <div style="display: flex; gap: 8px;">
+        <div slot="footer" class="flow-footer">
+          <div class="flow-footer-actions">
             <sl-button
               size="small"
               href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
@@ -460,32 +482,32 @@ export class FlowsView extends LitElement {
 
   renderPresetCard(preset: Flow) {
     return html`
-      <sl-card class="preset-card">
-        <div
-          slot="header"
-          style="display: flex; justify-content: space-between; align-items: center;"
-        >
-          <div style="display: flex; align-items: center; gap: 8px;">
+      <sl-card class="flow-card">
+        <div slot="header" class="flow-header">
+          <div class="flow-title">
             <sl-icon name=${preset.icon || 'gear'}></sl-icon>
             ${preset.name}
           </div>
-          <div style="display: flex; gap: 4px;">
-            <sl-button size="small" @click=${() => this.clonePreset(preset.id)}
-              >Clone</sl-button
-            >
+          <div class="flow-footer-actions">
+            <sl-button size="small" @click=${() => this.clonePreset(preset.id)}>
+              Clone
+            </sl-button>
             ${preset.account_id
               ? html`
                   <sl-button
                     size="small"
                     variant="danger"
                     @click=${() => this.removePreset(preset.id)}
-                    >Remove</sl-button
                   >
+                    Remove
+                  </sl-button>
                 `
               : ''}
           </div>
         </div>
-        ${preset.description}
+        ${preset.description
+          ? html`<div class="flow-description">${preset.description}</div>`
+          : ''}
       </sl-card>
     `;
   }
@@ -505,7 +527,7 @@ export class FlowsView extends LitElement {
           <div>
             <strong>${flow?.name || 'Unknown Flow'}</strong>
             <div
-              style="font-size: 0.85rem; color: var(--sl-color-neutral-600);"
+              style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-600);"
             >
               Started ${formatLocalDateTime(exec.start_time)}
             </div>

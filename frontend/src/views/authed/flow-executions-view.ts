@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { router } from '../../router';
 import { getFlowExecutions } from '../../api';
@@ -10,6 +10,8 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
 import { parseUTCDate, formatLocalDateTime } from '../../utils/date';
+import consoleStyles from '../../styles/console-styles.css?inline';
+import '../../components/view-header.ts';
 
 interface FlowExecution {
   id: string;
@@ -23,74 +25,76 @@ interface FlowExecution {
 
 @customElement('flow-executions-view')
 export class FlowExecutionsView extends AuthedElement {
-  static styles = css`
-    :host {
-      display: block;
-      padding: 16px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 1rem;
-    }
-    th,
-    td {
-      border: 1px solid var(--sl-color-neutral-200);
-      padding: 8px;
-      text-align: left;
-    }
-    th {
-      background-color: var(--sl-color-neutral-100);
-    }
-    .status-cell {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .status-indicator {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
-    .status-indicator.running {
-      background-color: var(--sl-color-primary-600);
-    }
-    .status-indicator.pending {
-      background-color: var(--sl-color-warning-600);
-    }
-    @keyframes pulse {
-      0%,
-      100% {
-        opacity: 1;
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
       }
-      50% {
-        opacity: 0.5;
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
       }
-    }
-    .header-controls {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .connection-status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.9rem;
-      color: var(--sl-color-neutral-600);
-    }
-    .connection-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background-color: var(--sl-color-success-600);
-    }
-    .connection-dot.disconnected {
-      background-color: var(--sl-color-danger-600);
-    }
-  `;
+      th,
+      td {
+        border: 1px solid var(--sl-color-neutral-200);
+        padding: 8px;
+        text-align: left;
+      }
+      th {
+        background-color: var(--sl-color-neutral-100);
+      }
+      .status-cell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+      }
+      .status-indicator.running {
+        background-color: var(--sl-color-primary-600);
+      }
+      .status-indicator.pending {
+        background-color: var(--sl-color-warning-600);
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .header-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .connection-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        color: var(--sl-color-neutral-600);
+      }
+      .connection-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: var(--sl-color-success-600);
+      }
+      .connection-dot.disconnected {
+        background-color: var(--sl-color-danger-600);
+      }
+    `,
+  ];
 
   @state()
   private executions: FlowExecution[] = [];
@@ -223,8 +227,8 @@ export class FlowExecutionsView extends AuthedElement {
 
   render() {
     return html`
-      <view-header headerText="Flow Executions"></view-header>
-      <div class="column-layout">
+      <view-header headerText="Flow Executions" width="wide"></view-header>
+      <div class="column-layout wide">
         <div class="main-column">
           <div class="header-controls">
             <div style="display: flex; gap: 12px; align-items: center;">

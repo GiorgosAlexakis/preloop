@@ -511,7 +511,7 @@ export class IssuesView extends LitElement {
 
   render() {
     return html`
-      <view-header headerText="Issue Similarity">
+      <view-header headerText="Issue Similarity" width="wide">
         <div slot="main-column">
           <sl-button @click=${this._openFilterModal}>
             <sl-icon slot="prefix" name="filter"></sl-icon>
@@ -519,7 +519,7 @@ export class IssuesView extends LitElement {
           </sl-button>
         </div>
       </view-header>
-      <div class="column-layout">
+      <div class="column-layout wide">
         <div class="main-column">
           <div class="container">
             <sl-alert

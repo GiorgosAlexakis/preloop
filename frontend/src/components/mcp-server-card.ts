@@ -55,7 +55,7 @@ export class MCPServerCard extends LitElement {
     }
 
     .server-name {
-      font-size: var(--sl-font-size-medium);
+      font-size: var(--sl-font-size-large);
       font-weight: var(--sl-font-weight-semibold);
       margin: 0;
       overflow: hidden;

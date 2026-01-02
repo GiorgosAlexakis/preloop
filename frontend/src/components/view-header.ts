@@ -7,11 +7,14 @@ export class ViewHeader extends LitElement {
   @property({ type: String })
   headerText = '';
 
+  @property({ type: String })
+  width = '';
+
   static styles = [unsafeCSS(consoleStyles), css``];
 
   render() {
     return html`
-      <div class="column-layout">
+      <div class="column-layout ${this.width}">
         <div class="main-column">
           <div class="header">
             <h1>${this.headerText}</h1>

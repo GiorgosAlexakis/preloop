@@ -18,11 +18,71 @@ a:hover {
     } */
 }
 
+/* Dashboard-specific layout with responsive 2-column ratio */
+.column-layout.dashboard {
+    grid-template-columns: 1fr; /* Default: stacked */
+}
+
+@media (min-width: 1400px) {
+    .column-layout.dashboard {
+        grid-template-columns: 2fr 1fr; /* Above 1400px: proportional columns */
+    }
+}
+
+/* Max-width modifiers for different view types */
+.column-layout.narrow {
+    max-width: var(--console-container-max-width); /* 960px */
+    margin: 0 auto;
+}
+
+.column-layout.wide {
+    max-width: var(--console-container-large-max-width); /* 1200px */
+    margin: 0 auto;
+}
+
+.column-layout.extra-wide {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.column-layout.full-width {
+    max-width: none;
+}
+
 .main-column,
 .side-column {
     display: flex;
     flex-direction: column;
     gap: var(--sl-spacing-large);
+    min-width: 0; /* Allow columns to shrink below content width */
+}
+
+/* Ensure cards and content resize with columns */
+.main-column > *,
+.side-column > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* Proxy notice component */
+.proxy-notice {
+    background: var(--sl-color-primary-50);
+    border-left: 3px solid var(--sl-color-primary-600);
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    border-radius: 4px;
+}
+
+.proxy-notice-title {
+    font-weight: 600;
+    color: var(--sl-color-primary-900);
+    margin-bottom: 0.5rem;
+}
+
+.proxy-notice-text {
+    color: var(--sl-color-primary-800);
+    font-size: var(--sl-font-size-small);
+    line-height: 1.5;
 }
 .container {
     display: flex;

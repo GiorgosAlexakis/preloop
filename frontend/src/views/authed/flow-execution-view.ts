@@ -614,7 +614,7 @@ export class FlowExecutionView extends LitElement {
     // Waiting for router to set executionId
     if (!this.executionId) {
       return html`
-        <view-header headerText="Flow Execution"></view-header>
+        <view-header headerText="Flow Execution" width="wide"></view-header>
         <div
           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; gap: 16px;"
         >
@@ -627,7 +627,7 @@ export class FlowExecutionView extends LitElement {
     // Loading execution data
     if (this.isLoading) {
       return html`
-        <view-header headerText="Flow Execution"></view-header>
+        <view-header headerText="Flow Execution" width="wide"></view-header>
         <div
           style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; gap: 16px;"
         >
@@ -640,8 +640,8 @@ export class FlowExecutionView extends LitElement {
     // Error state
     if (this.loadingError || !this.execution) {
       return html`
-        <view-header headerText="Flow Execution"></view-header>
-        <div class="column-layout">
+        <view-header headerText="Flow Execution" width="wide"></view-header>
+        <div class="column-layout wide">
           <div class="main-column">
             <sl-alert variant="danger" open>
               <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
@@ -668,6 +668,7 @@ export class FlowExecutionView extends LitElement {
     return html`
       <view-header
         headerText="${this.flow?.name || 'Flow Execution'}"
+        width="wide"
       ></view-header>
       <div class="column-layout">
         <div class="main-column">

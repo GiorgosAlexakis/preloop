@@ -821,7 +821,7 @@ export class IssuesComplianceView extends LitElement {
 
   render() {
     return html`
-      <view-header headerText="Issue Compliance">
+      <view-header headerText="Issue Compliance" width="wide">
         <div slot="main-column">${this._renderSearchBar()}</div>
       </view-header>
 
@@ -836,7 +836,7 @@ export class IssuesComplianceView extends LitElement {
         @on-apply=${this._applyFilters}
       ></project-filter-modal>
 
-      <div class="column-layout">
+      <div class="column-layout wide">
         <div class="main-column">
           <div class="container">
             <sl-alert

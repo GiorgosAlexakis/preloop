@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, query } from 'lit/decorators.js';
 import {
   Chart,
@@ -17,6 +17,8 @@ import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '../../components/view-header.ts';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 Chart.register(
   LineController,
@@ -38,52 +40,35 @@ export class ApiUsageView extends LitElement {
   @query('#issueActionsChart')
   private issueActionsChartCanvas!: HTMLCanvasElement;
 
-  static styles = css`
-    :host {
-      display: block;
-      padding: var(--lumo-space-l);
-    }
-    h1 {
-      font-size: var(--lumo-font-size-xxl);
-      margin-bottom: var(--lumo-space-l);
-    }
-    .selectors {
-      display: flex;
-      gap: var(--lumo-space-m);
-      align-items: center;
-      margin-bottom: var(--lumo-space-l);
-    }
-    .charts-container {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: var(--lumo-space-l);
-    }
-    .right-column {
-      display: flex;
-      flex-direction: column;
-      gap: var(--lumo-space-l);
-    }
-    sl-card::part(header) {
-      font-size: var(--lumo-font-size-l);
-    }
-    h2 {
-      margin: 0;
-    }
-    .endpoints-list ul {
-      list-style-type: none;
-      padding: 0;
-      margin: 0;
-    }
-    .endpoints-list li {
-      display: flex;
-      justify-content: space-between;
-      padding: var(--lumo-space-s) 0;
-      border-bottom: 1px solid var(--lumo-contrast-10pct);
-    }
-    .endpoints-list li:last-child {
-      border-bottom: none;
-    }
-  `;
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      /* Component-specific styles */
+      .selectors {
+        display: flex;
+        gap: var(--sl-spacing-medium);
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      h2 {
+        margin: 0;
+      }
+      .endpoints-list ul {
+        list-style-type: none;
+        padding: 0;
+        margin: 0;
+      }
+      .endpoints-list li {
+        display: flex;
+        justify-content: space-between;
+        padding: var(--sl-spacing-small) 0;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+      .endpoints-list li:last-child {
+        border-bottom: none;
+      }
+    `,
+  ];
 
   firstUpdated() {
     this.initApiUsageChart();
@@ -145,30 +130,33 @@ export class ApiUsageView extends LitElement {
 
   render() {
     return html`
-      <h1>API Usage</h1>
-
-      <div class="selectors">
-        <sl-select label="Date Range" value="last-30">
-          <sl-option value="last-7">Last 7 Days</sl-option>
-          <sl-option value="last-30">Last 30 Days</sl-option>
-          <sl-option value="last-90">Last 90 Days</sl-option>
-          <sl-option value="custom">Custom</sl-option>
-        </sl-select>
-        <sl-input type="date" label="Start Date"></sl-input>
-        <sl-input type="date" label="End Date"></sl-input>
-      </div>
-
-      <div class="charts-container">
-        <sl-card class="chart-card">
-          <h2 slot="header">API Usage Detail</h2>
-          <canvas id="apiUsageChart"></canvas>
-        </sl-card>
-        <div class="right-column">
-          <sl-card class="chart-card">
+      <view-header headerText="API Usage" width="extra-wide"></view-header>
+      <div class="column-layout dashboard extra-wide">
+        <div class="main-column">
+          <sl-card>
+            <h2 slot="header">Filters</h2>
+            <div class="selectors">
+              <sl-select label="Date Range" value="last-30">
+                <sl-option value="last-7">Last 7 Days</sl-option>
+                <sl-option value="last-30">Last 30 Days</sl-option>
+                <sl-option value="last-90">Last 90 Days</sl-option>
+                <sl-option value="custom">Custom</sl-option>
+              </sl-select>
+              <sl-input type="date" label="Start Date"></sl-input>
+              <sl-input type="date" label="End Date"></sl-input>
+            </div>
+          </sl-card>
+          <sl-card>
+            <h2 slot="header">API Usage Detail</h2>
+            <canvas id="apiUsageChart"></canvas>
+          </sl-card>
+        </div>
+        <div class="side-column">
+          <sl-card>
             <h2 slot="header">Issue Actions</h2>
             <canvas id="issueActionsChart"></canvas>
           </sl-card>
-          <sl-card class="list-card">
+          <sl-card>
             <h2 slot="header">Endpoints Usage</h2>
             <div class="endpoints-list">
               <ul>

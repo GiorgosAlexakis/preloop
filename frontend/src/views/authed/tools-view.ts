@@ -89,7 +89,7 @@ export class ToolsView extends LitElement {
         border: none;
         border-bottom: 2px solid transparent;
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: var(--sl-font-size-small);
         color: var(--sl-color-neutral-600);
         transition: all 0.2s;
         white-space: nowrap;
@@ -106,16 +106,36 @@ export class ToolsView extends LitElement {
 
       .tools-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: var(--sl-spacing-large);
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 28px;
         padding-top: var(--sl-spacing-medium);
       }
 
       .servers-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: var(--sl-spacing-medium);
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
         margin-bottom: 2rem;
+      }
+
+      @media (max-width: 1400px) {
+        .servers-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .servers-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .tools-grid > tool-card,
+      .servers-grid > mcp-server-card,
+      .servers-grid > sl-card {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
       }
 
       .loading-indicator {
@@ -129,26 +149,6 @@ export class ToolsView extends LitElement {
         text-align: center;
         padding: 3rem;
         color: var(--sl-color-neutral-600);
-      }
-
-      .proxy-notice {
-        background: var(--sl-color-primary-50);
-        border-left: 3px solid var(--sl-color-primary-600);
-        padding: 1rem;
-        margin-bottom: 1.5rem;
-        border-radius: 4px;
-      }
-
-      .proxy-notice-title {
-        font-weight: 600;
-        color: var(--sl-color-primary-900);
-        margin-bottom: 0.5rem;
-      }
-
-      .proxy-notice-text {
-        color: var(--sl-color-primary-800);
-        font-size: 0.9rem;
-        line-height: 1.5;
       }
 
       .builtin-server-card {
@@ -171,7 +171,7 @@ export class ToolsView extends LitElement {
       }
 
       .builtin-server-name {
-        font-size: var(--sl-font-size-medium);
+        font-size: var(--sl-font-size-large);
         font-weight: var(--sl-font-weight-semibold);
         margin: 0;
         overflow: hidden;
@@ -246,7 +246,7 @@ export class ToolsView extends LitElement {
 
       .help-text {
         color: var(--sl-color-neutral-600);
-        font-size: 0.85rem;
+        font-size: var(--sl-font-size-small);
         line-height: 1.5;
         margin-top: 0.5rem;
       }
@@ -872,7 +872,7 @@ export class ToolsView extends LitElement {
     );
 
     return html`
-      <view-header headerText="Tools">
+      <view-header headerText="Tools" width="extra-wide">
         <div slot="main-column">
           <sl-button
             variant="primary"
@@ -884,7 +884,7 @@ export class ToolsView extends LitElement {
         </div>
       </view-header>
 
-      <div>
+      <div class="column-layout extra-wide">
         <div class="main-column">
           ${this.isAddingMCPServer
             ? html`<mcp-server-form
