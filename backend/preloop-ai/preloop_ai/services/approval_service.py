@@ -433,59 +433,57 @@ class ApprovalService:
         approval_request: ApprovalRequest,
         approval_policy: ApprovalPolicy,
     ) -> Dict[str, Any]:
-        """Send notifications for an approval request through configured channels.
+        """Send notifications for an approval request based on user preferences.
+
+        Notification channels are determined by each user's notification preferences,
+        not by the policy. Each approver will be notified via their preferred channels:
+        - Email if they have enable_email=True
+        - Push notification if they have enable_mobile_push=True and registered devices
+
+        For webhook-based policies (slack, mattermost, webhook), those are sent
+        as configured in the policy since they're not per-user.
 
         Args:
             approval_request: The approval request to notify about
-            approval_policy: The approval policy with notification configuration
+            approval_policy: The approval policy with approver configuration
 
         Returns:
             Dict with results per notification channel
         """
         results = {}
 
-        # Get notification channels from policy (default to ["email"] for standard type)
-        notification_channels = approval_policy.notification_channels or []
-
-        # If no channels specified and it's a "standard" type, default to email
-        if not notification_channels and approval_policy.approval_type == "standard":
-            notification_channels = ["email"]
-            logger.info(
-                "No notification_channels specified for 'standard' approval type, defaulting to email"
+        # Send email notifications to users who have email enabled
+        try:
+            email_result = await self._send_email_notification(
+                approval_request, approval_policy
             )
+            results["email"] = email_result
+        except Exception as e:
+            logger.error(f"Failed to send email notifications: {str(e)}")
+            results["email"] = {"success": False, "error": str(e)}
 
-        # Route notifications to appropriate channels
-        for channel in notification_channels:
-            try:
-                if channel == "email":
-                    result = await self._send_email_notification(
-                        approval_request, approval_policy
-                    )
-                    results["email"] = result
+        # Send push notifications to users who have push enabled
+        try:
+            push_result = await self._send_push_notification(
+                approval_request, approval_policy
+            )
+            results["mobile_push"] = push_result
+        except Exception as e:
+            logger.error(f"Failed to send push notifications: {str(e)}")
+            results["mobile_push"] = {"success": False, "error": str(e)}
 
-                elif channel == "mobile_push":
-                    result = await self._send_push_notification(
-                        approval_request, approval_policy
-                    )
-                    results["mobile_push"] = result
-
-                elif channel in ["slack", "mattermost", "webhook"]:
-                    # Use existing webhook notification for slack/mattermost/webhook
+        # Handle webhook-based notifications (these are policy-level, not per-user)
+        policy_channels = approval_policy.notification_channels or []
+        for channel in policy_channels:
+            if channel in ["slack", "mattermost", "webhook"]:
+                try:
                     result = await self.post_webhook_notification(
                         approval_request, approval_policy
                     )
                     results[channel] = {"success": result}
-
-                else:
-                    logger.warning(f"Unknown notification channel: {channel}")
-                    results[channel] = {
-                        "success": False,
-                        "error": f"Unknown channel: {channel}",
-                    }
-
-            except Exception as e:
-                logger.error(f"Failed to send {channel} notification: {str(e)}")
-                results[channel] = {"success": False, "error": str(e)}
+                except Exception as e:
+                    logger.error(f"Failed to send {channel} notification: {str(e)}")
+                    results[channel] = {"success": False, "error": str(e)}
 
         return results
 
@@ -549,12 +547,30 @@ class ApprovalService:
             )
             return {"success": False, "error": "No approvers configured"}
 
-        # Send email to each approver
+        # Send email to each approver who has email notifications enabled
+        from preloop_models.crud import notification_preferences
+        from preloop_models.db.session import get_db_session
+
         sent_count = 0
         failed_count = 0
+        skipped_count = 0
 
         for user_id in approver_user_ids:
             try:
+                # Check user's notification preferences
+                sync_db = next(get_db_session())
+                try:
+                    prefs = notification_preferences.get_by_user(sync_db, user_id)
+                    # Skip if user has email notifications disabled
+                    if prefs and not prefs.enable_email:
+                        logger.debug(
+                            f"Skipping email for user {user_id} - email notifications disabled"
+                        )
+                        skipped_count += 1
+                        continue
+                finally:
+                    sync_db.close()
+
                 # Get user email using async query
                 result = await self.db.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
@@ -592,6 +608,7 @@ class ApprovalService:
             "success": failed_count == 0,
             "sent": sent_count,
             "failed": failed_count,
+            "skipped": skipped_count,
         }
 
     def _get_all_approver_user_ids_sync(
