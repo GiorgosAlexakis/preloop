@@ -127,6 +127,16 @@ export class FlowsView extends LitElement {
         font-size: var(--sl-font-size-small);
         color: var(--sl-color-neutral-600);
       }
+      .flow-footer {
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .flow-footer-actions {
+        display: flex;
+        gap: 8px;
+      }
       .active-executions {
         margin-bottom: 32px;
       }
@@ -430,11 +440,8 @@ export class FlowsView extends LitElement {
           </div>
         </div>
 
-        <div
-          slot="footer"
-          style="display: flex; gap: 8px; justify-content: space-between; align-items: center;"
-        >
-          <div style="display: flex; gap: 8px;">
+        <div slot="footer" class="flow-footer">
+          <div class="flow-footer-actions">
             <sl-button
               size="small"
               href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
@@ -475,32 +482,32 @@ export class FlowsView extends LitElement {
 
   renderPresetCard(preset: Flow) {
     return html`
-      <sl-card class="preset-card">
-        <div
-          slot="header"
-          style="display: flex; justify-content: space-between; align-items: center;"
-        >
-          <div style="display: flex; align-items: center; gap: 8px;">
+      <sl-card class="flow-card">
+        <div slot="header" class="flow-header">
+          <div class="flow-title">
             <sl-icon name=${preset.icon || 'gear'}></sl-icon>
             ${preset.name}
           </div>
-          <div style="display: flex; gap: 4px;">
-            <sl-button size="small" @click=${() => this.clonePreset(preset.id)}
-              >Clone</sl-button
-            >
+          <div class="flow-footer-actions">
+            <sl-button size="small" @click=${() => this.clonePreset(preset.id)}>
+              Clone
+            </sl-button>
             ${preset.account_id
               ? html`
                   <sl-button
                     size="small"
                     variant="danger"
                     @click=${() => this.removePreset(preset.id)}
-                    >Remove</sl-button
                   >
+                    Remove
+                  </sl-button>
                 `
               : ''}
           </div>
         </div>
-        ${preset.description}
+        ${preset.description
+          ? html`<div class="flow-description">${preset.description}</div>`
+          : ''}
       </sl-card>
     `;
   }
