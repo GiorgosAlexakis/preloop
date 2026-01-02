@@ -44,12 +44,43 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
         await websocket.close(code=1008)
         return
 
-    logger.info(
-        f"WebSocket authenticated for user {user.username} (account {user.account_id})"
+    # Get connection info
+    client_ip = get_client_ip(websocket)
+    user_agent = websocket.headers.get("user-agent", "")
+
+    # Detect mobile client from user-agent
+    is_mobile = any(
+        x in user_agent.lower()
+        for x in ["preloopai", "iphone", "ipad", "android", "mobile"]
     )
+    client_type = "mobile_app" if is_mobile else "browser"
+
+    logger.info(
+        f"WebSocket authenticated for user {user.username} (account {user.account_id}) "
+        f"from {client_ip} via {client_type}"
+    )
+
+    # Create session for tracking in admin UI
+    session = await session_manager.create_session(
+        websocket=websocket,
+        user=user,
+        fingerprint=None,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        db=db,
+    )
+
+    # Add client type metadata
+    session.metadata["client_type"] = client_type
+    session.metadata["endpoint"] = "/ws"
 
     # Connect with account_id for filtering
     connection_id = await manager.connect_with_account(websocket, str(user.account_id))
+
+    logger.info(
+        f"WebSocket session {session.id} established for {user.username} "
+        f"(connection_id={connection_id}, type={client_type})"
+    )
 
     try:
         while True:
@@ -57,6 +88,10 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             # Set a timeout to detect unresponsive clients.
             try:
                 message = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+
+                # Update session activity
+                session_manager.update_activity(session.id)
+
                 if message == "pong":
                     # Client is alive
                     continue
@@ -64,12 +99,12 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
                 # Log user interaction events
                 try:
                     event_data = json.loads(message)
-                    logger.info(
-                        f"Received user interaction event from {connection_id}: {event_data}"
+                    logger.debug(
+                        f"Received event from {connection_id} ({client_type}): {event_data.get('type', 'unknown')}"
                     )
                 except json.JSONDecodeError:
-                    logger.warning(
-                        f"Received non-JSON message from {connection_id}: {message}"
+                    logger.debug(
+                        f"Received non-JSON message from {connection_id}: {message[:50]}"
                     )
 
             except asyncio.TimeoutError:
@@ -81,13 +116,25 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
                         websocket.receive_text(), timeout=10.0
                     )
                     if response != "pong":
+                        logger.warning(
+                            f"Session {session.id} expected pong, got: {response[:50]}"
+                        )
                         break
                 except asyncio.TimeoutError:
+                    logger.info(
+                        f"Session {session.id} did not respond to ping, disconnecting"
+                    )
                     break  # Client did not respond to ping, assume disconnected.
     except WebSocketDisconnect:
-        pass
+        logger.info(f"Session {session.id} disconnected normally")
+    except Exception as e:
+        logger.error(f"Error in WebSocket session {session.id}: {e}", exc_info=True)
     finally:
         manager.disconnect(connection_id)
+        try:
+            await session_manager.end_session(session.id, db)
+        except Exception as e:
+            logger.error(f"Error ending session {session.id}: {e}")
 
 
 @router.websocket("/ws/flow-executions/{execution_id}")
