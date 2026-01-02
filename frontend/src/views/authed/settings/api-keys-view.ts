@@ -231,7 +231,7 @@ export class ApiKeysView extends LitElement {
     };
 
     return html`
-      <view-header headerText="API Keys">
+      <view-header headerText="API Keys" width="narrow">
         <div slot="main-column">
           <sl-button
             variant="primary"
@@ -242,7 +242,7 @@ export class ApiKeysView extends LitElement {
           >
         </div>
       </view-header>
-      <div class="column-layout">
+      <div class="column-layout narrow">
         <div class="main-column">${renderContent()}</div>
         <div class="side-column"></div>
       </div>

@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
@@ -16,6 +16,7 @@ import {
   triggerFlowExecution,
 } from '../../api';
 import { parseUTCDate, formatLocalDateTime } from '../../utils/date';
+import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface Flow {
   id: string;
@@ -35,21 +36,28 @@ interface FlowExecution {
 
 @customElement('flows-view')
 export class FlowsView extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      padding: 16px;
-    }
-    .flows-grid {
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
+      }
+      .flows-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 28px;
       margin-bottom: 32px;
     }
     .presets-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 28px;
+    }
+    .flows-grid > sl-card,
+    .presets-grid > sl-card {
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
     }
     .flow-card {
       cursor: pointer;
@@ -159,7 +167,8 @@ export class FlowsView extends LitElement {
       background: var(--sl-color-neutral-50);
       border-radius: 4px;
     }
-  `;
+  `,
+  ];
 
   @state()
   private flows: Flow[] = [];
@@ -277,7 +286,7 @@ export class FlowsView extends LitElement {
   render() {
     if (this.isLoading) {
       return html`
-        <view-header headerText="Flows"></view-header>
+        <view-header headerText="Flows" width="extra-wide"></view-header>
         <div style="display: flex; justify-content: center; padding: 48px;">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
         </div>
@@ -289,7 +298,7 @@ export class FlowsView extends LitElement {
     );
 
     return html`
-      <view-header headerText="Flows">
+      <view-header headerText="Flows" width="extra-wide">
         <div slot="main-column">
           <sl-button
             variant="primary"
@@ -300,7 +309,7 @@ export class FlowsView extends LitElement {
           </sl-button>
         </div>
       </view-header>
-      <div class="column-layout">
+      <div class="column-layout extra-wide">
         <div class="main-column">
           <div class="proxy-notice">
             <div class="proxy-notice-text">
@@ -309,9 +318,8 @@ export class FlowsView extends LitElement {
               by exploring the presets below, or create a new flow from scratch.
             </div>
           </div>
-        </div>
-      </div>
-      ${activeExecutions.length > 0
+
+          ${activeExecutions.length > 0
         ? html`
             <div class="active-executions">
               <div class="section-header">
@@ -334,52 +342,55 @@ export class FlowsView extends LitElement {
             </div>
           `
         : ''}
-      ${this.flows.length > 0
-        ? html`
-            <div class="section-header">
-              <h2>Your Flows</h2>
-            </div>
-            <div class="flows-grid">
-              ${this.flows.map((flow) => this.renderFlowCard(flow))}
-            </div>
-          `
-        : html`
-            <div class="empty-state">
-              <sl-icon
-                name="inbox"
-                style="font-size: 3rem; opacity: 0.3;"
-              ></sl-icon>
-              <p>
-                No flows yet. Create your first flow or clone a preset below.
-              </p>
-            </div>
-          `}
 
-      <sl-divider></sl-divider>
+          ${this.flows.length > 0
+            ? html`
+                <div class="section-header">
+                  <h2>Your Flows</h2>
+                </div>
+                <div class="flows-grid">
+                  ${this.flows.map((flow) => this.renderFlowCard(flow))}
+                </div>
+              `
+            : html`
+                <div class="empty-state">
+                  <sl-icon
+                    name="inbox"
+                    style="font-size: 3rem; opacity: 0.3;"
+                  ></sl-icon>
+                  <p>
+                    No flows yet. Create your first flow or clone a preset below.
+                  </p>
+                </div>
+              `}
 
-      <div class="section-header">
-        <h2>Presets</h2>
-        ${this.flows.length > 0
-          ? html`
-              <sl-button size="small" @click=${this.togglePresets}>
-                <sl-icon
-                  slot="prefix"
-                  name=${this.showPresets ? 'chevron-up' : 'chevron-down'}
-                ></sl-icon>
-                ${this.showPresets ? 'Hide presets' : 'Show presets'}
-              </sl-button>
-            `
-          : ''}
+          <sl-divider></sl-divider>
+
+          <div class="section-header">
+            <h2>Presets</h2>
+            ${this.flows.length > 0
+              ? html`
+                  <sl-button size="small" @click=${this.togglePresets}>
+                    <sl-icon
+                      slot="prefix"
+                      name=${this.showPresets ? 'chevron-up' : 'chevron-down'}
+                    ></sl-icon>
+                    ${this.showPresets ? 'Hide presets' : 'Show presets'}
+                  </sl-button>
+                `
+              : ''}
+          </div>
+          ${this.showPresets
+            ? html`
+                <div class="presets-grid">
+                  ${this.presets.map((preset) => this.renderPresetCard(preset))}
+                </div>
+              `
+            : html`<div class="presets-collapsed">
+                Presets are hidden. Use "Show presets" to explore starter workflows.
+              </div>`}
+        </div>
       </div>
-      ${this.showPresets
-        ? html`
-            <div class="presets-grid">
-              ${this.presets.map((preset) => this.renderPresetCard(preset))}
-            </div>
-          `
-        : html`<div class="presets-collapsed">
-            Presets are hidden. Use "Show presets" to explore starter workflows.
-          </div>`}
     `;
   }
 

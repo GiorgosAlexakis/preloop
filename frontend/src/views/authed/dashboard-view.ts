@@ -549,9 +549,6 @@ export class DashboardView extends AuthedElement {
   static styles = [
     unsafeCSS(consoleStyles),
     css`
-      .column-layout {
-        grid-template-columns: 2fr 1fr;
-      }
       /* Dashboard-specific styles only */
       sl-icon {
         font-size: 1rem;
@@ -970,7 +967,7 @@ export class DashboardView extends AuthedElement {
   render() {
     if (this.isLoading) {
       return html`
-        <view-header headerText="Overview"></view-header>
+        <view-header headerText="Overview" width="extra-wide"></view-header>
         <div
           style="display: flex; justify-content: center; align-items: center; height: 400px;"
         >
@@ -980,8 +977,8 @@ export class DashboardView extends AuthedElement {
     }
 
     return html`
-      <view-header headerText="Overview"></view-header>
-      <div class="column-layout">
+      <view-header headerText="Overview" width="extra-wide"></view-header>
+      <div class="column-layout dashboard extra-wide">
         <!-- Main Column -->
         <div class="main-column">
           <!-- Welcome Card -->

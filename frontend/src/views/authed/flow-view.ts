@@ -440,9 +440,9 @@ export class FlowView extends LitElement {
         @close-modal=${this.closeAIModelDialog}
       ></add-ai-model-modal>
       <view-header
-        headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}"
+        headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}" width="wide"
       ></view-header>
-      <div class="column-layout">
+      <div class="column-layout wide">
         <div class="main-column">
           ${this.isNew ? this.renderCreationModeSelector() : ''}
           ${this.isNew && this.creationMode === 'preset'
@@ -489,8 +489,8 @@ export class FlowView extends LitElement {
         </div>
       </sl-dialog>
 
-      <view-header headerText="${this.flow.name}"></view-header>
-      <div class="column-layout">
+      <view-header headerText="${this.flow.name}" width="wide"></view-header>
+      <div class="column-layout wide">
         <div class="main-column">
           <!-- Actions -->
           <div

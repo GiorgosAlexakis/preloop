@@ -547,7 +547,7 @@ export class ApprovalsView extends AuthedElement {
   render() {
     if (this.loading) {
       return html`
-        <view-header headerText="Approval Requests"></view-header>
+        <view-header headerText="Approval Requests" width="wide"></view-header>
         <div
           style="display: flex; justify-content: center; align-items: center; height: 400px;"
         >
@@ -557,15 +557,16 @@ export class ApprovalsView extends AuthedElement {
     }
 
     return html`
-      <view-header headerText="Approval Requests">
+      <view-header headerText="Approval Requests" width="wide">
         <sl-button href="/console/tools" size="small">
           <sl-icon slot="prefix" name="gear"></sl-icon>
           Configure Approvals
         </sl-button>
       </view-header>
-
-      <!-- Analytics Summary -->
-      <div class="stats-grid">
+      <div class="column-layout wide">
+        <div class="main-column">
+          <!-- Analytics Summary -->
+          <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-value primary">${this.stats.total}</div>
           <div class="stat-label">Total Requests</div>
@@ -798,6 +799,8 @@ export class ApprovalsView extends AuthedElement {
               )}
             </div>
           `}
+        </div>
+      </div>
     `;
   }
 }

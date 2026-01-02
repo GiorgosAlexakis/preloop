@@ -106,16 +106,24 @@ export class ToolsView extends LitElement {
 
       .tools-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: var(--sl-spacing-large);
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 28px;
         padding-top: var(--sl-spacing-medium);
       }
 
       .servers-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: var(--sl-spacing-medium);
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 28px;
         margin-bottom: 2rem;
+      }
+
+      .tools-grid > tool-card,
+      .servers-grid > mcp-server-card,
+      .servers-grid > sl-card {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
       }
 
       .loading-indicator {
@@ -872,7 +880,7 @@ export class ToolsView extends LitElement {
     );
 
     return html`
-      <view-header headerText="Tools">
+      <view-header headerText="Tools" width="extra-wide">
         <div slot="main-column">
           <sl-button
             variant="primary"
@@ -884,7 +892,7 @@ export class ToolsView extends LitElement {
         </div>
       </view-header>
 
-      <div>
+      <div class="column-layout extra-wide">
         <div class="main-column">
           ${this.isAddingMCPServer
             ? html`<mcp-server-form

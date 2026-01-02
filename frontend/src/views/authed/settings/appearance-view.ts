@@ -54,8 +54,8 @@ export class AppearanceView extends LitElement {
 
   render() {
     return html`
-      <view-header headerText="Appearance"> </view-header>
-      <div class="column-layout">
+      <view-header headerText="Appearance" width="narrow"> </view-header>
+      <div class="column-layout narrow">
         <div class="main-column">
           <sl-card>
             <sl-radio-group

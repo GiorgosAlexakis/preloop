@@ -777,7 +777,7 @@ export class IssuesDependenciesView extends LitElement {
         @on-apply=${this._applyFilters}
       ></project-filter-modal>
 
-      <view-header headerText="Issue Dependencies">
+      <view-header headerText="Issue Dependencies" width="wide">
         <div slot="main-column" class="controls">
           <sl-select
             placeholder="Select a project..."
@@ -797,7 +797,7 @@ export class IssuesDependenciesView extends LitElement {
         </div>
       </view-header>
 
-      <div class="column-layout">
+      <div class="column-layout wide">
         <div class="main-column">
           <div class="container">
             ${when(

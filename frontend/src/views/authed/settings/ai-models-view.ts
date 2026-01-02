@@ -170,14 +170,14 @@ export class AIModelsView extends LitElement {
     };
 
     return html`
-      <view-header headerText="AI Models">
+      <view-header headerText="AI Models" width="narrow">
         <div slot="main-column">
           <sl-button variant="primary" @click=${this.openAddModelModal}>
             <sl-icon slot="prefix" name="plus-lg"></sl-icon> Add Model
           </sl-button>
         </div>
       </view-header>
-      <div class="column-layout">
+      <div class="column-layout narrow">
         <div class="main-column">${renderContent()}</div>
         <div class="side-column"></div>
       </div>

@@ -310,8 +310,8 @@ export class AccountView extends LitElement {
   render() {
     if (this._loading) {
       return html`
-        <view-header headerText="Account"></view-header>
-        <div class="column-layout">
+        <view-header headerText="Account" width="narrow"></view-header>
+        <div class="column-layout narrow">
           <div class="main-column">
             <div class="loading">
               <sl-spinner style="font-size: 3rem;"></sl-spinner>
@@ -323,8 +323,8 @@ export class AccountView extends LitElement {
 
     if (this._error) {
       return html`
-        <view-header headerText="Account"></view-header>
-        <div class="column-layout">
+        <view-header headerText="Account" width="narrow"></view-header>
+        <div class="column-layout narrow">
           <div class="main-column">
             <sl-alert variant="danger" open>
               <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
@@ -343,8 +343,8 @@ export class AccountView extends LitElement {
       : 'Free';
 
     return html`
-      <view-header headerText="Account"></view-header>
-      <div class="column-layout">
+      <view-header headerText="Account" width="narrow"></view-header>
+      <div class="column-layout narrow">
         <div class="main-column">
           <!-- Organization Details Section -->
           <sl-card style="margin-bottom: 2rem;">

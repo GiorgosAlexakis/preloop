@@ -18,6 +18,31 @@ a:hover {
     } */
 }
 
+/* Dashboard-specific layout with 2-column ratio */
+.column-layout.dashboard {
+    grid-template-columns: 2fr 1fr;
+}
+
+/* Max-width modifiers for different view types */
+.column-layout.narrow {
+    max-width: var(--console-container-max-width); /* 960px */
+    margin: 0 auto;
+}
+
+.column-layout.wide {
+    max-width: var(--console-container-large-max-width); /* 1200px */
+    margin: 0 auto;
+}
+
+.column-layout.extra-wide {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.column-layout.full-width {
+    max-width: none;
+}
+
 .main-column,
 .side-column {
     display: flex;

@@ -223,8 +223,8 @@ export class FlowExecutionsView extends AuthedElement {
 
   render() {
     return html`
-      <view-header headerText="Flow Executions"></view-header>
-      <div class="column-layout">
+      <view-header headerText="Flow Executions" width="wide"></view-header>
+      <div class="column-layout wide">
         <div class="main-column">
           <div class="header-controls">
             <div style="display: flex; gap: 12px; align-items: center;">
