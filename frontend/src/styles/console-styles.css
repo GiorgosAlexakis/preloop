@@ -18,9 +18,15 @@ a:hover {
     } */
 }
 
-/* Dashboard-specific layout with 2-column ratio */
+/* Dashboard-specific layout with responsive 2-column ratio */
 .column-layout.dashboard {
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1fr; /* Default: stacked */
+}
+
+@media (min-width: 1400px) {
+    .column-layout.dashboard {
+        grid-template-columns: 2fr 1fr; /* Above 1400px: proportional columns */
+    }
 }
 
 /* Max-width modifiers for different view types */
@@ -48,6 +54,14 @@ a:hover {
     display: flex;
     flex-direction: column;
     gap: var(--sl-spacing-large);
+    min-width: 0; /* Allow columns to shrink below content width */
+}
+
+/* Ensure cards and content resize with columns */
+.main-column > *,
+.side-column > * {
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* Proxy notice component */

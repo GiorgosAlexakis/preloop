@@ -562,7 +562,8 @@ export class DashboardView extends AuthedElement {
       }
       .tool-counts {
         display: flex;
-        gap: var(--sl-spacing-large);
+        flex-wrap: wrap;
+        gap: var(--sl-spacing-2x-large);
         margin-top: var(--sl-spacing-small);
         justify-content: center;
       }
@@ -674,14 +675,6 @@ export class DashboardView extends AuthedElement {
       @media (min-width: 1024px) {
         .overview-layout {
           grid-template-columns: 1fr;
-        }
-        .tool-counts {
-          gap: 5rem;
-        }
-      }
-      @media (min-width: 1200px) {
-        .tool-counts {
-          gap: 9rem;
         }
       }
       /* Welcome card styles */
