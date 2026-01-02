@@ -1,4 +1,4 @@
-# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop AI - The MCP Governance Layer
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop - The MCP Governance Layer
 
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -14,7 +14,7 @@ Preloop is an open-source, event-driven automation platform with built-in human-
 
 - **Open Source**: single-user approvals with **email + mobile app notifications**.
 - **Enterprise**: adds **advanced conditions (CEL)**, **team-based approvals (quorum)**, **escalation**, and **Slack & Mattermost** notifications.
-- **Mobile & Watch apps**: the iOS/Watch and Android apps can be used with **self-hosted / open-source** Preloop AI deployments.
+- **Mobile & Watch apps**: the iOS/Watch and Android apps can be used with **self-hosted / open-source** Preloop deployments.
 
 ## Key Features
 
@@ -45,7 +45,7 @@ Preloop is an open-source, event-driven automation platform with built-in human-
 
 ## Architecture
 
-Preloop AI is designed with a modular architecture:
+Preloop is designed with a modular architecture:
 
 1.  **Preloop AI** (`./backend/preloop-ai`): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
 2.  **Preloop Models** (`./backend/preloop-models`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
@@ -451,6 +451,37 @@ curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/tool-configurations" \
 ```
 
 > **Enterprise Features**: Preloop Enterprise Edition adds CEL-based conditional approvals, team-based approvals with quorum, escalation policies, and multi-channel notifications (Slack, Mattermost, mobile push). Contact sales@spacecode.ai for more information.
+
+### Mobile Push Notifications (iOS/Android)
+
+Open-source users can enable mobile push notifications by proxying requests through the production Preloop server at https://preloop.ai.
+
+**Setup Steps:**
+
+1. **Create an account** at https://preloop.ai
+2. **Generate an API key** with `push_proxy` scope from the Settings page
+3. **Configure your instance** with these environment variables:
+
+```bash
+# Push notification proxy configuration
+PUSH_PROXY_URL=https://preloop.ai/api/v1/push/proxy
+PUSH_PROXY_API_KEY=your-api-key-here
+```
+
+4. **Enable push notifications** in the Notification Preferences page in your Preloop Console
+5. **Register your mobile device** by scanning the QR code shown in Notification Preferences
+
+Once configured, approval requests will trigger push notifications on your registered iOS or Android devices.
+
+> **Note**: The mobile apps (iOS/Watch and Android) are designed to work with self-hosted Preloop instances. They connect to your server URL extracted from the QR code.
+
+### Version Checking & Updates
+
+By default, Preloop checks for version updates by contacting https://preloop.ai on startup and once daily. This helps you stay informed about new releases and security updates.
+
+**Privacy**: Only instance UUID, version number, and IP address are sent. No user data is transmitted.
+
+**Opt-out**: Set `DISABLE_VERSION_CHECK=true` to disable version checking entirely.
 
 For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 

@@ -650,6 +650,10 @@ class ApprovalService:
     ) -> Dict[str, Any]:
         """Send mobile push notification for approval request.
 
+        This method supports two modes:
+        1. Native push: Uses APNs/FCM directly (enterprise with credentials)
+        2. Proxy push: Routes through preloop.ai proxy (OSS with API key)
+
         Args:
             approval_request: The approval request
             approval_policy: The approval policy
@@ -662,11 +666,19 @@ class ApprovalService:
             get_apns_service,
             NotificationPayloadBuilder,
         )
+        from preloop_ai.services.push_proxy import (
+            is_push_proxy_configured,
+            send_push_via_proxy,
+        )
 
         apns_service = get_apns_service()
-        if not apns_service:
-            logger.warning("APNs service not configured")
-            return {"success": False, "error": "APNs not configured"}
+        use_proxy = not apns_service and is_push_proxy_configured()
+
+        if not apns_service and not use_proxy:
+            logger.debug(
+                "Push notifications not available (no APNs config, no proxy config)"
+            )
+            return {"success": False, "error": "Push notifications not configured"}
 
         # Run sync database operations in thread pool to avoid blocking event loop
         loop = asyncio.get_event_loop()
@@ -735,27 +747,47 @@ class ApprovalService:
         failed_count = 0
         invalid_tokens = []
 
-        # Send to each device
+        # Send to each device - use native APNs or proxy depending on configuration
         for user_id, token in user_tokens:
             try:
-                (
-                    success,
-                    status_code,
-                    error_reason,
-                ) = await apns_service.send_notification(
-                    device_token=token, payload=payload, priority=apns_priority
-                )
-
-                if success:
-                    sent_count += 1
-                elif status_code == 410:
-                    # Token is no longer valid
-                    invalid_tokens.append((user_id, token))
-                else:
-                    logger.warning(
-                        f"Push notification failed: status={status_code}, reason={error_reason}"
+                if apns_service:
+                    # Use native APNs (enterprise mode with credentials)
+                    (
+                        success,
+                        status_code,
+                        error_reason,
+                    ) = await apns_service.send_notification(
+                        device_token=token, payload=payload, priority=apns_priority
                     )
-                    failed_count += 1
+
+                    if success:
+                        sent_count += 1
+                    elif status_code == 410:
+                        # Token is no longer valid
+                        invalid_tokens.append((user_id, token))
+                    else:
+                        logger.warning(
+                            f"Push notification failed: status={status_code}, reason={error_reason}"
+                        )
+                        failed_count += 1
+                else:
+                    # Use push proxy (OSS mode with API key)
+                    result = await send_push_via_proxy(
+                        platform="ios",
+                        device_token=token,
+                        title=payload.get("aps", {})
+                        .get("alert", {})
+                        .get("title", "Approval Required"),
+                        body=payload.get("aps", {}).get("alert", {}).get("body", ""),
+                        data=payload.get("data", {}),
+                        priority="high" if apns_priority == 10 else "normal",
+                    )
+
+                    if result.get("success"):
+                        sent_count += 1
+                    else:
+                        logger.warning(f"Push proxy failed: {result.get('error')}")
+                        failed_count += 1
 
             except Exception as e:
                 logger.error(f"Push notification error for token {token[:8]}...: {e}")

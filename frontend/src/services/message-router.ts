@@ -50,7 +50,10 @@ export class MessageRouter {
     const topic = this.extractTopic(message);
 
     if (!topic) {
-      console.warn('[MessageRouter] Message without identifiable topic:', message);
+      console.warn(
+        '[MessageRouter] Message without identifiable topic:',
+        message
+      );
       return;
     }
 
@@ -62,7 +65,9 @@ export class MessageRouter {
     // Notify topic-specific subscribers
     const topicSubscribers = this.subscriptions.get(topic) || new Set();
     if (topic === 'device_registered' || topic === 'approvals') {
-      console.log(`[MessageRouter] ${topicSubscribers.size} subscriber(s) for topic ${topic}`);
+      console.log(
+        `[MessageRouter] ${topicSubscribers.size} subscriber(s) for topic ${topic}`
+      );
     }
 
     topicSubscribers.forEach((sub) => {
