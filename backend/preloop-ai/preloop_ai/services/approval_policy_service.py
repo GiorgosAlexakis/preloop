@@ -14,7 +14,9 @@ from preloop_models.db.session import get_session_factory
 logger = logging.getLogger(__name__)
 
 
-def create_default_approval_policy_for_account(account_id: UUID) -> None:
+def create_default_approval_policy_for_account(
+    account_id: UUID, user_id: UUID | None = None
+) -> None:
     """
     Create a default approval policy for a newly created account.
 
@@ -24,6 +26,8 @@ def create_default_approval_policy_for_account(account_id: UUID) -> None:
 
     Args:
         account_id: The UUID of the account to create the policy for.
+        user_id: The UUID of the user to set as the default approver.
+                 In single-user mode, this should be the account owner.
     """
     session_factory = get_session_factory()
     db = session_factory()
@@ -52,7 +56,7 @@ def create_default_approval_policy_for_account(account_id: UUID) -> None:
             )
             return
 
-        # Create the default policy
+        # Create the default policy with the user as the approver
         policy_data = {
             "name": "Default Approval Policy",
             "description": (
@@ -61,7 +65,13 @@ def create_default_approval_policy_for_account(account_id: UUID) -> None:
             ),
             "approval_type": "standard",
             "is_default": True,
+            "approvals_required": 1,
+            "notification_channels": ["email", "mobile_push"],
         }
+
+        # In single-user/open-source mode, set the account owner as the approver
+        if user_id:
+            policy_data["approver_user_ids"] = [str(user_id)]
 
         crud_approval_policy.create(
             db,
@@ -69,7 +79,10 @@ def create_default_approval_policy_for_account(account_id: UUID) -> None:
             account_id=str(account_id),
         )
 
-        logger.info(f"Created default approval policy for account {account_id}")
+        logger.info(
+            f"Created default approval policy for account {account_id} "
+            f"with approver user_id={user_id}"
+        )
 
     except Exception as e:
         logger.error(
@@ -80,7 +93,9 @@ def create_default_approval_policy_for_account(account_id: UUID) -> None:
         db.close()
 
 
-def create_default_approval_policy_background(account_id: UUID) -> None:
+def create_default_approval_policy_background(
+    account_id: UUID, user_id: UUID | None = None
+) -> None:
     """
     Background task wrapper for creating default approval policy.
 
@@ -89,9 +104,10 @@ def create_default_approval_policy_background(account_id: UUID) -> None:
 
     Args:
         account_id: The UUID of the account to create the policy for.
+        user_id: The UUID of the user to set as the default approver.
     """
     try:
-        create_default_approval_policy_for_account(account_id)
+        create_default_approval_policy_for_account(account_id, user_id)
     except Exception as e:
         # Log but don't raise - this is a background task
         logger.error(

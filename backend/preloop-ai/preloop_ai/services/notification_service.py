@@ -246,29 +246,100 @@ class NotificationService:
         Returns:
             Dict with send results.
         """
+        from preloop_ai.services.push_notifications import (
+            get_apns_service,
+            NotificationPayloadBuilder,
+        )
+
+        apns_service = get_apns_service()
+        if not apns_service:
+            logger.warning("APNs service not configured")
+            return {
+                "success": False,
+                "error": "APNs not configured",
+                "sent": 0,
+                "failed": 0,
+            }
+
         sent_count = 0
         failed_count = 0
+        invalid_tokens = []  # Track 410 responses
 
         for user_id in user_ids:
+            # Get user's notification preferences
             prefs = notification_preferences.get_by_user(self.db, user_id)
             if not prefs or not prefs.enable_mobile_push:
                 continue
 
-            tokens = prefs.get_device_tokens()
-            for token in tokens:
+            # Get iOS device tokens
+            ios_tokens = prefs.get_device_tokens(platform="ios")
+            if not ios_tokens:
+                continue
+
+            # Build notification payload
+            # Note: ApprovalRequest model doesn't have a priority field,
+            # so we default to "medium" and set to "high" for escalations
+            priority_str = "high" if is_escalation else "medium"
+            payload = NotificationPayloadBuilder.new_approval_request(
+                request_id=str(approval_request.id),
+                tool_name=approval_request.tool_name,
+                priority=priority_str,
+                expires_at=approval_request.expires_at,
+                agent_reasoning=approval_request.agent_reasoning,
+            )
+
+            # Add escalation prefix if needed
+            if is_escalation:
+                payload["aps"]["alert"]["title"] = (
+                    "ESCALATION: " + payload["aps"]["alert"]["title"]
+                )
+
+            # Determine APNs priority
+            apns_priority = 10 if priority_str in ["urgent", "high"] else 5
+
+            # Send to each device
+            for token in ios_tokens:
                 try:
-                    # TODO: Send push notification via FCM/APNS
-                    # from preloop_ai.services.push_notifications import send_push
-                    # await send_push(token, approval_request)
-                    sent_count += 1
+                    (
+                        success,
+                        status_code,
+                        error_reason,
+                    ) = await apns_service.send_notification(
+                        device_token=token,
+                        payload=payload,
+                        priority=apns_priority,
+                    )
+
+                    if success:
+                        sent_count += 1
+                    elif status_code == 410:
+                        # Token is invalid/expired
+                        invalid_tokens.append((user_id, token))
+                        logger.info(f"Marking token as invalid: {token[:10]}...")
+                    else:
+                        failed_count += 1
+
                 except Exception as e:
-                    logger.error(f"Failed to send push to token {token}: {str(e)}")
+                    logger.error(f"Failed to send push to token {token[:10]}...: {e}")
                     failed_count += 1
+
+        # Remove invalid tokens from database
+        for user_id, token in invalid_tokens:
+            try:
+                notification_preferences.remove_device_token(self.db, user_id, token)
+                logger.info(f"Removed invalid token for user {user_id}")
+            except Exception as e:
+                logger.error(f"Failed to remove token: {e}")
+
+        # Commit token removals
+        if invalid_tokens:
+            self.db.commit()
 
         return {
             "success": failed_count == 0,
             "sent": sent_count,
             "failed": failed_count,
+            "invalid_tokens_removed": len(invalid_tokens),
             "is_escalation": is_escalation,
         }
 

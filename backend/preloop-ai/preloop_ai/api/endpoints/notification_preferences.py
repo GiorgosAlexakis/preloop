@@ -1,6 +1,7 @@
 """API endpoints for notification preferences."""
 
 import os
+from datetime import datetime, UTC
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -110,7 +111,7 @@ async def unregister_mobile_device(
     db: Session = Depends(get_db_session),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Optional[models.NotificationPreferences]:
-    """Unregister a mobile device.
+    """Unregister a mobile device and delete associated API key.
 
     Args:
         token: Device token to remove.
@@ -121,6 +122,30 @@ async def unregister_mobile_device(
     Raises:
         HTTPException: If preferences not found.
     """
+    from preloop_models.models.api_key import ApiKey
+
+    # Find and delete any API keys that were created for this device token
+    # We search for API keys that match the device token pattern in their name
+    # or look for the token in a device_token metadata field if we stored it
+    api_keys = (
+        db.query(ApiKey)
+        .filter(
+            ApiKey.user_id == current_user.id,
+            ApiKey.account_id == current_user.account_id,
+        )
+        .all()
+    )
+
+    # Delete API keys that match the device token
+    for api_key in api_keys:
+        # Check if this API key was created for this device
+        # We stored the device token in the key metadata or name
+        key_metadata = api_key.scopes or []
+        if isinstance(key_metadata, list) and any(
+            isinstance(s, dict) and s.get("device_token") == token for s in key_metadata
+        ):
+            db.delete(api_key)
+
     prefs = notification_preferences.remove_device_token(db, current_user.id, token)
 
     if not prefs:
@@ -202,28 +227,43 @@ async def register_device_via_token(
             detail="User not found",
         )
 
+    # Check if this is the first device being registered
+    existing_prefs = notification_preferences.get_by_user(db, user_id)
+    is_first_device = (
+        not existing_prefs
+        or not existing_prefs.mobile_device_tokens
+        or len(existing_prefs.mobile_device_tokens) == 0
+    )
+
     # Register device
     prefs = notification_preferences.add_device_token(
         db, user_id, device_in.platform, device_in.token
     )
 
+    # Enable push notifications by default when adding the first device
+    if is_first_device and not prefs.enable_mobile_push:
+        prefs.enable_mobile_push = True
+        db.flush()
+
     # Generate API key for mobile app
     alphabet = string.ascii_letters + string.digits
     api_key_value = "".join(secrets.choice(alphabet) for _ in range(40))
 
-    # Create device name
-    device_name = device_in.device_name or f"{device_in.platform.title()} Device"
+    # Create device name with timestamp to avoid conflicts
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    base_name = device_in.device_name or f"{device_in.platform.title()} Device"
+    device_name = f"{base_name} ({timestamp})"
 
     # Set expiration to 1 year
-    from datetime import datetime, UTC
-
     expires_at = datetime.now(UTC) + timedelta(days=365)
 
-    # Create API key
+    # Create API key with device_token reference for later cleanup
+    # Store the device token in scopes metadata so we can delete this key
+    # when the device is unregistered
     new_api_key = ApiKey(
         name=device_name,
         key=api_key_value,
-        scopes=[],  # Full access for mobile app
+        scopes=[{"device_token": device_in.token}],
         account_id=user.account_id,
         user_id=user_id,
         expires_at=expires_at,

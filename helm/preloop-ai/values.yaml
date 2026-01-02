@@ -241,6 +241,20 @@ stripe:
   secretKey: ""
   webhookSecret: ""
 
+# Apple Push Notification Service (APNS) configuration
+apns:
+  enabled: false
+  # Team ID from Apple Developer account
+  teamId: ""
+  # Key ID from Apple Developer portal
+  keyId: ""
+  # Base64-encoded APNS auth key (.p8 file contents)
+  authKey: ""
+  # App bundle identifier
+  bundleId: ""
+  # Use APNS sandbox environment (true for development, false for production)
+  useSandbox: false
+
 # Test user seeding configuration
 seed:
   enabled: false

@@ -50,19 +50,33 @@ export class MessageRouter {
     const topic = this.extractTopic(message);
 
     if (!topic) {
-      console.warn('Message without identifiable topic:', message);
+      console.warn(
+        '[MessageRouter] Message without identifiable topic:',
+        message
+      );
       return;
     }
 
+    console.log(
+      `[MessageRouter] Routing message type=${message.type} to topic=${topic}`
+    );
+
     // Notify topic-specific subscribers
     const topicSubscribers = this.subscriptions.get(topic) || new Set();
+    console.log(
+      `[MessageRouter] Found ${topicSubscribers.size} subscriber(s) for topic ${topic}`
+    );
+
     topicSubscribers.forEach((sub) => {
       if (!sub.filter || sub.filter(message)) {
         try {
+          console.log(
+            `[MessageRouter] Calling subscriber callback for topic ${topic}`
+          );
           sub.callback(message);
         } catch (error) {
           console.error(
-            `Error in subscription callback for topic ${topic}:`,
+            `[MessageRouter] Error in subscription callback for topic ${topic}:`,
             error
           );
         }

@@ -1,7 +1,7 @@
 """Authentication schemas for request and response validation."""
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -127,7 +127,7 @@ class ApiKeyResponse(BaseModel):
     key: str
     created_at: datetime
     expires_at: Optional[datetime] = None
-    scopes: List[str] = []
+    scopes: List[Any] = []  # Can be strings or dicts (e.g., {"device_token": "..."})
     user_id: UUID
     last_used_at: Optional[datetime] = None
 
@@ -139,7 +139,7 @@ class ApiKeySummary(BaseModel):
     name: str
     created_at: datetime
     expires_at: Optional[datetime] = None
-    scopes: List[str] = []
+    scopes: List[Any] = []  # Can be strings or dicts (e.g., {"device_token": "..."})
     last_used_at: Optional[datetime] = None
 
 

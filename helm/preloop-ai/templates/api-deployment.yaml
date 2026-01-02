@@ -108,6 +108,21 @@ spec:
               value: {{ .Values.stripe.secretKey | quote }}
             - name: STRIPE_WEBHOOK_SECRET
               value: {{ .Values.stripe.webhookSecret | quote }}
+            {{- if .Values.apns.enabled }}
+            - name: APNS_TEAM_ID
+              value: {{ .Values.apns.teamId | quote }}
+            - name: APNS_KEY_ID
+              value: {{ .Values.apns.keyId | quote }}
+            - name: APNS_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop_ai.fullname" . }}
+                  key: apns-auth-key
+            - name: APNS_BUNDLE_ID
+              value: {{ .Values.apns.bundleId | quote }}
+            - name: APNS_USE_SANDBOX
+              value: {{ .Values.apns.useSandbox | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8000

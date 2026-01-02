@@ -45,6 +45,17 @@ htmlcov/
 # Local development
 .DS_Store
 
+# Certificates and keys (SECURITY: Never commit these!)
+*.p8
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+*.jks
+AuthKey_*.p8
+
 *.db
 .aider*
 site/

@@ -3,9 +3,9 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "preloop-ai"
+name = "preloop"
 version = "0.3.0"
-description = "Preloop AI - Event-driven automation platform with built-in human-in-the-loop safety"
+description = "Preloop - Event-driven AI automation platform with built-in human-in-the-loop safety"
 authors = [{name = "Dimitris Moraitis", email = "dimitris@spacecode.ai"}, {name = "Yannis Chatzikonstantinou", email = "yannis@spacecode.ai"}]
 requires-python = ">=3.11"
 dependencies = [
@@ -23,7 +23,7 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "bcrypt<4.1.0",
     "python-multipart>=0.0.6",
-    "httpx>=0.24.1",
+    "httpx[http2]>=0.24.1",  # http2 extra required for APNs push notifications
     "tenacity>=8.2.3",
     "python-json-logger>=2.0.0",
     "jinja2>=3.1.2",
