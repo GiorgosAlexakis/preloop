@@ -232,10 +232,12 @@ async def register(
             logger.info("[REGISTER] Flow presets creation scheduled")
 
             # Create default approval policy for the new account
+            # In single-user mode, set the new user as the approver
             logger.info("[REGISTER] Scheduling default approval policy creation")
             background_tasks.add_task(
                 create_default_approval_policy_background,
                 account_id=new_account.id,
+                user_id=new_user.id,
             )
             logger.info("[REGISTER] Default approval policy creation scheduled")
 

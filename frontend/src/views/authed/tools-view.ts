@@ -14,6 +14,7 @@ import {
   createApprovalPolicy,
   updateApprovalPolicy,
   getFeatures,
+  getAccountDetails,
 } from '../../api';
 import '../../components/mcp-server-form';
 import '../../components/mcp-server-card';
@@ -58,6 +59,9 @@ export class ToolsView extends LitElement {
 
   @state()
   private activeTab: 'all' | 'builtin' | string = 'all';
+
+  @state()
+  private currentUser: { id: string } | null = null;
 
   @state()
   private showSetupDialog = false;
@@ -264,12 +268,17 @@ export class ToolsView extends LitElement {
     this.error = null;
 
     try {
-      const [tools, servers, policies, featuresResponse] = await Promise.all([
-        getTools(),
-        getMCPServers(),
-        getApprovalPolicies(),
-        getFeatures(),
-      ]);
+      const [tools, servers, policies, featuresResponse, currentUser] =
+        await Promise.all([
+          getTools(),
+          getMCPServers(),
+          getApprovalPolicies(),
+          getFeatures(),
+          getAccountDetails(),
+        ]);
+
+      // Store current user for default policy creation
+      this.currentUser = currentUser;
 
       // Store features for passing to child components
       this.features = featuresResponse.features || {};
@@ -531,13 +540,24 @@ export class ToolsView extends LitElement {
       }
 
       if (!defaultPolicy) {
-        // Create a default policy
-        defaultPolicy = (await createApprovalPolicy({
+        // Create a default policy with current user as approver
+        const policyData: Record<string, unknown> = {
           name: 'Default Approval Policy',
           description: 'Default policy for tool approval requests',
           approval_type: 'standard',
           is_default: true,
-        })) as ApprovalPolicy;
+          approvals_required: 1,
+          notification_channels: ['email', 'mobile_push'],
+        };
+
+        // In single-user mode, set current user as the approver
+        if (this.currentUser?.id) {
+          policyData.approver_user_ids = [this.currentUser.id];
+        }
+
+        defaultPolicy = (await createApprovalPolicy(
+          policyData
+        )) as ApprovalPolicy;
         this.approvalPolicies = [...this.approvalPolicies, defaultPolicy];
       }
 

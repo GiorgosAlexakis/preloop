@@ -123,6 +123,23 @@ class WebSocketManager:
             data: Data to broadcast as JSON
             account_id: If provided, only send to connections with matching account_id
         """
+        msg_type = data.get("type", "unknown")
+        logger.info(
+            f"Broadcasting JSON message type={msg_type} to account_id={account_id}, "
+            f"active_connections={len(self.active_connections)}"
+        )
+
+        # Log matching connections for debugging
+        if account_id:
+            matching = [
+                cid
+                for cid, acc in self.connection_accounts.items()
+                if acc == account_id
+            ]
+            logger.info(
+                f"Connections matching account_id={account_id}: {len(matching)}"
+            )
+
         await self.broadcast(json.dumps(data), account_id=account_id)
 
 
