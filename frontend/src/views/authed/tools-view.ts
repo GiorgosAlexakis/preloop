@@ -89,7 +89,7 @@ export class ToolsView extends LitElement {
         border: none;
         border-bottom: 2px solid transparent;
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: var(--sl-font-size-small);
         color: var(--sl-color-neutral-600);
         transition: all 0.2s;
         white-space: nowrap;
@@ -139,26 +139,6 @@ export class ToolsView extends LitElement {
         color: var(--sl-color-neutral-600);
       }
 
-      .proxy-notice {
-        background: var(--sl-color-primary-50);
-        border-left: 3px solid var(--sl-color-primary-600);
-        padding: 1rem;
-        margin-bottom: 1.5rem;
-        border-radius: 4px;
-      }
-
-      .proxy-notice-title {
-        font-weight: 600;
-        color: var(--sl-color-primary-900);
-        margin-bottom: 0.5rem;
-      }
-
-      .proxy-notice-text {
-        color: var(--sl-color-primary-800);
-        font-size: 0.9rem;
-        line-height: 1.5;
-      }
-
       .builtin-server-card {
         display: flex;
         flex-direction: column;
@@ -179,7 +159,7 @@ export class ToolsView extends LitElement {
       }
 
       .builtin-server-name {
-        font-size: var(--sl-font-size-medium);
+        font-size: var(--sl-font-size-large);
         font-weight: var(--sl-font-weight-semibold);
         margin: 0;
         overflow: hidden;
@@ -254,7 +234,7 @@ export class ToolsView extends LitElement {
 
       .help-text {
         color: var(--sl-color-neutral-600);
-        font-size: 0.85rem;
+        font-size: var(--sl-font-size-small);
         line-height: 1.5;
         margin-top: 0.5rem;
       }

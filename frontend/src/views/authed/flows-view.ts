@@ -79,13 +79,13 @@ export class FlowsView extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 1.2rem;
+      font-size: var(--sl-font-size-large);
       font-weight: 600;
     }
     .flow-description {
       color: var(--sl-color-neutral-600);
       margin-bottom: 12px;
-      font-size: 0.9rem;
+      font-size: var(--sl-font-size-small);
     }
     .flow-stats {
       display: flex;
@@ -98,7 +98,7 @@ export class FlowsView extends LitElement {
       display: flex;
       align-items: center;
       gap: 4px;
-      font-size: 0.85rem;
+      font-size: var(--sl-font-size-small);
       color: var(--sl-color-neutral-600);
     }
     .active-executions {
@@ -139,31 +139,11 @@ export class FlowsView extends LitElement {
       padding: 48px 16px;
       color: var(--sl-color-neutral-500);
     }
-    .proxy-notice {
-      background: var(--sl-color-primary-50);
-      border-left: 3px solid var(--sl-color-primary-600);
-      padding: 1rem;
-      margin-bottom: 1.5rem;
-      border-radius: 4px;
-    }
-
-    .proxy-notice-title {
-      font-weight: 600;
-      color: var(--sl-color-primary-900);
-      margin-bottom: 0.5rem;
-    }
-
-    .proxy-notice-text {
-      color: var(--sl-color-primary-800);
-      font-size: 0.9rem;
-      line-height: 1.5;
-    }
-
     .presets-collapsed {
       text-align: center;
       padding: 24px 16px;
       color: var(--sl-color-neutral-500);
-      font-size: 0.95rem;
+      font-size: var(--sl-font-size-medium);
       background: var(--sl-color-neutral-50);
       border-radius: 4px;
     }
@@ -516,7 +496,7 @@ export class FlowsView extends LitElement {
           <div>
             <strong>${flow?.name || 'Unknown Flow'}</strong>
             <div
-              style="font-size: 0.85rem; color: var(--sl-color-neutral-600);"
+              style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-600);"
             >
               Started ${formatLocalDateTime(exec.start_time)}
             </div>

@@ -49,6 +49,27 @@ a:hover {
     flex-direction: column;
     gap: var(--sl-spacing-large);
 }
+
+/* Proxy notice component */
+.proxy-notice {
+    background: var(--sl-color-primary-50);
+    border-left: 3px solid var(--sl-color-primary-600);
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    border-radius: 4px;
+}
+
+.proxy-notice-title {
+    font-weight: 600;
+    color: var(--sl-color-primary-900);
+    margin-bottom: 0.5rem;
+}
+
+.proxy-notice-text {
+    color: var(--sl-color-primary-800);
+    font-size: var(--sl-font-size-small);
+    line-height: 1.5;
+}
 .container {
     display: flex;
     flex-direction: column;
