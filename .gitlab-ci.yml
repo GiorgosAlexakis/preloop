@@ -467,7 +467,7 @@ test:coverage:
       --set apns.keyId="${APNS_KEY_ID}"
       --set-string apns.authKey="${APNS_AUTH_KEY}"
       --set apns.bundleId="${APNS_BUNDLE_ID}"
-      --set apns.useSandbox=${APNS_USE_SANDBOX:-false}
+      --set apns.useSandbox=${APNS_USE_SANDBOX:-true}
 
     - echo "Helm deployment finished."
     - echo "Checking deployed environment..."

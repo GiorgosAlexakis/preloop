@@ -101,6 +101,7 @@ class WebSocketManager:
             message: Message to broadcast
             account_id: If provided, only send to connections with matching account_id
         """
+        sent_count = 0
         for connection_id, connection in list(self.active_connections.items()):
             # If account_id is specified, only send to connections with matching account
             if account_id is not None:
@@ -110,10 +111,17 @@ class WebSocketManager:
 
             try:
                 await connection.send_text(message)
-            except Exception:
+                sent_count += 1
+                logger.debug(f"Sent message to connection {connection_id}")
+            except Exception as e:
                 logger.warning(
-                    f"Failed to send message to connection {connection_id}. It might be closed."
+                    f"Failed to send message to connection {connection_id}: {e}"
                 )
+
+        if account_id:
+            logger.info(
+                f"Broadcast complete: sent to {sent_count} connection(s) for account {account_id}"
+            )
 
     async def broadcast_json(self, data: dict, account_id: str = None):
         """

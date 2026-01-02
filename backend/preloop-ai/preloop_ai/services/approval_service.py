@@ -656,9 +656,10 @@ class ApprovalService:
 
         def _get_approvers_and_tokens():
             """Sync function to get approvers and their device tokens."""
-            from sqlalchemy.orm import Session
+            from preloop_models.db.session import get_db_session
 
-            sync_db = Session(bind=self.db.bind.sync_engine)
+            # Get a fresh sync database session (not from async session)
+            sync_db = next(get_db_session())
             try:
                 # Get all approver user IDs (including team members)
                 approver_user_ids = self._get_all_approver_user_ids_sync(
@@ -747,9 +748,10 @@ class ApprovalService:
         if invalid_tokens:
 
             def _remove_invalid_tokens():
-                from sqlalchemy.orm import Session
+                from preloop_models.db.session import get_db_session
 
-                sync_db = Session(bind=self.db.bind.sync_engine)
+                # Get a fresh sync database session (not from async session)
+                sync_db = next(get_db_session())
                 try:
                     for user_id, token in invalid_tokens:
                         notification_preferences.remove_device_token(
