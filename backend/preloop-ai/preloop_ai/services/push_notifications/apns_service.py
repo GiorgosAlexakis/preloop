@@ -5,7 +5,7 @@ import time
 import logging
 from typing import Dict, Any, Optional, Tuple
 
-import jwt
+from jose import jwt
 import httpx
 
 logger = logging.getLogger(__name__)

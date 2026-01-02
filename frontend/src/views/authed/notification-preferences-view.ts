@@ -265,28 +265,12 @@ export class NotificationPreferencesView extends AuthedElement {
 
     // Connect to WebSocket for real-time device registration updates
     try {
-      console.log(
-        '[NotificationPrefs] Setting up WebSocket subscription for device_registered'
-      );
-      console.log(
-        '[NotificationPrefs] Current WebSocket state:',
-        unifiedWebSocketManager.getState()
-      );
-
       this.unsubscribe = unifiedWebSocketManager.subscribe(
         'device_registered',
         (message: any) => {
-          console.log(
-            '[NotificationPrefs] Device registered via WebSocket:',
-            message
-          );
-
           // Close QR dialog if open
           if (this.showQRDialog) {
-            console.log('[NotificationPrefs] Closing QR dialog');
             this.handleCloseQRDialog();
-          } else {
-            console.log('[NotificationPrefs] QR dialog was not open');
           }
 
           // Reload preferences to show new device
@@ -298,17 +282,12 @@ export class NotificationPreferencesView extends AuthedElement {
         }
       );
 
-      console.log('[NotificationPrefs] WebSocket subscription registered');
-
-      // Track connection state
-      unifiedWebSocketManager.onStateChange((state) => {
-        console.log(`[NotificationPrefs] WebSocket state changed: ${state}`);
+      // Track connection state changes
+      unifiedWebSocketManager.onStateChange(() => {
+        // Connection state tracked silently
       });
     } catch (error) {
-      console.error(
-        '[NotificationPrefs] Failed to setup WebSocket subscription:',
-        error
-      );
+      console.error('Failed to setup WebSocket subscription:', error);
     }
   }
 
