@@ -665,6 +665,8 @@ class ApprovalService:
         from preloop_ai.services.push_notifications import (
             get_apns_service,
             NotificationPayloadBuilder,
+            send_fcm_notification,
+            is_fcm_configured,
         )
         from preloop_ai.services.push_proxy import (
             is_push_proxy_configured,
@@ -672,11 +674,12 @@ class ApprovalService:
         )
 
         apns_service = get_apns_service()
+        fcm_available = is_fcm_configured()
         use_proxy = not apns_service and is_push_proxy_configured()
 
-        if not apns_service and not use_proxy:
+        if not apns_service and not fcm_available and not use_proxy:
             logger.debug(
-                "Push notifications not available (no APNs config, no proxy config)"
+                "Push notifications not available (no APNs/FCM config, no proxy config)"
             )
             return {"success": False, "error": "Push notifications not configured"}
 
@@ -696,10 +699,11 @@ class ApprovalService:
                 )
 
                 if not approver_user_ids:
-                    return [], []
+                    return [], [], []
 
-                # Collect user tokens
-                user_tokens = []
+                # Collect user tokens for both iOS and Android
+                ios_tokens_list = []
+                android_tokens_list = []
                 for user_id in approver_user_ids:
                     prefs = notification_preferences.get_by_user(sync_db, user_id)
                     if not prefs or not prefs.enable_mobile_push:
@@ -708,13 +712,18 @@ class ApprovalService:
                     ios_tokens = prefs.get_device_tokens(platform="ios")
                     if ios_tokens:
                         for token in ios_tokens:
-                            user_tokens.append((user_id, token))
+                            ios_tokens_list.append((user_id, token))
 
-                return approver_user_ids, user_tokens
+                    android_tokens = prefs.get_device_tokens(platform="android")
+                    if android_tokens:
+                        for token in android_tokens:
+                            android_tokens_list.append((user_id, token))
+
+                return approver_user_ids, ios_tokens_list, android_tokens_list
             finally:
                 sync_db.close()
 
-        approver_user_ids, user_tokens = await loop.run_in_executor(
+        approver_user_ids, ios_tokens, android_tokens = await loop.run_in_executor(
             _sync_db_executor, _get_approvers_and_tokens
         )
 
@@ -722,7 +731,7 @@ class ApprovalService:
             logger.warning(f"No approvers configured for policy {approval_policy.id}")
             return {"success": False, "error": "No approvers configured"}
 
-        if not user_tokens:
+        if not ios_tokens and not android_tokens:
             logger.info(
                 f"No push-enabled devices for approvers in policy {approval_policy.id}"
             )
@@ -742,13 +751,25 @@ class ApprovalService:
         )
 
         apns_priority = 10 if priority_str in ["urgent", "high"] else 5
+        fcm_priority = "high" if priority_str in ["urgent", "high"] else "normal"
 
         sent_count = 0
         failed_count = 0
         invalid_tokens = []
 
-        # Send to each device - use native APNs or proxy depending on configuration
-        for user_id, token in user_tokens:
+        # Extract notification details for FCM
+        notification_title = (
+            payload.get("aps", {}).get("alert", {}).get("title", "Approval Required")
+        )
+        notification_body = (
+            payload.get("aps", {})
+            .get("alert", {})
+            .get("body", "A request needs your attention")
+        )
+        notification_data = payload.get("data", {})
+
+        # Send to iOS devices
+        for user_id, token in ios_tokens:
             try:
                 if apns_service:
                     # Use native APNs (enterprise mode with credentials)
@@ -764,10 +785,10 @@ class ApprovalService:
                         sent_count += 1
                     elif status_code == 410:
                         # Token is no longer valid
-                        invalid_tokens.append((user_id, token))
+                        invalid_tokens.append((user_id, token, "ios"))
                     else:
                         logger.warning(
-                            f"Push notification failed: status={status_code}, reason={error_reason}"
+                            f"APNs notification failed: status={status_code}, reason={error_reason}"
                         )
                         failed_count += 1
                 else:
@@ -775,22 +796,70 @@ class ApprovalService:
                     result = await send_push_via_proxy(
                         platform="ios",
                         device_token=token,
-                        title=payload.get("aps", {})
-                        .get("alert", {})
-                        .get("title", "Approval Required"),
-                        body=payload.get("aps", {}).get("alert", {}).get("body", ""),
-                        data=payload.get("data", {}),
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
                         priority="high" if apns_priority == 10 else "normal",
                     )
 
                     if result.get("success"):
                         sent_count += 1
                     else:
-                        logger.warning(f"Push proxy failed: {result.get('error')}")
+                        logger.warning(f"iOS push proxy failed: {result.get('error')}")
                         failed_count += 1
 
             except Exception as e:
-                logger.error(f"Push notification error for token {token[:8]}...: {e}")
+                logger.error(
+                    f"iOS push notification error for token {token[:8]}...: {e}"
+                )
+                failed_count += 1
+
+        # Send to Android devices
+        for user_id, token in android_tokens:
+            try:
+                if fcm_available:
+                    # Use native FCM (enterprise mode with credentials)
+                    result = await send_fcm_notification(
+                        token=token,
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                        priority=fcm_priority,
+                    )
+
+                    if result.get("success"):
+                        sent_count += 1
+                    elif result.get("invalid_token"):
+                        # Token is no longer valid
+                        invalid_tokens.append((user_id, token, "android"))
+                    else:
+                        logger.warning(
+                            f"FCM notification failed: {result.get('error')}"
+                        )
+                        failed_count += 1
+                else:
+                    # Use push proxy (OSS mode with API key)
+                    result = await send_push_via_proxy(
+                        platform="android",
+                        device_token=token,
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                        priority=fcm_priority,
+                    )
+
+                    if result.get("success"):
+                        sent_count += 1
+                    else:
+                        logger.warning(
+                            f"Android push proxy failed: {result.get('error')}"
+                        )
+                        failed_count += 1
+
+            except Exception as e:
+                logger.error(
+                    f"Android push notification error for token {token[:8]}...: {e}"
+                )
                 failed_count += 1
 
         # Remove invalid tokens in background
@@ -802,7 +871,7 @@ class ApprovalService:
                 # Get a fresh sync database session (not from async session)
                 sync_db = next(get_db_session())
                 try:
-                    for user_id, token in invalid_tokens:
+                    for user_id, token, _ in invalid_tokens:
                         notification_preferences.remove_device_token(
                             sync_db, user_id, token
                         )

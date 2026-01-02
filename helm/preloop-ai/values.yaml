@@ -255,6 +255,13 @@ apns:
   # Use APNS sandbox environment (true for development, false for production)
   useSandbox: false
 
+# Firebase Cloud Messaging (FCM) configuration for Android push notifications
+fcm:
+  enabled: false
+  # Firebase service account credentials JSON (base64-encoded or raw JSON string)
+  # Get this from Firebase Console > Project Settings > Service Accounts > Generate new private key
+  credentialsJson: ""
+
 # Test user seeding configuration
 seed:
   enabled: false

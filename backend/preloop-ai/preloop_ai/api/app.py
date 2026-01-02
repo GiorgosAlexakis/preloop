@@ -341,6 +341,18 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping plugin system (TESTING mode)")
 
+    # Register instance and send version check (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        from preloop_ai.services.instance_service import register_instance
+
+        try:
+            await register_instance()
+        except Exception as e:
+            logger.warning(f"Instance registration failed: {e}")
+            # Don't fail startup - continue anyway
+    else:
+        logger.info("Skipping instance registration (TESTING mode)")
+
     yield
 
     # Shutdown logic
