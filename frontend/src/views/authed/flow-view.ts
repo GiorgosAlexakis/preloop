@@ -440,7 +440,8 @@ export class FlowView extends LitElement {
         @close-modal=${this.closeAIModelDialog}
       ></add-ai-model-modal>
       <view-header
-        headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}" width="wide"
+        headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}"
+        width="wide"
       ></view-header>
       <div class="column-layout wide">
         <div class="main-column">

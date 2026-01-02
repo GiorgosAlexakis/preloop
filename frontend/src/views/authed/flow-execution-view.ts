@@ -667,7 +667,8 @@ export class FlowExecutionView extends LitElement {
 
     return html`
       <view-header
-        headerText="${this.flow?.name || 'Flow Execution'}" width="wide"
+        headerText="${this.flow?.name || 'Flow Execution'}"
+        width="wide"
       ></view-header>
       <div class="column-layout">
         <div class="main-column">
