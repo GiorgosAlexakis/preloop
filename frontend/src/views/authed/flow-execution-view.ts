@@ -1,6 +1,7 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import consoleStyles from '../../styles/console-styles.css?inline';
 import {
   getFlowExecution,
   getFlow,
@@ -68,11 +69,12 @@ export class FlowExecutionView extends LitElement {
     this.executionId = location.params.executionId;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-      padding: 16px;
-    }
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
+      }
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -174,7 +176,8 @@ export class FlowExecutionView extends LitElement {
       color: #858585;
       gap: 12px;
     }
-  `;
+  `,
+  ];
 
   @property()
   executionId?: string;
@@ -670,7 +673,7 @@ export class FlowExecutionView extends LitElement {
         headerText="${this.flow?.name || 'Flow Execution'}"
         width="wide"
       ></view-header>
-      <div class="column-layout">
+      <div class="column-layout wide">
         <div class="main-column">
           <!-- Navigation -->
           <div style="display: flex; gap: 8px; margin-bottom: 16px;">
