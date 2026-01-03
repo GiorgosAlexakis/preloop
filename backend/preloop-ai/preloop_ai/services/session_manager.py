@@ -224,6 +224,61 @@ class SessionManager:
         """
         return [s for s in self.sessions.values() if s.account_id == account_id]
 
+    def upgrade_session(
+        self, session_id: str, user: "User", db: Session
+    ) -> Optional[WebSocketSession]:
+        """Upgrade an anonymous session to authenticated.
+
+        This is used for message-based authentication where the client
+        connects anonymously and then sends an authenticate message.
+
+        Args:
+            session_id: The session ID to upgrade
+            user: The authenticated user
+            db: Database session
+
+        Returns:
+            Updated WebSocketSession or None if session not found
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            logger.warning(f"Cannot upgrade non-existent session {session_id}")
+            return None
+
+        if session.user_id:
+            logger.warning(f"Session {session_id} is already authenticated")
+            return session
+
+        # Update session with user info
+        session.user_id = user.id
+        session.account_id = user.account_id
+
+        # Log the upgrade event
+        now = datetime.now(timezone.utc)
+        activity = Event(
+            session_id=uuid.UUID(session_id),
+            user_id=user.id,
+            account_id=user.account_id,
+            fingerprint=session.fingerprint,
+            event_type="session_authenticated",
+            timestamp=now,
+            ip_address=session.ip_address,
+            user_agent=session.user_agent,
+            event_data={
+                "connection_id": session.connection_id,
+                "username": user.username,
+            },
+        )
+
+        db.add(activity)
+        db.commit()
+
+        logger.info(
+            f"Upgraded session {session_id} to authenticated user {user.username}"
+        )
+
+        return session
+
 
 # Global singleton instance
 session_manager = SessionManager()

@@ -532,6 +532,12 @@ def create_app() -> FastAPI:
     ):
         app.add_middleware(ApiUsageMiddleware)
 
+    # Add WebSocket authentication middleware
+    # Validates Bearer token during HTTP upgrade before WebSocket handshake
+    from preloop_ai.api.middleware import WebSocketAuthMiddleware
+
+    app.add_middleware(WebSocketAuthMiddleware)
+
     # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
     @app.get("/docs/api", include_in_schema=False)  # Changed path
     async def custom_swagger_ui_html():

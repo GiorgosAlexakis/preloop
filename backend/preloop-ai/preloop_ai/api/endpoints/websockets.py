@@ -25,22 +25,19 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     Includes a heartbeat to keep the connection alive.
 
     Only broadcasts flow execution updates that belong to the authenticated user's account.
+
+    Authentication is handled by WebSocketAuthMiddleware which validates the
+    Bearer token from the Authorization header during HTTP upgrade.
     """
-    # Extract token from query parameters for authentication
     await websocket.accept()
 
-    token = websocket.query_params.get("token")
-    if not token:
-        logger.warning("WebSocket connection attempted without token")
-        await websocket.send_json({"error": "Authentication required - token missing"})
-        await websocket.close(code=1008)
-        return
-
-    # Validate token and get user
-    user = await get_user_from_token_if_valid(token, db)
+    # Get authenticated user from middleware (set during HTTP upgrade)
+    user = websocket.scope.get("state", {}).get("user")
     if not user:
-        logger.warning("Invalid token for WebSocket connection")
-        await websocket.send_json({"error": "Invalid or expired authentication token"})
+        # Middleware already rejected unauthenticated requests to /ws,
+        # but handle edge case for safety
+        logger.warning("WebSocket /ws: no authenticated user in scope")
+        await websocket.send_json({"error": "Authentication required"})
         await websocket.close(code=1008)
         return
 
@@ -321,31 +318,26 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
     - Message routing to appropriate handlers
     - Automatic session management
 
+    Authentication:
+        - Bearer token in Authorization header (preferred)
+        - Token query param (backwards compatibility)
+        - Anonymous if no token provided
+
     Query Parameters:
-        token (optional): Authentication token for authenticated users
         fingerprint (optional): Browser fingerprint for anonymous users
     """
     await websocket.accept()
 
-    # Extract parameters
-    token = websocket.query_params.get("token")
+    # Get authenticated user from middleware (set during HTTP upgrade)
+    # Middleware validates Bearer token from Authorization header
+    user = websocket.scope.get("state", {}).get("user")
+
+    # Extract fingerprint for anonymous tracking
     fingerprint = websocket.query_params.get("fingerprint")
 
     # Get real IP address (behind ingress)
     client_ip = get_client_ip(websocket)
     user_agent = websocket.headers.get("user-agent", "")
-
-    # Authenticate user (optional for anonymous)
-    user = None
-    if token:
-        user = await get_user_from_token_if_valid(token, db)
-        if not user:
-            logger.warning(f"Invalid token for unified WebSocket from {client_ip}")
-            await websocket.send_json(
-                {"error": "Invalid or expired authentication token"}
-            )
-            await websocket.close(code=1008)
-            return
 
     # Create session
     session = await session_manager.create_session(
@@ -400,7 +392,51 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                 # Handle different message types
                 message_type = data.get("type")
 
-                if message_type == "activity":
+                if message_type == "authenticate":
+                    # Message-based authentication for browsers
+                    token = data.get("token")
+                    if not token:
+                        await websocket.send_json(
+                            {
+                                "type": "auth_error",
+                                "error": "Token required for authentication",
+                            }
+                        )
+                        continue
+
+                    # Validate token
+                    auth_user = await get_user_from_token_if_valid(token, db)
+                    if not auth_user:
+                        await websocket.send_json(
+                            {"type": "auth_error", "error": "Invalid or expired token"}
+                        )
+                        continue
+
+                    # Upgrade session to authenticated
+                    session_manager.upgrade_session(session.id, auth_user, db)
+                    user = auth_user  # Update local reference
+
+                    # Register with manager for account-based broadcasts
+                    if manager_connection_id is None:
+                        manager_connection_id = await manager.connect_with_account(
+                            websocket, str(user.account_id)
+                        )
+
+                    await websocket.send_json(
+                        {
+                            "type": "authenticated",
+                            "user": {
+                                "id": str(user.id),
+                                "username": user.username,
+                                "email": user.email,
+                            },
+                        }
+                    )
+                    logger.info(
+                        f"Session {session.id} authenticated via message as {user.username}"
+                    )
+
+                elif message_type == "activity":
                     # Handle activity tracking (page views, actions, conversions)
                     await handle_activity(data, session, db)
 
