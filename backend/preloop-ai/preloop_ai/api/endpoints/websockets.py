@@ -25,31 +25,59 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     Includes a heartbeat to keep the connection alive.
 
     Only broadcasts flow execution updates that belong to the authenticated user's account.
+
+    Authentication is handled by WebSocketAuthMiddleware which validates the
+    Bearer token from the Authorization header during HTTP upgrade.
     """
-    # Extract token from query parameters for authentication
     await websocket.accept()
 
-    token = websocket.query_params.get("token")
-    if not token:
-        logger.warning("WebSocket connection attempted without token")
-        await websocket.send_json({"error": "Authentication required - token missing"})
+    # Get authenticated user from middleware (set during HTTP upgrade)
+    user = websocket.scope.get("state", {}).get("user")
+    if not user:
+        # Middleware already rejected unauthenticated requests to /ws,
+        # but handle edge case for safety
+        logger.warning("WebSocket /ws: no authenticated user in scope")
+        await websocket.send_json({"error": "Authentication required"})
         await websocket.close(code=1008)
         return
 
-    # Validate token and get user
-    user = await get_user_from_token_if_valid(token, db)
-    if not user:
-        logger.warning("Invalid token for WebSocket connection")
-        await websocket.send_json({"error": "Invalid or expired authentication token"})
-        await websocket.close(code=1008)
-        return
+    # Get connection info
+    client_ip = get_client_ip(websocket)
+    user_agent = websocket.headers.get("user-agent", "")
+
+    # Detect mobile client from user-agent
+    is_mobile = any(
+        x in user_agent.lower()
+        for x in ["preloopai", "iphone", "ipad", "android", "mobile"]
+    )
+    client_type = "mobile_app" if is_mobile else "browser"
 
     logger.info(
-        f"WebSocket authenticated for user {user.username} (account {user.account_id})"
+        f"WebSocket authenticated for user {user.username} (account {user.account_id}) "
+        f"from {client_ip} via {client_type}"
     )
+
+    # Create session for tracking in admin UI
+    session = await session_manager.create_session(
+        websocket=websocket,
+        user=user,
+        fingerprint=None,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        db=db,
+    )
+
+    # Add client type metadata
+    session.metadata["client_type"] = client_type
+    session.metadata["endpoint"] = "/ws"
 
     # Connect with account_id for filtering
     connection_id = await manager.connect_with_account(websocket, str(user.account_id))
+
+    logger.info(
+        f"WebSocket session {session.id} established for {user.username} "
+        f"(connection_id={connection_id}, type={client_type})"
+    )
 
     try:
         while True:
@@ -57,6 +85,10 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             # Set a timeout to detect unresponsive clients.
             try:
                 message = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+
+                # Update session activity
+                session_manager.update_activity(session.id)
+
                 if message == "pong":
                     # Client is alive
                     continue
@@ -64,12 +96,12 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
                 # Log user interaction events
                 try:
                     event_data = json.loads(message)
-                    logger.info(
-                        f"Received user interaction event from {connection_id}: {event_data}"
+                    logger.debug(
+                        f"Received event from {connection_id} ({client_type}): {event_data.get('type', 'unknown')}"
                     )
                 except json.JSONDecodeError:
-                    logger.warning(
-                        f"Received non-JSON message from {connection_id}: {message}"
+                    logger.debug(
+                        f"Received non-JSON message from {connection_id}: {message[:50]}"
                     )
 
             except asyncio.TimeoutError:
@@ -81,13 +113,25 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
                         websocket.receive_text(), timeout=10.0
                     )
                     if response != "pong":
+                        logger.warning(
+                            f"Session {session.id} expected pong, got: {response[:50]}"
+                        )
                         break
                 except asyncio.TimeoutError:
+                    logger.info(
+                        f"Session {session.id} did not respond to ping, disconnecting"
+                    )
                     break  # Client did not respond to ping, assume disconnected.
     except WebSocketDisconnect:
-        pass
+        logger.info(f"Session {session.id} disconnected normally")
+    except Exception as e:
+        logger.error(f"Error in WebSocket session {session.id}: {e}", exc_info=True)
     finally:
         manager.disconnect(connection_id)
+        try:
+            await session_manager.end_session(session.id, db)
+        except Exception as e:
+            logger.error(f"Error ending session {session.id}: {e}")
 
 
 @router.websocket("/ws/flow-executions/{execution_id}")
@@ -274,31 +318,26 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
     - Message routing to appropriate handlers
     - Automatic session management
 
+    Authentication:
+        - Bearer token in Authorization header (preferred)
+        - Token query param (backwards compatibility)
+        - Anonymous if no token provided
+
     Query Parameters:
-        token (optional): Authentication token for authenticated users
         fingerprint (optional): Browser fingerprint for anonymous users
     """
     await websocket.accept()
 
-    # Extract parameters
-    token = websocket.query_params.get("token")
+    # Get authenticated user from middleware (set during HTTP upgrade)
+    # Middleware validates Bearer token from Authorization header
+    user = websocket.scope.get("state", {}).get("user")
+
+    # Extract fingerprint for anonymous tracking
     fingerprint = websocket.query_params.get("fingerprint")
 
     # Get real IP address (behind ingress)
     client_ip = get_client_ip(websocket)
     user_agent = websocket.headers.get("user-agent", "")
-
-    # Authenticate user (optional for anonymous)
-    user = None
-    if token:
-        user = await get_user_from_token_if_valid(token, db)
-        if not user:
-            logger.warning(f"Invalid token for unified WebSocket from {client_ip}")
-            await websocket.send_json(
-                {"error": "Invalid or expired authentication token"}
-            )
-            await websocket.close(code=1008)
-            return
 
     # Create session
     session = await session_manager.create_session(
@@ -353,7 +392,58 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                 # Handle different message types
                 message_type = data.get("type")
 
-                if message_type == "activity":
+                if message_type == "authenticate":
+                    # Message-based authentication for browsers
+                    token = data.get("token")
+                    if not token:
+                        await websocket.send_json(
+                            {
+                                "type": "auth_error",
+                                "error": "Token required for authentication",
+                            }
+                        )
+                        continue
+
+                    # Validate token
+                    auth_user = await get_user_from_token_if_valid(token, db)
+                    if not auth_user:
+                        await websocket.send_json(
+                            {"type": "auth_error", "error": "Invalid or expired token"}
+                        )
+                        continue
+
+                    # Upgrade session to authenticated
+                    session_manager.upgrade_session(session.id, auth_user, db)
+                    user = auth_user  # Update local reference
+
+                    # Re-register with manager for account-based broadcasts
+                    # Remove old anonymous registration first
+                    if (
+                        manager_connection_id
+                        and manager_connection_id in manager.active_connections
+                    ):
+                        del manager.active_connections[manager_connection_id]
+
+                    # Register with account filtering for broadcast messages
+                    manager_connection_id = await manager.connect_with_account(
+                        websocket, str(user.account_id)
+                    )
+
+                    await websocket.send_json(
+                        {
+                            "type": "authenticated",
+                            "user": {
+                                "id": str(user.id),
+                                "username": user.username,
+                                "email": user.email,
+                            },
+                        }
+                    )
+                    logger.info(
+                        f"Session {session.id} authenticated via message as {user.username}"
+                    )
+
+                elif message_type == "activity":
                     # Handle activity tracking (page views, actions, conversions)
                     await handle_activity(data, session, db)
 

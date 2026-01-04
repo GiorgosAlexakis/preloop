@@ -96,44 +96,6 @@ export class ApprovalsView extends AuthedElement {
         text-align: center;
       }
 
-      .stat-value {
-        font-size: 2rem;
-        font-weight: 700;
-        line-height: 1;
-      }
-
-      .stat-value.success {
-        color: var(--sl-color-success-600);
-      }
-
-      .stat-value.danger {
-        color: var(--sl-color-danger-600);
-      }
-
-      .stat-value.warning {
-        color: var(--sl-color-warning-600);
-      }
-
-      .stat-value.neutral {
-        color: var(--sl-color-neutral-600);
-      }
-
-      .stat-value.primary {
-        color: var(--sl-color-primary-600);
-      }
-
-      .stat-label {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-600);
-        margin-top: var(--sl-spacing-x-small);
-      }
-
-      .stat-subtext {
-        font-size: var(--sl-font-size-x-small);
-        color: var(--sl-color-neutral-500);
-        margin-top: var(--sl-spacing-2x-small);
-      }
-
       .filters-row {
         display: flex;
         gap: var(--sl-spacing-medium);
@@ -235,18 +197,6 @@ export class ApprovalsView extends AuthedElement {
         display: flex;
         align-items: center;
         gap: var(--sl-spacing-small);
-      }
-
-      .empty-state {
-        text-align: center;
-        padding: var(--sl-spacing-2x-large);
-        color: var(--sl-color-neutral-600);
-      }
-
-      .empty-state sl-icon {
-        font-size: 3rem;
-        margin-bottom: var(--sl-spacing-medium);
-        color: var(--sl-color-neutral-400);
       }
 
       .rate-bar {
@@ -548,9 +498,7 @@ export class ApprovalsView extends AuthedElement {
     if (this.loading) {
       return html`
         <view-header headerText="Approval Requests" width="wide"></view-header>
-        <div
-          style="display: flex; justify-content: center; align-items: center; height: 400px;"
-        >
+        <div class="loading-container">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
         </div>
       `;

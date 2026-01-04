@@ -123,6 +123,13 @@ spec:
             - name: APNS_USE_SANDBOX
               value: {{ .Values.apns.useSandbox | quote }}
             {{- end }}
+            {{- if .Values.fcm.enabled }}
+            - name: FCM_CREDENTIALS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop_ai.fullname" . }}
+                  key: fcm-credentials-json
+            {{- end }}
           ports:
             - name: http
               containerPort: 8000

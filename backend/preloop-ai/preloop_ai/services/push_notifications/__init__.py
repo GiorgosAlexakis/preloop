@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 
 from .apns_service import APNsService
-from .fcm_service import send_fcm_notification
+from .fcm_service import send_fcm_notification, is_fcm_configured
 from .notification_payloads import NotificationPayloadBuilder
 from .qr_service import (
     generate_registration_token,
@@ -77,6 +77,7 @@ __all__ = [
     "get_apns_service",
     "NotificationPayloadBuilder",
     "send_fcm_notification",
+    "is_fcm_configured",
     "generate_registration_token",
     "validate_registration_token",
     "check_token_validity",

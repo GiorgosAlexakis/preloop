@@ -143,12 +143,6 @@ export class InvitationManagementView extends LitElement {
       padding: 4rem;
     }
 
-    .empty-state {
-      text-align: center;
-      padding: 3rem;
-      color: var(--sl-color-neutral-600);
-    }
-
     sl-tab-group {
       margin-bottom: 2rem;
     }

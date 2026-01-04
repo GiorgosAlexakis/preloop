@@ -58,6 +58,16 @@ class NotificationPayloadBuilder:
                 reasoning_preview += "..."
             body += f": {reasoning_preview}"
 
+        # Custom data for app routing (used by both iOS and Android)
+        custom_data = {
+            "type": "new_approval_request",
+            "approval_request_id": request_id,
+            "tool_name": tool_name,
+            "priority": priority,
+        }
+        if expires_at:
+            custom_data["expires_at"] = expires_at.isoformat()
+
         payload = {
             "aps": {
                 "alert": {
@@ -72,15 +82,11 @@ class NotificationPayloadBuilder:
                 "interruption-level": interruption_level,
                 "relevance-score": 1.0 if priority in ["urgent", "high"] else 0.5,
             },
-            # Custom data for app routing
-            "type": "new_approval_request",
-            "approval_request_id": request_id,
-            "tool_name": tool_name,
-            "priority": priority,
+            # Custom data at top level for iOS backward compatibility
+            **custom_data,
+            # Data block for Android/FCM deep-linking
+            "data": custom_data,
         }
-
-        if expires_at:
-            payload["expires_at"] = expires_at.isoformat()
 
         return payload
 

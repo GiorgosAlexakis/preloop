@@ -433,59 +433,57 @@ class ApprovalService:
         approval_request: ApprovalRequest,
         approval_policy: ApprovalPolicy,
     ) -> Dict[str, Any]:
-        """Send notifications for an approval request through configured channels.
+        """Send notifications for an approval request based on user preferences.
+
+        Notification channels are determined by each user's notification preferences,
+        not by the policy. Each approver will be notified via their preferred channels:
+        - Email if they have enable_email=True
+        - Push notification if they have enable_mobile_push=True and registered devices
+
+        For webhook-based policies (slack, mattermost, webhook), those are sent
+        as configured in the policy since they're not per-user.
 
         Args:
             approval_request: The approval request to notify about
-            approval_policy: The approval policy with notification configuration
+            approval_policy: The approval policy with approver configuration
 
         Returns:
             Dict with results per notification channel
         """
         results = {}
 
-        # Get notification channels from policy (default to ["email"] for standard type)
-        notification_channels = approval_policy.notification_channels or []
-
-        # If no channels specified and it's a "standard" type, default to email
-        if not notification_channels and approval_policy.approval_type == "standard":
-            notification_channels = ["email"]
-            logger.info(
-                "No notification_channels specified for 'standard' approval type, defaulting to email"
+        # Send email notifications to users who have email enabled
+        try:
+            email_result = await self._send_email_notification(
+                approval_request, approval_policy
             )
+            results["email"] = email_result
+        except Exception as e:
+            logger.error(f"Failed to send email notifications: {str(e)}")
+            results["email"] = {"success": False, "error": str(e)}
 
-        # Route notifications to appropriate channels
-        for channel in notification_channels:
-            try:
-                if channel == "email":
-                    result = await self._send_email_notification(
-                        approval_request, approval_policy
-                    )
-                    results["email"] = result
+        # Send push notifications to users who have push enabled
+        try:
+            push_result = await self._send_push_notification(
+                approval_request, approval_policy
+            )
+            results["mobile_push"] = push_result
+        except Exception as e:
+            logger.error(f"Failed to send push notifications: {str(e)}")
+            results["mobile_push"] = {"success": False, "error": str(e)}
 
-                elif channel == "mobile_push":
-                    result = await self._send_push_notification(
-                        approval_request, approval_policy
-                    )
-                    results["mobile_push"] = result
-
-                elif channel in ["slack", "mattermost", "webhook"]:
-                    # Use existing webhook notification for slack/mattermost/webhook
+        # Handle webhook-based notifications (these are policy-level, not per-user)
+        policy_channels = approval_policy.notification_channels or []
+        for channel in policy_channels:
+            if channel in ["slack", "mattermost", "webhook"]:
+                try:
                     result = await self.post_webhook_notification(
                         approval_request, approval_policy
                     )
                     results[channel] = {"success": result}
-
-                else:
-                    logger.warning(f"Unknown notification channel: {channel}")
-                    results[channel] = {
-                        "success": False,
-                        "error": f"Unknown channel: {channel}",
-                    }
-
-            except Exception as e:
-                logger.error(f"Failed to send {channel} notification: {str(e)}")
-                results[channel] = {"success": False, "error": str(e)}
+                except Exception as e:
+                    logger.error(f"Failed to send {channel} notification: {str(e)}")
+                    results[channel] = {"success": False, "error": str(e)}
 
         return results
 
@@ -549,12 +547,43 @@ class ApprovalService:
             )
             return {"success": False, "error": "No approvers configured"}
 
-        # Send email to each approver
+        # Send email to each approver who has email notifications enabled
+        from preloop_models.crud import notification_preferences
+        from preloop_models.db.session import get_db_session
+
+        # Batch fetch notification preferences in executor to avoid blocking event loop
+        def _get_email_disabled_users(user_ids: List[uuid.UUID]) -> Set[uuid.UUID]:
+            """Fetch users with email notifications disabled (runs in thread pool)."""
+            disabled_users: Set[uuid.UUID] = set()
+            sync_db = next(get_db_session())
+            try:
+                for uid in user_ids:
+                    prefs = notification_preferences.get_by_user(sync_db, uid)
+                    if prefs and not prefs.enable_email:
+                        disabled_users.add(uid)
+            finally:
+                sync_db.close()
+            return disabled_users
+
+        loop = asyncio.get_running_loop()
+        email_disabled_users = await loop.run_in_executor(
+            _sync_db_executor, _get_email_disabled_users, approver_user_ids
+        )
+
         sent_count = 0
         failed_count = 0
+        skipped_count = 0
 
         for user_id in approver_user_ids:
             try:
+                # Check if user has email notifications disabled (already fetched)
+                if user_id in email_disabled_users:
+                    logger.debug(
+                        f"Skipping email for user {user_id} - email notifications disabled"
+                    )
+                    skipped_count += 1
+                    continue
+
                 # Get user email using async query
                 result = await self.db.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
@@ -592,6 +621,7 @@ class ApprovalService:
             "success": failed_count == 0,
             "sent": sent_count,
             "failed": failed_count,
+            "skipped": skipped_count,
         }
 
     def _get_all_approver_user_ids_sync(
@@ -633,6 +663,10 @@ class ApprovalService:
     ) -> Dict[str, Any]:
         """Send mobile push notification for approval request.
 
+        This method supports two modes:
+        1. Native push: Uses APNs/FCM directly (enterprise with credentials)
+        2. Proxy push: Routes through preloop.ai proxy (OSS with API key)
+
         Args:
             approval_request: The approval request
             approval_policy: The approval policy
@@ -644,12 +678,23 @@ class ApprovalService:
         from preloop_ai.services.push_notifications import (
             get_apns_service,
             NotificationPayloadBuilder,
+            send_fcm_notification,
+            is_fcm_configured,
+        )
+        from preloop_ai.services.push_proxy import (
+            is_push_proxy_configured,
+            send_push_via_proxy,
         )
 
         apns_service = get_apns_service()
-        if not apns_service:
-            logger.warning("APNs service not configured")
-            return {"success": False, "error": "APNs not configured"}
+        fcm_available = is_fcm_configured()
+        use_proxy = not apns_service and is_push_proxy_configured()
+
+        if not apns_service and not fcm_available and not use_proxy:
+            logger.debug(
+                "Push notifications not available (no APNs/FCM config, no proxy config)"
+            )
+            return {"success": False, "error": "Push notifications not configured"}
 
         # Run sync database operations in thread pool to avoid blocking event loop
         loop = asyncio.get_event_loop()
@@ -667,10 +712,11 @@ class ApprovalService:
                 )
 
                 if not approver_user_ids:
-                    return [], []
+                    return [], [], []
 
-                # Collect user tokens
-                user_tokens = []
+                # Collect user tokens for both iOS and Android
+                ios_tokens_list = []
+                android_tokens_list = []
                 for user_id in approver_user_ids:
                     prefs = notification_preferences.get_by_user(sync_db, user_id)
                     if not prefs or not prefs.enable_mobile_push:
@@ -679,13 +725,18 @@ class ApprovalService:
                     ios_tokens = prefs.get_device_tokens(platform="ios")
                     if ios_tokens:
                         for token in ios_tokens:
-                            user_tokens.append((user_id, token))
+                            ios_tokens_list.append((user_id, token))
 
-                return approver_user_ids, user_tokens
+                    android_tokens = prefs.get_device_tokens(platform="android")
+                    if android_tokens:
+                        for token in android_tokens:
+                            android_tokens_list.append((user_id, token))
+
+                return approver_user_ids, ios_tokens_list, android_tokens_list
             finally:
                 sync_db.close()
 
-        approver_user_ids, user_tokens = await loop.run_in_executor(
+        approver_user_ids, ios_tokens, android_tokens = await loop.run_in_executor(
             _sync_db_executor, _get_approvers_and_tokens
         )
 
@@ -693,7 +744,7 @@ class ApprovalService:
             logger.warning(f"No approvers configured for policy {approval_policy.id}")
             return {"success": False, "error": "No approvers configured"}
 
-        if not user_tokens:
+        if not ios_tokens and not android_tokens:
             logger.info(
                 f"No push-enabled devices for approvers in policy {approval_policy.id}"
             )
@@ -713,35 +764,115 @@ class ApprovalService:
         )
 
         apns_priority = 10 if priority_str in ["urgent", "high"] else 5
+        fcm_priority = "high" if priority_str in ["urgent", "high"] else "normal"
 
         sent_count = 0
         failed_count = 0
         invalid_tokens = []
 
-        # Send to each device
-        for user_id, token in user_tokens:
-            try:
-                (
-                    success,
-                    status_code,
-                    error_reason,
-                ) = await apns_service.send_notification(
-                    device_token=token, payload=payload, priority=apns_priority
-                )
+        # Extract notification details for FCM
+        notification_title = (
+            payload.get("aps", {}).get("alert", {}).get("title", "Approval Required")
+        )
+        notification_body = (
+            payload.get("aps", {})
+            .get("alert", {})
+            .get("body", "A request needs your attention")
+        )
+        notification_data = payload.get("data", {})
 
-                if success:
-                    sent_count += 1
-                elif status_code == 410:
-                    # Token is no longer valid
-                    invalid_tokens.append((user_id, token))
-                else:
-                    logger.warning(
-                        f"Push notification failed: status={status_code}, reason={error_reason}"
+        # Send to iOS devices
+        for user_id, token in ios_tokens:
+            try:
+                if apns_service:
+                    # Use native APNs (enterprise mode with credentials)
+                    (
+                        success,
+                        status_code,
+                        error_reason,
+                    ) = await apns_service.send_notification(
+                        device_token=token, payload=payload, priority=apns_priority
                     )
-                    failed_count += 1
+
+                    if success:
+                        sent_count += 1
+                    elif status_code == 410:
+                        # Token is no longer valid
+                        invalid_tokens.append((user_id, token, "ios"))
+                    else:
+                        logger.warning(
+                            f"APNs notification failed: status={status_code}, reason={error_reason}"
+                        )
+                        failed_count += 1
+                else:
+                    # Use push proxy (OSS mode with API key)
+                    result = await send_push_via_proxy(
+                        platform="ios",
+                        device_token=token,
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                        priority="high" if apns_priority == 10 else "normal",
+                    )
+
+                    if result.get("success"):
+                        sent_count += 1
+                    else:
+                        logger.warning(f"iOS push proxy failed: {result.get('error')}")
+                        failed_count += 1
 
             except Exception as e:
-                logger.error(f"Push notification error for token {token[:8]}...: {e}")
+                logger.error(
+                    f"iOS push notification error for token {token[:8]}...: {e}"
+                )
+                failed_count += 1
+
+        # Send to Android devices
+        for user_id, token in android_tokens:
+            try:
+                if fcm_available:
+                    # Use native FCM (enterprise mode with credentials)
+                    result = await send_fcm_notification(
+                        token=token,
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                        priority=fcm_priority,
+                    )
+
+                    if result.get("success"):
+                        sent_count += 1
+                    elif result.get("invalid_token"):
+                        # Token is no longer valid
+                        invalid_tokens.append((user_id, token, "android"))
+                    else:
+                        logger.warning(
+                            f"FCM notification failed: {result.get('error')}"
+                        )
+                        failed_count += 1
+                else:
+                    # Use push proxy (OSS mode with API key)
+                    result = await send_push_via_proxy(
+                        platform="android",
+                        device_token=token,
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                        priority=fcm_priority,
+                    )
+
+                    if result.get("success"):
+                        sent_count += 1
+                    else:
+                        logger.warning(
+                            f"Android push proxy failed: {result.get('error')}"
+                        )
+                        failed_count += 1
+
+            except Exception as e:
+                logger.error(
+                    f"Android push notification error for token {token[:8]}...: {e}"
+                )
                 failed_count += 1
 
         # Remove invalid tokens in background
@@ -753,7 +884,7 @@ class ApprovalService:
                 # Get a fresh sync database session (not from async session)
                 sync_db = next(get_db_session())
                 try:
-                    for user_id, token in invalid_tokens:
+                    for user_id, token, _ in invalid_tokens:
                         notification_preferences.remove_device_token(
                             sync_db, user_id, token
                         )

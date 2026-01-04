@@ -170,11 +170,6 @@ export class FlowsView extends LitElement {
         align-items: center;
         margin: 24px 0 16px 0;
       }
-      .empty-state {
-        text-align: center;
-        padding: 48px 16px;
-        color: var(--sl-color-neutral-500);
-      }
       .presets-collapsed {
         text-align: center;
         padding: 24px 16px;
@@ -490,7 +485,7 @@ export class FlowsView extends LitElement {
           </div>
           <div class="flow-footer-actions">
             <sl-button size="small" @click=${() => this.clonePreset(preset.id)}>
-              Clone
+              Use Template
             </sl-button>
             ${preset.account_id
               ? html`

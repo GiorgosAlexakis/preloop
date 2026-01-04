@@ -550,6 +550,9 @@ export class DashboardView extends AuthedElement {
     unsafeCSS(consoleStyles),
     css`
       /* Dashboard-specific styles only */
+      :host {
+        --gradient-brand: linear-gradient(225deg, #d35400, #6c3483, #1f618d);
+      }
       sl-icon {
         font-size: 1rem;
       }
@@ -580,7 +583,6 @@ export class DashboardView extends AuthedElement {
       .tool-count-value {
         font-size: 1.5rem;
         font-weight: 700;
-        color: var(--sl-color-primary-600);
       }
       .tool-count-label {
         font-size: var(--sl-font-size-small);
@@ -596,17 +598,6 @@ export class DashboardView extends AuthedElement {
         justify-content: space-between;
         margin-bottom: var(--sl-spacing-small);
         font-size: var(--sl-font-size-small);
-      }
-      /* Stat display styles */
-      .stat-value {
-        font-size: 2rem;
-        font-weight: 700;
-        color: var(--sl-color-primary-600);
-      }
-      .stat-label {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-600);
-        text-transform: uppercase;
       }
       /* MCP Server Capsule */
       .mcp-server-capsule {
@@ -678,13 +669,11 @@ export class DashboardView extends AuthedElement {
         }
       }
       /* Welcome card styles */
-      .welcome-card {
-        background: linear-gradient(
-          135deg,
-          var(--sl-color-primary-50) 0%,
-          var(--sl-color-primary-100) 100%
-        );
-        border: 1px solid var(--sl-color-primary-200);
+      .welcome-card::part(base) {
+        border-color: var(--sl-color-primary-200);
+      }
+      mcp-setup-dialog {
+        display: contents;
       }
       .welcome-header {
         display: flex;
@@ -695,10 +684,12 @@ export class DashboardView extends AuthedElement {
       .welcome-title {
         font-size: var(--sl-font-size-large);
         font-weight: 600;
-        color: var(--sl-color-primary-700);
         display: flex;
         align-items: center;
         gap: var(--sl-spacing-small);
+      }
+      .welcome-title sl-icon {
+        font-size: 1.5rem;
       }
       .welcome-content {
         color: var(--sl-color-neutral-700);
@@ -718,15 +709,16 @@ export class DashboardView extends AuthedElement {
         padding: var(--sl-spacing-medium);
         background: var(--sl-color-neutral-0);
         border-radius: var(--sl-border-radius-medium);
-        border: 1px solid var(--sl-color-neutral-200);
       }
       .step-item.completed {
         background: var(--sl-color-success-50);
         border-color: var(--sl-color-success-200);
       }
       .step-icon {
-        font-size: 1.5rem;
         flex-shrink: 0;
+      }
+      .step-icon sl-icon {
+        font-size: 1.5rem;
       }
       .step-content {
         flex: 1;
@@ -750,13 +742,44 @@ export class DashboardView extends AuthedElement {
         align-items: center;
         gap: var(--sl-spacing-small);
         margin-top: var(--sl-spacing-large);
-        padding-top: var(--sl-spacing-large);
-        border-top: 1px solid var(--sl-color-primary-200);
+      }
+      .progress-overview sl-progress-bar {
+        flex: 1;
+      }
+      .progress-overview sl-progress-bar::part(base) {
+        border: 1px solid rgba(230, 130, 50, 0.35);
+      }
+      .progress-overview sl-progress-bar::part(indicator) {
+        background: var(--gradient-brand);
+        position: relative;
+        overflow: hidden;
+      }
+      .progress-overview sl-progress-bar::part(indicator)::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 200, 100, 0.15),
+          transparent
+        );
+        animation: shimmer 2.5s infinite;
+      }
+      @keyframes shimmer {
+        0% {
+          left: -100%;
+        }
+        100% {
+          left: 100%;
+        }
       }
       .progress-text {
         font-size: var(--sl-font-size-small);
         font-weight: 500;
-        color: var(--sl-color-primary-700);
       }
       /* Analytics card styles */
       .analytics-grid {
@@ -945,10 +968,7 @@ export class DashboardView extends AuthedElement {
         </div>
 
         <div class="progress-overview">
-          <sl-progress-bar
-            value="${progress}"
-            style="flex: 1;"
-          ></sl-progress-bar>
+          <sl-progress-bar value="${progress}"></sl-progress-bar>
           <span class="progress-text"
             >${completedSteps} / ${totalSteps} completed</span
           >
@@ -961,9 +981,7 @@ export class DashboardView extends AuthedElement {
     if (this.isLoading) {
       return html`
         <view-header headerText="Overview" width="extra-wide"></view-header>
-        <div
-          style="display: flex; justify-content: center; align-items: center; height: 400px;"
-        >
+        <div class="loading-container">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
         </div>
       `;
@@ -1309,7 +1327,6 @@ export class DashboardView extends AuthedElement {
                       <span class="server-endpoint"
                         >${window.location.origin}/mcp/v1</span
                       >
-                      <span class="server-auth">Bearer Token</span>
                     </div>
                     <a href="/console/settings/api-keys" class="capsule-link">
                       Manage Keys

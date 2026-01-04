@@ -341,6 +341,18 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping plugin system (TESTING mode)")
 
+    # Register instance and send version check (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        from preloop_ai.services.instance_service import register_instance
+
+        try:
+            await register_instance()
+        except Exception as e:
+            logger.warning(f"Instance registration failed: {e}")
+            # Don't fail startup - continue anyway
+    else:
+        logger.info("Skipping instance registration (TESTING mode)")
+
     yield
 
     # Shutdown logic
@@ -358,6 +370,12 @@ async def lifespan(app: FastAPI):
             )
     else:
         logger.info("Skipping execution wait (TESTING mode)")
+
+    # Stop version checker (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        from preloop_ai.services.instance_service import stop_version_checker
+
+        stop_version_checker()
 
     # Shutdown plugin system (skip in testing mode)
     if os.getenv("TESTING") != "true" and plugin_manager:
@@ -519,6 +537,12 @@ def create_app() -> FastAPI:
         and os.getenv("DISABLE_API_USAGE_TRACKING", "false").lower() != "true"
     ):
         app.add_middleware(ApiUsageMiddleware)
+
+    # Add WebSocket authentication middleware
+    # Validates Bearer token during HTTP upgrade before WebSocket handshake
+    from preloop_ai.api.middleware import WebSocketAuthMiddleware
+
+    app.add_middleware(WebSocketAuthMiddleware)
 
     # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
     @app.get("/docs/api", include_in_schema=False)  # Changed path

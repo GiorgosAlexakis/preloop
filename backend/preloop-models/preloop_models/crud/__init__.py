@@ -67,6 +67,7 @@ from .team import CRUDTeam, crud_team
 from .user_invitation import CRUDUserInvitation, crud_user_invitation
 from .registration_token import CRUDRegistrationToken, crud_registration_token
 from .issue_duplicate import CRUDIssueDuplicate, crud_issue_duplicate
+from .instance import CRUDInstance, crud_instance
 from . import tool_approval_condition
 from . import notification_preferences
 
@@ -166,6 +167,8 @@ __all__ = [
     "crud_user_invitation",
     "crud_registration_token",
     "crud_issue_duplicate",
+    "CRUDInstance",
+    "crud_instance",
     "tool_approval_condition",
     "notification_preferences",
 ]

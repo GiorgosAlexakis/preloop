@@ -496,12 +496,6 @@ export class ToolCard extends LitElement {
       height: 100%;
     }
 
-    .card-content {
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
-    }
-
     .tool-header {
       margin-bottom: var(--sl-spacing-medium);
     }
@@ -650,20 +644,12 @@ export class ToolCard extends LitElement {
       padding-top: var(--sl-spacing-medium);
     }
 
-    .empty-state {
-      text-align: center;
-      padding: var(--sl-spacing-large);
-      color: var(--sl-color-neutral-600);
-      font-size: var(--sl-font-size-small);
-    }
-
     .default-badge {
       display: inline-flex;
       align-items: center;
       gap: var(--sl-spacing-2x-small);
       padding: 2px 8px;
       background: var(--sl-color-primary-100);
-      color: var(--sl-color-primary-700);
       border-radius: 4px;
       font-size: var(--sl-font-size-x-small);
       font-weight: var(--sl-font-weight-semibold);

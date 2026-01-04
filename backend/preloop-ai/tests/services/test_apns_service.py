@@ -69,7 +69,9 @@ class TestJWTTokenGeneration:
                 bundle_id="com.test.app",
             )
 
-        with patch("jwt.encode") as mock_encode:
+        with patch(
+            "preloop_ai.services.push_notifications.apns_service.jwt.encode"
+        ) as mock_encode:
             mock_encode.return_value = "fake.jwt.token"
 
             token = service._generate_jwt_token()
@@ -98,7 +100,9 @@ class TestJWTTokenGeneration:
                 bundle_id="com.test.app",
             )
 
-        with patch("jwt.encode") as mock_encode:
+        with patch(
+            "preloop_ai.services.push_notifications.apns_service.jwt.encode"
+        ) as mock_encode:
             mock_encode.return_value = "fake.jwt.token"
 
             # First call should generate token
@@ -121,7 +125,12 @@ class TestJWTTokenGeneration:
                 bundle_id="com.test.app",
             )
 
-        with patch("jwt.encode") as mock_encode, patch("time.time") as mock_time:
+        with (
+            patch(
+                "preloop_ai.services.push_notifications.apns_service.jwt.encode"
+            ) as mock_encode,
+            patch("time.time") as mock_time,
+        ):
             mock_encode.side_effect = ["first.jwt.token", "second.jwt.token"]
             mock_time.return_value = 1000
 
@@ -156,7 +165,10 @@ class TestSendNotification:
     @pytest.fixture
     def mock_jwt(self):
         """Mock JWT encode for all tests."""
-        with patch("jwt.encode", return_value="fake.jwt.token") as mock:
+        with patch(
+            "preloop_ai.services.push_notifications.apns_service.jwt.encode",
+            return_value="fake.jwt.token",
+        ) as mock:
             yield mock
 
     async def test_send_notification_success_200(self, apns_service, mock_jwt):

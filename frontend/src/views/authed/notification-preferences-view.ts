@@ -170,18 +170,6 @@ export class NotificationPreferencesView extends AuthedElement {
       color: var(--sl-color-neutral-500);
     }
 
-    .empty-state {
-      text-align: center;
-      padding: var(--sl-spacing-2x-large);
-      color: var(--sl-color-neutral-600);
-    }
-
-    .empty-state sl-icon {
-      font-size: 3rem;
-      margin-bottom: var(--sl-spacing-medium);
-      color: var(--sl-color-neutral-400);
-    }
-
     .qr-container {
       display: flex;
       flex-direction: column;
@@ -265,28 +253,22 @@ export class NotificationPreferencesView extends AuthedElement {
 
     // Connect to WebSocket for real-time device registration updates
     try {
-      console.log(
-        '[NotificationPrefs] Setting up WebSocket subscription for device_registered'
-      );
-      console.log(
-        '[NotificationPrefs] Current WebSocket state:',
-        unifiedWebSocketManager.getState()
+      console.debug(
+        '[NotificationPrefs] Setting up device_registered subscription'
       );
 
       this.unsubscribe = unifiedWebSocketManager.subscribe(
         'device_registered',
         (message: any) => {
-          console.log(
-            '[NotificationPrefs] Device registered via WebSocket:',
+          console.debug(
+            '[NotificationPrefs] Received device_registered event:',
             message
           );
 
           // Close QR dialog if open
           if (this.showQRDialog) {
-            console.log('[NotificationPrefs] Closing QR dialog');
+            console.debug('[NotificationPrefs] Closing QR dialog');
             this.handleCloseQRDialog();
-          } else {
-            console.log('[NotificationPrefs] QR dialog was not open');
           }
 
           // Reload preferences to show new device
@@ -298,17 +280,14 @@ export class NotificationPreferencesView extends AuthedElement {
         }
       );
 
-      console.log('[NotificationPrefs] WebSocket subscription registered');
-
-      // Track connection state
+      // Track connection state changes
       unifiedWebSocketManager.onStateChange((state) => {
-        console.log(`[NotificationPrefs] WebSocket state changed: ${state}`);
+        console.debug('[NotificationPrefs] WebSocket state:', state);
       });
+
+      console.debug('[NotificationPrefs] Subscription setup complete');
     } catch (error) {
-      console.error(
-        '[NotificationPrefs] Failed to setup WebSocket subscription:',
-        error
-      );
+      console.error('Failed to setup WebSocket subscription:', error);
     }
   }
 

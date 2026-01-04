@@ -92,8 +92,8 @@ class TestSendPushNotification:
 
             # Return a future that resolves to the function result
             future = asyncio.Future()
-            # We need to mock what the function returns
-            future.set_result(([user_id_1], [(user_id_1, "a" * 64)]))
+            # We need to mock what the function returns (approvers, ios_tokens, android_tokens)
+            future.set_result(([user_id_1], [(user_id_1, "a" * 64)], []))
             return future
 
         with patch(
@@ -126,9 +126,13 @@ class TestSendPushNotification:
             import asyncio
 
             future = asyncio.Future()
-            # Two approvers, each with a token
+            # Two approvers, each with an iOS token (approvers, ios_tokens, android_tokens)
             future.set_result(
-                ([user_id_1, user_id_2], [(user_id_1, "a" * 64), (user_id_2, "b" * 64)])
+                (
+                    [user_id_1, user_id_2],
+                    [(user_id_1, "a" * 64), (user_id_2, "b" * 64)],
+                    [],
+                )
             )
             return future
 
@@ -160,7 +164,9 @@ class TestSendPushNotification:
             import asyncio
 
             future = asyncio.Future()
-            future.set_result(([], []))  # No approvers
+            future.set_result(
+                ([], [], [])
+            )  # No approvers (approvers, ios_tokens, android_tokens)
             return future
 
         with patch(
@@ -182,16 +188,24 @@ class TestSendPushNotification:
     async def test_send_push_notification_apns_not_configured(
         self, approval_service, sample_approval_request, sample_approval_policy
     ):
-        """Test graceful handling when APNs is not configured."""
+        """Test graceful handling when push notifications are not configured."""
         with patch(
             "preloop_ai.services.push_notifications.get_apns_service", return_value=None
         ):
-            result = await approval_service._send_push_notification(
-                sample_approval_request, sample_approval_policy
-            )
+            with patch(
+                "preloop_ai.services.push_notifications.is_fcm_configured",
+                return_value=False,
+            ):
+                with patch(
+                    "preloop_ai.services.push_proxy.is_push_proxy_configured",
+                    return_value=False,
+                ):
+                    result = await approval_service._send_push_notification(
+                        sample_approval_request, sample_approval_policy
+                    )
 
-            assert result["success"] is False
-            assert result["error"] == "APNs not configured"
+                    assert result["success"] is False
+                    assert result["error"] == "Push notifications not configured"
 
     async def test_send_push_notification_invalid_token_removal(
         self,
@@ -212,9 +226,13 @@ class TestSendPushNotification:
             import asyncio
 
             future = asyncio.Future()
-            # Two approvers, each with a token
+            # Two approvers, each with an iOS token (approvers, ios_tokens, android_tokens)
             future.set_result(
-                ([user_id_1, user_id_2], [(user_id_1, "a" * 64), (user_id_2, "b" * 64)])
+                (
+                    [user_id_1, user_id_2],
+                    [(user_id_1, "a" * 64), (user_id_2, "b" * 64)],
+                    [],
+                )
             )
             return future
 
@@ -258,15 +276,15 @@ class TestSendPushNotification:
             # Verify _send_push_notification was called
             mock_send_push.assert_called_once()
 
-    async def test_send_notifications_skip_push_when_not_in_channels(
+    async def test_send_notifications_always_attempts_push(
         self, approval_service, sample_approval_request, mock_apns_service
     ):
-        """Test that push is skipped when not in notification channels."""
-        # Create policy without mobile_push channel
-        policy_no_push = MagicMock(spec=ApprovalPolicy)
-        policy_no_push.id = uuid.uuid4()
-        policy_no_push.notification_channels = ["email"]  # No mobile_push
-        policy_no_push.approval_type = "standard"
+        """Test that push is always attempted (filtering happens based on user preferences)."""
+        # Create policy - notification_channels no longer controls push behavior
+        policy = MagicMock(spec=ApprovalPolicy)
+        policy.id = uuid.uuid4()
+        policy.notification_channels = ["email"]  # Doesn't affect push anymore
+        policy.approval_type = "standard"
 
         # Mock email notification method
         with patch.object(
@@ -276,14 +294,16 @@ class TestSendPushNotification:
         ):
             # Mock push notification method
             with patch.object(
-                approval_service, "_send_push_notification", new=AsyncMock()
+                approval_service,
+                "_send_push_notification",
+                new=AsyncMock(return_value={"success": True, "sent": 0}),
             ) as mock_send_push:
                 await approval_service.send_notifications(
-                    sample_approval_request, policy_no_push
+                    sample_approval_request, policy
                 )
 
-                # Verify _send_push_notification was NOT called
-                mock_send_push.assert_not_called()
+                # Push is always attempted - filtering is internal based on user prefs
+                mock_send_push.assert_called_once()
 
     async def test_send_push_notification_handles_exceptions(
         self,
@@ -304,9 +324,13 @@ class TestSendPushNotification:
             import asyncio
 
             future = asyncio.Future()
-            # Two approvers, each with a token
+            # Two approvers, each with an iOS token (approvers, ios_tokens, android_tokens)
             future.set_result(
-                ([user_id_1, user_id_2], [(user_id_1, "a" * 64), (user_id_2, "b" * 64)])
+                (
+                    [user_id_1, user_id_2],
+                    [(user_id_1, "a" * 64), (user_id_2, "b" * 64)],
+                    [],
+                )
             )
             return future
 

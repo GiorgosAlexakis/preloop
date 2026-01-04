@@ -129,7 +129,9 @@ class Settings(BaseSettings):
             allowed_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
         )
 
-        prompts_file = os.getenv("PROMPTS_PATH", "preloop-ai/prompts.yaml")
+        prompts_file = os.getenv(
+            "PROMPTS_PATH", "backend/preloop-ai/preloop_ai/prompts.yaml"
+        )
 
         # Stripe configuration - no default keys for security
         # Self-hosted deployments must supply their own keys if billing is enabled

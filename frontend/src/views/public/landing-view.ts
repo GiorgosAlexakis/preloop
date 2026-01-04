@@ -4,6 +4,8 @@ import { getBrandConfig } from '../../brand-config';
 import { customElement, state, query } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
 import './../../components/news-capsule';
+import './../../components/ide-setup-tabs';
+import { getIdeConfigs } from '../../utils/ide-configs';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
@@ -11,8 +13,6 @@ import type SlCarousel from '@shoelace-style/shoelace/dist/components/carousel/c
 import type SlCarouselItem from '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import { getFeatures } from '../../api';
-
-type IdeTab = 'claude-code' | 'cursor' | 'windsurf';
 
 interface FeatureSlide {
   title: string;
@@ -24,7 +24,6 @@ interface FeatureSlide {
 @customElement('landing-view')
 export class LandingView extends LitElement {
   @query('.feature-carousel') private _carousel!: SlCarousel;
-  @state() private _activeIdeTab: IdeTab = 'claude-code';
   @state() private _showVideo: boolean[] = [false, false, false];
   @state() private _activeSlideIndex = 0;
   @state() private _featureSlides: FeatureSlide[] = [];
@@ -43,15 +42,6 @@ export class LandingView extends LitElement {
     text: string;
   }> = [];
   @state() private _mcpSetupTitle = '';
-  @state() private _mcpConfigs: Array<{
-    ide: string;
-    ide_name: string;
-    logo_path: string;
-    logo_width: string;
-    prerequisites: string[];
-    setup_instructions: string;
-    code: string;
-  }> = [];
   @state() private _extendedDescription = '';
   @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
   @state() private _billingEnabled = false;
@@ -283,54 +273,6 @@ export class LandingView extends LitElement {
     ) as HTMLElement | undefined;
     if (mcpSetupTitle) this._mcpSetupTitle = mcpSetupTitle.textContent || '';
 
-    // Read MCP configs from light DOM slots
-    const mcpConfigs: Array<{
-      ide: string;
-      ide_name: string;
-      logo_path: string;
-      logo_width: string;
-      prerequisites: string[];
-      setup_instructions: string;
-      code: string;
-    }> = [];
-
-    for (let i = 0; i < 10; i++) {
-      const mcpWrapper = children.find(
-        (el) => el.getAttribute('slot') === `mcp-config-${i}`
-      ) as HTMLElement | undefined;
-
-      if (mcpWrapper) {
-        const ide = mcpWrapper.getAttribute('data-ide') || '';
-        const ide_name = mcpWrapper.getAttribute('data-ide-name') || '';
-        const logo_path = mcpWrapper.getAttribute('data-logo-path') || '';
-        const logo_width = mcpWrapper.getAttribute('data-logo-width') || '';
-        const prerequisites = JSON.parse(
-          mcpWrapper.getAttribute('data-prerequisites') || '[]'
-        );
-        const setup_instructions =
-          mcpWrapper.getAttribute('data-setup-instructions') || '';
-        const code = mcpWrapper.textContent || '';
-
-        if (ide && ide_name && logo_path) {
-          mcpConfigs.push({
-            ide,
-            ide_name,
-            logo_path,
-            logo_width,
-            prerequisites,
-            setup_instructions,
-            code,
-          });
-        }
-      } else {
-        break;
-      }
-    }
-
-    if (mcpConfigs.length > 0) {
-      this._mcpConfigs = mcpConfigs;
-    }
-
     // Hide slotted elements (they stay in light DOM for SEO but are hidden)
     children.forEach((el) => {
       const slot = el.getAttribute('slot');
@@ -343,7 +285,7 @@ export class LandingView extends LitElement {
           slot.startsWith('feature-') ||
           slot.startsWith('faq-') ||
           slot.startsWith('get-started-') ||
-          slot.startsWith('mcp-'))
+          slot === 'mcp-setup-title')
       ) {
         (el as HTMLElement).style.display = 'none';
       }
@@ -388,29 +330,6 @@ export class LandingView extends LitElement {
     this._getStartedLinkUrl = getStarted.link_url || '';
     this._getStartedFeatures = getStarted.features || [];
     this._mcpSetupTitle = getStarted.mcp_setup_title || '';
-    this._mcpConfigs = getStarted.mcp_configs || [];
-  }
-
-  private _handleIdeTabClick(tabId: IdeTab) {
-    this._activeIdeTab = tabId;
-  }
-
-  private _copyCode(e: Event) {
-    const button = e.currentTarget as HTMLElement;
-    const pre = button.previousElementSibling;
-    if (pre && pre.tagName === 'PRE') {
-      const code = pre.querySelector('code');
-      if (code) {
-        navigator.clipboard.writeText(code.innerText).then(() => {
-          const originalHTML = button.innerHTML;
-          button.innerHTML =
-            '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg>';
-          setTimeout(() => {
-            button.innerHTML = originalHTML;
-          }, 2000);
-        });
-      }
-    }
   }
 
   private _playVideo(index: number) {
@@ -669,368 +588,106 @@ export class LandingView extends LitElement {
                 </section>
               `
             : ''}
-        ${this._getStartedFeatures.length > 0 || this._mcpConfigs.length > 0
-          ? html`
-              <section class="feature-section main-section" id="get-started">
-                <div class="section-container">
-                  <div class="title-container">
-                    <h2>
-                      ${this._getStartedTitle ||
-                      'Turbocharge your AI Workflow with MCP'}
-                    </h2>
-                    <a
-                      class="main-link"
-                      href="${this._getStartedLinkUrl || '/whatis-mcp'}"
-                      >${this._getStartedLinkText || 'What is MCP?'}</a
-                    >
-                  </div>
+        ${html`
+          <section class="feature-section main-section" id="get-started">
+            <div class="section-container">
+              <div class="title-container">
+                <h2>
+                  ${this._getStartedTitle ||
+                  'Turbocharge your AI Workflow with MCP'}
+                </h2>
+                <a
+                  class="main-link"
+                  href="${this._getStartedLinkUrl || '/whatis-mcp'}"
+                  >${this._getStartedLinkText || 'What is MCP?'}</a
+                >
+              </div>
 
-                  ${this._getStartedFeatures.length > 0
-                    ? html`<div class="feature-grid three-col">
-                        ${this._getStartedFeatures.map(
-                          (feature) => html`
-                            <div class="feature-box">
-                              <div class="feature-icon">
-                                <sl-icon name="${feature.icon}"></sl-icon>
-                              </div>
-                              <h3>${feature.title}</h3>
-                              <p>${feature.text}</p>
-                            </div>
-                          `
-                        )}
-                      </div>`
-                    : ``}
-                  ${this._mcpSetupTitle
-                    ? html` <h3>${this._mcpSetupTitle}</h3> `
-                    : ``}
+              ${this._getStartedFeatures.length > 0
+                ? html`<div class="feature-grid three-col">
+                    ${this._getStartedFeatures.map(
+                      (feature) => html`
+                        <div class="feature-box">
+                          <div class="feature-icon">
+                            <sl-icon name="${feature.icon}"></sl-icon>
+                          </div>
+                          <h3>${feature.title}</h3>
+                          <p>${feature.text}</p>
+                        </div>
+                      `
+                    )}
+                  </div>`
+                : ``}
+              ${this._mcpSetupTitle
+                ? html` <h3>${this._mcpSetupTitle}</h3> `
+                : ``}
 
-                  <div class="get-started-container">
-                    <div class="ide-tabs">
-                      ${this._mcpConfigs.length > 0
-                        ? this._mcpConfigs.map(
-                            (config) => html`
-                              <div
-                                class="ide-logo-container ${this
-                                  ._activeIdeTab === config.ide
-                                  ? 'active'
-                                  : ''}"
-                                @click=${() =>
-                                  this._handleIdeTabClick(config.ide as IdeTab)}
-                              >
-                                <img
-                                  src="${config.logo_path}"
-                                  alt="${config.ide_name}"
-                                  width="${config.logo_width}"
-                                />
-                              </div>
-                            `
-                          )
-                        : html`
-                            <div
-                              class="ide-logo-container ${this._activeIdeTab ===
-                              'claude-code'
-                                ? 'active'
-                                : ''}"
-                              @click=${() =>
-                                this._handleIdeTabClick('claude-code')}
-                            >
-                              <img
-                                src="/images/Claude_AI_logo.png"
-                                alt="Claude Code"
-                                width="130"
-                              />
-                            </div>
-                            <div
-                              class="ide-logo-container ${this._activeIdeTab ===
-                              'cursor'
-                                ? 'active'
-                                : ''}"
-                              @click=${() => this._handleIdeTabClick('cursor')}
-                            >
-                              <img
-                                src="/images/cursor_logo.png"
-                                alt="Cursor"
-                                width="130"
-                              />
-                            </div>
-                            <div
-                              class="ide-logo-container ${this._activeIdeTab ===
-                              'windsurf'
-                                ? 'active'
-                                : ''}"
-                              @click=${() =>
-                                this._handleIdeTabClick('windsurf')}
-                            >
-                              <img
-                                src="/images/windsurf_logo.png"
-                                alt="Windsurf"
-                                width="130"
-                              />
-                            </div>
-                          `}
-                    </div>
-
-                    <div class="tab-content">
-                      ${this._mcpConfigs.length > 0
-                        ? this._mcpConfigs.map(
-                            (config) => html`
-                              ${this._activeIdeTab === config.ide
-                                ? html`
-                                    <div>
-                                      <h5>Prerequisites</h5>
-                                      <ul>
-                                        ${config.prerequisites.map(
-                                          (prereq) => html`<li>${prereq}</li>`
-                                        )}
-                                      </ul>
-                                      <h5>Setup</h5>
-                                      <p>
-                                        ${unsafeHTML(config.setup_instructions)}
-                                      </p>
-                                      <div class="code-container">
-                                        <pre><code>${config.code.trimStart()}</code></pre>
-                                        <button
-                                          class="copy-btn"
-                                          @click=${this._copyCode}
-                                        >
-                                          <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            width="16"
-                                            height="16"
-                                            fill="currentColor"
-                                            class="bi bi-clipboard"
-                                            viewBox="0 0 16 16"
-                                          >
-                                            <path
-                                              d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                            />
-                                            <path
-                                              d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                            />
-                                          </svg>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  `
-                                : ''}
-                            `
-                          )
-                        : html`
-                            ${this._activeIdeTab === 'claude-code'
-                              ? html`
-                                  <div>
-                                    <h5>Prerequisites</h5>
-                                    <ul>
-                                      <li>
-                                        ${getBrandConfig().name} API key
-                                        (register above)
-                                      </li>
-                                    </ul>
-                                    <h5>Setup</h5>
-                                    <p>
-                                      Run the following command in your
-                                      terminal:
-                                    </p>
-                                    <div class="code-container">
-                                      <pre><code>claude mcp add --transport http ${getBrandConfig().domain.split(
-                                        '.'
-                                      )[0]} https://${getBrandConfig()
-                                        .domain}/mcp/v1
-  --header "Authorization: Bearer YOUR_${getBrandConfig().name.toUpperCase()}_API_KEY"</code></pre>
-                                      <button
-                                        class="copy-btn"
-                                        @click=${this._copyCode}
-                                      >
-                                        <svg
-                                          xmlns="http://www.w3.org/2000/svg"
-                                          width="16"
-                                          height="16"
-                                          fill="currentColor"
-                                          class="bi bi-clipboard"
-                                          viewBox="0 0 16 16"
-                                        >
-                                          <path
-                                            d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                          />
-                                          <path
-                                            d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                          />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </div>
-                                `
-                              : ''}
-                            ${this._activeIdeTab === 'cursor'
-                              ? html`
-                                  <div>
-                                    <h5>Prerequisites</h5>
-                                    <ul>
-                                      <li>
-                                        ${getBrandConfig().name} API key
-                                        (register above)
-                                      </li>
-                                    </ul>
-                                    <h5>Setup</h5>
-                                    <p>
-                                      Create or edit
-                                      <code>~/.cursor/mcp.json</code>:
-                                    </p>
-                                    <div class="code-container">
-                                      <pre><code>${dedent`## Create or edit ~/.cursor/mcp.json
-{
-  "mcpServers": {
-    "${getBrandConfig().domain.split('.')[0]}": {
-      "transport": "http",
-      "url": "https://${getBrandConfig().domain}/mcp/v1",
-      "headers": {
-        "Authorization": "Bearer YOUR_${getBrandConfig().name.toUpperCase().replace(' ', '_')}_API_KEY"
-      }
-    }
-  }
-}`}</code></pre>
-                                      <button
-                                        class="copy-btn"
-                                        @click=${this._copyCode}
-                                      >
-                                        <svg
-                                          xmlns="http://www.w3.org/2000/svg"
-                                          width="16"
-                                          height="16"
-                                          fill="currentColor"
-                                          class="bi bi-clipboard"
-                                          viewBox="0 0 16 16"
-                                        >
-                                          <path
-                                            d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                          />
-                                          <path
-                                            d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                          />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </div>
-                                `
-                              : ''}
-                            ${this._activeIdeTab === 'windsurf'
-                              ? html`
-                                  <div>
-                                    <h5>Prerequisites</h5>
-                                    <ul>
-                                      <li>
-                                        ${getBrandConfig().name} API key
-                                        (register above)
-                                      </li>
-                                    </ul>
-                                    <h5>Setup</h5>
-                                    <p>
-                                      Create or edit your MCP configuration
-                                      file:
-                                    </p>
-                                    <div class="code-container">
-                                      <pre><code>{
-  "mcpServers": {
-    "${getBrandConfig().domain.split('.')[0]}": {
-        "transport": "http",
-        "url": "https://${getBrandConfig().domain}/mcp/v1",
-        "headers": {
-            "Authorization": "Bearer YOUR_${getBrandConfig().name.toUpperCase()}_API_KEY"
-        }
-    }
-  }
-}</code></pre>
-                                      <button
-                                        class="copy-btn"
-                                        @click=${this._copyCode}
-                                      >
-                                        <svg
-                                          xmlns="http://www.w3.org/2000/svg"
-                                          width="16"
-                                          height="16"
-                                          fill="currentColor"
-                                          class="bi bi-clipboard"
-                                          viewBox="0 0 16 16"
-                                        >
-                                          <path
-                                            d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
-                                          />
-                                          <path
-                                            d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
-                                          />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </div>
-                                `
-                              : ''}
-                          `}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            `
-          : ''}
-        ${this._getStartedFeatures.length > 0 || this._mcpConfigs.length > 0
-          ? html`
-              <section class="tools-section main-section">
-                <div class="section-container">
-                  <h2 class="text-center">Works with the tools you use</h2>
-                  <div class="tool-logos">
-                    <sl-tooltip content="GitHub">
-                      <img
-                        src="/images/logos/github-mark-white.svg"
-                        alt="GitHub Logo"
-                        class="github-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="GitLab">
-                      <img
-                        src="/images/logos/gitlab-logo-700-rgb.svg"
-                        alt="GitLab Logo"
-                        class="gitlab-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Jira">
-                      <img
-                        src="/images/logos/jira.webp"
-                        alt="Jira Logo"
-                        class="jira-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Slack">
-                      <img
-                        src="/images/logos/slack-logo.svg"
-                        alt="Slack Logo"
-                        class="slack-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Microsoft Teams">
-                      <img
-                        src="/images/logos/teams-logo.svg"
-                        alt="Microsoft Teams Logo"
-                        class="teams-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Discord">
-                      <img
-                        src="images/logos/discord-logo.svg"
-                        alt="Discord Logo"
-                        class="discord-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Mattermost">
-                      <img
-                        src="images/logos/mattermost-logo.svg"
-                        alt="Mattermost Logo"
-                        class="mattermost-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                  </div>
-                </div>
-              </section>
-            `
-          : ''}
+              <ide-setup-tabs
+                .configs=${getIdeConfigs()}
+                defaultTab="claude-code"
+                helpText="The built-in MCP server provides access to all your enabled tools, including tools from external MCP servers."
+              ></ide-setup-tabs>
+            </div>
+          </section>
+        `}
+        ${html`
+          <section class="tools-section main-section">
+            <div class="section-container">
+              <h2 class="text-center">Works with the tools you use</h2>
+              <div class="tool-logos">
+                <sl-tooltip content="GitHub">
+                  <img
+                    src="/images/logos/github-mark-white.svg"
+                    alt="GitHub Logo"
+                    class="github-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="GitLab">
+                  <img
+                    src="/images/logos/gitlab-logo-700-rgb.svg"
+                    alt="GitLab Logo"
+                    class="gitlab-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Jira">
+                  <img
+                    src="/images/logos/jira.webp"
+                    alt="Jira Logo"
+                    class="jira-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Slack">
+                  <img
+                    src="/images/logos/slack-logo.svg"
+                    alt="Slack Logo"
+                    class="slack-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Microsoft Teams">
+                  <img
+                    src="/images/logos/teams-logo.svg"
+                    alt="Microsoft Teams Logo"
+                    class="teams-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Discord">
+                  <img
+                    src="images/logos/discord-logo.svg"
+                    alt="Discord Logo"
+                    class="discord-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Mattermost">
+                  <img
+                    src="images/logos/mattermost-logo.svg"
+                    alt="Mattermost Logo"
+                    class="mattermost-logo tool-logo"
+                  />
+                </sl-tooltip>
+              </div>
+            </div>
+          </section>
+        `}
         ${this._faqs.length > 0
           ? html`
               <section class="faq-section main-section">

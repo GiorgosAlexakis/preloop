@@ -33,6 +33,7 @@ from .user import User, UserSource
 from .permission import Permission, Role, RolePermission, UserRole, TeamRole
 from .user_invitation import UserInvitation, UserInvitationStatus
 from .event import Event
+from .instance import Instance
 
 __all__ = [
     "Base",
@@ -82,4 +83,5 @@ __all__ = [
     "UserInvitation",
     "UserInvitationStatus",
     "Event",
+    "Instance",
 ]

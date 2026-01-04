@@ -687,12 +687,6 @@ export class IssuesDependenciesView extends LitElement {
       sl-select {
         min-width: 250px;
       }
-      .empty-state {
-        text-align: center;
-        padding: var(--sl-spacing-xx-large);
-        border: 1px dashed var(--sl-color-neutral-300);
-        border-radius: var(--sl-radius-medium);
-      }
       .dependency-tags {
         display: flex;
         flex-wrap: wrap;

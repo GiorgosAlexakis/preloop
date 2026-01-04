@@ -69,6 +69,9 @@ ai-providers = [
     "anthropic>=0.39.0",  # For Anthropic Claude API key validation
     "google-generativeai>=0.8.0",  # For Google Gemini API key validation
 ]
+push-notifications = [
+    "firebase-admin>=6.0.0",  # For Android FCM push notifications
+]
 
 [tool.black]
 line-length = 88

@@ -87,10 +87,11 @@ pre-commit:
     - build:backend
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
-    - apt-get update && apt-get install -y git
+    - apt-get update && apt-get install -y git nodejs npm
     - pip install -U pip pre-commit ruff
     - pip install --no-cache-dir -e ./backend/preloop-models && pip install --no-cache-dir -e ./backend/preloop-sync
     - pip install -e ".[dev]"
+    - npm install -g prettier
   script:
     - pre-commit install
     - sleep 1
@@ -468,6 +469,8 @@ test:coverage:
       --set-string apns.authKey="${APNS_AUTH_KEY}"
       --set apns.bundleId="${APNS_BUNDLE_ID}"
       --set apns.useSandbox=${APNS_USE_SANDBOX:-true}
+      --set fcm.enabled=${FCM_ENABLED:-false}
+      --set-string fcm.credentialsJson="${FCM_CREDENTIALS_JSON}"
 
     - echo "Helm deployment finished."
     - echo "Checking deployed environment..."

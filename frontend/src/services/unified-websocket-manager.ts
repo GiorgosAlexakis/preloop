@@ -75,7 +75,8 @@ export class UnifiedWebSocketManager {
   /**
    * Connect to the unified WebSocket endpoint.
    *
-   * Automatically uses authentication token if available, or browser fingerprint for anonymous users.
+   * Uses message-based authentication: connects first, then sends auth message.
+   * This avoids exposing tokens in URLs (more secure than query params).
    */
   async connect(): Promise<void> {
     if (
@@ -93,18 +94,10 @@ export class UnifiedWebSocketManager {
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const host = window.location.host;
 
-      // Get authentication token
-      const token = localStorage.getItem('accessToken');
-
-      // Build URL with query parameters
+      // Build URL with fingerprint only (no token in URL)
       const params = new URLSearchParams();
-      if (token) {
-        params.append('token', token);
-      } else {
-        // For anonymous users, generate/get browser fingerprint
-        const fingerprint = await this.getBrowserFingerprint();
-        params.append('fingerprint', fingerprint);
-      }
+      const fingerprint = await this.getBrowserFingerprint();
+      params.append('fingerprint', fingerprint);
 
       const url = `${protocol}://${host}/api/v1/ws/unified?${params.toString()}`;
 
@@ -173,6 +166,13 @@ export class UnifiedWebSocketManager {
 
     this.setState(ConnectionState.CONNECTED);
 
+    // Authenticate via message if we have a token
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      this.send({ type: 'authenticate', token });
+      console.log('Sent authentication message');
+    }
+
     // Start heartbeat
     this.startHeartbeat();
   }
@@ -187,7 +187,23 @@ export class UnifiedWebSocketManager {
       // Handle handshake
       if (message.type === 'handshake') {
         this.sessionId = message.session_id;
-        console.log(`Session established: ${this.sessionId}`);
+        console.log(
+          `Session established: ${this.sessionId}, authenticated: ${message.authenticated}`
+        );
+        return;
+      }
+
+      // Handle authentication response
+      if (message.type === 'authenticated') {
+        console.log(`Authenticated as: ${message.user?.username}`);
+        return;
+      }
+
+      // Handle authentication error
+      if (message.type === 'auth_error') {
+        console.warn(`Authentication failed: ${message.error}`);
+        // Token might be expired, clear it
+        localStorage.removeItem('accessToken');
         return;
       }
 

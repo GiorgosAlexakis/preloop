@@ -1,6 +1,7 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import consoleStyles from '../../styles/console-styles.css?inline';
 import {
   getFlowExecution,
   getFlow,
@@ -68,113 +69,115 @@ export class FlowExecutionView extends LitElement {
     this.executionId = location.params.executionId;
   }
 
-  static styles = css`
-    :host {
-      display: block;
-      padding: 16px;
-    }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-    .log-container {
-      background-color: #1e1e1e;
-      color: #d4d4d4;
-      border: 1px solid var(--sl-color-neutral-300);
-      border-radius: 4px;
-      padding: 16px;
-      height: 500px;
-      overflow-y: auto;
-      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    .log-container::-webkit-scrollbar {
-      width: 8px;
-    }
-    .log-container::-webkit-scrollbar-track {
-      background: #2d2d2d;
-    }
-    .log-container::-webkit-scrollbar-thumb {
-      background: #555;
-      border-radius: 4px;
-    }
-    .log-container::-webkit-scrollbar-thumb:hover {
-      background: #666;
-    }
-    .log-entry {
-      display: flex;
-      margin-bottom: 4px;
-      animation: fadeIn 0.2s ease-in;
-      line-height: 1.5;
-    }
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
       }
-      to {
-        opacity: 1;
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 16px;
       }
-    }
-    .log-timestamp {
-      color: #858585;
-      margin-right: 12px;
-      user-select: none;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      min-width: 90px;
-      flex-shrink: 0;
-    }
-    .log-type {
-      color: #4ec9b0;
-      font-weight: 600;
-      margin-right: 8px;
-    }
-    .log-type-error {
-      color: #f48771;
-    }
-    .log-type-success {
-      color: #b5cea8;
-    }
-    .log-type-warning {
-      color: #dcdcaa;
-    }
-    .log-stderr {
-      color: #f48771;
-    }
-    .log-metadata {
-      background-color: #2d2d30;
-      border-left: 3px solid #4ec9b0;
-      padding-left: 8px;
-    }
-    .log-content {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      flex: 1;
-      overflow-wrap: break-word;
-    }
-    .terminal-input {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .controls {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    .empty-logs {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: #858585;
-      gap: 12px;
-    }
-  `;
+      .log-container {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        border: 1px solid var(--sl-color-neutral-300);
+        border-radius: 4px;
+        padding: 16px;
+        height: 500px;
+        overflow-y: auto;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .log-container::-webkit-scrollbar {
+        width: 8px;
+      }
+      .log-container::-webkit-scrollbar-track {
+        background: #2d2d2d;
+      }
+      .log-container::-webkit-scrollbar-thumb {
+        background: #555;
+        border-radius: 4px;
+      }
+      .log-container::-webkit-scrollbar-thumb:hover {
+        background: #666;
+      }
+      .log-entry {
+        display: flex;
+        margin-bottom: 4px;
+        animation: fadeIn 0.2s ease-in;
+        line-height: 1.5;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .log-timestamp {
+        color: #858585;
+        margin-right: 12px;
+        user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        min-width: 90px;
+        flex-shrink: 0;
+      }
+      .log-type {
+        color: #4ec9b0;
+        font-weight: 600;
+        margin-right: 8px;
+      }
+      .log-type-error {
+        color: #f48771;
+      }
+      .log-type-success {
+        color: #b5cea8;
+      }
+      .log-type-warning {
+        color: #dcdcaa;
+      }
+      .log-stderr {
+        color: #f48771;
+      }
+      .log-metadata {
+        background-color: #2d2d30;
+        border-left: 3px solid #4ec9b0;
+        padding-left: 8px;
+      }
+      .log-content {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        flex: 1;
+        overflow-wrap: break-word;
+      }
+      .terminal-input {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .empty-logs {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: #858585;
+        gap: 12px;
+      }
+    `,
+  ];
 
   @property()
   executionId?: string;
@@ -670,7 +673,7 @@ export class FlowExecutionView extends LitElement {
         headerText="${this.flow?.name || 'Flow Execution'}"
         width="wide"
       ></view-header>
-      <div class="column-layout">
+      <div class="column-layout wide">
         <div class="main-column">
           <!-- Navigation -->
           <div style="display: flex; gap: 8px; margin-bottom: 16px;">
