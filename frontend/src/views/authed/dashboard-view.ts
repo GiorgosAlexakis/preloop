@@ -550,6 +550,9 @@ export class DashboardView extends AuthedElement {
     unsafeCSS(consoleStyles),
     css`
       /* Dashboard-specific styles only */
+      :host {
+        --gradient-brand: linear-gradient(225deg, #d35400, #6c3483, #1f618d);
+      }
       sl-icon {
         font-size: 1rem;
       }
@@ -685,6 +688,9 @@ export class DashboardView extends AuthedElement {
         align-items: center;
         gap: var(--sl-spacing-small);
       }
+      .welcome-title sl-icon {
+        font-size: 1.5rem;
+      }
       .welcome-content {
         color: var(--sl-color-neutral-700);
         line-height: 1.6;
@@ -703,15 +709,16 @@ export class DashboardView extends AuthedElement {
         padding: var(--sl-spacing-medium);
         background: var(--sl-color-neutral-0);
         border-radius: var(--sl-border-radius-medium);
-        border: 1px solid var(--sl-color-neutral-200);
       }
       .step-item.completed {
         background: var(--sl-color-success-50);
         border-color: var(--sl-color-success-200);
       }
       .step-icon {
-        font-size: 1.5rem;
         flex-shrink: 0;
+      }
+      .step-icon sl-icon {
+        font-size: 1.5rem;
       }
       .step-content {
         flex: 1;
@@ -735,6 +742,12 @@ export class DashboardView extends AuthedElement {
         align-items: center;
         gap: var(--sl-spacing-small);
         margin-top: var(--sl-spacing-large);
+      }
+      .progress-overview sl-progress-bar {
+        flex: 1;
+      }
+      .progress-overview sl-progress-bar::part(indicator) {
+        background: var(--gradient-brand);
       }
       .progress-text {
         font-size: var(--sl-font-size-small);
@@ -927,10 +940,7 @@ export class DashboardView extends AuthedElement {
         </div>
 
         <div class="progress-overview">
-          <sl-progress-bar
-            value="${progress}"
-            style="flex: 1;"
-          ></sl-progress-bar>
+          <sl-progress-bar value="${progress}"></sl-progress-bar>
           <span class="progress-text"
             >${completedSteps} / ${totalSteps} completed</span
           >

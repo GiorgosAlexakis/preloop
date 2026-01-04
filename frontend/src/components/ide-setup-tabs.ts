@@ -1,4 +1,4 @@
-import { LitElement, html } from 'lit';
+import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { ideSetupStyles } from '../styles/ide-setup-styles';
@@ -15,7 +15,14 @@ export interface IdeConfig {
 
 @customElement('ide-setup-tabs')
 export class IdeSetupTabs extends LitElement {
-  static styles = [ideSetupStyles];
+  static styles = [
+    css`
+      :host {
+        --gradient-brand: linear-gradient(225deg, #d35400, #6c3483, #1f618d);
+      }
+    `,
+    ideSetupStyles,
+  ];
 
   @property({ type: Array })
   configs: IdeConfig[] = [];

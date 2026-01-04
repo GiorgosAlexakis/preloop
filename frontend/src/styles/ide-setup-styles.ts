@@ -11,7 +11,7 @@ export const ideSetupStyles = css`
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     overflow: hidden;
-    background: linear-gradient(45deg, #d35400, #6c3483, #1f618d);
+    background: var(--gradient-brand);
     color: #fff;
     margin-top: 2rem;
   }
