@@ -9,24 +9,44 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from preloop_ai.api.middleware.websocket_auth import (
     WebSocketAuthMiddleware,
     AUTHENTICATED_WS_PATHS,
+    AUTHENTICATED_WS_PREFIXES,
     ANONYMOUS_WS_PATHS,
+    _is_authenticated_ws_path,
+    _is_anonymous_ws_path,
 )
 
 
 class TestWebSocketPathMatching:
-    """Test that WebSocket paths are correctly matched with /api/v1 prefix."""
+    """Test that WebSocket paths are correctly matched under /api/v1 prefix."""
 
-    def test_authenticated_paths_include_api_prefix(self):
+    def test_authenticated_paths(self):
         """Verify /api/v1/ws is in AUTHENTICATED_WS_PATHS."""
-        assert "/ws" in AUTHENTICATED_WS_PATHS
         assert "/api/v1/ws" in AUTHENTICATED_WS_PATHS
 
-    def test_anonymous_paths_include_api_prefix(self):
+    def test_authenticated_prefixes_include_flow_executions(self):
+        """Verify flow-executions paths use prefix matching."""
+        assert "/api/v1/ws/flow-executions" in AUTHENTICATED_WS_PREFIXES
+
+    def test_anonymous_paths(self):
         """Verify /api/v1/ws/unified and /api/v1/ws/execution are in ANONYMOUS_WS_PATHS."""
-        assert "/ws/unified" in ANONYMOUS_WS_PATHS
         assert "/api/v1/ws/unified" in ANONYMOUS_WS_PATHS
-        assert "/ws/execution" in ANONYMOUS_WS_PATHS
         assert "/api/v1/ws/execution" in ANONYMOUS_WS_PATHS
+
+    def test_is_authenticated_ws_path_exact_match(self):
+        """Test exact path matching for authenticated paths."""
+        assert _is_authenticated_ws_path("/api/v1/ws") is True
+        assert _is_authenticated_ws_path("/ws/other") is False
+
+    def test_is_authenticated_ws_path_prefix_match(self):
+        """Test prefix matching for flow-executions paths."""
+        assert _is_authenticated_ws_path("/api/v1/ws/flow-executions/abc-def") is True
+        assert _is_authenticated_ws_path("/api/v1/ws/flow-executions") is True
+
+    def test_is_anonymous_ws_path(self):
+        """Test anonymous path matching."""
+        assert _is_anonymous_ws_path("/api/v1/ws/unified") is True
+        assert _is_anonymous_ws_path("/api/v1/ws/execution") is True
+        assert _is_anonymous_ws_path("/ws/other") is False
 
 
 class TestWebSocketAuthMiddleware:

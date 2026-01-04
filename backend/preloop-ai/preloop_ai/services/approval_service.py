@@ -551,25 +551,38 @@ class ApprovalService:
         from preloop_models.crud import notification_preferences
         from preloop_models.db.session import get_db_session
 
+        # Batch fetch notification preferences in executor to avoid blocking event loop
+        def _get_email_disabled_users(user_ids: List[uuid.UUID]) -> Set[uuid.UUID]:
+            """Fetch users with email notifications disabled (runs in thread pool)."""
+            disabled_users: Set[uuid.UUID] = set()
+            sync_db = next(get_db_session())
+            try:
+                for uid in user_ids:
+                    prefs = notification_preferences.get_by_user(sync_db, uid)
+                    if prefs and not prefs.enable_email:
+                        disabled_users.add(uid)
+            finally:
+                sync_db.close()
+            return disabled_users
+
+        loop = asyncio.get_running_loop()
+        email_disabled_users = await loop.run_in_executor(
+            _sync_db_executor, _get_email_disabled_users, approver_user_ids
+        )
+
         sent_count = 0
         failed_count = 0
         skipped_count = 0
 
         for user_id in approver_user_ids:
             try:
-                # Check user's notification preferences
-                sync_db = next(get_db_session())
-                try:
-                    prefs = notification_preferences.get_by_user(sync_db, user_id)
-                    # Skip if user has email notifications disabled
-                    if prefs and not prefs.enable_email:
-                        logger.debug(
-                            f"Skipping email for user {user_id} - email notifications disabled"
-                        )
-                        skipped_count += 1
-                        continue
-                finally:
-                    sync_db.close()
+                # Check if user has email notifications disabled (already fetched)
+                if user_id in email_disabled_users:
+                    logger.debug(
+                        f"Skipping email for user {user_id} - email notifications disabled"
+                    )
+                    skipped_count += 1
+                    continue
 
                 # Get user email using async query
                 result = await self.db.execute(select(User).where(User.id == user_id))

@@ -13,16 +13,38 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
-# WebSocket paths that require authentication (with and without API prefix)
-AUTHENTICATED_WS_PATHS = {"/ws", "/api/v1/ws"}
+# WebSocket path prefixes that require authentication
+# These use prefix matching to support dynamic segments like /ws/flow-executions/{id}
+# All WebSocket routes are mounted under /api/v1
+AUTHENTICATED_WS_PREFIXES = ("/api/v1/ws/flow-executions",)
 
-# WebSocket paths that allow anonymous connections (with and without API prefix)
+# Exact WebSocket paths that require authentication
+AUTHENTICATED_WS_PATHS = {"/api/v1/ws"}
+
+# WebSocket paths that allow anonymous connections
 ANONYMOUS_WS_PATHS = {
-    "/ws/unified",
     "/api/v1/ws/unified",
-    "/ws/execution",
     "/api/v1/ws/execution",
 }
+
+
+def _is_authenticated_ws_path(path: str) -> bool:
+    """Check if path requires authentication.
+
+    Uses exact match for simple paths and prefix match for paths with dynamic segments.
+    """
+    if path in AUTHENTICATED_WS_PATHS:
+        return True
+    # Check prefix matches for paths like /ws/flow-executions/{execution_id}
+    for prefix in AUTHENTICATED_WS_PREFIXES:
+        if path.startswith(prefix):
+            return True
+    return False
+
+
+def _is_anonymous_ws_path(path: str) -> bool:
+    """Check if path allows anonymous connections."""
+    return path in ANONYMOUS_WS_PATHS
 
 
 class WebSocketAuthMiddleware:
@@ -47,8 +69,8 @@ class WebSocketAuthMiddleware:
         path = scope["path"]
 
         # Check if this is a WebSocket path we handle
-        is_authenticated_path = path in AUTHENTICATED_WS_PATHS
-        is_anonymous_path = path in ANONYMOUS_WS_PATHS
+        is_authenticated_path = _is_authenticated_ws_path(path)
+        is_anonymous_path = _is_anonymous_ws_path(path)
 
         if not is_authenticated_path and not is_anonymous_path:
             # Not a WebSocket path we manage, pass through
