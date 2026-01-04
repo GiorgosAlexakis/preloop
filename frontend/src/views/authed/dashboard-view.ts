@@ -666,13 +666,11 @@ export class DashboardView extends AuthedElement {
         }
       }
       /* Welcome card styles */
-      .welcome-card {
-        background: linear-gradient(
-          135deg,
-          var(--sl-color-primary-50) 0%,
-          var(--sl-color-primary-100) 100%
-        );
-        border: 1px solid var(--sl-color-primary-200);
+      .welcome-card::part(base) {
+        border-color: var(--sl-color-primary-200);
+      }
+      mcp-setup-dialog {
+        display: contents;
       }
       .welcome-header {
         display: flex;
@@ -737,8 +735,6 @@ export class DashboardView extends AuthedElement {
         align-items: center;
         gap: var(--sl-spacing-small);
         margin-top: var(--sl-spacing-large);
-        padding-top: var(--sl-spacing-large);
-        border-top: 1px solid var(--sl-color-primary-200);
       }
       .progress-text {
         font-size: var(--sl-font-size-small);
