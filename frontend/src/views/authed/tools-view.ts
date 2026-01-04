@@ -159,22 +159,10 @@ export class ToolsView extends LitElement {
         height: 200px;
       }
 
-      .empty-state {
-        text-align: center;
-        padding: 3rem;
-        color: var(--sl-color-neutral-600);
-      }
-
       .builtin-server-card {
         display: flex;
         flex-direction: column;
         height: 100%;
-      }
-
-      .builtin-card-content {
-        flex-grow: 1;
-        display: flex;
-        flex-direction: column;
       }
 
       .builtin-server-header {
@@ -812,7 +800,7 @@ export class ToolsView extends LitElement {
 
     return html`
       <sl-card class="builtin-server-card">
-        <div class="builtin-card-content">
+        <div class="card-content">
           <div class="builtin-server-header">
             <h3 class="builtin-server-name">Preloop AI MCP Server</h3>
             <sl-badge variant="primary" size="small">Built-in</sl-badge>

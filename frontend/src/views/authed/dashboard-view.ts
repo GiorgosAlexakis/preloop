@@ -596,17 +596,6 @@ export class DashboardView extends AuthedElement {
         margin-bottom: var(--sl-spacing-small);
         font-size: var(--sl-font-size-small);
       }
-      /* Stat display styles */
-      .stat-value {
-        font-size: 2rem;
-        font-weight: 700;
-        color: var(--sl-color-primary-600);
-      }
-      .stat-label {
-        font-size: var(--sl-font-size-small);
-        color: var(--sl-color-neutral-600);
-        text-transform: uppercase;
-      }
       /* MCP Server Capsule */
       .mcp-server-capsule {
         display: flex;
@@ -958,9 +947,7 @@ export class DashboardView extends AuthedElement {
     if (this.isLoading) {
       return html`
         <view-header headerText="Overview" width="extra-wide"></view-header>
-        <div
-          style="display: flex; justify-content: center; align-items: center; height: 400px;"
-        >
+        <div class="loading-container">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
         </div>
       `;
