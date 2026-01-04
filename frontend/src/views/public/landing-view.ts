@@ -5,7 +5,7 @@ import { customElement, state, query } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
 import './../../components/news-capsule';
 import './../../components/ide-setup-tabs';
-import type { IdeConfig } from '../../components/ide-setup-tabs';
+import { getIdeConfigs } from '../../utils/ide-configs';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
 import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
@@ -42,15 +42,6 @@ export class LandingView extends LitElement {
     text: string;
   }> = [];
   @state() private _mcpSetupTitle = '';
-  @state() private _mcpConfigs: Array<{
-    ide: string;
-    ide_name: string;
-    logo_path: string;
-    logo_width: string;
-    prerequisites: string[];
-    setup_instructions: string;
-    code: string;
-  }> = [];
   @state() private _extendedDescription = '';
   @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
   @state() private _billingEnabled = false;
@@ -282,54 +273,6 @@ export class LandingView extends LitElement {
     ) as HTMLElement | undefined;
     if (mcpSetupTitle) this._mcpSetupTitle = mcpSetupTitle.textContent || '';
 
-    // Read MCP configs from light DOM slots
-    const mcpConfigs: Array<{
-      ide: string;
-      ide_name: string;
-      logo_path: string;
-      logo_width: string;
-      prerequisites: string[];
-      setup_instructions: string;
-      code: string;
-    }> = [];
-
-    for (let i = 0; i < 10; i++) {
-      const mcpWrapper = children.find(
-        (el) => el.getAttribute('slot') === `mcp-config-${i}`
-      ) as HTMLElement | undefined;
-
-      if (mcpWrapper) {
-        const ide = mcpWrapper.getAttribute('data-ide') || '';
-        const ide_name = mcpWrapper.getAttribute('data-ide-name') || '';
-        const logo_path = mcpWrapper.getAttribute('data-logo-path') || '';
-        const logo_width = mcpWrapper.getAttribute('data-logo-width') || '';
-        const prerequisites = JSON.parse(
-          mcpWrapper.getAttribute('data-prerequisites') || '[]'
-        );
-        const setup_instructions =
-          mcpWrapper.getAttribute('data-setup-instructions') || '';
-        const code = mcpWrapper.textContent || '';
-
-        if (ide && ide_name && logo_path) {
-          mcpConfigs.push({
-            ide,
-            ide_name,
-            logo_path,
-            logo_width,
-            prerequisites,
-            setup_instructions,
-            code,
-          });
-        }
-      } else {
-        break;
-      }
-    }
-
-    if (mcpConfigs.length > 0) {
-      this._mcpConfigs = mcpConfigs;
-    }
-
     // Hide slotted elements (they stay in light DOM for SEO but are hidden)
     children.forEach((el) => {
       const slot = el.getAttribute('slot');
@@ -342,7 +285,7 @@ export class LandingView extends LitElement {
           slot.startsWith('feature-') ||
           slot.startsWith('faq-') ||
           slot.startsWith('get-started-') ||
-          slot.startsWith('mcp-'))
+          slot === 'mcp-setup-title')
       ) {
         (el as HTMLElement).style.display = 'none';
       }
@@ -387,7 +330,6 @@ export class LandingView extends LitElement {
     this._getStartedLinkUrl = getStarted.link_url || '';
     this._getStartedFeatures = getStarted.features || [];
     this._mcpSetupTitle = getStarted.mcp_setup_title || '';
-    this._mcpConfigs = getStarted.mcp_configs || [];
   }
 
   private _playVideo(index: number) {
@@ -646,8 +588,7 @@ export class LandingView extends LitElement {
                 </section>
               `
             : ''}
-        ${this._getStartedFeatures.length > 0 || this._mcpConfigs.length > 0
-          ? html`
+        ${html`
               <section class="feature-section main-section" id="get-started">
                 <div class="section-container">
                   <div class="title-container">
@@ -682,15 +623,14 @@ export class LandingView extends LitElement {
                     : ``}
 
                   <ide-setup-tabs
-                    .configs=${this._mcpConfigs}
+                    .configs=${getIdeConfigs()}
                     defaultTab="claude-code"
+                    helpText="The built-in MCP server provides access to all your enabled tools, including tools from external MCP servers."
                   ></ide-setup-tabs>
                 </div>
               </section>
-            `
-          : ''}
-        ${this._getStartedFeatures.length > 0 || this._mcpConfigs.length > 0
-          ? html`
+            `}
+        ${html`
               <section class="tools-section main-section">
                 <div class="section-container">
                   <h2 class="text-center">Works with the tools you use</h2>
@@ -747,8 +687,7 @@ export class LandingView extends LitElement {
                   </div>
                 </div>
               </section>
-            `
-          : ''}
+            `}
         ${this._faqs.length > 0
           ? html`
               <section class="faq-section main-section">
