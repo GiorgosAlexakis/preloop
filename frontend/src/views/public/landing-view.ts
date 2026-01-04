@@ -589,105 +589,105 @@ export class LandingView extends LitElement {
               `
             : ''}
         ${html`
-              <section class="feature-section main-section" id="get-started">
-                <div class="section-container">
-                  <div class="title-container">
-                    <h2>
-                      ${this._getStartedTitle ||
-                      'Turbocharge your AI Workflow with MCP'}
-                    </h2>
-                    <a
-                      class="main-link"
-                      href="${this._getStartedLinkUrl || '/whatis-mcp'}"
-                      >${this._getStartedLinkText || 'What is MCP?'}</a
-                    >
-                  </div>
+          <section class="feature-section main-section" id="get-started">
+            <div class="section-container">
+              <div class="title-container">
+                <h2>
+                  ${this._getStartedTitle ||
+                  'Turbocharge your AI Workflow with MCP'}
+                </h2>
+                <a
+                  class="main-link"
+                  href="${this._getStartedLinkUrl || '/whatis-mcp'}"
+                  >${this._getStartedLinkText || 'What is MCP?'}</a
+                >
+              </div>
 
-                  ${this._getStartedFeatures.length > 0
-                    ? html`<div class="feature-grid three-col">
-                        ${this._getStartedFeatures.map(
-                          (feature) => html`
-                            <div class="feature-box">
-                              <div class="feature-icon">
-                                <sl-icon name="${feature.icon}"></sl-icon>
-                              </div>
-                              <h3>${feature.title}</h3>
-                              <p>${feature.text}</p>
-                            </div>
-                          `
-                        )}
-                      </div>`
-                    : ``}
-                  ${this._mcpSetupTitle
-                    ? html` <h3>${this._mcpSetupTitle}</h3> `
-                    : ``}
+              ${this._getStartedFeatures.length > 0
+                ? html`<div class="feature-grid three-col">
+                    ${this._getStartedFeatures.map(
+                      (feature) => html`
+                        <div class="feature-box">
+                          <div class="feature-icon">
+                            <sl-icon name="${feature.icon}"></sl-icon>
+                          </div>
+                          <h3>${feature.title}</h3>
+                          <p>${feature.text}</p>
+                        </div>
+                      `
+                    )}
+                  </div>`
+                : ``}
+              ${this._mcpSetupTitle
+                ? html` <h3>${this._mcpSetupTitle}</h3> `
+                : ``}
 
-                  <ide-setup-tabs
-                    .configs=${getIdeConfigs()}
-                    defaultTab="claude-code"
-                    helpText="The built-in MCP server provides access to all your enabled tools, including tools from external MCP servers."
-                  ></ide-setup-tabs>
-                </div>
-              </section>
-            `}
+              <ide-setup-tabs
+                .configs=${getIdeConfigs()}
+                defaultTab="claude-code"
+                helpText="The built-in MCP server provides access to all your enabled tools, including tools from external MCP servers."
+              ></ide-setup-tabs>
+            </div>
+          </section>
+        `}
         ${html`
-              <section class="tools-section main-section">
-                <div class="section-container">
-                  <h2 class="text-center">Works with the tools you use</h2>
-                  <div class="tool-logos">
-                    <sl-tooltip content="GitHub">
-                      <img
-                        src="/images/logos/github-mark-white.svg"
-                        alt="GitHub Logo"
-                        class="github-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="GitLab">
-                      <img
-                        src="/images/logos/gitlab-logo-700-rgb.svg"
-                        alt="GitLab Logo"
-                        class="gitlab-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Jira">
-                      <img
-                        src="/images/logos/jira.webp"
-                        alt="Jira Logo"
-                        class="jira-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Slack">
-                      <img
-                        src="/images/logos/slack-logo.svg"
-                        alt="Slack Logo"
-                        class="slack-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Microsoft Teams">
-                      <img
-                        src="/images/logos/teams-logo.svg"
-                        alt="Microsoft Teams Logo"
-                        class="teams-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Discord">
-                      <img
-                        src="images/logos/discord-logo.svg"
-                        alt="Discord Logo"
-                        class="discord-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                    <sl-tooltip content="Mattermost">
-                      <img
-                        src="images/logos/mattermost-logo.svg"
-                        alt="Mattermost Logo"
-                        class="mattermost-logo tool-logo"
-                      />
-                    </sl-tooltip>
-                  </div>
-                </div>
-              </section>
-            `}
+          <section class="tools-section main-section">
+            <div class="section-container">
+              <h2 class="text-center">Works with the tools you use</h2>
+              <div class="tool-logos">
+                <sl-tooltip content="GitHub">
+                  <img
+                    src="/images/logos/github-mark-white.svg"
+                    alt="GitHub Logo"
+                    class="github-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="GitLab">
+                  <img
+                    src="/images/logos/gitlab-logo-700-rgb.svg"
+                    alt="GitLab Logo"
+                    class="gitlab-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Jira">
+                  <img
+                    src="/images/logos/jira.webp"
+                    alt="Jira Logo"
+                    class="jira-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Slack">
+                  <img
+                    src="/images/logos/slack-logo.svg"
+                    alt="Slack Logo"
+                    class="slack-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Microsoft Teams">
+                  <img
+                    src="/images/logos/teams-logo.svg"
+                    alt="Microsoft Teams Logo"
+                    class="teams-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Discord">
+                  <img
+                    src="images/logos/discord-logo.svg"
+                    alt="Discord Logo"
+                    class="discord-logo tool-logo"
+                  />
+                </sl-tooltip>
+                <sl-tooltip content="Mattermost">
+                  <img
+                    src="images/logos/mattermost-logo.svg"
+                    alt="Mattermost Logo"
+                    class="mattermost-logo tool-logo"
+                  />
+                </sl-tooltip>
+              </div>
+            </div>
+          </section>
+        `}
         ${this._faqs.length > 0
           ? html`
               <section class="faq-section main-section">
