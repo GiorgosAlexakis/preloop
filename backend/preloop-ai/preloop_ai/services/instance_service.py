@@ -3,6 +3,7 @@
 This service:
 1. Creates/retrieves the local instance record on startup
 2. Sends version check POST to preloop.ai for telemetry
+3. Checks for updates periodically (default: once per day)
 """
 
 import asyncio
@@ -23,6 +24,13 @@ VERSION_CHECK_URL = "https://preloop.ai/api/v1/version"
 
 # Environment variable to disable telemetry
 DISABLE_TELEMETRY_ENV = "PRELOOP_DISABLE_TELEMETRY"
+
+# Version check interval (default: 24 hours)
+VERSION_CHECK_INTERVAL = int(os.getenv("VERSION_CHECK_INTERVAL", "86400"))
+
+# Global state for periodic checker
+_version_check_task: Optional[asyncio.Task] = None
+_current_instance: Optional["Instance"] = None
 
 
 def get_or_create_instance() -> Optional["Instance"]:
@@ -168,10 +176,69 @@ async def register_instance() -> None:
 
 
 async def _background_version_check(instance: "Instance") -> None:
-    """Background task to send version check."""
+    """Background task to send initial version check and start periodic checker."""
+    global _current_instance
+
     # Small delay to let the app fully start
     await asyncio.sleep(5)
 
+    _current_instance = instance
+
+    # Send initial version check
     success = await send_version_check(instance)
     if success:
-        logger.debug("Version check sent successfully")
+        logger.debug("Initial version check sent successfully")
+
+    # Start periodic version checker
+    _start_periodic_checker()
+
+
+async def _periodic_version_check_loop() -> None:
+    """Background loop that checks for updates periodically."""
+    global _current_instance
+
+    while True:
+        # Wait for the configured interval
+        await asyncio.sleep(VERSION_CHECK_INTERVAL)
+
+        if _current_instance is None:
+            logger.debug("No instance registered, skipping periodic version check")
+            continue
+
+        try:
+            success = await send_version_check(_current_instance)
+            if success:
+                logger.debug("Periodic version check completed")
+        except Exception as e:
+            logger.warning(f"Periodic version check failed: {e}")
+
+
+def _start_periodic_checker() -> None:
+    """Start the periodic version check background task."""
+    global _version_check_task
+
+    if os.getenv(DISABLE_TELEMETRY_ENV, "").lower() == "true":
+        logger.debug("Periodic version checker disabled (telemetry disabled)")
+        return
+
+    if _version_check_task is not None:
+        logger.debug("Periodic version checker already running")
+        return
+
+    logger.info(
+        f"Starting periodic version checker (interval: {VERSION_CHECK_INTERVAL}s)"
+    )
+    _version_check_task = asyncio.create_task(_periodic_version_check_loop())
+
+
+def stop_version_checker() -> None:
+    """Stop the periodic version checker.
+
+    Called during application shutdown.
+    """
+    global _version_check_task
+
+    if _version_check_task is not None:
+        _version_check_task.cancel()
+        _version_check_task = None
+        logger.info("Periodic version checker stopped")

@@ -416,11 +416,18 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                     session_manager.upgrade_session(session.id, auth_user, db)
                     user = auth_user  # Update local reference
 
-                    # Register with manager for account-based broadcasts
-                    if manager_connection_id is None:
-                        manager_connection_id = await manager.connect_with_account(
-                            websocket, str(user.account_id)
-                        )
+                    # Re-register with manager for account-based broadcasts
+                    # Remove old anonymous registration first
+                    if (
+                        manager_connection_id
+                        and manager_connection_id in manager.active_connections
+                    ):
+                        del manager.active_connections[manager_connection_id]
+
+                    # Register with account filtering for broadcast messages
+                    manager_connection_id = await manager.connect_with_account(
+                        websocket, str(user.account_id)
+                    )
 
                     await websocket.send_json(
                         {

@@ -371,6 +371,12 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Skipping execution wait (TESTING mode)")
 
+    # Stop version checker (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        from preloop_ai.services.instance_service import stop_version_checker
+
+        stop_version_checker()
+
     # Shutdown plugin system (skip in testing mode)
     if os.getenv("TESTING") != "true" and plugin_manager:
         logger.info("Shutting down plugin system...")

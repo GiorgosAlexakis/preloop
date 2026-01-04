@@ -187,7 +187,9 @@ export class UnifiedWebSocketManager {
       // Handle handshake
       if (message.type === 'handshake') {
         this.sessionId = message.session_id;
-        console.log(`Session established: ${this.sessionId}, authenticated: ${message.authenticated}`);
+        console.log(
+          `Session established: ${this.sessionId}, authenticated: ${message.authenticated}`
+        );
         return;
       }
 

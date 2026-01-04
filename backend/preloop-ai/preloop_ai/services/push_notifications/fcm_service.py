@@ -1,11 +1,17 @@
 """Firebase Cloud Messaging (FCM) service for Android push notifications."""
 
+import asyncio
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for FCM operations to avoid blocking the event loop
+_fcm_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="fcm_")
 
 # Global FCM service instance
 _fcm_initialized = False
@@ -76,32 +82,14 @@ def is_fcm_configured() -> bool:
     return bool(creds_json or (creds_path and os.path.exists(creds_path)))
 
 
-async def send_fcm_notification(
+def _send_fcm_sync(
     token: str,
     title: str,
     body: str,
     data: Optional[Dict[str, Any]] = None,
     priority: str = "high",
 ) -> Dict[str, Any]:
-    """Send a push notification via Firebase Cloud Messaging.
-
-    Args:
-        token: FCM device token.
-        title: Notification title.
-        body: Notification body.
-        data: Optional data payload.
-        priority: Message priority ("high" or "normal").
-
-    Returns:
-        Dict with send result including:
-            - success: bool
-            - message_id: str (if successful)
-            - error: str (if failed)
-            - invalid_token: bool (if token is invalid/expired)
-    """
-    if not _initialize_fcm():
-        return {"success": False, "error": "FCM not configured"}
-
+    """Synchronous FCM send - runs in thread pool to avoid blocking event loop."""
     try:
         from firebase_admin import messaging
 
@@ -131,7 +119,7 @@ async def send_fcm_notification(
             ),
         )
 
-        # Send message
+        # Send message (blocking HTTP call)
         response = messaging.send(message)
         logger.info(f"FCM notification sent: {response}")
 
@@ -155,3 +143,38 @@ async def send_fcm_notification(
             "error": error_str,
             "invalid_token": invalid_token,
         }
+
+
+async def send_fcm_notification(
+    token: str,
+    title: str,
+    body: str,
+    data: Optional[Dict[str, Any]] = None,
+    priority: str = "high",
+) -> Dict[str, Any]:
+    """Send a push notification via Firebase Cloud Messaging.
+
+    Runs the Firebase SDK call in a thread pool to avoid blocking the event loop.
+
+    Args:
+        token: FCM device token.
+        title: Notification title.
+        body: Notification body.
+        data: Optional data payload.
+        priority: Message priority ("high" or "normal").
+
+    Returns:
+        Dict with send result including:
+            - success: bool
+            - message_id: str (if successful)
+            - error: str (if failed)
+            - invalid_token: bool (if token is invalid/expired)
+    """
+    if not _initialize_fcm():
+        return {"success": False, "error": "FCM not configured"}
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _fcm_executor,
+        partial(_send_fcm_sync, token, title, body, data, priority),
+    )

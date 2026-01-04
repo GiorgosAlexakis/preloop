@@ -1,7 +1,9 @@
 """Session management for unified WebSocket connections."""
 
+import asyncio
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, Optional
@@ -12,6 +14,9 @@ from sqlalchemy.orm import Session
 from preloop_models.models import User, Event
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for DB operations to avoid blocking the event loop
+_db_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="session_db_")
 
 
 @dataclass
@@ -98,7 +103,7 @@ class SessionManager:
         self.sessions[session_id] = session
         self.connection_to_session[connection_id] = session_id
 
-        # Persist session_start event to database
+        # Persist session_start event to database (in thread pool to avoid blocking)
         activity = Event(
             session_id=uuid.UUID(session_id),
             user_id=session.user_id,
@@ -114,8 +119,12 @@ class SessionManager:
             },
         )
 
-        db.add(activity)
-        db.commit()
+        def _persist_event():
+            db.add(activity)
+            db.commit()
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_db_executor, _persist_event)
 
         logger.info(
             f"Created session {session_id} for "
@@ -145,7 +154,7 @@ class SessionManager:
         now = datetime.now(timezone.utc)
         duration_seconds = (now - session.connected_at).total_seconds()
 
-        # Persist session_end event to database
+        # Persist session_end event to database (in thread pool to avoid blocking)
         activity = Event(
             session_id=uuid.UUID(session_id),
             user_id=session.user_id,
@@ -160,8 +169,12 @@ class SessionManager:
             },
         )
 
-        db.add(activity)
-        db.commit()
+        def _persist_event():
+            db.add(activity)
+            db.commit()
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_db_executor, _persist_event)
 
         logger.info(
             f"Ended session {session_id} after {duration_seconds:.1f}s "
