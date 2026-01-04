@@ -663,7 +663,6 @@ export class ToolCard extends LitElement {
       gap: var(--sl-spacing-2x-small);
       padding: 2px 8px;
       background: var(--sl-color-primary-100);
-      color: var(--sl-color-primary-700);
       border-radius: 4px;
       font-size: var(--sl-font-size-x-small);
       font-weight: var(--sl-font-weight-semibold);

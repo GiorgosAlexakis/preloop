@@ -580,7 +580,6 @@ export class DashboardView extends AuthedElement {
       .tool-count-value {
         font-size: 1.5rem;
         font-weight: 700;
-        color: var(--sl-color-primary-600);
       }
       .tool-count-label {
         font-size: var(--sl-font-size-small);
@@ -695,7 +694,6 @@ export class DashboardView extends AuthedElement {
       .welcome-title {
         font-size: var(--sl-font-size-large);
         font-weight: 600;
-        color: var(--sl-color-primary-700);
         display: flex;
         align-items: center;
         gap: var(--sl-spacing-small);
@@ -756,7 +754,6 @@ export class DashboardView extends AuthedElement {
       .progress-text {
         font-size: var(--sl-font-size-small);
         font-weight: 500;
-        color: var(--sl-color-primary-700);
       }
       /* Analytics card styles */
       .analytics-grid {
@@ -1309,7 +1306,6 @@ export class DashboardView extends AuthedElement {
                       <span class="server-endpoint"
                         >${window.location.origin}/mcp/v1</span
                       >
-                      <span class="server-auth">Bearer Token</span>
                     </div>
                     <a href="/console/settings/api-keys" class="capsule-link">
                       Manage Keys
