@@ -22,6 +22,15 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+-   repo: local
+    hooks:
+      - id: frontend-format
+        name: Format frontend TypeScript
+        entry: bash -c 'cd frontend && npm run format'
+        language: system
+        files: ^frontend/src/.*\.ts$
+        pass_filenames: false
+
 # -   repo: local
 #     hooks:
 #     -   id: generate-openapi
