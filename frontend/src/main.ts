@@ -2,10 +2,10 @@ import * as Sentry from '@sentry/browser';
 
 const getEnvironment = () => {
   const hostname = window.location.hostname;
-  if (hostname === 'staging.preloop_ai.io') {
+  if (hostname === 'staging.preloop.ai') {
     return 'staging';
   }
-  if (hostname === 'preloop_ai.io') {
+  if (hostname === 'preloop.ai') {
     return 'production';
   }
   // Fallback to development for unknown domains

@@ -5,8 +5,8 @@
 image: alpine:3.22
 
 variables:
-  CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/preloop-ai
-  CI_REGISTRY_IMAGE_FRONTEND: $CI_REGISTRY/spacecode/preloop-ai/frontend
+  CI_REGISTRY_IMAGE: $CI_REGISTRY/spacecode/preloop
+  CI_REGISTRY_IMAGE_FRONTEND: $CI_REGISTRY/spacecode/preloop/frontend
   GITLAB_TOKEN: $GITLAB_TOKEN
   PRELOOP_TEST_PASSWORD: $PRELOOP_TEST_PASSWORD
   PRELOOP_TEST_USERNAME: $PRELOOP_TEST_USERNAME
@@ -89,7 +89,6 @@ pre-commit:
   before_script:
     - apt-get update && apt-get install -y git nodejs npm
     - pip install -U pip pre-commit ruff
-    - pip install --no-cache-dir -e ./backend/preloop-models && pip install --no-cache-dir -e ./backend/preloop-sync
     - pip install -e ".[dev]"
     - npm install -g prettier
   script:
@@ -139,9 +138,8 @@ frontend:unit-tests:
   before_script:
     - pip install -U pip
     - pip install pytest pytest-cov loguru
-    - pip install --no-cache-dir -e ./backend/preloop-models && pip install --no-cache-dir -e ./backend/preloop-sync
     - pip install -e ".[dev]"
-    - python ./backend/preloop-models/scripts/init_db.py --force
+    - python ./scripts/init_db.py --force
   script:
     - export ANTHROPIC_API_KEY="mock_openai_key"
     - export PYTHONPATH=$PYTHONPATH:.
@@ -156,7 +154,7 @@ frontend:unit-tests:
 test:unit:preloop-models:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-models/tests"
+    TEST_PATHS: "backend/tests/models"
 
 # test:unit:mcp:
 #   extends: .test:unit:template
@@ -166,42 +164,42 @@ test:unit:preloop-models:
 test:unit:preloop-sync:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-sync/tests"
+    TEST_PATHS: "backend/tests/sync"
 
 test:unit:preloop-other:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/test_*.py backend/preloop-ai/tests/tools backend/preloop-ai/tests/services"
+    TEST_PATHS: "backend/tests/test_*.py backend/tests/tools backend/tests/services"
 
 test:unit:preloop-endpoints-ai-models:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_ai_models.py"
+    TEST_PATHS: "backend/tests/endpoints/test_ai_models.py"
 
 test:unit:preloop-endpoints-auth:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_auth.py"
+    TEST_PATHS: "backend/tests/endpoints/test_auth.py"
 
 test:unit:preloop-endpoints-comments:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_comments.py"
+    TEST_PATHS: "backend/tests/endpoints/test_comments.py"
 
 test:unit:preloop-endpoints-embedding:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_embedding.py"
+    TEST_PATHS: "backend/tests/endpoints/test_embedding.py"
 
 test:unit:preloop-endpoints-flows:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_flows.py"
+    TEST_PATHS: "backend/tests/endpoints/test_flows.py"
 
 test:unit:preloop-endpoints-health:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_health.py"
+    TEST_PATHS: "backend/tests/endpoints/test_health.py"
 
 # test:unit:preloop-endpoints-issue-compliance:
 #   extends: .test:unit:template
@@ -211,17 +209,17 @@ test:unit:preloop-endpoints-health:
 test:unit:preloop-endpoints-issue-dependencies:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_dependencies.py"
+    TEST_PATHS: "backend/tests/endpoints/test_issue_dependencies.py"
 
 test:unit:preloop-endpoints-issue-duplicates:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicates.py"
+    TEST_PATHS: "backend/tests/endpoints/test_issue_duplicates.py"
 
 test:unit:preloop-endpoints-issues:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issues.py"
+    TEST_PATHS: "backend/tests/endpoints/test_issues.py"
 
 # test:unit:preloop-endpoints-organizations:
 #   extends: .test:unit:template
@@ -236,12 +234,12 @@ test:unit:preloop-endpoints-issues:
 test:unit:preloop-endpoints-search:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_search.py"
+    TEST_PATHS: "backend/tests/endpoints/test_search.py"
 
 test:unit:preloop-endpoints-trackers:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_trackers.py"
+    TEST_PATHS: "backend/tests/endpoints/test_trackers.py"
 
 # test:unit:preloop-endpoints-version:
 #   extends: .test:unit:template
@@ -251,29 +249,29 @@ test:unit:preloop-endpoints-trackers:
 test:unit:preloop-endpoints-webhooks:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_webhooks.py"
+    TEST_PATHS: "backend/tests/endpoints/test_webhooks.py"
 
 test:unit:preloop-endpoints-mcp:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_mcp.py"
+    TEST_PATHS: "backend/tests/endpoints/test_mcp.py"
 
 test:unit:preloop-endpoints-mcp-servers:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_mcp_servers.py"
+    TEST_PATHS: "backend/tests/endpoints/test_mcp_servers.py"
 
 test:unit:preloop-endpoints-tools:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_tools.py"
+    TEST_PATHS: "backend/tests/endpoints/test_tools.py"
 
 # test:unit:preloop-endpoints-issue-duplicate-stats:
 #   NOTE: This test was moved to plugins/analytics/tests/test_issue_duplicate_stats.py
 #   and is now run as part of the plugin tests
 #   extends: .test:unit:template
 #   variables:
-#     TEST_PATHS: "backend/preloop-ai/tests/endpoints/test_issue_duplicate_stats.py"
+#     TEST_PATHS: "backend/tests/endpoints/test_issue_duplicate_stats.py"
 
 # test:unit:preloop-endpoints-websockets:
 #   extends: .test:unit:template
@@ -283,17 +281,17 @@ test:unit:preloop-endpoints-tools:
 test:unit:preloop-agents:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/agents"
+    TEST_PATHS: "backend/tests/agents"
 
 test:unit:preloop-api:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/api"
+    TEST_PATHS: "backend/tests/api"
 
 test:unit:preloop-scripts:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/preloop-ai/tests/scripts"
+    TEST_PATHS: "backend/tests/scripts"
 
 test:coverage:
   stage: test
@@ -420,9 +418,9 @@ test:coverage:
     ENV_NAME: ""
   script:
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
-    - helm dependency update ./helm/preloop-ai
-    - helm dependency build ./helm/preloop-ai
-    - helm upgrade --install ${ENV_NAME} ./helm/preloop-ai
+    - helm dependency update ./helm/preloop
+    - helm dependency build ./helm/preloop
+    - helm upgrade --install ${ENV_NAME} ./helm/preloop
       --namespace ${NAMESPACE}
       --set image.tag=${CI_COMMIT_SHA}
       --set spacelit.tag=${CI_COMMIT_SHA}
@@ -527,7 +525,7 @@ deploy:review:
   before_script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install
-    - cd backend/preloop-ai
+    - cd backend
 
 test:integration:ui:
   extends: .test:integration:template
@@ -536,7 +534,7 @@ test:integration:ui:
   artifacts:
     when: on_failure
     paths:
-      - backend/preloop-ai/tests/integration/screenshots/
+      - backend/tests/integration/screenshots/
     expire_in: 7 days
 
 .test:integration:api:template:
@@ -544,7 +542,7 @@ test:integration:ui:
   image: python:3.12-alpine
   before_script:
     - pip install pytest httpx dotenv mcp
-    - cd backend/preloop-ai
+    - cd backend
 
 test:integration:api:github:
   extends: .test:integration:api:template

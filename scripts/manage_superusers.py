@@ -15,12 +15,12 @@ Usage:
 import sys
 from pathlib import Path
 
-# Add parent directory to path so we can import from preloop_models
+# Add parent directory to path so we can import from preloop.models
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy.orm import Session
-from preloop_models.db.session import get_db_session
-from preloop_models.models import User
+from preloop.models.db.session import get_db_session
+from preloop.models.models import User
 
 
 def promote_superuser(username_or_email: str, db: Session):

@@ -7,11 +7,11 @@ import os
 import click
 from dotenv import load_dotenv
 
-from preloop_models.crud import crud_account, crud_api_key, crud_user
-from preloop_models.db.session import get_db_session
-from preloop_models.db.setup import setup_database
-from preloop_ai.api.auth.jwt import get_password_hash
-from preloop_ai.schemas.auth import ApiKeyCreate
+from preloop.models.crud import crud_account, crud_api_key, crud_user
+from preloop.models.db.session import get_db_session
+from preloop.models.db.setup import setup_database
+from preloop.api.auth.jwt import get_password_hash
+from preloop.schemas.auth import ApiKeyCreate
 
 
 def assign_owner_role_if_available(db_session, user):
@@ -21,8 +21,8 @@ def assign_owner_role_if_available(db_session, user):
     In Enterprise builds, assigns the 'owner' role to give full access.
     """
     try:
-        from preloop_models.crud.permission import crud_user_role
-        from preloop_models.models.permission import Role
+        from preloop.models.crud.permission import crud_user_role
+        from preloop.models.models.permission import Role
 
         # Check if user already has owner role
         user_roles = crud_user_role.get_user_roles(db_session, user_id=user.id)

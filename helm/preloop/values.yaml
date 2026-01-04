@@ -1,0 +1,365 @@
+# Default values for the Preloop AI Helm chart
+
+# Replica count for the deployment
+replicaCount: 1
+
+# Image configuration
+image:
+  repository: registry.spacecode.ai/spacecode/preloop
+  pullPolicy: Always
+  tag: "latest"  # Overrides the image tag
+
+worker:
+  # -- Defines a list of worker pools to be deployed.
+  # Each pool can have its own replica count and a list of allowed tasks.
+  pools:
+    # -- The default worker pool, which runs all tasks.
+    - name: default
+      replicaCount: 1
+      tasks: "" # Empty string means all tasks
+    # -- An example of a specialized worker pool for polling tasks.
+    # - name: polling
+    #   replicaCount: 2
+    #   tasks: "poll_tracker"
+  # Worker resources (background tasks)
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+spacelit:
+  repository: registry.spacecode.ai/spacecode/spacelit
+  tag: "latest"
+  pullPolicy: Always
+  # SpaceLit frontend resources (nginx - lightweight)
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Service account configuration
+serviceAccount:
+  # Set to true to create a ServiceAccount for agent execution RBAC
+  create: true
+  annotations: {}
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext: {}
+
+# Security context
+securityContext: {}
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8000
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: preloop.ai
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - secretName: preloop-tls
+      hosts:
+        - preloop.ai
+        - www.preloop.ai
+        - api.preloop.ai
+        - install.preloop.ai
+
+# API server resources
+api:
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+# Scheduler resources
+scheduler:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Monitor resources
+monitor:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Autoscaling configuration
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity settings
+affinity: {}
+
+# Environment configuration
+environment:
+  preloopUrl: "https://preloop.ai"
+  preloopUrl: "https://preloop.ai"
+  debug: false
+  # Database settings
+  databaseUrl: ""
+  # JWT settings
+  jwtSecret: "b6fe6fa9-cf7c-4798-8328-f778712062df"
+  jwtAlgorithm: "HS256"
+  jwtExpireMinutes: 60
+
+# Configuration for external APIs
+config:
+  openai:
+    apiKey: ""
+  anthropic:
+    apiKey: ""
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+    from: ""
+    fromName: "Preloop AI"
+
+# Database configuration
+database:
+  # If true, deploys a PostgreSQL instance using CloudNativePG
+  enabled: true
+  # If external is true, uses an external PostgreSQL instance
+  external: false
+  # External database configuration (if external is true)
+  externalDatabase:
+    host: ""
+    port: 5432
+    user: ""
+    password: ""
+    database: ""
+  # CloudNativePG configuration (if enabled is true and external is false)
+  cnpg:
+    name: ""
+    instances: 1
+    imageName: registry.spacecode.ai/spacecode/pgvector:16
+    auth:
+      username: postgres
+      password: postgres
+      database: preloop
+    bootstrap:
+      initdb:
+        database: preloop
+        owner: postgres
+        postInitApplicationSQL:
+          - CREATE EXTENSION vector;
+    storage:
+      size: 1Gi
+      storageClass: ""
+    resources:
+      limits:
+        cpu: 1500m
+        memory: 2Gi
+      requests:
+        cpu: 100m
+        memory: 1Gi
+    # PGVector extension for vector search
+    pgvector:
+      enabled: true
+    parameters:
+      max_connections: "200"
+      shared_buffers: 512MB
+
+# Sentry configuration for error tracking
+sentry:
+  enabled: false
+  # The DSN for your Sentry project
+  dsn: ""
+
+# Performance profiling configuration
+profiling:
+  enabled: false
+  # Configuration for the PersistentVolumeClaim for storing profiling reports
+  storage:
+    pvc:
+      # If true, a PVC will be created
+      create: true
+      # If undefined or null, the default StorageClass will be used.
+      # Set to "-" to disable dynamic provisioning.
+      storageClassName: ""
+      # Size of the PVC
+      size: 1Gi
+
+# NATS configuration
+nats:
+  enabled: true
+  url: ""
+  config:
+    jetstream:
+      enabled: true
+  nats:
+    jetstream:
+      enabled: true
+
+# Stripe configuration
+stripe:
+  secretKey: ""
+  webhookSecret: ""
+
+# Apple Push Notification Service (APNS) configuration
+apns:
+  enabled: false
+  # Team ID from Apple Developer account
+  teamId: ""
+  # Key ID from Apple Developer portal
+  keyId: ""
+  # Base64-encoded APNS auth key (.p8 file contents)
+  authKey: ""
+  # App bundle identifier
+  bundleId: ""
+  # Use APNS sandbox environment (true for development, false for production)
+  useSandbox: false
+
+# Firebase Cloud Messaging (FCM) configuration for Android push notifications
+fcm:
+  enabled: false
+  # Firebase service account credentials JSON (base64-encoded or raw JSON string)
+  # Get this from Firebase Console > Project Settings > Service Accounts > Generate new private key
+  credentialsJson: ""
+
+# Test user seeding configuration
+seed:
+  enabled: false
+  username: "test"
+  email: "test@example.com"
+  password: ""
+  apiKey: ""
+
+cleanup:
+  enabled: false
+
+# Agent execution configuration
+agentExecution:
+  # Namespace for running agent containers
+  namespace:
+    # If true, creates a separate namespace for agent execution (recommended for production)
+    # If false, agents run in the same namespace as Preloop AI (easier for testing/PoC)
+    create: false
+    # Name of the namespace for agent execution (only used if create: true)
+    # If create is false, agents run in the same namespace as Preloop AI
+    name: "agent-executions"
+
+  # RBAC configuration for agent execution
+  rbac:
+    # If true, creates Role and RoleBinding for agent management
+    create: true
+
+  # NetworkPolicy configuration for agent isolation
+  networkPolicy:
+    # If true, creates NetworkPolicy for agent namespace
+    enabled: true
+    # Allow agent pods to call Preloop AI API for MCP tools
+    allowPreloopAPI: true
+    # Allow agent pods to call external LLM APIs (Anthropic, OpenAI)
+    allowExternalLLMAPIs: true
+    # CIDR ranges to exclude from external egress (internal cluster networks)
+    # Adjust these based on your cluster's network configuration
+    excludeCIDRs:
+      - "10.0.0.0/8"      # Private network (adjust if your cluster uses this)
+      - "172.16.0.0/12"   # Private network (adjust if your cluster uses this)
+      - "192.168.0.0/16"  # Private network (adjust if your cluster uses this)
+    # Additional egress rules (optional)
+    additionalEgressRules: []
+
+  # ResourceQuota for agent execution namespace
+  resourceQuota:
+    # Maximum number of concurrent Jobs
+    maxJobs: "50"
+    # Maximum number of concurrent Pods
+    maxPods: "100"
+    # Total CPU requests allowed across all pods
+    requestsCpu: "50"
+    # Total memory requests allowed across all pods
+    requestsMemory: "100Gi"
+    # Total CPU limits allowed across all pods
+    limitsCpu: "100"
+    # Total memory limits allowed across all pods
+    limitsMemory: "200Gi"
+
+  # LimitRange for individual agent containers
+  limitRange:
+    container:
+      # Maximum resources per container
+      maxCpu: "2"
+      maxMemory: "4Gi"
+      # Minimum resources per container
+      minCpu: "100m"
+      minMemory: "128Mi"
+      # Default limits if not specified
+      defaultCpu: "1"
+      defaultMemory: "2Gi"
+      # Default requests if not specified
+      defaultRequestCpu: "250m"
+      defaultRequestMemory: "512Mi"
+    pod:
+      # Maximum resources per pod
+      maxCpu: "4"
+      maxMemory: "8Gi"
+
+  # Container images for agent execution
+  images:
+    # Simple LLM agent (recommended for production)
+    simpleLLM:
+      repository: "registry.spacecode.ai/spacecode/simple-llm-agent"
+      tag: "latest"
+      pullPolicy: "Always"
+    # OpenHands agent (experimental, requires more resources)
+    openHands:
+      repository: "ghcr.io/all-hands-ai/openhands"
+      tag: "latest"
+      pullPolicy: "Always"
+
+  # Agent execution timeout (seconds)
+  defaultTimeout: 3600
+
+  # Job cleanup configuration
+  jobCleanup:
+    # TTL for completed Jobs (seconds)
+    ttlSecondsAfterFinished: 3600
+    # TTL for failed Jobs (seconds)
+    ttlSecondsAfterFailed: 7200

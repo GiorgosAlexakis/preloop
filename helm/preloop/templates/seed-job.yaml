@@ -1,0 +1,35 @@
+{{- if .Values.seed.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "preloop.fullname" . }}-seed-job
+  labels:
+    {{- include "preloop.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "preloop.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed-runner
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+          command: ["python", "/app/scripts/seed_test_user.py"]
+          env:
+            - name: DATABASE_URL
+              value: {{ include "preloop.databaseUrl" . }}
+            - name: TEST_USER_EMAIL
+              value: {{ .Values.seed.email | quote }}
+            - name: TEST_USER_USERNAME
+              value: {{ .Values.seed.username | quote }}
+            - name: TEST_USER_PASSWORD
+              value: {{ .Values.seed.password | quote }}
+            - name: TEST_USER_API_KEY
+              value: {{ .Values.seed.apiKey | quote }}
+{{- end }}

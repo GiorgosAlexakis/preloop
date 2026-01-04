@@ -1,10 +1,10 @@
 # SpaceLit
 
-This directory contains the new Preloop AI frontend, a modern web application built with Lit, Vite, and TypeScript. It follows the Material v3 design system using Material Web Components.
+This directory contains the new Preloop frontend, a modern web application built with Lit, Vite, and TypeScript. It follows the Material v3 design system using Material Web Components.
 
 ## Description
 
-This frontend is a single-page application (SPA) that provides a rich, interactive user experience for managing issue trackers through the Preloop AI API. It is designed to be fast, responsive, and maintainable.
+This frontend is a single-page application (SPA) that provides a rich, interactive user experience for managing issue trackers through the Preloop API. It is designed to be fast, responsive, and maintainable.
 
 ## Development
 

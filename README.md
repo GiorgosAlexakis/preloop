@@ -47,9 +47,9 @@ Preloop is an open-source, event-driven automation platform with built-in human-
 
 Preloop is designed with a modular architecture:
 
-1.  **Preloop AI** (`./backend/preloop-ai`): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
-2.  **Preloop Models** (`./backend/preloop-models`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
-3.  **Preloop Sync** (`./backend/preloop-sync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
+1.  **Preloop** (`./backend/preloop`): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
+2.  **Preloop Models** (`./backend/preloop/models`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
+3.  **Preloop Sync** (`./backend/preloop/sync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
 4.  **Preloop Console** (`./frontend`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
 
 This structure allows:
@@ -74,8 +74,8 @@ The Preloop Console is in the `frontend` directory. It is built using modern web
 
 ```bash
 # Clone the repository
-git clone https://github.com/spacecode/preloop-ai.git
-cd preloop-ai
+git clone https://github.com/spacecode/preloop.git
+cd preloop
 
 # Create and activate a virtual environment
 python -m venv .venv
@@ -95,7 +95,7 @@ cp .env.example .env
 
 ### Environment Variables
 
-Preloop AI is configured via environment variables. Copy `.env.example` to `.env` and customize as needed.
+Preloop is configured via environment variables. Copy `.env.example` to `.env` and customize as needed.
 
 #### Core Settings
 
@@ -135,8 +135,8 @@ To invite users when registration is disabled, use the admin API or CLI (Enterpr
 
 ```bash
 # Clone the repository
-git clone https://github.com/spacecode/preloop-ai.git
-cd preloop-ai
+git clone https://github.com/spacecode/preloop.git
+cd preloop
 
 # Run with Docker Compose
 docker-compose up
@@ -144,7 +144,7 @@ docker-compose up
 
 ### Kubernetes Setup
 
-Preloop AI can be deployed to Kubernetes using the provided Helm chart:
+Preloop can be deployed to Kubernetes using the provided Helm chart:
 
 ```bash
 # Add the Spacecode Helm repository (if available)
@@ -152,13 +152,13 @@ Preloop AI can be deployed to Kubernetes using the provided Helm chart:
 # helm repo update
 
 # Install from the local chart
-helm install preloop-ai ./helm/preloop-ai
+helm install preloop ./helm/preloop
 
 # Or install with custom values
-helm install preloop-ai ./helm/preloop-ai --values custom-values.yaml
+helm install preloop ./helm/preloop --values custom-values.yaml
 ```
 
-For more details about the Helm chart, see the [chart README](./helm/preloop-ai/README.md).
+For more details about the Helm chart, see the [chart README](./helm/preloop/README.md).
 
 ## Usage
 
@@ -167,12 +167,12 @@ For more details about the Helm chart, see the [chart README](./helm/preloop-ai/
 1.  **Set Environment Variables:**
     Ensure you have a `.env` file configured with the necessary environment variables (see `.env.example`). Key variables include database connection details, API keys, etc.
 
-2.  **Start Preloop AI API:**
+2.  **Start Preloop API:**
     Use the provided script to start the main API server:
     ```bash
     ./start.sh
     ```
-    This script typically handles activating the virtual environment and running the server (e.g., `python -m preloop_ai.server`).
+    This script typically handles activating the virtual environment and running the server (e.g., `python -m preloop.server`).
 
 3.  **Start Preloop Sync Service:**
     In a separate terminal, start the synchronization service to begin indexing data from your configured trackers:
@@ -199,13 +199,13 @@ http://localhost:8000/openapi.json
 
 ### Using the REST API
 
-Preloop AI provides a RESTful HTTP API:
+Preloop provides a RESTful HTTP API:
 
 ```python
 import requests
 import json
 
-# Base URL for the Preloop AI API
+# Base URL for the Preloop API
 base_url = "http://localhost:8000/api/v1"
 
 # Authenticate and get a token
@@ -258,7 +258,7 @@ print(json.dumps(issue.json(), indent=2))
 
 ## API Endpoints
 
-Preloop AI provides a RESTful API with the following key endpoints:
+Preloop provides a RESTful API with the following key endpoints:
 
 ### Authentication
 - `POST /api/v1/auth/token` - Get authentication token
@@ -334,7 +334,7 @@ Preloop AI provides a RESTful API with the following key endpoints:
 
 ### Unified WebSocket
 
-Preloop AI uses a unified WebSocket connection for real-time updates across the application:
+Preloop uses a unified WebSocket connection for real-time updates across the application:
 
 **Connection:** `ws://localhost:8000/api/v1/ws/unified`
 
@@ -368,7 +368,7 @@ unsubscribe();
 
 ### Using MCP Tools via API
 
-The Preloop AI API now includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
+The Preloop API now includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
 
 **Authentication:** All MCP endpoints use the same Bearer Token authentication as the rest of the API.
 
@@ -376,23 +376,23 @@ The Preloop AI API now includes integrated MCP tool endpoints with dynamic tool 
 
 **Connecting with Claude Code:**
 
-You can connect Claude Code directly to your Preloop AI instance using the `claude mcp add` command.
+You can connect Claude Code directly to your Preloop instance using the `claude mcp add` command.
 
-1.  **Get your Preloop AI API Key:** You can find or create an API key in your Preloop AI user settings.
-2.  **Add the MCP Server:** Run the following command, replacing `YOUR_PRELOOP_AI_URL` and `YOUR_API_KEY` with your details.
+1.  **Get your Preloop API Key:** You can find or create an API key in your Preloop user settings.
+2.  **Add the MCP Server:** Run the following command, replacing `YOUR_PRELOOP_URL` and `YOUR_API_KEY` with your details.
 
     ```bash
     claude mcp add \
       --transport http \
       --header "Authorization: Bearer YOUR_API_KEY" \
-      preloop_ai \
-      https://YOUR_PRELOOP_AI_URL/mcp/v1
+      preloop \
+      https://YOUR_PRELOOP_URL/mcp/v1
     ```
 
     - `--transport http`: Specifies that the server uses the HTTP transport.
     - `--header "Authorization: Bearer YOUR_API_KEY"`: Provides the necessary authentication header for all requests.
-    - `preloop_ai`: This is the name you will use to refer to the server (e.g., `@preloop_ai get_issue ...`).
-    - `https://YOUR_PRELOOP_AI_URL/mcp/v1`: This is the base URL for the Preloop AI MCP endpoints.
+    - `preloop`: This is the name you will use to refer to the server (e.g., `@preloop get_issue ...`).
+    - `https://YOUR_PRELOOP_URL/mcp/v1`: This is the base URL for the Preloop MCP endpoints.
 
 **Example Workflow (using `curl`):**
 
@@ -400,7 +400,7 @@ If you are not using an MCP client and want to interact with the tool endpoints 
 
 1.  **Create an Issue:**
     ```bash
-    curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/mcp/create_issue" \
+    curl -X POST "https://YOUR_PRELOOP_URL/api/v1/mcp/create_issue" \
     -H "Authorization: Bearer YOUR_API_KEY" \
     -H "Content-Type: application/json" \
     -d '{
@@ -412,7 +412,7 @@ If you are not using an MCP client and want to interact with the tool endpoints 
 
 ### Tool Approval Workflows
 
-Preloop AI provides approval workflows for tool execution. Control which operations require approval before execution.
+Preloop provides approval workflows for tool execution. Control which operations require approval before execution.
 
 **Key Concepts:**
 - **Tool Configuration**: Enable/disable tools and assign approval policies
@@ -422,7 +422,7 @@ Preloop AI provides approval workflows for tool execution. Control which operati
 **Example: Create an Approval Policy**
 
 ```bash
-curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/approval-policies" \
+curl -X POST "https://YOUR_PRELOOP_URL/api/v1/approval-policies" \
 -H "Authorization: Bearer YOUR_API_KEY" \
 -H "Content-Type: application/json" \
 -d '{
@@ -439,12 +439,12 @@ curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/approval-policies" \
 **Configure a tool to require approval:**
 
 ```bash
-curl -X POST "https://YOUR_PRELOOP_AI_URL/api/v1/tool-configurations" \
+curl -X POST "https://YOUR_PRELOOP_URL/api/v1/tool-configurations" \
 -H "Authorization: Bearer YOUR_API_KEY" \
 -H "Content-Type: application/json" \
 -d '{
   "tool_name": "update_issue",
-  "tool_source": "preloop_ai_builtin",
+  "tool_source": "preloop_builtin",
   "is_enabled": true,
   "approval_policy_id": "<policy_id_from_above>"
 }'
@@ -487,7 +487,7 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Testing
 
-Preloop AI uses pytest for unit and integration testing. The test suite covers API endpoints, database models, and tracker integrations.
+Preloop uses pytest for unit and integration testing. The test suite covers API endpoints, database models, and tracker integrations.
 
 ### Running Tests
 
@@ -565,6 +565,6 @@ Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING
 
 ## License
 
-Preloop AI is open source software licensed under the [Apache License 2.0](LICENSE).
+Preloop is open source software licensed under the [Apache License 2.0](LICENSE).
 
 Copyright (c) 2025 Spacecode AI Inc.

@@ -1,6 +1,6 @@
-# Preloop AI Examples
+# Preloop Examples
 
-This directory contains example code for working with Preloop AI.
+This directory contains example code for working with Preloop.
 
 ## Example MCP Server
 
@@ -58,16 +58,16 @@ The example MCP server can be deployed to the Kubernetes cluster via GitLab CI:
 
 See `.gitlab-ci.yml` for job definitions and `helm/example-mcp-server/` for Helm chart details.
 
-### Adding to Preloop AI
+### Adding to Preloop
 
-Once the server is running (locally, via Docker, or on Kubernetes), add it to Preloop AI:
+Once the server is running (locally, via Docker, or on Kubernetes), add it to Preloop:
 
 #### Via API
 
 ```bash
 # For local development
 curl -X POST https://preloop.ai/api/v1/mcp-servers \
-  -H "Authorization: Bearer YOUR_PRELOOP_AI_API_KEY" \
+  -H "Authorization: Bearer YOUR_PRELOOP_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Example MCP Server",
@@ -80,7 +80,7 @@ curl -X POST https://preloop.ai/api/v1/mcp-servers \
 
 # For deployed environment
 curl -X POST https://preloop.ai/api/v1/mcp-servers \
-  -H "Authorization: Bearer YOUR_PRELOOP_AI_API_KEY" \
+  -H "Authorization: Bearer YOUR_PRELOOP_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Example MCP Server",
@@ -92,7 +92,7 @@ curl -X POST https://preloop.ai/api/v1/mcp-servers \
   }'
 ```
 
-#### Via Preloop AI UI
+#### Via Preloop UI
 
 1. Navigate to Settings > MCP Servers
 2. Click "Add MCP Server"
@@ -113,7 +113,7 @@ The example server is designed to test approval policies in flows:
 
 #### Create Approval Policy
 
-1. In Preloop AI, create an approval policy for the `add` tool:
+1. In Preloop, create an approval policy for the `add` tool:
 ```json
 {
   "tool_name": "add",
@@ -123,7 +123,7 @@ The example server is designed to test approval policies in flows:
 }
 ```
 
-2. Test the policy by calling the `add` tool through Preloop AI in a flow
+2. Test the policy by calling the `add` tool through Preloop in a flow
 3. The request should be pending approval
 4. Approve it via the UI or API
 5. The tool should execute and return the result

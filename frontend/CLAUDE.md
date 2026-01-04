@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SpaceLit is a modern web application frontend for Preloop AI, built with:
+SpaceLit is a modern web application frontend for Preloop, built with:
 - **Lit** (Web Components framework)
 - **TypeScript** for type safety
 - **Vaadin components** for UI (Vaadin router, forms, layouts)
@@ -12,7 +12,7 @@ SpaceLit is a modern web application frontend for Preloop AI, built with:
 - **Vite** for build tooling and development server
 - **Chart.js** for data visualization
 
-The application is a single-page application (SPA) that provides an interface for managing issue trackers through the Preloop AI API.
+The application is a single-page application (SPA) that provides an interface for managing issue trackers through the Preloop API.
 
 ## Development Commands
 

@@ -1,0 +1,71 @@
+{{- if and .Values.database.enabled (not .Values.database.external) }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.database.cnpg.name | default (printf "%s-db" (include "preloop.fullname" .)) }}
+  labels:
+    {{- include "preloop.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.database.cnpg.instances }}
+  imageName: {{ .Values.database.cnpg.imageName }}
+  primaryUpdateStrategy: unsupervised
+  parameters: {{ .Values.database.cnpg.parameters }}
+  # Enable pgvector extension if requested
+  {{- if .Values.database.cnpg.pgvector.enabled }}
+  bootstrap:
+    initdb:
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS vector;
+        - ALTER USER {{ .Values.database.cnpg.auth.username }} WITH PASSWORD '{{ .Values.database.cnpg.auth.password }}';
+  {{- end }}
+
+  # User management
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: {{ include "preloop.fullname" . }}-db-superuser
+  bootstrap:
+    initdb:
+      postInitTemplateSQL: {{ .Values.database.cnpg.bootstrap.initdb.postInitTemplateSQL }}
+      database: {{ .Values.database.cnpg.bootstrap.initdb.database }}
+      owner: {{ .Values.database.cnpg.bootstrap.initdb.owner }}
+      secret:
+        name: {{ .Release.Name }}-db-user
+    # recovery:
+    #   database: {{ .Values.database.cnpg.auth.database }}
+    #   owner: {{ .Values.database.cnpg.auth.username }}
+    #   secret:
+    #     name: {{ include "preloop.fullname" . }}-db-user
+
+  # Storage configuration
+  storage:
+    size: {{ .Values.database.cnpg.storage.size }}
+    {{- with .Values.database.cnpg.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+
+  # Resources
+  resources:
+    {{- toYaml .Values.database.cnpg.resources | nindent 4 }}
+
+---
+# Superuser secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "preloop.fullname" . }}-db-superuser
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: {{ .Values.database.cnpg.auth.password }}
+
+---
+# Regular user secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "preloop.fullname" . }}-db-user
+type: kubernetes.io/basic-auth
+stringData:
+  username: {{ .Values.database.cnpg.auth.username }}
+  password: {{ .Values.database.cnpg.auth.password }}
+{{- end }}

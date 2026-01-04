@@ -12,9 +12,9 @@ import sys
 import stripe
 
 
-from preloop_ai.config import settings
-from preloop_models.models import Subscription
-from preloop_models.db.session import get_db_session
+from preloop.config import settings
+from preloop.models.models import Subscription
+from preloop.models.db.session import get_db_session
 
 
 # Add the project root to the Python path

@@ -90,7 +90,7 @@ export class RequestDemoView extends LitElement {
         headcount: this._headcount,
         trackers: this._trackers,
         comments: this._comments,
-        source: 'request-demo preloop-ai',
+        source: 'request-demo preloop',
       }),
     });
 

@@ -19,10 +19,10 @@ from typing import List
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, aliased, joinedload
 
-from preloop_models.db.session import get_db_session
-from preloop_models.models import Organization, Project, Tracker, Webhook
-from preloop_sync.scanner.core import TrackerClient
-from preloop_sync.exceptions import TrackerAuthenticationError
+from preloop.models.db.session import get_db_session
+from preloop.models.models import Organization, Project, Tracker, Webhook
+from preloop.sync.scanner.core import TrackerClient
+from preloop.sync.exceptions import TrackerAuthenticationError
 
 
 def verify_webhooks(db: Session, auto_delete: bool = False, auto_create: bool = False):

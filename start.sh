@@ -44,7 +44,7 @@ fi
 
 # Initialize database tables, embedding model, and AI model using Alembic
 echo "Initializing database schema, embedding model, and AI model..."
-python backend/preloop-models/scripts/init_db.py --force
+python scripts/init_db.py --force
 # Default parameters
 API_PORT=8000
 DEBUG="true"
@@ -124,4 +124,4 @@ if [ -z "$VIRTUAL_ENV" ]; then
 fi
 
 # Start the API server in the foreground
-python -m preloop_ai.server --port "$API_PORT" $debug_flag $test_data_flag
+python -m preloop.server --port "$API_PORT" $debug_flag $test_data_flag

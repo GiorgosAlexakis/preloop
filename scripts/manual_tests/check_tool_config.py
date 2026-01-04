@@ -4,8 +4,8 @@ import asyncio
 import os
 
 from sqlalchemy import select
-from preloop_models.db.session import get_async_db_session
-from preloop_models.models import ApprovalPolicy, ToolConfiguration
+from preloop.models.db.session import get_async_db_session
+from preloop.models.models import ApprovalPolicy, ToolConfiguration
 
 
 async def check_approval_config(tool_name: str = "estimate_compliance"):

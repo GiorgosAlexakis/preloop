@@ -15,6 +15,7 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "greenlet>=3.0.0",  # Required for SQLAlchemy async operations
     "psycopg[binary]>=3.1.12",
+    "psycopg2-binary>=2.9.0",  # Required for SQLAlchemy sync engine
     "pgvector>=0.2.0",
     "pydantic>=2.4.0",
     "pydantic-settings>=2.0.0",
@@ -39,13 +40,25 @@ dependencies = [
     "kubernetes_asyncio>=30.5.0", # Added for Kubernetes agent execution
     "cel-python>=0.1.0", # Added for CEL expression evaluation in approval rules
     "python-dotenv>=1.2.1",
+    # Dependencies from preloop-models
+    "alembic>=1.10.0",
+    "numpy>=1.24.0",
+    "openai>=1.75.0",
+    "asyncpg>=0.29.0",
+    # Dependencies from preloop-sync
+    "click>=8.0.0",
+    "python-gitlab>=4.0.0",
+    "APScheduler>=3.0.0",
+    "pytz>=2025.2",
+    "jira>=3.8.0",
 ]
 
-[tool.setuptools]
-packages = ["preloop_ai"]
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["preloop", "preloop.*"]
 
-[tool.setuptools.package-dir]
-preloop_ai = "backend/preloop-ai/preloop_ai"
+[project.scripts]
+preloop-sync = "preloop.sync.cli.commands:run"
 
 [project.optional-dependencies]
 dev = [
@@ -57,7 +70,6 @@ dev = [
     "black>=23.7.0",
     "isort>=5.12.0",
     "mypy>=1.5.1",
-    "ruff>=0.0.287",
     "pymdown-extensions>=10.0",
     "pre-commit>=4.2.0",
     "ruff>=0.11.3",
@@ -89,7 +101,7 @@ disallow_incomplete_defs = true
 explicit_package_bases = true
 namespace_packages = true
 mypy_path = "backend"
-exclude = ["backend/preloop-models/conftest.py"]
+exclude = ["backend/preloop/models/conftest.py"]
 
 [tool.ruff]
 line-length = 88
@@ -111,14 +123,12 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
 testpaths = [
-    "backend/preloop-ai/tests",
-    "backend/preloop-models/tests",
-    "backend/preloop-sync/tests",
+    "backend/tests",
 ]
 # Exclude proprietary plugin tests - they should be run from preloop-ee context
 # Exclude scripts directory - contains manual test scripts, not unit tests
 norecursedirs = [
-    "backend/preloop-ai/preloop_ai/plugins/proprietary",
+    "backend/preloop/plugins/proprietary",
     "plugins",
     "scripts",
 ]
@@ -152,17 +162,13 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = [
-    "preloop_ai",
-    "preloop_models",
-    "preloop_sync",
+    "preloop",
 ]
 relative_files = true
 
 [tool.coverage.paths]
 source = [
-    "backend/preloop-ai/preloop_ai",
-    "backend/preloop-models/preloop_models",
-    "backend/preloop-sync/preloop_sync",
+    "backend/preloop",
 ]
 
 [tool.coverage.report]

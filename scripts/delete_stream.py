@@ -19,10 +19,10 @@ logging.basicConfig(
 
 # Attempt to import settings
 try:
-    from preloop_ai.config import settings
+    from preloop.config import settings
 except ImportError:
     logging.error(
-        "Could not import settings from preloop_ai.config. "
+        "Could not import settings from preloop.config. "
         "Please ensure that the script is run from the root of the project "
         "and the project is installed in editable mode (e.g., 'pip install -e .')."
     )

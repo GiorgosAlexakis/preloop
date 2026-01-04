@@ -26,10 +26,10 @@ async def list_flow_containers() -> List[Dict[str, Any]]:
     docker = aiodocker.Docker()
 
     try:
-        # Get containers with preloop_ai labels
+        # Get containers with preloop labels
         # Docker API expects label filters as a list
         containers = await docker.containers.list(
-            all=True, filters={"label": ["preloop_ai.agent_type"]}
+            all=True, filters={"label": ["preloop.agent_type"]}
         )
 
         container_info = []
@@ -42,9 +42,9 @@ async def list_flow_containers() -> List[Dict[str, Any]]:
             container_data = {
                 "id": container.id,
                 "short_id": container.id[:12],
-                "flow_id": labels.get("preloop_ai.flow_id"),
-                "execution_id": labels.get("preloop_ai.execution_id"),
-                "agent_type": labels.get("preloop_ai.agent_type"),
+                "flow_id": labels.get("preloop.flow_id"),
+                "execution_id": labels.get("preloop.execution_id"),
+                "agent_type": labels.get("preloop.agent_type"),
                 "status": state["Status"],
                 "running": state["Running"],
                 "exit_code": state.get("ExitCode"),

@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "preloop.fullname" . }}-migration-job
+  labels:
+    {{- include "preloop.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "preloop.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migration-runner
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+          command: ["/bin/sh", "-c"]
+          args: ["cd /app/backend/preloop/models && alembic upgrade head"]
+          env:
+            - name: DATABASE_URL
+              value: {{ include "preloop.databaseUrl" . }}
