@@ -481,7 +481,7 @@ By default, Preloop checks for version updates by contacting https://preloop.ai 
 
 **Privacy**: Only instance UUID, version number, and IP address are sent. No user data is transmitted.
 
-**Opt-out**: Set `DISABLE_VERSION_CHECK=true` to disable version checking entirely.
+**Opt-out**: Set `PRELOOP_DISABLE_TELEMETRY=true` or `DISABLE_VERSION_CHECK=true` to disable version checking and telemetry entirely.
 
 For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 

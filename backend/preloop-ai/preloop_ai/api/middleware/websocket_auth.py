@@ -13,11 +13,16 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
-# WebSocket paths that require authentication
-AUTHENTICATED_WS_PATHS = {"/ws"}
+# WebSocket paths that require authentication (with and without API prefix)
+AUTHENTICATED_WS_PATHS = {"/ws", "/api/v1/ws"}
 
-# WebSocket paths that allow anonymous connections
-ANONYMOUS_WS_PATHS = {"/ws/unified", "/ws/execution"}
+# WebSocket paths that allow anonymous connections (with and without API prefix)
+ANONYMOUS_WS_PATHS = {
+    "/ws/unified",
+    "/api/v1/ws/unified",
+    "/ws/execution",
+    "/api/v1/ws/execution",
+}
 
 
 class WebSocketAuthMiddleware:

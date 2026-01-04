@@ -12,6 +12,7 @@ from fastapi import WebSocket
 from sqlalchemy.orm import Session
 
 from preloop_models.models import User, Event
+from preloop_models.db.session import get_db_session
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +121,13 @@ class SessionManager:
         )
 
         def _persist_event():
-            db.add(activity)
-            db.commit()
+            # Create a new session for thread-safety (SQLAlchemy sessions are not thread-safe)
+            thread_db = next(get_db_session())
+            try:
+                thread_db.add(activity)
+                thread_db.commit()
+            finally:
+                thread_db.close()
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(_db_executor, _persist_event)
@@ -170,8 +176,13 @@ class SessionManager:
         )
 
         def _persist_event():
-            db.add(activity)
-            db.commit()
+            # Create a new session for thread-safety (SQLAlchemy sessions are not thread-safe)
+            thread_db = next(get_db_session())
+            try:
+                thread_db.add(activity)
+                thread_db.commit()
+            finally:
+                thread_db.close()
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(_db_executor, _persist_event)

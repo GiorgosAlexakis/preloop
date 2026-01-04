@@ -22,8 +22,23 @@ logger = logging.getLogger(__name__)
 # Preloop.ai version check endpoint
 VERSION_CHECK_URL = "https://preloop.ai/api/v1/version"
 
-# Environment variable to disable telemetry
+# Environment variables to disable telemetry (accept both for backwards compatibility)
 DISABLE_TELEMETRY_ENV = "PRELOOP_DISABLE_TELEMETRY"
+DISABLE_VERSION_CHECK_ENV = "DISABLE_VERSION_CHECK"
+
+
+def is_telemetry_disabled() -> bool:
+    """Check if telemetry is disabled via environment variables.
+
+    Accepts both PRELOOP_DISABLE_TELEMETRY and DISABLE_VERSION_CHECK for
+    backwards compatibility with documentation.
+    """
+    return os.getenv(DISABLE_TELEMETRY_ENV, "").lower() in (
+        "true",
+        "1",
+        "yes",
+    ) or os.getenv(DISABLE_VERSION_CHECK_ENV, "").lower() in ("true", "1", "yes")
+
 
 # Version check interval (default: 24 hours)
 VERSION_CHECK_INTERVAL = int(os.getenv("VERSION_CHECK_INTERVAL", "86400"))
@@ -116,7 +131,7 @@ async def send_version_check(instance: "Instance") -> bool:
     Returns:
         True if successful, False otherwise.
     """
-    if os.getenv(DISABLE_TELEMETRY_ENV, "").lower() == "true":
+    if is_telemetry_disabled():
         logger.debug("Telemetry disabled via environment variable")
         return False
 
@@ -217,7 +232,7 @@ def _start_periodic_checker() -> None:
     """Start the periodic version check background task."""
     global _version_check_task
 
-    if os.getenv(DISABLE_TELEMETRY_ENV, "").lower() == "true":
+    if is_telemetry_disabled():
         logger.debug("Periodic version checker disabled (telemetry disabled)")
         return
 
