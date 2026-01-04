@@ -106,7 +106,7 @@ export class ToolsView extends LitElement {
 
       .tools-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        grid-template-columns: repeat(4, 1fr);
         gap: 28px;
         padding-top: var(--sl-spacing-medium);
       }
@@ -119,12 +119,26 @@ export class ToolsView extends LitElement {
       }
 
       @media (max-width: 1400px) {
+        .tools-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
         .servers-grid {
           grid-template-columns: repeat(2, 1fr);
         }
       }
 
+      @media (max-width: 1100px) {
+        .tools-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
       @media (max-width: 900px) {
+        .tools-grid {
+          grid-template-columns: 1fr;
+        }
+
         .servers-grid {
           grid-template-columns: 1fr;
         }
@@ -145,22 +159,10 @@ export class ToolsView extends LitElement {
         height: 200px;
       }
 
-      .empty-state {
-        text-align: center;
-        padding: 3rem;
-        color: var(--sl-color-neutral-600);
-      }
-
       .builtin-server-card {
         display: flex;
         flex-direction: column;
         height: 100%;
-      }
-
-      .builtin-card-content {
-        flex-grow: 1;
-        display: flex;
-        flex-direction: column;
       }
 
       .builtin-server-header {
@@ -798,7 +800,7 @@ export class ToolsView extends LitElement {
 
     return html`
       <sl-card class="builtin-server-card">
-        <div class="builtin-card-content">
+        <div class="card-content">
           <div class="builtin-server-header">
             <h3 class="builtin-server-name">Preloop AI MCP Server</h3>
             <sl-badge variant="primary" size="small">Built-in</sl-badge>

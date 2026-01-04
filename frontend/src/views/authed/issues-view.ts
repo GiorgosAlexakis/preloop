@@ -159,11 +159,6 @@ export class IssuesView extends LitElement {
         gap: var(--sl-spacing-medium);
         z-index: 10000;
       }
-      .chart-header {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
 
       sl-icon {
         font-size: 1rem;

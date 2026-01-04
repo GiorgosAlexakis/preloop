@@ -111,9 +111,6 @@ export class AIModelsView extends LitElement {
       .form-grid .full-width {
         grid-column: 1 / -1;
       }
-      .empty-state {
-        padding: var(--sl-spacing-large);
-      }
       .empty-state a {
         color: var(--sl-color-primary-600);
         text-decoration: none;

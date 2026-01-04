@@ -170,18 +170,6 @@ export class NotificationPreferencesView extends AuthedElement {
       color: var(--sl-color-neutral-500);
     }
 
-    .empty-state {
-      text-align: center;
-      padding: var(--sl-spacing-2x-large);
-      color: var(--sl-color-neutral-600);
-    }
-
-    .empty-state sl-icon {
-      font-size: 3rem;
-      margin-bottom: var(--sl-spacing-medium);
-      color: var(--sl-color-neutral-400);
-    }
-
     .qr-container {
       display: flex;
       flex-direction: column;

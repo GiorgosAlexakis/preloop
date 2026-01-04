@@ -31,10 +31,14 @@ export class FlowExecutionsView extends AuthedElement {
       :host {
         display: block;
       }
+      .table-wrapper {
+        overflow-x: auto;
+        margin-top: 1rem;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 1rem;
+        min-width: 800px;
       }
       th,
       td {
@@ -279,63 +283,65 @@ export class FlowExecutionsView extends AuthedElement {
                   of ${this.filteredExecutions.length} executions
                 </div>
 
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Flow Name</th>
-                      <th>Execution ID</th>
-                      <th>Status</th>
-                      <th>Start Time</th>
-                      <th>End Time</th>
-                      <th>Actions</th>
-                      <th>Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${this.paginatedExecutions.map(
-                      (exec) => html`
-                        <tr>
-                          <td>${exec.flow_name || 'Unnamed Flow'}</td>
-                          <td>${exec.id.slice(0, 8)}...</td>
-                          <td>
-                            <div class="status-cell">
-                              ${exec.status === 'RUNNING' ||
-                              exec.status === 'PENDING'
-                                ? html`
-                                    <div
-                                      class="status-indicator ${exec.status.toLowerCase()}"
-                                    ></div>
-                                  `
-                                : ''}
-                              <sl-badge
-                                variant=${this.getStatusVariant(exec.status)}
-                                >${exec.status}</sl-badge
+                <div class="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Flow Name</th>
+                        <th>Execution ID</th>
+                        <th>Status</th>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                        <th>Actions</th>
+                        <th>Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${this.paginatedExecutions.map(
+                        (exec) => html`
+                          <tr>
+                            <td>${exec.flow_name || 'Unnamed Flow'}</td>
+                            <td>${exec.id.slice(0, 8)}...</td>
+                            <td>
+                              <div class="status-cell">
+                                ${exec.status === 'RUNNING' ||
+                                exec.status === 'PENDING'
+                                  ? html`
+                                      <div
+                                        class="status-indicator ${exec.status.toLowerCase()}"
+                                      ></div>
+                                    `
+                                  : ''}
+                                <sl-badge
+                                  variant=${this.getStatusVariant(exec.status)}
+                                  >${exec.status}</sl-badge
+                                >
+                              </div>
+                            </td>
+                            <td>${formatLocalDateTime(exec.start_time)}</td>
+                            <td>
+                              ${exec.end_time
+                                ? formatLocalDateTime(exec.end_time)
+                                : '-'}
+                            </td>
+                            <td>${exec.actions_taken_summary?.length || 0}</td>
+                            <td>
+                              <sl-button
+                                size="small"
+                                href=${router.urlForPath(
+                                  `/console/flows/executions/${exec.id}`
+                                )}
                               >
-                            </div>
-                          </td>
-                          <td>${formatLocalDateTime(exec.start_time)}</td>
-                          <td>
-                            ${exec.end_time
-                              ? formatLocalDateTime(exec.end_time)
-                              : '-'}
-                          </td>
-                          <td>${exec.actions_taken_summary?.length || 0}</td>
-                          <td>
-                            <sl-button
-                              size="small"
-                              href=${router.urlForPath(
-                                `/console/flows/executions/${exec.id}`
-                              )}
-                            >
-                              <sl-icon name="eye"></sl-icon>
-                              View
-                            </sl-button>
-                          </td>
-                        </tr>
-                      `
-                    )}
-                  </tbody>
-                </table>
+                                <sl-icon name="eye"></sl-icon>
+                                View
+                              </sl-button>
+                            </td>
+                          </tr>
+                        `
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
                 ${this.totalPages > 1
                   ? html`
@@ -366,7 +372,6 @@ export class FlowExecutionsView extends AuthedElement {
                   : ''}
               `}
         </div>
-        <div class="side-column"></div>
       </div>
     `;
   }

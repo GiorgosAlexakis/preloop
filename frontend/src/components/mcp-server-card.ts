@@ -41,9 +41,6 @@ export class MCPServerCard extends LitElement {
     }
 
     .card-content {
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
       padding-bottom: var(--sl-spacing-small);
     }
 
