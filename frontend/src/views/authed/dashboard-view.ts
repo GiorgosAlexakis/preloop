@@ -746,8 +746,36 @@ export class DashboardView extends AuthedElement {
       .progress-overview sl-progress-bar {
         flex: 1;
       }
+      .progress-overview sl-progress-bar::part(base) {
+        border: 1px solid rgba(230, 130, 50, 0.35);
+      }
       .progress-overview sl-progress-bar::part(indicator) {
         background: var(--gradient-brand);
+        position: relative;
+        overflow: hidden;
+      }
+      .progress-overview sl-progress-bar::part(indicator)::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 200, 100, 0.15),
+          transparent
+        );
+        animation: shimmer 2.5s infinite;
+      }
+      @keyframes shimmer {
+        0% {
+          left: -100%;
+        }
+        100% {
+          left: 100%;
+        }
       }
       .progress-text {
         font-size: var(--sl-font-size-small);
