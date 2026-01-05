@@ -1187,7 +1187,10 @@ class FlowExecutionOrchestrator:
         4. SUCCEEDED/FAILED: Execution completed
         """
         try:
-            # Stage 1: Create execution log
+            # Stage 1: Retrieve flow details first (needed for account_id in messages)
+            self._get_flow_details()
+
+            # Stage 2: Create execution log
             self._create_execution_log()
 
             # Publish execution_started event for UI notification
@@ -1204,8 +1207,7 @@ class FlowExecutionOrchestrator:
             await self._publish_update("status_update", {"status": "PENDING"})
             logger.info(f"Flow execution started: {self.execution_log.id}")
 
-            # Stage 2: Retrieve flow and AI model details
-            self._get_flow_details()
+            # Stage 3: Mark as initializing
             await self._update_execution_log(status="INITIALIZING")
 
             # Stage 3: Prepare execution context

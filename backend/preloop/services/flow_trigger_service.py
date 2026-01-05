@@ -330,6 +330,9 @@ class FlowTriggerService:
     async def _run_orchestrator_without_creation(self, orchestrator):
         """Run orchestrator starting from stage 2 (skip execution log creation)."""
         try:
+            # Retrieve flow details first (needed for account_id in messages)
+            orchestrator._get_flow_details()
+
             # Publish execution_started event for UI notification
             await orchestrator._publish_update(
                 "execution_started",
@@ -340,8 +343,6 @@ class FlowTriggerService:
                 },
             )
 
-            # Stage 2: Retrieve flow and AI model details
-            orchestrator._get_flow_details()
             await orchestrator._update_execution_log(status="INITIALIZING")
 
             # Stage 3: Prepare execution context
