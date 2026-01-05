@@ -214,6 +214,14 @@ export class DashboardView extends AuthedElement {
         return;
       }
 
+      // Handle authentication completion - refresh data to catch any updates
+      // that occurred while the connection was being established
+      if (message.type === 'authenticated') {
+        console.log('WebSocket authenticated, refreshing dashboard data');
+        this.fetchDashboardData();
+        return;
+      }
+
       // If this is an execution_started event, add it to recent executions
       if (message.type === 'execution_started') {
         const newExecution = {
@@ -271,7 +279,7 @@ export class DashboardView extends AuthedElement {
       }
     };
 
-    // Subscribe to both flow_executions and approvals topics
+    // Subscribe to flow_executions, approvals, and system topics
     const unsubscribeFlow = unifiedWebSocketManager.subscribe(
       'flow_executions',
       handleMessage
@@ -280,11 +288,16 @@ export class DashboardView extends AuthedElement {
       'approvals',
       handleMessage
     );
+    const unsubscribeSystem = unifiedWebSocketManager.subscribe(
+      'system',
+      handleMessage
+    );
 
-    // Combine both unsubscribe functions
+    // Combine all unsubscribe functions
     this.unsubscribe = () => {
       unsubscribeFlow();
       unsubscribeApprovals();
+      unsubscribeSystem();
     };
 
     // Track connection state

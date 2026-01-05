@@ -143,7 +143,8 @@ export class MessageRouter {
     if (
       messageType === 'ping' ||
       messageType === 'pong' ||
-      messageType === 'handshake'
+      messageType === 'handshake' ||
+      messageType === 'authenticated'
     ) {
       return 'system';
     }

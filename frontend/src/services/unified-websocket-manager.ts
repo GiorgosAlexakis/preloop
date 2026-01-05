@@ -196,6 +196,8 @@ export class UnifiedWebSocketManager {
       // Handle authentication response
       if (message.type === 'authenticated') {
         console.log(`Authenticated as: ${message.user?.username}`);
+        // Route to subscribers so they can react (e.g., refresh data)
+        this.router.route(message);
         return;
       }
 

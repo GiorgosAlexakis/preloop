@@ -448,11 +448,41 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                     await handle_activity(data, session, db)
 
                 elif message_type == "command":
-                    # Handle commands (future: stop execution, etc.)
+                    # Handle commands for flow executions (stop, send_message, etc.)
+                    command = data.get("command")
+                    execution_id = data.get("execution_id")
+                    payload = data.get("payload")
+
                     logger.info(
-                        f"Received command from session {session.id}: {data.get('command')}"
+                        f"Received command '{command}' from session {session.id} "
+                        f"for execution {execution_id}"
                     )
-                    # TODO: Route commands to appropriate handlers
+
+                    if execution_id and command:
+                        # Forward command to NATS for orchestrator to handle
+                        try:
+                            event_bus = EventBus()
+                            if event_bus.nc and event_bus.nc.is_connected:
+                                command_subject = f"flow-commands.{execution_id}"
+                                command_data = {
+                                    "command": command,
+                                    "payload": payload or {},
+                                    "message": data.get("message"),  # For send_message
+                                }
+                                await event_bus.nc.publish(
+                                    command_subject, json.dumps(command_data).encode()
+                                )
+                                logger.info(f"Published command to {command_subject}")
+                            else:
+                                logger.warning(
+                                    "NATS not connected, cannot forward command"
+                                )
+                        except Exception as e:
+                            logger.error(f"Failed to forward command to NATS: {e}")
+                    else:
+                        logger.warning(
+                            f"Command missing execution_id or command: {data}"
+                        )
 
                 elif message_type == "subscribe":
                     # Handle topic subscriptions
