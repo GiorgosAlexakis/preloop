@@ -1,4 +1,4 @@
-"""Tool implementations for Preloop AI."""
+"""Tool implementations for Preloop."""
 
 from preloop.tools.base import MCPToolContext
 

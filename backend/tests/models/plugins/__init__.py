@@ -1,1 +1,1 @@
-"""Tests for Preloop AI plugins."""
+"""Tests for Preloop plugins."""

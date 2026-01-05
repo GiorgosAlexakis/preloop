@@ -29,8 +29,8 @@ class MCPConfigService:
         Args:
             allowed_mcp_servers: List of allowed MCP server names
             allowed_mcp_tools: List of allowed MCP tool definitions
-            preloop_url: Base URL for Preloop AI MCP endpoints
-            account_api_token: API token for the account (for Preloop AI MCP access)
+            preloop_url: Base URL for Preloop MCP endpoints
+            account_api_token: API token for the account (for Preloop MCP access)
 
         Returns:
             MCP configuration dict that can be mounted as JSON file
@@ -46,7 +46,7 @@ class MCPConfigService:
         # Build MCP server configurations
         for server_name in allowed_mcp_servers:
             if server_name == "preloop-mcp":
-                # Preloop AI MCP endpoints with authentication
+                # Preloop MCP endpoints with authentication
                 server_config = {
                     "url": f"{preloop_url}/mcp/v1",
                     "transport": "http-streaming",
@@ -111,7 +111,7 @@ class MCPConfigService:
 
             env["MCP_ALLOWED_TOOLS"] = json.dumps(tools_map)
 
-        # Set Preloop AI MCP endpoint
+        # Set Preloop MCP endpoint
         preloop_url = os.getenv("PRELOOP_URL", "http://host.docker.internal:8000")
         env["PRELOOP_MCP_URL"] = f"{preloop_url}/mcp/v1"
 

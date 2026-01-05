@@ -37,7 +37,7 @@ spec:
           port: 53
 
     {{- if .Values.agentExecution.networkPolicy.allowPreloopAPI }}
-    # Allow connections to Preloop AI API (for MCP tool calls)
+    # Allow connections to Preloop API (for MCP tool calls)
     - to:
         - namespaceSelector:
             matchLabels:

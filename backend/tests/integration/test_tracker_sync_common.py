@@ -33,7 +33,7 @@ TEST_RUN_ID = f"test_{uuid.uuid4().hex[:8]}"
 def wait_for_issue(
     client: httpx.Client, issue_key: str, timeout: int
 ) -> Dict[str, Any]:
-    """Poll Preloop AI until issue is available or timeout."""
+    """Poll Preloop until issue is available or timeout."""
     print(f"⏳ Waiting for issue {issue_key} to be indexed (timeout: {timeout}s)...")
     start_time = time.time()
 
@@ -58,7 +58,7 @@ def wait_for_issue(
 def wait_for_issue_update(
     client: httpx.Client, issue_key: str, expected_title: str, timeout: int
 ) -> Dict[str, Any]:
-    """Poll Preloop AI until issue title matches expected value or timeout."""
+    """Poll Preloop until issue title matches expected value or timeout."""
     print(
         f"⏳ Waiting for issue {issue_key} to update via webhook (timeout: {timeout}s)..."
     )

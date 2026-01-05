@@ -102,12 +102,12 @@ class OpenHandsAgent(ContainerAgentExecutor):
             )
             env.update(mcp_env)
 
-            # Add account API token for Preloop AI MCP authentication
+            # Add account API token for Preloop MCP authentication
             if account_api_token:
                 env["PRELOOP_API_TOKEN"] = account_api_token
             else:
                 self.logger.warning(
-                    "No account API token provided for Preloop AI MCP access"
+                    "No account API token provided for Preloop MCP access"
                 )
 
             # Generate MCP config file (will be used by agents that support config files)
@@ -235,7 +235,7 @@ class OpenHandsAgent(ContainerAgentExecutor):
         # OpenHands can access MCP tools via the environment variables:
         # - MCP_ALLOWED_SERVERS: comma-separated list of allowed servers
         # - MCP_ALLOWED_TOOLS: JSON map of server -> [tools]
-        # - PRELOOP_MCP_URL: URL to Preloop AI MCP endpoint
+        # - PRELOOP_MCP_URL: URL to Preloop MCP endpoint
 
         return env
 

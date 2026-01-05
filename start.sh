@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start Preloop AI REST API server
+# Start Preloop REST API server
 
 set -e
 
@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --help)
-      echo "Preloop AI Startup Script"
+      echo "Preloop Startup Script"
       echo ""
       echo "Usage: $0 [options]"
       echo ""
@@ -110,7 +110,7 @@ fi
 
 
 echo ""
-echo "Starting Preloop AI REST API with configuration:"
+echo "Starting Preloop REST API with configuration:"
 echo " - API Server: http://localhost:$API_PORT"
 echo " - API Documentation (Swagger): http://localhost:$API_PORT/docs/api"
 echo " - User Documentation: http://localhost:$API_PORT/docs"

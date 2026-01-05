@@ -1,6 +1,6 @@
 # tests/api/test_app.py
 """
-Tests for the Preloop AI FastAPI application.
+Tests for the Preloop FastAPI application.
 """
 
 import os
@@ -192,7 +192,7 @@ def test_create_app_configuration():
         os.environ, {"DEV_MODE": "false", "ALLOW_ALL_ORIGINS": "false"}, clear=False
     ):
         app = create_app()
-        assert app.title == "Preloop AI API"
+        assert app.title == "Preloop API"
         assert app.openapi_url == "/api/v1/openapi.json"
         assert len(app.user_middleware) > 0  # Check that middleware is configured
 

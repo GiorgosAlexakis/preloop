@@ -524,7 +524,7 @@ class JiraTracker(BaseTracker):
         return "".join(texts)
 
     def _map_jira_status(self, jira_status: Dict[str, Any]) -> IssueStatus:
-        """Map Jira status to Preloop AI status.
+        """Map Jira status to Preloop status.
 
         Args:
             jira_status: Jira status object
@@ -550,7 +550,7 @@ class JiraTracker(BaseTracker):
         return IssueStatus(id=status_id, name=status_name, category=category)
 
     def _map_jira_priority(self, jira_priority: Dict[str, Any]) -> IssuePriority:
-        """Map Jira priority to Preloop AI priority.
+        """Map Jira priority to Preloop priority.
 
         Args:
             jira_priority: Jira priority object
@@ -575,7 +575,7 @@ class JiraTracker(BaseTracker):
         return IssuePriority(id=priority_id, name=priority_name, level=level)
 
     def _map_jira_user(self, jira_user: Dict[str, Any]) -> IssueUser:
-        """Map Jira user to Preloop AI user.
+        """Map Jira user to Preloop user.
 
         Args:
             jira_user: Jira user object
@@ -596,7 +596,7 @@ class JiraTracker(BaseTracker):
         )
 
     def _map_jira_issue(self, jira_issue: Dict[str, Any], project_key: str) -> Issue:
-        """Map Jira issue to Preloop AI issue.
+        """Map Jira issue to Preloop issue.
 
         Args:
             jira_issue: Jira issue object
@@ -744,7 +744,7 @@ class JiraTracker(BaseTracker):
         Returns:
             Created issue.
         """
-        # Map Preloop AI issue data to Jira fields
+        # Map Preloop issue data to Jira fields
         fields = {
             "project": {"key": project_key},
             "summary": issue_data.title,
@@ -806,7 +806,7 @@ class JiraTracker(BaseTracker):
         Returns:
             Updated issue.
         """
-        # Map Preloop AI issue data to Jira fields
+        # Map Preloop issue data to Jira fields
         fields = {}
 
         if issue_data.title is not None:
@@ -1137,7 +1137,7 @@ class JiraTracker(BaseTracker):
         Returns:
             Whether the operation was successful.
         """
-        # Map Preloop AI relation type to Jira link type
+        # Map Preloop relation type to Jira link type
         relation_map = {
             "blocks": "Blocks",
             "blocked_by": "Blocked by",
@@ -1468,7 +1468,7 @@ class JiraTracker(BaseTracker):
             return True
 
         actual_events = events or DEFAULT_JIRA_WEBHOOK_EVENTS
-        webhook_name = f"Preloop AI Sync for {project.identifier}"
+        webhook_name = f"Preloop Sync for {project.identifier}"
 
         parsed_url = urllib.parse.urlparse(webhook_url)
         query_params = urllib.parse.parse_qs(parsed_url.query)
@@ -1743,11 +1743,11 @@ class JiraTracker(BaseTracker):
         Deletes stale webhooks from Jira.
 
         Stale webhooks are webhooks that:
-        1. Have a URL starting with preloop_url (they point to our Preloop AI instance)
+        1. Have a URL starting with preloop_url (they point to our Preloop instance)
         2. Are NOT registered in our database (they were created but not tracked, or orphaned)
 
         Args:
-            preloop_url: The base URL of the Preloop AI instance whose stale webhooks should be removed.
+            preloop_url: The base URL of the Preloop instance whose stale webhooks should be removed.
 
         Returns:
             A dictionary with counts of unregistered and failed deletions.
@@ -1774,17 +1774,17 @@ class JiraTracker(BaseTracker):
             results["failed"] = 1
             return results
 
-        # Filter webhooks that point to our Preloop AI instance
+        # Filter webhooks that point to our Preloop instance
         preloop_webhooks = [
             hook for hook in all_webhooks if hook.get("url", "").startswith(preloop_url)
         ]
 
         if not preloop_webhooks:
-            logger.info("No webhooks pointing to Preloop AI URL found.")
+            logger.info("No webhooks pointing to Preloop URL found.")
             return results
 
         logger.info(
-            f"Found {len(preloop_webhooks)} webhooks pointing to Preloop AI. "
+            f"Found {len(preloop_webhooks)} webhooks pointing to Preloop. "
             f"Checking which are stale (not in database)..."
         )
 
@@ -1810,7 +1810,7 @@ class JiraTracker(BaseTracker):
                     )
                     continue
 
-                # Webhook points to our Preloop AI but is NOT in database - it's stale
+                # Webhook points to our Preloop but is NOT in database - it's stale
                 logger.info(
                     f"Found stale webhook {webhook_id} pointing to {webhook_url}. "
                     f"This webhook is not in our database. Deleting..."

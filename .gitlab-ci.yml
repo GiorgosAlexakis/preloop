@@ -1,4 +1,4 @@
-# Preloop AI Open Source CI/CD
+# Preloop Open Source CI/CD
 # This pipeline builds and tests the open-source core.
 # For enterprise builds and production deployments, see preloop-ee/.gitlab-ci.yml
 

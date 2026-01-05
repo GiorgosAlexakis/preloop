@@ -57,7 +57,7 @@ class Flow(Base):
     #             "branch": str (optional - branch to clone, for backwards compatibility)
     #         }
     #     ],
-    #     "git_user_name": str (default: "Preloop AI"),
+    #     "git_user_name": str (default: "Preloop"),
     #     "git_user_email": str (default: "git@preloop.ai"),
     #     "source_branch": str (branch to checkout, default: "main"),
     #     "target_branch": str (branch to create for commits, optional - auto-generated if empty),

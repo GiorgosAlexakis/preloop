@@ -1,4 +1,4 @@
-"""FastAPI application for Preloop AI.
+"""FastAPI application for Preloop.
 
 This FastAPI application provides HTTP endpoints for authentication and management
 of issue tracking systems.
@@ -447,8 +447,8 @@ def create_app() -> FastAPI:
 
     # Initialize FastAPI app
     app = FastAPI(
-        title="Preloop AI API",
-        description="REST API for Preloop AI issue tracking management",
+        title="Preloop API",
+        description="REST API for Preloop issue tracking management",
         version=__version__,
         openapi_url="/api/v1/openapi.json",  # Keep OpenAPI schema URL
         docs_url=None,  # Disable the automatic docs at /docs

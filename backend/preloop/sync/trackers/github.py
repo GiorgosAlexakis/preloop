@@ -1116,13 +1116,13 @@ class GitHubTracker(BaseTracker):
         self, preloop_url: str, cleanup_projects: bool = False
     ) -> dict:
         """
-        Deletes stale webhooks pointing to the given Preloop AI URL.
+        Deletes stale webhooks pointing to the given Preloop URL.
 
         By default, this method cleans up organization-level webhooks.
         If `cleanup_projects` is True, it cleans up repository-level webhooks instead.
 
         Args:
-            preloop_url: The base URL of the Preloop AI instance.
+            preloop_url: The base URL of the Preloop instance.
             cleanup_projects: If True, clean up repository-level webhooks. Defaults to False.
 
         Returns:
@@ -1215,7 +1215,7 @@ class GitHubTracker(BaseTracker):
         Processes a single webhook for cleanup.
 
         Stale webhooks are webhooks that:
-        1. Have a URL starting with preloop_url (they point to our Preloop AI instance)
+        1. Have a URL starting with preloop_url (they point to our Preloop instance)
         2. Are NOT registered in our database (they were created but not tracked, or orphaned)
 
         This method checks if the webhook is stale and deletes it if so.
@@ -1227,7 +1227,7 @@ class GitHubTracker(BaseTracker):
         if not all([hook_id, hook_url]):
             return
 
-        # Only consider webhooks pointing to our Preloop AI instance
+        # Only consider webhooks pointing to our Preloop instance
         if not hook_url.startswith(preloop_url):
             # This webhook points to a different service, ignore it
             return
@@ -1250,7 +1250,7 @@ class GitHubTracker(BaseTracker):
                 )
                 return
 
-            # Webhook points to our Preloop AI but is NOT in database - it's stale
+            # Webhook points to our Preloop but is NOT in database - it's stale
             logger.info(
                 f"Found stale webhook {hook_id} in {base_endpoint} pointing to {hook_url}. "
                 f"This webhook is not in our database. Deleting..."

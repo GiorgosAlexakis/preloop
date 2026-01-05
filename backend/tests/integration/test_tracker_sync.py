@@ -1,33 +1,33 @@
 """
-Comprehensive integration test for tracker synchronization with Preloop AI.
+Comprehensive integration test for tracker synchronization with Preloop.
 
 This test verifies the complete end-to-end flow of tracker integration including:
 1. Tracker registration via API
 2. Initial issue indexing (polling)
 3. Webhook registration and propagation
-4. Bi-directional sync (tracker -> Preloop AI, Preloop AI -> tracker)
+4. Bi-directional sync (tracker -> Preloop, Preloop -> tracker)
 5. Proper cleanup and restoration
 
 Test Flow:
 -----------
-1. Health Check: Verify Preloop AI instance is running and accessible
+1. Health Check: Verify Preloop instance is running and accessible
 2. Tracker Registration: Register GitHub, GitLab, and Jira trackers via POST /api/v1/trackers
 3. Tracker Verification: List trackers via GET /api/v1/trackers and verify all are registered
 4. Webhook Verification: Verify webhooks are registered in each tracker
 5. Initial Indexing: Wait for initial scan to complete (polling) within INDEX_TIMEOUT
 6. Issue Retrieval: Verify issues are accessible via GET /api/v1/issues/{issue_key}
 7. External Update: Update issues via tracker APIs (GitHub/GitLab/Jira), adding unique suffix to title/description
-8. Webhook Propagation: Poll Preloop AI until updates appear (webhook delivery test)
-9. Comment Sync: Create comments via tracker APIs and verify they appear in Preloop AI
-10. Preloop AI Update: Update issues via PUT /api/v1/issues/{issue_key}, removing the suffix
-11. Tracker Verification: Verify updates propagated from Preloop AI to trackers
-12. Issue Creation: Create new issue via Preloop AI and verify it appears in tracker
+8. Webhook Propagation: Poll Preloop until updates appear (webhook delivery test)
+9. Comment Sync: Create comments via tracker APIs and verify they appear in Preloop
+10. Preloop Update: Update issues via PUT /api/v1/issues/{issue_key}, removing the suffix
+11. Tracker Verification: Verify updates propagated from Preloop to trackers
+12. Issue Creation: Create new issue via Preloop and verify it appears in tracker
 13. Cleanup: Restore original state regardless of test outcome
 
 Environment Variables Required:
 --------------------------------
-- PRELOOP_TEST_URL: Preloop AI instance URL (e.g., https://test.preloop.ai)
-- PRELOOP_TEST_API_KEY: API key for Preloop AI authentication
+- PRELOOP_TEST_URL: Preloop instance URL (e.g., https://test.preloop.ai)
+- PRELOOP_TEST_API_KEY: API key for Preloop authentication
 
 GitHub:
 - GITHUB_API_KEY: GitHub personal access token
@@ -112,7 +112,7 @@ TEST_RUN_ID = f"test_{uuid.uuid4().hex[:8]}"
 # Pytest fixtures
 @pytest.fixture(scope="module")
 def preloop_client():
-    """Create Preloop AI HTTP client with authentication."""
+    """Create Preloop HTTP client with authentication."""
     if not PRELOOP_URL or not PRELOOP_API_KEY:
         pytest.skip("PRELOOP_TEST_URL and PRELOOP_TEST_API_KEY required")
 
@@ -184,7 +184,7 @@ def parse_gitlab_issue_key(issue_key: str):
 def wait_for_issue(
     client: httpx.Client, issue_key: str, timeout: int
 ) -> Dict[str, Any]:
-    """Poll Preloop AI until issue is available or timeout."""
+    """Poll Preloop until issue is available or timeout."""
     print(f"⏳ Waiting for issue {issue_key} to be indexed (timeout: {timeout}s)...")
     start_time = time.time()
 
@@ -209,7 +209,7 @@ def wait_for_issue(
 def wait_for_issue_update(
     client: httpx.Client, issue_key: str, expected_title: str, timeout: int
 ) -> Dict[str, Any]:
-    """Poll Preloop AI until issue title matches expected value or timeout."""
+    """Poll Preloop until issue title matches expected value or timeout."""
     print(
         f"⏳ Waiting for issue {issue_key} to update via webhook (timeout: {timeout}s)..."
     )
@@ -246,7 +246,7 @@ def wait_for_issue_update(
 def test_preloop_health(preloop_client):
     """
     Step 1: Health Check
-    Verify Preloop AI instance is running and accessible.
+    Verify Preloop instance is running and accessible.
     """
     print("\n" + "=" * 80)
     print("STEP 1: Health Check")
@@ -254,7 +254,7 @@ def test_preloop_health(preloop_client):
 
     response = preloop_client.get("/api/v1/health")
     assert response.status_code == 200, f"Health check failed: {response.text}"
-    print("✓ Preloop AI instance is healthy")
+    print("✓ Preloop instance is healthy")
 
 
 @pytest.mark.integration
@@ -271,7 +271,7 @@ def test_github_tracker_sync(preloop_client, github_client):
     - Tracker registration
     - Initial issue indexing via polling
     - Webhook registration and propagation
-    - Bi-directional sync (GitHub -> Preloop AI, Preloop AI -> GitHub)
+    - Bi-directional sync (GitHub -> Preloop, Preloop -> GitHub)
     - Comment synchronization
     - MCP tools (search, get_issue, update_issue)
     - Proper cleanup
@@ -409,7 +409,7 @@ def test_github_tracker_sync(preloop_client, github_client):
         created_comment_ids.append(comment_id)
         print(f"✓ Created comment via GitHub API: {comment_id}")
 
-        # Wait for comment to appear in Preloop AI
+        # Wait for comment to appear in Preloop
         print("  Waiting for comment to sync...")
         time.sleep(10)  # Give webhook time to propagate
         issue_with_comments = wait_for_issue(
@@ -418,12 +418,12 @@ def test_github_tracker_sync(preloop_client, github_client):
         assert any(
             comment_text in c.get("body", "")
             for c in issue_with_comments.get("comments", [])
-        ), "Comment not synced to Preloop AI"
-        print("✓ Comment synced to Preloop AI")
+        ), "Comment not synced to Preloop"
+        print("✓ Comment synced to Preloop")
 
-        # Step 10: Update issue via Preloop AI API (remove test suffix)
+        # Step 10: Update issue via Preloop API (remove test suffix)
         print("\n" + "=" * 80)
-        print("STEP 10: Preloop AI Update")
+        print("STEP 10: Preloop Update")
         print("=" * 80)
 
         # URL-encode the issue key for the PUT request
@@ -436,9 +436,9 @@ def test_github_tracker_sync(preloop_client, github_client):
             },
         )
         assert update_response.status_code == 200, (
-            f"Failed to update issue via Preloop AI: {update_response.text}"
+            f"Failed to update issue via Preloop: {update_response.text}"
         )
-        print("✓ Updated issue via Preloop AI API")
+        print("✓ Updated issue via Preloop API")
 
         # Step 11: Verify update propagated to GitHub
         print("\n" + "=" * 80)
@@ -456,7 +456,7 @@ def test_github_tracker_sync(preloop_client, github_client):
             "Description not synced to GitHub"
         )
 
-        print("✓ Update propagated from Preloop AI to GitHub")
+        print("✓ Update propagated from Preloop to GitHub")
 
         # Step 12: Test MCP Tools
         print("\n" + "=" * 80)
@@ -567,7 +567,7 @@ def test_github_tracker_sync(preloop_client, github_client):
                 print(f"✗ Failed to delete comment {comment_id}: {e}")
 
         # Note: We intentionally don't restore the issue title/description
-        # since the Preloop AI update in Step 10 already restored them
+        # since the Preloop update in Step 10 already restored them
 
 
 @pytest.mark.integration
@@ -584,7 +584,7 @@ def test_gitlab_tracker_sync(preloop_client, gitlab_client):
     - Tracker registration
     - Initial issue indexing via polling
     - Webhook registration and propagation
-    - Bi-directional sync (GitLab -> Preloop AI, Preloop AI -> GitLab)
+    - Bi-directional sync (GitLab -> Preloop, Preloop -> GitLab)
     - Comment synchronization
     - Proper cleanup
     """
@@ -725,7 +725,7 @@ def test_gitlab_tracker_sync(preloop_client, gitlab_client):
         created_comment_ids.append(comment_id)
         print(f"✓ Created comment via GitLab API: {comment_id}")
 
-        # Wait for comment to appear in Preloop AI
+        # Wait for comment to appear in Preloop
         print("  Waiting for comment to sync...")
         time.sleep(10)  # Give webhook time to propagate
         issue_with_comments = wait_for_issue(
@@ -738,13 +738,13 @@ def test_gitlab_tracker_sync(preloop_client, gitlab_client):
             comment_text in c.get("body", "")
             for c in issue_with_comments.get("comments", [])
         ), (
-            f"Comment not synced to Preloop AI. Got {len(issue_with_comments.get('comments', []))} comments: {issue_with_comments.get('comments', [])}"
+            f"Comment not synced to Preloop. Got {len(issue_with_comments.get('comments', []))} comments: {issue_with_comments.get('comments', [])}"
         )
-        print("✓ Comment synced to Preloop AI")
+        print("✓ Comment synced to Preloop")
 
-        # Step 10: Update issue via Preloop AI API (remove test suffix)
+        # Step 10: Update issue via Preloop API (remove test suffix)
         print("\n" + "=" * 80)
-        print("STEP 10: Preloop AI Update")
+        print("STEP 10: Preloop Update")
         print("=" * 80)
 
         # URL-encode the issue key for the PUT request
@@ -757,9 +757,9 @@ def test_gitlab_tracker_sync(preloop_client, gitlab_client):
             },
         )
         assert update_response.status_code == 200, (
-            f"Failed to update issue via Preloop AI: {update_response.text}"
+            f"Failed to update issue via Preloop: {update_response.text}"
         )
-        print("✓ Updated issue via Preloop AI API")
+        print("✓ Updated issue via Preloop API")
 
         # Step 11: Verify update propagated to GitLab
         print("\n" + "=" * 80)
@@ -779,7 +779,7 @@ def test_gitlab_tracker_sync(preloop_client, gitlab_client):
             "Description not synced to GitLab"
         )
 
-        print("✓ Update propagated from Preloop AI to GitLab")
+        print("✓ Update propagated from Preloop to GitLab")
 
         # Step 12: Test MCP Tools
         print("\n" + "=" * 80)
@@ -893,7 +893,7 @@ def test_gitlab_tracker_sync(preloop_client, gitlab_client):
                 print(f"✗ Failed to delete comment {comment_id}: {e}")
 
         # Note: We intentionally don't restore the issue title/description
-        # since the Preloop AI update in Step 10 already restored them
+        # since the Preloop update in Step 10 already restored them
 
 
 @pytest.mark.integration
@@ -910,7 +910,7 @@ def test_jira_tracker_sync(preloop_client, jira_client):
     - Tracker registration
     - Initial issue indexing via polling
     - Webhook registration and propagation
-    - Bi-directional sync (Jira -> Preloop AI, Preloop AI -> Jira)
+    - Bi-directional sync (Jira -> Preloop, Preloop -> Jira)
     - Comment synchronization
     - Proper cleanup
     """
@@ -1067,7 +1067,7 @@ def test_jira_tracker_sync(preloop_client, jira_client):
         created_comment_ids.append(comment_id)
         print(f"✓ Created comment via Jira API: {comment_id}")
 
-        # Wait for comment to appear in Preloop AI
+        # Wait for comment to appear in Preloop
         print("  Waiting for comment to sync...")
         time.sleep(10)  # Give webhook time to propagate
         issue_with_comments = wait_for_issue(
@@ -1076,12 +1076,12 @@ def test_jira_tracker_sync(preloop_client, jira_client):
         assert any(
             comment_text in c.get("body", "")
             for c in issue_with_comments.get("comments", [])
-        ), "Comment not synced to Preloop AI"
-        print("✓ Comment synced to Preloop AI")
+        ), "Comment not synced to Preloop"
+        print("✓ Comment synced to Preloop")
 
-        # Step 10: Update issue via Preloop AI API (remove test suffix)
+        # Step 10: Update issue via Preloop API (remove test suffix)
         print("\n" + "=" * 80)
-        print("STEP 10: Preloop AI Update")
+        print("STEP 10: Preloop Update")
         print("=" * 80)
 
         # URL-encode the issue key for the PUT request
@@ -1094,9 +1094,9 @@ def test_jira_tracker_sync(preloop_client, jira_client):
             },
         )
         assert update_response.status_code == 200, (
-            f"Failed to update issue via Preloop AI: {update_response.text}"
+            f"Failed to update issue via Preloop: {update_response.text}"
         )
-        print("✓ Updated issue via Preloop AI API")
+        print("✓ Updated issue via Preloop API")
 
         # Step 11: Verify update propagated to Jira
         print("\n" + "=" * 80)
@@ -1122,7 +1122,7 @@ def test_jira_tracker_sync(preloop_client, jira_client):
             "Description not synced to Jira"
         )
 
-        print("✓ Update propagated from Preloop AI to Jira")
+        print("✓ Update propagated from Preloop to Jira")
 
         # Step 12: Test MCP Tools
         print("\n" + "=" * 80)
@@ -1229,4 +1229,4 @@ def test_jira_tracker_sync(preloop_client, jira_client):
                 print(f"✗ Failed to delete comment {comment_id}: {e}")
 
         # Note: We intentionally don't restore the issue title/description
-        # since the Preloop AI update in Step 10 already restored them
+        # since the Preloop update in Step 10 already restored them

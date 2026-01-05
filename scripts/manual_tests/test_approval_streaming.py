@@ -1,6 +1,6 @@
-"""Test approval streaming with Preloop AI MCP server.
+"""Test approval streaming with Preloop MCP server.
 
-This client connects to Preloop AI and calls a tool that requires approval,
+This client connects to Preloop and calls a tool that requires approval,
 displaying progress notifications during the approval wait period.
 """
 
@@ -45,7 +45,7 @@ async def progress_handler(
 async def main():
     """Test approval streaming."""
     print("\n" + "=" * 80)
-    print("Preloop AI Approval Streaming Test")
+    print("Preloop Approval Streaming Test")
     print("=" * 80)
     print()
 
@@ -58,7 +58,7 @@ async def main():
         print("Usage: PRELOOP_TOKEN=your-token python test_approval_streaming.py")
         return
 
-    print(f"Connecting to Preloop AI: {server_url}")
+    print(f"Connecting to Preloop: {server_url}")
     print(f"Using bearer token: {bearer_token[:20]}...")
     print()
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     print("SETUP INSTRUCTIONS:")
     print("=" * 80)
     print("1. Configure an approval policy for estimate_compliance:")
-    print("   - Go to Preloop AI UI: /console/tools")
+    print("   - Go to Preloop UI: /console/tools")
     print("   - Find 'estimate_compliance' tool")
     print("   - Enable 'Requires Approval'")
     print("   - Configure approval policy (Slack/Mattermost/webhook)")

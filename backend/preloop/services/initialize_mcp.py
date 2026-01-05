@@ -22,7 +22,7 @@ class CancelScopeErrorFilter(logging.Filter):
     """Filter out benign cancel scope errors from nested MCP sessions.
 
     When proxying tools to external MCP servers, we create nested MCP sessions
-    (Preloop AI as server, MCPClient as client). This causes harmless cancel
+    (Preloop as server, MCPClient as client). This causes harmless cancel
     scope cleanup errors that don't affect functionality. This filter suppresses
     those specific errors to avoid log spam.
     """

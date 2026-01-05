@@ -410,7 +410,7 @@ prompt_template: |
 
   ---
 
-  ## 🤖 Preloop AI Triage Report
+  ## 🤖 Preloop Triage Report
 
   ### 📋 Classification
   - **Type**: [Bug/Feature/Enhancement/etc.]
@@ -565,7 +565,7 @@ prompt_template: |
 
   ---
 
-  _This triage was performed automatically by Preloop AI. A human reviewer will validate these recommendations._
+  _This triage was performed automatically by Preloop. A human reviewer will validate these recommendations._
 
   ---
 

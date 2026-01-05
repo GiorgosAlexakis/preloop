@@ -1,4 +1,4 @@
-"""Utility modules for Preloop AI."""
+"""Utility modules for Preloop."""
 
 from .request import get_client_ip, get_client_ip_optional
 

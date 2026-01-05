@@ -251,7 +251,7 @@ async def commit_issue_dependencies(
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Commits a list of issue dependency pairs. This will create the dependency in the external tracker and mark it as 'committed' in Preloop AI.
+    Commits a list of issue dependency pairs. This will create the dependency in the external tracker and mark it as 'committed' in Preloop.
 
     - **dependencies**: A list of dependency pairs to commit.
     """

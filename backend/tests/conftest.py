@@ -1,4 +1,4 @@
-"""Pytest configuration file for Preloop AI tests."""
+"""Pytest configuration file for Preloop tests."""
 
 from typing import Generator
 import inspect

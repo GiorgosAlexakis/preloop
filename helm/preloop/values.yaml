@@ -1,4 +1,4 @@
-# Default values for the Preloop AI Helm chart
+# Default values for the Preloop Helm chart
 
 # Replica count for the deployment
 replicaCount: 1
@@ -158,7 +158,7 @@ config:
     username: ""
     password: ""
     from: ""
-    fromName: "Preloop AI"
+    fromName: "Preloop"
 
 # Database configuration
 database:
@@ -278,10 +278,10 @@ agentExecution:
   # Namespace for running agent containers
   namespace:
     # If true, creates a separate namespace for agent execution (recommended for production)
-    # If false, agents run in the same namespace as Preloop AI (easier for testing/PoC)
+    # If false, agents run in the same namespace as Preloop (easier for testing/PoC)
     create: false
     # Name of the namespace for agent execution (only used if create: true)
-    # If create is false, agents run in the same namespace as Preloop AI
+    # If create is false, agents run in the same namespace as Preloop
     name: "agent-executions"
 
   # RBAC configuration for agent execution
@@ -293,7 +293,7 @@ agentExecution:
   networkPolicy:
     # If true, creates NetworkPolicy for agent namespace
     enabled: true
-    # Allow agent pods to call Preloop AI API for MCP tools
+    # Allow agent pods to call Preloop API for MCP tools
     allowPreloopAPI: true
     # Allow agent pods to call external LLM APIs (Anthropic, OpenAI)
     allowExternalLLMAPIs: true

@@ -796,7 +796,7 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
         """
         Test that webhooks pointing to OTHER URLs (not our preloop_url) are ignored.
         A webhook at "http://other-service.com/webhook" should NOT be deleted
-        even though it's not in our DB, because it doesn't point to our Preloop AI.
+        even though it's not in our DB, because it doesn't point to our Preloop.
         """
         # Arrange
         tracker = GitHubTracker(str(uuid4()), "api-key", {})
@@ -809,7 +809,7 @@ class TestGitHubTrackerCleanupStaleWebhooks(unittest.IsolatedAsyncioTestCase):
         # Act
         results = await tracker.cleanup_stale_webhooks("http://my-preloop.com")
 
-        # Assert: Should NOT delete webhooks that don't point to our Preloop AI
+        # Assert: Should NOT delete webhooks that don't point to our Preloop
         self.assertEqual(results["unregistered"], 0)
         self.assertEqual(results["failed"], 0)
         mock_make_request_delete.assert_not_called()

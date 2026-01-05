@@ -832,7 +832,7 @@ export class DashboardView extends AuthedElement {
         <div class="welcome-header">
           <div class="welcome-title">
             <sl-icon name="rocket-takeoff"></sl-icon>
-            Welcome to Preloop AI!
+            Welcome to Preloop!
           </div>
           <sl-button
             size="small"
@@ -844,7 +844,7 @@ export class DashboardView extends AuthedElement {
         </div>
 
         <div class="welcome-content">
-          Preloop AI helps you automate your workflow with AI-powered agents,
+          Preloop helps you automate your workflow with AI-powered agents,
           intelligent issue management, and seamless tool integration. Here's
           how to get started:
         </div>

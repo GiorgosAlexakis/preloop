@@ -1144,11 +1144,11 @@ class GitLabTracker(BaseTracker):
         Cleans up stale webhooks from GitLab, for both groups and projects.
 
         Stale webhooks are webhooks that:
-        1. Have a URL starting with preloop_url (they point to our Preloop AI instance)
+        1. Have a URL starting with preloop_url (they point to our Preloop instance)
         2. Are NOT registered in our database (they were created but not tracked, or orphaned)
 
         Args:
-            preloop_url: The base URL of the Preloop AI instance.
+            preloop_url: The base URL of the Preloop instance.
 
         Returns:
             A dictionary summarizing the actions taken, e.g., `{"unregistered": count, "failed": count}`.
@@ -1193,7 +1193,7 @@ class GitLabTracker(BaseTracker):
                         group.hooks.list, all=True
                     )
                     for hook in hooks:
-                        # Only consider webhooks pointing to our Preloop AI instance
+                        # Only consider webhooks pointing to our Preloop instance
                         if not hook.url.startswith(preloop_url):
                             continue
 
@@ -1211,7 +1211,7 @@ class GitLabTracker(BaseTracker):
                                 )
                                 continue
 
-                            # Webhook points to our Preloop AI but is NOT in database - it's stale
+                            # Webhook points to our Preloop but is NOT in database - it's stale
                             logger.info(
                                 f"Found stale group webhook {hook.id} for group {group.id} pointing to {hook.url}. "
                                 f"This webhook is not in our database. Deleting..."
@@ -1255,7 +1255,7 @@ class GitLabTracker(BaseTracker):
             try:
                 hooks = await self._make_request(project.hooks.list, all=True)
                 for hook in hooks:
-                    # Only consider webhooks pointing to our Preloop AI instance
+                    # Only consider webhooks pointing to our Preloop instance
                     if not hook.url.startswith(preloop_url):
                         continue
 
@@ -1273,7 +1273,7 @@ class GitLabTracker(BaseTracker):
                             )
                             continue
 
-                        # Webhook points to our Preloop AI but is NOT in database - it's stale
+                        # Webhook points to our Preloop but is NOT in database - it's stale
                         logger.info(
                             f"Found stale project webhook {hook.id} for project {project.id} pointing to {hook.url}. "
                             f"This webhook is not in our database. Deleting..."

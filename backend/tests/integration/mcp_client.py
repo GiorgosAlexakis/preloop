@@ -3,7 +3,7 @@ Direct MCP client for integration testing.
 
 This module provides a fast, reliable way to test MCP endpoints without
 spawning Claude CLI processes. Uses the Python MCP client library to
-connect directly to Preloop AI's MCP HTTP endpoint.
+connect directly to Preloop's MCP HTTP endpoint.
 """
 
 import asyncio
@@ -21,7 +21,7 @@ class MCPTestClient:
         Initialize MCP test client.
 
         Args:
-            base_url: Preloop AI base URL (e.g., https://test.preloop.ai)
+            base_url: Preloop base URL (e.g., https://test.preloop.ai)
             api_key: API key for authentication
         """
         self.base_url = base_url.rstrip("/")

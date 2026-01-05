@@ -26,7 +26,7 @@ async def check_approval_config(tool_name: str = "estimate_compliance"):
         if not configs:
             print(f"❌ No ToolConfiguration found for '{tool_name}'")
             print("\nTo configure approval:")
-            print("  1. Go to Preloop AI UI: /console/tools")
+            print("  1. Go to Preloop UI: /console/tools")
             print(f"  2. Find '{tool_name}' tool")
             print("  3. Enable 'Requires Approval'")
             print("  4. Select or create an approval policy")

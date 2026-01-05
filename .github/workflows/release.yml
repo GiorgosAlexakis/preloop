@@ -1,4 +1,4 @@
-# Preloop AI Open Source - Release Pipeline
+# Preloop Open Source - Release Pipeline
 # Builds and pushes Docker images to GitHub Container Registry on releases and main branch
 
 name: Release

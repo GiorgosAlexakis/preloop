@@ -108,7 +108,7 @@ class IssueUpdate(BaseModel):
 class IssueResponse(IssueBase):
     """Response model for issue data."""
 
-    id: UUID = Field(..., description="Internal Preloop AI database ID (UUID)")
+    id: UUID = Field(..., description="Internal Preloop database ID (UUID)")
     external_id: str = Field(..., description="Issue ID in the original tracker")
     key: str = Field(..., description="Human-readable issue key (e.g., PROJ-123)")
     organization: str = Field(..., description="Organization name")

@@ -42,7 +42,7 @@ allowed_mcp_tools:
 git_clone_config:
   enabled: true
   repositories: []
-  git_user_name: Preloop AI
+  git_user_name: Preloop
   git_user_email: hello@preloop.ai
   source_branch: null
   target_branch: null

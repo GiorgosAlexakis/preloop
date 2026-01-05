@@ -1,4 +1,4 @@
-"""Token generation and validation for Preloop AI."""
+"""Token generation and validation for Preloop."""
 
 import os
 from datetime import datetime, timedelta, UTC

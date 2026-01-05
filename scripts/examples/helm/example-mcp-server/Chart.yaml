@@ -1,6 +1,6 @@
 apiVersion: v2
 name: example-mcp-server
-description: Example MCP Server for testing Preloop AI MCP proxy functionality
+description: Example MCP Server for testing Preloop MCP proxy functionality
 type: application
 version: 0.1.0
 appVersion: "1.0"

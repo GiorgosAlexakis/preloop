@@ -1,4 +1,4 @@
-"""Logging configuration for Preloop AI."""
+"""Logging configuration for Preloop."""
 
 import logging
 import logging.config

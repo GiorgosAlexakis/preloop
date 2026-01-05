@@ -2,7 +2,7 @@
 Endpoints for handling MCP (Model Context Protocol) tool calls via HTTP.
 
 This module provides a secure, scalable, and integrated way for MCP clients
-to interact with the Preloop AI platform using FastMCP.
+to interact with the Preloop platform using FastMCP.
 """
 
 import asyncio

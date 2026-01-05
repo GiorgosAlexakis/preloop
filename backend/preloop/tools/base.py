@@ -1,4 +1,4 @@
-"""Base classes for MCP tools in Preloop AI."""
+"""Base classes for MCP tools in Preloop."""
 
 from typing import Any, Dict, Set, TypeVar
 

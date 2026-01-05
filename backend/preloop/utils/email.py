@@ -1,4 +1,4 @@
-"""Email sending utility for Preloop AI."""
+"""Email sending utility for Preloop."""
 
 import asyncio
 import logging
@@ -20,9 +20,9 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "hello@preloop.ai")
-SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Preloop AI")
+SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Preloop")
 PRELOOP_URL = os.getenv("PRELOOP_URL", "https://preloop.ai")
-APP_NAME = os.getenv("APP_NAME", "Preloop AI")
+APP_NAME = os.getenv("APP_NAME", "Preloop")
 
 
 class EmailError(Exception):

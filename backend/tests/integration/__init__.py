@@ -1,1 +1,1 @@
-"""Integration tests for Preloop AI."""
+"""Integration tests for Preloop."""

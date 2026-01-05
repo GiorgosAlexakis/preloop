@@ -23,7 +23,7 @@ async def test_consecutive_proxied_tool_calls():
     proxied tool would fail due to improper async context cleanup.
 
     Prerequisites:
-    - Preloop AI server running on http://localhost:8001
+    - Preloop server running on http://localhost:8001
     - External MCP server with a test tool registered
     - PRELOOP_TOKEN environment variable set
     - TEST_MCP_TOOL environment variable set (name of tool to test)
@@ -35,7 +35,7 @@ async def test_consecutive_proxied_tool_calls():
     if not token:
         pytest.skip("PRELOOP_TOKEN not set")
 
-    # Connect to Preloop AI
+    # Connect to Preloop
     transport = StreamableHttpTransport(
         url="http://localhost:8001/mcp/v1",
         headers={"Authorization": f"Bearer {token}"},
@@ -94,7 +94,7 @@ async def test_concurrent_proxied_tool_calls():
     if not token:
         pytest.skip("PRELOOP_TOKEN not set")
 
-    # Connect to Preloop AI
+    # Connect to Preloop
     transport = StreamableHttpTransport(
         url="http://localhost:8001/mcp/v1",
         headers={"Authorization": f"Bearer {token}"},

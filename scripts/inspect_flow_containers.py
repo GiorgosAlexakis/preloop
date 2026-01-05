@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 async def list_flow_containers() -> List[Dict[str, Any]]:
     """
-    List all Preloop AI flow execution containers.
+    List all Preloop flow execution containers.
 
     Returns:
         List of container information dicts
@@ -119,7 +119,7 @@ def format_container_info(container: Dict[str, Any]) -> str:
 async def main():
     """Main function."""
     parser = argparse.ArgumentParser(
-        description="Inspect Preloop AI flow execution containers"
+        description="Inspect Preloop flow execution containers"
     )
     parser.add_argument("--list", action="store_true", help="List all flow containers")
     parser.add_argument(
@@ -144,7 +144,7 @@ async def main():
             print(json.dumps(containers, indent=2))
         else:
             if not containers:
-                print("No Preloop AI flow containers found.")
+                print("No Preloop flow containers found.")
             else:
                 print(f"Found {len(containers)} flow containers:\n")
                 for container in containers:

@@ -1,4 +1,4 @@
-"""Common utility functions for the Preloop AI API."""
+"""Common utility functions for the Preloop API."""
 
 import logging
 from typing import Any, Dict, Optional, List, Union

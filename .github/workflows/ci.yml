@@ -1,4 +1,4 @@
-# Preloop AI Open Source - CI Pipeline
+# Preloop Open Source - CI Pipeline
 # Runs unit tests on pull requests and pushes to main
 # For full integration tests, see GitLab CI
 

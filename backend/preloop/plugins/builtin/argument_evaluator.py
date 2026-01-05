@@ -39,7 +39,7 @@ class ArgumentEvaluator(ConditionEvaluatorPlugin):
         return PluginMetadata(
             name="Argument Evaluator",
             version="1.0.0",
-            author="Preloop AI Team",
+            author="Preloop Team",
             description="Evaluate conditions based on tool arguments using CEL",
         )
 
@@ -207,7 +207,7 @@ class BuiltinPlugin(Plugin):
         return PluginMetadata(
             name="builtin",
             version="1.0.0",
-            author="Preloop AI Team",
+            author="Preloop Team",
             description="Built-in evaluators and features",
         )
 

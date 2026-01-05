@@ -648,7 +648,7 @@ export class NotificationPreferencesView extends AuthedElement {
                 <div class="qr-instructions">
                   <h4>Scan with your mobile app</h4>
                   <p>
-                    Open the Preloop AI mobile app and scan this QR code to
+                    Open the Preloop mobile app and scan this QR code to
                     register your device for push notifications.
                   </p>
                 </div>

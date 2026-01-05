@@ -1,4 +1,4 @@
-"""API endpoints for Preloop AI."""
+"""API endpoints for Preloop."""
 
 # Open source core endpoints
 __all__ = [

@@ -1,4 +1,4 @@
-# Preloop AI - Open Source Edition
+# Preloop - Open Source Edition
 # Minimal brand configuration for self-hosted deployments.
 #
 # edition: Controls UI behavior, not feature set
@@ -12,7 +12,7 @@
 
 brands:
   preloop:
-    name: "Preloop AI"
+    name: "Preloop"
     domain: "localhost"
     edition: "selfhosted"
 
@@ -26,10 +26,10 @@ brands:
 
     landing:
       meta:
-        title: "Preloop AI"
+        title: "Preloop"
         description: "Responsible AI automation with human-in-the-loop approval"
       hero:
-        title: "Welcome to <span class=\"gradient-product\">Preloop AI</span>"
+        title: "Welcome to <span class=\"gradient-product\">Preloop</span>"
         lead: "Sign in to get started with responsible AI automation."
         cta_primary: "Sign In"
         cta_primary_url: "/login"

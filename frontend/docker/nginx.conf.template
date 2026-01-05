@@ -49,7 +49,7 @@ server {
     # MCP server proxy configuration
     # Use prefix match with ^~ to stop searching and prevent SPA catch-all
     location ^~ /mcp/ {
-        # Proxy to Preloop AI backend API
+        # Proxy to Preloop backend API
         set $api_backend "${API_URL}";
 
         proxy_pass $api_backend;

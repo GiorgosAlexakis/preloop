@@ -1,1 +1,1 @@
-"""API and MCP server implementation for Preloop AI."""
+"""API and MCP server implementation for Preloop."""

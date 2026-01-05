@@ -23,7 +23,7 @@ data:
 
         # API proxy configuration
         location /api/ {
-            # Proxy to Preloop AI backend service
+            # Proxy to Preloop backend service
             set $api_backend "http://{{ include "preloop.fullname" . }}-api:80";
 
             proxy_pass $api_backend;
@@ -57,7 +57,7 @@ data:
         # Approval page proxy configuration (public approval without authentication)
         # Use prefix match with ^~ to stop searching and prevent SPA catch-all
         location ^~ /approval/ {
-            # Proxy to Preloop AI backend service
+            # Proxy to Preloop backend service
             proxy_pass http://{{ include "preloop.fullname" . }}-api:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -69,7 +69,7 @@ data:
         # Invitation accept page proxy configuration (public invitation accept)
         # Use prefix match with ^~ to stop searching and prevent SPA catch-all
         location ^~ /invitations/accept {
-            # Proxy to Preloop AI backend service
+            # Proxy to Preloop backend service
             proxy_pass http://{{ include "preloop.fullname" . }}-api:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
@@ -81,7 +81,7 @@ data:
         # MCP server proxy configuration
         # Use prefix match with ^~ to stop searching and prevent SPA catch-all
         location ^~ /mcp/ {
-            # Proxy to Preloop AI backend service
+            # Proxy to Preloop backend service
             proxy_pass http://{{ include "preloop.fullname" . }}-api:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;

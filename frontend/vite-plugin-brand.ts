@@ -352,7 +352,7 @@ type RouteMeta = {
 
 function getMetaForRoute(route: string, config: BrandConfig): RouteMeta {
   const meta = config.landing?.meta || {};
-  const defaultTitle = meta.title || config.name || 'Preloop AI';
+  const defaultTitle = meta.title || config.name || 'Preloop';
   const defaultDescription = meta.description || '';
   const defaultKeywords = meta.keywords || '';
   const defaultOgImage = meta.og_image || '';

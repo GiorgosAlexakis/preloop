@@ -38,7 +38,7 @@ class GitCloneConfig(BaseModel):
         default_factory=list, description="List of repositories to clone"
     )
     git_user_name: Optional[str] = Field(
-        default="Preloop AI", description="Name to use for git commits"
+        default="Preloop", description="Name to use for git commits"
     )
     git_user_email: Optional[str] = Field(
         default="git@preloop.ai", description="Email to use for git commits"

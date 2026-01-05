@@ -530,10 +530,11 @@ class TestFlowExecutionOrchestrator:
     ):
         """Test error handling when an exception occurs during execution."""
 
-        # Patch _get_flow_details to raise an exception
+        # Patch _prepare_execution_context to raise an exception
+        # (this is called after execution log is created)
         with patch.object(
             FlowExecutionOrchestrator,
-            "_get_flow_details",
+            "_prepare_execution_context",
             side_effect=Exception("Test error"),
         ):
             orchestrator = FlowExecutionOrchestrator(

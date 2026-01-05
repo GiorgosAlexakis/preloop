@@ -176,7 +176,7 @@ class TestFlowExecution:
             filters={"label": "preloop.agent_type"}
         )
 
-        logger.info(f"Found {len(containers)} Preloop AI agent containers")
+        logger.info(f"Found {len(containers)} Preloop agent containers")
 
         for container in containers:
             info = await container.show()

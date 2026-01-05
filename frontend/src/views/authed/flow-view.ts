@@ -1181,7 +1181,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                           <sl-input
                             label="Git User Name"
                             .value=${this.flow.git_clone_config
-                              ?.git_user_name || 'Preloop AI'}
+                              ?.git_user_name || 'Preloop'}
                             @sl-input=${(e: any) => {
                               if (!this.flow.git_clone_config) return;
                               this.flow = {
@@ -1845,7 +1845,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       this.flow.git_clone_config = {
         enabled: true,
         repositories: [],
-        git_user_name: 'Preloop AI',
+        git_user_name: 'Preloop',
         git_user_email: 'git@preloop.ai',
         source_branch: 'main',
         target_branch: '',

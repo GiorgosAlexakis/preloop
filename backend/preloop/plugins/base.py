@@ -1,6 +1,6 @@
-"""Base classes for Preloop AI plugin system.
+"""Base classes for Preloop plugin system.
 
-This module provides the core plugin architecture for extending Preloop AI
+This module provides the core plugin architecture for extending Preloop
 functionality. Plugins can provide services, API routes, background tasks,
 condition evaluators, and workflow orchestrators.
 """
@@ -47,7 +47,7 @@ class RouterConfig:
 
 
 class Plugin(ABC):
-    """Base class for all Preloop AI plugins.
+    """Base class for all Preloop plugins.
 
     Plugins can provide:
     - Services (business logic, integrations)

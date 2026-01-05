@@ -19,7 +19,7 @@ class AiderAgent(ContainerAgentExecutor):
     Aider CE agent executor.
 
     Runs Aider CE (Community Edition with MCP support) in a Docker container
-    for autonomous coding tasks with access to Preloop AI MCP tools.
+    for autonomous coding tasks with access to Preloop MCP tools.
 
     Note: Uses dustinwashington/aider-ce Docker image which includes MCP support.
     The official paulgauthier/aider image does not support MCP servers.
@@ -117,13 +117,13 @@ class AiderAgent(ContainerAgentExecutor):
             )
             env.update(mcp_env)
 
-            # Add account API token for Preloop AI MCP authentication
+            # Add account API token for Preloop MCP authentication
             if account_api_token:
                 env["PRELOOP_API_TOKEN"] = account_api_token
                 self.logger.info("Added PRELOOP_API_TOKEN to environment")
             else:
                 self.logger.warning(
-                    "No account API token provided for Preloop AI MCP access"
+                    "No account API token provided for Preloop MCP access"
                 )
 
             # Generate MCP config file

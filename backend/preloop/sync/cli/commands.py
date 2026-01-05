@@ -120,7 +120,7 @@ def status(verbose: bool) -> None:
 @click.option(
     "--webhook-url",
     type=str,
-    help="(Optional) Specify a particular webhook URL pattern to unregister. If not provided, attempts to unregister Preloop AI-managed webhooks.",
+    help="(Optional) Specify a particular webhook URL pattern to unregister. If not provided, attempts to unregister Preloop-managed webhooks.",
 )
 @click.option(
     "--cleanup-all",
@@ -148,7 +148,7 @@ def unregister_webhooks_command(
     for all active accounts.
 
     The --webhook-url option allows specifying a URL pattern. If not given,
-    it defaults to unregistering webhooks that Preloop AI would have created,
+    it defaults to unregistering webhooks that Preloop would have created,
     typically based on the PRELOOP_URL environment variable.
     """
     click.echo("Starting webhook unregistration process...")

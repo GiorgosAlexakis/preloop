@@ -143,16 +143,14 @@ class GeminiAgent(ContainerAgentExecutor):
         # Prepare Gemini-specific environment variables
         env = await self._prepare_environment(execution_context)
 
-        # Add account API token for Preloop AI MCP authentication (always for Gemini)
+        # Add account API token for Preloop MCP authentication (always for Gemini)
         account_api_token = execution_context.get("account_api_token")
         if account_api_token:
             env["PRELOOP_API_TOKEN"] = account_api_token
         else:
-            self.logger.warning(
-                "No account API token provided for Preloop AI MCP access"
-            )
+            self.logger.warning("No account API token provided for Preloop MCP access")
 
-        # Set Preloop AI MCP URL (defaults to host.docker.internal for container access)
+        # Set Preloop MCP URL (defaults to host.docker.internal for container access)
         env["PRELOOP_MCP_URL"] = os.getenv(
             "PRELOOP_MCP_URL", "http://host.docker.internal:8000/mcp/v1"
         )
@@ -424,16 +422,14 @@ exit $GEMINI_EXIT_CODE
         # Prepare Gemini-specific environment variables
         gemini_env = await self._prepare_environment(execution_context)
 
-        # Add account API token for Preloop AI MCP authentication
+        # Add account API token for Preloop MCP authentication
         account_api_token = execution_context.get("account_api_token")
         if account_api_token:
             gemini_env["PRELOOP_API_TOKEN"] = account_api_token
         else:
-            self.logger.warning(
-                "No account API token provided for Preloop AI MCP access"
-            )
+            self.logger.warning("No account API token provided for Preloop MCP access")
 
-        # Set Preloop AI MCP URL (for Kubernetes)
+        # Set Preloop MCP URL (for Kubernetes)
         gemini_env["PRELOOP_MCP_URL"] = os.getenv(
             "PRELOOP_MCP_URL_K8S",
             os.getenv("PRELOOP_MCP_URL", "http://preloop-api:8000/mcp/v1"),

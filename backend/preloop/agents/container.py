@@ -160,12 +160,12 @@ class ContainerAgentExecutor(AgentExecutor):
             )
             env.update(mcp_env)
 
-            # Add account API token for Preloop AI MCP authentication
+            # Add account API token for Preloop MCP authentication
             if account_api_token:
                 env["PRELOOP_API_TOKEN"] = account_api_token
             else:
                 self.logger.warning(
-                    "No account API token provided for Preloop AI MCP access"
+                    "No account API token provided for Preloop MCP access"
                 )
 
             # Generate MCP config file (will be used by agents that support config files)
@@ -1156,7 +1156,7 @@ class ContainerAgentExecutor(AgentExecutor):
                 return ""
 
             # Get git user configuration (defaults)
-            git_user_name = git_config.get("git_user_name", "Preloop AI")
+            git_user_name = git_config.get("git_user_name", "Preloop")
             git_user_email = git_config.get("git_user_email", "git@preloop.ai")
             source_branch = git_config.get("source_branch", "main")
             target_branch = git_config.get("target_branch")
@@ -1406,7 +1406,7 @@ echo "✓ Repository successfully cloned to {full_path}"
 
                 # Add PR/MR creation if enabled
                 if create_pr and token:
-                    # Get Preloop AI URL for execution link
+                    # Get Preloop URL for execution link
                     import os
 
                     preloop_url = os.getenv("PRELOOP_URL", "http://localhost:8000")
@@ -1475,12 +1475,12 @@ PREOF
       # Single commit - use commit message
       PR_TITLE=$(git log -1 --format=%s {source_branch}..{target_branch})
       COMMIT_BODY=$(git log -1 --format=%b {source_branch}..{target_branch})
-      PR_BODY="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n$COMMIT_BODY"
+      PR_BODY="Automated changes from Preloop flow: [{flow_name}]({execution_link})\\n\\n$COMMIT_BODY"
     else
       # Multiple commits - use flow name and list commits
-      PR_TITLE="[Preloop AI] {flow_name}"
+      PR_TITLE="[Preloop] {flow_name}"
       COMMIT_LIST=$(git log --format="- %s" {source_branch}..{target_branch})
-      PR_BODY="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n**Commits:**\\n$COMMIT_LIST"
+      PR_BODY="Automated changes from Preloop flow: [{flow_name}]({execution_link})\\n\\n**Commits:**\\n$COMMIT_LIST"
     fi
 
     # Create PR with dynamic title/body
@@ -1576,12 +1576,12 @@ MREOF
       # Single commit - use commit message
       MR_TITLE=$(git log -1 --format=%s {source_branch}..{target_branch})
       COMMIT_BODY=$(git log -1 --format=%b {source_branch}..{target_branch})
-      MR_DESCRIPTION="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n$COMMIT_BODY"
+      MR_DESCRIPTION="Automated changes from Preloop flow: [{flow_name}]({execution_link})\\n\\n$COMMIT_BODY"
     else
       # Multiple commits - use flow name and list commits
-      MR_TITLE="[Preloop AI] {flow_name}"
+      MR_TITLE="[Preloop] {flow_name}"
       COMMIT_LIST=$(git log --format="- %s" {source_branch}..{target_branch})
-      MR_DESCRIPTION="Automated changes from Preloop AI flow: [{flow_name}]({execution_link})\\n\\n**Commits:**\\n$COMMIT_LIST"
+      MR_DESCRIPTION="Automated changes from Preloop flow: [{flow_name}]({execution_link})\\n\\n**Commits:**\\n$COMMIT_LIST"
     fi
 
     echo "Creating Merge Request on {gitlab_host}..."

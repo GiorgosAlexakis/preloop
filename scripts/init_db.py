@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Script to initialize the Preloop AI database.
+Script to initialize the Preloop database.
 This creates all tables using Alembic migrations and sets up default models.
 """
 

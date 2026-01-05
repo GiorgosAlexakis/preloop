@@ -27,7 +27,7 @@ def run_command(command: list, input_data: str = None, timeout: int = 30) -> str
 def wait_for_issue(
     client: httpx.Client, issue_key: str, timeout: int
 ) -> Dict[str, Any]:
-    """Poll Preloop AI until issue is available or timeout."""
+    """Poll Preloop until issue is available or timeout."""
     print(f"⏳ Waiting for issue {issue_key} to be indexed (timeout: {timeout}s)...")
     start_time = time.time()
 
@@ -52,7 +52,7 @@ def wait_for_issue(
 def wait_for_issue_update(
     client: httpx.Client, issue_key: str, expected_title: str, timeout: int
 ) -> Dict[str, Any]:
-    """Poll Preloop AI until issue title matches expected value or timeout."""
+    """Poll Preloop until issue title matches expected value or timeout."""
     print(
         f"⏳ Waiting for issue {issue_key} to update via webhook (timeout: {timeout}s)..."
     )
@@ -90,7 +90,7 @@ def create_mcp_client(base_url: str, api_key: str):
     Create an MCP test client.
 
     Args:
-        base_url: Preloop AI base URL
+        base_url: Preloop base URL
         api_key: API key for authentication
 
     Returns:
@@ -106,7 +106,7 @@ def run_mcp_test(base_url: str, api_key: str, test_func):
     Run an async MCP test from a synchronous context.
 
     Args:
-        base_url: Preloop AI base URL
+        base_url: Preloop base URL
         api_key: API key for authentication
         test_func: Async function that receives an MCPTestClient and performs tests
 

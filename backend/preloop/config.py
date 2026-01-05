@@ -1,4 +1,4 @@
-"""Configuration for Preloop AI."""
+"""Configuration for Preloop."""
 
 import logging
 import os
@@ -46,7 +46,7 @@ class ServerSettings(BaseModel):
 class Settings(BaseSettings):
     """Application settings."""
 
-    app_name: str = Field("Preloop AI", description="Application name")
+    app_name: str = Field("Preloop", description="Application name")
     version: str = Field(SERVER_VERSION, description="Application version")
     environment: str = Field(
         "development", description="Environment (development, production)"
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
         "product@spacecode.ai", description="Product team email address"
     )
     nats_url: str = Field("nats://localhost:4222", description="NATS server URL")
-    preloop_url: str = Field("http://localhost:8000", description="Preloop AI URL")
+    preloop_url: str = Field("http://localhost:8000", description="Preloop URL")
     PROMPTS_FILE: str = Field(
         "backend/preloop/prompts.yaml",
         description="Path to the prompts YAML file",
@@ -145,7 +145,7 @@ class Settings(BaseSettings):
         )
 
         return cls(
-            app_name=os.getenv("APP_NAME", "Preloop AI"),
+            app_name=os.getenv("APP_NAME", "Preloop"),
             environment=os.getenv("ENVIRONMENT", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", "product@spacecode.ai"),

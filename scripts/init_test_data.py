@@ -1,4 +1,4 @@
-"""Initialize test data for Preloop AI."""
+"""Initialize test data for Preloop."""
 
 import asyncio
 import logging
@@ -27,7 +27,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 async def create_test_data():
-    """Create test data for the Preloop AI server."""
+    """Create test data for the Preloop server."""
     session_generator = get_db_session()
     db = next(session_generator)
     crud_account = CRUDAccount(Account)

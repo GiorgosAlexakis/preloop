@@ -2,7 +2,7 @@
 Example MCP Server for testing external MCP server integration.
 
 This is a simple MCP server built with FastMCP that provides a few example tools
-for testing the Phase 1B external MCP server functionality in Preloop AI.
+for testing the Phase 1B external MCP server functionality in Preloop.
 
 The server supports HTTP streaming transport with bearer token authentication.
 
@@ -68,8 +68,8 @@ if __name__ == "__main__":
         "  - slow_fibonacci: Calculate Fibonacci with detailed progress (STREAMING)"
     )
     logger.info("")
-    logger.info("To add this server to Preloop AI:")
-    logger.info("  1. Navigate to /console/tools in Preloop AI UI")
+    logger.info("To add this server to Preloop:")
+    logger.info("  1. Navigate to /console/tools in Preloop UI")
     logger.info("  2. Click 'Add MCP Server'")
     logger.info("  3. Enter:")
     logger.info("     - Name: Example MCP Server")

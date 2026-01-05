@@ -1,6 +1,6 @@
-"""Preloop AI plugin system.
+"""Preloop plugin system.
 
-This package provides the plugin architecture for extending Preloop AI
+This package provides the plugin architecture for extending Preloop
 with custom evaluators, workflows, and integrations.
 """
 

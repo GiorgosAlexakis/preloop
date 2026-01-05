@@ -167,14 +167,14 @@ class TestSendVerificationEmail:
         assert "verify-email" in html_body
 
     @patch("preloop.utils.email.send_email")
-    @patch("preloop.utils.email.APP_NAME", "Preloop AI")
+    @patch("preloop.utils.email.APP_NAME", "Preloop")
     def test_send_verification_email_includes_welcome_message(self, mock_send_email):
         """Test that verification email includes welcome message."""
         send_verification_email("user@example.com", "token")
 
         call_args = mock_send_email.call_args
         text_body = call_args[0][2]
-        assert "Welcome to Preloop AI" in text_body
+        assert "Welcome to Preloop" in text_body
 
 
 class TestSendPasswordResetEmail:
