@@ -3,7 +3,7 @@ import json
 
 import requests
 
-# Base URL for the Preloop AI API
+# Base URL for the Preloop API
 base_url = "http://localhost:8000/api/v1"
 
 # Authenticate and get a token

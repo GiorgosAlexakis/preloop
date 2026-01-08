@@ -33,11 +33,11 @@ from typing import List, Tuple
 
 from sqlalchemy.orm import Session
 
-from preloop_models.db.session import get_db_session
-from preloop_models.crud.flow import CRUDFlow
-from preloop_models.models.flow import Flow
-from preloop_models import schemas
-from preloop_ai.flow_presets import FLOW_PRESETS, PRESETS_DIR
+from preloop.models.db.session import get_db_session
+from preloop.models.crud.flow import CRUDFlow
+from preloop.models.models.flow import Flow
+from preloop.models import schemas
+from preloop.flow_presets import FLOW_PRESETS, PRESETS_DIR
 
 load_dotenv()
 

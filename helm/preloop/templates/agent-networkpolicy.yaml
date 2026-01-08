@@ -1,0 +1,136 @@
+{{- if and .Values.agentExecution.networkPolicy.enabled .Values.agentExecution.namespace.create -}}
+{{- $agentNamespace := .Values.agentExecution.namespace.name -}}
+---
+# NetworkPolicy for agent execution namespace - enforces strict network isolation
+# Only created when using a separate namespace for agent execution
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-execution-isolation
+  namespace: {{ $agentNamespace }}
+  labels:
+    {{- include "preloop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-execution
+spec:
+  # Apply to all pods in the agent-execution namespace
+  podSelector: {}
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # INGRESS: Deny all incoming connections
+  # Agent containers should not receive any inbound connections
+  ingress: []
+
+  # EGRESS: Allow only specific outbound connections
+  egress:
+    # Allow DNS resolution (required for all network operations)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    {{- if .Values.agentExecution.networkPolicy.allowPreloopAPI }}
+    # Allow connections to Preloop API (for MCP tool calls)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "preloop.name" . }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+    {{- end }}
+
+    {{- if .Values.agentExecution.networkPolicy.allowExternalLLMAPIs }}
+    # Allow connections to external LLM APIs (Anthropic, OpenAI, etc.)
+    # This allows egress to any external IP on HTTPS port
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+      # Exclude internal cluster networks
+      {{- if .Values.agentExecution.networkPolicy.excludeCIDRs }}
+      except:
+        {{- range .Values.agentExecution.networkPolicy.excludeCIDRs }}
+        - namespaceSelector: {}
+          ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.agentExecution.networkPolicy.additionalEgressRules }}
+    # Additional custom egress rules
+    {{- toYaml .Values.agentExecution.networkPolicy.additionalEgressRules | nindent 4 }}
+    {{- end }}
+
+---
+# ResourceQuota for agent execution namespace - prevent resource exhaustion
+# Only created when using a separate namespace for agent execution
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: agent-execution-quota
+  namespace: {{ $agentNamespace }}
+  labels:
+    {{- include "preloop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-execution
+spec:
+  hard:
+    # Limit number of concurrent agent Jobs
+    count/jobs.batch: {{ .Values.agentExecution.resourceQuota.maxJobs | quote }}
+    # Limit number of concurrent Pods
+    pods: {{ .Values.agentExecution.resourceQuota.maxPods | quote }}
+    # Total CPU requests across all pods
+    requests.cpu: {{ .Values.agentExecution.resourceQuota.requestsCpu | quote }}
+    # Total memory requests across all pods
+    requests.memory: {{ .Values.agentExecution.resourceQuota.requestsMemory | quote }}
+    # Total CPU limits across all pods
+    limits.cpu: {{ .Values.agentExecution.resourceQuota.limitsCpu | quote }}
+    # Total memory limits across all pods
+    limits.memory: {{ .Values.agentExecution.resourceQuota.limitsMemory | quote }}
+
+---
+# LimitRange for agent execution namespace - enforce pod-level resource constraints
+# Only created when using a separate namespace for agent execution
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: agent-execution-limits
+  namespace: {{ $agentNamespace }}
+  labels:
+    {{- include "preloop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-execution
+spec:
+  limits:
+    # Constraints for containers
+    - type: Container
+      max:
+        cpu: {{ .Values.agentExecution.limitRange.container.maxCpu | quote }}
+        memory: {{ .Values.agentExecution.limitRange.container.maxMemory | quote }}
+      min:
+        cpu: {{ .Values.agentExecution.limitRange.container.minCpu | quote }}
+        memory: {{ .Values.agentExecution.limitRange.container.minMemory | quote }}
+      default:
+        cpu: {{ .Values.agentExecution.limitRange.container.defaultCpu | quote }}
+        memory: {{ .Values.agentExecution.limitRange.container.defaultMemory | quote }}
+      defaultRequest:
+        cpu: {{ .Values.agentExecution.limitRange.container.defaultRequestCpu | quote }}
+        memory: {{ .Values.agentExecution.limitRange.container.defaultRequestMemory | quote }}
+    # Constraints for pods
+    - type: Pod
+      max:
+        cpu: {{ .Values.agentExecution.limitRange.pod.maxCpu | quote }}
+        memory: {{ .Values.agentExecution.limitRange.pod.maxMemory | quote }}
+{{- end }}

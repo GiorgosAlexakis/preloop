@@ -1,0 +1,51 @@
+name: Pull Request Reviewer
+description: >-
+  Automatically review pull requests for code quality, potential bugs, security
+  issues, and best practices.
+icon: code-square
+trigger_event_source: null
+trigger_event_type: pull_request.opened
+prompt_template: |
+  You are an expert code reviewer.
+
+  A new pull request has been created:
+  Title: {{trigger_event.payload.pull_request.title}}
+  Description: {{trigger_event.payload.pull_request.description}}
+  Author: {{trigger_event.payload.pull_request.author}}
+  Repository: {{trigger_event.payload.repository.name}}
+  Branch: {{trigger_event.payload.pull_request.source_branch}} → {{trigger_event.payload.pull_request.target_branch}}
+
+  Your task:
+  1. Clone the repository and review the code changes
+  2. Check for:
+     - Code quality issues
+     - Potential bugs or edge cases
+     - Security vulnerabilities
+     - Performance concerns
+     - Best practice violations
+     - Missing tests or documentation
+  3. Provide constructive feedback with specific line references
+  4. Suggest improvements and alternatives
+  5. Highlight any critical issues that should block the merge
+
+  Use the add_comment tool to post your review findings.
+  Be thorough but constructive in your feedback.
+agent_type: codex
+agent_config:
+  sandbox_type: exec
+  enable_auto_lint: true
+allowed_mcp_servers: []
+allowed_mcp_tools:
+  - name: get_issue
+  - name: add_comment
+  - name: update_issue
+git_clone_config:
+  enabled: true
+  repositories: []
+  git_user_name: Preloop
+  git_user_email: hello@preloop.ai
+  source_branch: null
+  target_branch: null
+  create_pull_request: false
+trigger_config: null
+is_preset: true

@@ -4,7 +4,7 @@ The **Model Context Protocol (MCP)** is an open standard that enables AI assista
 
 ## How Preloop Uses MCP
 
-Preloop AI acts as an MCP server that provides:
+Preloop acts as an MCP server that provides:
 
 - **Human-in-the-loop approval** - Pause AI actions for human review before execution
 - **Tool orchestration** - Connect multiple MCP servers through a unified interface

@@ -1,12 +1,12 @@
-# Preloop AI Development Guide
+# Preloop Development Guide
 
-Only use the DB models defined in preloop-models package `from preloop_models import models`
+Only use the DB models defined in the preloop.models package `from preloop.models import models`
 
 Use the Lit.dev framework for frontend code. If you create new web components ensure that the landing page content is not hidden in their shadow DOM.
 
 ## Commands
 - **Install**: `pip install -e ".[dev]"`
-- **Run server**: `python -m preloop_ai.server`
+- **Run server**: `python -m preloop.server`
 - **Run tests**: `pytest`
 - **Run single test**: `pytest tests/path/to/test_file.py::TestClass::test_function`
 - **Lint**: `ruff check .`

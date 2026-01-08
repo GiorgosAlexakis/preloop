@@ -1,4 +1,4 @@
-"""Initialize test data for Preloop AI."""
+"""Initialize test data for Preloop."""
 
 import asyncio
 import logging
@@ -7,15 +7,15 @@ import uuid
 from passlib.context import CryptContext
 from sqlalchemy.exc import SQLAlchemyError
 
-from preloop_models.crud.account import CRUDAccount
-from preloop_models.crud.organization import CRUDOrganization
-from preloop_models.crud.project import CRUDProject
-from preloop_models.crud.tracker import CRUDTracker
-from preloop_models.db.session import get_db_session
-from preloop_models.models.account import Account
-from preloop_models.models.organization import Organization
-from preloop_models.models.project import Project
-from preloop_models.models.tracker import Tracker, TrackerType
+from preloop.models.crud.account import CRUDAccount
+from preloop.models.crud.organization import CRUDOrganization
+from preloop.models.crud.project import CRUDProject
+from preloop.models.crud.tracker import CRUDTracker
+from preloop.models.db.session import get_db_session
+from preloop.models.models.account import Account
+from preloop.models.models.organization import Organization
+from preloop.models.models.project import Project
+from preloop.models.models.tracker import Tracker, TrackerType
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -27,7 +27,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 async def create_test_data():
-    """Create test data for the Preloop AI server."""
+    """Create test data for the Preloop server."""
     session_generator = get_db_session()
     db = next(session_generator)
     crud_account = CRUDAccount(Account)
@@ -160,12 +160,13 @@ def main():
         # First ensure the database tables exist using Alembic
         import os
         import subprocess
+        from pathlib import Path
 
-        # Get the SpaceModels directory path
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        spacemodels_dir = os.getenv(
+        # Get the models directory path (where alembic.ini lives)
+        repo_root = Path(__file__).resolve().parents[1]
+        models_dir = os.getenv(
             "PRELOOP_MODELS_PATH",
-            os.path.join(repo_root, "backend", "preloop-models"),
+            str(repo_root / "backend" / "preloop" / "models"),
         )
 
         logger.info(
@@ -175,7 +176,7 @@ def main():
         # Run alembic upgrade head
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
-            cwd=spacemodels_dir,
+            cwd=models_dir,
             capture_output=True,
             text=True,
         )

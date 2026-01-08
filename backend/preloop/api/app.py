@@ -1,0 +1,781 @@
+"""FastAPI application for Preloop.
+
+This FastAPI application provides HTTP endpoints for authentication and management
+of issue tracking systems.
+"""
+
+import logging
+import os
+import json
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from contextlib import asynccontextmanager
+from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import FileResponse
+from pyinstrument import Profiler
+from pyinstrument.renderers import SpeedscopeRenderer
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from preloop import __version__
+from fastapi.encoders import jsonable_encoder
+from preloop.api.auth import auth_router, get_current_active_user
+from preloop.api.endpoints import (
+    account,
+    approval_requests,
+    comments,
+    features,
+    health,
+    issues,
+    mcp_servers,
+    notification_preferences,
+    organizations,
+    projects,
+    public_approval,
+    roles,
+    search as search_router,
+    tools,
+    trackers,
+    version,
+    embedding as embedding_router,
+    webhooks,
+    flows,
+    ai_models,
+    websockets,
+)
+
+# Enterprise endpoints (impersonation, issue_compliance, issue_duplicates, issue_dependencies)
+# are now loaded exclusively via the plugin system - see plugins/admin and plugins/analytics
+
+from preloop.services.mcp_http import setup_mcp_routes
+from preloop.models.sentry import init_sentry
+from preloop.models.db.session import get_db_session
+from preloop.models.db.setup import setup_database
+from preloop.models.models.api_usage import ApiUsage
+from preloop.sync.services.event_bus import connect_nats, close_nats  # NATS integration
+
+
+logger = logging.getLogger(__name__)
+
+
+class PyinstrumentMiddleware(BaseHTTPMiddleware):
+    """Middleware to profile requests using pyinstrument."""
+
+    async def dispatch(self, request: Request, call_next):
+        """Process a request and profile it.
+        Args:
+            request: The request to process.
+            call_next: The next middleware to call.
+        Returns:
+            The response from the next middleware.
+        """
+        profiling_enabled = os.getenv("PROFILING_ENABLED", "false").lower() == "true"
+        if not profiling_enabled or not request.url.path.startswith("/api/v1"):
+            return await call_next(request)
+
+        profiler = Profiler()
+        start_time = time.time()
+
+        profiler.start()
+        response = await call_next(request)
+        profiler.stop()
+
+        duration = time.time() - start_time
+
+        # Ensure the profiling directory exists
+        output_dir = Path("/tmp/profiling")
+        output_dir.mkdir(exist_ok=True)
+
+        # Generate a unique filename
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        path_slug = request.url.path.replace("/", "_").strip("_")
+        filename_base = f"{timestamp}_{request.method}_{path_slug}"
+
+        # Save HTML report
+        html_path = output_dir / f"{filename_base}.html"
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(profiler.output_html())
+
+        # Save speedscope report
+        speedscope_path = output_dir / f"{filename_base}.speedscope.json"
+        renderer = SpeedscopeRenderer()
+        with open(speedscope_path, "w", encoding="utf-8") as f:
+            f.write(renderer.render(profiler.last_session))
+
+        logger.info(
+            f"Profiled request {request.method} {request.url.path} in {duration:.4f}s. "
+            f"Reports saved to {html_path} and {speedscope_path}"
+        )
+
+        return response
+
+
+class ApiUsageMiddleware(BaseHTTPMiddleware):
+    """Middleware to track API usage."""
+
+    async def dispatch(self, request: Request, call_next):
+        """Process a request and track API usage.
+
+        Args:
+            request: The request to process.
+            call_next: The next middleware to call.
+
+        Returns:
+            The response from the next middleware.
+        """
+        # Skip tracking for non-api routes
+        path = request.url.path
+        logger.info(f"[ApiUsageMiddleware] Processing request: {request.method} {path}")
+
+        if (
+            not path.startswith("/api/v1")
+            or path.startswith("/api/v1/health")
+            or path.startswith("/api/v1/billing/plans")
+            or path.startswith("/api/v1/billing/create-checkout-session")
+            or path.startswith("/api/v1/billing/webhooks")
+            or path.startswith("/api/v1/ai-models/providers/")
+        ):
+            logger.info(f"[ApiUsageMiddleware] Skipping tracking for {path}")
+            return await call_next(request)
+
+        logger.info(
+            f"[ApiUsageMiddleware] Tracking enabled for {path}, calling next middleware"
+        )
+        start_time = datetime.now(timezone.utc)
+        response = await call_next(request)
+        logger.info(
+            f"[ApiUsageMiddleware] Response received for {path}, status: {response.status_code}"
+        )
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+        # Extract tracking information
+        method = request.method
+        status_code = response.status_code
+        user = None
+        action_type = None
+
+        # Determine the action type based on the path and method
+        if "/issues" in path:
+            if method == "POST":
+                action_type = "create_issue"
+            elif method == "PUT" or method == "PATCH":
+                action_type = "update_issue"
+            elif method == "DELETE":
+                action_type = "delete_issue"
+
+        # Get user_id from auth token if available
+        user_id = None
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            from preloop.api.auth.jwt import decode_token
+            from uuid import UUID
+
+            try:
+                token = auth_header.replace("Bearer ", "")
+                token_data = decode_token(token)
+                # user_id is stored in the "sub" field of the token
+                user_id_str = getattr(token_data, "sub", None)
+                if user_id_str:
+                    user_id = UUID(user_id_str)
+            except Exception:
+                # Ignore errors in token decoding
+                pass
+
+        # Log usage in database
+        if user_id and status_code < 500:  # Only log successful API calls
+            try:
+                session_generator = get_db_session()
+                session = next(session_generator)
+
+                try:
+                    # Create usage entry
+                    usage_entry = ApiUsage(
+                        user_id=user_id,
+                        endpoint=path,
+                        method=method,
+                        status_code=status_code,
+                        duration=duration,
+                        action_type=action_type,
+                        timestamp=start_time,
+                    )
+
+                    session.add(usage_entry)
+                    session.commit()
+                finally:
+                    session.close()
+                    try:
+                        # Clean up the generator
+                        next(session_generator, None)
+                    except StopIteration:
+                        pass
+            except Exception as e:
+                # Don't let tracking issues affect the response
+                logger.error(f"Error logging API usage: {str(e)}")
+
+        return response
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logger.info("Starting up application and database...")
+
+    # Initialize Sentry if DSN is configured
+    init_sentry()
+
+    # Initialize database connection and optionally create tables.
+    logger.info("Setting up database connection...")
+    try:
+        # Check if running in test mode or if INIT_DB is set
+        init_db = os.getenv("INIT_DB", "false").lower() == "true"
+        if init_db:
+            logger.info("Initializing database schema...")
+            database_url = os.getenv(
+                "DATABASE_URL",
+                "postgresql+psycopg://user:password@db:5432/preloop",
+            )
+            setup_database(database_url)
+            logger.info("Database schema initialized.")
+        else:
+            logger.info("Skipping database schema initialization (INIT_DB not true).")
+
+        # Check if test data initialization is enabled
+        if os.getenv("INIT_TEST_DATA", "false").lower() == "true":
+            logger.info("Initializing test data...")
+            # Import and run the test data initialization script
+            from scripts.init_test_data import main as init_data_main
+
+            init_data_main()
+            logger.info("Test data initialization complete.")
+
+    except Exception as e:
+        logger.error(f"Database setup failed: {e}", exc_info=True)
+        raise RuntimeError("Database setup failed") from e
+
+    # Connect to NATS (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        logger.info("Connecting to NATS...")
+        try:
+            await connect_nats()
+            logger.info("NATS connection established.")
+        except Exception as e:
+            logger.error(f"NATS connection failed: {e}", exc_info=True)
+            raise RuntimeError("NATS connection failed") from e
+
+        # Start the NATS consumer for WebSocket broadcasting
+        from preloop.services.websocket_manager import manager, nats_consumer
+        import asyncio
+
+        # Start the NATS consumer as a background task
+        loop = asyncio.get_event_loop()
+        app.state.nats_consumer_task = loop.create_task(nats_consumer(manager))
+        logger.info("NATS consumer for WebSockets started.")
+    else:
+        logger.info("Skipping NATS connection (TESTING mode)")
+
+    # Start the execution monitor for cleaning up stale executions (skip in testing mode)
+    execution_monitor = None
+    if os.getenv("TESTING") != "true":
+        from preloop.services.execution_monitor import get_execution_monitor
+
+        execution_monitor = get_execution_monitor()
+        await execution_monitor.start()
+        logger.info("Execution monitor started.")
+    else:
+        logger.info("Skipping execution monitor (TESTING mode)")
+
+    # Recover orphaned flow executions (skip in testing mode)
+    recovery_service = None
+    if os.getenv("TESTING") != "true":
+        from preloop.services.execution_recovery import get_recovery_service
+
+        recovery_service = get_recovery_service()
+        logger.info("Checking for orphaned flow executions to recover...")
+        try:
+            # Get a database session for recovery
+            db = next(get_db_session())
+            try:
+                recovered_count = await recovery_service.recover_orphaned_executions(db)
+                if recovered_count > 0:
+                    logger.info(f"Recovered {recovered_count} orphaned execution(s)")
+                else:
+                    logger.info("No orphaned executions found")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error recovering orphaned executions: {e}", exc_info=True)
+            # Don't fail startup - continue anyway
+    else:
+        logger.info("Skipping execution recovery (TESTING mode)")
+
+    # Start MCP server lifespan (skip in testing mode)
+    mcp_lifespan = None
+    if os.getenv("TESTING") != "true":
+        from preloop.services.mcp_http import get_mcp_lifespan_manager
+
+        mcp_lifespan = get_mcp_lifespan_manager()
+        if mcp_lifespan:
+            await mcp_lifespan.__aenter__()
+            logger.info("MCP server lifespan started")
+        else:
+            logger.warning("No MCP lifespan manager available")
+    else:
+        logger.info("Skipping MCP server (TESTING mode)")
+
+    # Initialize plugin system (skip in testing mode)
+    plugin_manager = None
+    if os.getenv("TESTING") != "true":
+        from preloop.plugins import get_plugin_manager
+
+        logger.info("Initializing plugin system...")
+        plugin_manager = get_plugin_manager()
+        await plugin_manager.startup_all()
+        logger.info(
+            f"Plugin system initialized. "
+            f"Registered {len(plugin_manager.list_condition_evaluators())} condition evaluators."
+        )
+    else:
+        logger.info("Skipping plugin system (TESTING mode)")
+
+    # Register instance and send version check (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        from preloop.services.instance_service import register_instance
+
+        try:
+            await register_instance()
+        except Exception as e:
+            logger.warning(f"Instance registration failed: {e}")
+            # Don't fail startup - continue anyway
+    else:
+        logger.info("Skipping instance registration (TESTING mode)")
+
+    yield
+
+    # Shutdown logic
+
+    # Wait for in-flight flow executions to complete (skip in testing mode)
+    if os.getenv("TESTING") != "true" and recovery_service:
+        logger.info("Waiting for in-flight flow executions to complete...")
+        try:
+            # Wait up to 5 minutes for recovery tasks to complete
+            await recovery_service.wait_for_completion(timeout=300)
+            logger.info("All in-flight executions completed or timed out.")
+        except Exception as e:
+            logger.error(
+                f"Error waiting for executions to complete: {e}", exc_info=True
+            )
+    else:
+        logger.info("Skipping execution wait (TESTING mode)")
+
+    # Stop version checker (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        from preloop.services.instance_service import stop_version_checker
+
+        stop_version_checker()
+
+    # Shutdown plugin system (skip in testing mode)
+    if os.getenv("TESTING") != "true" and plugin_manager:
+        logger.info("Shutting down plugin system...")
+        try:
+            await plugin_manager.shutdown_all()
+            logger.info("Plugin system shut down successfully.")
+        except Exception as e:
+            logger.error(f"Error shutting down plugins: {e}", exc_info=True)
+    else:
+        logger.info("Skipping plugin shutdown (TESTING mode)")
+
+    # Stop MCP server lifespan (skip in testing mode)
+    if os.getenv("TESTING") != "true" and mcp_lifespan:
+        try:
+            await mcp_lifespan.__aexit__(None, None, None)
+            logger.info("MCP server lifespan stopped")
+        except Exception as e:
+            logger.error(f"Error stopping MCP lifespan: {e}", exc_info=True)
+    else:
+        logger.info("Skipping MCP shutdown (TESTING mode)")
+
+    # Stop the execution monitor (skip in testing mode)
+    if os.getenv("TESTING") != "true" and execution_monitor:
+        try:
+            await execution_monitor.stop()
+            logger.info("Execution monitor stopped.")
+        except Exception as e:
+            logger.error(f"Error stopping execution monitor: {e}", exc_info=True)
+    else:
+        logger.info("Skipping execution monitor shutdown (TESTING mode)")
+
+    # Cancel the NATS consumer task (skip in testing mode)
+    if os.getenv("TESTING") != "true":
+        if hasattr(app.state, "nats_consumer_task"):
+            app.state.nats_consumer_task.cancel()
+            logger.info("NATS consumer for WebSockets stopped.")
+
+        logger.info("Shutting down NATS connection...")
+        try:
+            await close_nats()
+            logger.info("NATS connection closed.")
+        except Exception as e:
+            logger.error(f"Error closing NATS connection: {e}", exc_info=True)
+    else:
+        logger.info("Skipping NATS shutdown (TESTING mode)")
+
+    logger.info("Shutting down application...")
+    # Restore the original jsonable_encoder
+    import fastapi.encoders
+
+    if hasattr(app.state, "original_jsonable_encoder"):
+        fastapi.encoders.jsonable_encoder = app.state.original_jsonable_encoder
+        logger.info("Restored original jsonable_encoder.")
+    logger.info("Application shutdown complete.")
+
+
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application.
+
+    Returns:
+        FastAPI: The configured FastAPI application.
+    """
+    # Load environment variables from .env file
+    # load_dotenv()
+
+    # Define base directory relative to this file's location
+    base_dir = Path(__file__).resolve().parent.parent.parent
+
+    # Initialize FastAPI app
+    app = FastAPI(
+        title="Preloop API",
+        description="REST API for Preloop issue tracking management",
+        version=__version__,
+        openapi_url="/api/v1/openapi.json",  # Keep OpenAPI schema URL
+        docs_url=None,  # Disable the automatic docs at /docs
+        redoc_url=None,  # Disable the automatic redoc at /redoc
+        lifespan=lifespan,
+    )
+
+    # Add global exception handler to ensure all errors are logged
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Log all exceptions with full traceback."""
+        logger.error(
+            f"Unhandled exception in {request.method} {request.url.path}: {exc}",
+            exc_info=True,
+        )
+        # Re-raise HTTPException as-is
+        if isinstance(exc, HTTPException):
+            return JSONResponse(
+                status_code=exc.status_code, content={"detail": exc.detail}
+            )
+        # Return 500 for all other exceptions
+        return JSONResponse(
+            status_code=500, content={"detail": "Internal server error"}
+        )
+
+    # Override the default JSON encoder to handle datetime objects
+    class CustomJSONEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            return super().default(obj)
+
+    # Replace the default jsonable_encoder function with our custom one
+    def custom_jsonable_encoder(obj, *args, **kwargs):
+        # First let FastAPI's encoder prepare the object
+        encoded = jsonable_encoder(obj, *args, **kwargs)
+        # Then manually process any datetime objects that might have been missed
+        if isinstance(encoded, dict):
+            for key, value in encoded.items():
+                if isinstance(value, datetime):
+                    encoded[key] = value.isoformat()
+        elif isinstance(encoded, list):
+            for i, item in enumerate(encoded):
+                if isinstance(item, datetime):
+                    encoded[i] = item.isoformat()
+                elif isinstance(item, dict):
+                    for key, value in item.items():
+                        if isinstance(value, datetime):
+                            item[key] = value.isoformat()
+        return encoded
+
+    # Patch FastAPI's jsonable_encoder
+    import fastapi.encoders
+
+    app.state.original_jsonable_encoder = fastapi.encoders.jsonable_encoder
+    fastapi.encoders.jsonable_encoder = custom_jsonable_encoder
+
+    # Configure CORS
+    # In development/local mode, allow all origins for MCP and agent containers
+    # In production, this should be restricted to specific domains
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+    cors_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+    # Allow all origins in development mode for MCP clients (including containers)
+    if dev_mode or os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true":
+        cors_origins = ["*"]
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Add profiling middleware
+    app.add_middleware(PyinstrumentMiddleware)
+
+    # Add API usage tracking
+    # Can be disabled with DISABLE_API_USAGE_TRACKING=true for debugging
+    if (
+        os.getenv("TESTING") != "true"
+        and os.getenv("DISABLE_API_USAGE_TRACKING", "false").lower() != "true"
+    ):
+        app.add_middleware(ApiUsageMiddleware)
+
+    # Add WebSocket authentication middleware
+    # Validates Bearer token during HTTP upgrade before WebSocket handshake
+    from preloop.api.middleware import WebSocketAuthMiddleware
+
+    app.add_middleware(WebSocketAuthMiddleware)
+
+    # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
+    @app.get("/docs/api", include_in_schema=False)  # Changed path
+    async def custom_swagger_ui_html():
+        return get_swagger_ui_html(
+            openapi_url=app.openapi_url,
+            title=f"{app.title} - Swagger UI",
+            oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+            swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui-bundle.js",
+            swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui.css",
+        )
+
+    @app.get("/docs/redoc", include_in_schema=False)  # Changed path
+    async def custom_redoc_html():
+        return get_redoc_html(
+            openapi_url=app.openapi_url,
+            title=f"{app.title} - ReDoc",
+            redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2.0.0/bundles/redoc.standalone.js",
+        )
+
+    # Add custom OpenAPI schema
+    def custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        openapi_schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+
+        # Add security schemes and requirements
+        openapi_schema["components"]["securitySchemes"] = {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "JWT token for authentication",
+            }
+        }
+
+        # Apply security to all endpoints except auth endpoints, landing page, health checks, and docs
+        excluded_prefixes = [
+            "/api/v1/auth",
+            "/approval",  # Public approval endpoints (token-based, no login required)
+            "/api/v1/billing/plans",
+            "/api/v1/billing/create-checkout-session",
+            "/api/v1/webhooks/flows",
+            "/",
+            "/static",
+            "/register",
+            "/logout",
+            "/api/v1/health",
+            "/api/v1/features",
+            "/approval",
+        ]
+        for path in openapi_schema["paths"]:
+            # Check if path starts with any excluded prefix
+            is_excluded = False
+            for prefix in excluded_prefixes:
+                if path == prefix or (prefix != "/" and path.startswith(prefix)):
+                    is_excluded = True
+                    break
+            if not is_excluded:
+                # Check if path is exactly /api/v1/openapi.json
+                if path == app.openapi_url:
+                    continue  # Don't require auth for the schema itself
+
+                for method in openapi_schema["paths"][path]:
+                    if method.lower() != "options":  # Skip OPTIONS method
+                        openapi_schema["paths"][path][method]["security"] = [
+                            {"bearerAuth": []}
+                        ]
+
+        app.openapi_schema = openapi_schema
+        return app.openapi_schema
+
+    app.openapi = custom_openapi
+
+    # Setup MCP routes with DynamicMCPServer (MUST be before SPA mount)
+    setup_mcp_routes(app)
+    logger.info("MCP routes configured with DynamicMCPServer")
+
+    # Register plugin routes
+    # This allows plugins (both builtin and proprietary) to add their own endpoints
+    # We do this before adding standard routers to ensure plugins can override if needed
+    # or just be registered alongside
+    from preloop.plugins import get_plugin_manager
+
+    plugin_manager = get_plugin_manager()
+    plugin_manager.register_routes(app)
+
+    # Add routers
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
+    app.include_router(
+        account.router,
+        prefix="/api/v1",
+        tags=["Account"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        public_approval.router, tags=["Public Approval"], include_in_schema=False
+    )  # No auth required, mounted at /approval (not /api/v1/approval)
+    app.include_router(
+        features.router, prefix="/api/v1", tags=["Features"], include_in_schema=False
+    )  # No auth required
+    app.include_router(
+        health.router, prefix="/api/v1", tags=["Health"], include_in_schema=False
+    )
+    app.include_router(
+        version.router, prefix="/api/v1", tags=["Version"], include_in_schema=False
+    )
+    app.include_router(
+        trackers.router,
+        prefix="/api/v1",
+        tags=["Trackers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        mcp_servers.router,
+        prefix="/api/v1",
+        tags=["MCP Servers"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        tools.router,
+        prefix="/api/v1",
+        tags=["Tools"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        approval_requests.router,
+        prefix="/api/v1",
+        tags=["Approval Requests"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        notification_preferences.router,
+        prefix="/api/v1/notification-preferences",
+        tags=["Notification Preferences"],
+        # No router-level auth - individual endpoints handle their own auth
+        # /register-device and /register-via-token are public (token-based)
+    )
+    # Note: Issue dependencies endpoint is now loaded via plugins/analytics
+    app.include_router(
+        organizations.router,
+        prefix="/api/v1",
+        tags=["Organizations"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        projects.router,
+        prefix="/api/v1",
+        tags=["Projects"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        issues.router,
+        prefix="/api/v1",
+        tags=["Issues"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    # Note: Issue compliance endpoint is now loaded via plugins/analytics
+    app.include_router(
+        comments.router,
+        prefix="/api/v1",
+        tags=["Comments"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        search_router.router,
+        prefix="/api/v1",
+        tags=["Search"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        embedding_router.router,
+        prefix="/api/v1",
+        tags=["Embeddings"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    app.include_router(
+        ai_models.router,
+        prefix="/api/v1",
+        tags=["AI Models"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+    # Public AI models endpoints (no auth required)
+    app.include_router(
+        ai_models.public_router,
+        prefix="/api/v1",
+        tags=["AI Models"],
+    )
+    # Note: Issue duplicates endpoint is now loaded via plugins/analytics
+    app.include_router(
+        version.router, prefix="/api/v1", tags=["Version"]
+    )  # No auth dependency for version check
+    app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
+    app.include_router(
+        flows.router,
+        prefix="/api/v1",
+        tags=["Flows"],
+        # dependencies=[Depends(get_current_active_user)],
+    )
+
+    # WebSocket router
+    app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
+
+    # Impersonation router - Enterprise feature (loaded via admin plugin)
+    # No longer loaded from core - handled by plugins/admin
+
+    app.include_router(
+        roles.router,
+        prefix="/api/v1",
+        tags=["Roles"],
+        dependencies=[Depends(get_current_active_user)],
+    )
+
+    # --- Public Approval Page ---
+    @app.get("/approval/{request_id}", include_in_schema=False)
+    async def serve_approval_page(request_id: str):
+        """Serve the public approval page."""
+        approval_html_path = base_dir / "preloop" / "templates" / "approval.html"
+        return FileResponse(str(approval_html_path), media_type="text/html")
+
+    # --- Public Invitation Accept Page ---
+    @app.get("/invitations/accept", include_in_schema=False)
+    async def serve_invitation_accept_page():
+        """Serve the public invitation accept page."""
+        invitation_html_path = (
+            base_dir / "preloop" / "templates" / "invitation-accept.html"
+        )
+        return FileResponse(str(invitation_html_path), media_type="text/html")
+
+    return app

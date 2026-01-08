@@ -800,6 +800,21 @@ export class FlowExecutionView extends LitElement {
             </sl-card>
           </div>
 
+          <!-- Input Prompt (collapsible) -->
+          ${this.execution.resolved_input_prompt
+            ? html`
+                <sl-details summary="Input Prompt" style="margin-bottom: 16px;">
+                  <sl-card>
+                    <pre
+                      style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px; line-height: 1.5; background: var(--sl-color-neutral-100); padding: 12px; border-radius: 4px;"
+                    >
+${this.execution.resolved_input_prompt}</pre
+                    >
+                  </sl-card>
+                </sl-details>
+              `
+            : ''}
+
           <sl-card>
             <div
               slot="header"

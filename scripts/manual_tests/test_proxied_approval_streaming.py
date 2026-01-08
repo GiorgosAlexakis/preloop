@@ -1,6 +1,6 @@
 """Test approval streaming with proxied external MCP tools.
 
-This client connects to Preloop AI and calls a proxied tool (from example_mcp_server.py)
+This client connects to Preloop and calls a proxied tool (from example_mcp_server.py)
 that requires approval, displaying progress notifications during the approval wait period.
 """
 
@@ -45,7 +45,7 @@ async def progress_handler(
 async def main():
     """Test approval streaming with proxied tools."""
     print("\n" + "=" * 80)
-    print("Preloop AI Approval Streaming Test - PROXIED TOOLS")
+    print("Preloop Approval Streaming Test - PROXIED TOOLS")
     print("=" * 80)
     print()
 
@@ -60,7 +60,7 @@ async def main():
         )
         return
 
-    print(f"Connecting to Preloop AI: {server_url}")
+    print(f"Connecting to Preloop: {server_url}")
     print(f"Using bearer token: {bearer_token[:20]}...")
     print()
 
@@ -88,7 +88,7 @@ async def main():
             print()
             print("Please ensure:")
             print("  1. example_mcp_server.py is running on http://localhost:8001")
-            print("  2. The external MCP server is added to your Preloop AI account")
+            print("  2. The external MCP server is added to your Preloop account")
             print("  3. The tools have been scanned and are active")
             print()
             return
@@ -136,8 +136,8 @@ if __name__ == "__main__":
     print("1. Make sure example_mcp_server.py is running:")
     print("   python examples/example_mcp_server.py")
     print()
-    print("2. Add the external MCP server to Preloop AI:")
-    print("   - Go to Preloop AI UI: /console/tools")
+    print("2. Add the external MCP server to Preloop:")
+    print("   - Go to Preloop UI: /console/tools")
     print("   - Click 'Add MCP Server'")
     print("   - Enter:")
     print("     * Name: Example MCP Server")
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     print("   - Click 'Add' and then 'Scan' to discover tools")
     print()
     print("3. Configure an approval policy for calculate_fibonacci:")
-    print("   - Go to Preloop AI UI: /console/tools")
+    print("   - Go to Preloop UI: /console/tools")
     print("   - Find 'calculate_fibonacci' tool (from External MCP server)")
     print("   - Enable 'Requires Approval'")
     print("   - Configure approval policy (Slack/Mattermost/webhook)")

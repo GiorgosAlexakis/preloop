@@ -1,8 +1,8 @@
-# Preloop AI Architecture
+# Preloop Architecture
 
 ## System Overview
 
-Preloop AI is an open-source, responsible AI automation platform. It can proxy tools from MCP servers, optionally adding a human approval layer with configurable policies. It provides event-driven agentic flows to intelligently automate common tasks using any agent framework like Claude Code, Codex CLI, Aider or OpenHands. It integrates with issue & code tracking systems like Jira, GitHub, GitLab, both for listening to events and for ingesting issues, comments, documentation and code. By leveraging vector-based similarity search, Preloop AI detects duplicate and overlapping issues, detects unmapped dependencies, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
+Preloop is an open-source, responsible AI automation platform. It can proxy tools from MCP servers, optionally adding a human approval layer with configurable policies. It provides event-driven agentic flows to intelligently automate common tasks using any agent framework like Claude Code, Codex CLI, Aider or OpenHands. It integrates with issue & code tracking systems like Jira, GitHub, GitLab, both for listening to events and for ingesting issues, comments, documentation and code. By leveraging vector-based similarity search, Preloop detects duplicate and overlapping issues, detects unmapped dependencies, evaluates compliance metrics, and offers intelligent suggestions to streamline workflows. The architecture emphasizes flexibility, performance, and ease of integration, providing access via a REST API, a web UI, and an MCP server for various clients.
 
 ## High-Level Architecture
 
@@ -15,13 +15,13 @@ graph LR
         Issue_Trackers["Issue Trackers (Jira, GitHub, GitLab)"]
         Browser["Browser"]
     end
-    subgraph "Preloop AI Platform"
+    subgraph "Preloop Platform"
         subgraph "Main Repository"
             direction LR
-            API["Preloop AI REST API"]
+            API["Preloop REST API"]
             subgraph "Sub projects"
                 direction LR
-                PreloopModels["Preloop Models (Data Layer)"]
+                preloop.models["Preloop Models (Data Layer)"]
                 subgraph "Preloop Sync (Data Sync Service)"
                     Scheduler["Preloop Sync Scheduler"]
                     Worker["Preloop Sync Worker"]
@@ -38,7 +38,7 @@ graph LR
 
     end
     Browser --> PreloopConsole
-    PreloopModels --> DB
+    preloop.models --> DB
     Scheduler --> NATS
     NATS --> Worker
     Worker --> Issue_Trackers
@@ -50,7 +50,7 @@ graph LR
 
 **Key Components:**
 
-*   **Preloop AI REST API:** The core FastAPI application providing the HTTP interface.
+*   **Preloop REST API:** The core FastAPI application providing the HTTP interface.
 *   **Preloop Models:** Handles database interactions, defining SQLAlchemy models, Pydantic schemas, and CRUD operations. Manages the PostgreSQL database connection and PGVector operations.
 *   **Preloop Sync:** A service responsible for polling external issue trackers, processing data, generating embeddings, and storing/updating information in the database via `Preloop Models`. The preloop-sync cli can launch one-off scan operations, or start the scheduler process that adds polling tasks to the NATS queue. The NATS queue is consumed by the Preloop Sync worker process.
     *   **Preloop Sync Scheduler:** A process that adds polling tasks to the NATS queue.
@@ -58,7 +58,7 @@ graph LR
 *   **Preloop Console:** A web application built using Lit, Vite, TypeScript, and Material Web Components.
 *   **PostgreSQL + PGVector:** The database storing metadata and vector embeddings.
 *   **NATS:** An event bus used for both a reliable task queue (JetStream) and real-time streaming updates. It decouples the API from the background processing of events and flows.
-*   **External Systems:** Issue trackers and MCP clients interacting with the Preloop AI ecosystem.
+*   **External Systems:** Issue trackers and MCP clients interacting with the Preloop ecosystem.
 
 ## Frontend Architecture
 The frontend is in the `frontend` directory.
@@ -80,7 +80,7 @@ graph TD
     end
 
     subgraph "Backend"
-        PreloopAPI["Preloop AI REST API"]
+        PreloopAPI["Preloop REST API"]
     end
 
     WebApp -- Bundled by --> Vite
@@ -104,23 +104,23 @@ graph TD
 The `Preloop Console` application is structured around a component-based architecture.
 
 *   **`src/components/`**: This directory contains all the custom Lit components that make up the application. Each component is typically defined in its own file (e.g., `tracker-list.ts`) and may have a corresponding test file (e.g., `tracker-list.test.ts`).
-*   **`src/api.ts`**: A dedicated module for handling communication with the Preloop AI REST API. It encapsulates fetch logic, authentication, and data transformation.
+*   **`src/api.ts`**: A dedicated module for handling communication with the Preloop REST API. It encapsulates fetch logic, authentication, and data transformation.
 *   **`index.html`**: The main entry point for the application.
 *   **`vite.config.ts`**: Configuration for the Vite build tool.
 *   **`package.json`**: Defines project metadata, dependencies, and scripts for development, building, and testing.
 
 ## Core Components
 
-### Preloop AI API Server (Main Repository)
+### Preloop API Server (Main Repository)
 *   **Framework:** FastAPI-based RESTful API server.
 *   **Authentication:** JWT authentication and authorization.
 *   **MCP Server:** Includes integrated MCP tool endpoints under `/api/v1/mcp/` for direct communication with MCP clients over HTTP.
-*   **Validation:** Request validation using Pydantic models (defined in `PreloopModels`).
+*   **Validation:** Request validation using Pydantic models (defined in `preloop.models`).
 *   **Documentation:** Automatic API documentation with Swagger/ReDoc.
 *   **Features:** Rate limiting, error handling, monitoring integration.
-*   **Interaction:** Communicates with `PreloopModels` for database operations and directly with Issue Tracker APIs for certain actions (e.g., creating/updating issues in real-time).
+*   **Interaction:** Communicates with `preloop.models` for database operations and directly with Issue Tracker APIs for certain actions (e.g., creating/updating issues in real-time).
 
-### PreloopModels (`./backend/preloop-models`)
+### preloop.models (`./backend/preloop/models`)
 *   **Purpose:** Data modeling and database interaction layer.
 *   **Technology:** SQLAlchemy for ORM, Pydantic for data validation/schemas.
 *   **Database:** Defines schema for PostgreSQL, including tables for organizations, projects, issues, embeddings, etc.
@@ -128,10 +128,10 @@ The `Preloop Console` application is structured around a component-based archite
 *   **Operations:** Provides CRUD (Create, Read, Update, Delete) functions for all database entities.
 *   **Migrations:** Uses Alembic for database schema evolution.
 
-### Preloop Sync ( `./backend/preloop-sync`)
+### Preloop Sync ( `./backend/preloop/sync`)
 *   **Purpose:** Data synchronization and embedding generation service.
 *   **Functionality:**
-    *   The `preloop-sync` CLI can launch one-off scan operations or start a persistent scheduler.
+    *   The `preloop.sync` CLI can launch one-off scan operations or start a persistent scheduler.
     *   **Scheduler:** Periodically adds polling tasks for each configured tracker to the NATS queue.
     *   **Worker:** Consumes tasks from the NATS queue. Multiple, specialized worker groups can be deployed, each subscribing to a specific subset of tasks (e.g., polling, webhooks). This allows for independent scaling and monitoring of different task types.
 *   **Execution:** Runs as two distinct, long-running processes (scheduler and worker) or as a one-off CLI command.
@@ -143,11 +143,34 @@ The `Preloop Console` application is structured around a component-based archite
 *   **Implementations:** Concrete classes for each supported tracker (Jira, GitHub, GitLab).
 *   **Features:** Handles authentication, API specifics, rate limiting, and error mapping for each tracker.
 
+### Backend Project Structure
+
+The backend codebase is organized to separate concerns between the data models, synchronization logic, and the API server.
+
+*   **`backend/preloop/models/`**:
+    *   **`models/`**: SQLAlchemy models defining the database schema (e.g., `issues.py`, `projects.py`).
+    *   **`schemas/`**: Pydantic models for data validation and API I/O.
+    *   **`crud/`**: Database access operations (Create, Read, Update, Delete).
+    *   **`db/`**: Database connection and session management.
+    *   **`alembic/`**: Database migration scripts.
+
+*   **`backend/preloop/sync/`**:
+    *   **`scanner/`**: Core logic for polling trackers and processing data.
+    *   **`trackers/`**: Client implementations for different issue trackers (Jira, GitHub, GitLab).
+    *   **`embeddings/`**: Logic for generating vector embeddings from issue text.
+    *   **`scheduler/`**: Task scheduling logic for regular synchronization.
+    *   **`worker/`**: Worker process logic for consuming tasks from NATS.
+
+*   **`backend/preloop/api/`**:
+    *   **`endpoints/`**: API route definitions grouped by resource.
+    *   **`auth/`**: Authentication logic and router.
+    *   **`app.py`**: FastAPI application entry point.
+
 ### Tracker Scope Rules
 
 **Purpose:** TrackerScopeRule provides fine-grained control over which organizations and projects within a tracker are synchronized and accessible. This allows users to focus on relevant data and reduce noise.
 
-**Data Model:** Defined in `backend/preloop-models/preloop_models/models/tracker_scope_rule.py`
+**Data Model:** Defined in `backend/preloop/models/models/tracker_scope_rule.py`
 
 *   **Fields:**
     *   `tracker_id`: Foreign key to the Tracker
@@ -184,23 +207,23 @@ The `Preloop Console` application is structured around a component-based archite
 
 **Implementation Locations:**
 
-*   **Scanner (Preloop Sync):** `backend/preloop-sync/preloop_sync/scanner/core.py` - Lines 73-191
+*   **Scanner (Preloop Sync):** `backend/preloop/sync/scanner/core.py` - Lines 73-191
     *   Filters organizations and projects during synchronization
     *   Skips organizations not in the include list
     *   Applies project include/exclude logic
-*   **API (get_tracker_client):** `backend/preloop-sync/preloop_sync/api/common.py` - Lines 118-173
+*   **API (get_tracker_client):** `backend/preloop/api/common.py` - Lines 118-173
     *   Validates scope when a user requests access to a specific organization/project
     *   Returns HTTP 403 if access is denied
-*   **API (get_accessible_projects):** `backend/preloop-sync/preloop_sync/api/common.py` - Lines 326-422
+*   **API (get_accessible_projects):** `backend/preloop/api/common.py` - Lines 326-422
     *   Returns list of projects accessible to a user based on scope rules
     *   Used by search endpoints, project listing, and other features that query across projects
-*   **API (Projects Endpoints):** `backend/preloop-sync/preloop_sync/api/endpoints/projects.py`
+*   **API (Projects Endpoints):** `backend/preloop/api/endpoints/projects.py`
     *   `GET /projects` - Lists only accessible projects based on scope rules
     *   `GET /organizations/{organization_id}/projects` - Lists only accessible projects within an organization
-*   **API (Search Endpoint):** `backend/preloop-sync/preloop_sync/api/endpoints/search.py`
+*   **API (Search Endpoint):** `backend/preloop/api/endpoints/search.py`
     *   `GET /search` - Applies scope filtering to all search results (similarity and fulltext)
     *   Always filters by accessible projects, even when no project/org filter is specified
-*   **Cleanup Script:** `backend/preloop-sync/preloop_sync/scripts/cleanup_out_of_scope_issues.py` - Lines 38-131
+*   **Cleanup Script:** `preloop/backend/preloop/scripts/cleanup_out_of_scope_issues.py` - Lines 38-131
     *   Identifies issues that violate current scope rules
     *   Allows administrators to clean up out-of-scope data
 
@@ -239,49 +262,49 @@ The `Preloop Console` application is structured around a component-based archite
 
 ### Database (PostgreSQL + PGVector)
 *   **Role:** Central data store for metadata and vector embeddings.
-*   **Managed by:** `preloop-models` subproject.
+*   **Managed by:** `preloop.models` module.
 *   **Key Features:** Relational data storage, efficient vector similarity search via PGVector.
 
 ## Data Flow
 
 ### REST API Flow (e.g., Searching Issues)
-1.  **Client Request:** An HTTP client sends a `GET /api/v1/issues/search` request to the Preloop AI API server.
+1.  **Client Request:** An HTTP client sends a `GET /api/v1/issues/search` request to the Preloop API server.
 2.  **API Server:**
     *   Authenticates the request (JWT).
-    *   Validates query parameters (using Pydantic models from `PreloopModels`).
+    *   Validates query parameters (using Pydantic models from `preloop.models`).
     *   Calls the appropriate service function.
 3.  **Service Layer (API):**
     *   Generates an embedding for the search query.
-    *   Calls a function in `PreloopModels` to perform a vector similarity search in the PostgreSQL/PGVector database, potentially with metadata filters.
-4.  **PreloopModels:**
+    *   Calls a function in `preloop.models` to perform a vector similarity search in the PostgreSQL/PGVector database, potentially with metadata filters.
+4.  **preloop.models:**
     *   Constructs and executes the SQL query against the database.
     *   Retrieves matching issue data.
 5.  **API Server:** Formats the results and returns the HTTP response to the client.
 
 ### Data Synchronization Flow (Preloop Sync)
-1.  **Trigger:** `preloop-sync scan all` command is executed.
+1.  **Trigger:** `preloop.sync scan all` command is executed.
 2.  **Preloop Sync Service:**
-    *   Retrieves tracker configurations using `PreloopModels`.
+    *   Retrieves tracker configurations using `preloop.models`.
     *   For each configured tracker:
         *   Uses the appropriate Issue Tracker Client to poll the external API (e.g., Jira API) for new/updated issues since the last scan.
         *   Processes the fetched issues.
         *   Generates vector embeddings for new/updated issue text.
-        *   Calls functions in `PreloopModels` to insert or update issue data and embeddings in the database.
-3.  **PreloopModels:** Interacts with the PostgreSQL database to persist changes.
+        *   Calls functions in `preloop.models` to insert or update issue data and embeddings in the database.
+3.  **preloop.models:** Interacts with the PostgreSQL database to persist changes.
 
 ### MCP Flow (Integrated HTTP)
 1.  **MCP Client Request:** An MCP client (e.g., Claude Code) sends a tool request using streamable HTTP transport to the MCP server (e.g., `/mcp/v1`). The request includes the standard MCP payload and an `Authorization: Bearer <token>` header.
-2.  **Preloop AI API Server:**
+2.  **Preloop API Server:**
     *   Authenticates the request using the JWT token.
     *   Routes the request to the appropriate MCP tool endpoint.
     *   Validates the incoming MCP parameters against the Pydantic schema for that tool.
-    *   Executes the tool logic, interacting with other Preloop AI services and `PreloopModels` as needed.
+    *   Executes the tool logic, interacting with other Preloop services and `preloop.models` as needed.
     *   Formats the result into the standard MCP JSON response format.
 3.  **MCP Client:** Receives the HTTP response containing the tool's output.
 
-## Database Schema (Managed by PreloopModels)
+## Database Schema (Managed by preloop.models)
 
-The detailed schema is defined using SQLAlchemy models within the `PreloopModels` directory. Key tables include:
+The detailed schema is defined using SQLAlchemy models within the `preloop.models` directory. Key tables include:
 
 *   **Organizations:** Stores organization metadata, settings, and potentially user associations.
 *   **Projects:** Contains project details, tracker configurations (type, API URL, credentials), and links to organizations.
@@ -290,12 +313,12 @@ The detailed schema is defined using SQLAlchemy models within the `PreloopModels
 *   **Issue Embeddings:** Contains vector embeddings (using PGVector `vector` type) linked to issues, used for similarity search.
 *   **Other Metadata:** Tables for comments, users, API keys, etc., as needed.
 
-Schema migrations are managed using Alembic within `PreloopModels`.
+Schema migrations are managed using Alembic within `preloop.models`.
 
 ## Technical Decisions
 
 ### REST API Implementation
-Preloop AI implements a RESTful HTTP API using FastAPI, which provides:
+Preloop implements a RESTful HTTP API using FastAPI, which provides:
 - High performance with Starlette and Pydantic
 - Automatic OpenAPI documentation generation
 - Type annotation-based parameter validation
@@ -314,7 +337,7 @@ The MCP server is implemented directly within the FastAPI application using a cu
 The MCP server implements per-user dynamic tool filtering using `DynamicFastMCP`, a custom subclass of FastMCP:
 
 **Implementation Details:**
-- **`DynamicFastMCP`** (`preloop-ai/services/dynamic_fastmcp.py`): Extends FastMCP and overrides `_list_tools()` and `_mcp_call_tool()` methods
+- **`DynamicFastMCP`** (`preloop/services/dynamic_fastmcp.py`): Extends FastMCP and overrides `_list_tools()` and `_mcp_call_tool()` methods
 - **Tool Visibility:** Default tools (get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance) are only visible when the authenticated account has one or more trackers configured
 - **User Context Propagation:** Uses Python's `ContextVar` for async-safe user context storage across request boundaries
 - **Authentication:** `PreloopBearerAuthBackend` validates JWT tokens and injects user context into the request scope
@@ -323,7 +346,7 @@ The MCP server implements per-user dynamic tool filtering using `DynamicFastMCP`
 - **Endpoint:** Mounted at `/mcp/v1` with full authentication and lifespan management
 
 **Tool Registration:**
-All built-in tools are registered in `preloop-ai/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
+All built-in tools are registered in `preloop/services/initialize_mcp.py` using FastMCP's `@mcp.tool()` decorator, then filtered at runtime based on user context.
 
 **Benefits:**
 - Zero performance overhead for tool registration (happens once at startup)
@@ -333,7 +356,7 @@ All built-in tools are registered in `preloop-ai/services/initialize_mcp.py` usi
 
 ### Tool Configuration and Approval Workflow
 
-Preloop AI includes comprehensive infrastructure for managing tool configurations and implementing human-in-the-loop approval workflows for sensitive tool operations.
+Preloop includes comprehensive infrastructure for managing tool configurations and implementing human-in-the-loop approval workflows for sensitive tool operations.
 
 #### Tool Configuration Management
 
@@ -356,7 +379,7 @@ graph TD
         Client["MCP Client (Claude Code, etc.)"]
     end
 
-    subgraph "Preloop AI API"
+    subgraph "Preloop API"
         MCPEndpoint["MCP Endpoint (/mcp/v1)"]
         DynamicMCP["DynamicMCPServer"]
         ApprovalCheck["Approval Check"]
@@ -400,7 +423,7 @@ graph TD
    - The service waits for approval with configurable timeout
 4. Approver reviews request and responds via:
    - Public approval API endpoint (`/approval/{request_id}/decide`)
-   - Direct API call to Preloop AI
+   - Direct API call to Preloop
 5. On approval, tool execution proceeds; on decline, error is returned to client
 
 **API Endpoints:**
@@ -416,7 +439,7 @@ graph TD
 
 ### MCP Server Management
 
-Preloop AI supports configuration and management of external MCP servers, enabling tool proxying and federation.
+Preloop supports configuration and management of external MCP servers, enabling tool proxying and federation.
 
 **Database Model:**
 - **`MCPServer`**: Stores configuration for external MCP servers
@@ -444,11 +467,11 @@ Preloop AI supports configuration and management of external MCP servers, enabli
 Python is chosen as the primary language due to its strong ecosystem for machine learning and data processing, which is essential for similarity search and embedding generation. FastAPI is used for the REST API due to its performance, type safety, and automatic OpenAPI documentation generation.
 
 ### Database
-PostgreSQL with the PGVector extension is used. The `preloop-models` package encapsulates all database interaction logic, providing a clean separation from the API and synchronization services. This allows for centralized data management and schema evolution.
+PostgreSQL with the PGVector extension is used. The `preloop.models` module encapsulates all database interaction logic, providing a clean separation from the API and synchronization services. This allows for centralized data management and schema evolution.
 
 ### Authentication & Authorization
 
-Preloop AI implements authentication and multi-tenancy:
+Preloop implements authentication and multi-tenancy:
 
 **Authentication:**
 - JWT-based authentication for REST API and MCP endpoints
@@ -497,13 +520,13 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 
 ## Real-Time Communication
 
-Preloop AI uses WebSocket connections for real-time updates:
+Preloop uses WebSocket connections for real-time updates:
 
 ### Unified WebSocket Architecture
 
 Single WebSocket connection per client with pub/sub message routing:
 
-**MessageRouter** (`backend/preloop-ai/services/message_router.py`):
+**MessageRouter** (`backend/preloop/services/message_router.py`):
 - Routes messages to topic-based subscribers
 - Supports wildcard subscriptions (`'*'` topic)
 - Optional per-subscriber filter functions
@@ -544,12 +567,12 @@ graph TD
         OtherSources["Other Sources (Incidents, OTel, etc.)"]
     end
 
-    subgraph "Preloop AI Core"
+    subgraph "Preloop Core"
         direction TB
         WebhookEndpoint["Webhook Endpoint (/api/v1/private/webhooks/...)"]
         TaskQueue["Internal Task Queue (NATS)"]
-        APIExt["Preloop AI API (Flow/AIModel CRUD, Logs)"]
-        PreloopModelsDB["PreloopModels (PostgreSQL - Flows, AIModels, Executions)"]
+        APIExt["Preloop API (Flow/AIModel CRUD, Logs)"]
+        preloop.modelsDB["preloop.models (PostgreSQL - Flows, AIModels, Executions)"]
     end
 
     subgraph "Flows Subsystem"
@@ -611,7 +634,7 @@ graph TD
 *   **Flow Execution Orchestrator:**
     *   Responsible for managing the lifecycle of a single Flow execution.
     *   Retrieves the `Flow` definition and its associated `AIModel` (including the encrypted API key) from the database.
-    *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `preloop-models` or other Preloop AI services for the necessary context data.
+    *   **Dynamic Prompt Resolution:** Parses the `prompt_template` and resolves any placeholders (e.g., `{{project_docs_summary}}`, `{{relevant_code_files}}`) by querying `preloop-models` or other Preloop services for the necessary context data.
     *   Decrypts the API key and prepares the complete execution context for the agent, including the fully resolved prompt, AI model details (model name, API endpoint, decrypted API key), and the specific list of allowed MCP servers/tools.
     *   Initiates and manages an agent session via the Agent Execution Infrastructure based on the configured `agent_type`.
     *   Monitors the execution and records results/logs.
@@ -638,8 +661,8 @@ graph TD
 *   **Flow Execution Log (`FlowExecutions`):**
     *   A database table in `preloop-models` to record the history and outcome of each Flow run.
     *   Includes details like the triggering event, start/end times, status (pending, running, succeeded, failed), the resolved input prompt, a summary of actions taken by the agent, logs of MCP tool usage, and a reference to more detailed logs from the agent session (e.g., container logs, session ID, or process output).
-*   **Preloop AI API Extensions:**
-    *   New API endpoints will be added to the `Preloop AI API` for:
+*   **Preloop API Extensions:**
+    *   New API endpoints will be added to the `Preloop API` for:
         *   CRUD (Create, Read, Update, Delete) operations on `Flows` and `AIModels`.
         *   Listing and retrieving `FlowExecution` history and logs.
         *   Managing Flow presets (e.g., listing, cloning).
@@ -661,7 +684,7 @@ The following Pydantic schemas and corresponding SQLAlchemy models have been def
 ```mermaid
 sequenceDiagram
     participant ExtSrc as External Event Source (e.g., GitHub)
-    participant WebhookEP as Preloop AI Webhook Endpoint
+    participant WebhookEP as Preloop Webhook Endpoint
     participant TaskQueue as Internal Task Queue (NATS)
     participant Worker as Preloop Sync Worker (Flow Trigger)
     participant FlowsDB as Flows Database (preloop-models)
@@ -769,9 +792,9 @@ graph TD
     *   CRUD operations for these new entities will be added to `preloop-models`.
     *   Will be queried by the Flow Execution Orchestrator to resolve dynamic prompt content.
 *   **`Preloop Sync` / Webhook Infrastructure:**
-    *   The existing webhook ingestion mechanism within the main `Preloop AI API` will publish a `process_webhook_event` task to the NATS task queue.
+    *   The existing webhook ingestion mechanism within the main `Preloop API` will publish a `process_webhook_event` task to the NATS task queue.
     *   The `Preloop Sync` worker, upon receiving this task, will be responsible for triggering the appropriate Agentic Flows.
-*   **`Preloop AI API`:**
+*   **`Preloop API`:**
     *   Will be extended with new RESTful API endpoints for:
         *   Managing `Flows` (CRUD, enable/disable, list presets).
         *   Managing `AIModels` (CRUD, share).
@@ -818,7 +841,7 @@ graph TD
     *   Comprehensive logging of Flow executions, including which MCP tools were called with what parameters (sensitive data redacted).
     *   Audit trails for changes to `Flows` and `AIModels`.
 *   **Permissions:**
-    *   Role-based access control (RBAC) for managing `Flows` and `AIModels` via the Preloop AI API. Users should only be able to create/edit/view Flows and AIModels within their authorized scope (e.g., organization).
+    *   Role-based access control (RBAC) for managing `Flows` and `AIModels` via the Preloop API. Users should only be able to create/edit/view Flows and AIModels within their authorized scope (e.g., organization).
 
 ### 8. Scalability and Extensibility
 

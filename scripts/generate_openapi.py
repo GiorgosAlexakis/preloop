@@ -4,16 +4,16 @@ import sys
 from pathlib import Path
 
 # Ensure the project root is in the Python path
-# This allows importing preloop_ai modules when running the script directly
+# This allows importing preloop modules when running the script directly
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    from preloop_ai.api.app import create_app
+    from preloop.api.app import create_app
 except ImportError as e:
     print(f"Error importing FastAPI app factory: {e}", file=sys.stderr)
     print(
-        "Ensure the script is run from the project root or the preloop_ai package is installed.",
+        "Ensure the script is run from the project root or the preloop package is installed.",
         file=sys.stderr,
     )
     sys.exit(1)

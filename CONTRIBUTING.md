@@ -1,4 +1,4 @@
-# Contributing to Preloop AI
+# Contributing to Preloop
 
 We welcome contributions from the community. To ensure a high-quality codebase, we have established the following guidelines.
 

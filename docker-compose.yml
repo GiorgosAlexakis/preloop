@@ -25,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/preloop-ai:latest
+    image: registry.spacecode.ai/spacecode/preloop:latest
     restart: unless-stopped
     depends_on:
       - postgres
@@ -51,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/preloop-ai:latest
+    image: registry.spacecode.ai/spacecode/preloop:latest
     restart: unless-stopped
     depends_on:
       - postgres
@@ -75,7 +75,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/preloop-ai:latest
+    image: registry.spacecode.ai/spacecode/preloop:latest
     restart: unless-stopped
     depends_on:
       - postgres

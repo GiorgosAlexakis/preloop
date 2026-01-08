@@ -19,7 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-helm/preloop-ai/charts
+helm/preloop/charts
 
 # Virtual environment
 .env

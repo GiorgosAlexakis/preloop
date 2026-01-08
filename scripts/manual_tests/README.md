@@ -20,12 +20,12 @@ python scripts/manual_tests/test_basic_progress_client.py
 
 Expected output: Progress handler should be called for each table backup (5 times total).
 
-### Preloop AI Progress Test
+### Preloop Progress Test
 
-Tests that progress reporting works with Preloop AI's stateless HTTP mode.
+Tests that progress reporting works with Preloop's stateless HTTP mode.
 
 **Prerequisites:**
-- Preloop AI server running on `http://localhost:8001`
+- Preloop server running on `http://localhost:8001`
 - Valid API key/token
 
 **Run the test:**

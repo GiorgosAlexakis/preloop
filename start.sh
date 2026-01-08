@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start Preloop AI REST API server
+# Start Preloop REST API server
 
 set -e
 
@@ -44,7 +44,7 @@ fi
 
 # Initialize database tables, embedding model, and AI model using Alembic
 echo "Initializing database schema, embedding model, and AI model..."
-python backend/preloop-models/scripts/init_db.py --force
+python scripts/init_db.py --force
 # Default parameters
 API_PORT=8000
 DEBUG="true"
@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --help)
-      echo "Preloop AI Startup Script"
+      echo "Preloop Startup Script"
       echo ""
       echo "Usage: $0 [options]"
       echo ""
@@ -110,7 +110,7 @@ fi
 
 
 echo ""
-echo "Starting Preloop AI REST API with configuration:"
+echo "Starting Preloop REST API with configuration:"
 echo " - API Server: http://localhost:$API_PORT"
 echo " - API Documentation (Swagger): http://localhost:$API_PORT/docs/api"
 echo " - User Documentation: http://localhost:$API_PORT/docs"
@@ -124,4 +124,4 @@ if [ -z "$VIRTUAL_ENV" ]; then
 fi
 
 # Start the API server in the foreground
-python -m preloop_ai.server --port "$API_PORT" $debug_flag $test_data_flag
+python -m preloop.server --port "$API_PORT" $debug_flag $test_data_flag

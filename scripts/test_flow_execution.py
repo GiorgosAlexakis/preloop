@@ -6,10 +6,10 @@ import asyncio
 import logging
 import sys
 
-from preloop_models.db.session import get_db_session
-from preloop_models.models import Flow, Account
-from preloop_ai.services.flow_orchestrator import FlowExecutionOrchestrator
-from preloop_sync.services.event_bus import EventBus
+from preloop.models.db.session import get_db_session
+from preloop.models.models import Flow, Account
+from preloop.services.flow_orchestrator import FlowExecutionOrchestrator
+from preloop.sync.services.event_bus import EventBus
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

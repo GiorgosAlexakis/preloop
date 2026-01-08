@@ -1,4 +1,4 @@
-"""Test progress reporting with Preloop AI MCP server.
+"""Test progress reporting with Preloop MCP server.
 
 This tests that progress updates work correctly with stateless_http=True.
 """
@@ -24,9 +24,9 @@ async def my_progress_handler(
 
 
 async def main():
-    """Test progress reporting with Preloop AI server."""
+    """Test progress reporting with Preloop server."""
     print("\n" + "=" * 70)
-    print("Testing Progress Reporting with Preloop AI (stateless_http=True)")
+    print("Testing Progress Reporting with Preloop (stateless_http=True)")
     print("=" * 70)
     print()
 
@@ -37,14 +37,14 @@ async def main():
         print("   Please set it with: export PRELOOP_TOKEN='your-api-key'")
         return
 
-    # Connect to Preloop AI server
+    # Connect to Preloop server
     transport = StreamableHttpTransport(
         url="http://localhost:8001/mcp/v1",
         headers={"Authorization": f"Bearer {token}"},
     )
 
     async with Client(transport=transport) as client:
-        print("✓ Connected to Preloop AI server")
+        print("✓ Connected to Preloop server")
         print()
 
         # List tools
@@ -55,9 +55,7 @@ async def main():
         # Find test_progress tool
         if not any(t.name == "test_progress" for t in tools):
             print("❌ Error: test_progress tool not found")
-            print(
-                "   Make sure the Preloop AI server has test_progress tool registered"
-            )
+            print("   Make sure the Preloop server has test_progress tool registered")
             return
 
         # Call test_progress with progress handler

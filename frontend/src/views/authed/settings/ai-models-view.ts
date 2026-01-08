@@ -28,7 +28,7 @@ import consoleStyles from '../../../styles/console-styles.css?inline';
 @customElement('ai-models-view')
 export class AIModelsView extends LitElement {
   private readonly INFO_ALERT_DISMISSED_KEY =
-    'preloop-ai-models-info-alert-dismissed';
+    'preloop-models-info-alert-dismissed';
 
   @state()
   private _isInfoAlertOpen = false;

@@ -802,7 +802,7 @@ export class ToolsView extends LitElement {
       <sl-card class="builtin-server-card">
         <div class="card-content">
           <div class="builtin-server-header">
-            <h3 class="builtin-server-name">Preloop AI MCP Server</h3>
+            <h3 class="builtin-server-name">Preloop MCP Server</h3>
             <sl-badge variant="primary" size="small">Built-in</sl-badge>
           </div>
           <p class="builtin-server-url" title=${mcpUrl}>${mcpUrl}</p>
@@ -909,7 +909,7 @@ export class ToolsView extends LitElement {
             : ''}
           <div class="proxy-notice">
             <div class="proxy-notice-text">
-              Tools from external MCP servers are proxied through the Preloop AI
+              Tools from external MCP servers are proxied through the Preloop
               MCP server. Any tool (built-in or external) can be prelooped with
               a human approval policy, requiring review and approval by the
               appropriate users before allowing tool executions to run.
