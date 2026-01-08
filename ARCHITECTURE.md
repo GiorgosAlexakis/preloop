@@ -143,6 +143,29 @@ The `Preloop Console` application is structured around a component-based archite
 *   **Implementations:** Concrete classes for each supported tracker (Jira, GitHub, GitLab).
 *   **Features:** Handles authentication, API specifics, rate limiting, and error mapping for each tracker.
 
+### Backend Project Structure
+
+The backend codebase is organized to separate concerns between the data models, synchronization logic, and the API server.
+
+*   **`backend/preloop/models/`**:
+    *   **`models/`**: SQLAlchemy models defining the database schema (e.g., `issues.py`, `projects.py`).
+    *   **`schemas/`**: Pydantic models for data validation and API I/O.
+    *   **`crud/`**: Database access operations (Create, Read, Update, Delete).
+    *   **`db/`**: Database connection and session management.
+    *   **`alembic/`**: Database migration scripts.
+
+*   **`backend/preloop/sync/`**:
+    *   **`scanner/`**: Core logic for polling trackers and processing data.
+    *   **`trackers/`**: Client implementations for different issue trackers (Jira, GitHub, GitLab).
+    *   **`embeddings/`**: Logic for generating vector embeddings from issue text.
+    *   **`scheduler/`**: Task scheduling logic for regular synchronization.
+    *   **`worker/`**: Worker process logic for consuming tasks from NATS.
+
+*   **`backend/preloop/api/`**:
+    *   **`endpoints/`**: API route definitions grouped by resource.
+    *   **`auth/`**: Authentication logic and router.
+    *   **`app.py`**: FastAPI application entry point.
+
 ### Tracker Scope Rules
 
 **Purpose:** TrackerScopeRule provides fine-grained control over which organizations and projects within a tracker are synchronized and accessible. This allows users to focus on relevant data and reduce noise.
@@ -200,7 +223,7 @@ The `Preloop Console` application is structured around a component-based archite
 *   **API (Search Endpoint):** `backend/preloop/api/endpoints/search.py`
     *   `GET /search` - Applies scope filtering to all search results (similarity and fulltext)
     *   Always filters by accessible projects, even when no project/org filter is specified
-*   **Cleanup Script:** `backend/preloop/sync/preloop_sync/scripts/cleanup_out_of_scope_issues.py` - Lines 38-131
+*   **Cleanup Script:** `preloop/backend/preloop/scripts/cleanup_out_of_scope_issues.py` - Lines 38-131
     *   Identifies issues that violate current scope rules
     *   Allows administrators to clean up out-of-scope data
 

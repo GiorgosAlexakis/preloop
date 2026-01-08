@@ -15,8 +15,10 @@ class UserBase(BaseModel):
     full_name: Optional[str] = Field(None, max_length=255)
 
 
-class UserCreate(UserBase):
+class AdminUserCreate(UserBase):
     """Schema for creating a new user."""
+
+    model_config = {"title": "AdminUserCreate"}
 
     password: str = Field(..., min_length=8)
     user_source: str = Field(default="local")
@@ -36,8 +38,10 @@ class UserCreate(UserBase):
         return v
 
 
-class UserUpdate(BaseModel):
+class AdminUserUpdate(BaseModel):
     """Schema for updating a user."""
+
+    model_config = {"title": "AdminUserUpdate"}
 
     email: Optional[EmailStr] = None
     full_name: Optional[str] = Field(None, max_length=255)
@@ -51,8 +55,10 @@ class UserPasswordUpdate(BaseModel):
     new_password: str = Field(..., min_length=8)
 
 
-class UserResponse(BaseModel):
+class AdminUserResponse(BaseModel):
     """Response schema for user data."""
+
+    model_config = {"title": "AdminUserResponse"}
 
     id: UUID
     account_id: UUID
@@ -99,7 +105,7 @@ class UserSummary(BaseModel):
 class UserListResponse(BaseModel):
     """Response schema for paginated user list."""
 
-    users: List[UserResponse]
+    users: List[AdminUserResponse]
     total: int
     skip: int
     limit: int

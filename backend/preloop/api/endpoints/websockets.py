@@ -167,25 +167,31 @@ async def flow_execution_websocket(
         await websocket.close(code=1008)
         return
 
-    # Extract token from query parameters for authentication
-    token = websocket.query_params.get("token")
-    if not token:
-        logger.warning(
-            f"WebSocket connection attempted without token for execution {execution_id}"
-        )
-        await websocket.send_json({"error": "Authentication required - token missing"})
-        await websocket.close(code=1008)
-        return
+    # Try to get authenticated user from middleware (Authorization header)
+    user = websocket.scope.get("state", {}).get("user")
 
-    # Validate token and get user
-    user = await get_user_from_token_if_valid(token, db)
     if not user:
-        logger.warning(
-            f"Invalid token for WebSocket connection to execution {execution_id}"
-        )
-        await websocket.send_json({"error": "Invalid or expired authentication token"})
-        await websocket.close(code=1008)
-        return
+        # Fallback: Extract token from query parameters for backward compatibility
+        token = websocket.query_params.get("token")
+        if token:
+            # Validate token and get user
+            user = await get_user_from_token_if_valid(token, db)
+            if not user:
+                logger.warning(
+                    f"Invalid token for WebSocket connection to execution {execution_id}"
+                )
+                await websocket.send_json(
+                    {"error": "Invalid or expired authentication token"}
+                )
+                await websocket.close(code=1008)
+                return
+        else:
+            logger.warning(
+                f"WebSocket connection attempted without authentication for execution {execution_id}"
+            )
+            await websocket.send_json({"error": "Authentication required"})
+            await websocket.close(code=1008)
+            return
 
     # Get the flow associated with this execution
     flow = crud_flow.get(db, id=execution.flow_id)

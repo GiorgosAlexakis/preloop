@@ -20,10 +20,10 @@ from preloop.schemas.auth import (
     Token,
     TokenData,
     User,
-    UserCreate,
+    AuthUserCreate,
     UserInDB,
-    UserResponse,
-    UserUpdate,
+    AuthUserResponse,
+    AuthUserUpdate,
 )
 
 
@@ -119,12 +119,12 @@ class TestUserInDB:
         assert user_in_db.hashed_password == "$2b$12$..."
 
 
-class TestUserCreate:
-    """Test UserCreate schema."""
+class TestAuthUserCreate:
+    """Test AuthUserCreate schema."""
 
     def test_create_with_required_fields(self):
-        """Test creating UserCreate with required fields."""
-        user_create = UserCreate(
+        """Test creating AuthUserCreate with required fields."""
+        user_create = AuthUserCreate(
             username="newuser",
             email="new@example.com",
             password="securepassword123",
@@ -136,8 +136,8 @@ class TestUserCreate:
         assert user_create.full_name is None
 
     def test_create_with_full_name(self):
-        """Test creating UserCreate with optional full_name."""
-        user_create = UserCreate(
+        """Test creating AuthUserCreate with optional full_name."""
+        user_create = AuthUserCreate(
             username="newuser",
             email="new@example.com",
             password="securepassword123",
@@ -150,7 +150,7 @@ class TestUserCreate:
         """Test username length validation."""
         # Too short
         with pytest.raises(ValidationError):
-            UserCreate(
+            AuthUserCreate(
                 username="ab",
                 email="test@example.com",
                 password="password123",
@@ -158,7 +158,7 @@ class TestUserCreate:
 
         # Too long
         with pytest.raises(ValidationError):
-            UserCreate(
+            AuthUserCreate(
                 username="a" * 51,
                 email="test@example.com",
                 password="password123",
@@ -167,7 +167,7 @@ class TestUserCreate:
     def test_username_alphanumeric_validation(self):
         """Test username alphanumeric validation."""
         with pytest.raises(ValidationError) as exc_info:
-            UserCreate(
+            AuthUserCreate(
                 username="invalid-username",
                 email="test@example.com",
                 password="password123",
@@ -179,7 +179,7 @@ class TestUserCreate:
     def test_password_length_validation(self):
         """Test password minimum length validation."""
         with pytest.raises(ValidationError):
-            UserCreate(
+            AuthUserCreate(
                 username="testuser",
                 email="test@example.com",
                 password="short",
@@ -188,35 +188,35 @@ class TestUserCreate:
     def test_email_validation(self):
         """Test email format validation."""
         with pytest.raises(ValidationError):
-            UserCreate(
+            AuthUserCreate(
                 username="testuser",
                 email="invalid-email",
                 password="password123",
             )
 
 
-class TestUserUpdate:
-    """Test UserUpdate schema."""
+class TestAuthUserUpdate:
+    """Test AuthUserUpdate schema."""
 
     def test_create_empty_update(self):
-        """Test creating empty UserUpdate."""
-        update = UserUpdate()
+        """Test creating empty AuthUserUpdate."""
+        update = AuthUserUpdate()
 
         assert update.full_name is None
 
     def test_create_with_full_name(self):
-        """Test creating UserUpdate with full_name."""
-        update = UserUpdate(full_name="Updated Name")
+        """Test creating AuthUserUpdate with full_name."""
+        update = AuthUserUpdate(full_name="Updated Name")
 
         assert update.full_name == "Updated Name"
 
 
-class TestUserResponse:
-    """Test UserResponse schema."""
+class TestAuthUserResponse:
+    """Test AuthUserResponse schema."""
 
     def test_create_user_response(self):
-        """Test creating UserResponse."""
-        response = UserResponse(
+        """Test creating AuthUserResponse."""
+        response = AuthUserResponse(
             username="testuser",
             email="test@example.com",
             full_name="Test User",
@@ -231,7 +231,7 @@ class TestUserResponse:
     def test_email_verified_required(self):
         """Test that email_verified is required."""
         with pytest.raises(ValidationError):
-            UserResponse(
+            AuthUserResponse(
                 username="testuser",
                 email="test@example.com",
             )

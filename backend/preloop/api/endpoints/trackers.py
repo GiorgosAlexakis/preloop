@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from preloop.api.auth.jwt import get_current_active_user
-from preloop.schemas.auth import UserResponse
+from preloop.schemas.auth import AuthUserResponse
 from preloop.schemas.tracker import (
     TrackerResponse,
     TrackerUpdate,
@@ -54,7 +54,7 @@ async def debug_tracker_request(request: Request):
 async def register_tracker(
     request: Request,
     background_tasks: BackgroundTasks,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Register a new issue tracker.
@@ -265,7 +265,7 @@ async def register_tracker(
 @router.get("/trackers", response_model=List[TrackerResponse])
 @require_permission("view_trackers")
 async def list_trackers(
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[Tracker]:
     """List all non-deleted trackers for the current user."""
@@ -284,7 +284,7 @@ async def list_trackers(
 @require_permission("view_trackers")
 async def get_tracker(
     tracker_id: UUID4,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Get a non-deleted tracker by ID, ensuring it belongs to the current user."""
@@ -315,7 +315,7 @@ async def get_tracker(
 async def update_tracker(
     tracker_id: UUID4,
     tracker_update: TrackerUpdate,  # Use new update schema
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Tracker:
     """Update an existing tracker."""
@@ -412,7 +412,7 @@ async def update_tracker(
 @require_permission("delete_trackers")
 async def delete_tracker(
     tracker_id: UUID4,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
     hard_delete: bool = False,
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
@@ -480,7 +480,7 @@ async def delete_tracker(
 @require_permission("manage_trackers")
 async def test_connection_and_list_orgs(
     test_data: TrackerTestRequest,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> TrackerTestResponse:
     """
@@ -562,7 +562,7 @@ async def test_connection_and_list_orgs(
 @require_permission("manage_trackers")
 async def list_projects_for_org(
     project_data: TrackerTestRequest,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[ProjectIdentifier]:
     """

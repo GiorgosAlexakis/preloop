@@ -19,7 +19,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserCreate'
+              $ref: '#/components/schemas/AuthUserCreate'
         required: true
       responses:
         '201':
@@ -27,7 +27,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/AuthUserResponse'
         '422':
           description: Validation Error
           content:
@@ -227,7 +227,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/AuthUserResponse'
       security:
       - OAuth2PasswordBearer: []
     put:
@@ -240,7 +240,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserUpdate'
+              $ref: '#/components/schemas/AuthUserUpdate'
         required: true
       responses:
         '200':
@@ -248,7 +248,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/AuthUserResponse'
         '422':
           description: Validation Error
           content:
@@ -4818,6 +4818,67 @@ components:
       - webhook_error
       title: ApprovalRequestResponse
       description: Schema for approval request response.
+    AuthUserCreate:
+      properties:
+        username:
+          type: string
+          maxLength: 50
+          minLength: 3
+          title: Username
+        email:
+          type: string
+          format: email
+          title: Email
+        password:
+          type: string
+          minLength: 8
+          title: Password
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+      type: object
+      required:
+      - username
+      - email
+      - password
+      title: AuthUserCreate
+      description: User creation model.
+    AuthUserResponse:
+      properties:
+        username:
+          type: string
+          title: Username
+        email:
+          type: string
+          format: email
+          title: Email
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+        email_verified:
+          type: boolean
+          title: Email Verified
+      type: object
+      required:
+      - username
+      - email
+      - email_verified
+      title: AuthUserResponse
+      description: Response model for user data.
+    AuthUserUpdate:
+      properties:
+        full_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Full Name
+      type: object
+      title: AuthUserUpdate
+      description: User update model.
     Body_login_form_api_v1_auth_token_post:
       properties:
         grant_type:
@@ -7508,67 +7569,6 @@ components:
       type: object
       title: TrackerUpdate
       description: Model for updating an existing tracker.
-    UserCreate:
-      properties:
-        username:
-          type: string
-          maxLength: 50
-          minLength: 3
-          title: Username
-        email:
-          type: string
-          format: email
-          title: Email
-        password:
-          type: string
-          minLength: 8
-          title: Password
-        full_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Full Name
-      type: object
-      required:
-      - username
-      - email
-      - password
-      title: UserCreate
-      description: User creation model.
-    UserResponse:
-      properties:
-        username:
-          type: string
-          title: Username
-        email:
-          type: string
-          format: email
-          title: Email
-        full_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Full Name
-        email_verified:
-          type: boolean
-          title: Email Verified
-      type: object
-      required:
-      - username
-      - email
-      - email_verified
-      title: UserResponse
-      description: Response model for user data.
-    UserUpdate:
-      properties:
-        full_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Full Name
-      type: object
-      title: UserUpdate
-      description: User update model.
     ValidationError:
       properties:
         loc:

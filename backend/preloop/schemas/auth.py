@@ -41,8 +41,10 @@ class UserInDB(User):
     hashed_password: str
 
 
-class UserCreate(BaseModel):
+class AuthUserCreate(BaseModel):
     """User creation model."""
+
+    model_config = {"title": "AuthUserCreate"}
 
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
@@ -57,14 +59,18 @@ class UserCreate(BaseModel):
         return v
 
 
-class UserUpdate(BaseModel):
+class AuthUserUpdate(BaseModel):
     """User update model."""
+
+    model_config = {"title": "AuthUserUpdate"}
 
     full_name: Optional[str] = None
 
 
-class UserResponse(BaseModel):
+class AuthUserResponse(BaseModel):
     """Response model for user data."""
+
+    model_config = {"title": "AuthUserResponse"}
 
     username: str
     email: EmailStr

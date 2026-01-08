@@ -42,9 +42,9 @@ from preloop.schemas.auth import (
     RefreshRequest,
     Token,
     User,
-    UserCreate,
-    UserResponse,
-    UserUpdate,
+    AuthUserCreate,
+    AuthUserResponse,
+    AuthUserUpdate,
 )
 from preloop.utils import get_client_ip
 from preloop.utils.email import (
@@ -89,10 +89,10 @@ class OnboardingRequest(BaseModel):
 
 
 @router.post(
-    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+    "/register", response_model=AuthUserResponse, status_code=status.HTTP_201_CREATED
 )
 async def register(
-    user_data: UserCreate, background_tasks: BackgroundTasks, request: Request
+    user_data: AuthUserCreate, background_tasks: BackgroundTasks, request: Request
 ) -> Dict[str, str]:
     """Register a new user.
 
@@ -618,7 +618,7 @@ async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
         session.close()
 
 
-@router.get("/users/me", response_model=UserResponse)
+@router.get("/users/me", response_model=AuthUserResponse)
 async def read_users_me(current_user: User = Depends(get_current_active_user)) -> User:
     """Get the current user.
 
@@ -631,11 +631,11 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)) -
     return current_user
 
 
-@router.put("/users/me", response_model=UserResponse)
+@router.put("/users/me", response_model=AuthUserResponse)
 async def update_user_me(
     *,
     db: Session = Depends(get_db_session),
-    user_update: UserUpdate,
+    user_update: AuthUserUpdate,
     current_user: UserModel = Depends(get_current_active_user),
 ) -> Any:
     """Update own user."""
@@ -754,7 +754,7 @@ async def create_api_key(
 
 @router.get("/api-keys", response_model=List[ApiKeySummary])
 async def list_api_keys(
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
 ) -> List[ApiKeySummary]:
     """List all API keys for the current user.
 
@@ -795,7 +795,7 @@ async def list_api_keys(
 async def debug_api_keys(
     username: str,
     api_key: Optional[str] = None,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
 ) -> List[ApiKeyResponse]:
     """Debug endpoint to get API keys with their values (admin only).
 
@@ -869,7 +869,7 @@ async def debug_api_keys(
 
 @router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_api_key(
-    key_id: UUID, current_user: UserResponse = Depends(get_current_active_user)
+    key_id: UUID, current_user: AuthUserResponse = Depends(get_current_active_user)
 ) -> None:
     """Delete an API key.
 
@@ -918,7 +918,7 @@ async def delete_api_key(
 async def get_api_usage(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: AuthUserResponse = Depends(get_current_active_user),
 ) -> ApiUsageStatistics:
     """Get API usage statistics for the current user.
 

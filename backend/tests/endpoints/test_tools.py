@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException, status
 
 from preloop.api.endpoints import tools
-from preloop.schemas.auth import UserResponse
+from preloop.schemas.auth import AuthUserResponse
 from preloop.models.models.account import Account
 from preloop.models.models.mcp_server import MCPServer
 from preloop.models.models.mcp_tool import MCPTool
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.asyncio
 @pytest.fixture
 def mock_user():
     """Create mock user for testing."""
-    return UserResponse(
+    return AuthUserResponse(
         username="testuser",
         email="test@example.com",
         email_verified=True,
