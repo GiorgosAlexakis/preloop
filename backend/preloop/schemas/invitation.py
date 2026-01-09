@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 
 
 class InvitationCreate(BaseModel):
@@ -49,8 +49,7 @@ class InvitationResponse(BaseModel):
         """Serialize UUID to string for JSON response."""
         return str(value) if value is not None else None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InvitationListResponse(BaseModel):

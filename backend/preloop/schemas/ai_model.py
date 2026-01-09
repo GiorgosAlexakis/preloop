@@ -3,7 +3,7 @@
 import uuid
 from typing import Dict, Optional
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from preloop.models.models.mixins import TimestampMixin
 
@@ -66,8 +66,7 @@ class AIModelInDBBase(AIModelBase, TimestampMixin):
         """Serialize UUID to string for JSON response."""
         return str(value) if value is not None else None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIModelRead(AIModelInDBBase):

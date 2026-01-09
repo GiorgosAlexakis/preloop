@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from preloop.models.models.tracker_scope_rule import RuleType, ScopeType
 
@@ -38,7 +38,4 @@ class TrackerScopeRuleResponse(TrackerScopeRuleBase):
         """Serialize UUID to string for JSON response."""
         return str(value)
 
-    class Config:
-        """Pydantic configuration."""
-
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

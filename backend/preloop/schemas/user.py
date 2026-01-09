@@ -4,7 +4,14 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_serializer,
+    field_validator,
+)
 
 
 class UserBase(BaseModel):
@@ -80,8 +87,7 @@ class AdminUserResponse(BaseModel):
         """Serialize UUID to string for JSON response."""
         return str(value)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserSummary(BaseModel):
@@ -98,8 +104,7 @@ class UserSummary(BaseModel):
         """Serialize UUID to string for JSON response."""
         return str(value)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserListResponse(BaseModel):

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List
 
 from .issue import IssueResponse
@@ -17,8 +17,7 @@ class DuplicateIssuePair(BaseModel):
         ..., description="The similarity score between the two issues."
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProjectDuplicatesResponse(BaseModel):
@@ -37,5 +36,4 @@ class ProjectDuplicatesResponse(BaseModel):
         ..., description="A list of potential duplicate issue pairs."
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
