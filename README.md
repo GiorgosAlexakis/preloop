@@ -6,15 +6,9 @@
 
 ## Overview
 
-Preloop is an open-source, event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval—no infrastructure changes required.
+Preloop is an open-source, event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval.
 
-> **Looking for Enterprise features?** Preloop Enterprise Edition adds RBAC, team-based approvals, advanced audit logging, and more. See [Enterprise Features](#enterprise-features) below.
-
-### Open Source vs Enterprise (important)
-
-- **Open Source**: single-user approvals with **email + mobile app notifications**.
-- **Enterprise**: adds **advanced conditions (CEL)**, **team-based approvals (quorum)**, **escalation**, and **Slack & Mattermost** notifications.
-- **Mobile & Watch apps**: the iOS/Watch and Android apps can be used with **self-hosted / open-source** Preloop deployments.
+Preloop acts as an MCP proxy and can be integrated in existing workflows without any infrastructure changes.
 
 ## Key Features
 
@@ -35,6 +29,14 @@ Preloop is an open-source, event-driven automation platform with built-in human-
 - **Duplicate Detection**: Automated detection of duplicate and overlapping issues
 - **Compliance Metrics**: Evaluate issue compliance and get improvement recommendations
 - **Web UI**: Modern interface built with Lit, Vite, and Shoelace Web Components
+
+> **Looking for Enterprise features?** Preloop Enterprise Edition adds RBAC, team-based approvals, advanced audit logging, and more. See [Enterprise Features](#enterprise-features) below.
+
+### Open Source vs Enterprise (important)
+
+- **Open Source**: single-user approvals with **email + mobile app notifications**.
+- **Enterprise**: adds **advanced conditions (CEL)**, **team-based approvals (quorum)**, **escalation**, and **Slack & Mattermost** notifications.
+- **Mobile & Watch apps**: the iOS/Watch and Android apps can be used with **self-hosted / open-source** Preloop deployments.
 
 ## Supported Issue Trackers
 
@@ -567,4 +569,4 @@ Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING
 
 Preloop is open source software licensed under the [Apache License 2.0](LICENSE).
 
-Copyright (c) 2025 Spacecode AI Inc.
+Copyright (c) 2026 Spacecode AI Inc.
