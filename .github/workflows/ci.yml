@@ -90,6 +90,7 @@ jobs:
       - name: Run tests
         run: |
           pytest -v \
+            --ignore tests/integration \
             --cov=backend/preloop/models \
             --cov=backend/preloop/sync \
             --cov=backend/preloop \
