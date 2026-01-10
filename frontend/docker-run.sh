@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SpaceLit Docker Management Script
+# Preloop Console Docker Management Script
 # Usage: ./docker-run.sh [command] [options]
 
 set -e
@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 print_usage() {
-    echo -e "${BLUE}SpaceLit Docker Management${NC}"
+    echo -e "${BLUE}Preloop Console Docker Management${NC}"
     echo ""
     echo -e "${YELLOW}Usage:${NC} ./docker-run.sh [command] [options]"
     echo ""
@@ -61,14 +61,14 @@ run_mock() {
 
 build_image() {
     echo -e "${GREEN}Building production Docker image...${NC}"
-    docker build -t spacelit:latest .
-    echo -e "${GREEN}Image built successfully: spacelit:latest${NC}"
+    docker build -t console:latest .
+    echo -e "${GREEN}Image built successfully: console:latest${NC}"
 }
 
 run_tests() {
     echo -e "${GREEN}Running tests in container...${NC}"
-    docker build -f Dockerfile.dev -t spacelit:test .
-    docker run --rm spacelit:test npm test
+    docker build -f Dockerfile.dev -t console:test .
+    docker run --rm console:test npm test
 }
 
 stop_containers() {
@@ -82,7 +82,7 @@ clean_up() {
     echo -e "${YELLOW}Cleaning up containers and images...${NC}"
     stop_containers
     docker system prune -f
-    docker image rm spacelit:latest spacelit:test 2>/dev/null || true
+    docker image rm console:latest console:test 2>/dev/null || true
     echo -e "${GREEN}Cleanup complete${NC}"
 }
 

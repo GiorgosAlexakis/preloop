@@ -15,7 +15,7 @@ services:
     depends_on:
       - mock-api
     networks:
-      - spacelit-mock-network
+      - console-mock-network
 
   # Mock API Server
   mock-api:
@@ -26,8 +26,8 @@ services:
       - ./docker/mock-api:/usr/share/nginx/html
       - ./docker/mock-api.conf:/etc/nginx/conf.d/default.conf
     networks:
-      - spacelit-mock-network
+      - console-mock-network
 
 networks:
-  spacelit-mock-network:
+  console-mock-network:
     driver: bridge

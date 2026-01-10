@@ -15,7 +15,7 @@ services:
     depends_on:
       - backend
     networks:
-      - spacelit-network
+      - console-network
 
   # Real API Backend (placeholder - replace with actual backend)
   backend:
@@ -25,7 +25,7 @@ services:
     volumes:
       - ./docker/mock-api.conf:/etc/nginx/conf.d/default.conf
     networks:
-      - spacelit-network
+      - console-network
 
   # Mock API Server (for testing without real backend)
   mock-api:
@@ -36,8 +36,8 @@ services:
       - ./docker/mock-api:/usr/share/nginx/html
       - ./docker/mock-api.conf:/etc/nginx/conf.d/default.conf
     networks:
-      - spacelit-network
+      - console-network
 
 networks:
-  spacelit-network:
+  console-network:
     driver: bridge

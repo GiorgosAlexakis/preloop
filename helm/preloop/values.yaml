@@ -30,11 +30,11 @@ worker:
       cpu: "1"
       memory: "1Gi"
 
-spacelit:
-  repository: registry.spacecode.ai/spacecode/spacelit
+console:
+  repository: registry.spacecode.ai/spacecode/console
   tag: "latest"
   pullPolicy: Always
-  # SpaceLit frontend resources (nginx - lightweight)
+  # Preloop Console frontend resources (nginx - lightweight)
   resources:
     requests:
       cpu: "50m"

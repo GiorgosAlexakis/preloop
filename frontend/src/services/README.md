@@ -1,6 +1,6 @@
 # Unified WebSocket Services
 
-This directory contains the unified WebSocket infrastructure for SpaceLit.
+This directory contains the unified WebSocket infrastructure for Preloop Console.
 
 ## Overview
 

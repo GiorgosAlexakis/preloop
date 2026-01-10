@@ -13,4 +13,4 @@ spec:
       name: http
   selector:
     {{- include "preloop.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: spacelit
+    app.kubernetes.io/component: console

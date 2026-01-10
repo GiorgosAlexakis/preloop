@@ -1,6 +1,6 @@
-# Docker Setup for SpaceLit
+# Docker Setup for Preloop Console
 
-This document provides comprehensive Docker support for SpaceLit with multiple environments and easy API switching.
+This document provides comprehensive Docker support for Preloop Console with multiple environments and easy API switching.
 
 ## Quick Start
 
@@ -161,17 +161,17 @@ For production deployment:
 
 1. **Build the image**:
    ```bash
-   docker build -t spacelit:v1.0.0 .
+   docker build -t console:v1.0.0 .
    ```
 
 2. **Tag for registry**:
    ```bash
-   docker tag spacelit:v1.0.0 your-registry.com/spacelit:v1.0.0
+   docker tag console:v1.0.0 your-registry.com/console:v1.0.0
    ```
 
 3. **Push to registry**:
    ```bash
-   docker push your-registry.com/spacelit:v1.0.0
+   docker push your-registry.com/console:v1.0.0
    ```
 
 4. **Deploy with environment variables**:
@@ -180,5 +180,5 @@ For production deployment:
      -p 80:80 \
      -e API_URL=https://your-api.example.com \
      -e MOCK_API=false \
-     your-registry.com/spacelit:v1.0.0
+     your-registry.com/console:v1.0.0
    ```

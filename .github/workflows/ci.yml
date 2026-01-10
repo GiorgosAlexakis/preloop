@@ -224,8 +224,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY_GHCR }}/frontend
-            ${{ vars.PUSH_TO_DOCKERHUB == 'true' && format('{0}/frontend', vars.DOCKERHUB_ORG) || '' }}
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}/console
+            ${{ vars.PUSH_TO_DOCKERHUB == 'true' && format('{0}/console', vars.DOCKERHUB_ORG) || '' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
