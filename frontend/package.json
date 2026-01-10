@@ -1,7 +1,7 @@
 {
-  "name": "spacelit",
-  "version": "1.0.0",
-  "description": "SpaceLit frontend rewrite",
+  "name": "preloop",
+  "version": "0.8.0",
+  "description": "Preloop console frontend",
   "main": "src/main.ts",
   "scripts": {
     "start": "npm run dev",
