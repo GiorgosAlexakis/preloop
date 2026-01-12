@@ -1,11 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "preloop.fullname" . }}-spacelit
+  name: {{ include "preloop.fullname" . }}-console
   labels:
     {{- include "preloop.labels" . | nindent 4 }}
-    app.kubernetes.io/component: spacelit
-    app: spacelit
+    app.kubernetes.io/component: console
+    app: console
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -13,7 +13,7 @@ spec:
   selector:
     matchLabels:
       {{- include "preloop.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: spacelit
+      app.kubernetes.io/component: console
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -22,7 +22,7 @@ spec:
       {{- end }}
       labels:
         {{- include "preloop.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: spacelit
+        app.kubernetes.io/component: console
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -32,9 +32,9 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: spacelit
-          image: "{{ .Values.spacelit.repository }}:{{ .Values.spacelit.tag }}"
-          imagePullPolicy: {{ .Values.spacelit.pullPolicy }}
+        - name: console
+          image: "{{ .Values.console.repository }}:{{ .Values.console.tag }}"
+          imagePullPolicy: {{ .Values.console.pullPolicy }}
           ports:
             - name: http
               containerPort: 80
@@ -43,7 +43,7 @@ spec:
             - name: nginx-config
               mountPath: /etc/nginx/templates
           resources:
-            {{- toYaml .Values.spacelit.resources | nindent 12 }}
+            {{- toYaml .Values.console.resources | nindent 12 }}
       volumes:
         - name: nginx-config
           configMap:

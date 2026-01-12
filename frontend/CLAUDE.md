@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SpaceLit is a modern web application frontend for Preloop, built with:
+Preloop Console is a modern web application frontend for Preloop, built with:
 - **Lit** (Web Components framework)
 - **TypeScript** for type safety
 - **Vaadin components** for UI (Vaadin router, forms, layouts)

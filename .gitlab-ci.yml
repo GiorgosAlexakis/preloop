@@ -423,8 +423,8 @@ test:coverage:
     - helm upgrade --install ${ENV_NAME} ./helm/preloop
       --namespace ${NAMESPACE}
       --set image.tag=${CI_COMMIT_SHA}
-      --set spacelit.tag=${CI_COMMIT_SHA}
-      --set spacelit.repository=${CI_REGISTRY_IMAGE_FRONTEND}
+      --set console.tag=${CI_COMMIT_SHA}
+      --set console.repository=${CI_REGISTRY_IMAGE_FRONTEND}
       --set config.openai.apiKey=${OPENAI_API_KEY}
       --set config.anthropic.apiKey=${ANTHROPIC_API_KEY}
       --set config.smtp.host=${SMTP_HOST}

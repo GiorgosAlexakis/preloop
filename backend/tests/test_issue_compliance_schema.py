@@ -235,7 +235,7 @@ class TestIssueComplianceResultResponse:
 
     def test_from_attributes_config(self):
         """Test that from_attributes is enabled."""
-        assert IssueComplianceResultResponse.Config.from_attributes is True
+        assert IssueComplianceResultResponse.model_config.get("from_attributes") is True
 
 
 class TestComplianceSuggestionResponse:

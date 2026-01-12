@@ -105,10 +105,10 @@ Resources are configured per-component to allow fine-grained control:
 | `api.resources.requests.memory`   | API server memory request          | `256Mi`       |
 | `api.resources.limits.cpu`        | API server CPU limit               | `1`           |
 | `api.resources.limits.memory`     | API server memory limit            | `1Gi`         |
-| `spacelit.resources.requests.cpu` | Frontend (nginx) CPU request       | `50m`         |
-| `spacelit.resources.requests.memory` | Frontend memory request         | `64Mi`        |
-| `spacelit.resources.limits.cpu`   | Frontend CPU limit                 | `200m`        |
-| `spacelit.resources.limits.memory` | Frontend memory limit             | `256Mi`       |
+| `console.resources.requests.cpu` | Frontend (nginx) CPU request       | `50m`         |
+| `console.resources.requests.memory` | Frontend memory request         | `64Mi`        |
+| `console.resources.limits.cpu`   | Frontend CPU limit                 | `200m`        |
+| `console.resources.limits.memory` | Frontend memory limit             | `256Mi`       |
 | `worker.resources.requests.cpu`   | Worker CPU request                 | `200m`        |
 | `worker.resources.requests.memory` | Worker memory request             | `256Mi`       |
 | `worker.resources.limits.cpu`     | Worker CPU limit                   | `1`           |

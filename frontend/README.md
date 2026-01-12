@@ -1,10 +1,10 @@
-# SpaceLit
+# Preloop Console
 
-This directory contains the new Preloop frontend, a modern web application built with Lit, Vite, and TypeScript. It follows the Material v3 design system using Material Web Components.
+This directory contains the new Preloop frontend, a modern web application built with Lit, Vite, and TypeScript. It uses Shoelace Web Components for UI.
 
 ## Description
 
-This frontend is a single-page application (SPA) that provides a rich, interactive user experience for managing issue trackers through the Preloop API. It is designed to be fast, responsive, and maintainable.
+This frontend is a single-page application (SPA) that provides a rich, interactive user experience for managing MCP servers, issue trackers, and more through the Preloop API. It is designed to be fast, responsive, and maintainable.
 
 ## Development
 
