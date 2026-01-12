@@ -47,6 +47,8 @@ from preloop.schemas.tracker_models import (
 class GitLabTracker(BaseTracker):
     """GitLab tracker implementation using python-gitlab."""
 
+    tracker_type: str = "gitlab"
+
     def __init__(
         self, tracker_id: str, api_key: str, connection_details: Dict[str, Any]
     ):

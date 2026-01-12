@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 class BaseTracker(ABC):
     """Base class for all tracker implementations."""
 
+    # Subclasses should override this
+    tracker_type: str = "unknown"
+
     def __init__(
         self, tracker_id: str, api_key: str, connection_details: Dict[str, Any]
     ):

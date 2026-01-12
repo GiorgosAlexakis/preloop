@@ -60,6 +60,8 @@ DEFAULT_JIRA_WEBHOOK_EVENTS = [
 class JiraTracker(BaseTracker):
     """Jira tracker implementation."""
 
+    tracker_type: str = "jira"
+
     def __init__(
         self, tracker_id: str, api_key: str, connection_details: Dict[str, Any]
     ):

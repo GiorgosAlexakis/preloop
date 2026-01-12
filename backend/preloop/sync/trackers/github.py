@@ -47,6 +47,7 @@ from preloop.models.crud import crud_organization, crud_project, crud_webhook
 class GitHubTracker(BaseTracker):
     """GitHub tracker implementation."""
 
+    tracker_type: str = "github"
     API_BASE_URL = "https://api.github.com"
 
     def __init__(
@@ -418,6 +419,7 @@ class GitHubTracker(BaseTracker):
                         # or a login/slug. The membership API requires the login, so we need
                         # to resolve numeric IDs to logins first.
                         org_login = org_identifier
+                        org_lookup_failed = False
                         if org_identifier.isdigit():
                             # Numeric ID - need to look up the org login
                             org_lookup_url = (
@@ -430,52 +432,64 @@ class GitHubTracker(BaseTracker):
                                 org_data = org_lookup_response.json()
                                 org_login = org_data.get("login", org_identifier)
                             else:
-                                # Can't resolve org ID, warn but continue
+                                # Can't resolve org ID - skip membership check to avoid
+                                # misleading "not a member" errors when we just can't
+                                # resolve the numeric ID to a slug
+                                org_lookup_failed = True
                                 logger.warning(
                                     f"Could not resolve org ID {org_identifier} to login: "
                                     f"{org_lookup_response.status_code}"
                                 )
+                                result["is_org_admin"] = None
+                                result["warnings"].append(
+                                    f"Could not verify admin status for organization ID '{org_identifier}'. "
+                                    "The token may be missing 'read:org' scope or the organization "
+                                    "may not be accessible. Webhook registration may fail if you "
+                                    "are not an organization admin."
+                                )
 
-                        membership_url = f"{self.API_BASE_URL}/orgs/{org_login}/memberships/{username}"
-                        membership_response = await client.get(
-                            membership_url, headers=self.headers
-                        )
+                        # Only proceed with membership check if we resolved the org
+                        if not org_lookup_failed:
+                            membership_url = f"{self.API_BASE_URL}/orgs/{org_login}/memberships/{username}"
+                            membership_response = await client.get(
+                                membership_url, headers=self.headers
+                            )
 
-                        if membership_response.status_code == 200:
-                            membership_data = membership_response.json()
-                            role = membership_data.get("role")
-                            state = membership_data.get("state")
+                            if membership_response.status_code == 200:
+                                membership_data = membership_response.json()
+                                role = membership_data.get("role")
+                                state = membership_data.get("state")
 
-                            if state != "active":
+                                if state != "active":
+                                    result["is_org_admin"] = False
+                                    result["warnings"].append(
+                                        f"Your membership in organization '{org_login}' is pending. "
+                                        "Webhook registration may fail until membership is active."
+                                    )
+                                elif role == "admin":
+                                    result["is_org_admin"] = True
+                                else:
+                                    result["is_org_admin"] = False
+                                    result["warnings"].append(
+                                        f"You are not an admin of organization '{org_login}'. "
+                                        "Webhook registration requires organization admin access. "
+                                        "Contact an organization owner to register webhooks, or use a Fine-Grained Token with webhook permissions."
+                                    )
+                            elif membership_response.status_code == 404:
                                 result["is_org_admin"] = False
                                 result["warnings"].append(
-                                    f"Your membership in organization '{org_login}' is pending. "
-                                    "Webhook registration may fail until membership is active."
+                                    f"You are not a member of organization '{org_login}'. "
+                                    "Webhook registration will fail."
                                 )
-                            elif role == "admin":
-                                result["is_org_admin"] = True
-                            else:
-                                result["is_org_admin"] = False
+                            elif membership_response.status_code == 403:
+                                # User doesn't have permission to view membership
+                                # This can happen with Fine-Grained tokens
+                                result["is_org_admin"] = None
                                 result["warnings"].append(
-                                    f"You are not an admin of organization '{org_login}'. "
-                                    "Webhook registration requires organization admin access. "
-                                    "Contact an organization owner to register webhooks, or use a Fine-Grained Token with webhook permissions."
+                                    f"Cannot verify admin status for organization '{org_login}'. "
+                                    "If using a Fine-Grained Personal Access Token, ensure it has "
+                                    "'Organization webhooks' write permission."
                                 )
-                        elif membership_response.status_code == 404:
-                            result["is_org_admin"] = False
-                            result["warnings"].append(
-                                f"You are not a member of organization '{org_login}'. "
-                                "Webhook registration will fail."
-                            )
-                        elif membership_response.status_code == 403:
-                            # User doesn't have permission to view membership
-                            # This can happen with Fine-Grained tokens
-                            result["is_org_admin"] = None
-                            result["warnings"].append(
-                                f"Cannot verify admin status for organization '{org_login}'. "
-                                "If using a Fine-Grained Personal Access Token, ensure it has "
-                                "'Organization webhooks' write permission."
-                            )
                     except Exception as e:
                         logger.warning(
                             f"Error checking org membership for {org_login}: {e}"

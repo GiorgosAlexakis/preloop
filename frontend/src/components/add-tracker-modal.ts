@@ -12,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 import '@shoelace-style/shoelace/dist/components/tree/tree.js';
 import '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
 @customElement('add-tracker-modal')
 export class AddTrackerModal extends LitElement {
@@ -67,6 +68,9 @@ export class AddTrackerModal extends LitElement {
 
   @state()
   private errorMessage = '';
+
+  @state()
+  private warningMessages: string[] = [];
 
   static styles = css`
     .error {
@@ -135,6 +139,17 @@ export class AddTrackerModal extends LitElement {
         @sl-request-close=${() => this.closeModal()}
       >
         ${this.step === 1 ? this.renderStep1() : this.renderStep2()}
+        ${this.warningMessages.length > 0
+          ? html`
+              <sl-alert variant="warning" open style="margin-top: 1rem;">
+                <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+                <strong>Warnings:</strong>
+                <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+                  ${this.warningMessages.map((w) => html`<li>${w}</li>`)}
+                </ul>
+              </sl-alert>
+            `
+          : ''}
         ${this.errorMessage
           ? html`<p class="error">${this.errorMessage}</p>`
           : ''}
@@ -144,6 +159,14 @@ export class AddTrackerModal extends LitElement {
   }
 
   renderFooterButtons() {
+    // Show "Done" button after successful save with warnings
+    if (this.warningMessages.length > 0) {
+      return html`
+        <sl-button variant="primary" @click=${() => this.closeModal(true)}>
+          Done
+        </sl-button>
+      `;
+    }
     if (this.step === 1) {
       return html`
         <sl-button @click=${() => this.closeModal()}>Cancel</sl-button>
@@ -521,29 +544,36 @@ export class AddTrackerModal extends LitElement {
     };
 
     try {
+      let response;
       if (this.tracker) {
-        const updatedTracker = await this._api.updateTracker(
-          this.tracker.id,
-          trackerData
-        );
+        response = await this._api.updateTracker(this.tracker.id, trackerData);
         this.dispatchEvent(
           new CustomEvent('tracker-updated', {
-            detail: { tracker: updatedTracker },
+            detail: { tracker: response },
           })
         );
       } else {
-        const newTracker = await this._api.addTracker(trackerData);
+        response = await this._api.addTracker(trackerData);
         this.dispatchEvent(
           new CustomEvent('tracker-added', {
-            detail: { tracker: newTracker },
+            detail: { tracker: response },
           })
         );
       }
+
+      // Check for warnings in response and display them before closing
+      if (response?.warnings && response.warnings.length > 0) {
+        this.warningMessages = response.warnings;
+        this.isLoading = false;
+        // Don't close modal yet - let user see the warnings
+        return;
+      }
+
+      this.closeModal(true);
     } catch (error: any) {
       this.errorMessage = error.message;
     } finally {
       this.isLoading = false;
-      this.closeModal(true);
     }
   }
 
