@@ -99,7 +99,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: ghcr.io/preloop/preloop:latest
+    image: ghcr.io/preloop/console:latest
     restart: unless-stopped
     depends_on:
       - api
