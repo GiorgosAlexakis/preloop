@@ -116,6 +116,12 @@ def normalize_event_type(
                         normalized = "pull_request_closed"
                     elif action == "reopened":
                         normalized = "pull_request_reopened"
+                    elif action == "review_requested":
+                        normalized = "pull_request_review_requested"
+                    elif action == "synchronize":
+                        normalized = "pull_request_synchronized"
+                    elif action == "ready_for_review":
+                        normalized = "pull_request_ready_for_review"
                 elif normalized == "comment_created":
                     if action == "created":
                         pass  # Keep as comment_created
@@ -269,6 +275,19 @@ def extract_filter_fields(
                 filter_fields["reviewer"] = [
                     r.get("login") for r in requested_reviewers
                 ]
+
+            # For review_requested action, also check top-level requested_reviewer
+            # This is the specific reviewer that was just added (not in the PR object)
+            if action == "review_requested":
+                top_level_reviewer = payload.get("requested_reviewer", {})
+                if top_level_reviewer:
+                    reviewer_login = top_level_reviewer.get("login")
+                    if reviewer_login:
+                        # Ensure reviewer list includes the just-added reviewer
+                        if "reviewer" not in filter_fields:
+                            filter_fields["reviewer"] = []
+                        if reviewer_login not in filter_fields["reviewer"]:
+                            filter_fields["reviewer"].append(reviewer_login)
 
             # Labels
             labels = pr.get("labels", [])
