@@ -133,6 +133,38 @@ async def register_tracker(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to connect to tracker: {connection_result.message}",
             )
+
+        # For GitHub trackers, validate token permissions and warn about missing scopes
+        permission_warnings = []
+        if tracker_type == TrackerType.GITHUB and hasattr(
+            client, "validate_token_permissions"
+        ):
+            # Extract organization identifiers from scope rules to check admin access
+            org_identifiers = []
+            for rule in scope_rules_data:
+                if (
+                    rule.get("scope_type") == "ORGANIZATION"
+                    and rule.get("rule_type") == "INCLUDE"
+                ):
+                    org_identifiers.append(rule.get("identifier"))
+
+            # Validate token permissions (check first org if any)
+            first_org = org_identifiers[0] if org_identifiers else None
+            permission_result = await client.validate_token_permissions(first_org)
+
+            if not permission_result["valid"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"GitHub token validation failed: {', '.join(permission_result['errors'])}",
+                )
+
+            # Collect warnings to return with the response
+            permission_warnings = permission_result.get("warnings", [])
+            if permission_warnings:
+                logger.warning(
+                    f"GitHub token permission warnings for tracker '{name}': {permission_warnings}"
+                )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -224,7 +256,11 @@ async def register_tracker(
         # Send NATS event
         await event_bus_service.publish_task("poll_tracker", str(new_tracker.id))
 
-        return {"id": str(new_tracker.id)}  # Return the tracker ID as string
+        # Build response with warnings if any
+        response = {"id": str(new_tracker.id)}
+        if permission_warnings:
+            response["warnings"] = permission_warnings
+        return response
 
     except IntegrityError as e:
         db.rollback()

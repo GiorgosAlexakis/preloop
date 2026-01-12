@@ -1003,3 +1003,156 @@ class TestGitHubTrackerIssueOperations(IsolatedAsyncioTestCase):
 
         # Assert - should return empty list on error
         self.assertEqual(result, [])
+
+
+@pytest.mark.asyncio
+class TestGitHubTrackerTokenValidation(unittest.IsolatedAsyncioTestCase):
+    """Tests for GitHub token permission validation."""
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_validate_token_permissions_valid_token_with_all_scopes(
+        self, mock_client_class
+    ):
+        """Test validation with a token that has all required scopes."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock response with all required scopes
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"X-OAuth-Scopes": "repo, admin:org_hook, user"}
+        mock_response.json.return_value = {"login": "testuser"}
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker and validate
+        tracker = GitHubTracker(str(uuid4()), "test-token", {})
+        result = await tracker.validate_token_permissions()
+
+        # Assert
+        self.assertTrue(result["valid"])
+        self.assertIn("repo", result["scopes"])
+        self.assertIn("admin:org_hook", result["scopes"])
+        self.assertEqual(len(result["warnings"]), 0)
+        self.assertEqual(len(result["errors"]), 0)
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_validate_token_permissions_missing_org_hook_scope(
+        self, mock_client_class
+    ):
+        """Test validation warns when admin:org_hook scope is missing."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock response without org_hook scope
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"X-OAuth-Scopes": "repo, user"}
+        mock_response.json.return_value = {"login": "testuser"}
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker and validate
+        tracker = GitHubTracker(str(uuid4()), "test-token", {})
+        result = await tracker.validate_token_permissions()
+
+        # Assert - should be valid but with warning
+        self.assertTrue(result["valid"])
+        self.assertTrue(
+            any("admin:org_hook" in w for w in result["warnings"]),
+            "Should warn about missing admin:org_hook scope",
+        )
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_validate_token_permissions_invalid_token(self, mock_client_class):
+        """Test validation fails with invalid token."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock response for unauthorized
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker and validate
+        tracker = GitHubTracker(str(uuid4()), "invalid-token", {})
+        result = await tracker.validate_token_permissions()
+
+        # Assert - should not be valid
+        self.assertFalse(result["valid"])
+        self.assertTrue(len(result["errors"]) > 0)
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_validate_token_permissions_with_org_admin_check(
+        self, mock_client_class
+    ):
+        """Test validation checks org admin status when org_identifier provided."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        user_response = MagicMock()
+        user_response.status_code = 200
+        user_response.headers = {"X-OAuth-Scopes": "repo, admin:org_hook"}
+        user_response.json.return_value = {"login": "testuser"}
+
+        membership_response = MagicMock()
+        membership_response.status_code = 200
+        membership_response.json.return_value = {"role": "admin", "state": "active"}
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [user_response, membership_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker and validate with org
+        tracker = GitHubTracker(str(uuid4()), "test-token", {})
+        result = await tracker.validate_token_permissions(org_identifier="test-org")
+
+        # Assert - should be valid and user is admin
+        self.assertTrue(result["valid"])
+        self.assertTrue(result["is_org_admin"])
+        self.assertEqual(len(result["warnings"]), 0)
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_validate_token_permissions_non_admin_user(self, mock_client_class):
+        """Test validation warns when user is not an org admin."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        user_response = MagicMock()
+        user_response.status_code = 200
+        user_response.headers = {"X-OAuth-Scopes": "repo, admin:org_hook"}
+        user_response.json.return_value = {"login": "testuser"}
+
+        membership_response = MagicMock()
+        membership_response.status_code = 200
+        membership_response.json.return_value = {"role": "member", "state": "active"}
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [user_response, membership_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker and validate with org
+        tracker = GitHubTracker(str(uuid4()), "test-token", {})
+        result = await tracker.validate_token_permissions(org_identifier="test-org")
+
+        # Assert - should be valid but not admin with warning
+        self.assertTrue(result["valid"])
+        self.assertFalse(result["is_org_admin"])
+        self.assertTrue(
+            any("not an admin" in w for w in result["warnings"]),
+            "Should warn that user is not an admin",
+        )

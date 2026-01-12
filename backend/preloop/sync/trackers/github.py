@@ -333,6 +333,131 @@ class GitHubTracker(BaseTracker):
         ) as e:
             return TrackerConnection(connected=False, message=str(e))
 
+    async def validate_token_permissions(
+        self, org_identifier: str | None = None
+    ) -> dict:
+        """
+        Validate that the GitHub token has the required permissions.
+
+        This checks:
+        1. Token scopes from the X-OAuth-Scopes header
+        2. If org_identifier is provided, checks if user is an admin of that org
+
+        Args:
+            org_identifier: Optional organization name to check admin access for.
+
+        Returns:
+            Dict with 'valid' (bool), 'scopes' (list), 'warnings' (list), and 'errors' (list)
+        """
+        result = {
+            "valid": True,
+            "scopes": [],
+            "warnings": [],
+            "errors": [],
+            "is_org_admin": None,
+        }
+
+        try:
+            # Make a request to /user to get the token scopes from response headers
+            async with httpx.AsyncClient() as client:
+                url = f"{self.API_BASE_URL}/user"
+                response = await client.get(url, headers=self.headers)
+
+                if response.status_code == HTTP_STATUS_UNAUTHORIZED:
+                    result["valid"] = False
+                    result["errors"].append("Invalid or expired GitHub token")
+                    return result
+
+                # Extract scopes from X-OAuth-Scopes header
+                oauth_scopes_header = response.headers.get("X-OAuth-Scopes", "")
+                scopes = [
+                    s.strip() for s in oauth_scopes_header.split(",") if s.strip()
+                ]
+                result["scopes"] = scopes
+
+                # Check for required scopes for webhook registration
+                # admin:org_hook or admin:org includes org hook permissions
+                has_org_hook_scope = any(
+                    scope in scopes
+                    for scope in ["admin:org_hook", "admin:org", "write:org_hook"]
+                )
+
+                if not has_org_hook_scope:
+                    result["warnings"].append(
+                        "Token is missing 'admin:org_hook' scope. "
+                        "Webhook registration for organizations will fail. "
+                        "Please regenerate the token with 'admin:org_hook' or 'admin:org' scope."
+                    )
+
+                # Check for repo scope (needed for reading repositories)
+                has_repo_scope = any(
+                    scope in scopes for scope in ["repo", "public_repo"]
+                )
+                if not has_repo_scope:
+                    result["warnings"].append(
+                        "Token is missing 'repo' scope. "
+                        "Access to private repositories will be limited."
+                    )
+
+                # If org_identifier provided, check if user is admin of that org
+                if org_identifier and org_identifier != "personal":
+                    try:
+                        # Get user's membership in the organization
+                        user_data = response.json()
+                        username = user_data.get("login")
+
+                        membership_url = f"{self.API_BASE_URL}/orgs/{org_identifier}/memberships/{username}"
+                        membership_response = await client.get(
+                            membership_url, headers=self.headers
+                        )
+
+                        if membership_response.status_code == 200:
+                            membership_data = membership_response.json()
+                            role = membership_data.get("role")
+                            state = membership_data.get("state")
+
+                            if state != "active":
+                                result["is_org_admin"] = False
+                                result["warnings"].append(
+                                    f"Your membership in organization '{org_identifier}' is pending. "
+                                    "Webhook registration may fail until membership is active."
+                                )
+                            elif role == "admin":
+                                result["is_org_admin"] = True
+                            else:
+                                result["is_org_admin"] = False
+                                result["warnings"].append(
+                                    f"You are not an admin of organization '{org_identifier}'. "
+                                    "Webhook registration requires organization admin access. "
+                                    "Contact an organization owner to register webhooks, or use a Fine-Grained Token with webhook permissions."
+                                )
+                        elif membership_response.status_code == 404:
+                            result["is_org_admin"] = False
+                            result["warnings"].append(
+                                f"You are not a member of organization '{org_identifier}'. "
+                                "Webhook registration will fail."
+                            )
+                        elif membership_response.status_code == 403:
+                            # User doesn't have permission to view membership
+                            # This can happen with Fine-Grained tokens
+                            result["is_org_admin"] = None
+                            result["warnings"].append(
+                                f"Cannot verify admin status for organization '{org_identifier}'. "
+                                "If using a Fine-Grained Personal Access Token, ensure it has "
+                                "'Organization webhooks' write permission."
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Error checking org membership for {org_identifier}: {e}"
+                        )
+                        result["is_org_admin"] = None
+
+        except Exception as e:
+            result["valid"] = False
+            result["errors"].append(f"Failed to validate token: {str(e)}")
+
+        return result
+
     async def get_project_metadata(self, project_key: str) -> ProjectMetadata:
         """Get metadata about a GitHub project.
 
@@ -905,6 +1030,9 @@ class GitHubTracker(BaseTracker):
         events = [
             "issues",
             "issue_comment",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
             "discussion",
             "project",
             "repository",
