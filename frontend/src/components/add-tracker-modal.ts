@@ -126,6 +126,9 @@ export class AddTrackerModal extends LitElement {
     }
   }
   firstUpdated() {
+    // Reset state when modal is shown
+    this.warningMessages = [];
+    this.errorMessage = '';
     this.shadowRoot?.querySelector('sl-dialog')?.show();
     setTimeout(() => {
       const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
@@ -547,28 +550,29 @@ export class AddTrackerModal extends LitElement {
       let response;
       if (this.tracker) {
         response = await this._api.updateTracker(this.tracker.id, trackerData);
-        this.dispatchEvent(
-          new CustomEvent('tracker-updated', {
-            detail: { tracker: response },
-          })
-        );
       } else {
         response = await this._api.addTracker(trackerData);
-        this.dispatchEvent(
-          new CustomEvent('tracker-added', {
-            detail: { tracker: response },
-          })
-        );
       }
 
       // Check for warnings in response and display them before closing
       if (response?.warnings && response.warnings.length > 0) {
         this.warningMessages = response.warnings;
         this.isLoading = false;
-        // Don't close modal yet - let user see the warnings
+        // Dispatch event but don't close modal yet - let user see the warnings
+        this.dispatchEvent(
+          new CustomEvent(this.tracker ? 'tracker-updated' : 'tracker-added', {
+            detail: { tracker: response, hasWarnings: true },
+          })
+        );
         return;
       }
 
+      // No warnings - dispatch event and close
+      this.dispatchEvent(
+        new CustomEvent(this.tracker ? 'tracker-updated' : 'tracker-added', {
+          detail: { tracker: response },
+        })
+      );
       this.closeModal(true);
     } catch (error: any) {
       this.errorMessage = error.message;

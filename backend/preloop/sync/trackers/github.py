@@ -492,7 +492,7 @@ class GitHubTracker(BaseTracker):
                                 )
                     except Exception as e:
                         logger.warning(
-                            f"Error checking org membership for {org_login}: {e}"
+                            f"Error checking org membership for {org_identifier}: {e}"
                         )
                         result["is_org_admin"] = None
 

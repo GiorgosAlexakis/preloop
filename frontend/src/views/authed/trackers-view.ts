@@ -29,13 +29,19 @@ export class TrackersView extends LitElement {
     this.editingTracker = null;
   }
 
-  private async _handleTrackerAdded() {
-    this.isAddingTracker = false;
+  private async _handleTrackerAdded(event: CustomEvent) {
+    // Don't close modal if there are warnings to display
+    if (!event.detail?.hasWarnings) {
+      this.isAddingTracker = false;
+    }
     await this.trackerListElement?.fetchTrackers();
   }
 
-  private async _handleTrackerUpdated() {
-    this.editingTracker = null;
+  private async _handleTrackerUpdated(event: CustomEvent) {
+    // Don't close modal if there are warnings to display
+    if (!event.detail?.hasWarnings) {
+      this.editingTracker = null;
+    }
     await this.trackerListElement?.fetchTrackers();
   }
 

@@ -2200,7 +2200,10 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   private async handleTrackerAdded(event: CustomEvent) {
-    this.isAddingTracker = false;
+    // Don't close modal if there are warnings to display
+    if (!event.detail?.hasWarnings) {
+      this.isAddingTracker = false;
+    }
     // Reload trackers list
     this.trackers = await getTrackers();
 
