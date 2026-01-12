@@ -568,10 +568,7 @@ paths:
           content:
             application/json:
               schema:
-                additionalProperties:
-                  type: string
-                type: object
-                title: Response Register Tracker Api V1 Trackers Post
+                $ref: '#/components/schemas/TrackerCreateResponse'
       security:
       - bearerAuth: []
   /api/v1/trackers/{tracker_id}:
@@ -7276,6 +7273,23 @@ components:
       type: object
       title: ToolConfigurationUpdate
       description: Schema for updating tool configuration.
+    TrackerCreateResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        warnings:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Warnings
+      type: object
+      required:
+      - id
+      title: TrackerCreateResponse
+      description: Response model for tracker creation.
     TrackerResponse:
       properties:
         name:

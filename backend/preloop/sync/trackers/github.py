@@ -368,6 +368,14 @@ class GitHubTracker(BaseTracker):
                     result["errors"].append("Invalid or expired GitHub token")
                     return result
 
+                # Handle other error responses (403, 404, 500, etc.)
+                if response.status_code >= 400:
+                    result["valid"] = False
+                    result["errors"].append(
+                        f"GitHub API error: {response.status_code} - {response.text[:200]}"
+                    )
+                    return result
+
                 # Extract scopes from X-OAuth-Scopes header
                 oauth_scopes_header = response.headers.get("X-OAuth-Scopes", "")
                 scopes = [
@@ -406,7 +414,29 @@ class GitHubTracker(BaseTracker):
                         user_data = response.json()
                         username = user_data.get("login")
 
-                        membership_url = f"{self.API_BASE_URL}/orgs/{org_identifier}/memberships/{username}"
+                        # The org_identifier might be a numeric ID (from transform_organization)
+                        # or a login/slug. The membership API requires the login, so we need
+                        # to resolve numeric IDs to logins first.
+                        org_login = org_identifier
+                        if org_identifier.isdigit():
+                            # Numeric ID - need to look up the org login
+                            org_lookup_url = (
+                                f"{self.API_BASE_URL}/organizations/{org_identifier}"
+                            )
+                            org_lookup_response = await client.get(
+                                org_lookup_url, headers=self.headers
+                            )
+                            if org_lookup_response.status_code == 200:
+                                org_data = org_lookup_response.json()
+                                org_login = org_data.get("login", org_identifier)
+                            else:
+                                # Can't resolve org ID, warn but continue
+                                logger.warning(
+                                    f"Could not resolve org ID {org_identifier} to login: "
+                                    f"{org_lookup_response.status_code}"
+                                )
+
+                        membership_url = f"{self.API_BASE_URL}/orgs/{org_login}/memberships/{username}"
                         membership_response = await client.get(
                             membership_url, headers=self.headers
                         )
@@ -419,7 +449,7 @@ class GitHubTracker(BaseTracker):
                             if state != "active":
                                 result["is_org_admin"] = False
                                 result["warnings"].append(
-                                    f"Your membership in organization '{org_identifier}' is pending. "
+                                    f"Your membership in organization '{org_login}' is pending. "
                                     "Webhook registration may fail until membership is active."
                                 )
                             elif role == "admin":
@@ -427,14 +457,14 @@ class GitHubTracker(BaseTracker):
                             else:
                                 result["is_org_admin"] = False
                                 result["warnings"].append(
-                                    f"You are not an admin of organization '{org_identifier}'. "
+                                    f"You are not an admin of organization '{org_login}'. "
                                     "Webhook registration requires organization admin access. "
                                     "Contact an organization owner to register webhooks, or use a Fine-Grained Token with webhook permissions."
                                 )
                         elif membership_response.status_code == 404:
                             result["is_org_admin"] = False
                             result["warnings"].append(
-                                f"You are not a member of organization '{org_identifier}'. "
+                                f"You are not a member of organization '{org_login}'. "
                                 "Webhook registration will fail."
                             )
                         elif membership_response.status_code == 403:
@@ -442,13 +472,13 @@ class GitHubTracker(BaseTracker):
                             # This can happen with Fine-Grained tokens
                             result["is_org_admin"] = None
                             result["warnings"].append(
-                                f"Cannot verify admin status for organization '{org_identifier}'. "
+                                f"Cannot verify admin status for organization '{org_login}'. "
                                 "If using a Fine-Grained Personal Access Token, ensure it has "
                                 "'Organization webhooks' write permission."
                             )
                     except Exception as e:
                         logger.warning(
-                            f"Error checking org membership for {org_identifier}: {e}"
+                            f"Error checking org membership for {org_login}: {e}"
                         )
                         result["is_org_admin"] = None
 

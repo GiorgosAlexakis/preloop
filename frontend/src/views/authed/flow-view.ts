@@ -226,6 +226,9 @@ export class FlowView extends LitElement {
   private showTestRunModal = false;
 
   @state()
+  private formError: string | null = null;
+
+  @state()
   private testRunPlaceholders: Record<string, string> = {};
 
   private organizationPollingInterval?: number;
@@ -546,12 +549,40 @@ export class FlowView extends LitElement {
               <strong>Agent Type:</strong>
               <sl-badge>${this.flow.agent_type}</sl-badge>
 
+              ${this.flow.ai_model_id
+                ? html`
+                    <strong>AI Model:</strong>
+                    <span>${this.getModelName(this.flow.ai_model_id)}</span>
+                  `
+                : ''}
+
               <strong>Trigger:</strong>
               <span>
                 ${this.flow.trigger_event_source === 'webhook'
                   ? 'Webhook'
-                  : `${this.flow.trigger_event_source} - ${this.flow.trigger_event_type}`}
+                  : `${this.getTrackerName(this.flow.trigger_event_source)} - ${this.flow.trigger_event_type}`}
               </span>
+
+              ${this.flow.trigger_organization_id
+                ? html`
+                    <strong>Organization:</strong>
+                    <span
+                      >${this.getOrganizationName(
+                        this.flow.trigger_organization_id
+                      )}</span
+                    >
+                  `
+                : ''}
+              ${this.flow.trigger_project_id
+                ? html`
+                    <strong>Project:</strong>
+                    <span
+                      >${this.getProjectName(
+                        this.flow.trigger_project_id
+                      )}</span
+                    >
+                  `
+                : ''}
 
               <strong>Status:</strong>
               <sl-badge
@@ -575,6 +606,21 @@ export class FlowView extends LitElement {
             </div>
           </sl-card>
 
+          ${this.flow.prompt_template
+            ? html`
+                <sl-card>
+                  <div slot="header">
+                    <sl-icon name="chat-left-text"></sl-icon>
+                    Prompt Template
+                  </div>
+                  <pre
+                    style="white-space: pre-wrap; word-wrap: break-word; font-family: var(--sl-font-mono); font-size: var(--sl-font-size-small); background: var(--sl-color-neutral-50); padding: var(--sl-spacing-medium); border-radius: var(--sl-border-radius-medium); margin: 0; max-height: 300px; overflow-y: auto;"
+                  >
+${this.flow.prompt_template}</pre
+                  >
+                </sl-card>
+              `
+            : ''}
           ${this.flow.trigger_event_source === 'webhook' &&
           this.flow.webhook_config
             ? html`
@@ -998,6 +1044,19 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
   renderForm() {
     return html`
+      ${this.formError
+        ? html`
+            <sl-alert
+              variant="danger"
+              open
+              closable
+              @sl-after-hide=${() => (this.formError = null)}
+            >
+              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+              ${this.formError}
+            </sl-alert>
+          `
+        : ''}
       <form @submit=${this.handleSubmit}>
         <sl-card>
           <sl-input
@@ -1454,6 +1513,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
   async handleSubmit(e: Event) {
     e.preventDefault();
+    this.formError = null;
 
     // Build payload with required fields
     const payload: any = {
@@ -1492,13 +1552,26 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       }
     }
 
-    if (this.isNew) {
-      const newFlow = await createFlow(payload);
-      Router.go(`/console/flows/${newFlow.id}`);
-    } else {
-      await updateFlow(this.flowId!, payload);
-      // Redirect to flow view after successful update
-      Router.go(`/console/flows/${this.flowId}`);
+    try {
+      if (this.isNew) {
+        const newFlow = await createFlow(payload);
+        Router.go(`/console/flows/${newFlow.id}`);
+      } else {
+        await updateFlow(this.flowId!, payload);
+        // Redirect to flow view after successful update
+        Router.go(`/console/flows/${this.flowId}`);
+      }
+    } catch (error: any) {
+      // Extract error message from API response
+      let errorMessage = 'Failed to save flow. Please try again.';
+      if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      this.formError = errorMessage;
+      // Scroll to top to show error
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
   startPollingOrganizations(trackerId: string) {
@@ -1835,6 +1908,29 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     return this.trackers.filter(
       (t) => t.tracker_type === 'github' || t.tracker_type === 'gitlab'
     );
+  }
+
+  getModelName(modelId: string): string {
+    const model = this.models.find((m: any) => m.id === modelId);
+    return model?.name || modelId;
+  }
+
+  getTrackerName(trackerId: string | undefined): string {
+    if (!trackerId) return 'Unknown';
+    const tracker = this.trackers.find((t: any) => t.id === trackerId);
+    return tracker?.name || trackerId;
+  }
+
+  getOrganizationName(orgId: string | undefined): string {
+    if (!orgId) return 'Unknown';
+    const org = this.organizations.find((o: any) => o.id === orgId);
+    return org?.name || orgId;
+  }
+
+  getProjectName(projectId: string | undefined): string {
+    if (!projectId) return 'Unknown';
+    const project = this.projects.find((p: any) => p.id === projectId);
+    return project?.name || projectId;
   }
 
   handleGitCloneToggle(enabled: boolean) {
