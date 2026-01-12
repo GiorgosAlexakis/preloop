@@ -198,7 +198,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY_GHCR }}/preloop/preloop
             ${{ vars.PUSH_TO_DOCKERHUB == 'true' && format('{0}/preloop', vars.DOCKERHUB_ORG) || '' }}
           tags: |
             type=ref,event=branch
@@ -224,7 +224,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}/console
+            ${{ env.REGISTRY_GHCR }}/preloop/console
             ${{ vars.PUSH_TO_DOCKERHUB == 'true' && format('{0}/console', vars.DOCKERHUB_ORG) || '' }}
           tags: |
             type=ref,event=branch

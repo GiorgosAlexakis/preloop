@@ -110,6 +110,7 @@ def clone_preset(
         raise HTTPException(status_code=404, detail="Preset not found")
 
     # Build dict excluding fields we want to override or that aren't in FlowCreate
+    # Note: is_enabled is excluded so cloned flows start enabled (presets are disabled)
     preset_dict = {
         k: v
         for k, v in preset.__dict__.items()
@@ -121,6 +122,7 @@ def clone_preset(
             "updated_at",
             "name",
             "is_preset",
+            "is_enabled",
             "account_id",
         ]
     }
@@ -140,6 +142,7 @@ def clone_preset(
         **preset_dict,
         name=final_name,
         is_preset=False,
+        is_enabled=True,  # Cloned flows start enabled
         account_id=str(current_user.account_id),
     )
     cloned_flow = crud_flow.create(

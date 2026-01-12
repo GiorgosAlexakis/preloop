@@ -796,13 +796,17 @@ export class DashboardView extends AuthedElement {
       }
       /* Analytics card styles */
       .analytics-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
         gap: var(--sl-spacing-large);
         margin-top: var(--sl-spacing-medium);
       }
       .analytics-stat {
         text-align: center;
+        display: flex;
+        flex-direction: column;
+        min-width: 30%;
       }
       .analytics-value {
         font-size: 2.5rem;

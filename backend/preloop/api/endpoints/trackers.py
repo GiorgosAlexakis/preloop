@@ -1,10 +1,10 @@
 """Trackers router for registering and managing issue trackers."""
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from pydantic import UUID4
+from pydantic import UUID4, BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,11 +19,17 @@ from preloop.schemas.tracker import (
 from preloop.schemas.tracker import (
     ProjectIdentifier,
 )  # Corrected import location
+
+
 from preloop.sync.trackers import create_tracker_client
 from preloop.utils.email import send_tracker_registered_email
 from preloop.sync.services.event_bus import event_bus_service
 from preloop.models.db.session import get_db_session
+
+
 from preloop.models.models.tracker import Tracker, TrackerType, TrackerScopeRule
+
+
 from preloop.models.crud import (
     crud_account,
     crud_tracker,
@@ -35,6 +41,18 @@ from preloop.utils.permissions import require_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class TrackerCreateResponse(BaseModel):
+    """Response model for tracker creation."""
+
+    id: str
+    warnings: Optional[List[str]] = None
+
+    class Config:
+        """Pydantic config."""
+
+        from_attributes = True
 
 
 @router.post("/trackers/debug")
@@ -49,14 +67,18 @@ async def debug_tracker_request(request: Request):
         return {"error": str(e)}
 
 
-@router.post("/trackers", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/trackers",
+    status_code=status.HTTP_201_CREATED,
+    response_model=TrackerCreateResponse,
+)
 @require_permission("create_trackers")
 async def register_tracker(
     request: Request,
     background_tasks: BackgroundTasks,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
-) -> Dict[str, str]:
+) -> TrackerCreateResponse:
     """Register a new issue tracker.
 
     Args:
@@ -81,7 +103,7 @@ async def register_tracker(
         url_str = data.get("url")
         api_key = data.get("api_key")
         config = data.get("config")
-        scope_rules_data = data.get("scope_rules", [])
+        scope_rules_data = data.get("scope_rules") or []
 
         # Validate required fields
         if not name or not tracker_type_str or not api_key:
@@ -133,6 +155,52 @@ async def register_tracker(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to connect to tracker: {connection_result.message}",
             )
+
+        # For GitHub trackers, validate token permissions and warn about missing scopes
+        permission_warnings = []
+        if tracker_type == TrackerType.GITHUB and hasattr(
+            client, "validate_token_permissions"
+        ):
+            # Extract organization identifiers from scope rules to check admin access
+            org_identifiers = []
+            for rule in scope_rules_data:
+                if (
+                    rule.get("scope_type") == "ORGANIZATION"
+                    and rule.get("rule_type") == "INCLUDE"
+                ):
+                    identifier = rule.get("identifier")
+                    if identifier:  # Only append valid identifiers
+                        org_identifiers.append(identifier)
+
+            # First, validate basic token permissions (scopes) without org-specific checks
+            permission_result = await client.validate_token_permissions(None)
+
+            if not permission_result["valid"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"GitHub token validation failed: {', '.join(permission_result['errors'])}",
+                )
+
+            # Collect basic scope warnings
+            permission_warnings = permission_result.get("warnings", [])
+
+            # Now validate admin access for each organization in scope rules
+            for org_id in org_identifiers:
+                org_result = await client.validate_token_permissions(org_id)
+                # Add org-specific warnings (skip duplicate scope warnings)
+                for warning in org_result.get("warnings", []):
+                    if warning not in permission_warnings:
+                        permission_warnings.append(warning)
+                # Add any org-specific errors as warnings (don't fail registration)
+                for error in org_result.get("errors", []):
+                    if error not in permission_warnings:
+                        permission_warnings.append(error)
+
+            if permission_warnings:
+                logger.warning(
+                    f"GitHub token permission warnings for tracker '{name}': {permission_warnings}"
+                )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -224,7 +292,11 @@ async def register_tracker(
         # Send NATS event
         await event_bus_service.publish_task("poll_tracker", str(new_tracker.id))
 
-        return {"id": str(new_tracker.id)}  # Return the tracker ID as string
+        # Build response with warnings if any
+        response = {"id": str(new_tracker.id)}
+        if permission_warnings:
+            response["warnings"] = permission_warnings
+        return response
 
     except IntegrityError as e:
         db.rollback()

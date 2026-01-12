@@ -935,8 +935,8 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
                 # Remove gitlab host and get project path (everything between host and /-/)
                 project_path = "/".join(url_path[1:]).rstrip("/-")
                 logger.info(f"Detected GitLab MR: {project_path}#{pr_mr_number}")
-    # Parse slug format for PRs/MRs: owner/repo#123
-    elif "/" in target and "#" in target:
+    # Parse slug format for PRs/MRs: owner/repo#123 or repo#123
+    elif "#" in target:
         slug_parts = target.split("#")
         pr_mr_number = slug_parts[1]
         project_path = slug_parts[0]
@@ -1156,7 +1156,7 @@ async def get_pull_request(pull_request: str) -> "PullRequestResponse":
         tracker = trackers[0]
         from preloop.models.crud import crud_organization
 
-        organizations = crud_organization.get_multi_by_tracker(
+        organizations = crud_organization.get_for_tracker(
             db, tracker_id=tracker.id, account_id=current_user.account_id
         )
         if not organizations:
@@ -1276,7 +1276,7 @@ async def get_merge_request(merge_request: str) -> "MergeRequestResponse":
         tracker = trackers[0]
         from preloop.models.crud import crud_organization
 
-        organizations = crud_organization.get_multi_by_tracker(
+        organizations = crud_organization.get_for_tracker(
             db, tracker_id=tracker.id, account_id=current_user.account_id
         )
         if not organizations:
@@ -1414,7 +1414,7 @@ async def update_pull_request(
         tracker = trackers[0]
         from preloop.models.crud import crud_organization
 
-        organizations = crud_organization.get_multi_by_tracker(
+        organizations = crud_organization.get_for_tracker(
             db, tracker_id=tracker.id, account_id=current_user.account_id
         )
         if not organizations:
@@ -1562,7 +1562,7 @@ async def update_merge_request(
         tracker = trackers[0]
         from preloop.models.crud import crud_organization
 
-        organizations = crud_organization.get_multi_by_tracker(
+        organizations = crud_organization.get_for_tracker(
             db, tracker_id=tracker.id, account_id=current_user.account_id
         )
         if not organizations:

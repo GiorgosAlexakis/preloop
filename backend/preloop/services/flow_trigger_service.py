@@ -186,7 +186,10 @@ class FlowTriggerService:
             flows_to_trigger = []
             for flow in matching_flows:
                 if not flow.is_enabled:
-                    logger.info(f"Skipping disabled flow '{flow.name}' ({flow.id})")
+                    logger.warning(
+                        f"Skipping disabled flow '{flow.name}' ({flow.id}). "
+                        f"To enable this flow, set is_enabled=true via the API or UI."
+                    )
                     continue
 
                 if not self._matches_trigger_config(flow, event_data):

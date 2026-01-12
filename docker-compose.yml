@@ -25,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/preloop:latest
+    image: ghcr.io/preloop/preloop:latest
     restart: unless-stopped
     depends_on:
       - postgres
@@ -51,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/preloop:latest
+    image: ghcr.io/preloop/preloop:latest
     restart: unless-stopped
     depends_on:
       - postgres
@@ -75,7 +75,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: registry.spacecode.ai/spacecode/preloop:latest
+    image: ghcr.io/preloop/preloop:latest
     restart: unless-stopped
     depends_on:
       - postgres
@@ -94,6 +94,17 @@ services:
     volumes:
       - .:/app
     command: preloop-sync worker
+
+  console:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ghcr.io/preloop/console:latest
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
 
 volumes:
   postgres-data:

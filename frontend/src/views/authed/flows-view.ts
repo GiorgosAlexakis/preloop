@@ -439,7 +439,7 @@ export class FlowsView extends LitElement {
           <div class="flow-footer-actions">
             <sl-button
               size="small"
-              href=${router.urlForPath(`/console/flows/${flow.id}?edit=true`)}
+              href=${`/console/flows/${flow.id}?edit=true`}
               @click=${(e: Event) => e.stopPropagation()}
             >
               <sl-icon slot="prefix" name="pencil"></sl-icon>
