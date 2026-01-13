@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .permission import UserRole
     from .notification_preferences import NotificationPreferences
     from .event import Event
+    from .github_oauth_token import OAuthToken
 
 
 class UserSource(str):
@@ -158,6 +159,9 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
         foreign_keys="[Event.user_id]",
+    )
+    oauth_tokens: Mapped[List["OAuthToken"]] = relationship(
+        "OAuthToken", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

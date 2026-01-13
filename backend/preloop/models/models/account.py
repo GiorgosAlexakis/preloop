@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from .user import User
     from .user_invitation import UserInvitation
     from .event import Event
+    from .github_app_installation import OAuthAppInstallation
+    from .github_oauth_token import OAuthToken
 
 
 class Account(Base):
@@ -139,6 +141,14 @@ class Account(Base):
         "Event",
         cascade="all, delete-orphan",
         foreign_keys="[Event.account_id]",
+    )
+
+    # OAuth App relationships
+    oauth_app_installations: Mapped[List["OAuthAppInstallation"]] = relationship(
+        "OAuthAppInstallation", back_populates="account", cascade="all, delete-orphan"
+    )
+    oauth_tokens: Mapped[List["OAuthToken"]] = relationship(
+        "OAuthToken", back_populates="account", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship helper for organizational roles

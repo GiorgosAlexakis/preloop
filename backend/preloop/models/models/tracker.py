@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .comment import Comment
     from .issue import Issue
     from .organization import Organization
+    from .github_app_installation import OAuthAppInstallation
 
 
 class TrackerType(enum.Enum):
@@ -107,12 +108,27 @@ class Tracker(Base):
         comment="Secret used to validate incoming Jira webhooks. Store encrypted if possible.",
     )
 
+    # Authentication type for trackers
+    auth_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="api_token",
+        comment="Authentication type: 'api_token' or 'oauth_app'",
+    )
+
     # Foreign keys
     account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    oauth_installation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("oauth_app_installation.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Reference to OAuth App installation for oauth_app auth type",
     )
 
     # Relationships
@@ -131,6 +147,22 @@ class Tracker(Base):
     comments: Mapped[List["Comment"]] = relationship(
         "Comment", back_populates="tracker", cascade="all, delete-orphan"
     )
+    oauth_installation: Mapped[Optional["OAuthAppInstallation"]] = relationship(
+        "OAuthAppInstallation",
+        back_populates="trackers",
+        foreign_keys=[oauth_installation_id],
+    )
+
+    # Backward compatibility alias
+    @property
+    def github_installation(self) -> Optional["OAuthAppInstallation"]:
+        """Alias for oauth_installation (GitHub compatibility)."""
+        return self.oauth_installation
+
+    @property
+    def github_installation_id(self) -> Optional[uuid.UUID]:
+        """Alias for oauth_installation_id (GitHub compatibility)."""
+        return self.oauth_installation_id
 
     # Validation status
     is_valid: Mapped[bool] = mapped_column(default=False)

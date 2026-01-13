@@ -51,6 +51,7 @@ dependencies = [
     "APScheduler>=3.0.0",
     "pytz>=2025.2",
     "jira>=3.8.0",
+    "cryptography>=42.0.0",  # For Fernet encryption of sensitive data
 ]
 
 [tool.setuptools.packages.find]

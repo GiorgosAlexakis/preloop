@@ -900,6 +900,26 @@ class ApprovalService:
             # Run token cleanup in background
             loop.run_in_executor(_sync_db_executor, _remove_invalid_tokens)
 
+        # Notify admins if push notifications failed (and we had devices to send to)
+        if failed_count > 0 and (ios_tokens or android_tokens):
+            try:
+                task_publisher = await get_task_publisher()
+                if task_publisher:
+                    await task_publisher.publish_task(
+                        "notify_admins",
+                        subject="Push Notification Delivery Failed",
+                        message=(
+                            f"Push notifications failed for approval request.\n\n"
+                            f"Request ID: {approval_request.id}\n"
+                            f"Tool: {approval_request.tool_name}\n"
+                            f"Sent: {sent_count}, Failed: {failed_count}\n"
+                            f"iOS devices: {len(ios_tokens)}, Android devices: {len(android_tokens)}\n\n"
+                            f"Please check APNs/FCM configuration and device token validity."
+                        ),
+                    )
+            except Exception as e:
+                logger.error(f"Failed to notify admins about push failure: {e}")
+
         return {
             "success": failed_count == 0,
             "sent": sent_count,

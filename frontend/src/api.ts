@@ -1715,3 +1715,104 @@ export async function updateAccountOrganization(
   }
   return response.json();
 }
+
+// GitHub App OAuth API
+export interface TrackerAuthMethodsResponse {
+  methods: string[];
+  github_app_configured: boolean;
+}
+
+export async function getTrackerAuthMethods(): Promise<TrackerAuthMethodsResponse> {
+  const response = await fetchWithAuth('/api/v1/trackers/auth-methods');
+  if (!response.ok) {
+    throw new Error('Failed to fetch tracker auth methods');
+  }
+  return response.json();
+}
+
+export interface GitHubAuthUrlResponse {
+  authorization_url: string;
+  state: string;
+}
+
+export async function getGitHubAuthUrl(): Promise<GitHubAuthUrlResponse> {
+  const response = await fetchWithAuth('/api/v1/auth/github/authorize');
+  if (!response.ok) {
+    throw new Error('Failed to get GitHub authorization URL');
+  }
+  return response.json();
+}
+
+export interface GitHubInstallation {
+  id: string;
+  installation_id: number;
+  target_type: string;
+  target_login: string;
+  permissions: Record<string, string>;
+  repository_selection: string;
+  is_suspended: boolean;
+  created_at: string;
+}
+
+export async function getGitHubInstallations(): Promise<GitHubInstallation[]> {
+  const response = await fetchWithAuth('/api/v1/github/installations');
+  if (!response.ok) {
+    throw new Error('Failed to fetch GitHub installations');
+  }
+  const data = await response.json();
+  return data.installations;
+}
+
+export async function getGitHubInstallation(
+  installationId: string
+): Promise<GitHubInstallation> {
+  const response = await fetchWithAuth(
+    `/api/v1/github/installations/${installationId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch GitHub installation');
+  }
+  return response.json();
+}
+
+export async function unlinkGitHubInstallation(
+  installationId: string
+): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/github/installations/${installationId}`,
+    { method: 'DELETE' }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to unlink GitHub installation');
+  }
+}
+
+export interface CompleteGitHubInstallationRequest {
+  installation_id: string;
+  name: string;
+  scope_rules: Array<{
+    rule_type: 'INCLUDE' | 'EXCLUDE';
+    scope_type: 'ORGANIZATION' | 'PROJECT';
+    identifier: string;
+  }>;
+}
+
+export async function completeGitHubInstallation(
+  data: CompleteGitHubInstallationRequest
+): Promise<any> {
+  const response = await fetchWithAuth(
+    '/api/v1/auth/github/complete-installation',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || 'Failed to complete GitHub installation'
+    );
+  }
+  return response.json();
+}

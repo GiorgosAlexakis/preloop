@@ -1,5 +1,9 @@
 """
 GitHub tracker implementation for preloop.sync.
+
+Supports two authentication types:
+- api_token: Traditional Personal Access Token (PAT) authentication
+- github_app: GitHub App installation-based authentication (for SaaS)
 """
 
 from datetime import datetime
@@ -45,22 +49,121 @@ from preloop.models.crud import crud_organization, crud_project, crud_webhook
 
 
 class GitHubTracker(BaseTracker):
-    """GitHub tracker implementation."""
+    """GitHub tracker implementation.
+
+    Supports two authentication types:
+    - api_token: Traditional PAT authentication (self-hosted or personal use)
+    - github_app: GitHub App OAuth authentication (Preloop SaaS)
+    """
 
     tracker_type: str = "github"
     API_BASE_URL = "https://api.github.com"
 
     def __init__(
-        self, tracker_id: str, api_key: str, connection_details: Dict[str, Any]
+        self,
+        tracker_id: str,
+        api_key: str,
+        connection_details: Dict[str, Any],
+        auth_type: str = "api_token",
+        github_installation_id: Optional[int] = None,
     ):
         """
         Initialize the GitHub tracker.
+
+        Args:
+            tracker_id: The tracker ID
+            api_key: The API key (PAT token for api_token auth, or None for github_app)
+            connection_details: Connection configuration
+            auth_type: Authentication type - "api_token" or "github_app"
+            github_installation_id: GitHub App installation ID (required for github_app auth)
         """
         super().__init__(tracker_id, api_key, connection_details)
-        self.headers = {
-            "Authorization": f"token {api_key}",
-            "Accept": "application/vnd.github.v3+json",
-        }
+        self.auth_type = auth_type
+        self.github_installation_id = github_installation_id
+        self._installation_token: Optional[str] = None
+        self._installation_token_expires_at: Optional[datetime] = None
+
+        # Set up headers based on auth type
+        if auth_type == "api_token":
+            self.headers = {
+                "Authorization": f"token {api_key}",
+                "Accept": "application/vnd.github.v3+json",
+            }
+        else:
+            # For github_app, headers will be set dynamically with installation token
+            self.headers = {
+                "Accept": "application/vnd.github.v3+json",
+            }
+
+    async def _get_installation_token(self) -> str:
+        """Get a valid installation access token for GitHub App auth.
+
+        Returns:
+            Installation access token
+
+        Raises:
+            TrackerAuthenticationError: If unable to obtain token
+        """
+        if self.auth_type not in ("github_app", "oauth_app"):
+            raise TrackerAuthenticationError(
+                "Installation token only available for github_app or oauth_app auth types"
+            )
+
+        if not self.github_installation_id:
+            raise TrackerAuthenticationError(
+                "GitHub installation ID not configured for this tracker"
+            )
+
+        # Check if we have a valid cached token
+        from datetime import timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        if (
+            self._installation_token
+            and self._installation_token_expires_at
+            and self._installation_token_expires_at > now
+        ):
+            return self._installation_token
+
+        # Get a new installation access token
+        try:
+            # Import from the plugin (EE only)
+            from preloop.plugins.proprietary.github_app.service import (
+                get_github_app_service,
+            )
+
+            service = get_github_app_service()
+            token = await service.get_installation_access_token(
+                self.github_installation_id
+            )
+
+            # Cache the token (GitHub installation tokens are valid for 1 hour)
+            # We'll expire it slightly early (55 minutes) to be safe
+            self._installation_token = token
+            self._installation_token_expires_at = now + timedelta(minutes=55)
+
+            return token
+        except Exception as e:
+            logger.error(f"Failed to get installation access token: {e}")
+            raise TrackerAuthenticationError(
+                f"Failed to get GitHub App installation token: {e}"
+            )
+
+    async def _get_auth_headers(self) -> Dict[str, str]:
+        """Get authorization headers for API requests.
+
+        Returns:
+            Headers dict with appropriate authorization
+        """
+        if self.auth_type == "api_token":
+            return self.headers
+        else:
+            # Get fresh installation token
+            token = await self._get_installation_token()
+            return {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json",
+            }
 
     @async_retry()
     async def _make_request(
@@ -74,12 +177,12 @@ class GitHubTracker(BaseTracker):
         params.setdefault("per_page", GITHUB_DEFAULT_PAGE_SIZE)
         results = []
         url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+        # Get auth headers (may refresh installation token for github_app auth)
+        headers = await self._get_auth_headers()
         async with httpx.AsyncClient() as client:
             while url:
                 try:
-                    response = await client.get(
-                        url, headers=self.headers, params=params
-                    )
+                    response = await client.get(url, headers=headers, params=params)
                     params = None
 
                     if response.status_code == HTTP_STATUS_UNAUTHORIZED:
@@ -128,12 +231,15 @@ class GitHubTracker(BaseTracker):
             else f"{self.API_BASE_URL}/{endpoint}"
         )
 
+        # Get auth headers (may refresh installation token for github_app auth)
+        headers = await self._get_auth_headers()
+
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.request(
                     method,
                     url,
-                    headers=self.headers,
+                    headers=headers,
                     json=data,
                     params=params,
                 )
@@ -257,10 +363,12 @@ class GitHubTracker(BaseTracker):
         """
         Make a DELETE request to the GitHub API.
         """
+        # Get auth headers (may refresh installation token for github_app auth)
+        headers = await self._get_auth_headers()
         async with httpx.AsyncClient() as client:
             try:
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-                response = await client.delete(url, headers=self.headers)
+                response = await client.delete(url, headers=headers)
 
                 if response.status_code == HTTP_STATUS_UNAUTHORIZED:
                     raise TrackerAuthenticationError("GitHub authentication failed")
@@ -359,10 +467,12 @@ class GitHubTracker(BaseTracker):
         }
 
         try:
+            # Get auth headers (may refresh installation token for github_app auth)
+            headers = await self._get_auth_headers()
             # Make a request to /user to get the token scopes from response headers
             async with httpx.AsyncClient() as client:
                 url = f"{self.API_BASE_URL}/user"
-                response = await client.get(url, headers=self.headers)
+                response = await client.get(url, headers=headers)
 
                 if response.status_code == HTTP_STATUS_UNAUTHORIZED:
                     result["valid"] = False
@@ -426,7 +536,7 @@ class GitHubTracker(BaseTracker):
                                 f"{self.API_BASE_URL}/organizations/{org_identifier}"
                             )
                             org_lookup_response = await client.get(
-                                org_lookup_url, headers=self.headers
+                                org_lookup_url, headers=headers
                             )
                             if org_lookup_response.status_code == 200:
                                 org_data = org_lookup_response.json()
@@ -452,7 +562,7 @@ class GitHubTracker(BaseTracker):
                         if not org_lookup_failed:
                             membership_url = f"{self.API_BASE_URL}/orgs/{org_login}/memberships/{username}"
                             membership_response = await client.get(
-                                membership_url, headers=self.headers
+                                membership_url, headers=headers
                             )
 
                             if membership_response.status_code == 200:
@@ -1095,9 +1205,11 @@ class GitHubTracker(BaseTracker):
         }
 
         try:
+            # Get auth headers (may refresh installation token for github_app auth)
+            headers = await self._get_auth_headers()
             async with httpx.AsyncClient() as client:
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-                response = await client.post(url, headers=self.headers, json=payload)
+                response = await client.post(url, headers=headers, json=payload)
 
             if response.status_code in [HTTP_STATUS_OK, HTTP_STATUS_CREATED]:
                 response_data = response.json()
@@ -1199,9 +1311,11 @@ class GitHubTracker(BaseTracker):
         else:
             endpoint = f"orgs/{org_identifier}/hooks/{webhook_id}"
         try:
+            # Get auth headers (may refresh installation token for github_app auth)
+            headers = await self._get_auth_headers()
             async with httpx.AsyncClient() as client:
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-                response = await client.delete(url, headers=self.headers)
+                response = await client.delete(url, headers=headers)
 
             if response.status_code == HTTP_STATUS_NO_CONTENT:
                 logger.info(

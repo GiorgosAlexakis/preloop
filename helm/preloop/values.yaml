@@ -241,6 +241,21 @@ stripe:
   secretKey: ""
   webhookSecret: ""
 
+# GitHub App OAuth configuration (Enterprise Edition only)
+# Required for "Connect with GitHub" flow in tracker creation
+githubApp:
+  enabled: false
+  # GitHub App ID from app settings
+  appId: ""
+  # GitHub App Client ID for OAuth
+  clientId: ""
+  # GitHub App Client Secret for OAuth
+  clientSecret: ""
+  # GitHub App Private Key (PEM format, base64 encoded)
+  privateKey: ""
+  # GitHub App Webhook Secret for signature verification
+  webhookSecret: ""
+
 # Apple Push Notification Service (APNS) configuration
 apns:
   enabled: false

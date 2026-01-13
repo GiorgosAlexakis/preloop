@@ -13,6 +13,7 @@ import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 import '@shoelace-style/shoelace/dist/components/tree/tree.js';
 import '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
 
 @customElement('add-tracker-modal')
 export class AddTrackerModal extends LitElement {
@@ -72,6 +73,19 @@ export class AddTrackerModal extends LitElement {
   @state()
   private warningMessages: string[] = [];
 
+  @state()
+  private githubAppConfigured = false;
+
+  @state()
+  private authMethod: 'api_token' | 'github_app' = 'api_token';
+
+  // Properties passed from trackers-view after GitHub OAuth callback
+  @property({ type: String })
+  githubInstallationId: string | null = null;
+
+  @property({ type: String })
+  githubTargetLogin: string | null = null;
+
   static styles = css`
     .error {
       color: var(--sl-color-danger-700);
@@ -88,6 +102,45 @@ export class AddTrackerModal extends LitElement {
       margin-left: 0.5rem;
       margin-top: 1rem;
     }
+    .auth-method-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .auth-method-card {
+      cursor: pointer;
+      transition:
+        border-color 0.2s,
+        box-shadow 0.2s;
+      border: 2px solid transparent;
+    }
+    .auth-method-card:hover {
+      border-color: var(--sl-color-primary-300);
+    }
+    .auth-method-card.selected {
+      border-color: var(--sl-color-primary-600);
+      box-shadow: 0 0 0 3px var(--sl-color-primary-100);
+    }
+    .auth-method-card h3 {
+      margin: 0 0 0.5rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .auth-method-card p {
+      margin: 0;
+      color: var(--sl-color-neutral-600);
+      font-size: var(--sl-font-size-small);
+    }
+    .recommended-badge {
+      background: var(--sl-color-success-100);
+      color: var(--sl-color-success-700);
+      padding: 0.125rem 0.5rem;
+      border-radius: var(--sl-border-radius-pill);
+      font-size: var(--sl-font-size-x-small);
+      font-weight: 600;
+    }
   `;
 
   connectedCallback() {
@@ -98,6 +151,7 @@ export class AddTrackerModal extends LitElement {
       this.trackerUrl = this.tracker.url;
       this.trackerToken = 'unchanged';
       this.trackerUsername = this.tracker.connection_details?.username;
+      this.authMethod = this.tracker.auth_type || 'api_token';
       this.selectedOrgs = this.tracker.scope_rules
         .filter(
           (x: any) => x.rule_type == 'INCLUDE' && x.scope_type == 'ORGANIZATION'
@@ -124,6 +178,30 @@ export class AddTrackerModal extends LitElement {
         this.trackerToken = 'unchanged';
       }
     }
+    // Check if GitHub App OAuth is available
+    this.checkGitHubAppAvailability();
+
+    // If we have a GitHub installation ID from OAuth callback, set up for GitHub App flow
+    if (this.githubInstallationId) {
+      this.trackerType = 'github';
+      this.authMethod = 'github_app';
+      this.trackerUrl = 'https://github.com';
+      if (this.githubTargetLogin) {
+        this.trackerName = `GitHub - ${this.githubTargetLogin}`;
+      }
+      // Skip auth method selection, go directly to step 1
+      this.step = 1;
+    }
+  }
+
+  async checkGitHubAppAvailability() {
+    try {
+      const authMethods = await this._api.getTrackerAuthMethods();
+      this.githubAppConfigured = authMethods.github_app_configured;
+    } catch (error) {
+      console.error('Failed to check GitHub App availability:', error);
+      this.githubAppConfigured = false;
+    }
   }
   firstUpdated() {
     // Reset state when modal is shown
@@ -141,7 +219,11 @@ export class AddTrackerModal extends LitElement {
         label="${this.tracker ? 'Edit' : 'Add'} Tracker"
         @sl-request-close=${() => this.closeModal()}
       >
-        ${this.step === 1 ? this.renderStep1() : this.renderStep2()}
+        ${this.step === 0
+          ? this.renderAuthMethodSelection()
+          : this.step === 1
+            ? this.renderStep1()
+            : this.renderStep2()}
         ${this.warningMessages.length > 0
           ? html`
               <sl-alert variant="warning" open style="margin-top: 1rem;">
@@ -170,8 +252,23 @@ export class AddTrackerModal extends LitElement {
         </sl-button>
       `;
     }
-    if (this.step === 1) {
+    if (this.step === 0) {
       return html`
+        <sl-button @click=${() => this.closeModal()}>Cancel</sl-button>
+        <sl-button variant="primary" @click=${() => (this.step = 1)}
+          >Next</sl-button
+        >
+      `;
+    }
+    if (this.step === 1) {
+      const showBack =
+        !this.tracker &&
+        this.trackerType === 'github' &&
+        this.githubAppConfigured;
+      return html`
+        ${showBack
+          ? html`<sl-button @click=${() => (this.step = 0)}>Back</sl-button>`
+          : ''}
         <sl-button @click=${() => this.closeModal()}>Cancel</sl-button>
         <sl-button
           variant="primary"
@@ -191,6 +288,72 @@ export class AddTrackerModal extends LitElement {
         ${this.tracker ? 'Save' : 'Add'}
       </sl-button>
     `;
+  }
+
+  renderAuthMethodSelection() {
+    return html`
+      <p style="margin-bottom: 1rem;">
+        How would you like to connect to GitHub?
+      </p>
+      <div class="auth-method-cards">
+        <sl-card
+          class="auth-method-card ${this.authMethod === 'github_app'
+            ? 'selected'
+            : ''}"
+          @click=${() => this.selectAuthMethod('github_app')}
+        >
+          <h3>
+            <sl-icon name="github"></sl-icon>
+            Connect with GitHub
+            <span class="recommended-badge">Recommended</span>
+          </h3>
+          <p>
+            One-click OAuth connection. No token management required. Best for
+            teams using Preloop SaaS.
+          </p>
+        </sl-card>
+        <sl-card
+          class="auth-method-card ${this.authMethod === 'api_token'
+            ? 'selected'
+            : ''}"
+          @click=${() => this.selectAuthMethod('api_token')}
+        >
+          <h3>
+            <sl-icon name="key"></sl-icon>
+            Use API Token
+          </h3>
+          <p>
+            Manual token configuration. Ideal for self-hosted GitHub Enterprise
+            or advanced configurations.
+          </p>
+        </sl-card>
+      </div>
+    `;
+  }
+
+  selectAuthMethod(method: 'api_token' | 'github_app') {
+    this.authMethod = method;
+    if (method === 'github_app') {
+      // Redirect to GitHub OAuth flow
+      this.startGitHubOAuth();
+    }
+  }
+
+  async startGitHubOAuth() {
+    this.isLoading = true;
+    this.errorMessage = '';
+    try {
+      const { authorization_url, state } = await this._api.getGitHubAuthUrl();
+      // Store state for CSRF validation on callback
+      sessionStorage.setItem('github_oauth_state', state);
+      // Redirect to GitHub
+      window.location.href = authorization_url;
+    } catch (error: any) {
+      this.errorMessage = error.message || 'Failed to start GitHub OAuth';
+      this.authMethod = 'api_token'; // Fall back to API token
+    } finally {
+      this.isLoading = false;
+    }
   }
 
   renderStep1() {
@@ -223,6 +386,10 @@ export class AddTrackerModal extends LitElement {
             if (urlInput) {
               urlInput.placeholder = 'e.g., https://github.example.com';
             }
+            // Show auth method selection if GitHub App is configured and not editing
+            if (this.githubAppConfigured && !this.tracker) {
+              this.step = 0;
+            }
           } else {
             this.trackerUrl = '';
             if (urlInput) {
@@ -253,14 +420,23 @@ export class AddTrackerModal extends LitElement {
             ></sl-input>
           `
         : ''}
-      <sl-input
-        type="password"
-        label="API Key"
-        name="api_key"
-        .value=${this.trackerToken}
-        @sl-input=${(e: any) => (this.trackerToken = e.target.value)}
-        required
-      ></sl-input>
+      ${this.authMethod === 'github_app' && this.githubInstallationId
+        ? html`
+            <sl-alert variant="success" open>
+              <sl-icon slot="icon" name="check-circle"></sl-icon>
+              Connected to GitHub as <strong>${this.githubTargetLogin}</strong>
+            </sl-alert>
+          `
+        : html`
+            <sl-input
+              type="password"
+              label="API Key"
+              name="api_key"
+              .value=${this.trackerToken}
+              @sl-input=${(e: any) => (this.trackerToken = e.target.value)}
+              required
+            ></sl-input>
+          `}
     `;
   }
 
@@ -340,19 +516,40 @@ export class AddTrackerModal extends LitElement {
     this.isLoading = true;
     this.errorMessage = '';
     try {
-      const response = await this._api.validateTrackerToken(
-        this.trackerType,
-        this.trackerToken,
-        this.trackerUrl,
-        this.trackerUsername,
-        this.tracker?.id
-      );
-      if (!response.success) {
-        this.errorMessage = response.message.split('\n')[0];
-        return;
+      // For GitHub App auth, complete the installation first
+      if (this.authMethod === 'github_app' && this.githubInstallationId) {
+        // Complete the installation to associate it with the account
+        await this._api.completeGitHubInstallation({
+          installation_id: this.githubInstallationId,
+          name: this.trackerName,
+          scope_rules: [], // Will be set in handleSave
+        });
+
+        // For GitHub App, we need to fetch the installations to get orgs
+        const installations = await this._api.getGitHubInstallations();
+        // Convert installations to org format
+        this.orgs = installations.map((inst) => ({
+          id: String(inst.installation_id),
+          name: inst.target_login,
+          type: inst.target_type,
+        }));
+        this.step = 2;
+      } else {
+        // Standard API token flow
+        const response = await this._api.validateTrackerToken(
+          this.trackerType,
+          this.trackerToken,
+          this.trackerUrl,
+          this.trackerUsername,
+          this.tracker?.id
+        );
+        if (!response.success) {
+          this.errorMessage = response.message.split('\n')[0];
+          return;
+        }
+        this.orgs = response.orgs;
+        this.step = 2;
       }
-      this.orgs = response.orgs;
-      this.step = 2;
     } catch (error: any) {
       this.errorMessage = error.message;
     } finally {
@@ -535,16 +732,25 @@ export class AddTrackerModal extends LitElement {
       }
     }
 
-    const trackerData = {
+    const trackerData: any = {
       name: this.trackerName,
       type: this.trackerType,
       url: this.trackerUrl,
-      api_key: this.trackerToken,
       scope_rules: scopeRules,
       config: {
         username: this.trackerUsername,
       },
     };
+
+    // Add auth-specific fields
+    if (this.authMethod === 'github_app' && this.githubInstallationId) {
+      trackerData.auth_type = 'github_app';
+      trackerData.github_installation_id = this.githubInstallationId;
+      // No API key needed for GitHub App auth
+    } else {
+      trackerData.auth_type = 'api_token';
+      trackerData.api_key = this.trackerToken;
+    }
 
     try {
       let response;

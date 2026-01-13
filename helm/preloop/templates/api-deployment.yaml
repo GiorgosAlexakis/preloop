@@ -130,6 +130,27 @@ spec:
                   name: {{ include "preloop.fullname" . }}
                   key: fcm-credentials-json
             {{- end }}
+            {{- if .Values.githubApp.enabled }}
+            - name: GITHUB_APP_ID
+              value: {{ .Values.githubApp.appId | quote }}
+            - name: GITHUB_APP_CLIENT_ID
+              value: {{ .Values.githubApp.clientId | quote }}
+            - name: GITHUB_APP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-client-secret
+            - name: GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-private-key
+            - name: GITHUB_APP_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-webhook-secret
+            {{- end }}
           ports:
             - name: http
               containerPort: 8000
