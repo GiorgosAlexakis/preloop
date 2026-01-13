@@ -172,7 +172,7 @@ class TestGetAPNsService:
                 service = get_apns_service()
 
                 assert service is not None
-                assert service.bundle_id == "spacecode.ai.PreloopAI"
+                assert service.bundle_id == "spacecode.ai.Preloop"
 
     def test_get_apns_service_default_sandbox_mode(self):
         """Test that sandbox mode is default if APNS_USE_SANDBOX not specified."""
