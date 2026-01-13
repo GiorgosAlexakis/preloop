@@ -754,13 +754,14 @@ class ApprovalService:
         # Default to "medium" for normal requests
         priority_str = getattr(approval_request, "priority", None) or "medium"
 
-        # Build notification payload
+        # Build notification payload with tool args for context
         payload = NotificationPayloadBuilder.new_approval_request(
             request_id=str(approval_request.id),
             tool_name=approval_request.tool_name,
             priority=priority_str,
             expires_at=approval_request.expires_at,
             agent_reasoning=approval_request.agent_reasoning,
+            tool_args=approval_request.tool_args,
         )
 
         apns_priority = 10 if priority_str in ["urgent", "high"] else 5

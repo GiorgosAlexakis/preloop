@@ -17,6 +17,7 @@ class NotificationPayloadBuilder:
         priority: str = "medium",
         expires_at: Optional[datetime] = None,
         agent_reasoning: Optional[str] = None,
+        tool_args: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Build payload for new approval request.
 
@@ -28,6 +29,7 @@ class NotificationPayloadBuilder:
             priority: 'low', 'medium', 'high', or 'urgent'.
             expires_at: Request expiration time.
             agent_reasoning: Agent's explanation (truncated to 100 chars).
+            tool_args: Tool arguments to show in notification body.
 
         Returns:
             APNs payload dictionary.
@@ -49,14 +51,42 @@ class NotificationPayloadBuilder:
         # Format tool name nicely
         tool_display = tool_name.replace("_", " ").title()
 
-        # Build body
-        body = f"AI agent needs approval for {tool_display}"
-        if agent_reasoning:
-            # Truncate reasoning for notification
-            reasoning_preview = agent_reasoning[:100]
-            if len(agent_reasoning) > 100:
+        # Build body with tool args for context
+        body_parts = []
+
+        # Add key tool args (limit to fit notification)
+        if tool_args:
+            # Prioritize important args, limit total length
+            arg_strs = []
+            total_len = 0
+            for key, value in tool_args.items():
+                # Skip internal/long args
+                if key.startswith("_") or key in ["content", "body", "message"]:
+                    continue
+                # Format value (truncate if too long)
+                val_str = str(value)
+                if len(val_str) > 50:
+                    val_str = val_str[:47] + "..."
+                arg_str = f"{key}: {val_str}"
+                if total_len + len(arg_str) > 150:
+                    break
+                arg_strs.append(arg_str)
+                total_len += len(arg_str) + 2
+            if arg_strs:
+                body_parts.append(" | ".join(arg_strs))
+
+        # Add reasoning if no args or space remaining
+        if agent_reasoning and len(" ".join(body_parts)) < 100:
+            reasoning_preview = agent_reasoning[:80]
+            if len(agent_reasoning) > 80:
                 reasoning_preview += "..."
-            body += f": {reasoning_preview}"
+            body_parts.append(reasoning_preview)
+
+        # Fallback if no context
+        if not body_parts:
+            body_parts.append(f"AI agent needs approval for {tool_display}")
+
+        body = "\n".join(body_parts) if len(body_parts) > 1 else body_parts[0]
 
         # Custom data for app routing (used by both iOS and Android)
         custom_data = {
