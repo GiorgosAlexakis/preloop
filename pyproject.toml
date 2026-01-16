@@ -52,6 +52,7 @@ dependencies = [
     "pytz>=2025.2",
     "jira>=3.8.0",
     "cryptography>=42.0.0",  # For Fernet encryption of sensitive data
+    "firebase-admin>=6.0.0",  # For Android FCM push notifications
 ]
 
 [tool.setuptools.packages.find]
