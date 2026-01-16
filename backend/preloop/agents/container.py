@@ -429,7 +429,11 @@ class ContainerAgentExecutor(AgentExecutor):
             ),
         )
 
-        # Job specification with TTL for auto-cleanup
+        # Job specification with TTL for auto-cleanup after completion
+        # Set AGENT_JOB_TTL_SECONDS to a higher value (e.g., 86400 for 24 hours)
+        # to keep completed/failed pods around for debugging with:
+        #   kubectl exec -it <pod-name> -n <namespace> -- /bin/bash
+        # Note: Pods are only accessible until TTL expires after completion
         ttl_seconds = int(os.getenv("AGENT_JOB_TTL_SECONDS", "3600"))
         job = client.V1Job(
             api_version="batch/v1",
@@ -1271,36 +1275,86 @@ class ContainerAgentExecutor(AgentExecutor):
                 clone_branch = repo_branch if repo_branch else source_branch
                 branch_arg = f" -b {clone_branch}" if clone_branch else ""
 
-                # Build repository setup commands
-                repo_commands = [
-                    # Clone the repository
-                    f"git clone{branch_arg} {repo_url} {full_path}",
-                    # Navigate to repo
-                    f"cd {full_path}",
-                    # Ensure we're on the source branch
-                    f"git checkout {source_branch} 2>/dev/null || git checkout -b {source_branch}",
-                    # Create and checkout target branch for commits
-                    f"git checkout -b {target_branch}",
-                    # Return to workspace root
-                    "cd /workspace",
-                ]
+                # Build repository setup commands with robust error handling
+                # Note: The codex-universal image creates .nvmrc in the working directory,
+                # which causes git clone to fail if cloning to /workspace. We need to:
+                # 1. Pre-check and clean the target directory
+                # 2. Wrap git clone with explicit error handling
+                # 3. Fail immediately if clone doesn't work
 
-                clone_commands.extend(repo_commands)
+                # Pre-clone command: ensure target directory is empty or doesn't exist
+                # This handles the codex-universal .nvmrc issue and other edge cases
+                pre_clone_cmd = f"""
+echo "Preparing clone directory: {full_path}"
+if [ -d "{full_path}" ]; then
+    if [ -d "{full_path}/.git" ]; then
+        echo "WARNING: {full_path} already contains a git repository, will reset it"
+        rm -rf "{full_path}"
+    elif [ "$(ls -A {full_path} 2>/dev/null)" ]; then
+        echo "WARNING: {full_path} is not empty, cleaning up non-essential files..."
+        # Move any existing files to a backup location, preserving only reports if they exist
+        mkdir -p /tmp/workspace-backup
+        mv {full_path}/* /tmp/workspace-backup/ 2>/dev/null || true
+        mv {full_path}/.[!.]* /tmp/workspace-backup/ 2>/dev/null || true
+        echo "Backed up existing files to /tmp/workspace-backup"
+    fi
+fi
+""".strip()
 
-                # Add validation check - FAIL IMMEDIATELY if clone didn't work
-                # This prevents wasting tokens if we can't actually update the repo
+                # Clone command with explicit error checking
+                clone_cmd = f"""
+echo "Cloning repository to {full_path}..."
+if ! git clone{branch_arg} {repo_url} {full_path}; then
+    echo "========================================="
+    echo "FATAL ERROR: Git clone failed!"
+    echo "Could not clone repository to {full_path}"
+    echo "Check repository URL, credentials, and network connectivity."
+    echo "========================================="
+    exit 1
+fi
+""".strip()
+
+                # Branch setup commands with explicit error handling
+                branch_setup_cmd = f"""
+cd {full_path}
+echo "Setting up branches: source={source_branch}, target={target_branch}"
+# Checkout source branch (create if it doesn't exist remotely)
+if ! git checkout {source_branch} 2>/dev/null; then
+    echo "Source branch '{source_branch}' not found, creating from current HEAD"
+    git checkout -b {source_branch}
+fi
+# Create and checkout target branch for commits
+if ! git checkout -b {target_branch}; then
+    echo "========================================="
+    echo "FATAL ERROR: Could not create target branch '{target_branch}'"
+    echo "========================================="
+    exit 1
+fi
+cd /workspace
+""".strip()
+
+                # Validation command
                 validation_cmd = f"""
 if [ ! -d "{full_path}" ] || [ ! -d "{full_path}/.git" ]; then
     echo "========================================="
-    echo "FATAL ERROR: Git clone failed!"
+    echo "FATAL ERROR: Git clone validation failed!"
     echo "Repository directory '{full_path}' does not exist or is not a git repository."
     echo "Flow execution cannot continue without repository access."
     echo "========================================="
     exit 1
 fi
 echo "✓ Repository successfully cloned to {full_path}"
+echo "  Branch: {target_branch} (from {source_branch})"
 """.strip()
-                clone_commands.append(validation_cmd)
+
+                clone_commands.extend(
+                    [
+                        pre_clone_cmd,
+                        clone_cmd,
+                        branch_setup_cmd,
+                        validation_cmd,
+                    ]
+                )
 
                 configured_repos_count += 1
                 self.logger.info(
