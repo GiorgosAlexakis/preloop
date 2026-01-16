@@ -60,13 +60,13 @@ class WebSocketService {
     };
 
     ws.onmessage = (event) => {
-      if (event.data === 'ping') {
-        ws.send('pong');
-        return;
-      }
-
+      // Handle ping/pong - backend expects JSON format
       try {
         const message = JSON.parse(event.data);
+        if (message.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong' }));
+          return;
+        }
         onMessageCallback(message);
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e);
@@ -183,7 +183,8 @@ class WebSocketService {
     const interval = window.setInterval(() => {
       const ws = this.connections.get(key);
       if (ws?.readyState === WebSocket.OPEN) {
-        ws.send('pong');
+        // Send JSON pong as keepalive
+        ws.send(JSON.stringify({ type: 'pong' }));
       }
     }, 30000); // 30 seconds
 

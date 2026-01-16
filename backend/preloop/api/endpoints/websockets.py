@@ -390,7 +390,20 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
         while True:
             try:
                 # Wait for message with timeout for heartbeat
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
+                # Use receive_text() instead of receive_json() to handle non-JSON messages
+                text = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+
+                # Try to parse as JSON
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError as e:
+                    # Log non-JSON messages with client info to identify problematic clients
+                    user_agent = websocket.headers.get("user-agent", "unknown")
+                    logger.warning(
+                        f"Received non-JSON message from session {session.id} "
+                        f"(User-Agent: {user_agent}): {text[:200]} - Error: {e}"
+                    )
+                    continue
 
                 # Update activity timestamp
                 session_manager.update_activity(session.id)
@@ -518,12 +531,20 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                 try:
                     await websocket.send_json({"type": "ping"})
                     # Wait for pong response
-                    pong = await asyncio.wait_for(
-                        websocket.receive_json(), timeout=10.0
+                    pong_text = await asyncio.wait_for(
+                        websocket.receive_text(), timeout=10.0
                     )
-                    if pong.get("type") != "pong":
+                    try:
+                        pong = json.loads(pong_text)
+                        if pong.get("type") != "pong":
+                            logger.warning(
+                                f"Expected pong from session {session.id}, got: {pong}"
+                            )
+                            break
+                    except json.JSONDecodeError:
+                        # Non-JSON response to ping, treat as invalid
                         logger.warning(
-                            f"Expected pong from session {session.id}, got: {pong}"
+                            f"Session {session.id} sent non-JSON response to ping: {pong_text[:100]}"
                         )
                         break
                 except asyncio.TimeoutError:
