@@ -39,17 +39,30 @@ export class TrackersView extends LitElement {
     // Handle GitHub OAuth callback
     const installationId = params.get('github_installation_id');
     const targetLogin = params.get('target_login');
+    const returnedState = params.get('state');
     const error = params.get('github_error');
     const errorDescription = params.get('error_description');
 
     if (error) {
       this.githubError = errorDescription || error;
-      // Clear URL params
+      // Clear stored state and URL params
+      sessionStorage.removeItem('github_oauth_state');
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
 
     if (installationId) {
+      // Validate CSRF state token
+      const storedState = sessionStorage.getItem('github_oauth_state');
+      sessionStorage.removeItem('github_oauth_state');
+
+      if (!storedState || storedState !== returnedState) {
+        this.githubError =
+          'OAuth state mismatch. This may be a CSRF attack or the session expired. Please try again.';
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
       this.githubInstallationId = installationId;
       this.githubTargetLogin = targetLogin;
       // Auto-open the add tracker modal
