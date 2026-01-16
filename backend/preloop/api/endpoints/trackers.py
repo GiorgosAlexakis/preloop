@@ -154,6 +154,7 @@ async def register_tracker(
     # For github_app auth, we need to resolve the installation_id to the actual GitHub installation ID
     resolved_github_installation_id = None
     permission_warnings = []
+    installation = None  # Will be set for OAuth auth types
 
     try:
         if auth_type in ("github_app", "oauth_app"):
@@ -172,7 +173,7 @@ async def register_tracker(
             installation = (
                 db.query(OAuthAppInstallation)
                 .filter(
-                    OAuthAppInstallation.id == github_installation_id,
+                    OAuthAppInstallation.external_id == github_installation_id,
                     OAuthAppInstallation.account_id == current_user.account_id,
                 )
                 .first()
@@ -325,6 +326,12 @@ async def register_tracker(
                 rule["rule_type"] = rule["rule_type"].value
             scope_rules.append(TrackerScopeRule(**rule))
 
+        # For OAuth auth types, use the internal installation UUID
+        # (installation is looked up earlier in the flow)
+        oauth_installation_uuid = None
+        if auth_type in ("github_app", "oauth_app") and installation:
+            oauth_installation_uuid = installation.id
+
         new_tracker = Tracker(
             name=name,
             tracker_type=tracker_type.value,
@@ -336,9 +343,7 @@ async def register_tracker(
             meta_data={},
             scope_rules=scope_rules,
             auth_type=auth_type,
-            oauth_installation_id=github_installation_id
-            if auth_type in ("github_app", "oauth_app")
-            else None,
+            oauth_installation_id=oauth_installation_uuid,
         )
 
         db.add(new_tracker)

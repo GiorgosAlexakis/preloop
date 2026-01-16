@@ -431,10 +431,45 @@ class GitHubTracker(BaseTracker):
         return dependencies
 
     async def test_connection(self) -> TrackerConnection:
-        """Test the connection to the tracker."""
+        """Test the connection to the tracker.
+
+        For api_token auth, tests using the /user endpoint.
+        For github_app auth, tests by getting an installation token and
+        checking the installation's accessible repositories.
+        """
         try:
-            await self._make_request("user")
-            return TrackerConnection(connected=True, message="Connection successful")
+            if self.auth_type in ("github_app", "oauth_app"):
+                # For GitHub App auth, test by getting an installation token
+                # This validates both the app configuration and the installation
+                token = await self._get_installation_token()
+                if not token:
+                    return TrackerConnection(
+                        connected=False,
+                        message="Failed to obtain GitHub App installation token",
+                    )
+                # Optionally verify by listing repos (installation tokens can access this)
+                headers = await self._get_auth_headers()
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.API_BASE_URL}/installation/repositories",
+                        headers=headers,
+                        params={"per_page": 1},
+                    )
+                    if response.status_code == HTTP_STATUS_OK:
+                        return TrackerConnection(
+                            connected=True, message="GitHub App connection successful"
+                        )
+                    else:
+                        return TrackerConnection(
+                            connected=False,
+                            message=f"GitHub App connection failed: {response.status_code}",
+                        )
+            else:
+                # For api_token auth, use the /user endpoint
+                await self._make_request("user")
+                return TrackerConnection(
+                    connected=True, message="Connection successful"
+                )
         except (
             TrackerAuthenticationError,
             TrackerConnectionError,

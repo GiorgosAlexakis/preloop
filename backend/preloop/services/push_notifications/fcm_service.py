@@ -1,6 +1,7 @@
 """Firebase Cloud Messaging (FCM) service for Android push notifications."""
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -44,7 +45,16 @@ def _initialize_fcm() -> bool:
         creds_json = os.getenv("FCM_CREDENTIALS_JSON")
         if creds_json:
             try:
-                cred_dict = json.loads(creds_json)
+                # Try to decode from base64 first (in case it's base64 encoded)
+                try:
+                    decoded = base64.b64decode(creds_json).decode("utf-8")
+                    cred_dict = json.loads(decoded)
+                    logger.debug("FCM credentials decoded from base64")
+                except Exception:
+                    # If base64 decode fails, assume it's already plain JSON
+                    cred_dict = json.loads(creds_json)
+                    logger.debug("FCM credentials parsed as plain JSON")
+
                 cred = credentials.Certificate(cred_dict)
                 firebase_admin.initialize_app(cred)
                 _fcm_initialized = True
@@ -113,7 +123,7 @@ def _send_fcm_sync(
             android=messaging.AndroidConfig(
                 priority=priority,
                 notification=messaging.AndroidNotification(
-                    channel_id="approvals",
+                    channel_id="preloop_approvals",  # Must match Android app's CHANNEL_APPROVALS
                     priority="max" if priority == "high" else "default",
                 ),
             ),

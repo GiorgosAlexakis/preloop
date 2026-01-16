@@ -152,6 +152,13 @@ export class AddTrackerModal extends LitElement {
       this.trackerToken = 'unchanged';
       this.trackerUsername = this.tracker.connection_details?.username;
       this.authMethod = this.tracker.auth_type || 'api_token';
+      // For GitHub App auth, initialize installation ID from tracker
+      if (
+        this.tracker.auth_type === 'github_app' &&
+        this.tracker.oauth_installation_id
+      ) {
+        this.githubInstallationId = String(this.tracker.oauth_installation_id);
+      }
       this.selectedOrgs = this.tracker.scope_rules
         .filter(
           (x: any) => x.rule_type == 'INCLUDE' && x.scope_type == 'ORGANIZATION'
@@ -181,8 +188,9 @@ export class AddTrackerModal extends LitElement {
     // Check if GitHub App OAuth is available
     this.checkGitHubAppAvailability();
 
-    // If we have a GitHub installation ID from OAuth callback, set up for GitHub App flow
-    if (this.githubInstallationId) {
+    // If we have a GitHub installation ID from OAuth callback (not editing), set up for GitHub App flow
+    // Only apply these defaults for new trackers, not when editing existing ones
+    if (this.githubInstallationId && !this.tracker) {
       this.trackerType = 'github';
       this.authMethod = 'github_app';
       this.trackerUrl = 'https://github.com';
@@ -198,6 +206,8 @@ export class AddTrackerModal extends LitElement {
     try {
       const authMethods = await this._api.getTrackerAuthMethods();
       this.githubAppConfigured = authMethods.github_app_configured;
+      // Don't auto-show auth selection on load - user should see the tracker form first
+      // Auth selection is triggered when user clicks "Next" with GitHub selected
     } catch (error) {
       console.error('Failed to check GitHub App availability:', error);
       this.githubAppConfigured = false;
@@ -261,14 +271,7 @@ export class AddTrackerModal extends LitElement {
       `;
     }
     if (this.step === 1) {
-      const showBack =
-        !this.tracker &&
-        this.trackerType === 'github' &&
-        this.githubAppConfigured;
       return html`
-        ${showBack
-          ? html`<sl-button @click=${() => (this.step = 0)}>Back</sl-button>`
-          : ''}
         <sl-button @click=${() => this.closeModal()}>Cancel</sl-button>
         <sl-button
           variant="primary"
@@ -386,10 +389,7 @@ export class AddTrackerModal extends LitElement {
             if (urlInput) {
               urlInput.placeholder = 'e.g., https://github.example.com';
             }
-            // Show auth method selection if GitHub App is configured and not editing
-            if (this.githubAppConfigured && !this.tracker) {
-              this.step = 0;
-            }
+            // Auth method selection is shown when clicking "Next" via testConnection
           } else {
             this.trackerUrl = '';
             if (urlInput) {
@@ -427,16 +427,53 @@ export class AddTrackerModal extends LitElement {
               Connected to GitHub as <strong>${this.githubTargetLogin}</strong>
             </sl-alert>
           `
-        : html`
-            <sl-input
-              type="password"
-              label="API Key"
-              name="api_key"
-              .value=${this.trackerToken}
-              @sl-input=${(e: any) => (this.trackerToken = e.target.value)}
-              required
-            ></sl-input>
-          `}
+        : this.trackerType === 'github' &&
+            this.githubAppConfigured &&
+            !this.tracker
+          ? html`
+              <div style="margin-bottom: 1rem;">
+                <sl-button
+                  variant="primary"
+                  size="large"
+                  @click=${this.startGitHubOAuth}
+                  .loading=${this.isLoading}
+                  style="width: 100%;"
+                >
+                  <sl-icon slot="prefix" name="github"></sl-icon>
+                  Connect with GitHub
+                </sl-button>
+                <p
+                  style="text-align: center; margin: 0.75rem 0 0.5rem 0; color: var(--sl-color-neutral-500); font-size: var(--sl-font-size-small);"
+                >
+                  Recommended: One-click OAuth connection
+                </p>
+              </div>
+              <details style="margin-bottom: 1rem;">
+                <summary
+                  style="cursor: pointer; color: var(--sl-color-neutral-600); font-size: var(--sl-font-size-small);"
+                >
+                  Or use an API token instead
+                </summary>
+                <sl-input
+                  type="password"
+                  label="API Key"
+                  name="api_key"
+                  .value=${this.trackerToken}
+                  @sl-input=${(e: any) => (this.trackerToken = e.target.value)}
+                  style="margin-top: 0.5rem;"
+                ></sl-input>
+              </details>
+            `
+          : html`
+              <sl-input
+                type="password"
+                label="API Key"
+                name="api_key"
+                .value=${this.trackerToken}
+                @sl-input=${(e: any) => (this.trackerToken = e.target.value)}
+                required
+              ></sl-input>
+            `}
     `;
   }
 
@@ -467,11 +504,14 @@ export class AddTrackerModal extends LitElement {
   }
 
   renderOrgTree() {
+    // For GitHub App auth, orgs represent installations - no expandable projects
+    const isGitHubApp = this.authMethod === 'github_app';
+
     setTimeout(() => {
       this.shadowRoot
         ?.querySelectorAll('sl-tree-item')
         ?.forEach((item: any) => {
-          if (item.selected) {
+          if (item.selected && !isGitHubApp) {
             item.dispatchEvent(
               new CustomEvent('sl-lazy-load', { bubbles: true })
             );
@@ -488,23 +528,25 @@ export class AddTrackerModal extends LitElement {
             <sl-tree-item
               value="${org.id}"
               ?selected=${this.selectedOrgs[org.id]}
-              ?lazy=${!this.projects[org.id]}
+              ?lazy=${!isGitHubApp && !this.projects[org.id]}
               ?loading=${this.isLoading}
-              ?expanded=${this.selectedOrgs[org.id]}
+              ?expanded=${!isGitHubApp && this.selectedOrgs[org.id]}
               @sl-lazy-load=${(e: { target: SlTreeItem }) =>
                 this.loadProjects(org.id, e.target)}
             >
               ${org.name}
-              ${this.projects[org.id]?.map(
-                (proj: any) => html`
-                  <sl-tree-item
-                    value="${proj.id}"
-                    ?selected=${this.selectedProjects[org.id]?.[proj.id]}
-                  >
-                    ${proj.name}
-                  </sl-tree-item>
-                `
-              )}
+              ${!isGitHubApp
+                ? this.projects[org.id]?.map(
+                    (proj: any) => html`
+                      <sl-tree-item
+                        value="${proj.id}"
+                        ?selected=${this.selectedProjects[org.id]?.[proj.id]}
+                      >
+                        ${proj.name}
+                      </sl-tree-item>
+                    `
+                  )
+                : ''}
             </sl-tree-item>
           `
         )}
@@ -515,24 +557,52 @@ export class AddTrackerModal extends LitElement {
   async testConnection() {
     this.isLoading = true;
     this.errorMessage = '';
+
+    // For GitHub with GitHub App configured but no auth chosen yet, show error
+    if (
+      this.trackerType === 'github' &&
+      this.githubAppConfigured &&
+      !this.tracker &&
+      !this.githubInstallationId &&
+      !this.trackerToken
+    ) {
+      this.isLoading = false;
+      this.errorMessage =
+        'Please connect with GitHub or enter an API token to continue.';
+      return;
+    }
+
     try {
-      // For GitHub App auth, complete the installation first
+      // For GitHub App auth, complete the installation and save directly
+      // Users already select org/repo access during GitHub App installation
       if (this.authMethod === 'github_app' && this.githubInstallationId) {
         // Complete the installation to associate it with the account
         await this._api.completeGitHubInstallation({
           installation_id: this.githubInstallationId,
-          name: this.trackerName,
-          scope_rules: [], // Will be set in handleSave
         });
 
-        // For GitHub App, we need to fetch the installations to get orgs
+        // For GitHub App, fetch installations to build scope rules automatically
         const installations = await this._api.getGitHubInstallations();
-        // Convert installations to org format
+        // Use target_id (GitHub org/user ID) as the identifier for scope rules
         this.orgs = installations.map((inst) => ({
-          id: String(inst.installation_id),
+          id: String(inst.target_id),
           name: inst.target_login,
           type: inst.target_type,
         }));
+
+        // Auto-select all orgs from the installation (user already selected during GitHub App setup)
+        this.selectedOrgs = {};
+        for (const org of this.orgs) {
+          this.selectedOrgs[org.id] = true;
+        }
+
+        // Skip step 2 and save directly for new GitHub App trackers
+        if (!this.tracker) {
+          await this.handleSave();
+          return;
+        }
+
+        // For editing existing trackers, show step 2
         this.step = 2;
       } else {
         // Standard API token flow
@@ -560,6 +630,10 @@ export class AddTrackerModal extends LitElement {
   async loadProjects(orgId: string, item?: SlTreeItem) {
     if (this.projects[orgId]) {
       // Projects already loaded
+      return;
+    }
+    // GitHub App auth doesn't support per-project listing - access is at installation level
+    if (this.authMethod === 'github_app') {
       return;
     }
     this.isLoading = true;

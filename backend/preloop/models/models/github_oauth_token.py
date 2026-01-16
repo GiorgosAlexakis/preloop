@@ -5,7 +5,7 @@ providers (GitHub, GitLab, etc.).
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey, String, func
@@ -119,7 +119,7 @@ class OAuthToken(Base):
         """Check if the access token is expired."""
         if self.expires_at is None:
             return False
-        return datetime.utcnow() >= self.expires_at
+        return datetime.now(timezone.utc) >= self.expires_at
 
     @property
     def can_refresh(self) -> bool:
@@ -128,7 +128,7 @@ class OAuthToken(Base):
             return False
         if self.refresh_token_expires_at is None:
             return True
-        return datetime.utcnow() < self.refresh_token_expires_at
+        return datetime.now(timezone.utc) < self.refresh_token_expires_at
 
 
 # Backward compatibility alias

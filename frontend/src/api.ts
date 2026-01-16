@@ -1747,11 +1747,12 @@ export interface GitHubInstallation {
   id: string;
   installation_id: number;
   target_type: string;
+  target_id: number; // GitHub org/user ID - use this for scope rules
   target_login: string;
   permissions: Record<string, string>;
   repository_selection: string;
   is_suspended: boolean;
-  created_at: string;
+  created_at?: string;
 }
 
 export async function getGitHubInstallations(): Promise<GitHubInstallation[]> {
@@ -1789,23 +1790,23 @@ export async function unlinkGitHubInstallation(
 
 export interface CompleteGitHubInstallationRequest {
   installation_id: string;
-  name: string;
-  scope_rules: Array<{
-    rule_type: 'INCLUDE' | 'EXCLUDE';
-    scope_type: 'ORGANIZATION' | 'PROJECT';
-    identifier: string;
-  }>;
+  code?: string;
 }
 
 export async function completeGitHubInstallation(
   data: CompleteGitHubInstallationRequest
 ): Promise<any> {
+  // Backend expects installation_id and optional code as query parameters
+  const params = new URLSearchParams();
+  params.set('installation_id', data.installation_id);
+  if (data.code) {
+    params.set('code', data.code);
+  }
+
   const response = await fetchWithAuth(
-    '/api/v1/auth/github/complete-installation',
+    `/api/v1/auth/github/complete-installation?${params.toString()}`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
     }
   );
   if (!response.ok) {

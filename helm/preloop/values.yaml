@@ -241,6 +241,12 @@ stripe:
   secretKey: ""
   webhookSecret: ""
 
+# Security settings
+security:
+  # Encryption key for sensitive data (OAuth tokens, etc.)
+  # If not set, derived from JWT secret. Recommended to set a dedicated key.
+  encryptionKey: ""
+
 # GitHub App OAuth configuration (Enterprise Edition only)
 # Required for "Connect with GitHub" flow in tracker creation
 githubApp:

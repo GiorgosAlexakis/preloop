@@ -113,7 +113,7 @@ class Tracker(Base):
         String(50),
         nullable=False,
         default="api_token",
-        comment="Authentication type: 'api_token' or 'oauth_app'",
+        comment="Authentication type: 'api_token', 'github_app', or 'oauth_app'",
     )
 
     # Foreign keys
