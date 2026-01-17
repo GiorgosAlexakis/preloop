@@ -549,15 +549,27 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                         break
                 except asyncio.TimeoutError:
                     logger.warning(
-                        f"Session {session.id} did not respond to ping, disconnecting"
+                        f"Session {session.id} did not respond to ping, disconnecting - "
+                        f"User: {user.username if user else 'anonymous'}, "
+                        f"IP: {client_ip}, "
+                        f"User-Agent: {user_agent[:100]}"
                     )
                     break
 
-    except WebSocketDisconnect:
-        logger.info(f"Session {session.id} disconnected normally")
+    except WebSocketDisconnect as e:
+        # Log detailed disconnection info
+        logger.info(
+            f"Session {session.id} disconnected - "
+            f"User: {user.username if user else 'anonymous'}, "
+            f"Duration: {(session_manager.sessions.get(session.id).last_activity - session_manager.sessions.get(session.id).connected_at).total_seconds() if session.id in session_manager.sessions else 'unknown'}s, "
+            f"Reason: {e}"
+        )
     except Exception as e:
         logger.error(
-            f"Error in unified WebSocket session {session.id}: {e}", exc_info=True
+            f"Error in unified WebSocket session {session.id}: {e}, "
+            f"User: {user.username if user else 'anonymous'}, "
+            f"IP: {client_ip}",
+            exc_info=True,
         )
     finally:
         # Cleanup
