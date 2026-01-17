@@ -1165,7 +1165,7 @@ async def get_pull_request(pull_request: str) -> "PullRequestResponse":
                 detail="No organizations found for GitHub tracker.",
             )
 
-        projects = crud_project.get_multi_by_organization(
+        projects = crud_project.get_for_organization(
             db, organization_id=organizations[0].id, account_id=current_user.account_id
         )
         if not projects:
@@ -1285,7 +1285,7 @@ async def get_merge_request(merge_request: str) -> "MergeRequestResponse":
                 detail="No organizations found for GitLab tracker.",
             )
 
-        projects = crud_project.get_multi_by_organization(
+        projects = crud_project.get_for_organization(
             db, organization_id=organizations[0].id, account_id=current_user.account_id
         )
         if not projects:
@@ -1423,7 +1423,7 @@ async def update_pull_request(
                 detail="No organizations found for GitHub tracker.",
             )
 
-        projects = crud_project.get_multi_by_organization(
+        projects = crud_project.get_for_organization(
             db, organization_id=organizations[0].id, account_id=current_user.account_id
         )
         if not projects:
@@ -1571,7 +1571,7 @@ async def update_merge_request(
                 detail="No organizations found for GitLab tracker.",
             )
 
-        projects = crud_project.get_multi_by_organization(
+        projects = crud_project.get_for_organization(
             db, organization_id=organizations[0].id, account_id=current_user.account_id
         )
         if not projects:

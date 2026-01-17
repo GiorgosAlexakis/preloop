@@ -47,7 +47,7 @@ class AgentExecutor(ABC):
         Initialize the agent executor.
 
         Args:
-            agent_type: Type of agent (e.g., 'openhands', 'claude-code', 'aider')
+            agent_type: Type of agent (e.g., 'codex', 'gemini', 'openhands', 'aider')
             config: Agent-specific configuration
         """
         self.agent_type = agent_type

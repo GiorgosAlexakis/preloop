@@ -5,7 +5,6 @@ import pytest
 from preloop.agents.factory import create_agent_executor
 from preloop.agents.openhands import OpenHandsAgent
 from preloop.agents.aider import AiderAgent
-from preloop.agents.claude_code import ClaudeCodeAgent
 from preloop.agents.codex import CodexAgent
 
 
@@ -33,19 +32,6 @@ class TestAgentFactory:
         for agent_type in ["openhands", "OpenHands", "OPENHANDS", "OpEnHaNdS"]:
             agent = create_agent_executor(agent_type, config)
             assert isinstance(agent, OpenHandsAgent)
-
-    def test_create_claude_code_agent(self):
-        """Test creating a Claude Code agent."""
-        config = {
-            "model": "claude-sonnet-4",
-            "max_tokens": 4096,
-        }
-
-        agent = create_agent_executor("claude-code", config)
-
-        assert isinstance(agent, ClaudeCodeAgent)
-        assert agent.agent_type == "claude-code"
-        assert agent.config == config
 
     def test_create_aider_agent(self):
         """Test creating an Aider agent."""
@@ -89,7 +75,6 @@ class TestAgentFactory:
             error_msg = str(e)
             assert "invalid" in error_msg
             assert "openhands" in error_msg
-            assert "claude-code" in error_msg
             assert "aider" in error_msg
             assert "codex" in error_msg
 
@@ -135,8 +120,6 @@ class TestAgentFactory:
             "OpenHands": OpenHandsAgent,
             "aider": AiderAgent,
             "AIDER": AiderAgent,
-            "claude-code": ClaudeCodeAgent,
-            "CLAUDE-CODE": ClaudeCodeAgent,
             "codex": CodexAgent,
             "CODEX": CodexAgent,
         }
