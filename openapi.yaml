@@ -524,7 +524,7 @@ paths:
       tags:
       - Account
       summary: Request Account Deletion
-      description: "Internal endpoint to notify admins of account deletion request.\n\
+      description: "Public endpoint to notify admins of account deletion request.\n\
         \nThis endpoint is called from the public delete-account page and sends\n\
         notifications to admins via email and configured webhooks (Slack/Mattermost).\n\
         \nArgs:\n    deletion_request: Account deletion request details\n\nReturns:\n\

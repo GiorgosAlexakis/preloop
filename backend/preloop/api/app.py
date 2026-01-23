@@ -645,6 +645,11 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     app.include_router(
+        account.public_router,
+        prefix="/api/v1",
+        tags=["Account"],
+    )  # Public account endpoints (no auth required)
+    app.include_router(
         public_approval.router, tags=["Public Approval"], include_in_schema=False
     )  # No auth required, mounted at /approval (not /api/v1/approval)
     app.include_router(

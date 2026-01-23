@@ -15,6 +15,7 @@ from preloop.models.models.account import Account
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+public_router = APIRouter()  # Public endpoints (no auth required)
 
 
 class AccountDetailsResponse(BaseModel):
@@ -89,11 +90,11 @@ async def update_account_details(
     )
 
 
-@router.post("/account/deletion-request")
+@public_router.post("/account/deletion-request")
 async def request_account_deletion(
     deletion_request: AccountDeletionRequest,
 ):
-    """Internal endpoint to notify admins of account deletion request.
+    """Public endpoint to notify admins of account deletion request.
 
     This endpoint is called from the public delete-account page and sends
     notifications to admins via email and configured webhooks (Slack/Mattermost).
