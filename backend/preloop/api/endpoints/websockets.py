@@ -518,8 +518,12 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                     # TODO: Implement topic-based unsubscription
 
                 elif message_type == "pong":
-                    # Heartbeat response
+                    # Heartbeat response from client
                     continue
+
+                elif message_type == "ping":
+                    # Heartbeat request from client - respond with pong
+                    await websocket.send_json({"type": "pong"})
 
                 else:
                     logger.warning(
