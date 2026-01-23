@@ -1055,66 +1055,175 @@ class GitHubTracker(BaseTracker):
     async def get_organizations(self) -> List[Dict[str, Any]]:
         """
         Get organizations from GitHub.
+
+        For api_token auth: Uses /user and /user/orgs endpoints.
+        For github_app auth: Uses /installation/repositories to derive orgs from accessible repos.
         """
         organizations = []
-        user_data = await self._make_request("user")
-        organizations.append(
-            {
-                "id": "personal",
-                "name": f"{user_data['login']}",
-                "url": user_data["html_url"],
-            }
-        )
-        orgs_data = await self._make_request(
-            "user/orgs", {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
-        )
-        for org in orgs_data:
+
+        if self.auth_type in ("github_app", "oauth_app"):
+            # For GitHub App auth, get organizations from installation repositories
+            # The installation has access to specific repos, we derive orgs from those
+            headers = await self._get_auth_headers()
+            async with httpx.AsyncClient() as client:
+                url = f"{self.API_BASE_URL}/installation/repositories"
+                params = {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+                seen_orgs = set()
+
+                while url:
+                    response = await client.get(url, headers=headers, params=params)
+                    params = None  # Only use params on first request
+
+                    if response.status_code != HTTP_STATUS_OK:
+                        raise TrackerResponseError(
+                            f"GitHub API error: {response.status_code} - {response.text}"
+                        )
+
+                    data = response.json()
+                    repos = data.get("repositories", [])
+
+                    for repo in repos:
+                        owner = repo.get("owner", {})
+                        owner_id = str(owner.get("id", ""))
+                        owner_login = owner.get("login", "")
+                        owner_type = owner.get("type", "User")
+
+                        if owner_id and owner_id not in seen_orgs:
+                            seen_orgs.add(owner_id)
+                            organizations.append(
+                                {
+                                    "id": owner_id,
+                                    "name": owner_login,
+                                    "url": owner.get(
+                                        "html_url", f"https://github.com/{owner_login}"
+                                    ),
+                                    "type": owner_type,
+                                }
+                            )
+
+                    # Handle pagination
+                    if "next" in response.links:
+                        url = response.links["next"]["url"]
+                    else:
+                        url = None
+
+            return organizations
+        else:
+            # For api_token auth, use user endpoints
+            user_data = await self._make_request("user")
             organizations.append(
                 {
-                    "id": str(org["id"]),
-                    "name": org["login"],
-                    "url": org["url"]
-                    .replace("api.github.com", "github.com")
-                    .replace("/orgs/", "/"),
+                    "id": "personal",
+                    "name": f"{user_data['login']}",
+                    "url": user_data["html_url"],
                 }
             )
-        return organizations
+            orgs_data = await self._make_request(
+                "user/orgs", {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+            )
+            for org in orgs_data:
+                organizations.append(
+                    {
+                        "id": str(org["id"]),
+                        "name": org["login"],
+                        "url": org["url"]
+                        .replace("api.github.com", "github.com")
+                        .replace("/orgs/", "/"),
+                    }
+                )
+            return organizations
 
     async def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
         """
         Get repositories (projects) for an organization from GitHub.
+
+        For api_token auth: Uses /user/repos or /orgs/{org}/repos endpoints.
+        For github_app auth: Uses /installation/repositories and filters by owner.
         """
-        params = {
-            "per_page": GITHUB_DEFAULT_PAGE_SIZE,
-            "sort": "updated",
-            "direction": "desc",
-        }
-        if organization_id == "personal":
-            repos_data = await self._make_request("user/repos", params)
-        else:
-            repos_data = await self._make_request(
-                f"orgs/{organization_id}/repos", params
-            )
         projects = []
-        for repo in repos_data:
-            projects.append(
-                {
-                    "id": str(repo["id"]),
-                    "identifier": str(repo["id"]),
-                    "name": repo["name"],
-                    "description": repo["description"] or "",
-                    "url": repo["html_url"],
-                    "meta_data": {
-                        "full_name": repo["full_name"],
-                        "default_branch": repo["default_branch"],
-                        "language": repo.get("language"),
-                        "created_at": repo["created_at"],
-                        "updated_at": repo["pushed_at"],
-                        "stars": repo["stargazers_count"],
-                    },
-                }
-            )
-        return projects
+
+        if self.auth_type in ("github_app", "oauth_app"):
+            # For GitHub App auth, get repos from installation and filter by org
+            headers = await self._get_auth_headers()
+            async with httpx.AsyncClient() as client:
+                url = f"{self.API_BASE_URL}/installation/repositories"
+                params = {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+
+                while url:
+                    response = await client.get(url, headers=headers, params=params)
+                    params = None  # Only use params on first request
+
+                    if response.status_code != HTTP_STATUS_OK:
+                        raise TrackerResponseError(
+                            f"GitHub API error: {response.status_code} - {response.text}"
+                        )
+
+                    data = response.json()
+                    repos = data.get("repositories", [])
+
+                    for repo in repos:
+                        owner = repo.get("owner", {})
+                        owner_id = str(owner.get("id", ""))
+
+                        # Filter by organization_id
+                        if owner_id == organization_id:
+                            projects.append(
+                                {
+                                    "id": str(repo["id"]),
+                                    "identifier": str(repo["id"]),
+                                    "name": repo["name"],
+                                    "description": repo.get("description") or "",
+                                    "url": repo["html_url"],
+                                    "meta_data": {
+                                        "full_name": repo["full_name"],
+                                        "default_branch": repo.get("default_branch"),
+                                        "language": repo.get("language"),
+                                        "created_at": repo.get("created_at"),
+                                        "updated_at": repo.get("pushed_at"),
+                                        "stars": repo.get("stargazers_count", 0),
+                                    },
+                                }
+                            )
+
+                    # Handle pagination
+                    if "next" in response.links:
+                        url = response.links["next"]["url"]
+                    else:
+                        url = None
+
+            return projects
+        else:
+            # For api_token auth, use user/org endpoints
+            params = {
+                "per_page": GITHUB_DEFAULT_PAGE_SIZE,
+                "sort": "updated",
+                "direction": "desc",
+            }
+            if organization_id == "personal":
+                repos_data = await self._make_request("user/repos", params)
+            else:
+                repos_data = await self._make_request(
+                    f"orgs/{organization_id}/repos", params
+                )
+            for repo in repos_data:
+                projects.append(
+                    {
+                        "id": str(repo["id"]),
+                        "identifier": str(repo["id"]),
+                        "name": repo["name"],
+                        "description": repo["description"] or "",
+                        "url": repo["html_url"],
+                        "meta_data": {
+                            "full_name": repo["full_name"],
+                            "default_branch": repo["default_branch"],
+                            "language": repo.get("language"),
+                            "created_at": repo["created_at"],
+                            "updated_at": repo["pushed_at"],
+                            "stars": repo["stargazers_count"],
+                        },
+                    }
+                )
+            return projects
 
     async def get_issues(
         self,

@@ -17,7 +17,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .account import Account
-    from .oauth_token import OAuthToken
+    from .github_oauth_token import OAuthToken
     from .tracker import Tracker
 
 

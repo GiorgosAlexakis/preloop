@@ -125,6 +125,16 @@ class Settings(BaseSettings):
         description="Stripe webhook secret",
     )
 
+    # Notification webhooks for admin alerts
+    slack_webhook_url: str = Field(
+        "",
+        description="Slack webhook URL for admin notifications",
+    )
+    mattermost_webhook_url: str = Field(
+        "",
+        description="Mattermost webhook URL for admin notifications",
+    )
+
     @classmethod
     def from_env(cls) -> "Settings":
         """Create settings from environment variables.

@@ -42,7 +42,7 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     send_email(admin_email, subject, message, message_html)
 
     # Send Slack notification if webhook is configured
-    slack_webhook = getattr(settings, "slack_webhook_url", None)
+    slack_webhook = settings.slack_webhook_url
     if slack_webhook:
         try:
             slack_payload = {"text": f"*{subject}*\n{message}"}
@@ -53,7 +53,7 @@ def notify_admins(subject: str, message: str, message_html: str = None):
             logger.error(f"Failed to send Slack notification: {e}")
 
     # Send Mattermost notification if webhook is configured
-    mattermost_webhook = getattr(settings, "mattermost_webhook_url", None)
+    mattermost_webhook = settings.mattermost_webhook_url
     if mattermost_webhook:
         try:
             mattermost_payload = {"text": f"**{subject}**\n{message}"}

@@ -183,8 +183,8 @@ class WebSocketService {
     const interval = window.setInterval(() => {
       const ws = this.connections.get(key);
       if (ws?.readyState === WebSocket.OPEN) {
-        // Send JSON pong as keepalive
-        ws.send(JSON.stringify({ type: 'pong' }));
+        // Send JSON ping as keepalive - backend will respond with pong
+        ws.send(JSON.stringify({ type: 'ping' }));
       }
     }, 30000); // 30 seconds
 
