@@ -102,45 +102,6 @@ export class AddTrackerModal extends LitElement {
       margin-left: 0.5rem;
       margin-top: 1rem;
     }
-    .auth-method-cards {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-    .auth-method-card {
-      cursor: pointer;
-      transition:
-        border-color 0.2s,
-        box-shadow 0.2s;
-      border: 2px solid transparent;
-    }
-    .auth-method-card:hover {
-      border-color: var(--sl-color-primary-300);
-    }
-    .auth-method-card.selected {
-      border-color: var(--sl-color-primary-600);
-      box-shadow: 0 0 0 3px var(--sl-color-primary-100);
-    }
-    .auth-method-card h3 {
-      margin: 0 0 0.5rem 0;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .auth-method-card p {
-      margin: 0;
-      color: var(--sl-color-neutral-600);
-      font-size: var(--sl-font-size-small);
-    }
-    .recommended-badge {
-      background: var(--sl-color-success-100);
-      color: var(--sl-color-success-700);
-      padding: 0.125rem 0.5rem;
-      border-radius: var(--sl-border-radius-pill);
-      font-size: var(--sl-font-size-x-small);
-      font-weight: 600;
-    }
   `;
 
   connectedCallback() {
@@ -229,11 +190,7 @@ export class AddTrackerModal extends LitElement {
         label="${this.tracker ? 'Edit' : 'Add'} Tracker"
         @sl-request-close=${() => this.closeModal()}
       >
-        ${this.step === 0
-          ? this.renderAuthMethodSelection()
-          : this.step === 1
-            ? this.renderStep1()
-            : this.renderStep2()}
+        ${this.step === 1 ? this.renderStep1() : this.renderStep2()}
         ${this.warningMessages.length > 0
           ? html`
               <sl-alert variant="warning" open style="margin-top: 1rem;">
@@ -262,14 +219,6 @@ export class AddTrackerModal extends LitElement {
         </sl-button>
       `;
     }
-    if (this.step === 0) {
-      return html`
-        <sl-button @click=${() => this.closeModal()}>Cancel</sl-button>
-        <sl-button variant="primary" @click=${() => (this.step = 1)}
-          >Next</sl-button
-        >
-      `;
-    }
     if (this.step === 1) {
       return html`
         <sl-button @click=${() => this.closeModal()}>Cancel</sl-button>
@@ -291,55 +240,6 @@ export class AddTrackerModal extends LitElement {
         ${this.tracker ? 'Save' : 'Add'}
       </sl-button>
     `;
-  }
-
-  renderAuthMethodSelection() {
-    return html`
-      <p style="margin-bottom: 1rem;">
-        How would you like to connect to GitHub?
-      </p>
-      <div class="auth-method-cards">
-        <sl-card
-          class="auth-method-card ${this.authMethod === 'github_app'
-            ? 'selected'
-            : ''}"
-          @click=${() => this.selectAuthMethod('github_app')}
-        >
-          <h3>
-            <sl-icon name="github"></sl-icon>
-            Connect with GitHub
-            <span class="recommended-badge">Recommended</span>
-          </h3>
-          <p>
-            One-click OAuth connection. No token management required. Best for
-            teams using Preloop SaaS.
-          </p>
-        </sl-card>
-        <sl-card
-          class="auth-method-card ${this.authMethod === 'api_token'
-            ? 'selected'
-            : ''}"
-          @click=${() => this.selectAuthMethod('api_token')}
-        >
-          <h3>
-            <sl-icon name="key"></sl-icon>
-            Use API Token
-          </h3>
-          <p>
-            Manual token configuration. Ideal for self-hosted GitHub Enterprise
-            or advanced configurations.
-          </p>
-        </sl-card>
-      </div>
-    `;
-  }
-
-  selectAuthMethod(method: 'api_token' | 'github_app') {
-    this.authMethod = method;
-    if (method === 'github_app') {
-      // Redirect to GitHub OAuth flow
-      this.startGitHubOAuth();
-    }
   }
 
   async startGitHubOAuth() {
