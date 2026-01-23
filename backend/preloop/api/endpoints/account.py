@@ -1,5 +1,6 @@
 """Account-related endpoints."""
 
+import html
 import logging
 from typing import Annotated, Optional
 
@@ -125,20 +126,25 @@ async def request_account_deletion(
     message = "\n".join(message_parts)
 
     # Build HTML version for email
+    # Escape user-controlled input to prevent HTML injection
+    safe_username = html.escape(deletion_request.username)
+    safe_email = html.escape(deletion_request.email)
+    safe_account_id = html.escape(deletion_request.account_id)
+
     message_html = f"""
     <h2>Account Deletion Request</h2>
-    <p><strong>User:</strong> {deletion_request.username}</p>
-    <p><strong>Email:</strong> {deletion_request.email}</p>
-    <p><strong>Account ID:</strong> {deletion_request.account_id}</p>
+    <p><strong>User:</strong> {safe_username}</p>
+    <p><strong>Email:</strong> {safe_email}</p>
+    <p><strong>Account ID:</strong> {safe_account_id}</p>
     """
 
     if deletion_request.org_name:
-        message_html += (
-            f"<p><strong>Organization:</strong> {deletion_request.org_name}</p>"
-        )
+        safe_org_name = html.escape(deletion_request.org_name)
+        message_html += f"<p><strong>Organization:</strong> {safe_org_name}</p>"
 
     if deletion_request.reason:
-        message_html += f"<p><strong>Reason:</strong> {deletion_request.reason}</p>"
+        safe_reason = html.escape(deletion_request.reason)
+        message_html += f"<p><strong>Reason:</strong> {safe_reason}</p>"
 
     # Send notifications
     try:
