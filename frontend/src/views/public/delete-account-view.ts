@@ -13,10 +13,23 @@ import '../../components/logo-component';
 export class DeleteAccountView extends LitElement {
   @state() private _email = '';
   @state() private _username = '';
+  @state() private _accountId = '';
+  @state() private _orgName = '';
   @state() private _reason = '';
   @state() private _submitting = false;
   @state() private _error: string | null = null;
   @state() private _success = false;
+
+  connectedCallback() {
+    super.connectedCallback();
+
+    // Parse URL parameters
+    const params = new URLSearchParams(window.location.search);
+    this._email = params.get('email') || '';
+    this._username = params.get('username') || '';
+    this._accountId = params.get('account_id') || '';
+    this._orgName = params.get('org_name') || '';
+  }
 
   static styles = [
     formStyles,
@@ -77,16 +90,17 @@ export class DeleteAccountView extends LitElement {
     this._success = false;
 
     try {
-      const response = await fetch('https://spacecode.ai/api/v1/leads', {
+      const response = await fetch('/api/v1/account/deletion-request', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: this._username,
           email: this._email,
-          comments: this._reason,
-          source: 'account-deletion-request preloop',
+          username: this._username,
+          account_id: this._accountId,
+          org_name: this._orgName,
+          reason: this._reason,
         }),
       });
 
@@ -99,7 +113,7 @@ export class DeleteAccountView extends LitElement {
     } catch (e) {
       this._submitting = false;
       this._error =
-        'Failed to submit request. Please try again or contact support@spacecode.ai';
+        'Failed to submit request. Please try again or contact support@preloop.ai';
     }
   }
 
@@ -186,6 +200,14 @@ export class DeleteAccountView extends LitElement {
               .value=${this._username}
               @sl-input=${(e: any) => (this._username = e.target.value)}
             ></sl-input>
+
+            ${this._orgName
+              ? html`<sl-input
+                  label="Organization"
+                  readonly
+                  .value=${this._orgName}
+                ></sl-input>`
+              : ''}
 
             <sl-textarea
               label="Reason for leaving (optional)"

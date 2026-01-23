@@ -291,6 +291,19 @@ seed:
   password: ""
   apiKey: ""
 
+# Admin notification configuration
+notifications:
+  # Email for admin notifications (account deletions, errors, etc.)
+  productTeamEmail: ""
+
+  # Slack webhook URL for admin notifications (optional)
+  # Get this from Slack: https://api.slack.com/messaging/webhooks
+  slackWebhookUrl: ""
+
+  # Mattermost webhook URL for admin notifications (optional)
+  # Get this from Mattermost: Settings > Integrations > Incoming Webhooks
+  mattermostWebhookUrl: ""
+
 cleanup:
   enabled: false
 

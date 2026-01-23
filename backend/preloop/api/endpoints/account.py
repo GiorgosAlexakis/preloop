@@ -3,8 +3,8 @@
 import logging
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from preloop.api.common import get_account_for_user
@@ -30,6 +30,16 @@ class AccountDetailsUpdate(BaseModel):
     """Account details update request."""
 
     organization_name: Optional[str] = None
+
+
+class AccountDeletionRequest(BaseModel):
+    """Account deletion request from user."""
+
+    email: EmailStr
+    username: str
+    account_id: str
+    org_name: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @router.get("/account/details", response_model=AccountDetailsResponse)
@@ -77,3 +87,69 @@ async def update_account_details(
         created_at=updated_account.created_at.isoformat(),
         updated_at=updated_account.updated_at.isoformat(),
     )
+
+
+@router.post("/account/deletion-request")
+async def request_account_deletion(
+    deletion_request: AccountDeletionRequest,
+):
+    """Internal endpoint to notify admins of account deletion request.
+
+    This endpoint is called from the public delete-account page and sends
+    notifications to admins via email and configured webhooks (Slack/Mattermost).
+
+    Args:
+        deletion_request: Account deletion request details
+
+    Returns:
+        Success message
+    """
+    from preloop.sync.tasks import notify_admins
+
+    # Build notification message
+    subject = f"Account Deletion Request: {deletion_request.username}"
+
+    message_parts = [
+        f"User: {deletion_request.username}",
+        f"Email: {deletion_request.email}",
+        f"Account ID: {deletion_request.account_id}",
+    ]
+
+    if deletion_request.org_name:
+        message_parts.append(f"Organization: {deletion_request.org_name}")
+
+    if deletion_request.reason:
+        message_parts.append(f"\nReason: {deletion_request.reason}")
+
+    message = "\n".join(message_parts)
+
+    # Build HTML version for email
+    message_html = f"""
+    <h2>Account Deletion Request</h2>
+    <p><strong>User:</strong> {deletion_request.username}</p>
+    <p><strong>Email:</strong> {deletion_request.email}</p>
+    <p><strong>Account ID:</strong> {deletion_request.account_id}</p>
+    """
+
+    if deletion_request.org_name:
+        message_html += (
+            f"<p><strong>Organization:</strong> {deletion_request.org_name}</p>"
+        )
+
+    if deletion_request.reason:
+        message_html += f"<p><strong>Reason:</strong> {deletion_request.reason}</p>"
+
+    # Send notifications
+    try:
+        notify_admins(subject, message, message_html)
+        logger.info(
+            f"Account deletion request notification sent for account {deletion_request.account_id}"
+        )
+        return {"status": "success", "message": "Deletion request received"}
+    except Exception as e:
+        logger.error(
+            f"Failed to send account deletion notification: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to process deletion request"
+        )

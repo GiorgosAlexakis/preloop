@@ -519,6 +519,37 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/account/deletion-request:
+    post:
+      tags:
+      - Account
+      summary: Request Account Deletion
+      description: "Internal endpoint to notify admins of account deletion request.\n\
+        \nThis endpoint is called from the public delete-account page and sends\n\
+        notifications to admins via email and configured webhooks (Slack/Mattermost).\n\
+        \nArgs:\n    deletion_request: Account deletion request details\n\nReturns:\n\
+        \    Success message"
+      operationId: request_account_deletion_api_v1_account_deletion_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDeletionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/trackers/debug:
     post:
       tags:
@@ -4103,6 +4134,35 @@ components:
       type: object
       title: AIModelUpdate
       description: Schema for updating an existing AIModel entry. All fields are optional.
+    AccountDeletionRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        username:
+          type: string
+          title: Username
+        account_id:
+          type: string
+          title: Account Id
+        org_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Org Name
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - email
+      - username
+      - account_id
+      title: AccountDeletionRequest
+      description: Account deletion request from user.
     AccountDetailsResponse:
       properties:
         id:
