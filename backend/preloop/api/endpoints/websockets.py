@@ -562,10 +562,19 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
 
     except WebSocketDisconnect as e:
         # Log detailed disconnection info
+        # Get session once to avoid TOCTOU race condition
+        current_session = session_manager.sessions.get(session.id)
+        if current_session:
+            duration = (
+                current_session.last_activity - current_session.connected_at
+            ).total_seconds()
+            duration_str = f"{duration}s"
+        else:
+            duration_str = "unknown"
         logger.info(
             f"Session {session.id} disconnected - "
             f"User: {user.username if user else 'anonymous'}, "
-            f"Duration: {(session_manager.sessions.get(session.id).last_activity - session_manager.sessions.get(session.id).connected_at).total_seconds() if session.id in session_manager.sessions else 'unknown'}s, "
+            f"Duration: {duration_str}, "
             f"Reason: {e}"
         )
     except Exception as e:
