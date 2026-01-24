@@ -261,6 +261,8 @@ githubApp:
   privateKey: ""
   # GitHub App Webhook Secret for signature verification
   webhookSecret: ""
+  # GitHub App slug (e.g., "preloop" or "preloop-staging")
+  slug: ""
 
 # Apple Push Notification Service (APNS) configuration
 apns:

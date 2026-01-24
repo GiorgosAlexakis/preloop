@@ -145,6 +145,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "preloop.fullname" $ }}
                   key: github-app-webhook-secret
+            - name: GITHUB_APP_SLUG
+              value: {{ $.Values.githubApp.slug | quote }}
             {{- end }}
           resources:
             {{- toYaml $.Values.worker.resources | nindent 12 }}

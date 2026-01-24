@@ -64,6 +64,9 @@ class GitHubAppSettings(BaseModel):
     webhook_secret: str = Field(
         "", description="GitHub App Webhook Secret for signature verification"
     )
+    slug: str = Field(
+        "", description="GitHub App slug (e.g., 'preloop' or 'preloop-staging')"
+    )
 
     @property
     def is_configured(self) -> bool:
@@ -74,6 +77,7 @@ class GitHubAppSettings(BaseModel):
             and self.client_secret
             and self.private_key
             and self.webhook_secret
+            and self.slug
         )
 
 
@@ -200,6 +204,7 @@ class Settings(BaseSettings):
             client_secret=os.getenv("GITHUB_APP_CLIENT_SECRET", ""),
             private_key=os.getenv("GITHUB_APP_PRIVATE_KEY", ""),
             webhook_secret=os.getenv("GITHUB_APP_WEBHOOK_SECRET", ""),
+            slug=os.getenv("GITHUB_APP_SLUG", ""),
         )
 
         return cls(

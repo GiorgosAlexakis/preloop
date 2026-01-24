@@ -1017,7 +1017,10 @@ async def authenticate_user(
         session.refresh(user)
 
         # Check if we should notify admins about login after inactivity
-        if should_notify_on_login(old_last_login, days_threshold=7):
+        if (
+            should_notify_on_login(old_last_login, days_threshold=7)
+            and source_ip != "testclient"
+        ):
             # Run notification in background thread to avoid blocking login
             def send_login_notification():
                 try:

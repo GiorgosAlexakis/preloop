@@ -46,6 +46,12 @@ def notify_admins_new_user_signup(
         account_id: The account UUID (optional).
         organization_name: The organization name (optional).
     """
+    if source_ip == "testclient":
+        logger.info(
+            f"Skipping admin notification for new user signup for test client: {source_ip}"
+        )
+        return
+
     subject = f"New User Signup: {username}"
 
     message_parts = [
@@ -112,6 +118,12 @@ def notify_admins_user_login_after_inactivity(
         last_login: When the user last logged in.
         source_ip: The IP address from which the login occurred (optional).
     """
+    if source_ip == "testclient":
+        logger.info(
+            f"Skipping admin notification for user login after inactivity for test client: {source_ip}"
+        )
+        return
+
     if last_login:
         days_inactive = (datetime.now(timezone.utc) - last_login).days
         subject = f"User Login After {days_inactive} Days: {username}"
