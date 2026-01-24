@@ -3,6 +3,11 @@
   "version": "0.8.0",
   "description": "Preloop console frontend",
   "main": "src/main.ts",
+  "overrides": {
+    "static-eval": "^2.1.0",
+    "minimist": "^1.2.8",
+    "koa": "^2.16.2"
+  },
   "scripts": {
     "start": "npm run dev",
     "dev": "vite",
