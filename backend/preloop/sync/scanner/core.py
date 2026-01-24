@@ -55,7 +55,48 @@ class TrackerClient:
         if self.tracker_type == "github":
             from ..trackers.github import GitHubTracker
 
-            self.client = GitHubTracker(tracker.id, tracker.api_key, connection_details)
+            # Determine auth type and get installation ID if using GitHub App
+            auth_type = getattr(tracker, "auth_type", "api_token") or "api_token"
+            github_installation_id = None
+
+            if auth_type == "github_app" or auth_type == "oauth_app":
+                # Get the GitHub installation ID from the linked OAuthAppInstallation
+                if (
+                    hasattr(tracker, "oauth_installation")
+                    and tracker.oauth_installation
+                ):
+                    github_installation_id = tracker.oauth_installation.external_id
+                elif (
+                    hasattr(tracker, "oauth_installation_id")
+                    and tracker.oauth_installation_id
+                ):
+                    # Fallback: load the installation to get the GitHub installation ID
+                    from preloop.models.models.github_app_installation import (
+                        OAuthAppInstallation,
+                    )
+                    from preloop.models.db.session import get_db_session
+
+                    db = next(get_db_session())
+                    try:
+                        installation = (
+                            db.query(OAuthAppInstallation)
+                            .filter(
+                                OAuthAppInstallation.id == tracker.oauth_installation_id
+                            )
+                            .first()
+                        )
+                        if installation:
+                            github_installation_id = installation.external_id
+                    finally:
+                        db.close()
+
+            self.client = GitHubTracker(
+                tracker.id,
+                tracker.api_key,
+                connection_details,
+                auth_type=auth_type,
+                github_installation_id=github_installation_id,
+            )
         elif self.tracker_type == "gitlab":
             from ..trackers.gitlab import GitLabTracker
 

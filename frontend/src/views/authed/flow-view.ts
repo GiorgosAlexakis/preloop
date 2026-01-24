@@ -1024,7 +1024,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     const agentProviderMap: Record<string, string[]> = {
       gemini: ['google'],
       codex: ['openai', 'google', 'deepseek', 'qwen'],
-      'claude-code': ['anthropic'],
       aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // Aider supports multiple providers
       openhands: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // OpenHands supports multiple
     };
@@ -1118,7 +1117,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
           >
             <sl-option value="codex">Codex (Recommended)</sl-option>
             <sl-option value="gemini">Gemini CLI</sl-option>
-            <sl-option value="claude-code">Claude Code</sl-option>
             <sl-option value="aider">Aider</sl-option>
             <sl-option value="openhands">OpenHands</sl-option>
           </sl-select>
@@ -1148,7 +1146,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 const providerNames: Record<string, string> = {
                   gemini: 'Google',
                   codex: 'OpenAI',
-                  'claude-code': 'Anthropic',
                   aider: 'OpenAI/Anthropic',
                   openhands: 'OpenAI/Anthropic/Google',
                 };

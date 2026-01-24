@@ -6,7 +6,6 @@ from typing import Any, Dict
 from .base import AgentExecutor
 from .openhands import OpenHandsAgent
 from .aider import AiderAgent
-from .claude_code import ClaudeCodeAgent
 from .codex import CodexAgent
 from .gemini import GeminiAgent
 
@@ -18,7 +17,7 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
     Create an agent executor based on agent type.
 
     Args:
-        agent_type: Type of agent (e.g., 'openhands', 'claude-code', 'aider', 'codex', 'gemini')
+        agent_type: Type of agent (e.g., 'openhands', 'aider', 'codex', 'gemini')
         config: Agent-specific configuration
 
     Returns:
@@ -31,8 +30,6 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
 
     if agent_type_lower == "openhands":
         return OpenHandsAgent(config)
-    elif agent_type_lower == "claude-code":
-        return ClaudeCodeAgent(config)
     elif agent_type_lower == "aider":
         return AiderAgent(config)
     elif agent_type_lower == "codex":
@@ -42,5 +39,5 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
     else:
         raise ValueError(
             f"Unsupported agent type: {agent_type}. "
-            f"Supported types: openhands, claude-code, aider, codex, gemini"
+            f"Supported types: codex, gemini, aider, openhands"
         )

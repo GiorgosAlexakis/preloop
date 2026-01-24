@@ -14,10 +14,63 @@ export class TrackersView extends LitElement {
   @state()
   private editingTracker: Tracker | null = null;
 
+  @state()
+  private githubInstallationId: string | null = null;
+
+  @state()
+  private githubTargetLogin: string | null = null;
+
+  @state()
+  private githubError: string | null = null;
+
   @query('tracker-list')
   private trackerListElement: TrackerList | undefined;
 
   static styles = [unsafeCSS(consoleStyles)];
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._handleGitHubCallback();
+  }
+
+  private _handleGitHubCallback() {
+    const params = new URLSearchParams(window.location.search);
+
+    // Handle GitHub OAuth callback
+    const installationId = params.get('github_installation_id');
+    const targetLogin = params.get('target_login');
+    const returnedState = params.get('state');
+    const error = params.get('github_error');
+    const errorDescription = params.get('error_description');
+
+    if (error) {
+      this.githubError = errorDescription || error;
+      // Clear stored state and URL params
+      sessionStorage.removeItem('github_oauth_state');
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    if (installationId) {
+      // Validate CSRF state token
+      const storedState = sessionStorage.getItem('github_oauth_state');
+      sessionStorage.removeItem('github_oauth_state');
+
+      if (!storedState || storedState !== returnedState) {
+        this.githubError =
+          'OAuth state mismatch. This may be a CSRF attack or the session expired. Please try again.';
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
+      this.githubInstallationId = installationId;
+      this.githubTargetLogin = targetLogin;
+      // Auto-open the add tracker modal
+      this.isAddingTracker = true;
+      // Clear URL params
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }
 
   private _openAddTrackerForm() {
     this.isAddingTracker = true;
@@ -50,6 +103,10 @@ export class TrackersView extends LitElement {
     this.isAddingTracker = false;
   }
 
+  private _dismissGitHubError() {
+    this.githubError = null;
+  }
+
   render() {
     return html`
       <view-header headerText="Trackers" width="narrow">
@@ -62,8 +119,24 @@ export class TrackersView extends LitElement {
       </view-header>
       <div class="column-layout narrow">
         <div class="main-column">
+          ${this.githubError
+            ? html`
+                <sl-alert
+                  variant="danger"
+                  open
+                  closable
+                  @sl-after-hide=${this._dismissGitHubError}
+                >
+                  <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                  <strong>GitHub Connection Failed</strong><br />
+                  ${this.githubError}
+                </sl-alert>
+              `
+            : ''}
           ${this.isAddingTracker
             ? html`<add-tracker-modal
+                .githubInstallationId=${this.githubInstallationId}
+                .githubTargetLogin=${this.githubTargetLogin}
                 @tracker-added=${this._handleTrackerAdded}
                 @close-modal=${this._closeAddTrackerForm}
               ></add-tracker-modal>`

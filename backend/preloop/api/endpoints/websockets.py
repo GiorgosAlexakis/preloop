@@ -390,7 +390,20 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
         while True:
             try:
                 # Wait for message with timeout for heartbeat
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
+                # Use receive_text() instead of receive_json() to handle non-JSON messages
+                text = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+
+                # Try to parse as JSON
+                try:
+                    data = json.loads(text)
+                except json.JSONDecodeError as e:
+                    # Log non-JSON messages with client info to identify problematic clients
+                    user_agent = websocket.headers.get("user-agent", "unknown")
+                    logger.warning(
+                        f"Received non-JSON message from session {session.id} "
+                        f"(User-Agent: {user_agent}): {text[:200]} - Error: {e}"
+                    )
+                    continue
 
                 # Update activity timestamp
                 session_manager.update_activity(session.id)
@@ -505,8 +518,12 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                     # TODO: Implement topic-based unsubscription
 
                 elif message_type == "pong":
-                    # Heartbeat response
+                    # Heartbeat response from client
                     continue
+
+                elif message_type == "ping":
+                    # Heartbeat request from client - respond with pong
+                    await websocket.send_json({"type": "pong"})
 
                 else:
                     logger.warning(
@@ -518,25 +535,54 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                 try:
                     await websocket.send_json({"type": "ping"})
                     # Wait for pong response
-                    pong = await asyncio.wait_for(
-                        websocket.receive_json(), timeout=10.0
+                    pong_text = await asyncio.wait_for(
+                        websocket.receive_text(), timeout=10.0
                     )
-                    if pong.get("type") != "pong":
+                    try:
+                        pong = json.loads(pong_text)
+                        if pong.get("type") != "pong":
+                            logger.warning(
+                                f"Expected pong from session {session.id}, got: {pong}"
+                            )
+                            break
+                    except json.JSONDecodeError:
+                        # Non-JSON response to ping, treat as invalid
                         logger.warning(
-                            f"Expected pong from session {session.id}, got: {pong}"
+                            f"Session {session.id} sent non-JSON response to ping: {pong_text[:100]}"
                         )
                         break
                 except asyncio.TimeoutError:
                     logger.warning(
-                        f"Session {session.id} did not respond to ping, disconnecting"
+                        f"Session {session.id} did not respond to ping, disconnecting - "
+                        f"User: {user.username if user else 'anonymous'}, "
+                        f"IP: {client_ip}, "
+                        f"User-Agent: {user_agent[:100]}"
                     )
                     break
 
-    except WebSocketDisconnect:
-        logger.info(f"Session {session.id} disconnected normally")
+    except WebSocketDisconnect as e:
+        # Log detailed disconnection info
+        # Get session once to avoid TOCTOU race condition
+        current_session = session_manager.sessions.get(session.id)
+        if current_session:
+            duration = (
+                current_session.last_activity - current_session.connected_at
+            ).total_seconds()
+            duration_str = f"{duration}s"
+        else:
+            duration_str = "unknown"
+        logger.info(
+            f"Session {session.id} disconnected - "
+            f"User: {user.username if user else 'anonymous'}, "
+            f"Duration: {duration_str}, "
+            f"Reason: {e}"
+        )
     except Exception as e:
         logger.error(
-            f"Error in unified WebSocket session {session.id}: {e}", exc_info=True
+            f"Error in unified WebSocket session {session.id}: {e}, "
+            f"User: {user.username if user else 'anonymous'}, "
+            f"IP: {client_ip}",
+            exc_info=True,
         )
     finally:
         # Cleanup

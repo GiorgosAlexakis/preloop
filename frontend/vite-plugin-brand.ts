@@ -84,6 +84,8 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         features: brandConfig.landing.features || [],
         faqs: brandConfig.landing.faqs || [],
         get_started: brandConfig.landing.get_started || {},
+        product_hunt: (brandConfig.landing as any).product_hunt || null,
+        featured_video: (brandConfig.landing as any).featured_video || null,
       };
 
       // Add JSON file to bundle
@@ -516,6 +518,40 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
     </div>`
       )
       .join('\n')}
+
+    <!-- Product Hunt slot -->
+    ${(() => {
+      const productHunt = (config.landing as any).product_hunt;
+      if (productHunt?.enabled) {
+        return `
+    <div slot="product-hunt"
+         data-enabled="true"
+         data-post-id="${productHunt.post_id || ''}"
+         data-theme="${productHunt.theme || 'light'}">
+      <a href="https://www.producthunt.com/products/preloop?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-preloop" target="_blank" rel="noopener noreferrer">
+        <img alt="Preloop - The MCP Governance Layer | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=${productHunt.post_id}&amp;theme=${productHunt.theme}" />
+      </a>
+    </div>`;
+      }
+      return '';
+    })()}
+
+    <!-- Featured Video slot -->
+    ${(() => {
+      const featuredVideo = (config.landing as any).featured_video;
+      if (featuredVideo?.enabled) {
+        return `
+    <div slot="featured-video"
+         data-enabled="true"
+         data-title="${featuredVideo.title || ''}"
+         data-youtube-url="${featuredVideo.youtube_url || ''}"
+         data-youtube-embed="${featuredVideo.youtube_embed || ''}">
+      <h2>${featuredVideo.title || 'See It in Action'}</h2>
+      <iframe width="560" height="315" src="${featuredVideo.youtube_embed}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    </div>`;
+      }
+      return '';
+    })()}
   `;
 
     case '/privacy':
@@ -727,11 +763,34 @@ function generatePricingContent(config: BrandConfig): string {
 
       <section class="pricing-plans">
         <div class="plan">
+          <h2>Open Source</h2>
+          <p class="price">Free</p>
+          <ul>
+            <li>Self-hosted deployment</li>
+            <li>MCP proxy &amp; tool management</li>
+            <li>Single-user approvals</li>
+            <li>Email &amp; mobile notifications</li>
+            <li>Issue tracker integration</li>
+            <li>Vector search &amp; duplicates</li>
+            <li>Agentic flows</li>
+            <li>Community support</li>
+          </ul>
+          <a href="https://github.com/preloop/preloop" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+        </div>
+
+        <div class="plan">
           <h2>Teams</h2>
           <p class="price">$29/month or $290/year</p>
           <ul>
+            <li>Everything in Open Source</li>
+            <li>Cloud-hosted (managed)</li>
+            <li>RBAC &amp; team management</li>
+            <li>CEL conditional approvals</li>
+            <li>Team-based approvals (quorum)</li>
+            <li>Approval escalation</li>
+            <li>Slack &amp; Mattermost notifications</li>
+            <li>Audit logging</li>
             <li>30-day free trial</li>
-            <li>No credit card required</li>
             <li>Email support</li>
           </ul>
           <a href="/register">Start Free Trial</a>
@@ -741,13 +800,11 @@ function generatePricingContent(config: BrandConfig): string {
           <h2>Enterprise</h2>
           <p class="price">Custom pricing</p>
           <ul>
-            <li>Model/provider limits &amp; controls</li>
-            <li>Comprehensive audit logs</li>
+            <li>Everything in Teams</li>
+            <li>Self-hosted deployment option</li>
             <li>SSO, OIDC, SCIM support</li>
             <li>SLA commitments</li>
             <li>Dedicated support channels</li>
-            <li>Custom integrations &amp; flow presets</li>
-            <li>On-premise deployment options</li>
             <li>Priority feature requests</li>
           </ul>
           <a href="/request-demo">Contact Sales</a>
@@ -765,6 +822,12 @@ function generatePricingContent(config: BrandConfig): string {
 
         <h3>Is there a free trial?</h3>
         <p>Yes, the Teams plan comes with a 30-day free trial. No credit card required.</p>
+
+        <h3>Is the Open Source edition really free?</h3>
+        <p>Yes! ${config.name} is open source under the Apache 2.0 license. You can self-host it for free with no limitations on usage.</p>
+
+        <h3>What's the difference between Teams and Enterprise?</h3>
+        <p>Teams is cloud-hosted with all advanced approval features. Enterprise adds self-hosted deployment options, SSO/SCIM, admin dashboard, and dedicated support with SLA commitments.</p>
       </section>
     </article>
   `;

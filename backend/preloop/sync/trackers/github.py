@@ -1,5 +1,9 @@
 """
 GitHub tracker implementation for preloop.sync.
+
+Supports two authentication types:
+- api_token: Traditional Personal Access Token (PAT) authentication
+- github_app: GitHub App installation-based authentication (for SaaS)
 """
 
 from datetime import datetime
@@ -45,22 +49,121 @@ from preloop.models.crud import crud_organization, crud_project, crud_webhook
 
 
 class GitHubTracker(BaseTracker):
-    """GitHub tracker implementation."""
+    """GitHub tracker implementation.
+
+    Supports two authentication types:
+    - api_token: Traditional PAT authentication (self-hosted or personal use)
+    - github_app: GitHub App OAuth authentication (Preloop SaaS)
+    """
 
     tracker_type: str = "github"
     API_BASE_URL = "https://api.github.com"
 
     def __init__(
-        self, tracker_id: str, api_key: str, connection_details: Dict[str, Any]
+        self,
+        tracker_id: str,
+        api_key: str,
+        connection_details: Dict[str, Any],
+        auth_type: str = "api_token",
+        github_installation_id: Optional[int] = None,
     ):
         """
         Initialize the GitHub tracker.
+
+        Args:
+            tracker_id: The tracker ID
+            api_key: The API key (PAT token for api_token auth, or None for github_app)
+            connection_details: Connection configuration
+            auth_type: Authentication type - "api_token" or "github_app"
+            github_installation_id: GitHub App installation ID (required for github_app auth)
         """
         super().__init__(tracker_id, api_key, connection_details)
-        self.headers = {
-            "Authorization": f"token {api_key}",
-            "Accept": "application/vnd.github.v3+json",
-        }
+        self.auth_type = auth_type
+        self.github_installation_id = github_installation_id
+        self._installation_token: Optional[str] = None
+        self._installation_token_expires_at: Optional[datetime] = None
+
+        # Set up headers based on auth type
+        if auth_type == "api_token":
+            self.headers = {
+                "Authorization": f"token {api_key}",
+                "Accept": "application/vnd.github.v3+json",
+            }
+        else:
+            # For github_app, headers will be set dynamically with installation token
+            self.headers = {
+                "Accept": "application/vnd.github.v3+json",
+            }
+
+    async def _get_installation_token(self) -> str:
+        """Get a valid installation access token for GitHub App auth.
+
+        Returns:
+            Installation access token
+
+        Raises:
+            TrackerAuthenticationError: If unable to obtain token
+        """
+        if self.auth_type not in ("github_app", "oauth_app"):
+            raise TrackerAuthenticationError(
+                "Installation token only available for github_app or oauth_app auth types"
+            )
+
+        if not self.github_installation_id:
+            raise TrackerAuthenticationError(
+                "GitHub installation ID not configured for this tracker"
+            )
+
+        # Check if we have a valid cached token
+        from datetime import timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        if (
+            self._installation_token
+            and self._installation_token_expires_at
+            and self._installation_token_expires_at > now
+        ):
+            return self._installation_token
+
+        # Get a new installation access token
+        try:
+            # Import from the plugin (EE only)
+            from preloop.plugins.proprietary.github_app.service import (
+                get_github_app_service,
+            )
+
+            service = get_github_app_service()
+            token = await service.get_installation_access_token(
+                self.github_installation_id
+            )
+
+            # Cache the token (GitHub installation tokens are valid for 1 hour)
+            # We'll expire it slightly early (55 minutes) to be safe
+            self._installation_token = token
+            self._installation_token_expires_at = now + timedelta(minutes=55)
+
+            return token
+        except Exception as e:
+            logger.error(f"Failed to get installation access token: {e}")
+            raise TrackerAuthenticationError(
+                f"Failed to get GitHub App installation token: {e}"
+            )
+
+    async def _get_auth_headers(self) -> Dict[str, str]:
+        """Get authorization headers for API requests.
+
+        Returns:
+            Headers dict with appropriate authorization
+        """
+        if self.auth_type == "api_token":
+            return self.headers
+        else:
+            # Get fresh installation token
+            token = await self._get_installation_token()
+            return {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json",
+            }
 
     @async_retry()
     async def _make_request(
@@ -74,12 +177,12 @@ class GitHubTracker(BaseTracker):
         params.setdefault("per_page", GITHUB_DEFAULT_PAGE_SIZE)
         results = []
         url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
+        # Get auth headers (may refresh installation token for github_app auth)
+        headers = await self._get_auth_headers()
         async with httpx.AsyncClient() as client:
             while url:
                 try:
-                    response = await client.get(
-                        url, headers=self.headers, params=params
-                    )
+                    response = await client.get(url, headers=headers, params=params)
                     params = None
 
                     if response.status_code == HTTP_STATUS_UNAUTHORIZED:
@@ -128,12 +231,15 @@ class GitHubTracker(BaseTracker):
             else f"{self.API_BASE_URL}/{endpoint}"
         )
 
+        # Get auth headers (may refresh installation token for github_app auth)
+        headers = await self._get_auth_headers()
+
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.request(
                     method,
                     url,
-                    headers=self.headers,
+                    headers=headers,
                     json=data,
                     params=params,
                 )
@@ -257,10 +363,12 @@ class GitHubTracker(BaseTracker):
         """
         Make a DELETE request to the GitHub API.
         """
+        # Get auth headers (may refresh installation token for github_app auth)
+        headers = await self._get_auth_headers()
         async with httpx.AsyncClient() as client:
             try:
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-                response = await client.delete(url, headers=self.headers)
+                response = await client.delete(url, headers=headers)
 
                 if response.status_code == HTTP_STATUS_UNAUTHORIZED:
                     raise TrackerAuthenticationError("GitHub authentication failed")
@@ -323,10 +431,45 @@ class GitHubTracker(BaseTracker):
         return dependencies
 
     async def test_connection(self) -> TrackerConnection:
-        """Test the connection to the tracker."""
+        """Test the connection to the tracker.
+
+        For api_token auth, tests using the /user endpoint.
+        For github_app auth, tests by getting an installation token and
+        checking the installation's accessible repositories.
+        """
         try:
-            await self._make_request("user")
-            return TrackerConnection(connected=True, message="Connection successful")
+            if self.auth_type in ("github_app", "oauth_app"):
+                # For GitHub App auth, test by getting an installation token
+                # This validates both the app configuration and the installation
+                token = await self._get_installation_token()
+                if not token:
+                    return TrackerConnection(
+                        connected=False,
+                        message="Failed to obtain GitHub App installation token",
+                    )
+                # Optionally verify by listing repos (installation tokens can access this)
+                headers = await self._get_auth_headers()
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.API_BASE_URL}/installation/repositories",
+                        headers=headers,
+                        params={"per_page": 1},
+                    )
+                    if response.status_code == HTTP_STATUS_OK:
+                        return TrackerConnection(
+                            connected=True, message="GitHub App connection successful"
+                        )
+                    else:
+                        return TrackerConnection(
+                            connected=False,
+                            message=f"GitHub App connection failed: {response.status_code}",
+                        )
+            else:
+                # For api_token auth, use the /user endpoint
+                await self._make_request("user")
+                return TrackerConnection(
+                    connected=True, message="Connection successful"
+                )
         except (
             TrackerAuthenticationError,
             TrackerConnectionError,
@@ -359,10 +502,12 @@ class GitHubTracker(BaseTracker):
         }
 
         try:
+            # Get auth headers (may refresh installation token for github_app auth)
+            headers = await self._get_auth_headers()
             # Make a request to /user to get the token scopes from response headers
             async with httpx.AsyncClient() as client:
                 url = f"{self.API_BASE_URL}/user"
-                response = await client.get(url, headers=self.headers)
+                response = await client.get(url, headers=headers)
 
                 if response.status_code == HTTP_STATUS_UNAUTHORIZED:
                     result["valid"] = False
@@ -426,7 +571,7 @@ class GitHubTracker(BaseTracker):
                                 f"{self.API_BASE_URL}/organizations/{org_identifier}"
                             )
                             org_lookup_response = await client.get(
-                                org_lookup_url, headers=self.headers
+                                org_lookup_url, headers=headers
                             )
                             if org_lookup_response.status_code == 200:
                                 org_data = org_lookup_response.json()
@@ -452,7 +597,7 @@ class GitHubTracker(BaseTracker):
                         if not org_lookup_failed:
                             membership_url = f"{self.API_BASE_URL}/orgs/{org_login}/memberships/{username}"
                             membership_response = await client.get(
-                                membership_url, headers=self.headers
+                                membership_url, headers=headers
                             )
 
                             if membership_response.status_code == 200:
@@ -910,66 +1055,175 @@ class GitHubTracker(BaseTracker):
     async def get_organizations(self) -> List[Dict[str, Any]]:
         """
         Get organizations from GitHub.
+
+        For api_token auth: Uses /user and /user/orgs endpoints.
+        For github_app auth: Uses /installation/repositories to derive orgs from accessible repos.
         """
         organizations = []
-        user_data = await self._make_request("user")
-        organizations.append(
-            {
-                "id": "personal",
-                "name": f"{user_data['login']}",
-                "url": user_data["html_url"],
-            }
-        )
-        orgs_data = await self._make_request(
-            "user/orgs", {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
-        )
-        for org in orgs_data:
+
+        if self.auth_type in ("github_app", "oauth_app"):
+            # For GitHub App auth, get organizations from installation repositories
+            # The installation has access to specific repos, we derive orgs from those
+            headers = await self._get_auth_headers()
+            async with httpx.AsyncClient() as client:
+                url = f"{self.API_BASE_URL}/installation/repositories"
+                params = {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+                seen_orgs = set()
+
+                while url:
+                    response = await client.get(url, headers=headers, params=params)
+                    params = None  # Only use params on first request
+
+                    if response.status_code != HTTP_STATUS_OK:
+                        raise TrackerResponseError(
+                            f"GitHub API error: {response.status_code} - {response.text}"
+                        )
+
+                    data = response.json()
+                    repos = data.get("repositories", [])
+
+                    for repo in repos:
+                        owner = repo.get("owner", {})
+                        owner_id = str(owner.get("id", ""))
+                        owner_login = owner.get("login", "")
+                        owner_type = owner.get("type", "User")
+
+                        if owner_id and owner_id not in seen_orgs:
+                            seen_orgs.add(owner_id)
+                            organizations.append(
+                                {
+                                    "id": owner_id,
+                                    "name": owner_login,
+                                    "url": owner.get(
+                                        "html_url", f"https://github.com/{owner_login}"
+                                    ),
+                                    "type": owner_type,
+                                }
+                            )
+
+                    # Handle pagination
+                    if "next" in response.links:
+                        url = response.links["next"]["url"]
+                    else:
+                        url = None
+
+            return organizations
+        else:
+            # For api_token auth, use user endpoints
+            user_data = await self._make_request("user")
             organizations.append(
                 {
-                    "id": str(org["id"]),
-                    "name": org["login"],
-                    "url": org["url"]
-                    .replace("api.github.com", "github.com")
-                    .replace("/orgs/", "/"),
+                    "id": "personal",
+                    "name": f"{user_data['login']}",
+                    "url": user_data["html_url"],
                 }
             )
-        return organizations
+            orgs_data = await self._make_request(
+                "user/orgs", {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+            )
+            for org in orgs_data:
+                organizations.append(
+                    {
+                        "id": str(org["id"]),
+                        "name": org["login"],
+                        "url": org["url"]
+                        .replace("api.github.com", "github.com")
+                        .replace("/orgs/", "/"),
+                    }
+                )
+            return organizations
 
     async def get_projects(self, organization_id: str) -> List[Dict[str, Any]]:
         """
         Get repositories (projects) for an organization from GitHub.
+
+        For api_token auth: Uses /user/repos or /orgs/{org}/repos endpoints.
+        For github_app auth: Uses /installation/repositories and filters by owner.
         """
-        params = {
-            "per_page": GITHUB_DEFAULT_PAGE_SIZE,
-            "sort": "updated",
-            "direction": "desc",
-        }
-        if organization_id == "personal":
-            repos_data = await self._make_request("user/repos", params)
-        else:
-            repos_data = await self._make_request(
-                f"orgs/{organization_id}/repos", params
-            )
         projects = []
-        for repo in repos_data:
-            projects.append(
-                {
-                    "id": str(repo["id"]),
-                    "identifier": str(repo["id"]),
-                    "name": repo["name"],
-                    "description": repo["description"] or "",
-                    "url": repo["html_url"],
-                    "meta_data": {
-                        "full_name": repo["full_name"],
-                        "default_branch": repo["default_branch"],
-                        "language": repo.get("language"),
-                        "created_at": repo["created_at"],
-                        "updated_at": repo["pushed_at"],
-                        "stars": repo["stargazers_count"],
-                    },
-                }
-            )
-        return projects
+
+        if self.auth_type in ("github_app", "oauth_app"):
+            # For GitHub App auth, get repos from installation and filter by org
+            headers = await self._get_auth_headers()
+            async with httpx.AsyncClient() as client:
+                url = f"{self.API_BASE_URL}/installation/repositories"
+                params = {"per_page": GITHUB_DEFAULT_PAGE_SIZE}
+
+                while url:
+                    response = await client.get(url, headers=headers, params=params)
+                    params = None  # Only use params on first request
+
+                    if response.status_code != HTTP_STATUS_OK:
+                        raise TrackerResponseError(
+                            f"GitHub API error: {response.status_code} - {response.text}"
+                        )
+
+                    data = response.json()
+                    repos = data.get("repositories", [])
+
+                    for repo in repos:
+                        owner = repo.get("owner", {})
+                        owner_id = str(owner.get("id", ""))
+
+                        # Filter by organization_id
+                        if owner_id == organization_id:
+                            projects.append(
+                                {
+                                    "id": str(repo["id"]),
+                                    "identifier": str(repo["id"]),
+                                    "name": repo["name"],
+                                    "description": repo.get("description") or "",
+                                    "url": repo["html_url"],
+                                    "meta_data": {
+                                        "full_name": repo["full_name"],
+                                        "default_branch": repo.get("default_branch"),
+                                        "language": repo.get("language"),
+                                        "created_at": repo.get("created_at"),
+                                        "updated_at": repo.get("pushed_at"),
+                                        "stars": repo.get("stargazers_count", 0),
+                                    },
+                                }
+                            )
+
+                    # Handle pagination
+                    if "next" in response.links:
+                        url = response.links["next"]["url"]
+                    else:
+                        url = None
+
+            return projects
+        else:
+            # For api_token auth, use user/org endpoints
+            params = {
+                "per_page": GITHUB_DEFAULT_PAGE_SIZE,
+                "sort": "updated",
+                "direction": "desc",
+            }
+            if organization_id == "personal":
+                repos_data = await self._make_request("user/repos", params)
+            else:
+                repos_data = await self._make_request(
+                    f"orgs/{organization_id}/repos", params
+                )
+            for repo in repos_data:
+                projects.append(
+                    {
+                        "id": str(repo["id"]),
+                        "identifier": str(repo["id"]),
+                        "name": repo["name"],
+                        "description": repo["description"] or "",
+                        "url": repo["html_url"],
+                        "meta_data": {
+                            "full_name": repo["full_name"],
+                            "default_branch": repo["default_branch"],
+                            "language": repo.get("language"),
+                            "created_at": repo["created_at"],
+                            "updated_at": repo["pushed_at"],
+                            "stars": repo["stargazers_count"],
+                        },
+                    }
+                )
+            return projects
 
     async def get_issues(
         self,
@@ -1095,9 +1349,11 @@ class GitHubTracker(BaseTracker):
         }
 
         try:
+            # Get auth headers (may refresh installation token for github_app auth)
+            headers = await self._get_auth_headers()
             async with httpx.AsyncClient() as client:
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-                response = await client.post(url, headers=self.headers, json=payload)
+                response = await client.post(url, headers=headers, json=payload)
 
             if response.status_code in [HTTP_STATUS_OK, HTTP_STATUS_CREATED]:
                 response_data = response.json()
@@ -1199,9 +1455,11 @@ class GitHubTracker(BaseTracker):
         else:
             endpoint = f"orgs/{org_identifier}/hooks/{webhook_id}"
         try:
+            # Get auth headers (may refresh installation token for github_app auth)
+            headers = await self._get_auth_headers()
             async with httpx.AsyncClient() as client:
                 url = f"{self.API_BASE_URL}/{endpoint.lstrip('/')}"
-                response = await client.delete(url, headers=self.headers)
+                response = await client.delete(url, headers=headers)
 
             if response.status_code == HTTP_STATUS_NO_CONTENT:
                 logger.info(

@@ -241,6 +241,27 @@ stripe:
   secretKey: ""
   webhookSecret: ""
 
+# Security settings
+security:
+  # Encryption key for sensitive data (OAuth tokens, etc.)
+  # If not set, derived from JWT secret. Recommended to set a dedicated key.
+  encryptionKey: ""
+
+# GitHub App OAuth configuration (Enterprise Edition only)
+# Required for "Connect with GitHub" flow in tracker creation
+githubApp:
+  enabled: false
+  # GitHub App ID from app settings
+  appId: ""
+  # GitHub App Client ID for OAuth
+  clientId: ""
+  # GitHub App Client Secret for OAuth
+  clientSecret: ""
+  # GitHub App Private Key (PEM format, base64 encoded)
+  privateKey: ""
+  # GitHub App Webhook Secret for signature verification
+  webhookSecret: ""
+
 # Apple Push Notification Service (APNS) configuration
 apns:
   enabled: false
@@ -269,6 +290,19 @@ seed:
   email: "test@example.com"
   password: ""
   apiKey: ""
+
+# Admin notification configuration
+notifications:
+  # Email for admin notifications (account deletions, errors, etc.)
+  productTeamEmail: ""
+
+  # Slack webhook URL for admin notifications (optional)
+  # Get this from Slack: https://api.slack.com/messaging/webhooks
+  slackWebhookUrl: ""
+
+  # Mattermost webhook URL for admin notifications (optional)
+  # Get this from Mattermost: Settings > Integrations > Incoming Webhooks
+  mattermostWebhookUrl: ""
 
 cleanup:
   enabled: false

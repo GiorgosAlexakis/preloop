@@ -614,7 +614,7 @@ export class NotificationPreferencesView extends AuthedElement {
 
         <div class="app-store-links">
           <a
-            href="https://apps.apple.com/placeholder"
+            href="https://apps.apple.com/app/preloop/id6757803021"
             target="_blank"
             rel="noopener noreferrer"
             class="app-store-button"
@@ -624,7 +624,7 @@ export class NotificationPreferencesView extends AuthedElement {
             <span>App Store</span>
           </a>
           <a
-            href="https://play.google.com/store/placeholder"
+            href="https://play.google.com/store/apps/details?id=ai.spacecode.preloop&pli=1"
             target="_blank"
             rel="noopener noreferrer"
             class="app-store-button"

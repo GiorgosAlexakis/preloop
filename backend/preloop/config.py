@@ -28,6 +28,11 @@ class SecuritySettings(BaseModel):
     """Security configuration."""
 
     secret_key: str = Field(..., description="Secret key for JWT tokens")
+    encryption_key: str = Field(
+        "",
+        description="Fernet encryption key for sensitive data (32 url-safe base64-encoded bytes). "
+        "Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'",
+    )
     token_expire_minutes: int = Field(
         30, description="Token expiration time in minutes"
     )
@@ -41,6 +46,35 @@ class ServerSettings(BaseModel):
     port: int = Field(8000, description="Server port")
     debug: bool = Field(False, description="Debug mode")
     allowed_origins: list[str] = Field(["*"], description="Allowed CORS origins")
+
+
+class GitHubAppSettings(BaseModel):
+    """GitHub App OAuth configuration (SaaS only).
+
+    These settings are required for GitHub App OAuth integration.
+    When configured, enables "Connect with GitHub" flow for tracker creation.
+    """
+
+    app_id: str = Field("", description="GitHub App ID")
+    client_id: str = Field("", description="GitHub App Client ID")
+    client_secret: str = Field("", description="GitHub App Client Secret")
+    private_key: str = Field(
+        "", description="GitHub App Private Key (PEM format, base64 encoded)"
+    )
+    webhook_secret: str = Field(
+        "", description="GitHub App Webhook Secret for signature verification"
+    )
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if GitHub App is fully configured."""
+        return bool(
+            self.app_id
+            and self.client_id
+            and self.client_secret
+            and self.private_key
+            and self.webhook_secret
+        )
 
 
 class Settings(BaseSettings):
@@ -71,6 +105,10 @@ class Settings(BaseSettings):
     database: DatabaseSettings
     security: SecuritySettings
     server: ServerSettings
+    github_app: GitHubAppSettings = Field(
+        default_factory=GitHubAppSettings,
+        description="GitHub App OAuth settings (SaaS only)",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -85,6 +123,16 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = Field(
         "",
         description="Stripe webhook secret",
+    )
+
+    # Notification webhooks for admin alerts
+    slack_webhook_url: str = Field(
+        "",
+        description="Slack webhook URL for admin notifications",
+    )
+    mattermost_webhook_url: str = Field(
+        "",
+        description="Mattermost webhook URL for admin notifications",
     )
 
     @classmethod
@@ -117,6 +165,7 @@ class Settings(BaseSettings):
         # Create security settings
         security = SecuritySettings(
             secret_key=secret_key,
+            encryption_key=os.getenv("SECURITY__ENCRYPTION_KEY", ""),
             token_expire_minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")),
             algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
         )
@@ -144,6 +193,15 @@ class Settings(BaseSettings):
             "yes",
         )
 
+        # GitHub App OAuth settings (SaaS only)
+        github_app = GitHubAppSettings(
+            app_id=os.getenv("GITHUB_APP_ID", ""),
+            client_id=os.getenv("GITHUB_APP_CLIENT_ID", ""),
+            client_secret=os.getenv("GITHUB_APP_CLIENT_SECRET", ""),
+            private_key=os.getenv("GITHUB_APP_PRIVATE_KEY", ""),
+            webhook_secret=os.getenv("GITHUB_APP_WEBHOOK_SECRET", ""),
+        )
+
         return cls(
             app_name=os.getenv("APP_NAME", "Preloop"),
             environment=os.getenv("ENVIRONMENT", "development"),
@@ -155,6 +213,7 @@ class Settings(BaseSettings):
             database=database,
             security=security,
             server=server,
+            github_app=github_app,
             stripe_secret_key=stripe_secret_key,
             stripe_webhook_secret=stripe_webhook_secret,
         )

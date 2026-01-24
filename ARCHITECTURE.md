@@ -613,7 +613,7 @@ graph TD
 
 *   **Flow Definition (`Flows`):**
     *   Stored in `preloop-models`.
-    *   Details the triggering event, prompt template, selected `AIModel` ID, agent type (e.g., "openhands", "claude-code", "aider"), agent configuration (e.g., specific agent parameters), and a list of allowed MCP servers and specific tools.
+    *   Details the triggering event, prompt template, selected `AIModel` ID, agent type (e.g., "codex", "gemini", "openhands", "aider"), agent configuration (e.g., specific agent parameters), and a list of allowed MCP servers and specific tools.
     *   Presets are implemented as special, non-editable (or cloneable) records in this table.
 *   **AI Model (`AIModel`):**
     *   Stored in `preloop-models`.
@@ -643,16 +643,18 @@ graph TD
     *   **Production Mode (Container-based):** All agents run in isolated containers (Docker or Kubernetes) for security, isolation, and scalability. Each Flow execution spawns a new container regardless of agent type.
     *   **Development Mode (Optional):** For local development only, CLI-based agents can be run as processes to simplify testing and iteration.
     *   Provides an abstraction layer for different agent types:
+        *   **Codex CLI**
+        *   **Gemini CLI**
         *   **OpenHands**: Container with the OpenHands library and runtime dependencies
-        *   **Claude Code**: Container with `claude-code` CLI pre-installed
         *   **Aider**: Container with `aider` CLI and dependencies pre-installed
-        *   **Future**: Other agent frameworks as containers
+
     *   The Flow Execution Orchestrator interacts with this infrastructure to start, monitor, and terminate agent sessions.
 *   **Agent (running in a container):**
     *   The core agentic execution environment running in an isolated container (or process in dev mode).
     *   Supported agent types:
+        *   **Codex CLI**
+        *   **Gemini CLI**
         *   **OpenHands**: Library-based agent (default implementation)
-        *   **Claude Code**: CLI-based agent using `claude-code` command
         *   **Aider**: CLI-based agent using `aider` command
         *   **Other agents**: Extensible to support additional agent frameworks
     *   Receives the resolved prompt, AI model configuration, and allowed MCP toolset from the Flow Execution Orchestrator.
@@ -805,7 +807,7 @@ graph TD
 
 ### 6. Agent Integration - Key Aspects
 
-*   **Agent Type Selection:** The `Flow.agent_type` field specifies which agent implementation to use (e.g., 'openhands', 'claude-code', 'aider'). The Agent Execution Infrastructure uses this to determine how to start and manage the agent session.
+*   **Agent Type Selection:** The `Flow.agent_type` field specifies which agent implementation to use (e.g., 'codex', 'gemini', 'openhands', 'aider'). The Agent Execution Infrastructure uses this to determine how to start and manage the agent session.
 *   **Agent Configuration:** The `Flow.agent_config` field stores JSON with agent-specific configuration:
     *   **OpenHands**: `{"agent_type": "CodeActAgent", "max_iterations": 10}`
     *   **Claude Code**: `{"model": "claude-3-5-sonnet", "max_tokens": 4096}`

@@ -104,12 +104,28 @@ async def register_tracker(
         api_key = data.get("api_key")
         config = data.get("config")
         scope_rules_data = data.get("scope_rules") or []
+        auth_type = data.get("auth_type", "api_token")
+        github_installation_id = data.get("github_installation_id")
 
-        # Validate required fields
-        if not name or not tracker_type_str or not api_key:
+        # Validate required fields based on auth type
+        if not name or not tracker_type_str:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required fields: name, type, api_key",
+                detail="Missing required fields: name, type",
+            )
+
+        # For github_app auth, api_key is not required
+        if auth_type == "api_token" and not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required field: api_key (required for API token authentication)",
+            )
+
+        # For OAuth auth types, github_installation_id is required
+        if auth_type in ("github_app", "oauth_app") and not github_installation_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required field: github_installation_id (required for OAuth authentication)",
             )
     except Exception as e:
         logger.error(f"Error parsing request data: {str(e)}")
@@ -135,17 +151,66 @@ async def register_tracker(
         )
 
     # Create a tracker client to test the connection
+    # For github_app auth, we need to resolve the installation_id to the actual GitHub installation ID
+    resolved_github_installation_id = None
+    permission_warnings = []
+    installation = None  # Will be set for OAuth auth types
+
     try:
-        # Create the client
-        client = await create_tracker_client(
-            tracker_type=tracker_type.value,
-            tracker_id="test-connection",
-            api_key=api_key,
-            connection_details={
-                "url": str(url_str) if url_str else None,
-                **(config or {}),
-            },
-        )
+        if auth_type in ("github_app", "oauth_app"):
+            # OAuth auth types are only supported for GitHub trackers
+            if tracker_type != TrackerType.GITHUB:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"OAuth authentication is only supported for GitHub trackers, not {tracker_type.value}",
+                )
+
+            # Look up the OAuth App installation to get the actual installation ID
+            from preloop.models.models.github_app_installation import (
+                OAuthAppInstallation,
+            )
+
+            installation = (
+                db.query(OAuthAppInstallation)
+                .filter(
+                    OAuthAppInstallation.external_id == github_installation_id,
+                    OAuthAppInstallation.account_id == current_user.account_id,
+                )
+                .first()
+            )
+
+            if not installation:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="OAuth App installation not found",
+                )
+
+            resolved_github_installation_id = installation.external_id
+
+            # For github_app auth, create client with installation token support
+            from preloop.sync.trackers.github import GitHubTracker
+
+            client = GitHubTracker(
+                tracker_id="test-connection",
+                api_key="",  # Not needed for github_app auth
+                connection_details={
+                    "url": str(url_str) if url_str else None,
+                    **(config or {}),
+                },
+                auth_type="github_app",
+                github_installation_id=resolved_github_installation_id,
+            )
+        else:
+            # Create the client for api_token auth
+            client = await create_tracker_client(
+                tracker_type=tracker_type.value,
+                tracker_id="test-connection",
+                api_key=api_key,
+                connection_details={
+                    "url": str(url_str) if url_str else None,
+                    **(config or {}),
+                },
+            )
 
         # Test the connection
         connection_result = await client.test_connection()
@@ -156,10 +221,11 @@ async def register_tracker(
                 detail=f"Failed to connect to tracker: {connection_result.message}",
             )
 
-        # For GitHub trackers, validate token permissions and warn about missing scopes
-        permission_warnings = []
-        if tracker_type == TrackerType.GITHUB and hasattr(
-            client, "validate_token_permissions"
+        # For GitHub trackers with api_token auth, validate token permissions and warn about missing scopes
+        if (
+            tracker_type == TrackerType.GITHUB
+            and auth_type == "api_token"
+            and hasattr(client, "validate_token_permissions")
         ):
             # Extract organization identifiers from scope rules to check admin access
             org_identifiers = []
@@ -260,16 +326,24 @@ async def register_tracker(
                 rule["rule_type"] = rule["rule_type"].value
             scope_rules.append(TrackerScopeRule(**rule))
 
+        # For OAuth auth types, use the internal installation UUID
+        # (installation is looked up earlier in the flow)
+        oauth_installation_uuid = None
+        if auth_type in ("github_app", "oauth_app") and installation:
+            oauth_installation_uuid = installation.id
+
         new_tracker = Tracker(
             name=name,
             tracker_type=tracker_type.value,
             url=str(url_str) if url_str else None,
-            api_key=api_key,
+            api_key=api_key or "",  # Empty string for github_app auth
             connection_details=config or {},
             account_id=account.id,
             is_active=True,
             meta_data={},
             scope_rules=scope_rules,
+            auth_type=auth_type,
+            oauth_installation_id=oauth_installation_uuid,
         )
 
         db.add(new_tracker)

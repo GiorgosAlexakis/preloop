@@ -33,10 +33,37 @@ async def poll_tracker(tracker_id: int, since=None, force_update=False):
 def notify_admins(subject: str, message: str, message_html: str = None):
     from preloop.utils.email import send_email  # noqa: E402
     from preloop.config import settings  # noqa: E402
+    import requests
 
     logger.info(f"Notifying admins: {subject} - {message}")
+
+    # Send email notification
     admin_email = settings.product_team_email
     send_email(admin_email, subject, message, message_html)
+
+    # Send Slack notification if webhook is configured
+    slack_webhook = settings.slack_webhook_url
+    if slack_webhook:
+        try:
+            slack_payload = {"text": f"*{subject}*\n{message}"}
+            response = requests.post(slack_webhook, json=slack_payload, timeout=5)
+            response.raise_for_status()
+            logger.info("Slack notification sent successfully")
+        except Exception as e:
+            logger.error(f"Failed to send Slack notification: {e}")
+
+    # Send Mattermost notification if webhook is configured
+    mattermost_webhook = settings.mattermost_webhook_url
+    if mattermost_webhook:
+        try:
+            mattermost_payload = {"text": f"**{subject}**\n{message}"}
+            response = requests.post(
+                mattermost_webhook, json=mattermost_payload, timeout=5
+            )
+            response.raise_for_status()
+            logger.info("Mattermost notification sent successfully")
+        except Exception as e:
+            logger.error(f"Failed to send Mattermost notification: {e}")
 
 
 def serialize_uuids(obj):

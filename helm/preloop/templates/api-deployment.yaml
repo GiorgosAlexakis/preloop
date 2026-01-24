@@ -57,6 +57,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "preloop.fullname" . }}
                   key: jwt-secret
+            {{- if .Values.security.encryptionKey }}
+            - name: SECURITY__ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: encryption-key
+            {{- end }}
             - name: JWT_ALGORITHM
               value: {{ .Values.environment.jwtAlgorithm | quote }}
             - name: JWT_EXPIRE_MINUTES
@@ -123,12 +130,45 @@ spec:
             - name: APNS_USE_SANDBOX
               value: {{ .Values.apns.useSandbox | quote }}
             {{- end }}
+            {{- if .Values.notifications.productTeamEmail }}
+            - name: PRODUCT_TEAM_EMAIL
+              value: {{ .Values.notifications.productTeamEmail | quote }}
+            {{- end }}
+            {{- if .Values.notifications.slackWebhookUrl }}
+            - name: SLACK_WEBHOOK_URL
+              value: {{ .Values.notifications.slackWebhookUrl | quote }}
+            {{- end }}
+            {{- if .Values.notifications.mattermostWebhookUrl }}
+            - name: MATTERMOST_WEBHOOK_URL
+              value: {{ .Values.notifications.mattermostWebhookUrl | quote }}
+            {{- end }}
             {{- if .Values.fcm.enabled }}
             - name: FCM_CREDENTIALS_JSON
               valueFrom:
                 secretKeyRef:
                   name: {{ include "preloop.fullname" . }}
                   key: fcm-credentials-json
+            {{- end }}
+            {{- if .Values.githubApp.enabled }}
+            - name: GITHUB_APP_ID
+              value: {{ .Values.githubApp.appId | quote }}
+            - name: GITHUB_APP_CLIENT_ID
+              value: {{ .Values.githubApp.clientId | quote }}
+            - name: GITHUB_APP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-client-secret
+            - name: GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-private-key
+            - name: GITHUB_APP_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-webhook-secret
             {{- end }}
           ports:
             - name: http

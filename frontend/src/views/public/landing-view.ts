@@ -45,6 +45,17 @@ export class LandingView extends LitElement {
   @state() private _extendedDescription = '';
   @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
   @state() private _billingEnabled = false;
+  @state() private _productHunt: {
+    enabled: boolean;
+    post_id: string;
+    theme: string;
+  } | null = null;
+  @state() private _featuredVideo: {
+    enabled: boolean;
+    title: string;
+    youtube_url: string;
+    youtube_embed: string;
+  } | null = null;
 
   static styles = [
     css`
@@ -273,6 +284,38 @@ export class LandingView extends LitElement {
     ) as HTMLElement | undefined;
     if (mcpSetupTitle) this._mcpSetupTitle = mcpSetupTitle.textContent || '';
 
+    // Read Product Hunt configuration from slot
+    const productHuntSlot = children.find(
+      (el) => el.getAttribute('slot') === 'product-hunt'
+    ) as HTMLElement | undefined;
+    if (productHuntSlot) {
+      const enabled = productHuntSlot.getAttribute('data-enabled') === 'true';
+      if (enabled) {
+        this._productHunt = {
+          enabled: true,
+          post_id: productHuntSlot.getAttribute('data-post-id') || '',
+          theme: productHuntSlot.getAttribute('data-theme') || 'light',
+        };
+      }
+    }
+
+    // Read Featured Video configuration from slot
+    const featuredVideoSlot = children.find(
+      (el) => el.getAttribute('slot') === 'featured-video'
+    ) as HTMLElement | undefined;
+    if (featuredVideoSlot) {
+      const enabled = featuredVideoSlot.getAttribute('data-enabled') === 'true';
+      if (enabled) {
+        this._featuredVideo = {
+          enabled: true,
+          title: featuredVideoSlot.getAttribute('data-title') || '',
+          youtube_url: featuredVideoSlot.getAttribute('data-youtube-url') || '',
+          youtube_embed:
+            featuredVideoSlot.getAttribute('data-youtube-embed') || '',
+        };
+      }
+    }
+
     // Hide slotted elements (they stay in light DOM for SEO but are hidden)
     children.forEach((el) => {
       const slot = el.getAttribute('slot');
@@ -285,7 +328,9 @@ export class LandingView extends LitElement {
           slot.startsWith('feature-') ||
           slot.startsWith('faq-') ||
           slot.startsWith('get-started-') ||
-          slot === 'mcp-setup-title')
+          slot === 'mcp-setup-title' ||
+          slot === 'product-hunt' ||
+          slot === 'featured-video')
       ) {
         (el as HTMLElement).style.display = 'none';
       }
@@ -309,6 +354,16 @@ export class LandingView extends LitElement {
     this._ctaSecondaryUrl = hero.cta_secondary_url || '';
     this._extendedDescription = content.extended_description || '';
     this._featuresLayout = content.features_layout || 'grid';
+
+    // Load Product Hunt configuration
+    if (content.product_hunt?.enabled) {
+      this._productHunt = content.product_hunt;
+    }
+
+    // Load featured video configuration
+    if (content.featured_video?.enabled) {
+      this._featuredVideo = content.featured_video;
+    }
 
     // Load features with safe defaults
     const features = content.features || [];
@@ -419,6 +474,26 @@ export class LandingView extends LitElement {
           <!-- <news-capsule></news-capsule> -->
           <div class="section-container hero-inner">
             <div class="hero-content">
+              ${this._productHunt?.enabled
+                ? html`
+                    <div class="product-hunt-badge">
+                      <a
+                        href="https://www.producthunt.com/products/preloop?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-preloop"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <img
+                          alt="Preloop - The MCP Governance Layer | Product Hunt"
+                          width="250"
+                          height="54"
+                          src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=${this
+                            ._productHunt.post_id}&amp;theme=${this._productHunt
+                            .theme}&amp;t=${Date.now()}"
+                        />
+                      </a>
+                    </div>
+                  `
+                : ''}
               <h1 class="fw-bold">${unsafeHTML(this._heroTitle)}</h1>
               <p class="lead">${this._heroLead}</p>
               <div class="hero-buttons">
@@ -447,6 +522,27 @@ export class LandingView extends LitElement {
               <section class="extended-description-section main-section">
                 <div class="section-container">
                   <p class="lead text-center">${this._extendedDescription}</p>
+                </div>
+              </section>
+            `
+          : ''}
+        ${this._featuredVideo?.enabled
+          ? html`
+              <section class="featured-video-section main-section">
+                <div class="section-container text-center">
+                  <h2>${this._featuredVideo.title || 'See It in Action'}</h2>
+                  <div class="featured-video-wrapper">
+                    <iframe
+                      width="560"
+                      height="315"
+                      src="${this._featuredVideo.youtube_embed}"
+                      title="YouTube video player"
+                      frameborder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      referrerpolicy="strict-origin-when-cross-origin"
+                      allowfullscreen
+                    ></iframe>
+                  </div>
                 </div>
               </section>
             `

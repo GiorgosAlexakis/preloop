@@ -20,16 +20,39 @@ export class PublicPricingView extends LitElement {
   @state() private _interval: 'month' | 'year' = 'year';
   @state() private _billingEnabled = false;
 
-  // Hardcoded plans - Teams and Enterprise only
+  // Hardcoded plans - Open Source, Teams, and Enterprise
   private _plans: Plan[] = [
+    {
+      id: 'opensource',
+      name: 'Open Source',
+      price_monthly: 0,
+      price_annually: 0,
+      features: [
+        'Self-hosted deployment',
+        'MCP proxy & tool management',
+        'Single-user approvals',
+        'Email & mobile notifications',
+        'Issue tracker integration',
+        'Vector search & duplicates',
+        'Agentic flows',
+        'Community support',
+      ],
+    },
     {
       id: 'teams',
       name: 'Teams',
       price_monthly: 29,
       price_annually: 290, // ~24/mo when billed annually
       features: [
+        'Everything in Open Source',
+        'Cloud-hosted (managed)',
+        'RBAC & team management',
+        'CEL conditional approvals',
+        'Team-based approvals (quorum)',
+        'Approval escalation',
+        'Slack & Mattermost notifications',
+        'Audit logging',
         '30-day free trial',
-        'No credit card required',
         'Email support',
       ],
     },
@@ -39,13 +62,11 @@ export class PublicPricingView extends LitElement {
       price_monthly: null,
       price_annually: null,
       features: [
-        'Model/provider limits & controls',
-        'Comprehensive audit logs',
+        'Everything in Teams',
+        'Self-hosted deployment option',
         'SSO, OIDC, SCIM support',
         'SLA commitments',
         'Dedicated support channels',
-        'Custom integrations & flow presets',
-        'On-premise deployment options',
         'Priority feature requests',
       ],
     },
@@ -71,6 +92,11 @@ export class PublicPricingView extends LitElement {
   }
 
   private async _handleSignUp(planId: string) {
+    if (planId === 'opensource') {
+      window.open('https://github.com/preloop/preloop', '_blank');
+      return;
+    }
+
     if (planId === 'enterprise') {
       window.location.href = '/request-demo';
       return;
@@ -158,7 +184,7 @@ export class PublicPricingView extends LitElement {
 
       .pricing-table th,
       .pricing-table td {
-        width: 25%;
+        width: 33.33%;
       }
 
       .pricing-table th {
@@ -390,7 +416,9 @@ export class PublicPricingView extends LitElement {
                   >
                     ${plan.id === 'enterprise'
                       ? 'Contact Sales'
-                      : 'Start Free Trial'}
+                      : plan.id === 'opensource'
+                        ? 'View on GitHub'
+                        : 'Start Free Trial'}
                   </sl-button>
                 </td>
               `

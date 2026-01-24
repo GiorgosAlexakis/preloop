@@ -309,11 +309,13 @@ export class PricingCard extends LitElement {
         >
           ${this.plan.id === 'enterprise'
             ? 'Contact Sales'
-            : this.plan.id === 'free'
-              ? 'Get Free'
-              : this.plan.id === 'teams'
-                ? 'Start Free Trial'
-                : `Get ${this.plan.name}`}
+            : this.plan.id === 'opensource'
+              ? 'View on GitHub'
+              : this.plan.id === 'free'
+                ? 'Get Free'
+                : this.plan.id === 'teams'
+                  ? 'Start Free Trial'
+                  : `Get ${this.plan.name}`}
         </sl-button>
       </div>
     `;
