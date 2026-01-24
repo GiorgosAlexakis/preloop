@@ -539,6 +539,8 @@ async def test_mcp_get_pull_request_success(db_session: Session, test_user: User
             }
         )
         mock_tracker.get_pull_request = mock_tracker.client.get_pull_request
+        # Mock get_pull_request_comments as it's called when include_comments=True (default)
+        mock_tracker.get_pull_request_comments = AsyncMock(return_value=[])
         mock_get_tracker.return_value = mock_tracker
 
         response = await mcp.get_pull_request(pull_request="owner/repo#123")
@@ -690,7 +692,8 @@ async def test_mcp_update_pull_request_success(db_session: Session, test_user: U
 
     assert response.status == "updated"
     assert response.pull_request_id == "pr-123"
-    assert "Successfully updated pull request" in response.message
+    assert "Successfully performed" in response.message
+    assert "metadata update" in response.message
 
 
 @pytest.mark.asyncio

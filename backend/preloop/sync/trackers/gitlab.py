@@ -1596,3 +1596,336 @@ class GitLabTracker(BaseTracker):
         except Exception as e:
             logger.error(f"Error updating merge request {mr_iid}: {e}")
             raise TrackerResponseError(f"Failed to update merge request: {e}")
+
+    async def approve_merge_request(self, mr_iid: str) -> Dict[str, Any]:
+        """
+        Approve a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+
+        Returns:
+            Dict with approval details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Approve the merge request
+            approval = await self._make_request(mr.approve)
+
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "approved": True,
+                "approval_details": approval if approval else {},
+            }
+
+        except Exception as e:
+            logger.error(f"Error approving merge request {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to approve merge request: {e}")
+
+    async def unapprove_merge_request(self, mr_iid: str) -> Dict[str, Any]:
+        """
+        Remove approval from a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+
+        Returns:
+            Dict with unapproval confirmation.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Unapprove the merge request
+            await self._make_request(mr.unapprove)
+
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "approved": False,
+            }
+
+        except Exception as e:
+            logger.error(f"Error unapproving merge request {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to unapprove merge request: {e}")
+
+    async def get_mr_discussions(
+        self, mr_iid: str, filter_author: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all discussions on a merge request, optionally filtered by author.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            filter_author: Optional username to filter discussions by.
+
+        Returns:
+            List of discussion dicts with id, author, body, notes, resolved status.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get all discussions
+            discussions = await self._make_request(mr.discussions.list, all=True)
+
+            result = []
+            for discussion in discussions:
+                discussion_data = {
+                    "id": discussion.id,
+                    "individual_note": getattr(discussion, "individual_note", False),
+                    "notes": [],
+                }
+
+                # Get notes from discussion
+                notes = getattr(discussion, "notes", [])
+                for note in notes:
+                    note_author = None
+                    if isinstance(note, dict):
+                        note_author = note.get("author", {}).get("username")
+                        note_data = {
+                            "id": note.get("id"),
+                            "author": note_author,
+                            "body": note.get("body", ""),
+                            "created_at": note.get("created_at"),
+                            "updated_at": note.get("updated_at"),
+                            "resolvable": note.get("resolvable", False),
+                            "resolved": note.get("resolved", False),
+                            "system": note.get("system", False),
+                        }
+                    else:
+                        note_author = (
+                            note.author.get("username")
+                            if hasattr(note, "author") and isinstance(note.author, dict)
+                            else None
+                        )
+                        note_data = {
+                            "id": getattr(note, "id", None),
+                            "author": note_author,
+                            "body": getattr(note, "body", ""),
+                            "created_at": getattr(note, "created_at", None),
+                            "updated_at": getattr(note, "updated_at", None),
+                            "resolvable": getattr(note, "resolvable", False),
+                            "resolved": getattr(note, "resolved", False),
+                            "system": getattr(note, "system", False),
+                        }
+                    discussion_data["notes"].append(note_data)
+
+                # Apply author filter if specified
+                if filter_author:
+                    discussion_data["notes"] = [
+                        n
+                        for n in discussion_data["notes"]
+                        if n.get("author") == filter_author
+                    ]
+                    # Only include discussion if it has matching notes
+                    if not discussion_data["notes"]:
+                        continue
+
+                result.append(discussion_data)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting MR discussions for {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to get MR discussions: {e}")
+
+    async def update_mr_note(
+        self, mr_iid: str, note_id: str, body: str
+    ) -> Dict[str, Any]:
+        """
+        Update the body of an existing MR note.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            note_id: The note ID to update.
+            body: New note body.
+
+        Returns:
+            Dict with updated note details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get the note
+            note = await self._make_request(mr.notes.get, note_id)
+
+            # Update the note body
+            note.body = body
+            await self._make_request(note.save)
+
+            return {
+                "id": str(note.id),
+                "body": note.body,
+                "author": note.author.get("username")
+                if hasattr(note, "author") and isinstance(note.author, dict)
+                else None,
+                "updated_at": getattr(note, "updated_at", None),
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating MR note {note_id} for MR {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to update MR note: {e}")
+
+    async def resolve_mr_discussion(
+        self, mr_iid: str, discussion_id: str, resolved: bool
+    ) -> Dict[str, Any]:
+        """
+        Resolve or unresolve a discussion thread on a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            discussion_id: The discussion ID.
+            resolved: True to resolve, False to unresolve.
+
+        Returns:
+            Dict with discussion resolution status.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get the discussion
+            discussion = await self._make_request(mr.discussions.get, discussion_id)
+
+            # Update resolved status
+            discussion.resolved = resolved
+            await self._make_request(discussion.save)
+
+            return {
+                "id": discussion.id,
+                "resolved": resolved,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error resolving MR discussion {discussion_id} for MR {mr_iid}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to resolve MR discussion: {e}")
+
+    async def create_mr_discussion(
+        self, mr_iid: str, body: str, position: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new discussion on a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            body: Discussion comment body.
+            position: Optional position dict for diff comments with:
+                - base_sha, start_sha, head_sha: Commit SHAs
+                - position_type: "text" for diff comments
+                - new_path: File path in new version
+                - new_line: Line number in new version
+                - old_path: File path in old version (optional)
+                - old_line: Line number in old version (optional)
+
+        Returns:
+            Dict with created discussion details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Build discussion data
+            discussion_data: Dict[str, Any] = {"body": body}
+
+            # Add position if provided (for diff comments)
+            if position:
+                discussion_data["position"] = {
+                    "base_sha": position.get("base_sha"),
+                    "start_sha": position.get("start_sha"),
+                    "head_sha": position.get("head_sha"),
+                    "position_type": position.get("position_type", "text"),
+                    "new_path": position.get("new_path"),
+                    "new_line": position.get("new_line"),
+                }
+                # Add optional old path/line if provided
+                if position.get("old_path"):
+                    discussion_data["position"]["old_path"] = position["old_path"]
+                if position.get("old_line"):
+                    discussion_data["position"]["old_line"] = position["old_line"]
+
+            # Create the discussion
+            discussion = await self._make_request(
+                mr.discussions.create, discussion_data
+            )
+
+            # Build response
+            notes = getattr(discussion, "notes", [])
+            first_note = notes[0] if notes else {}
+
+            return {
+                "id": discussion.id,
+                "individual_note": getattr(discussion, "individual_note", False),
+                "notes": [
+                    {
+                        "id": first_note.get("id")
+                        if isinstance(first_note, dict)
+                        else getattr(first_note, "id", None),
+                        "body": first_note.get("body")
+                        if isinstance(first_note, dict)
+                        else getattr(first_note, "body", body),
+                        "author": (
+                            first_note.get("author", {}).get("username")
+                            if isinstance(first_note, dict)
+                            else (
+                                first_note.author.get("username")
+                                if hasattr(first_note, "author")
+                                and isinstance(first_note.author, dict)
+                                else None
+                            )
+                        ),
+                    }
+                ],
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating MR discussion for MR {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to create MR discussion: {e}")

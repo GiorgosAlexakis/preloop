@@ -276,4 +276,28 @@ class UpdateMergeRequestResponse(BaseModel):
         return str(value) if isinstance(value, UUID) else value
 
 
+class UpdateCommentRequest(BaseModel):
+    """Request body for the update_comment tool."""
+
+    target: str  # PR/MR identifier (URL, slug, or number)
+    comment_id: str  # Comment/note ID to update
+    body: Optional[str] = None  # New comment body
+    resolved: Optional[bool] = None  # Whether to resolve/unresolve the thread
+
+
+class UpdateCommentResponse(BaseModel):
+    """Response for the update_comment tool."""
+
+    comment_id: str
+    status: str  # e.g., "updated"
+    message: str
+    url: Optional[str] = None
+
+    @field_validator("comment_id", mode="before")
+    @classmethod
+    def validate_comment_id(cls, value: UUID | str) -> str:
+        """Convert UUID to string for validation."""
+        return str(value) if isinstance(value, UUID) else value
+
+
 # Schemas for other tools will be added here.
