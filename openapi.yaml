@@ -134,9 +134,9 @@ paths:
       - Auth
       summary: Login Form
       description: "Login to get an access token using form data (required for OAuth2\
-        \ flow).\n\nArgs:\n    form_data: OAuth2 password request form.\n\nReturns:\n\
-        \    Access token.\n\nRaises:\n    HTTPException: If the username or password\
-        \ is incorrect."
+        \ flow).\n\nArgs:\n    request: The incoming request object.\n    form_data:\
+        \ OAuth2 password request form.\n\nReturns:\n    Access token.\n\nRaises:\n\
+        \    HTTPException: If the username or password is incorrect."
       operationId: login_form_api_v1_auth_token_post
       requestBody:
         content:
@@ -162,9 +162,10 @@ paths:
       tags:
       - Auth
       summary: Login Json
-      description: "Login to get an access token using JSON data.\n\nArgs:\n    request:\
-        \ Login request with username and password.\n\nReturns:\n    Access token.\n\
-        \nRaises:\n    HTTPException: If the username or password is incorrect."
+      description: "Login to get an access token using JSON data.\n\nArgs:\n    http_request:\
+        \ The incoming HTTP request object.\n    request: Login request with username\
+        \ and password.\n\nReturns:\n    Access token.\n\nRaises:\n    HTTPException:\
+        \ If the username or password is incorrect."
       operationId: login_json_api_v1_auth_token_json_post
       requestBody:
         content:

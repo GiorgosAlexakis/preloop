@@ -50,11 +50,9 @@ from preloop.utils import get_client_ip
 from preloop.utils.email import (
     send_password_reset_email,
     send_product_notification_email,
-    send_verification_email,
 )
 from preloop.utils.tokens import (
     TokenError,
-    create_email_verification_token,
     create_password_reset_token,
     verify_token,
 )
@@ -70,11 +68,10 @@ from preloop.models.db.session import get_db_session
 from preloop.models.models.user import User as UserModel
 from preloop.models.models.api_key import ApiKey
 from pydantic import BaseModel
-from preloop.services.flow_presets_service import (
-    create_default_presets_for_account_background,
-)
-from preloop.services.approval_policy_service import (
-    create_default_approval_policy_background,
+from preloop.services.account_setup_service import (
+    complete_new_account_setup_background,
+    notify_admins_user_login_after_inactivity,
+    should_notify_on_login,
 )
 
 
@@ -211,37 +208,24 @@ async def register(
             session.refresh(new_account)
             logger.info("[REGISTER] Objects refreshed")
 
-            # Generate email verification token
-            logger.info("[REGISTER] Generating email verification token")
-            token = create_email_verification_token(user_data.email)
-            logger.info("[REGISTER] Token generated")
-
-            # Send verification email as a background task
-            logger.info("[REGISTER] Scheduling verification email")
+            # Schedule all post-account-creation tasks (verification email,
+            # default approval policy, admin notifications)
+            logger.info("[REGISTER] Scheduling account setup tasks")
             background_tasks.add_task(
-                send_verification_email, user_email=user_data.email, token=token
-            )
-            logger.info("[REGISTER] Verification email scheduled")
-
-            # Create default flow presets for the new account
-            logger.info("[REGISTER] Scheduling flow presets creation")
-            background_tasks.add_task(
-                create_default_presets_for_account_background,
-                account_id=new_account.id,
-            )
-            logger.info("[REGISTER] Flow presets creation scheduled")
-
-            # Create default approval policy for the new account
-            # In single-user mode, set the new user as the approver
-            logger.info("[REGISTER] Scheduling default approval policy creation")
-            background_tasks.add_task(
-                create_default_approval_policy_background,
+                complete_new_account_setup_background,
                 account_id=new_account.id,
                 user_id=new_user.id,
+                user_email=new_user.email,
+                username=new_user.username,
+                full_name=new_user.full_name,
+                organization_name=new_account.organization_name,
+                signup_source="standard",
+                source_ip=get_client_ip(request),
+                send_verification=True,
             )
-            logger.info("[REGISTER] Default approval policy creation scheduled")
+            logger.info("[REGISTER] Account setup tasks scheduled")
 
-            # Send product notification email
+            # Send product notification email (for analytics/CRM integration)
             logger.info("[REGISTER] Sending product notification email")
             try:
                 user_info_for_email = {
@@ -453,11 +437,13 @@ async def reset_password(reset_data: PasswordResetConfirmRequest) -> Dict[str, s
 
 @router.post("/token", response_model=Token)
 async def login_form(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> Dict[str, str]:
     """Login to get an access token using form data (required for OAuth2 flow).
 
     Args:
+        request: The incoming request object.
         form_data: OAuth2 password request form.
 
     Returns:
@@ -466,7 +452,9 @@ async def login_form(
     Raises:
         HTTPException: If the username or password is incorrect.
     """
-    user = await authenticate_user(form_data.username, form_data.password)
+    user = await authenticate_user(
+        form_data.username, form_data.password, source_ip=get_client_ip(request)
+    )
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -497,10 +485,11 @@ async def login_form(
 
 
 @router.post("/token/json", response_model=Token)
-async def login_json(request: LoginRequest) -> Dict[str, str]:
+async def login_json(http_request: Request, request: LoginRequest) -> Dict[str, str]:
     """Login to get an access token using JSON data.
 
     Args:
+        http_request: The incoming HTTP request object.
         request: Login request with username and password.
 
     Returns:
@@ -509,7 +498,9 @@ async def login_json(request: LoginRequest) -> Dict[str, str]:
     Raises:
         HTTPException: If the username or password is incorrect.
     """
-    user = await authenticate_user(request.username, request.password)
+    user = await authenticate_user(
+        request.username, request.password, source_ip=get_client_ip(http_request)
+    )
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -985,17 +976,21 @@ async def get_api_usage(
             pass
 
 
-async def authenticate_user(username: str, password: str) -> Optional[UserModel]:
+async def authenticate_user(
+    username: str, password: str, source_ip: Optional[str] = None
+) -> Optional[UserModel]:
     """Authenticate a user.
 
     Args:
         username: The username.
         password: The password.
+        source_ip: The IP address of the login request (optional).
 
     Returns:
         The user if authentication is successful, None otherwise.
     """
     from datetime import datetime, timezone
+    import threading
 
     session_generator = get_db_session()
     session = next(session_generator)
@@ -1013,10 +1008,31 @@ async def authenticate_user(username: str, password: str) -> Optional[UserModel]
         if not user.is_active:
             return None
 
+        # Capture old last_login before updating (for inactivity notification)
+        old_last_login = user.last_login
+
         # Update last_login timestamp
         user.last_login = datetime.now(timezone.utc)
         session.commit()
         session.refresh(user)
+
+        # Check if we should notify admins about login after inactivity
+        if should_notify_on_login(old_last_login, days_threshold=7):
+            # Run notification in background thread to avoid blocking login
+            def send_login_notification():
+                try:
+                    notify_admins_user_login_after_inactivity(
+                        username=user.username,
+                        email=user.email,
+                        last_login=old_last_login,
+                        source_ip=source_ip,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send login notification: {e}")
+
+            thread = threading.Thread(target=send_login_notification)
+            thread.daemon = True
+            thread.start()
 
         return user
     finally:
