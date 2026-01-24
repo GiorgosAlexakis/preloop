@@ -76,6 +76,7 @@ class AuthUserResponse(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     email_verified: bool
+    is_superuser: bool = False
 
 
 class LoginRequest(BaseModel):

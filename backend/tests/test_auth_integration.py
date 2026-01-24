@@ -44,10 +44,7 @@ class TestRegistrationWithOwnerRole:
         app.dependency_overrides[get_db_session] = override_get_db
 
         with TestClient(app) as client:
-            with (
-                patch("preloop.api.auth.router.send_verification_email"),
-                patch("preloop.api.auth.router.send_product_notification_email"),
-            ):
+            with patch("preloop.api.auth.router.complete_new_account_setup_background"):
                 # Register a new user
                 response = client.post(
                     "/api/v1/auth/register",
@@ -260,10 +257,7 @@ class TestPermissionEnforcement:
         app.dependency_overrides[get_db_session] = lambda: db_session
 
         with TestClient(app) as client:
-            with (
-                patch("preloop.api.auth.router.send_verification_email"),
-                patch("preloop.api.auth.router.send_product_notification_email"),
-            ):
+            with patch("preloop.api.auth.router.complete_new_account_setup_background"):
                 # Register user
                 response = client.post(
                     "/api/v1/auth/register",
