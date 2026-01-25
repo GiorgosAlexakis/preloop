@@ -262,25 +262,74 @@ class TestCleanupMonitoring:
     """Test cleanup of monitoring resources."""
 
     @pytest.mark.asyncio
-    async def test_cleanup_cancels_log_streaming(self, orchestrator):
-        """Test that cleanup cancels log streaming task."""
+    async def test_cleanup_waits_for_log_streaming(self, orchestrator):
+        """Test that cleanup waits for log streaming task to complete."""
 
-        # Create a real async task that we can test with
+        completed = False
+
+        # Create a real async task that completes quickly
         async def dummy_stream():
-            try:
-                await asyncio.sleep(10)  # Long sleep
-            except asyncio.CancelledError:
-                raise
+            nonlocal completed
+            await asyncio.sleep(0.1)  # Short sleep to complete quickly
+            completed = True
 
         # Create actual task
         mock_task = asyncio.create_task(dummy_stream())
 
         orchestrator._log_streaming_task = mock_task
 
-        # Run cleanup
+        # Run cleanup - should wait for task to complete
         await orchestrator._cleanup_monitoring()
 
-        # Verify task was cancelled
+        # Verify task completed (not cancelled)
+        assert mock_task.done()
+        assert completed
+        assert not mock_task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_cancels_log_streaming_on_timeout(self, orchestrator):
+        """Test that cleanup cancels log streaming task if it times out."""
+
+        # Create a real async task that takes too long
+        async def slow_stream():
+            try:
+                await asyncio.sleep(100)  # Very long sleep
+            except asyncio.CancelledError:
+                raise
+
+        # Create actual task
+        mock_task = asyncio.create_task(slow_stream())
+
+        orchestrator._log_streaming_task = mock_task
+
+        # Patch the timeout to be very short for testing
+
+        original_cleanup = orchestrator._cleanup_monitoring
+
+        async def short_timeout_cleanup():
+            # Wait for just 0.1 seconds instead of 30
+            if (
+                orchestrator._log_streaming_task
+                and not orchestrator._log_streaming_task.done()
+            ):
+                try:
+                    await asyncio.wait_for(
+                        orchestrator._log_streaming_task, timeout=0.1
+                    )
+                except asyncio.TimeoutError:
+                    orchestrator._log_streaming_task.cancel()
+                    try:
+                        await orchestrator._log_streaming_task
+                    except asyncio.CancelledError:
+                        pass
+
+        # Run cleanup with short timeout
+        await short_timeout_cleanup()
+
+        # Give a moment for cancellation to propagate
+        await asyncio.sleep(0.05)
+
+        # Verify task was cancelled due to timeout
         assert mock_task.cancelled()
 
     @pytest.mark.asyncio

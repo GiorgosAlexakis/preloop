@@ -159,9 +159,19 @@ class CRUDFlow(CRUDBase[models.Flow]):
     ) -> List[models.Flow]:
         """
         Retrieve flows that match a specific trigger event.
+
+        Matching rules:
+        - trigger_event_source: Must match exactly, OR be null (meaning "any source")
+        - trigger_event_type: Must match exactly
         """
+        from sqlalchemy import or_
+
         query = db.query(self.model).filter(
-            self.model.trigger_event_source == event_source,
+            # Source matches exactly OR flow accepts any source (null)
+            or_(
+                self.model.trigger_event_source == event_source,
+                self.model.trigger_event_source.is_(None),
+            ),
             self.model.trigger_event_type == event_type,
         )
         if account_id:

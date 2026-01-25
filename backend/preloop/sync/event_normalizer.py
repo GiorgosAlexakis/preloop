@@ -107,6 +107,14 @@ def normalize_event_type(
                         normalized = "issue_closed"
                     elif action == "reopened":
                         normalized = "issue_reopened"
+                    elif action == "labeled":
+                        normalized = "issue_labeled"
+                    elif action == "unlabeled":
+                        normalized = "issue_unlabeled"
+                    elif action == "assigned":
+                        normalized = "issue_assigned"
+                    elif action == "unassigned":
+                        normalized = "issue_unassigned"
                 elif normalized == "pull_request_opened":
                     if action == "opened":
                         pass  # Keep as pull_request_opened
