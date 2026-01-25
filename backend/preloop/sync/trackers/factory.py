@@ -24,13 +24,45 @@ async def create_tracker_client(
         tracker_id: ID of the tracker in the database (UUID string).
         api_key: API key or token for the tracker.
         connection_details: Connection details for the tracker.
+            For GitHub App OAuth, include:
+            - auth_type: "github_app" or "oauth_app"
+            - github_installation_id: The GitHub App installation ID
 
     Returns:
         A tracker client or None if the tracker type is not supported.
     """
     try:
         if tracker_type == "github":
-            return GitHubTracker(tracker_id, api_key, connection_details)
+            # Check if this is a GitHub App OAuth tracker
+            auth_type = connection_details.get("auth_type", "api_token")
+            github_installation_id = connection_details.get("github_installation_id")
+
+            # If no api_key but we have installation_id, use github_app auth
+            if not api_key and github_installation_id:
+                auth_type = "github_app"
+                logger.info(
+                    f"Creating GitHub tracker with GitHub App OAuth "
+                    f"(installation_id: {github_installation_id})"
+                )
+
+            # Validate: if api_token auth but no api_key, that's an error
+            if auth_type == "api_token" and not api_key:
+                logger.error(
+                    "GitHub tracker configured for api_token auth but no API key provided. "
+                    "Check tracker configuration or use GitHub App OAuth."
+                )
+                raise ValueError(
+                    "GitHub API token is required for api_token authentication. "
+                    "Configure an API token or use GitHub App OAuth."
+                )
+
+            return GitHubTracker(
+                tracker_id=tracker_id,
+                api_key=api_key or "",
+                connection_details=connection_details,
+                auth_type=auth_type,
+                github_installation_id=github_installation_id,
+            )
         elif tracker_type == "gitlab":
             return GitLabTracker(tracker_id, api_key, connection_details)
         elif tracker_type == "jira":

@@ -641,6 +641,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         pull_request: str,
         title: str | None = None,
         description: str | None = None,
+        state: str | None = None,
         labels: list[str] | None = None,
         assignees: list[str] | None = None,
         reviewers: list[str] | None = None,
@@ -650,7 +651,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         review_comments: list[dict] | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Update a pull request's metadata and/or submit a review. To update PR properties: provide title, description, labels, etc. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback."""
+        """Update a pull request's metadata and/or submit a review. To update PR properties: provide title, description, labels, state (open/closed), etc. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -668,6 +669,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "pull_request": pull_request,
                 "title": title,
                 "description": description,
+                "state": state,
                 "labels": labels,
                 "assignees": assignees,
                 "reviewers": reviewers,
@@ -686,6 +688,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             pull_request=pull_request,
             title=title,
             description=description,
+            state=state,
             labels=labels,
             assignees=assignees,
             reviewers=reviewers,

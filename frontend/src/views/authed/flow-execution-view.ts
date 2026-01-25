@@ -958,6 +958,45 @@ ${log.payload.content}</pre
       const stream = log.payload.stream || 'stdout';
       const streamClass = stream === 'stderr' ? 'log-stderr' : '';
 
+      // Check for Kubernetes status messages (pod initializing, etc.)
+      // These are JSON objects with "kind":"Status" - display a friendly message instead
+      if (content.startsWith('{"kind":"Status"')) {
+        try {
+          const statusObj = JSON.parse(content);
+          // Show a friendly message for pod initialization
+          if (
+            statusObj.reason === 'BadRequest' &&
+            statusObj.message?.includes('PodInitializing')
+          ) {
+            return html`
+              <div
+                class="log-entry log-metadata"
+                style="border-left-color: #dcdcaa;"
+              >
+                <span class="log-timestamp">${time}</span>
+                <span class="log-type log-type-warning">[Initializing]</span>
+                <span>Container is starting up, please wait...</span>
+              </div>
+            `;
+          }
+          // For other status messages, show a condensed version
+          if (statusObj.message) {
+            return html`
+              <div
+                class="log-entry log-metadata"
+                style="border-left-color: #858585;"
+              >
+                <span class="log-timestamp">${time}</span>
+                <span class="log-type">[K8s Status]</span>
+                <span>${statusObj.message}</span>
+              </div>
+            `;
+          }
+        } catch {
+          // Not valid JSON, fall through to regular display
+        }
+      }
+
       return html`
         <div class="log-entry ${streamClass}">
           <span class="log-timestamp">${time}</span>

@@ -323,6 +323,11 @@ BUILTIN_TOOLS = [
                     "type": "string",
                     "description": "New description/body",
                 },
+                "state": {
+                    "type": "string",
+                    "enum": ["open", "closed"],
+                    "description": "New state (open/closed for GitHub, close/reopen for GitLab)",
+                },
                 "labels": {
                     "type": "array",
                     "items": {"type": "string"},

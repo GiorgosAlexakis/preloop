@@ -224,6 +224,17 @@ async def get_tracker_client(
                 or project.identifier
             )
 
+    # Add auth type to config for factory
+    full_config["auth_type"] = tracker.auth_type
+
+    # For GitHub App OAuth, add the installation ID
+    if tracker.auth_type in ("github_app", "oauth_app") and tracker.oauth_installation:
+        # Use the external_id which is the actual GitHub installation ID
+        full_config["github_installation_id"] = tracker.oauth_installation.external_id
+        logger.info(
+            f"Using GitHub App OAuth with installation ID: {tracker.oauth_installation.external_id}"
+        )
+
     logger.debug(
         f"Creating tracker client of type '{tracker_type}' with config: {full_config}"
     )
@@ -233,7 +244,7 @@ async def get_tracker_client(
         tracker_client = await create_tracker_client(
             tracker_type=tracker_type,
             tracker_id=str(tracker.id),
-            api_key=tracker.api_key,
+            api_key=tracker.api_key or "",  # May be empty for OAuth
             connection_details=full_config,
         )
         if not tracker_client:

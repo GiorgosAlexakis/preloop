@@ -989,7 +989,10 @@ async def add_comment(
                 project_path = f"{owner}/{repo}"
                 logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
         # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
-        elif "gitlab" in target.lower() and "merge_requests/" in target:
+        # Also handles self-hosted GitLab where platform was detected via URL patterns
+        elif (
+            platform == "gitlab" or "gitlab" in target.lower()
+        ) and "merge_requests/" in target:
             is_merge_request = True
             platform = "gitlab"
             mr_parts = target.split("merge_requests/")
@@ -2127,7 +2130,10 @@ async def update_comment(
                 project_path = f"{owner}/{repo}"
                 logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
         # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
-        elif "gitlab" in target.lower() and "merge_requests/" in target:
+        # Also handles self-hosted GitLab where platform was detected via URL patterns
+        elif (
+            platform == "gitlab" or "gitlab" in target.lower()
+        ) and "merge_requests/" in target:
             platform = "gitlab"
             mr_parts = target.split("merge_requests/")
             pr_mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
