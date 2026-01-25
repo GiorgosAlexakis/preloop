@@ -920,7 +920,7 @@ async def add_comment(
     # New parameters for inline comments
     path: Optional[str] = None,
     line: Optional[int] = None,
-    side: str = "RIGHT",  # "LEFT" or "RIGHT"
+    side: Optional[str] = None,  # "LEFT" or "RIGHT", defaults to "RIGHT"
     in_reply_to: Optional[str] = None,
 ) -> "AddCommentResponse":
     """
@@ -953,8 +953,11 @@ async def add_comment(
 
     target = target.strip()
 
-    # Validate side parameter
-    if side not in ("LEFT", "RIGHT"):
+    # Validate side parameter only for inline comments (when path and line provided)
+    # If side is None or not provided, default to "RIGHT"
+    if side is None:
+        side = "RIGHT"
+    elif side not in ("LEFT", "RIGHT"):
         raise HTTPException(
             status_code=400,
             detail="Invalid side parameter. Must be 'LEFT' or 'RIGHT'.",
@@ -1816,6 +1819,7 @@ async def update_pull_request(
         has_updates = any(
             [title, description, state, assignees, reviewers, labels, draft is not None]
         )
+        gitlab_warnings = []  # Track any GitLab-specific limitations
 
         if has_updates:
             if platform == "github":
@@ -1845,6 +1849,26 @@ async def update_pull_request(
                     elif state_lower in ("open", "reopen"):
                         state_event = "reopen"
 
+                # Note: GitLab requires user IDs for assignees/reviewers, not usernames
+                # We would need to look up user IDs by username, which is not implemented
+                gitlab_warnings = []
+                if assignees:
+                    logger.warning(
+                        f"Assignees parameter not supported for GitLab MRs via this API. "
+                        f"GitLab requires user IDs, not usernames. Skipping: {assignees}"
+                    )
+                    gitlab_warnings.append(
+                        "assignees not applied (GitLab requires user IDs)"
+                    )
+                if reviewers:
+                    logger.warning(
+                        f"Reviewers parameter not supported for GitLab MRs via this API. "
+                        f"GitLab requires user IDs, not usernames. Skipping: {reviewers}"
+                    )
+                    gitlab_warnings.append(
+                        "reviewers not applied (GitLab requires user IDs)"
+                    )
+
                 mr_data = await tracker_client.update_merge_request(
                     mr_identifier=pr_number,
                     title=title,
@@ -1868,6 +1892,10 @@ async def update_pull_request(
             f"Successfully performed {', '.join(actions_taken)} on "
             f"{'PR' if platform == 'github' else 'MR'} {pr_number}"
         )
+
+        # Add warnings for GitLab limitations
+        if gitlab_warnings:
+            message += f". Note: {'; '.join(gitlab_warnings)}"
 
         return UpdatePullRequestResponse(
             pull_request_id=str(result_id) if result_id else pr_number,
@@ -2042,6 +2070,7 @@ async def update_comment(
     comment_id: str,
     body: Optional[str] = None,
     resolved: Optional[bool] = None,
+    thread_id: Optional[str] = None,
 ) -> "UpdateCommentResponse":
     """
     Handles the 'update_comment' tool call.
@@ -2051,9 +2080,13 @@ async def update_comment(
 
     Args:
         target: PR/MR identifier (URL, slug, or number).
-        comment_id: The comment/note ID to update.
+        comment_id: The comment/note ID to update (used for body updates).
         body: New body text for the comment (optional).
         resolved: Whether to resolve/unresolve the comment thread (optional).
+        thread_id: The thread/discussion ID for resolution (optional).
+            For GitHub: The review thread node_id (e.g., "PRRT_...").
+            For GitLab: The discussion ID.
+            If not provided, comment_id is used for resolution (may fail if wrong ID type).
 
     Returns:
         UpdateCommentResponse with update status.
@@ -2161,20 +2194,20 @@ async def update_comment(
 
             # Resolve/unresolve thread if requested
             if resolved is not None:
+                # Use thread_id for resolution if provided, otherwise fall back to comment_id
+                resolution_id = thread_id or comment_id
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitHub review "
-                    f"thread for comment {comment_id}"
+                    f"thread {resolution_id}"
                 )
-                # Note: resolve_review_thread requires the thread node_id
-                # The comment_id might be the thread_id or we may need to find it
                 resolve_result = await tracker_client.resolve_review_thread(
-                    thread_id=comment_id,
+                    thread_id=resolution_id,
                     resolved=resolved,
                 )
                 actions_taken.append("resolved" if resolved else "unresolved")
                 logger.info(
                     f"Successfully {'resolved' if resolved else 'unresolved'} "
-                    f"review thread {comment_id}"
+                    f"review thread {resolution_id}"
                 )
 
         else:  # GitLab
@@ -2193,20 +2226,21 @@ async def update_comment(
 
             # Resolve/unresolve discussion if requested
             if resolved is not None:
+                # Use thread_id (discussion_id) for resolution if provided, otherwise fall back to comment_id
+                discussion_id = thread_id or comment_id
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitLab MR "
-                    f"discussion {comment_id}"
+                    f"discussion {discussion_id}"
                 )
-                # Note: For GitLab, comment_id should be the discussion_id
                 await tracker_client.resolve_mr_discussion(
                     mr_iid=pr_mr_number,
-                    discussion_id=comment_id,
+                    discussion_id=discussion_id,
                     resolved=resolved,
                 )
                 actions_taken.append("resolved" if resolved else "unresolved")
                 logger.info(
                     f"Successfully {'resolved' if resolved else 'unresolved'} "
-                    f"MR discussion {comment_id}"
+                    f"MR discussion {discussion_id}"
                 )
 
         message = (

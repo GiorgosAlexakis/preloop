@@ -882,13 +882,27 @@ class FlowExecutionOrchestrator:
 
     async def _cleanup_monitoring(self):
         """Cleanup monitoring resources (log streaming, command subscription)."""
-        # Cancel log streaming task
+        # Wait for log streaming task to complete naturally with a timeout
+        # This ensures buffered logs are fully streamed before cleanup
         if self._log_streaming_task and not self._log_streaming_task.done():
-            self._log_streaming_task.cancel()
             try:
-                await self._log_streaming_task
+                # Give the log streaming task time to finish naturally
+                # (container may have buffered logs to yield)
+                await asyncio.wait_for(self._log_streaming_task, timeout=30.0)
+                logger.info("Log streaming task completed successfully")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Log streaming task did not complete within timeout, cancelling"
+                )
+                self._log_streaming_task.cancel()
+                try:
+                    await self._log_streaming_task
+                except asyncio.CancelledError:
+                    pass
             except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                logger.warning(f"Error waiting for log streaming task: {e}")
 
         # Unsubscribe from commands
         if self._command_subscription:

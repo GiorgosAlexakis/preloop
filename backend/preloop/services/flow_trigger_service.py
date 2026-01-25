@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,6 +14,12 @@ from preloop.sync.services.event_bus import get_nats_client
 from preloop.models.db.session import get_session_factory
 
 logger = logging.getLogger(__name__)
+
+# Cache for recent event IDs to prevent duplicate processing
+# Format: {event_id: timestamp}
+_recent_events: Dict[str, datetime] = {}
+_events_lock = asyncio.Lock()
+_EVENT_DEDUP_WINDOW_SECONDS = 60  # Ignore duplicate events within this window
 
 
 class FlowTriggerService:
@@ -27,6 +34,105 @@ class FlowTriggerService:
 
     def _create_orchestrator_session(self) -> Session:
         return self.session_factory()
+
+    def _extract_resource_key(self, event_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract a unique resource identifier from the event payload.
+
+        This is used for deduplication - events about the same resource
+        (e.g., the same PR/MR) can be coalesced or skipped if an execution
+        is already running.
+
+        Returns:
+            A unique key like "github:owner/repo:pr:123" or None if not extractable.
+        """
+        source = event_data.get("source", "").lower()
+        payload = event_data.get("payload", {})
+
+        if source == "github":
+            # GitHub PR events
+            pr = payload.get("pull_request", {})
+            if pr:
+                repo = payload.get("repository", {})
+                repo_full_name = repo.get("full_name", "")
+                pr_number = pr.get("number")
+                if repo_full_name and pr_number:
+                    return f"github:{repo_full_name}:pr:{pr_number}"
+
+            # GitHub issue events
+            issue = payload.get("issue", {})
+            if issue:
+                repo = payload.get("repository", {})
+                repo_full_name = repo.get("full_name", "")
+                issue_number = issue.get("number")
+                if repo_full_name and issue_number:
+                    return f"github:{repo_full_name}:issue:{issue_number}"
+
+        elif source == "gitlab":
+            # GitLab MR/issue events
+            obj_attrs = payload.get("object_attributes", {})
+            project = payload.get("project", {})
+            project_path = project.get("path_with_namespace", "")
+
+            if obj_attrs:
+                iid = obj_attrs.get("iid")
+                obj_kind = payload.get("object_kind", "")
+                if project_path and iid:
+                    return f"gitlab:{project_path}:{obj_kind}:{iid}"
+
+        return None
+
+    def _has_running_execution(
+        self, flow_id: uuid.UUID, resource_key: str, account_id: str
+    ) -> bool:
+        """
+        Check if there's already a running execution for the same flow and resource.
+
+        Args:
+            flow_id: The flow to check
+            resource_key: The resource identifier (e.g., "github:owner/repo:pr:123")
+            account_id: Account ID for scoping
+
+        Returns:
+            True if there's already a running execution for this flow+resource.
+        """
+        # Query for running executions of this flow
+
+        running_statuses = ["PENDING", "INITIALIZING", "RUNNING", "STARTING"]
+
+        # Get recent executions for this flow that are still running
+        executions = crud_flow_execution.get_by_flow(
+            self.db,
+            flow_id=flow_id,
+            account_id=uuid.UUID(account_id)
+            if isinstance(account_id, str)
+            else account_id,
+            limit=10,
+        )
+
+        for execution in executions:
+            if execution.status not in running_statuses:
+                continue
+
+            # Check if the trigger_event_details contain the same resource
+            trigger_details = execution.trigger_event_details or {}
+            exec_payload = trigger_details.get("payload", {})
+
+            # Extract resource key from the execution's trigger event
+            exec_event_data = {
+                "source": trigger_details.get("source", ""),
+                "payload": exec_payload,
+            }
+            exec_resource_key = self._extract_resource_key(exec_event_data)
+
+            if exec_resource_key == resource_key:
+                logger.info(
+                    f"Found running execution {execution.id} for flow {flow_id} "
+                    f"and resource {resource_key} (status: {execution.status})"
+                )
+                return True
+
+        return False
 
     async def _run_orchestrator_with_session(
         self,
@@ -208,9 +314,27 @@ class FlowTriggerService:
             # Get NATS client for publishing updates
             nats_client = await get_nats_client()
 
+            # Extract resource key for deduplication
+            resource_key = self._extract_resource_key(event_data)
+            if resource_key:
+                logger.info(f"Extracted resource key for deduplication: {resource_key}")
+
             # Trigger each matching flow
             for flow in flows_to_trigger:
                 try:
+                    # Check for running execution on the same resource
+                    if resource_key and account_id:
+                        if self._has_running_execution(
+                            flow.id, resource_key, account_id
+                        ):
+                            logger.info(
+                                f"Skipping flow '{flow.name}' ({flow.id}) - "
+                                f"already has a running execution for resource {resource_key}. "
+                                f"To avoid duplicate executions, events about the same resource "
+                                f"are not processed while an execution is in progress."
+                            )
+                            continue
+
                     logger.info(
                         f"Triggering flow '{flow.name}' ({flow.id}) for event {event_type}"
                     )
