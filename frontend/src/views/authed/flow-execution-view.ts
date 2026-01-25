@@ -800,10 +800,31 @@ export class FlowExecutionView extends LitElement {
             </sl-card>
           </div>
 
-          <!-- Input Prompt (collapsible) -->
+          <!-- Trigger Event Details (collapsible) -->
+          ${this.execution.trigger_event_details
+            ? html`
+                <sl-details
+                  summary="Trigger Event"
+                  style="margin-bottom: 16px;"
+                >
+                  <sl-card>
+                    <pre
+                      style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.4; background: var(--sl-color-neutral-100); padding: 12px; border-radius: 4px; max-height: 400px; overflow-y: auto;"
+                    >
+${JSON.stringify(this.execution.trigger_event_details, null, 2)}</pre
+                    >
+                  </sl-card>
+                </sl-details>
+              `
+            : ''}
+
+          <!-- Resolved Input Prompt (collapsible) -->
           ${this.execution.resolved_input_prompt
             ? html`
-                <sl-details summary="Input Prompt" style="margin-bottom: 16px;">
+                <sl-details
+                  summary="Resolved Input Prompt"
+                  style="margin-bottom: 16px;"
+                >
                   <sl-card>
                     <pre
                       style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px; line-height: 1.5; background: var(--sl-color-neutral-100); padding: 12px; border-radius: 4px;"
