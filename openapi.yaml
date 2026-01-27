@@ -4049,6 +4049,149 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/policies/validate:
+    post:
+      tags:
+      - Policies
+      summary: Validate a policy file
+      description: Validate a YAML/JSON policy file without applying any changes.
+      operationId: validate_policy_api_v1_policies_validate_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_validate_policy_api_v1_policies_validate_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyValidationResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/policies/upload:
+    post:
+      tags:
+      - Policies
+      summary: Upload and apply a policy file
+      description: Upload a YAML/JSON policy file and apply it to your account.
+      operationId: upload_policy_api_v1_policies_upload_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_policy_api_v1_policies_upload_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyImportResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/policies/export:
+    get:
+      tags:
+      - Policies
+      summary: Export current configuration as policy
+      description: Export your current MCP servers, approval policies, and tool configurations
+        as a YAML or JSON policy file.
+      operationId: export_policy_api_v1_policies_export_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: format
+        in: query
+        required: false
+        schema:
+          enum:
+          - yaml
+          - json
+          type: string
+          default: yaml
+          title: Format
+      - name: policy_name
+        in: query
+        required: false
+        schema:
+          type: string
+          default: Exported Policy
+          title: Policy Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/policies/diff:
+    post:
+      tags:
+      - Policies
+      summary: Preview changes from a policy file
+      description: Compare an uploaded policy file with your current configuration
+        to see what would change.
+      operationId: diff_policy_api_v1_policies_diff_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_diff_policy_api_v1_policies_diff_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyDiffResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/policies/schema:
+    get:
+      tags:
+      - Policies
+      summary: Get policy schema documentation
+      description: Get the JSON schema for policy files with documentation.
+      operationId: get_policy_schema_api_v1_policies_schema_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Policy Schema Api V1 Policies Schema Get
+      security:
+      - bearerAuth: []
   /api/v1/roles:
     get:
       tags:
@@ -5054,6 +5197,17 @@ components:
       type: object
       title: AuthUserUpdate
       description: User update model.
+    Body_diff_policy_api_v1_policies_diff_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+          description: YAML or JSON policy file to compare
+      type: object
+      required:
+      - file
+      title: Body_diff_policy_api_v1_policies_diff_post
     Body_login_form_api_v1_auth_token_post:
       properties:
         grant_type:
@@ -5089,6 +5243,38 @@ components:
       - username
       - password
       title: Body_login_form_api_v1_auth_token_post
+    Body_upload_policy_api_v1_policies_upload_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+          description: YAML or JSON policy file to apply
+        dry_run:
+          type: boolean
+          title: Dry Run
+          description: If true, validate only without making changes
+          default: false
+        resolve_env:
+          type: boolean
+          title: Resolve Env
+          description: If true, resolve ${VAR} environment variable references
+          default: true
+      type: object
+      required:
+      - file
+      title: Body_upload_policy_api_v1_policies_upload_post
+    Body_validate_policy_api_v1_policies_validate_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+          description: YAML or JSON policy file to validate
+      type: object
+      required:
+      - file
+      title: Body_validate_policy_api_v1_policies_validate_post
     CommentCreate:
       properties:
         body:
@@ -6939,6 +7125,163 @@ components:
       - email
       title: PasswordResetRequest
       description: Model for password reset requests.
+    PolicyDiffItem:
+      properties:
+        path:
+          type: string
+          title: Path
+          description: JSON path to the changed item
+        operation:
+          type: string
+          enum:
+          - add
+          - remove
+          - modify
+          title: Operation
+          description: Type of change
+        old_value:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Old Value
+          description: Previous value
+        new_value:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: New Value
+          description: New value
+      type: object
+      required:
+      - path
+      - operation
+      title: PolicyDiffItem
+      description: Single diff item between policies.
+    PolicyDiffResult:
+      properties:
+        has_changes:
+          type: boolean
+          title: Has Changes
+          description: Whether there are any changes
+        changes:
+          items:
+            $ref: '#/components/schemas/PolicyDiffItem'
+          type: array
+          title: Changes
+          description: List of changes
+        summary:
+          type: string
+          title: Summary
+          description: Human-readable summary of changes
+      type: object
+      required:
+      - has_changes
+      - summary
+      title: PolicyDiffResult
+      description: Result of comparing two policies.
+    PolicyImportResult:
+      properties:
+        success:
+          type: boolean
+          title: Success
+          description: Whether import was successful
+        policy_name:
+          type: string
+          title: Policy Name
+          description: Name of the imported policy
+        mcp_servers_created:
+          type: integer
+          title: Mcp Servers Created
+          description: Number of MCP servers created
+          default: 0
+        mcp_servers_updated:
+          type: integer
+          title: Mcp Servers Updated
+          description: Number of MCP servers updated
+          default: 0
+        policies_created:
+          type: integer
+          title: Policies Created
+          description: Number of approval policies created
+          default: 0
+        policies_updated:
+          type: integer
+          title: Policies Updated
+          description: Number of approval policies updated
+          default: 0
+        tools_created:
+          type: integer
+          title: Tools Created
+          description: Number of tool configs created
+          default: 0
+        tools_updated:
+          type: integer
+          title: Tools Updated
+          description: Number of tool configs updated
+          default: 0
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+          description: Non-fatal warnings
+        errors:
+          items:
+            type: string
+          type: array
+          title: Errors
+          description: Errors that occurred
+      type: object
+      required:
+      - success
+      - policy_name
+      title: PolicyImportResult
+      description: Result of importing a policy.
+    PolicyValidationError:
+      properties:
+        path:
+          type: string
+          title: Path
+          description: JSON path to the error location
+        message:
+          type: string
+          title: Message
+          description: Error message
+        value:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Value
+          description: The invalid value
+      type: object
+      required:
+      - path
+      - message
+      title: PolicyValidationError
+      description: Validation error details.
+    PolicyValidationResult:
+      properties:
+        is_valid:
+          type: boolean
+          title: Is Valid
+          description: Whether the policy is valid
+        errors:
+          items:
+            $ref: '#/components/schemas/PolicyValidationError'
+          type: array
+          title: Errors
+          description: List of validation errors
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+          description: Non-fatal warnings
+      type: object
+      required:
+      - is_valid
+      title: PolicyValidationResult
+      description: Result of policy validation.
     ProjectCreate:
       properties:
         name:

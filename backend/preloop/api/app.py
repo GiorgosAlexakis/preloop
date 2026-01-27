@@ -34,6 +34,7 @@ from preloop.api.endpoints import (
     mcp_servers,
     notification_preferences,
     organizations,
+    policies,
     projects,
     public_approval,
     roles,
@@ -762,6 +763,14 @@ def create_app() -> FastAPI:
         prefix="/api/v1",
         tags=["Flows"],
         # dependencies=[Depends(get_current_active_user)],
+    )
+
+    # Policies router for policy-as-code YAML import/export
+    app.include_router(
+        policies.router,
+        prefix="/api/v1",
+        tags=["Policies"],
+        dependencies=[Depends(get_current_active_user)],
     )
 
     # WebSocket router

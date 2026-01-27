@@ -11,6 +11,7 @@ __all__ = [
     "mcp_servers",
     "notification_preferences",
     "organizations",
+    "policies",
     "projects",
     "public_approval",
     "roles",
