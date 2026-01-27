@@ -2324,6 +2324,64 @@ class GitHubTracker(BaseTracker):
             raise TrackerResponseError(f"Failed to update review comment: {e}")
 
     @async_retry()
+    async def reply_to_review_comment(
+        self,
+        pr_number: str,
+        comment_id: str,
+        body: str,
+    ) -> Dict[str, Any]:
+        """
+        Reply to an existing pull request review comment (threaded reply).
+
+        Args:
+            pr_number: The pull request number.
+            comment_id: The ID of the comment to reply to.
+            body: The reply body text.
+
+        Returns:
+            Dict with the created reply comment details.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        try:
+            # GitHub REST API endpoint for replying to a review comment
+            # POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies
+            reply_path = (
+                f"/repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies"
+            )
+            payload = {"body": body}
+            reply_data = await self._request("POST", reply_path, data=payload)
+
+            return {
+                "id": str(reply_data["id"]),
+                "node_id": reply_data.get("node_id"),
+                "author": reply_data["user"]["login"],
+                "body": reply_data["body"],
+                "path": reply_data.get("path"),
+                "line": reply_data.get("line"),
+                "side": reply_data.get("side"),
+                "in_reply_to_id": reply_data.get("in_reply_to_id"),
+                "created_at": reply_data["created_at"],
+                "updated_at": reply_data["updated_at"],
+                "html_url": reply_data.get("html_url"),
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error replying to review comment {comment_id} on PR {pr_number}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to reply to review comment: {e}")
+
+    @async_retry()
     async def resolve_review_thread(
         self,
         thread_id: str,

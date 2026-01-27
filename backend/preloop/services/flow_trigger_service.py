@@ -96,24 +96,18 @@ class FlowTriggerService:
         Returns:
             True if there's already a running execution for this flow+resource.
         """
-        # Query for running executions of this flow
-
-        running_statuses = ["PENDING", "INITIALIZING", "RUNNING", "STARTING"]
-
-        # Get recent executions for this flow that are still running
-        executions = crud_flow_execution.get_by_flow(
+        # Query specifically for running executions (no limit - we need all of them)
+        # This ensures we don't miss long-running executions that might have
+        # fallen outside a limit window
+        executions = crud_flow_execution.get_running_by_flow(
             self.db,
             flow_id=flow_id,
             account_id=uuid.UUID(account_id)
             if isinstance(account_id, str)
             else account_id,
-            limit=10,
         )
 
         for execution in executions:
-            if execution.status not in running_statuses:
-                continue
-
             # Check if the trigger_event_details contain the same resource
             trigger_details = execution.trigger_event_details or {}
             exec_payload = trigger_details.get("payload", {})

@@ -1929,3 +1929,62 @@ class GitLabTracker(BaseTracker):
         except Exception as e:
             logger.error(f"Error creating MR discussion for MR {mr_iid}: {e}")
             raise TrackerResponseError(f"Failed to create MR discussion: {e}")
+
+    async def reply_to_mr_discussion(
+        self, mr_iid: str, discussion_id: str, body: str
+    ) -> Dict[str, Any]:
+        """
+        Reply to an existing merge request discussion (add a note to the thread).
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            discussion_id: The discussion ID to reply to.
+            body: The reply body text.
+
+        Returns:
+            Dict with the created note details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get the discussion
+            discussion = await self._make_request(mr.discussions.get, discussion_id)
+
+            # Add a note to the discussion
+            note = await self._make_request(discussion.notes.create, {"body": body})
+
+            # Handle both dict and object responses
+            if isinstance(note, dict):
+                return {
+                    "id": note.get("id"),
+                    "discussion_id": discussion_id,
+                    "body": note.get("body"),
+                    "author": note.get("author", {}).get("username"),
+                    "created_at": note.get("created_at"),
+                }
+            else:
+                return {
+                    "id": getattr(note, "id", None),
+                    "discussion_id": discussion_id,
+                    "body": getattr(note, "body", body),
+                    "author": (
+                        note.author.get("username")
+                        if hasattr(note, "author") and isinstance(note.author, dict)
+                        else None
+                    ),
+                    "created_at": getattr(note, "created_at", None),
+                }
+
+        except Exception as e:
+            logger.error(
+                f"Error replying to discussion {discussion_id} on MR {mr_iid}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to reply to MR discussion: {e}")

@@ -1048,7 +1048,24 @@ async def add_comment(
             # Handle inline comments (path and line provided)
             if path and line is not None:
                 if platform == "github":
-                    # For GitHub, use submit_pull_request_review with a single comment
+                    # If replying to an existing review comment, use threaded reply
+                    if in_reply_to:
+                        logger.info(
+                            f"Replying to review comment {in_reply_to} on GitHub PR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_review_comment(
+                            pr_number=target_id,
+                            comment_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to comment {in_reply_to} on PR {target_id}",
+                            url=reply_result.get("html_url"),
+                        )
+
+                    # Otherwise, create a new inline comment
                     logger.info(
                         f"Adding inline comment to GitHub PR {target_id} "
                         f"at {path}:{line}"
@@ -1059,12 +1076,6 @@ async def add_comment(
                         "body": comment,
                         "side": side,
                     }
-
-                    # If replying to a comment, we need different handling
-                    if in_reply_to:
-                        # GitHub reply to review comment - this is a different endpoint
-                        # For now, use submit_pull_request_review with context
-                        inline_comment["body"] = f"> In reply to comment\n\n{comment}"
 
                     review_result = await tracker_client.submit_pull_request_review(
                         pr_number=target_id,
@@ -1081,19 +1092,38 @@ async def add_comment(
                     )
 
                 else:  # GitLab
-                    # For GitLab, use create_mr_discussion with position
-                    logger.info(
-                        f"Adding inline comment to GitLab MR {target_id} "
-                        f"at {path}:{line}"
+                    # If replying to an existing discussion, add a note to it
+                    if in_reply_to:
+                        logger.info(
+                            f"Replying to discussion {in_reply_to} on GitLab MR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_mr_discussion(
+                            mr_iid=target_id,
+                            discussion_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to discussion {in_reply_to} on MR {target_id}",
+                            url=None,
+                        )
+
+                    # For new inline comments, creating true diff comments requires position data
+                    # (base_sha, start_sha, head_sha, new_path, new_line)
+                    # Since we don't have this context, we create a discussion that references
+                    # the file and line in a clear, machine-readable format
+                    logger.warning(
+                        f"GitLab inline comments require diff position data. "
+                        f"Creating discussion with file context instead: {path}:{line}"
                     )
 
-                    # Note: Full position requires SHA info from MR
-                    # For basic inline comments, we create a discussion with file context
+                    # Format the comment to clearly indicate the affected file and line
+                    formatted_body = f"**Affected file:** `{path}:{line}`\n\n{comment}"
+
                     discussion_result = await tracker_client.create_mr_discussion(
                         mr_iid=target_id,
-                        body=f"**{path}:{line}**\n\n{comment}",
-                        # Position would require base_sha, start_sha, head_sha
-                        # which requires fetching MR details first
+                        body=formatted_body,
                     )
 
                     notes = discussion_result.get("notes", [])
@@ -1110,6 +1140,41 @@ async def add_comment(
 
             # Regular PR/MR comment (not inline)
             else:
+                # Handle threaded replies
+                if in_reply_to:
+                    if platform == "github":
+                        # GitHub: reply to a review comment
+                        logger.info(
+                            f"Replying to comment {in_reply_to} on GitHub PR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_review_comment(
+                            pr_number=target_id,
+                            comment_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to comment {in_reply_to} on PR {target_id}",
+                            url=reply_result.get("html_url"),
+                        )
+                    else:  # GitLab
+                        # GitLab: reply to a discussion
+                        logger.info(
+                            f"Replying to discussion {in_reply_to} on GitLab MR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_mr_discussion(
+                            mr_iid=target_id,
+                            discussion_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to discussion {in_reply_to} on MR {target_id}",
+                            url=None,
+                        )
+
                 logger.info(f"Adding comment to {target_id} via tracker client")
                 created_comment = await tracker_client.add_comment(target_id, comment)
                 logger.info(f"Successfully added comment to {target_id}")

@@ -171,6 +171,39 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
             query = query.join(Flow).filter(Flow.account_id == account_id)
         return query.offset(skip).limit(limit).all()
 
+    def get_running_by_flow(
+        self,
+        db: Session,
+        flow_id: uuid.UUID,
+        account_id: Optional[uuid.UUID] = None,
+        running_statuses: Optional[List[str]] = None,
+    ) -> List[FlowExecution]:
+        """Get running flow executions for a specific flow.
+
+        Unlike get_by_flow, this specifically queries for executions in running states
+        without a limit, ensuring long-running executions are not missed.
+
+        Args:
+            db: Database session
+            flow_id: The flow ID to query
+            account_id: Optional account ID to filter by
+            running_statuses: List of statuses considered "running".
+                             Defaults to ["PENDING", "INITIALIZING", "STARTING", "RUNNING"]
+
+        Returns:
+            List of flow executions in running states
+        """
+        if running_statuses is None:
+            running_statuses = ["PENDING", "INITIALIZING", "STARTING", "RUNNING"]
+
+        query = db.query(FlowExecution).filter(
+            FlowExecution.flow_id == flow_id,
+            FlowExecution.status.in_(running_statuses),
+        )
+        if account_id:
+            query = query.join(Flow).filter(Flow.account_id == account_id)
+        return query.all()
+
     def get_multi(
         self,
         db: Session,
