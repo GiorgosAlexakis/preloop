@@ -1,37 +1,73 @@
-# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop - The MCP Governance Layer
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop — The Safety Layer for AI Agents
 
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-## Overview
+## Don't Let AI Agents Run Unsupervised
 
-Preloop is an open-source, event-driven automation platform with built-in human-in-the-loop safety. AI agents respond to events across your tools automatically. When agents call sensitive operations, Preloop intercepts the request and routes it for human approval.
+AI agents are powerful. They can write code, deploy to production, delete databases, push secrets to public repos, and run up your cloud bills—all in seconds.
 
-Preloop acts as an MCP proxy and can be integrated in existing workflows without any infrastructure changes.
+**But who's watching them?**
+
+Preloop is the safety layer that sits between AI agents and your critical infrastructure. When an agent tries to perform a dangerous operation, Preloop intercepts it, notifies you, and waits for your approval before proceeding.
+
+**You stay in control. AI handles the routine work.**
+
+## The Problem
+
+AI coding assistants like Claude Code, Cursor, and GitHub Copilot are transforming how we build software. But with great power comes great risk:
+
+- 🗑️ **Accidental deletions** — One wrong command and your production database is gone
+- 🔓 **Leaked secrets** — API keys pushed to public repos before anyone notices
+- 💸 **Runaway costs** — Agents spinning up expensive resources without limits
+- 🔧 **Breaking changes** — Untested deployments to production at 3am
+
+Most teams face an impossible choice: give AI full access and move fast (but dangerously), or lock everything down and lose the productivity gains.
+
+## The Solution
+
+Preloop adds a human approval layer to AI agent operations. It works with any MCP-compatible tool and requires zero infrastructure changes.
+
+```
+AI Agent → Preloop → [Dangerous operation?] → Human Approval → Execute
+```
+
+**How it works:**
+1. Configure which operations require approval (delete, deploy, billing changes, etc.)
+2. AI agents call tools through Preloop's MCP proxy
+3. Risky operations trigger instant notifications to your phone, Slack, or email
+4. Approve or reject with one tap—agents wait for your decision
+5. Full audit trail of every action and decision
+
+**Works with:** Claude Code, Cursor, Cline, Windsurf, and any MCP-compatible AI assistant.
 
 ## Key Features
 
-### Core Platform (Open Source)
+### Safety & Control
 
-- **Event-Driven Automation**: AI agents respond to events across your tools automatically
-- **Human-in-the-Loop Safety**: Intercept sensitive operations and route for human approval
-- **MCP Server**: Standards-based Model Context Protocol (MCP) server
-  - 11 built-in tools for issue and PR/MR management:
-    - **Issues**: get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance
-    - **Pull Requests/Merge Requests**: get_pull_request, update_pull_request, create_pull_request, add_comment, update_comment
-  - Full GitHub and GitLab support including reviews, inline comments, reactions, and thread resolution
-  - JWT authentication with per-user tool visibility
-  - StreamableHTTP transport for Claude Code and other MCP clients
-- **Tool Management**: Configure and manage tool access
-  - Support for external MCP servers and tool proxying
-  - Basic approval workflows (single-user) with email + mobile app notifications
-- **Agentic Flows**: Event-driven workflows triggered by issue tracker events
-- **Issue Tracker Integration**: Jira, GitHub, GitLab support with continuous sync
-- **Vector Search**: Intelligent similarity search using embeddings
-- **Duplicate Detection**: Automated detection of duplicate and overlapping issues
-- **Compliance Metrics**: Evaluate issue compliance and get improvement recommendations
-- **Web UI**: Modern interface built with Lit, Vite, and Shoelace Web Components
+- **Approval Policies** — Define exactly which operations require human approval
+- **Instant Notifications** — Get alerts on mobile, Slack, email, or Mattermost
+- **One-Tap Approvals** — Approve or reject from your phone, watch, or desktop
+- **Full Audit Trail** — Complete log of every AI action and human decision
+- **Flexible Conditions** — Use CEL expressions for context-aware approval rules (Enterprise)
+- **Team Approvals** — Require quorum from multiple team members for critical ops (Enterprise)
+
+### Integration & Compatibility
+
+- **MCP Proxy** — Works with any Model Context Protocol-compatible AI assistant
+- **Zero Infrastructure Changes** — Drop-in solution, no code modifications needed
+- **Built-in Tools** — 6 issue management tools included (get, create, update, search, compliance)
+- **External MCP Servers** — Proxy any external MCP server through Preloop's safety layer
+- **Issue Tracker Sync** — Connect Jira, GitHub, GitLab for full context
+
+### Automation Platform
+
+- **Agentic Flows** — Build event-driven workflows triggered by webhooks, schedules, or tracker events
+- **Vector Search** — Intelligent similarity search using embeddings
+- **Duplicate Detection** — Automatically identify overlapping issues
+- **Compliance Metrics** — Evaluate and improve issue quality
+- **Web UI** — Modern interface built with Lit, Vite, and Shoelace
 
 > **Looking for Enterprise features?** Preloop Enterprise Edition adds RBAC, team-based approvals, advanced audit logging, and more. See [Enterprise Features](#enterprise-features) below.
 
