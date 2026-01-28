@@ -1597,6 +1597,93 @@ class GitLabTracker(BaseTracker):
             logger.error(f"Error updating merge request {mr_iid}: {e}")
             raise TrackerResponseError(f"Failed to update merge request: {e}")
 
+    async def create_merge_request(
+        self,
+        title: str,
+        source_branch: str,
+        target_branch: str,
+        description: Optional[str] = None,
+        draft: bool = False,
+        assignee_ids: Optional[List[int]] = None,
+        reviewer_ids: Optional[List[int]] = None,
+        labels: Optional[List[str]] = None,
+        milestone_id: Optional[int] = None,
+        squash: Optional[bool] = None,
+        remove_source_branch: Optional[bool] = None,
+        allow_collaboration: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a GitLab merge request.
+
+        Args:
+            title: MR title
+            source_branch: Branch containing the changes
+            target_branch: Branch to merge into
+            description: MR description
+            draft: Whether to create as draft (WIP)
+            assignee_ids: List of assignee user IDs
+            reviewer_ids: List of reviewer user IDs
+            labels: List of label names
+            milestone_id: Milestone ID
+            squash: Whether to squash commits when merging
+            remove_source_branch: Whether to remove source branch when merged
+            allow_collaboration: Allow commits from upstream members
+
+        Returns:
+            Dict with created MR details including id, iid, title, url
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+
+            # Build create data
+            create_data = {
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+                "title": f"Draft: {title}" if draft else title,
+            }
+
+            if description is not None:
+                create_data["description"] = description
+            if assignee_ids:
+                create_data["assignee_ids"] = assignee_ids
+            if reviewer_ids:
+                create_data["reviewer_ids"] = reviewer_ids
+            if labels:
+                create_data["labels"] = ",".join(labels)
+            if milestone_id is not None:
+                create_data["milestone_id"] = milestone_id
+            if squash is not None:
+                create_data["squash"] = squash
+            if remove_source_branch is not None:
+                create_data["remove_source_branch"] = remove_source_branch
+            if allow_collaboration is not None:
+                create_data["allow_collaboration"] = allow_collaboration
+
+            # Create the merge request
+            mr = await self._make_request(project.mergerequests.create, create_data)
+
+            logger.info(f"Created merge request !{mr.iid}: {title}")
+
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "title": mr.title,
+                "description": mr.description or "",
+                "state": mr.state,
+                "url": mr.web_url,
+                "work_in_progress": getattr(mr, "work_in_progress", False),
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating merge request: {e}")
+            raise TrackerResponseError(f"Failed to create merge request: {e}")
+
     async def approve_merge_request(self, mr_iid: str) -> Dict[str, Any]:
         """
         Approve a merge request.

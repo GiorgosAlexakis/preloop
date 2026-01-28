@@ -363,6 +363,67 @@ BUILTIN_TOOLS = [
         },
     },
     {
+        "name": "create_pull_request",
+        "description": "Create a pull request (GitHub) or merge request (GitLab). Auto-detects platform from project. Use extra_options for GitLab-specific options like squash, remove_source_branch, assignee_ids, reviewer_ids, milestone_id.",
+        "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": ["github", "gitlab"],
+        "schema": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "description": "Project identifier (slug like owner/repo, full path, or URL)",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "PR/MR title",
+                },
+                "source_branch": {
+                    "type": "string",
+                    "description": "Branch containing the changes (head branch)",
+                },
+                "target_branch": {
+                    "type": "string",
+                    "description": "Branch to merge into (base branch)",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "PR/MR description/body",
+                },
+                "draft": {
+                    "type": "boolean",
+                    "description": "Create as draft",
+                    "default": False,
+                },
+                "assignees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Assignee usernames",
+                },
+                "reviewers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Reviewer usernames",
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Label names",
+                },
+                "milestone": {
+                    "type": "string",
+                    "description": "Milestone number or title",
+                },
+                "extra_options": {
+                    "type": "object",
+                    "description": "Additional options (GitLab: squash, remove_source_branch, assignee_ids, reviewer_ids, milestone_id, allow_collaboration)",
+                },
+            },
+            "required": ["project", "title", "source_branch", "target_branch"],
+        },
+    },
+    {
         "name": "update_merge_request",
         "description": "[DEPRECATED: Use update_pull_request instead, which auto-detects platform] Update a GitLab merge request",
         "source": "builtin",

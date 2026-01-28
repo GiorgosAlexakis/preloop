@@ -56,6 +56,17 @@ async def create_tracker_client(
                     "Configure an API token or use GitHub App OAuth."
                 )
 
+            # Validate: if github_app/oauth_app auth but no installation_id, that's an error
+            if auth_type in ("github_app", "oauth_app") and not github_installation_id:
+                logger.error(
+                    f"GitHub tracker configured for {auth_type} auth but no installation ID provided. "
+                    "Check tracker configuration - github_installation_id is required."
+                )
+                raise ValueError(
+                    f"GitHub installation ID is required for {auth_type} authentication. "
+                    "Configure the GitHub App installation or use api_token authentication."
+                )
+
             return GitHubTracker(
                 tracker_id=tracker_id,
                 api_key=api_key or "",

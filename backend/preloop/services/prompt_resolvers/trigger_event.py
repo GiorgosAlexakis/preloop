@@ -34,7 +34,10 @@ class TriggerEventResolver(PromptResolver):
 
         Also adds platform-agnostic fields for common operations.
         """
-        normalized = dict(event_data)
+        import copy
+
+        # Deep copy to avoid mutating the original event_data
+        normalized = copy.deepcopy(event_data)
         payload = normalized.get("payload", {})
         source = normalized.get("source", "").lower()
 

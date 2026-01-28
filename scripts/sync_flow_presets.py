@@ -38,6 +38,11 @@ from preloop.models.crud.flow import CRUDFlow
 from preloop.models.models.flow import Flow
 from preloop.models import schemas
 from preloop.flow_presets import FLOW_PRESETS, PRESETS_DIR
+from preloop.services.flow_presets_service import (
+    compute_content_hash,
+    sync_preset_to_derived_flows,
+    PresetSyncResult,
+)
 
 load_dotenv()
 
@@ -243,17 +248,176 @@ def cleanup_overlapping_presets(db: Session, dry_run: bool = False) -> int:
     return deleted_count
 
 
+def link_existing_flows_to_presets(db: Session, dry_run: bool = False) -> int:
+    """
+    Link existing flows to their source presets by matching name patterns.
+
+    This is a one-time migration for flows created before template tracking
+    was implemented. It matches flows named "Copy of {preset_name}" to their
+    corresponding presets.
+
+    Args:
+        db: Database session
+        dry_run: If True, only log what would be done without making changes
+
+    Returns:
+        Number of flows linked
+    """
+    crud_flow = CRUDFlow()
+    linked_count = 0
+
+    # Get all global presets
+    global_presets = crud_flow.get_global_presets(db, limit=1000)
+    preset_by_name = {preset.name: preset for preset in global_presets}
+
+    logger.info(f"Found {len(preset_by_name)} global presets to match against")
+
+    # Find flows that might be clones of presets
+    # Pattern: "Copy of {preset_name}" or "Copy of {preset_name} (N)"
+    for preset_name, preset in preset_by_name.items():
+        # Find flows matching the clone pattern
+        pattern_base = f"Copy of {preset_name}"
+
+        # Query flows that start with "Copy of {preset_name}"
+        matching_flows = (
+            db.query(Flow)
+            .filter(
+                Flow.name.like(f"{pattern_base}%"),
+                Flow.is_preset.is_(False),
+                Flow.account_id.isnot(None),
+                Flow.source_preset_id.is_(None),  # Not already linked
+            )
+            .all()
+        )
+
+        for flow in matching_flows:
+            # Verify the name matches exactly or has suffix like " (2)"
+            if flow.name == pattern_base or flow.name.startswith(f"{pattern_base} ("):
+                logger.info(
+                    f"  Linking flow '{flow.name}' (id={flow.id}) "
+                    f"to preset '{preset_name}' (id={preset.id})"
+                )
+
+                if not dry_run:
+                    # Link the flow to the preset
+                    flow.source_preset_id = preset.id
+
+                    # Compute hashes based on current preset content
+                    flow.source_prompt_hash = compute_content_hash(
+                        preset.prompt_template
+                    )
+                    flow.source_tools_hash = compute_content_hash(
+                        preset.allowed_mcp_tools or []
+                    )
+
+                    # Check if flow has been customized (prompt differs from preset)
+                    current_flow_prompt_hash = compute_content_hash(
+                        flow.prompt_template
+                    )
+                    current_flow_tools_hash = compute_content_hash(
+                        flow.allowed_mcp_tools or []
+                    )
+
+                    flow.prompt_customized = (
+                        current_flow_prompt_hash != flow.source_prompt_hash
+                    )
+                    flow.tools_customized = (
+                        current_flow_tools_hash != flow.source_tools_hash
+                    )
+
+                    # If customized but outdated, set update available flag
+                    flow.preset_update_available = (
+                        flow.prompt_customized or flow.tools_customized
+                    )
+
+                    db.add(flow)
+
+                    if flow.prompt_customized or flow.tools_customized:
+                        logger.info(
+                            f"    Flow has customizations - "
+                            f"prompt: {flow.prompt_customized}, "
+                            f"tools: {flow.tools_customized}"
+                        )
+
+                linked_count += 1
+
+    if not dry_run:
+        db.commit()
+
+    logger.info(f"Linked {linked_count} existing flows to their source presets")
+    return linked_count
+
+
+def sync_derived_flows(db: Session, dry_run: bool = False) -> List[PresetSyncResult]:
+    """
+    Sync all derived flows with their source presets.
+
+    This propagates preset changes to flows that haven't been customized,
+    and sets update notifications for flows that have been customized.
+
+    Args:
+        db: Database session
+        dry_run: If True, only log what would be done without making changes
+
+    Returns:
+        List of sync results per preset
+    """
+    results = []
+
+    # Get all global presets
+    presets = (
+        db.query(Flow)
+        .filter(
+            Flow.is_preset.is_(True),
+            Flow.account_id.is_(None),
+        )
+        .all()
+    )
+
+    logger.info(f"Syncing derived flows for {len(presets)} presets")
+
+    for preset in presets:
+        try:
+            if dry_run:
+                # Count what would be affected
+                derived = (
+                    db.query(Flow).filter(Flow.source_preset_id == preset.id).count()
+                )
+                logger.info(
+                    f"  Preset '{preset.name}': {derived} derived flows would be checked"
+                )
+            else:
+                result = sync_preset_to_derived_flows(db, preset.id)
+                results.append(result)
+                logger.info(
+                    f"  Preset '{preset.name}': "
+                    f"{result.auto_updated} auto-updated, "
+                    f"{result.notified} notified, "
+                    f"{result.skipped} skipped"
+                )
+        except Exception as e:
+            logger.error(f"  Failed to sync preset '{preset.name}': {e}")
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Sync global flow presets",
+        description="Sync global flow presets and manage derived flows",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Sync global presets (create/update)
+    # Sync global presets (create/update) and propagate to derived flows
     python scripts/sync_flow_presets.py
 
     # Dry run (show what would be done)
     python scripts/sync_flow_presets.py --dry-run
+
+    # Only sync global presets, don't propagate to derived flows
+    python scripts/sync_flow_presets.py --no-propagate
+
+    # Link existing flows to their source presets (one-time migration)
+    python scripts/sync_flow_presets.py --link-existing
 
     # Cleanup overlapping account-specific presets
     python scripts/sync_flow_presets.py --cleanup
@@ -272,6 +436,16 @@ Examples:
         action="store_true",
         help="Delete account-specific presets that overlap with global presets (requires confirmation)",
     )
+    parser.add_argument(
+        "--link-existing",
+        action="store_true",
+        help="Link existing flows to presets by matching name patterns (one-time migration)",
+    )
+    parser.add_argument(
+        "--no-propagate",
+        action="store_true",
+        help="Don't propagate preset changes to derived flows",
+    )
 
     args = parser.parse_args()
 
@@ -288,6 +462,16 @@ Examples:
             deleted = cleanup_overlapping_presets(db, dry_run=args.dry_run)
             if not args.dry_run and deleted > 0:
                 logger.info(f"Cleanup complete: deleted {deleted} overlapping presets")
+
+        elif args.link_existing:
+            # Link existing flows to their source presets by name pattern
+            logger.info("Linking existing flows to presets by name pattern...")
+            linked = link_existing_flows_to_presets(db, dry_run=args.dry_run)
+            if not args.dry_run:
+                logger.info(
+                    f"Successfully linked {linked} flows to their source presets"
+                )
+
         else:
             # Normal mode: sync global presets
             changes = sync_global_presets(db, dry_run=args.dry_run)
@@ -295,6 +479,19 @@ Examples:
                 logger.info(
                     f"Successfully synced global flow presets ({changes} changes)"
                 )
+
+            # Propagate changes to derived flows (unless --no-propagate)
+            if not args.no_propagate:
+                logger.info("\nPropagating preset changes to derived flows...")
+                results = sync_derived_flows(db, dry_run=args.dry_run)
+
+                if not args.dry_run:
+                    total_updated = sum(r.auto_updated for r in results)
+                    total_notified = sum(r.notified for r in results)
+                    logger.info(
+                        f"Propagation complete: {total_updated} flows auto-updated, "
+                        f"{total_notified} flows notified of available updates"
+                    )
 
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)

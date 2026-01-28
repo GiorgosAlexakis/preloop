@@ -1,3 +1,5 @@
+import hashlib
+import json
 import uuid
 import secrets
 from typing import Any, Dict, List, Optional
@@ -14,6 +16,23 @@ from preloop.models.models.user import User
 from preloop.utils.permissions import require_permission
 
 router = APIRouter()
+
+
+def compute_content_hash(content: Any) -> str:
+    """Compute a hash of content for detecting changes.
+
+    For strings (prompts), hashes the string directly.
+    For lists/dicts (tools), serializes to JSON first.
+    Returns first 16 chars of SHA256 hash.
+    """
+    if isinstance(content, str):
+        data = content.encode("utf-8")
+    else:
+        # Serialize to JSON with sorted keys for consistent hashing
+        data = json.dumps(content, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
 crud_flow = CRUDFlow()
 crud_flow_execution = CRUDFlowExecution()
 
@@ -104,13 +123,19 @@ def clone_preset(
     flow_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
 ):
-    """Clone a flow preset."""
+    """Clone a flow preset.
+
+    Creates a copy of the preset for the user's account with template tracking
+    enabled. The cloned flow will auto-update when the preset changes, unless
+    the user customizes the prompt or tools.
+    """
     preset = crud_flow.get(db=db, id=flow_id)
     if not preset or not preset.is_preset:
         raise HTTPException(status_code=404, detail="Preset not found")
 
     # Build dict excluding fields we want to override or that aren't in FlowCreate
     # Note: is_enabled is excluded so cloned flows start enabled (presets are disabled)
+    # Also exclude template tracking fields - we set these explicitly
     preset_dict = {
         k: v
         for k, v in preset.__dict__.items()
@@ -124,6 +149,13 @@ def clone_preset(
             "is_preset",
             "is_enabled",
             "account_id",
+            # Template tracking fields - set explicitly below
+            "source_preset_id",
+            "source_prompt_hash",
+            "source_tools_hash",
+            "prompt_customized",
+            "tools_customized",
+            "preset_update_available",
         ]
     }
 
@@ -138,12 +170,24 @@ def clone_preset(
         suffix += 1
         final_name = f"{base_name} ({suffix})"
 
+    # Compute hashes of the preset's current prompt and tools
+    # These are used to detect if the user customizes the flow later
+    source_prompt_hash = compute_content_hash(preset.prompt_template)
+    source_tools_hash = compute_content_hash(preset.allowed_mcp_tools or [])
+
     cloned_flow_in = schemas.FlowCreate(
         **preset_dict,
         name=final_name,
         is_preset=False,
         is_enabled=True,  # Cloned flows start enabled
         account_id=str(current_user.account_id),
+        # Template tracking: link to source preset
+        source_preset_id=str(preset.id),
+        source_prompt_hash=source_prompt_hash,
+        source_tools_hash=source_tools_hash,
+        prompt_customized=False,
+        tools_customized=False,
+        preset_update_available=False,
     )
     cloned_flow = crud_flow.create(
         db=db, flow_in=cloned_flow_in, account_id=current_user.account_id
@@ -602,6 +646,28 @@ def update_flow(
                 detail="Only administrators can configure custom commands for security reasons",
             )
 
+    # Detect customization for template-tracked flows
+    # If the user modifies the prompt or tools, mark them as customized
+    # so they won't be auto-updated when the source preset changes
+    if flow.source_preset_id:
+        # Check if prompt is being changed
+        if flow_in.prompt_template is not None:
+            new_prompt_hash = compute_content_hash(flow_in.prompt_template)
+            if new_prompt_hash != flow.source_prompt_hash:
+                # User is customizing the prompt
+                flow_in.prompt_customized = True
+                # Clear update notification since they're making their own changes
+                flow_in.preset_update_available = False
+
+        # Check if tools are being changed
+        if flow_in.allowed_mcp_tools is not None:
+            new_tools_hash = compute_content_hash(flow_in.allowed_mcp_tools)
+            if new_tools_hash != flow.source_tools_hash:
+                # User is customizing the tools
+                flow_in.tools_customized = True
+                # Clear update notification since they're making their own changes
+                flow_in.preset_update_available = False
+
     flow = crud_flow.update(
         db=db, db_obj=flow, flow_in=flow_in, account_id=current_user.account_id
     )
@@ -651,6 +717,76 @@ def delete_flow(
     crud_flow.remove(db=db, id=flow_id, account_id=current_user.account_id)
     logger.info(f"Successfully deleted flow {flow_id}")
     return flow
+
+
+@router.post(
+    "/flows/{flow_id}/apply-preset-update", response_model=schemas.FlowResponse
+)
+@require_permission("edit_flows")
+def apply_preset_update(
+    *,
+    db: Session = Depends(get_db),
+    flow_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Apply pending preset update to a flow.
+
+    This overwrites the flow's prompt and tools with the latest version
+    from its source preset. Any customizations will be lost.
+
+    Returns the updated flow.
+    """
+    from preloop.services.flow_presets_service import apply_preset_update_to_flow
+
+    # Check that flow belongs to user's account
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    if not flow.source_preset_id:
+        raise HTTPException(
+            status_code=400, detail="This flow is not linked to a preset template"
+        )
+
+    try:
+        updated_flow = apply_preset_update_to_flow(db, flow_id)
+        return updated_flow
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/flows/{flow_id}/dismiss-preset-update", response_model=schemas.FlowResponse
+)
+@require_permission("edit_flows")
+def dismiss_preset_update(
+    *,
+    db: Session = Depends(get_db),
+    flow_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Dismiss the preset update notification for a flow.
+
+    The notification won't reappear until the source preset changes again.
+
+    Returns the updated flow.
+    """
+    from preloop.services.flow_presets_service import (
+        dismiss_preset_update as dismiss_update,
+    )
+
+    # Check that flow belongs to user's account
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    try:
+        updated_flow = dismiss_update(db, flow_id)
+        return updated_flow
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/webhooks/flows/{flow_id}/{webhook_secret}")

@@ -3549,7 +3549,14 @@ paths:
       tags:
       - Flows
       summary: Clone Preset
-      description: Clone a flow preset.
+      description: 'Clone a flow preset.
+
+
+        Creates a copy of the preset for the user''s account with template tracking
+
+        enabled. The cloned flow will auto-update when the preset changes, unless
+
+        the user customizes the prompt or tools.'
       operationId: clone_preset_api_v1_flows_presets__flow_id__clone_post
       security:
       - bearerAuth: []
@@ -3874,6 +3881,80 @@ paths:
       summary: Delete Flow
       description: Delete a flow.
       operationId: delete_flow_api_v1_flows__flow_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/{flow_id}/apply-preset-update:
+    post:
+      tags:
+      - Flows
+      summary: Apply Preset Update
+      description: 'Apply pending preset update to a flow.
+
+
+        This overwrites the flow''s prompt and tools with the latest version
+
+        from its source preset. Any customizations will be lost.
+
+
+        Returns the updated flow.'
+      operationId: apply_preset_update_api_v1_flows__flow_id__apply_preset_update_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/{flow_id}/dismiss-preset-update:
+    post:
+      tags:
+      - Flows
+      summary: Dismiss Preset Update
+      description: 'Dismiss the preset update notification for a flow.
+
+
+        The notification won''t reappear until the source preset changes again.
+
+
+        Returns the updated flow.'
+      operationId: dismiss_preset_update_api_v1_flows__flow_id__dismiss_preset_update_post
       security:
       - bearerAuth: []
       parameters:
@@ -5316,6 +5397,40 @@ components:
             format: uuid
           - type: 'null'
           title: Account Id
+        source_preset_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Source Preset Id
+        source_prompt_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Prompt Hash
+        source_tools_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Tools Hash
+        prompt_customized:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Prompt Customized
+          default: false
+        tools_customized:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Tools Customized
+          default: false
+        preset_update_available:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Preset Update Available
+          default: false
       type: object
       required:
       - name
@@ -5574,6 +5689,33 @@ components:
           - type: string
           - type: 'null'
           title: Account Id
+        source_preset_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Preset Id
+        source_prompt_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Prompt Hash
+        source_tools_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Tools Hash
+        prompt_customized:
+          type: boolean
+          title: Prompt Customized
+          default: false
+        tools_customized:
+          type: boolean
+          title: Tools Customized
+          default: false
+        preset_update_available:
+          type: boolean
+          title: Preset Update Available
+          default: false
         id:
           anyOf:
           - type: string
@@ -5706,6 +5848,40 @@ components:
             format: uuid
           - type: 'null'
           title: Account Id
+        source_preset_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Source Preset Id
+        source_prompt_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Prompt Hash
+        source_tools_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Tools Hash
+        prompt_customized:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Prompt Customized
+          default: false
+        tools_customized:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Tools Customized
+          default: false
+        preset_update_available:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Preset Update Available
+          default: false
       type: object
       title: FlowUpdate
     GitCloneConfig-Input:

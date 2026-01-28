@@ -102,6 +102,13 @@ class FlowBase(BaseModel):
     is_preset: Optional[bool] = False
     is_enabled: Optional[bool] = True
     account_id: Optional[UUID] = None
+    # Template tracking fields
+    source_preset_id: Optional[UUID] = None
+    source_prompt_hash: Optional[str] = None
+    source_tools_hash: Optional[str] = None
+    prompt_customized: Optional[bool] = False
+    tools_customized: Optional[bool] = False
+    preset_update_available: Optional[bool] = False
 
 
 class FlowCreate(FlowBase):
@@ -124,6 +131,11 @@ class FlowResponse(FlowBase):
     account_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+    # Template tracking - expose in response for UI to show update notifications
+    source_preset_id: Optional[UUID] = None
+    prompt_customized: bool = False
+    tools_customized: bool = False
+    preset_update_available: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -133,6 +145,7 @@ class FlowResponse(FlowBase):
         "ai_model_id",
         "trigger_organization_id",
         "trigger_project_id",
+        "source_preset_id",
     )
     def serialize_uuids(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID fields to strings."""

@@ -2083,6 +2083,129 @@ class GitHubTracker(BaseTracker):
             logger.error(f"Error updating pull request {pr_number}: {e}")
             raise TrackerResponseError(f"Failed to update pull request: {e}")
 
+    async def create_pull_request(
+        self,
+        title: str,
+        source_branch: str,
+        target_branch: str,
+        description: Optional[str] = None,
+        draft: bool = False,
+        assignees: Optional[List[str]] = None,
+        reviewers: Optional[List[str]] = None,
+        labels: Optional[List[str]] = None,
+        milestone: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a GitHub pull request.
+
+        Args:
+            title: PR title
+            source_branch: Branch containing the changes (head branch)
+            target_branch: Branch to merge into (base branch)
+            description: PR description/body
+            draft: Whether to create as draft PR
+            assignees: List of assignee usernames
+            reviewers: List of reviewer usernames
+            labels: List of label names
+            milestone: Milestone number or title
+
+        Returns:
+            Dict with created PR details including id, number, title, url
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        try:
+            # Create the pull request
+            create_data = {
+                "title": title,
+                "head": source_branch,
+                "base": target_branch,
+                "body": description or "",
+                "draft": draft,
+            }
+
+            pr_path = f"/repos/{owner}/{repo}/pulls"
+            pr_data = await self._request("POST", pr_path, data=create_data)
+            pr_number = pr_data["number"]
+
+            logger.info(f"Created pull request #{pr_number}: {title}")
+
+            # Add assignees if provided
+            if assignees:
+                try:
+                    assignees_path = (
+                        f"/repos/{owner}/{repo}/issues/{pr_number}/assignees"
+                    )
+                    await self._request(
+                        "POST", assignees_path, data={"assignees": assignees}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to add assignees to PR #{pr_number}: {e}")
+
+            # Request reviewers if provided
+            if reviewers:
+                try:
+                    reviewers_path = (
+                        f"/repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers"
+                    )
+                    await self._request(
+                        "POST", reviewers_path, data={"reviewers": reviewers}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to add reviewers to PR #{pr_number}: {e}")
+
+            # Add labels if provided
+            if labels:
+                try:
+                    labels_path = f"/repos/{owner}/{repo}/issues/{pr_number}/labels"
+                    await self._request("POST", labels_path, data={"labels": labels})
+                except Exception as e:
+                    logger.warning(f"Failed to add labels to PR #{pr_number}: {e}")
+
+            # Set milestone if provided
+            if milestone:
+                try:
+                    # Try to get milestone by number first, then by title
+                    milestone_number = None
+                    if milestone.isdigit():
+                        milestone_number = int(milestone)
+                    else:
+                        # Search for milestone by title
+                        milestones_path = f"/repos/{owner}/{repo}/milestones"
+                        milestones = await self._request("GET", milestones_path)
+                        for m in milestones:
+                            if m["title"].lower() == milestone.lower():
+                                milestone_number = m["number"]
+                                break
+
+                    if milestone_number:
+                        issue_path = f"/repos/{owner}/{repo}/issues/{pr_number}"
+                        await self._request(
+                            "PATCH", issue_path, data={"milestone": milestone_number}
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to set milestone on PR #{pr_number}: {e}")
+
+            return {
+                "id": str(pr_data["id"]),
+                "number": pr_data["number"],
+                "title": pr_data["title"],
+                "description": pr_data.get("body", ""),
+                "state": pr_data["state"],
+                "url": pr_data["html_url"],
+                "is_draft": pr_data.get("draft", False),
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating pull request: {e}")
+            raise TrackerResponseError(f"Failed to create pull request: {e}")
+
     @async_retry()
     async def submit_pull_request_review(
         self,

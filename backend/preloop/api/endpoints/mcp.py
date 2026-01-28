@@ -1372,17 +1372,19 @@ async def get_pull_request(
         project_path = slug_parts[0]
 
     # Find the project
+    # For GitLab nested groups (e.g., "group/subgroup/project#123"), try full path first
     project_obj = None
-    if owner and repo:
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db,
-            slug_or_identifier=f"{owner}/{repo}",
-            account_id=str(current_user.account_id),
-        )
-    elif project_path:
+    if project_path:
         project_obj = crud_project.get_by_slug_or_identifier(
             db,
             slug_or_identifier=project_path,
+            account_id=str(current_user.account_id),
+        )
+    if not project_obj and owner and repo:
+        # Fall back to owner/repo for GitHub and simple paths
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=f"{owner}/{repo}",
             account_id=str(current_user.account_id),
         )
 
@@ -1725,17 +1727,19 @@ async def update_pull_request(
         project_path = slug_parts[0]
 
     # Find the project
+    # For GitLab nested groups (e.g., "group/subgroup/project#123"), try full path first
     project_obj = None
-    if owner and repo:
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db,
-            slug_or_identifier=f"{owner}/{repo}",
-            account_id=str(current_user.account_id),
-        )
-    elif project_path:
+    if project_path:
         project_obj = crud_project.get_by_slug_or_identifier(
             db,
             slug_or_identifier=project_path,
+            account_id=str(current_user.account_id),
+        )
+    if not project_obj and owner and repo:
+        # Fall back to owner/repo for GitHub and simple paths
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=f"{owner}/{repo}",
             account_id=str(current_user.account_id),
         )
 
@@ -1982,6 +1986,202 @@ async def update_pull_request(
         raise HTTPException(
             status_code=502,
             detail=f"Failed to update pull request/merge request: {str(e)}",
+        )
+
+
+async def create_pull_request(
+    project: str,
+    title: str,
+    source_branch: str,
+    target_branch: str,
+    description: Optional[str] = None,
+    draft: bool = False,
+    assignees: Optional[List[str]] = None,
+    reviewers: Optional[List[str]] = None,
+    labels: Optional[List[str]] = None,
+    milestone: Optional[str] = None,
+    extra_options: Optional[Dict] = None,
+) -> "CreatePullRequestResponse":
+    """
+    Handles the 'create_pull_request' tool call.
+
+    Creates a GitHub pull request or GitLab merge request.
+    Auto-detects the platform from the project configuration.
+
+    Args:
+        project: Project identifier (slug like "owner/repo", full path, or URL).
+        title: PR/MR title.
+        source_branch: Branch containing the changes (head branch).
+        target_branch: Branch to merge into (base branch).
+        description: PR/MR description/body.
+        draft: Whether to create as draft.
+        assignees: List of assignee usernames.
+        reviewers: List of reviewer usernames.
+        labels: List of label names.
+        milestone: Milestone number or title.
+        extra_options: Additional options (e.g., squash, remove_source_branch for GitLab).
+
+    Returns:
+        CreatePullRequestResponse with created PR/MR details.
+    """
+    from preloop.schemas.mcp import CreatePullRequestResponse
+
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+
+    # Parse project identifier
+    project_path = project
+    platform = None
+
+    # Detect platform from URL if provided
+    if "github.com" in project.lower():
+        platform = "github"
+        # Extract owner/repo from GitHub URL
+        if "github.com/" in project:
+            parts = project.split("github.com/")[1].split("/")
+            if len(parts) >= 2:
+                project_path = f"{parts[0]}/{parts[1].rstrip('/')}"
+    elif "gitlab" in project.lower():
+        platform = "gitlab"
+        # Extract project path from GitLab URL
+        if "://" in project:
+            url_parts = project.split("://")[1].split("/")
+            if len(url_parts) >= 2:
+                project_path = "/".join(url_parts[1:]).rstrip("/")
+
+    # Find the project in database
+    from preloop.models.crud import crud_project
+
+    # Try full project path first (handles GitLab nested groups)
+    project_obj = crud_project.get_by_slug_or_identifier(
+        db,
+        slug_or_identifier=project_path,
+        account_id=str(current_user.account_id),
+    )
+
+    # Fall back to simpler matching if not found
+    if not project_obj and "/" in project_path:
+        parts = project_path.split("/")
+        if len(parts) >= 2:
+            simple_path = f"{parts[-2]}/{parts[-1]}"
+            project_obj = crud_project.get_by_slug_or_identifier(
+                db,
+                slug_or_identifier=simple_path,
+                account_id=str(current_user.account_id),
+            )
+
+    if not project_obj:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project not found: {project}. Make sure it's synced to your account.",
+        )
+
+    # Get tracker client
+    tracker_client = await get_tracker_client(
+        project_obj.organization_id, project_obj.id, db, current_user
+    )
+
+    # Determine platform from tracker if not already known
+    if platform is None:
+        platform = tracker_client.tracker_type.lower()
+
+    try:
+        if platform == "github":
+            logger.info(
+                f"Creating GitHub PR: {title} ({source_branch} -> {target_branch})"
+            )
+            result = await tracker_client.create_pull_request(
+                title=title,
+                source_branch=source_branch,
+                target_branch=target_branch,
+                description=description,
+                draft=draft,
+                assignees=assignees,
+                reviewers=reviewers,
+                labels=labels,
+                milestone=milestone,
+            )
+
+            return CreatePullRequestResponse(
+                pull_request_id=str(result["id"]),
+                number=result["number"],
+                status="created",
+                message=f"Successfully created pull request #{result['number']}",
+                url=result["url"],
+                source_branch=source_branch,
+                target_branch=target_branch,
+                is_draft=result.get("is_draft", False),
+            )
+
+        else:  # GitLab
+            logger.info(
+                f"Creating GitLab MR: {title} ({source_branch} -> {target_branch})"
+            )
+
+            # Parse extra options for GitLab
+            squash = None
+            remove_source_branch = None
+            allow_collaboration = None
+
+            if extra_options:
+                squash = extra_options.get("squash")
+                remove_source_branch = extra_options.get("remove_source_branch")
+                allow_collaboration = extra_options.get("allow_collaboration")
+
+            # Convert usernames to IDs for GitLab if needed
+            # Note: This is a simplified approach - in production you might want
+            # to resolve usernames to IDs via the GitLab API
+            assignee_ids = None
+            reviewer_ids = None
+
+            # For now, we'll pass usernames and let the tracker handle it
+            # or the caller can provide IDs directly in extra_options
+            if extra_options and "assignee_ids" in extra_options:
+                assignee_ids = extra_options["assignee_ids"]
+            if extra_options and "reviewer_ids" in extra_options:
+                reviewer_ids = extra_options["reviewer_ids"]
+
+            milestone_id = None
+            if milestone and milestone.isdigit():
+                milestone_id = int(milestone)
+            elif extra_options and "milestone_id" in extra_options:
+                milestone_id = extra_options["milestone_id"]
+
+            result = await tracker_client.create_merge_request(
+                title=title,
+                source_branch=source_branch,
+                target_branch=target_branch,
+                description=description,
+                draft=draft,
+                assignee_ids=assignee_ids,
+                reviewer_ids=reviewer_ids,
+                labels=labels,
+                milestone_id=milestone_id,
+                squash=squash,
+                remove_source_branch=remove_source_branch,
+                allow_collaboration=allow_collaboration,
+            )
+
+            return CreatePullRequestResponse(
+                pull_request_id=str(result["id"]),
+                number=result["iid"],
+                status="created",
+                message=f"Successfully created merge request !{result['iid']}",
+                url=result["url"],
+                source_branch=source_branch,
+                target_branch=target_branch,
+                is_draft=result.get("work_in_progress", False),
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error creating pull request/merge request: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to create pull request/merge request: {str(e)}",
         )
 
 

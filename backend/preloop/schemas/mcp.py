@@ -220,6 +220,44 @@ class MergeRequestResponse(BaseModel):
     changes: Optional[dict] = None  # Diff/changes information
 
 
+class CreatePullRequestRequest(BaseModel):
+    """Request body for the create_pull_request tool."""
+
+    project: str  # Project identifier (slug like "owner/repo" or project path)
+    title: str
+    source_branch: str  # Branch containing the changes (head)
+    target_branch: str  # Branch to merge into (base)
+    description: Optional[str] = None
+    draft: bool = False
+    assignees: Optional[List[str]] = None
+    reviewers: Optional[List[str]] = None
+    labels: Optional[List[str]] = None
+    milestone: Optional[str] = None  # Milestone number or title
+    # Extra options (primarily for GitLab)
+    extra_options: Optional[dict] = (
+        None  # {"squash": bool, "remove_source_branch": bool, etc.}
+    )
+
+
+class CreatePullRequestResponse(BaseModel):
+    """Response for the create_pull_request tool."""
+
+    pull_request_id: str
+    number: int  # PR/MR number
+    status: str  # e.g., "created"
+    message: str
+    url: str
+    source_branch: str
+    target_branch: str
+    is_draft: bool = False
+
+    @field_validator("pull_request_id", mode="before")
+    @classmethod
+    def validate_pull_request_id(cls, value) -> str:
+        """Convert to string for validation."""
+        return str(value) if value is not None else ""
+
+
 class UpdatePullRequestRequest(BaseModel):
     """Request body for the update_pull_request tool."""
 

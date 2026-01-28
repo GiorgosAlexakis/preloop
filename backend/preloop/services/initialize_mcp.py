@@ -699,7 +699,71 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         )
         return result.model_dump_json()
 
-    # Register Tool 12: update_merge_request (DEPRECATED - use update_pull_request)
+    # Register Tool 12: create_pull_request
+    @mcp.tool()
+    async def create_pull_request(
+        project: str,
+        title: str,
+        source_branch: str,
+        target_branch: str,
+        description: str | None = None,
+        draft: bool = False,
+        assignees: list[str] | None = None,
+        reviewers: list[str] | None = None,
+        labels: list[str] | None = None,
+        milestone: str | None = None,
+        extra_options: dict | None = None,
+        ctx: Optional[Context] = None,
+    ) -> str:
+        """Create a pull request (GitHub) or merge request (GitLab). Auto-detects platform from project. Provide project as slug (owner/repo), full path, or URL. Use extra_options for GitLab-specific options like squash, remove_source_branch, assignee_ids, reviewer_ids, milestone_id."""
+        # Get user context for approval checking
+        from preloop.services.dynamic_fastmcp_http import get_current_user_context
+
+        user_context = get_current_user_context()
+
+        if not user_context:
+            return "Error: No user context available"
+
+        # Check approval with streaming
+        approved, error = await require_approval(
+            tool_name="create_pull_request",
+            tool_source="builtin",
+            account_id=user_context.account_id,
+            arguments={
+                "project": project,
+                "title": title,
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+                "description": description,
+                "draft": draft,
+                "assignees": assignees,
+                "reviewers": reviewers,
+                "labels": labels,
+                "milestone": milestone,
+                "extra_options": extra_options,
+            },
+            ctx=ctx,
+        )
+
+        if not approved:
+            return error
+
+        result = await mcp_router.create_pull_request(
+            project=project,
+            title=title,
+            source_branch=source_branch,
+            target_branch=target_branch,
+            description=description,
+            draft=draft,
+            assignees=assignees,
+            reviewers=reviewers,
+            labels=labels,
+            milestone=milestone,
+            extra_options=extra_options,
+        )
+        return result.model_dump_json()
+
+    # Register Tool 13: update_merge_request (DEPRECATED - use update_pull_request)
     @mcp.tool()
     async def update_merge_request(
         merge_request: str,
@@ -754,6 +818,6 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         )
         return result.model_dump_json()
 
-    logger.info("All 13 default tools registered with DynamicFastMCP")
+    logger.info("All 14 default tools registered with DynamicFastMCP")
 
     return mcp
