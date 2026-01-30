@@ -289,23 +289,6 @@ BUILTIN_TOOLS = [
         },
     },
     {
-        "name": "get_merge_request",
-        "description": "[DEPRECATED: Use get_pull_request instead, which auto-detects platform] Get details of a GitLab merge request",
-        "source": "builtin",
-        "requires_tracker": True,
-        "required_tracker_types": ["gitlab"],
-        "schema": {
-            "type": "object",
-            "properties": {
-                "merge_request": {
-                    "type": "string",
-                    "description": "MR identifier (URL, slug, or IID)",
-                }
-            },
-            "required": ["merge_request"],
-        },
-    },
-    {
         "name": "update_pull_request",
         "description": "Update a pull request's metadata and/or submit a review. To update PR properties: provide title, description, labels, etc. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback.",
         "source": "builtin",
@@ -421,45 +404,6 @@ BUILTIN_TOOLS = [
                 },
             },
             "required": ["project", "title", "source_branch", "target_branch"],
-        },
-    },
-    {
-        "name": "update_merge_request",
-        "description": "[DEPRECATED: Use update_pull_request instead, which auto-detects platform] Update a GitLab merge request",
-        "source": "builtin",
-        "requires_tracker": True,
-        "required_tracker_types": ["gitlab"],
-        "schema": {
-            "type": "object",
-            "properties": {
-                "merge_request": {
-                    "type": "string",
-                    "description": "MR identifier (URL, slug, or IID)",
-                },
-                "title": {"type": "string", "description": "New MR title"},
-                "description": {"type": "string", "description": "New MR description"},
-                "state_event": {
-                    "type": "string",
-                    "description": "State event (close/reopen)",
-                },
-                "assignee_ids": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "Assignee user IDs",
-                },
-                "reviewer_ids": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "Reviewer user IDs",
-                },
-                "labels": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Label names",
-                },
-                "draft": {"type": "boolean", "description": "Mark as draft/WIP"},
-            },
-            "required": ["merge_request"],
         },
     },
 ]

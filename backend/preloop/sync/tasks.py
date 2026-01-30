@@ -60,11 +60,12 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     # Prefix subject with instance URL for chat notifications
     instance_prefix = f"[{instance_url}] "
 
-    # Send email notification
+    # Send email notification (only if product_team_email is configured)
     admin_email = settings.product_team_email
-    # Include instance URL in email subject
-    email_subject = f"{instance_prefix}{subject}"
-    send_email(admin_email, email_subject, message, message_html)
+    if admin_email:
+        # Include instance URL in email subject
+        email_subject = f"{instance_prefix}{subject}"
+        send_email(admin_email, email_subject, message, message_html)
 
     # Send Slack notification if webhook is configured
     slack_webhook = settings.slack_webhook_url

@@ -86,10 +86,10 @@ def _detect_platform_from_url(url: str) -> Literal["github", "gitlab"]:
     if "gitlab.com" in url_lower or "gitlab." in url_lower:
         return "gitlab"
 
-    # Check URL structure patterns
-    if "/pull/" in url:
+    # Check URL structure patterns (use url_lower for consistency)
+    if "/pull/" in url_lower:
         return "github"
-    if "/merge_requests/" in url or "/-/" in url:
+    if "/merge_requests/" in url_lower or "/-/" in url_lower:
         return "gitlab"
 
     # Default based on common patterns
@@ -1348,9 +1348,9 @@ async def get_pull_request(
                 owner = parts[3]
                 repo = parts[4]
                 if "pull" in parts:
-                    pr_number = (
-                        parts[parts.index("pull") + 1].split("?")[0].split("#")[0]
-                    )
+                    pull_idx = parts.index("pull")
+                    if pull_idx + 1 < len(parts):
+                        pr_number = parts[pull_idx + 1].split("?")[0].split("#")[0]
         elif platform == "gitlab" or "gitlab" in pr_identifier.lower():
             platform = "gitlab"
             if "merge_requests" in pr_identifier:
@@ -1584,9 +1584,9 @@ async def update_pull_request(
                 owner = parts[3]
                 repo = parts[4]
                 if "pull" in parts:
-                    pr_number = (
-                        parts[parts.index("pull") + 1].split("?")[0].split("#")[0]
-                    )
+                    pull_idx = parts.index("pull")
+                    if pull_idx + 1 < len(parts):
+                        pr_number = parts[pull_idx + 1].split("?")[0].split("#")[0]
         elif platform == "gitlab" or "gitlab" in pr_identifier.lower():
             platform = "gitlab"
             if "merge_requests" in pr_identifier:
