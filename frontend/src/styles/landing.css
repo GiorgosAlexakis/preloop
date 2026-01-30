@@ -3,6 +3,7 @@
   font-family: 'Inter', sans-serif;
   background-color: #161b24;
   color: #e6edf3;
+  overflow-x: hidden;
 }
 
 p,
@@ -162,10 +163,6 @@ p.lead {
   text-align: left;
 }
 
-#features .section-container {
-  padding-left: 0;
-  padding-right: 0;
-}
 
 .carousel-navigation {
   margin-top: auto;
@@ -789,8 +786,19 @@ summary.faq-question sl-icon {
     max-width: 100%;
   }
 
+  .hero-content h1 {
+    font-size: 2.8rem;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .hero-content .lead {
+    font-size: 1.1rem;
+  }
+
   .hero-buttons {
     justify-content: center;
+    flex-wrap: wrap;
   }
 
   .feature-grid {
@@ -807,6 +815,16 @@ summary.faq-question sl-icon {
 
   .get-started-container {
     flex-direction: column;
+  }
+
+  .title-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .title-container .main-link {
+    top: 0;
   }
 
   .ide-tabs {

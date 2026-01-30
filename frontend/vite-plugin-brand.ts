@@ -546,7 +546,7 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
          data-title="${featuredVideo.title || ''}"
          data-youtube-url="${featuredVideo.youtube_url || ''}"
          data-youtube-embed="${featuredVideo.youtube_embed || ''}">
-      <h2>${featuredVideo.title || 'See It in Action'}</h2>
+      ${featuredVideo.title ? `<h2>${featuredVideo.title}</h2>` : ''}
       <iframe width="560" height="315" src="${featuredVideo.youtube_embed}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
     </div>`;
       }
