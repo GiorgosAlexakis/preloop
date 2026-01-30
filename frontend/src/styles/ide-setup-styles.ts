@@ -181,18 +181,39 @@ export const ideSetupStyles = css`
       flex-direction: column;
     }
 
+    .tabs-wrapper {
+      flex-direction: column;
+    }
+
     .ide-tabs {
       flex-direction: row;
       border-right: none;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+      overflow-x: auto;
     }
 
     .ide-logo-container {
       flex: 1;
+      height: 60px;
+      min-width: 60px;
+      padding: 0.75rem;
+    }
+
+    .ide-logo-container img {
+      max-width: 80px;
     }
 
     .ide-logo-container.active {
       border-left: none;
       border-bottom: 3px solid #fff;
+    }
+
+    .tab-content {
+      padding: 1.5rem;
+    }
+
+    .modal-variant .ide-tabs {
+      border-bottom: 1px solid var(--sl-color-neutral-200);
     }
 
     .modal-variant .ide-logo-container.active {
