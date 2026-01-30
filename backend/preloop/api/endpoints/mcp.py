@@ -78,12 +78,12 @@ def _detect_platform_from_url(url: str) -> Literal["github", "gitlab"]:
     """
     url_lower = url.lower()
 
-    # Check for GitHub indicators
-    if "github.com" in url_lower or "github" in url_lower:
+    # Check for GitHub indicators (must be github.com domain)
+    if "github.com" in url_lower:
         return "github"
 
-    # Check for GitLab indicators
-    if "gitlab" in url_lower:
+    # Check for GitLab indicators (gitlab.com or contains gitlab in domain)
+    if "gitlab.com" in url_lower or "gitlab." in url_lower:
         return "gitlab"
 
     # Check URL structure patterns
@@ -1324,7 +1324,6 @@ async def get_pull_request(
     """
     from preloop.schemas.mcp import PullRequestResponse
 
-    db = next(get_db())
     db, current_user = await _get_authenticated_user(get_http_request().headers)
 
     pr_identifier = pull_request.strip()
@@ -1822,6 +1821,14 @@ async def update_pull_request(
                         status_code=400,
                         detail=f"Invalid review_action: {review_action}. "
                         "Must be 'approve', 'request_changes', or 'comment'.",
+                    )
+
+                # Validate that comment reviews have content
+                if event == "COMMENT" and not review_body and not review_comments:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="review_action='comment' requires either review_body "
+                        "or review_comments to be provided.",
                     )
 
                 logger.info(
