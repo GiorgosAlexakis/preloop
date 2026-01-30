@@ -1010,7 +1010,26 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   selectPreset(preset: any) {
+    // Copy preset to flow
     this.flow = { ...preset };
+
+    // Transform allowed_mcp_tools from preset format [{name: "tool"}] to flow format [{server_name, tool_name}]
+    if (preset.allowed_mcp_tools && Array.isArray(preset.allowed_mcp_tools)) {
+      this.flow.allowed_mcp_tools = preset.allowed_mcp_tools.map(
+        (tool: { name: string }) => ({
+          server_name: 'preloop-mcp',
+          tool_name: tool.name,
+        })
+      );
+    } else {
+      this.flow.allowed_mcp_tools = [];
+    }
+
+    // Ensure preloop-mcp is in allowed_mcp_servers
+    if (!this.flow.allowed_mcp_servers?.includes('preloop-mcp')) {
+      this.flow.allowed_mcp_servers = ['preloop-mcp'];
+    }
+
     this.creationMode = 'scratch';
   }
 
