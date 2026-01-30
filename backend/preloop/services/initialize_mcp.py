@@ -605,37 +605,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         )
         return result.model_dump_json()
 
-    # Register Tool 10: get_merge_request (DEPRECATED - use get_pull_request)
-    @mcp.tool()
-    async def get_merge_request(
-        merge_request: str,
-        ctx: Optional[Context] = None,
-    ) -> str:
-        """[DEPRECATED: Use get_pull_request instead, which auto-detects platform] Get details of a GitLab merge request."""
-        # Get user context for approval checking
-        from preloop.services.dynamic_fastmcp_http import get_current_user_context
-
-        user_context = get_current_user_context()
-
-        if not user_context:
-            return "Error: No user context available"
-
-        # Check approval with streaming
-        approved, error = await require_approval(
-            tool_name="get_merge_request",
-            tool_source="builtin",
-            account_id=user_context.account_id,
-            arguments={"merge_request": merge_request},
-            ctx=ctx,
-        )
-
-        if not approved:
-            return error
-
-        result = await mcp_router.get_merge_request(merge_request=merge_request)
-        return result.model_dump_json()
-
-    # Register Tool 11: update_pull_request
+    # Register Tool 10: update_pull_request
     @mcp.tool()
     async def update_pull_request(
         pull_request: str,
@@ -763,61 +733,6 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         )
         return result.model_dump_json()
 
-    # Register Tool 13: update_merge_request (DEPRECATED - use update_pull_request)
-    @mcp.tool()
-    async def update_merge_request(
-        merge_request: str,
-        title: str | None = None,
-        description: str | None = None,
-        state_event: str | None = None,
-        assignee_ids: list[int] | None = None,
-        reviewer_ids: list[int] | None = None,
-        labels: list[str] | None = None,
-        draft: bool | None = None,
-        ctx: Optional[Context] = None,
-    ) -> str:
-        """[DEPRECATED: Use update_pull_request instead, which auto-detects platform] Update a GitLab merge request."""
-        # Get user context for approval checking
-        from preloop.services.dynamic_fastmcp_http import get_current_user_context
-
-        user_context = get_current_user_context()
-
-        if not user_context:
-            return "Error: No user context available"
-
-        # Check approval with streaming
-        approved, error = await require_approval(
-            tool_name="update_merge_request",
-            tool_source="builtin",
-            account_id=user_context.account_id,
-            arguments={
-                "merge_request": merge_request,
-                "title": title,
-                "description": description,
-                "state_event": state_event,
-                "assignee_ids": assignee_ids,
-                "reviewer_ids": reviewer_ids,
-                "labels": labels,
-                "draft": draft,
-            },
-            ctx=ctx,
-        )
-
-        if not approved:
-            return error
-
-        result = await mcp_router.update_merge_request(
-            merge_request=merge_request,
-            title=title,
-            description=description,
-            state_event=state_event,
-            assignee_ids=assignee_ids,
-            reviewer_ids=reviewer_ids,
-            labels=labels,
-            draft=draft,
-        )
-        return result.model_dump_json()
-
-    logger.info("All 14 default tools registered with DynamicFastMCP")
+    logger.info("All 12 default tools registered with DynamicFastMCP")
 
     return mcp

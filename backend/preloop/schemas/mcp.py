@@ -191,35 +191,6 @@ class PullRequestResponse(BaseModel):
     changes: Optional[dict] = None  # Diff/changes information
 
 
-class GetMergeRequestRequest(BaseModel):
-    """Request body for the get_merge_request tool."""
-
-    merge_request: str  # MR identifier (URL, slug, or number)
-
-
-class MergeRequestResponse(BaseModel):
-    """Response for the get_merge_request tool."""
-
-    id: str
-    iid: int  # GitLab internal ID
-    title: str
-    description: Optional[str] = None
-    state: str  # e.g., "opened", "closed", "merged"
-    author: Optional[str] = None
-    assignees: List[str] = []
-    reviewers: List[str] = []
-    labels: List[str] = []
-    url: str
-    source_branch: Optional[str] = None
-    target_branch: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    merged_at: Optional[str] = None
-    work_in_progress: bool = False
-    comments: List[dict] = []
-    changes: Optional[dict] = None  # Diff/changes information
-
-
 class CreatePullRequestRequest(BaseModel):
     """Request body for the create_pull_request tool."""
 
@@ -282,34 +253,6 @@ class UpdatePullRequestResponse(BaseModel):
     @field_validator("pull_request_id", mode="before")
     @classmethod
     def validate_pull_request_id(cls, value: UUID | str) -> str:
-        """Convert UUID to string for validation."""
-        return str(value) if isinstance(value, UUID) else value
-
-
-class UpdateMergeRequestRequest(BaseModel):
-    """Request body for the update_merge_request tool."""
-
-    merge_request: str  # MR identifier (URL, slug, or number)
-    title: Optional[str] = None
-    description: Optional[str] = None
-    state_event: Optional[str] = None  # "close", "reopen"
-    assignee_ids: Optional[List[int]] = None
-    reviewer_ids: Optional[List[int]] = None
-    labels: Optional[List[str]] = None
-    draft: Optional[bool] = None
-
-
-class UpdateMergeRequestResponse(BaseModel):
-    """Response for the update_merge_request tool."""
-
-    merge_request_id: str
-    status: str  # e.g., "updated"
-    message: str
-    url: Optional[str] = None
-
-    @field_validator("merge_request_id", mode="before")
-    @classmethod
-    def validate_merge_request_id(cls, value: UUID | str) -> str:
         """Convert UUID to string for validation."""
         return str(value) if isinstance(value, UUID) else value
 

@@ -159,7 +159,6 @@ class TestListTools:
         default_tools = [
             Tool(name="get_issue", description="Get issue", parameters={}),
             Tool(name="get_pull_request", description="Get PR", parameters={}),
-            Tool(name="get_merge_request", description="Get MR", parameters={}),
         ]
 
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
@@ -182,7 +181,6 @@ class TestListTools:
         # Should include tools compatible with tracker types (github)
         assert any(t.name == "get_issue" for t in result)
         assert any(t.name == "get_pull_request" for t in result)
-        assert not any(t.name == "get_merge_request" for t in result)
 
     async def test_list_tools_includes_request_approval_without_tracker(
         self, dynamic_mcp
