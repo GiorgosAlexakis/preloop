@@ -622,5 +622,3 @@ async def test_mcp_update_pull_request_success(db_session: Session, test_user: U
     assert response.pull_request_id == "pr-123"
     assert "Successfully performed" in response.message
     assert "metadata update" in response.message
-
-
