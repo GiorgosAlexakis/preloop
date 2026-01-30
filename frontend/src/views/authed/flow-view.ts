@@ -1062,19 +1062,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
   renderForm() {
     return html`
-      ${this.formError
-        ? html`
-            <sl-alert
-              variant="danger"
-              open
-              closable
-              @sl-after-hide=${() => (this.formError = null)}
-            >
-              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-              ${this.formError}
-            </sl-alert>
-          `
-        : ''}
       <form @submit=${this.handleSubmit}>
         <sl-card>
           <sl-input
@@ -1506,6 +1493,21 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             >Save as Preset</sl-checkbox
           >
         </div>
+
+        ${this.formError
+          ? html`
+              <sl-alert
+                variant="danger"
+                open
+                closable
+                @sl-after-hide=${() => (this.formError = null)}
+              >
+                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                ${this.formError}
+              </sl-alert>
+            `
+          : ''}
+
         <div style="display: flex; gap: var(--sl-spacing-small);">
           <sl-button type="submit" variant="primary"
             >${this.isNew ? 'Create' : 'Update'}</sl-button
@@ -1578,16 +1580,11 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
         Router.go(`/console/flows/${this.flowId}`);
       }
     } catch (error: any) {
-      // Extract error message from API response
-      let errorMessage = 'Failed to save flow. Please try again.';
-      if (error?.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error?.message) {
-        errorMessage = error.message;
-      }
-      this.formError = errorMessage;
-      // Scroll to top to show error
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Extract error message - API functions now throw with actual error messages
+      this.formError =
+        error?.message || 'Failed to save flow. Please try again.';
+      // Scroll to bottom where the error and submit button are
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     }
   }
   startPollingOrganizations(trackerId: string) {

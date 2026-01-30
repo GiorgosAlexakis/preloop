@@ -31,6 +31,8 @@ def create_flow(
 ):
     """Create new flow."""
     # Check for name uniqueness within account
+    # Note: We intentionally allow flows to have the same name as global presets,
+    # as users should be able to customize presets and keep the original name
     existing_in_account = crud_flow.get_by_name_and_account(
         db, name=flow_in.name, account_id=current_user.account_id
     )
@@ -39,15 +41,6 @@ def create_flow(
             status_code=400,
             detail=f"A flow with name '{flow_in.name}' already exists in your account",
         )
-
-    # Check if name conflicts with a global preset (unless creating a preset)
-    if not flow_in.is_preset:
-        global_preset = crud_flow.get_global_preset_by_name(db, name=flow_in.name)
-        if global_preset:
-            raise HTTPException(
-                status_code=400,
-                detail=f"A global preset with name '{flow_in.name}' already exists. Please choose a different name.",
-            )
 
     # Security check: Only superusers can configure custom commands
     if flow_in.custom_commands and flow_in.custom_commands.enabled:
@@ -603,6 +596,7 @@ def update_flow(
         raise HTTPException(status_code=404, detail="Flow not found")
 
     # Check for name uniqueness if name is being changed
+    # Note: We intentionally allow flows to have the same name as global presets
     if flow_in.name and flow_in.name != flow.name:
         existing_in_account = crud_flow.get_by_name_and_account(
             db, name=flow_in.name, account_id=current_user.account_id
@@ -612,15 +606,6 @@ def update_flow(
                 status_code=400,
                 detail=f"A flow with name '{flow_in.name}' already exists in your account",
             )
-
-        # Check if name conflicts with a global preset (unless this is a preset)
-        if not flow.is_preset:
-            global_preset = crud_flow.get_global_preset_by_name(db, name=flow_in.name)
-            if global_preset:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"A global preset with name '{flow_in.name}' already exists. Please choose a different name.",
-                )
 
     # Security check: Only superusers can configure custom commands
     if flow_in.custom_commands and flow_in.custom_commands.enabled:
