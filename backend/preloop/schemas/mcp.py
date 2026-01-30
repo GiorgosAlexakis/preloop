@@ -145,6 +145,11 @@ class AddCommentRequest(BaseModel):
 
     target: str  # Issue, PR, or MR identifier (URL, key, or ID)
     comment: str
+    # Optional parameters for inline/review comments
+    line: Optional[int] = None  # Line number for inline comments
+    path: Optional[str] = None  # File path for inline comments
+    side: Optional[str] = None  # "LEFT" or "RIGHT" for diff comments
+    in_reply_to: Optional[str] = None  # Comment ID to reply to (creates thread)
 
 
 class AddCommentResponse(BaseModel):
@@ -166,6 +171,11 @@ class GetPullRequestRequest(BaseModel):
     """Request body for the get_pull_request tool."""
 
     pull_request: str  # PR identifier (URL, slug, or number)
+    include_comments: bool = True  # Include all comments/discussions
+    include_diff: bool = True  # Include file changes
+    filter_comments_by_author: Optional[str] = (
+        None  # Filter comments by author username
+    )
 
 
 class PullRequestResponse(BaseModel):
@@ -229,10 +239,20 @@ class CreatePullRequestResponse(BaseModel):
         return str(value) if value is not None else ""
 
 
+class ReviewComment(BaseModel):
+    """Inline review comment for pull request reviews."""
+
+    path: str  # File path
+    line: int  # Line number
+    body: str  # Comment body
+    side: Optional[str] = None  # "LEFT" or "RIGHT"
+
+
 class UpdatePullRequestRequest(BaseModel):
     """Request body for the update_pull_request tool."""
 
     pull_request: str  # PR identifier (URL, slug, or number)
+    # Metadata updates
     title: Optional[str] = None
     description: Optional[str] = None
     state: Optional[str] = None  # "open", "closed"
@@ -240,6 +260,10 @@ class UpdatePullRequestRequest(BaseModel):
     reviewers: Optional[List[str]] = None
     labels: Optional[List[str]] = None
     draft: Optional[bool] = None
+    # Review submission
+    review_action: Optional[str] = None  # "approve", "request_changes", "comment"
+    review_body: Optional[str] = None  # Review summary comment
+    review_comments: Optional[List[ReviewComment]] = None  # Inline review comments
 
 
 class UpdatePullRequestResponse(BaseModel):
@@ -264,6 +288,7 @@ class UpdateCommentRequest(BaseModel):
     comment_id: str  # Comment/note ID to update
     body: Optional[str] = None  # New comment body
     resolved: Optional[bool] = None  # Whether to resolve/unresolve the thread
+    thread_id: Optional[str] = None  # Thread/discussion ID for resolution
 
 
 class UpdateCommentResponse(BaseModel):

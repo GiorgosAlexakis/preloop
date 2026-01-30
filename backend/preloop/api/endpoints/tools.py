@@ -230,7 +230,7 @@ BUILTIN_TOOLS = [
     },
     {
         "name": "update_comment",
-        "description": "Update or resolve an existing comment on a pull request, merge request, or issue. To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false. Both can be done in a single call.",
+        "description": "Update or resolve an existing comment on a pull request, merge request, or issue. To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false with thread_id. Both can be done in a single call.",
         "source": "builtin",
         "requires_tracker": True,
         "required_tracker_types": [],
@@ -252,6 +252,10 @@ BUILTIN_TOOLS = [
                 "resolved": {
                     "type": "boolean",
                     "description": "Resolve or unresolve the thread",
+                },
+                "thread_id": {
+                    "type": "string",
+                    "description": "Thread/discussion ID for resolution. For GitHub: the review thread node_id (e.g., 'PRRT_...'). For GitLab: the discussion ID. Required when using resolved parameter.",
                 },
             },
             "required": ["target", "comment_id"],

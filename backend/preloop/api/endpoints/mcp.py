@@ -1047,6 +1047,15 @@ async def add_comment(
         try:
             # Handle inline comments (path and line provided)
             if path and line is not None:
+                # Inline comments are only supported on GitHub and GitLab PRs/MRs
+                if platform not in ("github", "gitlab"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Inline comments (path/line) are only supported for "
+                        f"GitHub and GitLab pull/merge requests. "
+                        f"Tracker type '{tracker_client.tracker_type}' does not support this feature.",
+                    )
+
                 if platform == "github":
                     # If replying to an existing review comment, use threaded reply
                     if in_reply_to:
@@ -1091,7 +1100,7 @@ async def add_comment(
                         url=review_result.get("html_url"),
                     )
 
-                else:  # GitLab
+                else:  # GitLab (explicitly checked above)
                     # If replying to an existing discussion, add a note to it
                     if in_reply_to:
                         logger.info(
@@ -1142,6 +1151,15 @@ async def add_comment(
             else:
                 # Handle threaded replies
                 if in_reply_to:
+                    # Threaded replies are only supported on GitHub and GitLab
+                    if platform not in ("github", "gitlab"):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Threaded replies (in_reply_to) are only supported for "
+                            f"GitHub and GitLab pull/merge requests. "
+                            f"Tracker type '{tracker_client.tracker_type}' does not support this feature.",
+                        )
+
                     if platform == "github":
                         # GitHub: reply to a review comment
                         logger.info(
@@ -1158,7 +1176,7 @@ async def add_comment(
                             message=f"Successfully replied to comment {in_reply_to} on PR {target_id}",
                             url=reply_result.get("html_url"),
                         )
-                    else:  # GitLab
+                    else:  # GitLab (explicitly checked above)
                         # GitLab: reply to a discussion
                         logger.info(
                             f"Replying to discussion {in_reply_to} on GitLab MR {target_id}"
@@ -1747,7 +1765,14 @@ async def update_pull_request(
                     logger.info(f"Successfully requested changes on MR {pr_number}")
 
                 elif review_action_lower == "comment":
-                    # Just add a comment
+                    # Validate that comment reviews have content
+                    if not review_body and not review_comments:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="review_action='comment' requires either review_body "
+                            "or review_comments to be provided.",
+                        )
+                    # Add a comment
                     if review_body:
                         logger.info(f"Adding comment to GitLab MR {pr_number}")
                         discussion_result = await tracker_client.create_mr_discussion(
