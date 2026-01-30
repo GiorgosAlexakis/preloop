@@ -151,3 +151,339 @@ def test_remove_not_found(crud_approval_policy, mock_db_session):
     assert result is None
     mock_db_session.delete.assert_not_called()
     mock_db_session.commit.assert_not_called()
+
+
+def test_get_default(crud_approval_policy, mock_db_session):
+    """Test retrieving the default approval policy for an account."""
+    # Arrange
+    account_id = str(uuid4())
+    mock_policy = MagicMock()
+    mock_policy.is_default = True
+    mock_policy.account_id = account_id
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = mock_policy
+
+    # Act
+    result = crud_approval_policy.get_default(mock_db_session, account_id=account_id)
+
+    # Assert
+    assert result is not None
+    assert result.is_default is True
+
+
+def test_get_default_not_found(crud_approval_policy, mock_db_session):
+    """Test retrieving default policy when none exists."""
+    # Arrange
+    account_id = str(uuid4())
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = None
+
+    # Act
+    result = crud_approval_policy.get_default(mock_db_session, account_id=account_id)
+
+    # Assert
+    assert result is None
+
+
+def test_create_first_policy_becomes_default(crud_approval_policy, mock_db_session):
+    """Test that first policy for an account becomes default."""
+    # Arrange
+    account_id = str(uuid4())
+    policy_data = {"name": "First Policy", "approval_type": "standard"}
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    # No existing policies
+    mock_query.count.return_value = 0
+
+    mock_db_session.add = MagicMock()
+    mock_db_session.commit = MagicMock()
+    mock_db_session.refresh = MagicMock()
+
+    # Act
+    result = crud_approval_policy.create(
+        mock_db_session, obj_in=policy_data, account_id=account_id
+    )
+
+    # Assert
+    assert result is not None
+    mock_db_session.add.assert_called_once()
+    mock_db_session.commit.assert_called_once()
+
+
+def test_create_with_explicit_default(crud_approval_policy, mock_db_session):
+    """Test creating policy with explicit is_default=True."""
+    # Arrange
+    account_id = str(uuid4())
+    policy_data = {
+        "name": "New Default",
+        "approval_type": "standard",
+        "is_default": True,
+    }
+
+    # One existing policy
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.count.return_value = 1
+    mock_query.first.return_value = None  # No current default to unmark
+
+    mock_db_session.add = MagicMock()
+    mock_db_session.commit = MagicMock()
+    mock_db_session.refresh = MagicMock()
+    mock_db_session.flush = MagicMock()
+
+    # Act
+    result = crud_approval_policy.create(
+        mock_db_session, obj_in=policy_data, account_id=account_id
+    )
+
+    # Assert
+    assert result is not None
+    mock_db_session.add.assert_called_once()
+
+
+def test_create_without_default_when_policies_exist(
+    crud_approval_policy, mock_db_session
+):
+    """Test creating non-default policy when others exist."""
+    # Arrange
+    account_id = str(uuid4())
+    policy_data = {"name": "Second Policy", "approval_type": "standard"}
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    # Existing policies
+    mock_query.count.return_value = 1
+
+    mock_db_session.add = MagicMock()
+    mock_db_session.commit = MagicMock()
+    mock_db_session.refresh = MagicMock()
+
+    # Act
+    result = crud_approval_policy.create(
+        mock_db_session, obj_in=policy_data, account_id=account_id
+    )
+
+    # Assert
+    assert result is not None
+
+
+def test_update_setting_as_default(crud_approval_policy, mock_db_session):
+    """Test updating policy to become default."""
+    # Arrange
+    policy_id = uuid4()
+    account_id = str(uuid4())
+    mock_policy = MagicMock()
+    mock_policy.id = policy_id
+    mock_policy.account_id = account_id
+    mock_policy.is_default = False
+
+    update_data = {"is_default": True}
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = None  # No existing default
+
+    mock_db_session.add = MagicMock()
+    mock_db_session.commit = MagicMock()
+    mock_db_session.refresh = MagicMock()
+    mock_db_session.flush = MagicMock()
+
+    # Act
+    result = crud_approval_policy.update(
+        mock_db_session, db_obj=mock_policy, obj_in=update_data
+    )
+
+    # Assert
+    mock_db_session.add.assert_called()
+    mock_db_session.commit.assert_called_once()
+
+
+def test_update_not_changing_default(crud_approval_policy, mock_db_session):
+    """Test updating policy without changing default status."""
+    # Arrange
+    policy_id = uuid4()
+    account_id = str(uuid4())
+    mock_policy = MagicMock()
+    mock_policy.id = policy_id
+    mock_policy.account_id = account_id
+    mock_policy.is_default = True
+
+    update_data = {"name": "Updated Name"}
+
+    mock_db_session.add = MagicMock()
+    mock_db_session.commit = MagicMock()
+    mock_db_session.refresh = MagicMock()
+
+    # Act
+    result = crud_approval_policy.update(
+        mock_db_session, db_obj=mock_policy, obj_in=update_data
+    )
+
+    # Assert
+    assert result.name == "Updated Name"
+    mock_db_session.commit.assert_called_once()
+
+
+def test_remove_default_promotes_another(crud_approval_policy, mock_db_session):
+    """Test that removing default policy promotes another policy."""
+    # Arrange
+    policy_id = uuid4()
+    account_id = str(uuid4())
+    mock_policy = MagicMock()
+    mock_policy.id = policy_id
+    mock_policy.account_id = account_id
+    mock_policy.is_default = True
+
+    replacement_policy = MagicMock()
+    replacement_policy.is_default = False
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
+    # First call returns policy to delete, second call returns replacement
+    mock_query.first.side_effect = [mock_policy, replacement_policy]
+
+    mock_db_session.delete = MagicMock()
+    mock_db_session.flush = MagicMock()
+    mock_db_session.add = MagicMock()
+    mock_db_session.commit = MagicMock()
+
+    # Act
+    result = crud_approval_policy.remove(
+        mock_db_session, id=policy_id, account_id=account_id
+    )
+
+    # Assert
+    assert result == mock_policy
+    mock_db_session.delete.assert_called_once_with(mock_policy)
+    mock_db_session.commit.assert_called_once()
+    # Replacement should be marked as default
+    assert replacement_policy.is_default is True
+
+
+def test_remove_default_no_replacement(crud_approval_policy, mock_db_session):
+    """Test removing default policy when no other policies exist."""
+    # Arrange
+    policy_id = uuid4()
+    account_id = str(uuid4())
+    mock_policy = MagicMock()
+    mock_policy.id = policy_id
+    mock_policy.account_id = account_id
+    mock_policy.is_default = True
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
+    # First call returns policy to delete, second call returns None (no replacement)
+    mock_query.first.side_effect = [mock_policy, None]
+
+    mock_db_session.delete = MagicMock()
+    mock_db_session.flush = MagicMock()
+    mock_db_session.commit = MagicMock()
+
+    # Act
+    result = crud_approval_policy.remove(
+        mock_db_session, id=policy_id, account_id=account_id
+    )
+
+    # Assert
+    assert result == mock_policy
+    mock_db_session.delete.assert_called_once_with(mock_policy)
+    mock_db_session.commit.assert_called_once()
+
+
+def test_get_by_name_not_found(crud_approval_policy, mock_db_session):
+    """Test retrieving policy by name that doesn't exist."""
+    # Arrange
+    account_id = str(uuid4())
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = None
+
+    # Act
+    result = crud_approval_policy.get_by_name(
+        mock_db_session, account_id=account_id, name="Non-existent"
+    )
+
+    # Assert
+    assert result is None
+
+
+def test_get_not_found(crud_approval_policy, mock_db_session):
+    """Test retrieving policy by ID that doesn't exist."""
+    # Arrange
+    policy_id = uuid4()
+    account_id = str(uuid4())
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = None
+
+    # Act
+    result = crud_approval_policy.get(
+        mock_db_session, id=policy_id, account_id=account_id
+    )
+
+    # Assert
+    assert result is None
+
+
+def test_get_multi_by_account_empty(crud_approval_policy, mock_db_session):
+    """Test retrieving policies when none exist."""
+    # Arrange
+    account_id = str(uuid4())
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.offset.return_value = mock_query
+    mock_query.limit.return_value = mock_query
+    mock_query.all.return_value = []
+
+    # Act
+    result = crud_approval_policy.get_multi_by_account(
+        mock_db_session, account_id=account_id
+    )
+
+    # Assert
+    assert result == []
+
+
+def test_get_multi_by_account_with_pagination(crud_approval_policy, mock_db_session):
+    """Test retrieving policies with pagination."""
+    # Arrange
+    account_id = str(uuid4())
+    mock_policies = [MagicMock() for _ in range(5)]
+
+    mock_query = MagicMock()
+    mock_db_session.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.offset.return_value = mock_query
+    mock_query.limit.return_value = mock_query
+    mock_query.all.return_value = mock_policies
+
+    # Act
+    result = crud_approval_policy.get_multi_by_account(
+        mock_db_session, account_id=account_id, skip=10, limit=5
+    )
+
+    # Assert
+    assert len(result) == 5
+    mock_query.offset.assert_called()
+    mock_query.limit.assert_called()

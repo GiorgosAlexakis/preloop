@@ -27,9 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Session Manager**: Database writes now run in thread pool to prevent event loop blocking during connection spikes
 - **WebSocket Endpoints**: Updated to support message-based authentication for browsers
 
+### Deprecated
+
+- **`get_merge_request` MCP Tool**: Use `get_pull_request` instead. Works with both GitHub PRs and GitLab MRs.
+- **`update_merge_request` MCP Tool**: Use `update_pull_request` instead. Works with both GitHub PRs and GitLab MRs.
+
 ### Fixed
 
 - **GitHub Inline Comment ID**: `add_comment` now returns the actual comment ID instead of the review ID for GitHub inline comments, enabling proper follow-up updates via `update_comment`
+- **Thread Resolution Validation**: `update_comment` now properly validates that `thread_id` is required for resolving threads. GitHub requires a thread ID (format: `PRRT_...`), not a comment ID.
+- **Inline Comment Side Parameter**: `add_comment` no longer validates the `side` parameter for non-inline comments, fixing errors when `side` was passed for regular comments
 - **Event Loop Blocking**: FCM notifications and session DB writes no longer block the FastAPI event loop
 - **WebSocket Middleware Paths**: Middleware now handles `/api/v1/ws` prefixed paths correctly
 - **Telemetry Env Var**: Both `PRELOOP_DISABLE_TELEMETRY` and `DISABLE_VERSION_CHECK` now work to disable telemetry

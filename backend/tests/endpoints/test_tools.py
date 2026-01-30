@@ -665,3 +665,391 @@ class TestApprovalPolicyEndpoints:
 
         assert "message" in result
         assert "2 tool(s)" in result["message"]
+
+
+class TestApprovalPolicyEndpointsErrorHandling:
+    """Test approval policy endpoints error handling."""
+
+    async def test_get_approval_policy_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test getting non-existent approval policy returns 404."""
+        policy_id = uuid.uuid4()
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.get_approval_policy(
+                policy_id=policy_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert "not found" in exc_info.value.detail.lower()
+
+    async def test_update_approval_policy_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test updating non-existent approval policy returns 404."""
+        policy_id = uuid.uuid4()
+        update_data = ApprovalPolicyUpdate(name="New Name")
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.update_approval_policy(
+                policy_id=policy_id,
+                policy_update=update_data,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_update_approval_policy_duplicate_name(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test updating approval policy with duplicate name returns 400."""
+        policy_id = uuid.uuid4()
+        another_policy_id = uuid.uuid4()
+
+        policy = MagicMock(spec=ApprovalPolicy)
+        policy.id = policy_id
+        policy.name = "Original Name"
+        policy.account_id = str(mock_account.id)
+        policy.is_default = False
+
+        existing_policy = MagicMock(spec=ApprovalPolicy)
+        existing_policy.id = another_policy_id
+        existing_policy.name = "Conflicting Name"
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            return_value=policy,
+        )
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.get_by_name",
+            return_value=existing_policy,
+        )
+
+        update_data = ApprovalPolicyUpdate(name="Conflicting Name")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.update_approval_policy(
+                policy_id=policy_id,
+                policy_update=update_data,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
+        assert "already exists" in exc_info.value.detail
+
+    async def test_delete_approval_policy_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test deleting non-existent approval policy returns 404."""
+        policy_id = uuid.uuid4()
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.delete_approval_policy(
+                policy_id=policy_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_delete_approval_policy_remove_fails(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test deleting approval policy when remove returns None."""
+        policy_id = uuid.uuid4()
+        policy = MagicMock(spec=ApprovalPolicy)
+        policy.id = policy_id
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            return_value=policy,
+        )
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.count_by_policy",
+            return_value=0,
+        )
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.remove",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.delete_approval_policy(
+                policy_id=policy_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_create_approval_policy_error(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test creating approval policy with database error."""
+        policy_data = ApprovalPolicyCreate(
+            name="Test Policy",
+            approval_type="slack",
+            channel="#approvals",
+        )
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.get_by_name",
+            return_value=None,
+        )
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_approval_policy.create",
+            side_effect=Exception("Database error"),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.create_approval_policy(
+                policy_data=policy_data,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        mock_db.rollback.assert_called()
+
+
+class TestToolConfigurationEndpointsErrorHandling:
+    """Test tool configuration endpoints error handling."""
+
+    async def test_update_tool_configuration_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test updating non-existent tool configuration returns 404."""
+        config_id = uuid.uuid4()
+        update_data = ToolConfigurationUpdate(is_enabled=False)
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.update_tool_configuration(
+                config_id=config_id,
+                config_update=update_data,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_delete_tool_configuration_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test deleting non-existent tool configuration returns 404."""
+        config_id = uuid.uuid4()
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.delete_tool_configuration(
+                config_id=config_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_update_tool_configuration_error(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test updating tool configuration with database error."""
+        config_id = uuid.uuid4()
+        config = MagicMock(spec=ToolConfiguration)
+        config.id = config_id
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=config,
+        )
+
+        # Simulate error during commit
+        mock_db.commit.side_effect = Exception("Database error")
+
+        update_data = ToolConfigurationUpdate(is_enabled=False)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.update_tool_configuration(
+                config_id=config_id,
+                config_update=update_data,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        mock_db.rollback.assert_called()
+
+    async def test_delete_tool_configuration_error(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test deleting tool configuration with database error."""
+        config_id = uuid.uuid4()
+        config = MagicMock(spec=ToolConfiguration)
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=config,
+        )
+
+        mock_db.commit.side_effect = Exception("Database error")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.delete_tool_configuration(
+                config_id=config_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        mock_db.rollback.assert_called()
+
+
+class TestApprovalConditionEndpoints:
+    """Test tool approval condition endpoints."""
+
+    async def test_get_approval_condition_tool_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test getting approval condition when tool config not found."""
+        config_id = uuid.uuid4()
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.get_tool_approval_condition(
+                config_id=config_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert "Tool configuration not found" in exc_info.value.detail
+
+    async def test_get_approval_condition_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test getting approval condition when no condition exists."""
+        config_id = uuid.uuid4()
+        config = MagicMock(spec=ToolConfiguration)
+        config.id = config_id
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=config,
+        )
+        mocker.patch(
+            "preloop.api.endpoints.tools.tool_approval_condition.get_by_tool_configuration",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.get_tool_approval_condition(
+                config_id=config_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert "No approval condition found" in exc_info.value.detail
+
+    async def test_delete_approval_condition_tool_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test deleting approval condition when tool config not found."""
+        config_id = uuid.uuid4()
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.delete_tool_approval_condition(
+                config_id=config_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_delete_approval_condition_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test deleting approval condition when no condition exists."""
+        config_id = uuid.uuid4()
+        config = MagicMock(spec=ToolConfiguration)
+        config.id = config_id
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=config,
+        )
+        mocker.patch(
+            "preloop.api.endpoints.tools.tool_approval_condition.get_by_tool_configuration",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.delete_tool_approval_condition(
+                config_id=config_id,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestUpdateToolApprovalCondition:
+    """Test update_tool_approval_condition endpoint."""
+
+    async def test_update_approval_condition_tool_not_found(
+        self, mock_db, mock_user, mock_account, mocker
+    ):
+        """Test updating approval condition when tool config not found."""
+        config_id = uuid.uuid4()
+        condition_data = {"approval_condition": "args.severity == 'high'"}
+
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.get",
+            return_value=None,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await tools.update_tool_approval_condition(
+                config_id=config_id,
+                condition_data=condition_data,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND

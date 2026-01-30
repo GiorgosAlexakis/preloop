@@ -953,16 +953,6 @@ async def add_comment(
 
     target = target.strip()
 
-    # Validate side parameter only for inline comments (when path and line provided)
-    # If side is None or not provided, default to "RIGHT"
-    if side is None:
-        side = "RIGHT"
-    elif side not in ("LEFT", "RIGHT"):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid side parameter. Must be 'LEFT' or 'RIGHT'.",
-        )
-
     # Validate that path and line must be provided together for inline comments
     if (path is not None and line is None) or (path is None and line is not None):
         raise HTTPException(
@@ -970,6 +960,18 @@ async def add_comment(
             detail="For inline comments, both 'path' and 'line' must be provided together. "
             "Received only one of them.",
         )
+
+    # Validate side parameter only for inline comments (when path and line provided)
+    # For non-inline comments, the side parameter is ignored
+    if path is not None and line is not None:
+        # This is an inline comment - validate/default the side parameter
+        if side is None:
+            side = "RIGHT"
+        elif side not in ("LEFT", "RIGHT"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid side parameter. Must be 'LEFT' or 'RIGHT'.",
+            )
 
     # Detect if target is a PR/MR URL and handle separately
     is_pull_request = False
@@ -2277,29 +2279,41 @@ async def update_comment(
 
             # Resolve/unresolve thread if requested
             if resolved is not None:
-                # Use thread_id for resolution if provided, otherwise fall back to comment_id
-                # WARNING: GitHub's resolve_review_thread requires the thread's GraphQL node_id
-                # (format: "PRRT_..."), not a comment ID. If thread_id is not provided,
-                # resolution may fail.
-                resolution_id = thread_id or comment_id
+                # GitHub's resolve_review_thread requires the thread's GraphQL node_id
+                # (format: "PRRT_..."), not a comment ID (format: "PRRC_...").
+                # We must have a valid thread_id to proceed.
                 if not thread_id:
-                    logger.warning(
-                        f"No thread_id provided for GitHub thread resolution. "
-                        f"Using comment_id={comment_id} which may not work - "
-                        "GitHub requires the thread's GraphQL node_id (PRRT_...)."
-                    )
+                    # Check if comment_id looks like a thread ID
+                    if comment_id.startswith("PRRT_"):
+                        # User passed thread_id as comment_id, use it
+                        thread_id = comment_id
+                        logger.info(
+                            "Using comment_id as thread_id since it has PRRT_ prefix"
+                        )
+                    else:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "GitHub thread resolution requires a thread_id parameter "
+                                "(format: 'PRRT_...'). The comment_id provided "
+                                f"('{comment_id[:20]}...') is a comment ID, not a thread ID. "
+                                "To resolve a thread, you must provide the thread's GraphQL "
+                                "node_id. You can find this in the 'thread_id' field when "
+                                "fetching PR comments."
+                            ),
+                        )
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitHub review "
-                    f"thread {resolution_id}"
+                    f"thread {thread_id}"
                 )
-                resolve_result = await tracker_client.resolve_review_thread(
-                    thread_id=resolution_id,
+                await tracker_client.resolve_review_thread(
+                    thread_id=thread_id,
                     resolved=resolved,
                 )
                 actions_taken.append("resolved" if resolved else "unresolved")
                 logger.info(
                     f"Successfully {'resolved' if resolved else 'unresolved'} "
-                    f"review thread {resolution_id}"
+                    f"review thread {thread_id}"
                 )
 
         else:  # GitLab
@@ -2318,29 +2332,33 @@ async def update_comment(
 
             # Resolve/unresolve discussion if requested
             if resolved is not None:
-                # Use thread_id (discussion_id) for resolution if provided, otherwise fall back to comment_id
-                # WARNING: GitLab's resolve_mr_discussion requires the discussion ID, not a note ID.
-                # If thread_id is not provided, resolution may fail.
-                discussion_id = thread_id or comment_id
+                # GitLab's resolve_mr_discussion requires the discussion ID, not a note ID.
+                # We must have a valid thread_id (discussion_id) to proceed.
                 if not thread_id:
-                    logger.warning(
-                        f"No thread_id provided for GitLab discussion resolution. "
-                        f"Using comment_id={comment_id} which may not work - "
-                        "GitLab requires the discussion ID, not the note ID."
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "GitLab discussion resolution requires a thread_id parameter "
+                            "(the discussion ID). The comment_id provided "
+                            f"('{comment_id}') is a note ID, not a discussion ID. "
+                            "To resolve a discussion, you must provide the discussion ID. "
+                            "You can find this in the 'discussion_id' field when "
+                            "fetching MR discussions."
+                        ),
                     )
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitLab MR "
-                    f"discussion {discussion_id}"
+                    f"discussion {thread_id}"
                 )
                 await tracker_client.resolve_mr_discussion(
                     mr_iid=pr_mr_number,
-                    discussion_id=discussion_id,
+                    discussion_id=thread_id,
                     resolved=resolved,
                 )
                 actions_taken.append("resolved" if resolved else "unresolved")
                 logger.info(
                     f"Successfully {'resolved' if resolved else 'unresolved'} "
-                    f"MR discussion {discussion_id}"
+                    f"MR discussion {thread_id}"
                 )
 
         message = (

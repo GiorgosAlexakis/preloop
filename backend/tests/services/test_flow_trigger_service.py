@@ -657,3 +657,410 @@ class TestCreateOrchestratorSession:
 
         mock_session_factory.assert_called_once()
         assert result == mock_session_factory.return_value
+
+
+class TestExtractResourceKeyEdgeCases:
+    """Additional edge case tests for _extract_resource_key method."""
+
+    def test_gitlab_issue_resource_key(self, flow_trigger_service):
+        """Test extracting resource key from GitLab issue event."""
+        event_data = {
+            "source": "gitlab",
+            "payload": {
+                "object_kind": "issue",
+                "object_attributes": {
+                    "iid": 42,
+                },
+                "project": {
+                    "path_with_namespace": "company/project",
+                },
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        assert result == "gitlab:company/project:issue:42"
+
+    def test_gitlab_missing_iid_returns_none(self, flow_trigger_service):
+        """Test that missing GitLab iid returns None."""
+        event_data = {
+            "source": "gitlab",
+            "payload": {
+                "object_kind": "merge_request",
+                "object_attributes": {},
+                "project": {
+                    "path_with_namespace": "group/project",
+                },
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        assert result is None
+
+    def test_gitlab_missing_project_path_returns_none(self, flow_trigger_service):
+        """Test that missing project path returns None."""
+        event_data = {
+            "source": "gitlab",
+            "payload": {
+                "object_kind": "merge_request",
+                "object_attributes": {"iid": 123},
+                "project": {},
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        assert result is None
+
+    def test_gitlab_missing_project_returns_none(self, flow_trigger_service):
+        """Test that missing project object returns None."""
+        event_data = {
+            "source": "gitlab",
+            "payload": {
+                "object_kind": "merge_request",
+                "object_attributes": {"iid": 123},
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        assert result is None
+
+    def test_github_empty_full_name_returns_none(self, flow_trigger_service):
+        """Test that empty full_name returns None."""
+        event_data = {
+            "source": "github",
+            "payload": {
+                "pull_request": {"number": 123},
+                "repository": {"full_name": ""},
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        assert result is None
+
+    def test_github_pr_zero_number(self, flow_trigger_service):
+        """Test that PR number 0 is treated as falsy and returns None."""
+        event_data = {
+            "source": "github",
+            "payload": {
+                "pull_request": {"number": 0},
+                "repository": {"full_name": "owner/repo"},
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        # Number 0 is falsy in Python, should return None
+        assert result is None
+
+    def test_case_insensitive_source(self, flow_trigger_service):
+        """Test that source comparison is case-insensitive."""
+        event_data = {
+            "source": "GITHUB",
+            "payload": {
+                "pull_request": {"number": 123},
+                "repository": {"full_name": "owner/repo"},
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        assert result == "github:owner/repo:pr:123"
+
+    def test_github_prefers_pr_over_issue(self, flow_trigger_service):
+        """Test that PR is preferred over issue when both present."""
+        event_data = {
+            "source": "github",
+            "payload": {
+                "pull_request": {"number": 100},
+                "issue": {"number": 200},
+                "repository": {"full_name": "owner/repo"},
+            },
+        }
+        result = flow_trigger_service._extract_resource_key(event_data)
+        assert result == "github:owner/repo:pr:100"
+
+
+class TestMatchesTriggerConfigEdgeCases:
+    """Additional edge case tests for _matches_trigger_config method."""
+
+    def test_empty_trigger_config_matches(self, flow_trigger_service, sample_flow):
+        """Test that empty trigger config matches."""
+        sample_flow.trigger_config = {}
+        event_data = {"payload": {"status": "opened"}}
+
+        result = flow_trigger_service._matches_trigger_config(sample_flow, event_data)
+
+        assert result is True
+
+    def test_actual_value_is_empty_string(self, flow_trigger_service, sample_flow):
+        """Test matching when actual value is empty string."""
+        sample_flow.trigger_config = {"branch": ""}
+        event_data = {"payload": {"branch": ""}}
+
+        result = flow_trigger_service._matches_trigger_config(sample_flow, event_data)
+
+        assert result is True
+
+    def test_actual_value_is_zero(self, flow_trigger_service, sample_flow):
+        """Test matching when actual value is zero (falsy but not None)."""
+        sample_flow.trigger_config = {"priority": 0}
+        event_data = {"payload": {"priority": 0}}
+
+        result = flow_trigger_service._matches_trigger_config(sample_flow, event_data)
+
+        assert result is True
+
+    def test_actual_value_is_false(self, flow_trigger_service, sample_flow):
+        """Test matching when actual value is False (falsy but not None)."""
+        sample_flow.trigger_config = {"draft": False}
+        event_data = {"payload": {"draft": False}}
+
+        result = flow_trigger_service._matches_trigger_config(sample_flow, event_data)
+
+        assert result is True
+
+    def test_expected_empty_list_with_empty_actual_list(
+        self, flow_trigger_service, sample_flow
+    ):
+        """Test empty list expected matching empty list actual."""
+        sample_flow.trigger_config = {"labels": []}
+        event_data = {"payload": {"labels": []}}
+
+        result = flow_trigger_service._matches_trigger_config(sample_flow, event_data)
+
+        # Empty list matches - no items required
+        assert result is False  # Empty expected list means nothing can match
+
+    def test_nested_filter_conditions_multiple_keys(
+        self, flow_trigger_service, sample_flow
+    ):
+        """Test nested filter_conditions with multiple keys."""
+        sample_flow.trigger_config = {
+            "assignee": "user1",
+            "filter_conditions": {
+                "labels": ["bug"],
+                "milestone": "v1.0",
+            },
+        }
+        event_data = {
+            "payload": {
+                "assignee": "user1",
+                "labels": ["bug", "critical"],
+                "milestone": "v1.0",
+            }
+        }
+
+        result = flow_trigger_service._matches_trigger_config(sample_flow, event_data)
+
+        assert result is True
+
+    def test_nested_filter_conditions_partial_match_fails(
+        self, flow_trigger_service, sample_flow
+    ):
+        """Test that partial match in nested filter_conditions fails."""
+        sample_flow.trigger_config = {
+            "assignee": "user1",
+            "filter_conditions": {
+                "labels": ["bug"],
+                "milestone": "v2.0",
+            },
+        }
+        event_data = {
+            "payload": {
+                "assignee": "user1",
+                "labels": ["bug"],
+                "milestone": "v1.0",  # Wrong milestone
+            }
+        }
+
+        result = flow_trigger_service._matches_trigger_config(sample_flow, event_data)
+
+        assert result is False
+
+
+class TestHasRunningExecutionEdgeCases:
+    """Additional edge case tests for _has_running_execution method."""
+
+    @patch("preloop.services.flow_trigger_service.crud_flow_execution")
+    def test_handles_empty_trigger_details_dict(self, mock_crud, flow_trigger_service):
+        """Test handling execution with empty trigger details dict."""
+        mock_execution = MagicMock()
+        mock_execution.trigger_event_details = {}
+        mock_crud.get_running_by_flow.return_value = [mock_execution]
+
+        result = flow_trigger_service._has_running_execution(
+            flow_id=uuid.uuid4(),
+            resource_key="github:owner/repo:pr:123",
+            account_id=str(uuid.uuid4()),
+        )
+
+        assert result is False
+
+    @patch("preloop.services.flow_trigger_service.crud_flow_execution")
+    def test_handles_missing_payload_in_trigger_details(
+        self, mock_crud, flow_trigger_service
+    ):
+        """Test handling execution with missing payload in trigger details."""
+        mock_execution = MagicMock()
+        mock_execution.trigger_event_details = {"source": "github"}
+        mock_crud.get_running_by_flow.return_value = [mock_execution]
+
+        result = flow_trigger_service._has_running_execution(
+            flow_id=uuid.uuid4(),
+            resource_key="github:owner/repo:pr:123",
+            account_id=str(uuid.uuid4()),
+        )
+
+        assert result is False
+
+    @patch("preloop.services.flow_trigger_service.crud_flow_execution")
+    def test_account_id_as_uuid_object(self, mock_crud, flow_trigger_service):
+        """Test that account_id can be passed as UUID object."""
+        mock_crud.get_running_by_flow.return_value = []
+        account_uuid = uuid.uuid4()
+
+        result = flow_trigger_service._has_running_execution(
+            flow_id=uuid.uuid4(),
+            resource_key="github:owner/repo:pr:123",
+            account_id=account_uuid,  # Pass as UUID, not string
+        )
+
+        assert result is False
+        # Verify the UUID was passed correctly
+        call_args = mock_crud.get_running_by_flow.call_args
+        assert call_args.kwargs["account_id"] == account_uuid
+
+    @patch("preloop.services.flow_trigger_service.crud_flow_execution")
+    def test_multiple_running_executions_only_one_matches(
+        self, mock_crud, flow_trigger_service
+    ):
+        """Test with multiple running executions where only one matches."""
+        # Execution 1 - different resource
+        mock_execution1 = MagicMock()
+        mock_execution1.id = uuid.uuid4()
+        mock_execution1.status = "RUNNING"
+        mock_execution1.trigger_event_details = {
+            "source": "github",
+            "payload": {
+                "pull_request": {"number": 456},
+                "repository": {"full_name": "owner/repo"},
+            },
+        }
+
+        # Execution 2 - matching resource
+        mock_execution2 = MagicMock()
+        mock_execution2.id = uuid.uuid4()
+        mock_execution2.status = "RUNNING"
+        mock_execution2.trigger_event_details = {
+            "source": "github",
+            "payload": {
+                "pull_request": {"number": 123},
+                "repository": {"full_name": "owner/repo"},
+            },
+        }
+
+        mock_crud.get_running_by_flow.return_value = [mock_execution1, mock_execution2]
+
+        result = flow_trigger_service._has_running_execution(
+            flow_id=uuid.uuid4(),
+            resource_key="github:owner/repo:pr:123",
+            account_id=str(uuid.uuid4()),
+        )
+
+        assert result is True
+
+
+class TestProcessEventEdgeCases:
+    """Additional edge case tests for process_event method."""
+
+    @patch("preloop.services.flow_trigger_service.get_nats_client")
+    @patch("preloop.services.flow_trigger_service.crud_flow")
+    async def test_process_event_handles_exception_in_flow_query(
+        self, mock_crud, mock_nats, flow_trigger_service
+    ):
+        """Test that exceptions in flow query are handled."""
+        mock_crud.get_by_trigger.side_effect = Exception("Database error")
+
+        event_data = {
+            "source": "github",
+            "type": "push",
+            "account_id": str(uuid.uuid4()),
+            "payload": {},
+        }
+
+        # Should not raise
+        await flow_trigger_service.process_event(event_data)
+
+    @patch("preloop.services.flow_trigger_service.asyncio.create_task")
+    @patch("preloop.services.flow_trigger_service.get_nats_client")
+    @patch("preloop.services.flow_trigger_service.crud_flow")
+    async def test_process_event_triggers_multiple_matching_flows(
+        self,
+        mock_crud,
+        mock_nats,
+        mock_create_task,
+        flow_trigger_service,
+    ):
+        """Test that multiple matching flows are all triggered."""
+        mock_nats.return_value = AsyncMock()
+
+        # Create two matching flows
+        flow1 = MagicMock()
+        flow1.id = uuid.uuid4()
+        flow1.name = "Flow 1"
+        flow1.is_enabled = True
+        flow1.trigger_config = None
+
+        flow2 = MagicMock()
+        flow2.id = uuid.uuid4()
+        flow2.name = "Flow 2"
+        flow2.is_enabled = True
+        flow2.trigger_config = None
+
+        mock_crud.get_by_trigger.return_value = [flow1, flow2]
+
+        event_data = {
+            "source": "github",
+            "type": "push",
+            "account_id": str(uuid.uuid4()),
+            "payload": {},
+        }
+
+        await flow_trigger_service.process_event(event_data)
+
+        # Both flows should be triggered
+        assert mock_create_task.call_count == 2
+
+    @patch("preloop.services.flow_trigger_service.asyncio.create_task")
+    @patch("preloop.services.flow_trigger_service.get_nats_client")
+    @patch("preloop.services.flow_trigger_service.crud_flow")
+    async def test_process_event_continues_after_single_flow_error(
+        self,
+        mock_crud,
+        mock_nats,
+        mock_create_task,
+        flow_trigger_service,
+    ):
+        """Test that processing continues even if one flow raises an error."""
+        mock_nats.return_value = AsyncMock()
+
+        # Create two flows - first will error, second should still trigger
+        flow1 = MagicMock()
+        flow1.id = uuid.uuid4()
+        flow1.name = "Flow 1"
+        flow1.is_enabled = True
+        flow1.trigger_config = None
+
+        flow2 = MagicMock()
+        flow2.id = uuid.uuid4()
+        flow2.name = "Flow 2"
+        flow2.is_enabled = True
+        flow2.trigger_config = None
+
+        mock_crud.get_by_trigger.return_value = [flow1, flow2]
+
+        # First call raises exception, second succeeds
+        mock_create_task.side_effect = [Exception("Error"), None]
+
+        event_data = {
+            "source": "github",
+            "type": "push",
+            "account_id": str(uuid.uuid4()),
+            "payload": {},
+        }
+
+        # Should not raise - should handle error and continue
+        await flow_trigger_service.process_event(event_data)
+
+        # Both flows should have been attempted
+        assert mock_create_task.call_count == 2

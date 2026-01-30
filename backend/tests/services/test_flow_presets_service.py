@@ -671,3 +671,317 @@ class TestDismissPresetUpdate:
         assert mock_flow.preset_update_available is False
         mock_db.commit.assert_called_once()
         mock_db.refresh.assert_called_once_with(mock_flow)
+
+
+class TestComputeContentHashEdgeCases:
+    """Additional edge case tests for compute_content_hash function."""
+
+    def test_hash_none_value(self):
+        """Test hashing None value."""
+        result = compute_content_hash(None)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_hash_nested_dict(self):
+        """Test hashing a nested dictionary."""
+        content = {
+            "level1": {
+                "level2": {
+                    "level3": "value",
+                }
+            }
+        }
+        result = compute_content_hash(content)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_hash_list_of_dicts(self):
+        """Test hashing a list of dictionaries."""
+        content = [
+            {"name": "tool1", "enabled": True},
+            {"name": "tool2", "enabled": False},
+        ]
+        result = compute_content_hash(content)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_hash_with_numeric_values(self):
+        """Test hashing content with numeric values."""
+        content = {"int": 42, "float": 3.14, "negative": -10}
+        result = compute_content_hash(content)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_hash_with_boolean_values(self):
+        """Test hashing content with boolean values."""
+        content = {"enabled": True, "disabled": False}
+        result = compute_content_hash(content)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_hash_unicode_string(self):
+        """Test hashing a unicode string."""
+        content = "Hello, 世界! 🌍"
+        result = compute_content_hash(content)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_hash_very_long_string(self):
+        """Test hashing a very long string."""
+        content = "x" * 100000
+        result = compute_content_hash(content)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_hash_whitespace_sensitivity(self):
+        """Test that whitespace differences produce different hashes."""
+        hash1 = compute_content_hash("hello world")
+        hash2 = compute_content_hash("hello  world")
+        hash3 = compute_content_hash("hello\tworld")
+        hash4 = compute_content_hash("hello\nworld")
+
+        # All should be different
+        assert len({hash1, hash2, hash3, hash4}) == 4
+
+
+class TestSyncPresetToDerivedFlowsEdgeCases:
+    """Additional edge case tests for sync_preset_to_derived_flows function."""
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_sync_with_no_derived_flows(self, mock_crud):
+        """Test syncing a preset with no derived flows."""
+        mock_db = MagicMock(spec=Session)
+        preset_id = uuid.uuid4()
+
+        mock_preset = MagicMock()
+        mock_preset.id = preset_id
+        mock_preset.name = "Test Preset"
+        mock_preset.is_preset = True
+        mock_preset.prompt_template = "test"
+        mock_preset.allowed_mcp_tools = []
+        mock_crud.get.return_value = mock_preset
+
+        # No derived flows
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        result = sync_preset_to_derived_flows(mock_db, preset_id)
+
+        assert result.auto_updated == 0
+        assert result.notified == 0
+        assert result.skipped == 0
+        assert result.errors == 0
+        mock_db.commit.assert_called_once()
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_sync_updates_prompt_only(self, mock_crud):
+        """Test syncing when only prompt needs update."""
+        mock_db = MagicMock(spec=Session)
+        preset_id = uuid.uuid4()
+
+        mock_preset = MagicMock()
+        mock_preset.id = preset_id
+        mock_preset.name = "Test Preset"
+        mock_preset.is_preset = True
+        mock_preset.prompt_template = "New prompt"
+        mock_preset.allowed_mcp_tools = ["tool1"]
+        mock_crud.get.return_value = mock_preset
+
+        # Flow with outdated prompt but up-to-date tools
+        tools_hash = compute_content_hash(["tool1"])
+        mock_flow = MagicMock()
+        mock_flow.id = uuid.uuid4()
+        mock_flow.name = "Derived Flow"
+        mock_flow.source_prompt_hash = "old_hash"
+        mock_flow.source_tools_hash = tools_hash
+        mock_flow.prompt_customized = False
+        mock_flow.tools_customized = False
+
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_flow]
+
+        result = sync_preset_to_derived_flows(mock_db, preset_id)
+
+        assert result.auto_updated == 1
+        assert mock_flow.prompt_template == "New prompt"
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_sync_updates_tools_only(self, mock_crud):
+        """Test syncing when only tools need update."""
+        mock_db = MagicMock(spec=Session)
+        preset_id = uuid.uuid4()
+
+        mock_preset = MagicMock()
+        mock_preset.id = preset_id
+        mock_preset.name = "Test Preset"
+        mock_preset.is_preset = True
+        mock_preset.prompt_template = "Current prompt"
+        mock_preset.allowed_mcp_tools = ["new_tool"]
+        mock_crud.get.return_value = mock_preset
+
+        # Flow with up-to-date prompt but outdated tools
+        prompt_hash = compute_content_hash("Current prompt")
+        mock_flow = MagicMock()
+        mock_flow.id = uuid.uuid4()
+        mock_flow.name = "Derived Flow"
+        mock_flow.source_prompt_hash = prompt_hash
+        mock_flow.source_tools_hash = "old_hash"
+        mock_flow.prompt_customized = False
+        mock_flow.tools_customized = False
+
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_flow]
+
+        result = sync_preset_to_derived_flows(mock_db, preset_id)
+
+        assert result.auto_updated == 1
+        assert mock_flow.allowed_mcp_tools == ["new_tool"]
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_sync_mixed_flows(self, mock_crud):
+        """Test syncing with a mix of different flow states."""
+        mock_db = MagicMock(spec=Session)
+        preset_id = uuid.uuid4()
+
+        mock_preset = MagicMock()
+        mock_preset.id = preset_id
+        mock_preset.name = "Test Preset"
+        mock_preset.is_preset = True
+        mock_preset.prompt_template = "New prompt"
+        mock_preset.allowed_mcp_tools = ["new_tool"]
+        mock_crud.get.return_value = mock_preset
+
+        # Flow 1: Up to date (should be skipped)
+        prompt_hash = compute_content_hash("New prompt")
+        tools_hash = compute_content_hash(["new_tool"])
+        flow1 = MagicMock()
+        flow1.id = uuid.uuid4()
+        flow1.source_prompt_hash = prompt_hash
+        flow1.source_tools_hash = tools_hash
+
+        # Flow 2: Needs update, not customized (should be auto-updated)
+        flow2 = MagicMock()
+        flow2.id = uuid.uuid4()
+        flow2.name = "Flow 2"
+        flow2.source_prompt_hash = "old_hash"
+        flow2.source_tools_hash = "old_hash"
+        flow2.prompt_customized = False
+        flow2.tools_customized = False
+
+        # Flow 3: Needs update, customized prompt (should be notified)
+        flow3 = MagicMock()
+        flow3.id = uuid.uuid4()
+        flow3.name = "Flow 3"
+        flow3.source_prompt_hash = "old_hash"
+        flow3.source_tools_hash = tools_hash
+        flow3.prompt_customized = True
+        flow3.tools_customized = False
+        flow3.preset_update_available = False
+
+        mock_db.query.return_value.filter.return_value.all.return_value = [
+            flow1,
+            flow2,
+            flow3,
+        ]
+
+        result = sync_preset_to_derived_flows(mock_db, preset_id)
+
+        assert result.skipped == 1
+        assert result.auto_updated == 1
+        assert result.notified == 1
+
+
+class TestApplyPresetUpdateToFlowEdgeCases:
+    """Additional edge case tests for apply_preset_update_to_flow function."""
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_apply_update_with_none_allowed_mcp_tools(self, mock_crud):
+        """Test applying update when allowed_mcp_tools is None."""
+        mock_db = MagicMock(spec=Session)
+        flow_id = uuid.uuid4()
+        preset_id = uuid.uuid4()
+
+        mock_flow = MagicMock()
+        mock_flow.id = flow_id
+        mock_flow.name = "Test Flow"
+        mock_flow.source_preset_id = preset_id
+
+        mock_preset = MagicMock()
+        mock_preset.prompt_template = "Updated prompt"
+        mock_preset.allowed_mcp_tools = None  # None instead of list
+        mock_preset.name = "Source Preset"
+
+        mock_crud.get.side_effect = [mock_flow, mock_preset]
+
+        result = apply_preset_update_to_flow(mock_db, flow_id)
+
+        assert result == mock_flow
+        assert mock_flow.allowed_mcp_tools is None
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_apply_update_clears_customization_flags(self, mock_crud):
+        """Test that applying update clears all customization flags."""
+        mock_db = MagicMock(spec=Session)
+        flow_id = uuid.uuid4()
+        preset_id = uuid.uuid4()
+
+        mock_flow = MagicMock()
+        mock_flow.id = flow_id
+        mock_flow.name = "Test Flow"
+        mock_flow.source_preset_id = preset_id
+        mock_flow.prompt_customized = True
+        mock_flow.tools_customized = True
+        mock_flow.preset_update_available = True
+
+        mock_preset = MagicMock()
+        mock_preset.prompt_template = "Updated prompt"
+        mock_preset.allowed_mcp_tools = ["tool"]
+        mock_preset.name = "Source Preset"
+
+        mock_crud.get.side_effect = [mock_flow, mock_preset]
+
+        apply_preset_update_to_flow(mock_db, flow_id)
+
+        # All flags should be cleared
+        assert mock_flow.prompt_customized is False
+        assert mock_flow.tools_customized is False
+        assert mock_flow.preset_update_available is False
+
+
+class TestEnsureGlobalPresetsExistEdgeCases:
+    """Additional edge case tests for ensure_global_presets_exist function."""
+
+    @patch("preloop.services.flow_presets_service.FLOW_PRESETS", [])
+    def test_ensure_global_presets_with_empty_presets_list(self):
+        """Test with empty presets list."""
+        mock_db = MagicMock(spec=Session)
+
+        result = ensure_global_presets_exist(mock_db)
+
+        assert result == []
+
+    @patch("preloop.services.flow_presets_service.schemas.FlowCreate")
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    @patch("preloop.services.flow_presets_service.FLOW_PRESETS")
+    def test_ensure_global_presets_removes_account_id(
+        self, mock_presets, mock_crud, mock_flow_create
+    ):
+        """Test that account_id is removed from preset config."""
+        mock_db = MagicMock(spec=Session)
+        mock_presets.__iter__ = lambda self: iter(
+            [
+                {
+                    "name": "Preset With Account",
+                    "prompt_template": "test",
+                    "account_id": uuid.uuid4(),  # This should be removed
+                    "agent_config": {},
+                },
+            ]
+        )
+
+        mock_crud.get_global_preset_by_name.return_value = None
+        mock_flow = MagicMock()
+        mock_crud.create.return_value = mock_flow
+
+        ensure_global_presets_exist(mock_db)
+
+        # FlowCreate should not receive account_id
+        call_kwargs = mock_flow_create.call_args[1]
+        assert "account_id" not in call_kwargs
