@@ -715,8 +715,29 @@ class ContainerAgentExecutor(AgentExecutor):
         Returns:
             True if error patterns detected
         """
-        # Benign patterns that should NOT trigger failure detection
-        # These are informational messages that contain "error" but don't indicate failure
+        logs_lower = logs_text.lower()
+
+        # Critical error patterns that always indicate failure
+        # These take priority over benign patterns
+        critical_error_patterns = [
+            "litellm.badrequesterror",
+            "litellm.authenticationerror",
+            "litellm.ratelimiterror",
+            "openaiexception",
+            "anthropicexception",
+            "traceback (most recent call last)",
+            "fatal error",
+            "critical:",
+            "agent execution failed",
+            "unhandled exception",
+        ]
+
+        for pattern in critical_error_patterns:
+            if pattern in logs_lower:
+                return True
+
+        # Benign patterns - these are informational messages that might contain
+        # "error" but don't indicate actual failure
         benign_patterns = [
             "no commits",
             "skipping push",
@@ -726,39 +747,24 @@ class ContainerAgentExecutor(AgentExecutor):
             "up-to-date",
             "already up to date",
             "everything up-to-date",
-            "failed to create pr (may already exist)",  # PR/MR creation failure is not critical
+            "failed to create pr (may already exist)",
             "failed to create mr (may already exist)",
         ]
 
-        logs_lower = logs_text.lower()
-
-        # Check for benign patterns first - if found, don't mark as error
-        for benign_pattern in benign_patterns:
-            if benign_pattern in logs_lower:
-                return False
-
-        # Critical error patterns that always indicate failure
-        critical_error_patterns = [
-            "litellm.BadRequestError",
-            "litellm.AuthenticationError",
-            "litellm.RateLimitError",
-            "OpenAIException",
-            "AnthropicException",
-            "Traceback (most recent call last)",
-            "FATAL ERROR",
-            "CRITICAL:",
-        ]
-
-        for pattern in critical_error_patterns:
-            if pattern.lower() in logs_lower:
-                return True
-
-        # Check for "ERROR:" but only if it's not a benign git-related message
-        # and if it appears multiple times (suggesting a real error, not just logging)
+        # Check for "ERROR:" but filter out benign cases
         if "error:" in logs_lower:
             # Count occurrences to filter out single informational errors
             error_count = logs_lower.count("error:")
-            if error_count >= 3:  # Multiple errors suggest real failure
+
+            # If we have errors, check if they're all benign
+            has_only_benign = False
+            for benign_pattern in benign_patterns:
+                if benign_pattern in logs_lower:
+                    has_only_benign = True
+                    break
+
+            # Multiple errors that aren't covered by benign patterns suggest real failure
+            if error_count >= 3 and not has_only_benign:
                 return True
 
         return False

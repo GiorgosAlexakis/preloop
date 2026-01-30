@@ -22,6 +22,28 @@ class CRUDOrganization(CRUDBase[Organization]):
             query = query.join(Tracker).filter(Tracker.account_id == account_id)
         return query.first()
 
+    def get_by_identifier_and_tracker(
+        self, db: Session, *, identifier: str, tracker_id: str
+    ) -> Optional[Organization]:
+        """Get organization by identifier and tracker ID.
+
+        Args:
+            db: Database session
+            identifier: Organization's external identifier (e.g., GitHub org ID)
+            tracker_id: Tracker UUID
+
+        Returns:
+            Organization if found, None otherwise
+        """
+        return (
+            db.query(Organization)
+            .filter(
+                Organization.identifier == identifier,
+                Organization.tracker_id == tracker_id,
+            )
+            .first()
+        )
+
     def get_by_name(
         self,
         db: Session,
