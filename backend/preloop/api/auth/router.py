@@ -1021,12 +1021,17 @@ async def authenticate_user(
             should_notify_on_login(old_last_login, days_threshold=7)
             and source_ip != "testclient"
         ):
+            # Capture string values before creating thread to avoid accessing
+            # detached ORM object after session.close() in finally block
+            username_str = user.username
+            email_str = user.email
+
             # Run notification in background thread to avoid blocking login
             def send_login_notification():
                 try:
                     notify_admins_user_login_after_inactivity(
-                        username=user.username,
-                        email=user.email,
+                        username=username_str,
+                        email=email_str,
                         last_login=old_last_login,
                         source_ip=source_ip,
                     )

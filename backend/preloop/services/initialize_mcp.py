@@ -568,10 +568,9 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         pull_request: str,
         include_comments: bool = True,
         include_diff: bool = True,
-        filter_comments_by_author: str | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Get details of a pull request (GitHub) or merge request (GitLab). Auto-detects platform from URL. Returns PR metadata, comments, and file changes. Use filter_comments_by_author to find comments posted by a specific user/bot."""
+        """Get details of a pull request (GitHub) or merge request (GitLab). Auto-detects platform from URL. Returns PR metadata, comments, and file changes."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -589,7 +588,6 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "pull_request": pull_request,
                 "include_comments": include_comments,
                 "include_diff": include_diff,
-                "filter_comments_by_author": filter_comments_by_author,
             },
             ctx=ctx,
         )
@@ -601,7 +599,6 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             pull_request=pull_request,
             include_comments=include_comments,
             include_diff=include_diff,
-            filter_comments_by_author=filter_comments_by_author,
         )
         return result.model_dump_json()
 

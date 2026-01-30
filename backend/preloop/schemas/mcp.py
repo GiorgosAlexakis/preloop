@@ -173,9 +173,6 @@ class GetPullRequestRequest(BaseModel):
     pull_request: str  # PR identifier (URL, slug, or number)
     include_comments: bool = True  # Include all comments/discussions
     include_diff: bool = True  # Include file changes
-    filter_comments_by_author: Optional[str] = (
-        None  # Filter comments by author username
-    )
 
 
 class PullRequestResponse(BaseModel):

@@ -263,7 +263,7 @@ BUILTIN_TOOLS = [
     },
     {
         "name": "get_pull_request",
-        "description": "Get details of a pull request (GitHub) or merge request (GitLab). Auto-detects platform from URL. Returns PR metadata, comments, and file changes. Use filter_comments_by_author to find comments posted by a specific user/bot.",
+        "description": "Get details of a pull request (GitHub) or merge request (GitLab). Auto-detects platform from URL. Returns PR metadata, comments, and file changes.",
         "source": "builtin",
         "requires_tracker": True,
         "required_tracker_types": ["github", "gitlab"],
@@ -283,10 +283,6 @@ BUILTIN_TOOLS = [
                     "type": "boolean",
                     "description": "Include file changes",
                     "default": True,
-                },
-                "filter_comments_by_author": {
-                    "type": "string",
-                    "description": "Filter comments by author username (e.g., 'preloop-bot')",
                 },
             },
             "required": ["pull_request"],

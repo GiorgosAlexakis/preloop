@@ -963,6 +963,14 @@ async def add_comment(
             detail="Invalid side parameter. Must be 'LEFT' or 'RIGHT'.",
         )
 
+    # Validate that path and line must be provided together for inline comments
+    if (path is not None and line is None) or (path is None and line is not None):
+        raise HTTPException(
+            status_code=400,
+            detail="For inline comments, both 'path' and 'line' must be provided together. "
+            "Received only one of them.",
+        )
+
     # Detect if target is a PR/MR URL and handle separately
     is_pull_request = False
     is_merge_request = False
@@ -1093,11 +1101,36 @@ async def add_comment(
                         comments=[inline_comment],
                     )
 
+                    # Fetch the actual comment ID from the review
+                    # The review response contains the review ID, not the comment ID
+                    # We need to fetch the review's comments to get the actual comment ID
+                    review_id = str(review_result.get("id", ""))
+                    comment_id = (
+                        review_id  # Fallback to review ID if we can't get comment
+                    )
+                    comment_url = review_result.get("html_url")
+
+                    try:
+                        review_comments = await tracker_client.get_review_comments(
+                            pr_number=target_id,
+                            review_id=review_id,
+                        )
+                        if review_comments:
+                            # Get the first (and should be only) comment from this review
+                            comment_id = review_comments[0].get("id", review_id)
+                            comment_url = review_comments[0].get(
+                                "html_url", comment_url
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not fetch review comment ID, using review ID: {e}"
+                        )
+
                     return AddCommentResponse(
-                        comment_id=str(review_result.get("id", "")),
+                        comment_id=str(comment_id),
                         status="created",
                         message=f"Successfully added inline comment to PR {target_id} at {path}:{line}",
-                        url=review_result.get("html_url"),
+                        url=comment_url,
                     )
 
                 else:  # GitLab (explicitly checked above)
@@ -1323,7 +1356,6 @@ async def get_pull_request(
     pull_request: str,
     include_comments: bool = True,
     include_diff: bool = True,
-    filter_comments_by_author: Optional[str] = None,
 ) -> "PullRequestResponse":
     """
     Handles the 'get_pull_request' tool call.
@@ -1335,7 +1367,6 @@ async def get_pull_request(
         pull_request: PR/MR identifier (URL, slug, or number).
         include_comments: Whether to include comments in the response.
         include_diff: Whether to include diff/changes in the response.
-        filter_comments_by_author: Optional username to filter comments by.
 
     Returns:
         PullRequestResponse with PR/MR details.
@@ -1475,7 +1506,6 @@ async def get_pull_request(
             if include_comments:
                 comments = await tracker_client.get_pull_request_comments(
                     pr_number=pr_number,
-                    filter_author=filter_comments_by_author,
                 )
                 pr_data["comments"] = comments
 
@@ -1494,7 +1524,6 @@ async def get_pull_request(
             if include_comments:
                 discussions = await tracker_client.get_mr_discussions(
                     mr_iid=pr_number,
-                    filter_author=filter_comments_by_author,
                 )
                 mr_data["comments"] = discussions
 

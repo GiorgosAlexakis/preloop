@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pull Request/Merge Request MCP Tools**: New built-in tools for PR/MR management:
+  - `get_pull_request`: Fetch PR/MR details including comments and diff
+  - `update_pull_request`: Update PR/MR state, submit reviews (approve, request changes, comment)
+  - `add_comment`: Add comments to PRs/MRs (general, inline code comments, threaded replies)
+  - `update_comment`: Update or resolve existing PR/MR comments
+  - Works with both GitHub Pull Requests and GitLab Merge Requests
 - **Android Push Notifications (FCM)**: Native Firebase Cloud Messaging support for Android mobile app push notifications
 - **Push Proxy**: Proxy endpoint allowing OSS instances to send push notifications via production infrastructure
 - **Message-based WebSocket Authentication**: Secure WebSocket auth via message after connection (tokens no longer in URLs)
@@ -23,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GitHub Inline Comment ID**: `add_comment` now returns the actual comment ID instead of the review ID for GitHub inline comments, enabling proper follow-up updates via `update_comment`
 - **Event Loop Blocking**: FCM notifications and session DB writes no longer block the FastAPI event loop
 - **WebSocket Middleware Paths**: Middleware now handles `/api/v1/ws` prefixed paths correctly
 - **Telemetry Env Var**: Both `PRELOOP_DISABLE_TELEMETRY` and `DISABLE_VERSION_CHECK` now work to disable telemetry

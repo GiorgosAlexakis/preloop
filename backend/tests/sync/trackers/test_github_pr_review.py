@@ -678,3 +678,109 @@ class TestPRReviewIntegration(IsolatedAsyncioTestCase):
         self.assertEqual(len(comments), 1)
         self.assertEqual(comments[0]["author"], "bot")
         self.assertEqual(result["state"], "APPROVED")
+
+
+@pytest.mark.asyncio
+class TestGetReviewComments(IsolatedAsyncioTestCase):
+    """Tests for get_review_comments method."""
+
+    async def test_get_review_comments_success(self):
+        """Test successfully fetching comments for a specific review."""
+        # Arrange
+        review_comments = [
+            {
+                "id": 1001,
+                "node_id": "PRRC_1001",
+                "user": {"login": "reviewer1"},
+                "body": "Inline comment on review",
+                "path": "src/main.py",
+                "line": 10,
+                "position": 5,
+                "created_at": "2023-01-15T10:00:00Z",
+                "updated_at": "2023-01-15T10:00:00Z",
+                "html_url": "https://github.com/owner/repo/pull/1#discussion_r1001",
+            }
+        ]
+
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
+        tracker._request = AsyncMock(return_value=review_comments)
+
+        # Act
+        result = await tracker.get_review_comments(
+            pr_number="1",
+            review_id="12345",
+        )
+
+        # Assert
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], "1001")
+        self.assertEqual(result[0]["body"], "Inline comment on review")
+        self.assertEqual(result[0]["author"], "reviewer1")
+        self.assertEqual(result[0]["path"], "src/main.py")
+        self.assertEqual(result[0]["line"], 10)
+
+        # Verify API call
+        tracker._request.assert_called_once_with(
+            "GET", "/repos/testowner/testrepo/pulls/1/reviews/12345/comments"
+        )
+
+    async def test_get_review_comments_empty(self):
+        """Test fetching comments when review has no comments."""
+        # Arrange
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
+        tracker._request = AsyncMock(return_value=[])
+
+        # Act
+        result = await tracker.get_review_comments(
+            pr_number="1",
+            review_id="12345",
+        )
+
+        # Assert
+        self.assertEqual(len(result), 0)
+
+    async def test_get_review_comments_missing_connection_details(self):
+        """Test error when connection details are missing."""
+        # Arrange
+        tracker = GitHubTracker(str(uuid4()), "api-key", {})
+
+        # Act & Assert
+        with self.assertRaises(TrackerResponseError) as context:
+            await tracker.get_review_comments(
+                pr_number="1",
+                review_id="12345",
+            )
+
+        self.assertIn("Owner/repo not found", str(context.exception))
+
+    async def test_get_review_comments_api_error(self):
+        """Test handling of API errors."""
+        # Arrange
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
+        tracker._request = AsyncMock(side_effect=TrackerResponseError("404 Not Found"))
+
+        # Act & Assert
+        with self.assertRaises(TrackerResponseError):
+            await tracker.get_review_comments(
+                pr_number="1",
+                review_id="99999",
+            )
+
+    async def test_get_review_comments_extracts_pr_number_from_formats(self):
+        """Test that PR number is correctly extracted from various formats."""
+        # Arrange
+        connection_details = {"owner": "testowner", "repo": "testrepo"}
+        tracker = GitHubTracker(str(uuid4()), "api-key", connection_details)
+        tracker._request = AsyncMock(return_value=[])
+
+        # Test with "owner/repo#123" format
+        await tracker.get_review_comments(
+            pr_number="testowner/testrepo#42",
+            review_id="12345",
+        )
+
+        call_args = tracker._request.call_args
+        self.assertIn("/pulls/42/", call_args[0][1])

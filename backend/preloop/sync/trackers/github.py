@@ -2293,6 +2293,74 @@ class GitHubTracker(BaseTracker):
             raise TrackerResponseError(f"Failed to submit pull request review: {e}")
 
     @async_retry()
+    async def get_review_comments(
+        self,
+        pr_number: str,
+        review_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get comments for a specific pull request review.
+
+        Args:
+            pr_number: PR number.
+            review_id: The review ID to get comments for.
+
+        Returns:
+            List of comment dicts with id, body, path, line, etc.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Extract PR number from various formats
+        pr_num = pr_number
+        if "/" in pr_number:
+            parts = pr_number.split("/")
+            pr_num = parts[-1]
+        if "#" in pr_num:
+            pr_num = pr_num.split("#")[-1]
+
+        try:
+            comments_path = (
+                f"/repos/{owner}/{repo}/pulls/{pr_num}/reviews/{review_id}/comments"
+            )
+            comments_data = await self._request("GET", comments_path)
+
+            comments = []
+            for comment in comments_data:
+                comments.append(
+                    {
+                        "id": str(comment["id"]),
+                        "node_id": comment.get("node_id"),
+                        "body": comment.get("body", ""),
+                        "path": comment.get("path"),
+                        "line": comment.get("line"),
+                        "position": comment.get("position"),
+                        "author": comment["user"]["login"]
+                        if comment.get("user")
+                        else None,
+                        "created_at": comment.get("created_at"),
+                        "updated_at": comment.get("updated_at"),
+                        "html_url": comment.get("html_url"),
+                    }
+                )
+
+            return comments
+
+        except Exception as e:
+            logger.error(
+                f"Error getting review comments for PR {pr_num}, review {review_id}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to get review comments: {e}")
+
+    @async_retry()
     async def get_pull_request_comments(
         self,
         pr_number: str,
