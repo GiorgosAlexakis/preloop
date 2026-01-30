@@ -1,7 +1,5 @@
 import logging
-import asyncio
 import uuid
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,12 +12,6 @@ from preloop.sync.services.event_bus import get_nats_client
 from preloop.models.db.session import get_session_factory
 
 logger = logging.getLogger(__name__)
-
-# Cache for recent event IDs to prevent duplicate processing
-# Format: {event_id: timestamp}
-_recent_events: Dict[str, datetime] = {}
-_events_lock = asyncio.Lock()
-_EVENT_DEDUP_WINDOW_SECONDS = 60  # Ignore duplicate events within this window
 
 
 class FlowTriggerService:

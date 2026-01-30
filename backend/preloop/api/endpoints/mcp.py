@@ -2134,18 +2134,33 @@ async def create_pull_request(
                 remove_source_branch = extra_options.get("remove_source_branch")
                 allow_collaboration = extra_options.get("allow_collaboration")
 
-            # Convert usernames to IDs for GitLab if needed
-            # Note: This is a simplified approach - in production you might want
-            # to resolve usernames to IDs via the GitLab API
+            # GitLab requires user IDs, not usernames, for assignees/reviewers
+            # Warn if usernames were provided but can't be used
             assignee_ids = None
             reviewer_ids = None
+            warnings = []
 
-            # For now, we'll pass usernames and let the tracker handle it
-            # or the caller can provide IDs directly in extra_options
             if extra_options and "assignee_ids" in extra_options:
                 assignee_ids = extra_options["assignee_ids"]
+            elif assignees:
+                warnings.append(
+                    "assignees parameter ignored for GitLab (requires user IDs). "
+                    "Use extra_options.assignee_ids instead."
+                )
+                logger.warning(
+                    f"GitLab MR creation: assignees={assignees} ignored - GitLab requires user IDs"
+                )
+
             if extra_options and "reviewer_ids" in extra_options:
                 reviewer_ids = extra_options["reviewer_ids"]
+            elif reviewers:
+                warnings.append(
+                    "reviewers parameter ignored for GitLab (requires user IDs). "
+                    "Use extra_options.reviewer_ids instead."
+                )
+                logger.warning(
+                    f"GitLab MR creation: reviewers={reviewers} ignored - GitLab requires user IDs"
+                )
 
             milestone_id = None
             if milestone and milestone.isdigit():
@@ -2168,11 +2183,15 @@ async def create_pull_request(
                 allow_collaboration=allow_collaboration,
             )
 
+            message = f"Successfully created merge request !{result['iid']}"
+            if warnings:
+                message += f". Note: {' '.join(warnings)}"
+
             return CreatePullRequestResponse(
                 pull_request_id=str(result["id"]),
                 number=result["iid"],
                 status="created",
-                message=f"Successfully created merge request !{result['iid']}",
+                message=message,
                 url=result["url"],
                 source_branch=source_branch,
                 target_branch=target_branch,
@@ -2473,7 +2492,16 @@ async def update_comment(
             # Resolve/unresolve thread if requested
             if resolved is not None:
                 # Use thread_id for resolution if provided, otherwise fall back to comment_id
+                # WARNING: GitHub's resolve_review_thread requires the thread's GraphQL node_id
+                # (format: "PRRT_..."), not a comment ID. If thread_id is not provided,
+                # resolution may fail.
                 resolution_id = thread_id or comment_id
+                if not thread_id:
+                    logger.warning(
+                        f"No thread_id provided for GitHub thread resolution. "
+                        f"Using comment_id={comment_id} which may not work - "
+                        "GitHub requires the thread's GraphQL node_id (PRRT_...)."
+                    )
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitHub review "
                     f"thread {resolution_id}"
@@ -2505,7 +2533,15 @@ async def update_comment(
             # Resolve/unresolve discussion if requested
             if resolved is not None:
                 # Use thread_id (discussion_id) for resolution if provided, otherwise fall back to comment_id
+                # WARNING: GitLab's resolve_mr_discussion requires the discussion ID, not a note ID.
+                # If thread_id is not provided, resolution may fail.
                 discussion_id = thread_id or comment_id
+                if not thread_id:
+                    logger.warning(
+                        f"No thread_id provided for GitLab discussion resolution. "
+                        f"Using comment_id={comment_id} which may not work - "
+                        "GitLab requires the discussion ID, not the note ID."
+                    )
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitLab MR "
                     f"discussion {discussion_id}"

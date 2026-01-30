@@ -1,8 +1,6 @@
-import hashlib
-import json
 import uuid
 import secrets
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -13,24 +11,10 @@ from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.db.session import get_db_session as get_db
 from preloop.api.auth import get_current_active_user
 from preloop.models.models.user import User
+from preloop.utils.hashing import compute_content_hash
 from preloop.utils.permissions import require_permission
 
 router = APIRouter()
-
-
-def compute_content_hash(content: Any) -> str:
-    """Compute a hash of content for detecting changes.
-
-    For strings (prompts), hashes the string directly.
-    For lists/dicts (tools), serializes to JSON first.
-    Returns first 16 chars of SHA256 hash.
-    """
-    if isinstance(content, str):
-        data = content.encode("utf-8")
-    else:
-        # Serialize to JSON with sorted keys for consistent hashing
-        data = json.dumps(content, sort_keys=True, default=str).encode("utf-8")
-    return hashlib.sha256(data).hexdigest()[:16]
 
 
 crud_flow = CRUDFlow()

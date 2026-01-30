@@ -10,8 +10,6 @@ Template Sync System:
 - If the user has customized, they get a notification that an update is available
 """
 
-import hashlib
-import json
 import logging
 from dataclasses import dataclass
 from typing import List, Optional
@@ -24,23 +22,9 @@ from preloop.models.crud import crud_flow
 from preloop.models.db.session import get_session_factory
 from preloop.models.models.flow import Flow
 from preloop.flow_presets import FLOW_PRESETS
+from preloop.utils.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
-
-
-def compute_content_hash(content) -> str:
-    """Compute a hash of content for detecting changes.
-
-    For strings (prompts), hashes the string directly.
-    For lists/dicts (tools), serializes to JSON first.
-    Returns first 16 chars of SHA256 hash.
-    """
-    if isinstance(content, str):
-        data = content.encode("utf-8")
-    else:
-        # Serialize to JSON with sorted keys for consistent hashing
-        data = json.dumps(content, sort_keys=True, default=str).encode("utf-8")
-    return hashlib.sha256(data).hexdigest()[:16]
 
 
 @dataclass
