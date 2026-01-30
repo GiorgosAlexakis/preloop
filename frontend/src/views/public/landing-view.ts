@@ -716,10 +716,6 @@ export class LandingView extends LitElement {
                     )}
                   </div>`
                 : ``}
-              ${this._mcpSetupTitle
-                ? html` <h3>${this._mcpSetupTitle}</h3> `
-                : ``}
-
               <ide-setup-tabs
                 .configs=${getIdeConfigs()}
                 defaultTab="claude-code"

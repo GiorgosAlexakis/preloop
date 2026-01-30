@@ -817,6 +817,16 @@ summary.faq-question sl-icon {
     flex-direction: column;
   }
 
+  .title-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .title-container .main-link {
+    top: 0;
+  }
+
   .ide-tabs {
     flex-direction: row;
     border-right: none;
