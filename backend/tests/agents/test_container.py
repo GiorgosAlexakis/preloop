@@ -399,7 +399,7 @@ class TestGetStatus:
 
         mock_docker = AsyncMock()
         mock_docker.containers.get.side_effect = DockerError(
-            status=404, data={"message": "Not found"}
+            404, {"message": "Not found"}
         )
         mock_get_client.return_value = mock_docker
 
@@ -516,7 +516,7 @@ class TestGetResult:
 
         mock_docker = AsyncMock()
         mock_docker.containers.get.side_effect = DockerError(
-            status=404, data={"message": "Not found"}
+            404, {"message": "Not found"}
         )
         mock_get_client.return_value = mock_docker
 
@@ -572,7 +572,7 @@ class TestGetLogs:
 
         mock_docker = AsyncMock()
         mock_docker.containers.get.side_effect = DockerError(
-            status=404, data={"message": "Not found"}
+            404, {"message": "Not found"}
         )
         mock_get_client.return_value = mock_docker
 

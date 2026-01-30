@@ -1002,6 +1002,7 @@ async def test_add_comment_validation_invalid_side(
 ):
     """
     Tests that providing an invalid side parameter raises a validation error.
+    Side validation only occurs for inline comments (when both path and line are provided).
     """
     with (
         patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
@@ -1021,6 +1022,8 @@ async def test_add_comment_validation_invalid_side(
             await mcp.add_comment(
                 target="owner/repo#123",
                 comment="Test comment",
+                path="src/main.py",  # Path is required for side validation
+                line=42,  # Line is required for side validation
                 side="INVALID",  # Invalid side parameter
             )
 

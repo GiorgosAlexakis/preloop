@@ -197,6 +197,9 @@ export class FlowView extends LitElement {
   private creationMode: 'scratch' | 'preset' = 'scratch';
 
   @state()
+  private sourcePresetId: string | null = null;
+
+  @state()
   private organizations: any[] = [];
 
   @state()
@@ -1014,6 +1017,10 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     // Copy preset to flow
     this.flow = { ...preset };
 
+    // Store the source preset ID for template tracking
+    // This links the new flow to the preset for auto-updates
+    this.sourcePresetId = preset.id;
+
     // Transform allowed_mcp_tools from preset format [{name: "tool"}] to flow format [{server_name, tool_name}]
     if (preset.allowed_mcp_tools && Array.isArray(preset.allowed_mcp_tools)) {
       this.flow.allowed_mcp_tools = preset.allowed_mcp_tools.map(
@@ -1576,6 +1583,14 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
     try {
       if (this.isNew) {
+        // If creating from a preset, include template tracking fields
+        if (this.sourcePresetId) {
+          payload.source_preset_id = this.sourcePresetId;
+          // Mark as not customized initially - backend will compute hashes
+          payload.prompt_customized = false;
+          payload.tools_customized = false;
+          payload.preset_update_available = false;
+        }
         const newFlow = await createFlow(payload);
         Router.go(`/console/flows/${newFlow.id}`);
       } else {

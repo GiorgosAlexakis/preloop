@@ -60,6 +60,19 @@ def create_flow(
         flow_in.trigger_event_source = "webhook"
         flow_in.trigger_event_type = "webhook"
 
+    # If creating from a preset, compute source hashes for template tracking
+    if flow_in.source_preset_id:
+        preset = crud_flow.get(db=db, id=flow_in.source_preset_id)
+        if preset and preset.is_preset:
+            # Compute hashes of the preset's current prompt and tools
+            flow_in.source_prompt_hash = compute_content_hash(preset.prompt_template)
+            flow_in.source_tools_hash = compute_content_hash(
+                preset.allowed_mcp_tools or []
+            )
+            flow_in.prompt_customized = False
+            flow_in.tools_customized = False
+            flow_in.preset_update_available = False
+
     flow = crud_flow.create(db=db, flow_in=flow_in, account_id=current_user.account_id)
     return flow
 

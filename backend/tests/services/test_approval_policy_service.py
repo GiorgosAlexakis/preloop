@@ -3,7 +3,6 @@
 Tests for default approval policy creation service functions.
 """
 
-import logging
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -114,10 +113,11 @@ class TestCreateDefaultApprovalPolicyForAccount:
         mock_crud.create.assert_not_called()
         mock_db.close.assert_called_once()
 
+    @patch("preloop.services.approval_policy_service.logger")
     @patch("preloop.services.approval_policy_service.get_session_factory")
     @patch("preloop.services.approval_policy_service.crud_approval_policy")
     def test_handles_exception_gracefully(
-        self, mock_crud, mock_session_factory, caplog
+        self, mock_crud, mock_session_factory, mock_logger
     ):
         """Test that exceptions are logged but not raised."""
         # Arrange
@@ -128,11 +128,12 @@ class TestCreateDefaultApprovalPolicyForAccount:
         mock_crud.get_default.side_effect = Exception("Database error")
 
         # Act - should not raise
-        with caplog.at_level(logging.ERROR):
-            create_default_approval_policy_for_account(account_id)
+        create_default_approval_policy_for_account(account_id)
 
-        # Assert
-        assert "Failed to create default approval policy" in caplog.text
+        # Assert - verify logger.error was called with expected message
+        mock_logger.error.assert_called_once()
+        call_args = mock_logger.error.call_args
+        assert "Failed to create default approval policy" in call_args[0][0]
         mock_db.close.assert_called_once()
 
     @patch("preloop.services.approval_policy_service.get_session_factory")
@@ -171,21 +172,23 @@ class TestCreateDefaultApprovalPolicyBackground:
         # Assert
         mock_create_func.assert_called_once_with(account_id, user_id)
 
+    @patch("preloop.services.approval_policy_service.logger")
     @patch(
         "preloop.services.approval_policy_service.create_default_approval_policy_for_account"
     )
-    def test_handles_exception_silently(self, mock_create_func, caplog):
+    def test_handles_exception_silently(self, mock_create_func, mock_logger):
         """Test that exceptions in background task are logged but not raised."""
         # Arrange
         account_id = uuid4()
         mock_create_func.side_effect = Exception("Background task error")
 
         # Act - should not raise
-        with caplog.at_level(logging.ERROR):
-            create_default_approval_policy_background(account_id)
+        create_default_approval_policy_background(account_id)
 
-        # Assert
-        assert "Background task failed" in caplog.text
+        # Assert - verify logger.error was called with expected message
+        mock_logger.error.assert_called_once()
+        call_args = mock_logger.error.call_args
+        assert "Background task failed" in call_args[0][0]
 
     @patch(
         "preloop.services.approval_policy_service.create_default_approval_policy_for_account"

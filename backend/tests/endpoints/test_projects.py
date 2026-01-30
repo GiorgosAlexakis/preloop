@@ -1,5 +1,17 @@
-"""Tests for projects API endpoints."""
+"""Tests for projects API endpoints.
 
+Note: These tests call the underlying endpoint functions directly, bypassing
+the require_permission decorator. This allows testing endpoint logic
+independently of RBAC. The RBAC permission checking is tested separately
+in plugin-specific tests.
+
+If the EE RBAC plugin is linked (via link_ee_plugins.sh), the decorator
+wraps functions in an async wrapper. To handle this, tests access the
+original unwrapped function via __wrapped__ when available.
+"""
+
+import asyncio
+import inspect
 import uuid
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,6 +25,26 @@ from preloop.schemas.project import (
     ProjectUpdate,
     TestConnectionRequest,
 )
+
+
+def call_endpoint(func, **kwargs):
+    """Call an endpoint function, handling both sync and async wrappers.
+
+    When the EE RBAC plugin is linked, endpoints are wrapped in an async
+    decorator. This helper unwraps to get the original sync function,
+    or runs the async version if needed.
+    """
+    # Try to get the original unwrapped function
+    original_func = func
+    while hasattr(original_func, "__wrapped__"):
+        original_func = original_func.__wrapped__
+
+    # If original is sync, call it directly
+    if not inspect.iscoroutinefunction(original_func):
+        return original_func(**kwargs)
+
+    # If we get here, both wrapper and original are async - run it
+    return asyncio.get_event_loop().run_until_complete(func(**kwargs))
 
 
 @pytest.fixture
@@ -96,7 +128,8 @@ class TestCreateProject:
                 with patch.object(
                     projects.crud_project, "create", return_value=mock_project
                 ):
-                    result = projects.create_project(
+                    result = call_endpoint(
+                        projects.create_project,
                         project=project_create,
                         db=mock_db_session,
                         current_user=mock_user,
@@ -115,7 +148,8 @@ class TestCreateProject:
 
         with patch.object(projects.crud_organization, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                projects.create_project(
+                call_endpoint(
+                    projects.create_project,
                     project=project_create,
                     db=mock_db_session,
                     current_user=mock_user,
@@ -141,7 +175,8 @@ class TestCreateProject:
                 projects.crud_project, "get_by_identifier", return_value=mock_project
             ):
                 with pytest.raises(HTTPException) as exc_info:
-                    projects.create_project(
+                    call_endpoint(
+                        projects.create_project,
                         project=project_create,
                         db=mock_db_session,
                         current_user=mock_user,
@@ -159,7 +194,8 @@ class TestListProjects:
         with patch.object(
             projects, "get_accessible_projects", return_value=[mock_project]
         ):
-            result = projects.list_projects(
+            result = call_endpoint(
+                projects.list_projects,
                 organization_id=None,
                 limit=100,
                 offset=0,
@@ -180,7 +216,8 @@ class TestListProjects:
             with patch.object(
                 projects.crud_organization, "get", return_value=mock_organization
             ):
-                result = projects.list_projects(
+                result = call_endpoint(
+                    projects.list_projects,
                     organization_id=mock_organization.id,
                     limit=100,
                     offset=0,
@@ -199,7 +236,8 @@ class TestListProjects:
         ):
             with patch.object(projects.crud_organization, "get", return_value=None):
                 with pytest.raises(HTTPException) as exc_info:
-                    projects.list_projects(
+                    call_endpoint(
+                        projects.list_projects,
                         organization_id=str(uuid.uuid4()),
                         limit=100,
                         offset=0,
@@ -212,7 +250,8 @@ class TestListProjects:
     def test_list_projects_empty(self, mock_user, mock_db_session):
         """Test listing when no projects exist."""
         with patch.object(projects, "get_accessible_projects", return_value=[]):
-            result = projects.list_projects(
+            result = call_endpoint(
+                projects.list_projects,
                 organization_id=None,
                 limit=100,
                 offset=0,
@@ -236,7 +275,8 @@ class TestListOrganizationProjects:
             with patch.object(
                 projects, "get_accessible_projects", return_value=[mock_project]
             ):
-                result = projects.list_organization_projects(
+                result = call_endpoint(
+                    projects.list_organization_projects,
                     organization_id=mock_organization.id,
                     limit=100,
                     offset=0,
@@ -251,7 +291,8 @@ class TestListOrganizationProjects:
         """Test 404 when organization is not found."""
         with patch.object(projects.crud_organization, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                projects.list_organization_projects(
+                call_endpoint(
+                    projects.list_organization_projects,
                     organization_id=str(uuid.uuid4()),
                     limit=100,
                     offset=0,
@@ -268,7 +309,8 @@ class TestGetProject:
     def test_get_project_success(self, mock_user, mock_project, mock_db_session):
         """Test successful project retrieval."""
         with patch.object(projects.crud_project, "get", return_value=mock_project):
-            result = projects.get_project(
+            result = call_endpoint(
+                projects.get_project,
                 project_id=mock_project.id,
                 db=mock_db_session,
                 current_user=mock_user,
@@ -281,7 +323,8 @@ class TestGetProject:
         """Test 404 when project is not found."""
         with patch.object(projects.crud_project, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                projects.get_project(
+                call_endpoint(
+                    projects.get_project,
                     project_id=str(uuid.uuid4()),
                     db=mock_db_session,
                     current_user=mock_user,
@@ -306,7 +349,8 @@ class TestGetProjectByIdentifier:
                 "get_by_slug_or_identifier",
                 return_value=mock_project,
             ):
-                result = projects.get_project_by_identifier(
+                result = call_endpoint(
+                    projects.get_project_by_identifier,
                     organization_id=mock_organization.id,
                     identifier="test-project",
                     db=mock_db_session,
@@ -319,7 +363,8 @@ class TestGetProjectByIdentifier:
         """Test 404 when organization is not found."""
         with patch.object(projects.crud_organization, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                projects.get_project_by_identifier(
+                call_endpoint(
+                    projects.get_project_by_identifier,
                     organization_id=str(uuid.uuid4()),
                     identifier="test-project",
                     db=mock_db_session,
@@ -340,7 +385,8 @@ class TestGetProjectByIdentifier:
                 projects.crud_project, "get_by_slug_or_identifier", return_value=None
             ):
                 with pytest.raises(HTTPException) as exc_info:
-                    projects.get_project_by_identifier(
+                    call_endpoint(
+                        projects.get_project_by_identifier,
                         organization_id=mock_organization.id,
                         identifier="non-existent",
                         db=mock_db_session,
@@ -376,7 +422,8 @@ class TestUpdateProject:
             with patch.object(
                 projects.crud_project, "update", return_value=updated_project
             ):
-                result = projects.update_project(
+                result = call_endpoint(
+                    projects.update_project,
                     project_id=mock_project.id,
                     project_update=project_update,
                     db=mock_db_session,
@@ -391,7 +438,8 @@ class TestUpdateProject:
 
         with patch.object(projects.crud_project, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                projects.update_project(
+                call_endpoint(
+                    projects.update_project,
                     project_id=str(uuid.uuid4()),
                     project_update=project_update,
                     db=mock_db_session,
@@ -423,7 +471,8 @@ class TestUpdateProject:
             with patch.object(
                 projects.crud_project, "update", return_value=updated_project
             ) as mock_update:
-                result = projects.update_project(
+                call_endpoint(
+                    projects.update_project,
                     project_id=mock_project.id,
                     project_update=project_update,
                     db=mock_db_session,
@@ -443,7 +492,8 @@ class TestDeleteProject:
         """Test successful project deletion."""
         with patch.object(projects.crud_project, "get", return_value=mock_project):
             with patch.object(projects.crud_project, "delete") as mock_delete:
-                result = projects.delete_project(
+                result = call_endpoint(
+                    projects.delete_project,
                     project_id=mock_project.id,
                     db=mock_db_session,
                     current_user=mock_user,
@@ -456,7 +506,8 @@ class TestDeleteProject:
         """Test 404 when project is not found."""
         with patch.object(projects.crud_project, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                projects.delete_project(
+                call_endpoint(
+                    projects.delete_project,
                     project_id=str(uuid.uuid4()),
                     db=mock_db_session,
                     current_user=mock_user,

@@ -1,5 +1,17 @@
-"""Tests for organizations API endpoints."""
+"""Tests for organizations API endpoints.
 
+Note: These tests call the underlying endpoint functions directly, bypassing
+the require_permission decorator. This allows testing endpoint logic
+independently of RBAC. The RBAC permission checking is tested separately
+in plugin-specific tests.
+
+If the EE RBAC plugin is linked (via link_ee_plugins.sh), the decorator
+wraps functions in an async wrapper. To handle this, tests access the
+original unwrapped function via __wrapped__ when available.
+"""
+
+import asyncio
+import inspect
 import uuid
 from datetime import datetime, UTC
 from unittest.mock import MagicMock, patch
@@ -12,6 +24,26 @@ from preloop.schemas.organization import (
     OrganizationCreate,
     OrganizationUpdate,
 )
+
+
+def call_endpoint(func, **kwargs):
+    """Call an endpoint function, handling both sync and async wrappers.
+
+    When the EE RBAC plugin is linked, endpoints are wrapped in an async
+    decorator. This helper unwraps to get the original sync function,
+    or runs the async version if needed.
+    """
+    # Try to get the original unwrapped function
+    original_func = func
+    while hasattr(original_func, "__wrapped__"):
+        original_func = original_func.__wrapped__
+
+    # If original is sync, call it directly
+    if not inspect.iscoroutinefunction(original_func):
+        return original_func(**kwargs)
+
+    # If we get here, both wrapper and original are async - run it
+    return asyncio.get_event_loop().run_until_complete(func(**kwargs))
 
 
 @pytest.fixture
@@ -87,7 +119,8 @@ class TestCreateOrganization:
                     "create",
                     return_value=mock_organization,
                 ):
-                    result = organizations.create_organization(
+                    result = call_endpoint(
+                        organizations.create_organization,
                         organization=org_create,
                         db=mock_db_session,
                         current_user=mock_user,
@@ -110,7 +143,8 @@ class TestCreateOrganization:
             return_value=mock_organization,
         ):
             with pytest.raises(HTTPException) as exc_info:
-                organizations.create_organization(
+                call_endpoint(
+                    organizations.create_organization,
                     organization=org_create,
                     db=mock_db_session,
                     current_user=mock_user,
@@ -133,7 +167,8 @@ class TestCreateOrganization:
                 organizations.crud_tracker, "get_for_account", return_value=[]
             ):
                 with pytest.raises(HTTPException) as exc_info:
-                    organizations.create_organization(
+                    call_endpoint(
+                        organizations.create_organization,
                         organization=org_create,
                         db=mock_db_session,
                         current_user=mock_user,
@@ -158,7 +193,8 @@ class TestListOrganizations:
                 "get_for_trackers",
                 return_value=([mock_organization], 1),
             ):
-                result = organizations.list_organizations(
+                result = call_endpoint(
+                    organizations.list_organizations,
                     limit=100,
                     offset=0,
                     db=mock_db_session,
@@ -174,7 +210,8 @@ class TestListOrganizations:
         with patch.object(
             organizations.crud_tracker, "get_for_account", return_value=[]
         ):
-            result = organizations.list_organizations(
+            result = call_endpoint(
+                organizations.list_organizations,
                 limit=100,
                 offset=0,
                 db=mock_db_session,
@@ -196,7 +233,8 @@ class TestListOrganizations:
                 "get_for_trackers",
                 return_value=([mock_organization], 5),
             ) as mock_get:
-                result = organizations.list_organizations(
+                call_endpoint(
+                    organizations.list_organizations,
                     limit=10,
                     offset=20,
                     db=mock_db_session,
@@ -220,7 +258,8 @@ class TestGetOrganization:
         with patch.object(
             organizations.crud_organization, "get", return_value=mock_organization
         ):
-            result = organizations.get_organization(
+            result = call_endpoint(
+                organizations.get_organization,
                 organization_id=mock_organization.id,
                 db=mock_db_session,
                 current_user=mock_user,
@@ -232,7 +271,8 @@ class TestGetOrganization:
         """Test 404 when organization is not found."""
         with patch.object(organizations.crud_organization, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                organizations.get_organization(
+                call_endpoint(
+                    organizations.get_organization,
                     organization_id=str(uuid.uuid4()),
                     db=mock_db_session,
                     current_user=mock_user,
@@ -254,7 +294,8 @@ class TestGetOrganizationByIdentifier:
             "get_by_identifier",
             return_value=mock_organization,
         ):
-            result = organizations.get_organization_by_identifier(
+            result = call_endpoint(
+                organizations.get_organization_by_identifier,
                 identifier="test-org",
                 db=mock_db_session,
                 current_user=mock_user,
@@ -268,7 +309,8 @@ class TestGetOrganizationByIdentifier:
             organizations.crud_organization, "get_by_identifier", return_value=None
         ):
             with pytest.raises(HTTPException) as exc_info:
-                organizations.get_organization_by_identifier(
+                call_endpoint(
+                    organizations.get_organization_by_identifier,
                     identifier="non-existent",
                     db=mock_db_session,
                     current_user=mock_user,
@@ -302,7 +344,8 @@ class TestUpdateOrganization:
             with patch.object(
                 organizations.crud_organization, "update", return_value=updated_org
             ):
-                result = organizations.update_organization(
+                result = call_endpoint(
+                    organizations.update_organization,
                     organization_id=mock_organization.id,
                     organization_update=org_update,
                     db=mock_db_session,
@@ -317,7 +360,8 @@ class TestUpdateOrganization:
 
         with patch.object(organizations.crud_organization, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                organizations.update_organization(
+                call_endpoint(
+                    organizations.update_organization,
                     organization_id=str(uuid.uuid4()),
                     organization_update=org_update,
                     db=mock_db_session,
@@ -340,7 +384,8 @@ class TestUpdateOrganization:
                 "update",
                 return_value=mock_organization,
             ) as mock_update:
-                organizations.update_organization(
+                call_endpoint(
+                    organizations.update_organization,
                     organization_id=mock_organization.id,
                     organization_update=org_update,
                     db=mock_db_session,
@@ -363,7 +408,8 @@ class TestDeleteOrganization:
             organizations.crud_organization, "get", return_value=mock_organization
         ):
             with patch.object(organizations.crud_organization, "delete") as mock_delete:
-                result = organizations.delete_organization(
+                result = call_endpoint(
+                    organizations.delete_organization,
                     organization_id=mock_organization.id,
                     db=mock_db_session,
                     current_user=mock_user,
@@ -378,7 +424,8 @@ class TestDeleteOrganization:
         """Test 404 when organization is not found."""
         with patch.object(organizations.crud_organization, "get", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                organizations.delete_organization(
+                call_endpoint(
+                    organizations.delete_organization,
                     organization_id=str(uuid.uuid4()),
                     db=mock_db_session,
                     current_user=mock_user,

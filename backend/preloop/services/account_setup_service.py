@@ -118,9 +118,9 @@ def notify_admins_user_login_after_inactivity(
         last_login: When the user last logged in.
         source_ip: The IP address from which the login occurred (optional).
     """
-    if source_ip == "testclient":
+    if source_ip == "testclient" or username == "spacetester":
         logger.info(
-            f"Skipping admin notification for user login after inactivity for test client: {source_ip}"
+            f"Skipping admin notification for user login after inactivity for test client: {source_ip} or username: {username}"
         )
         return
 
