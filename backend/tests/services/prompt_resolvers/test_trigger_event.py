@@ -109,7 +109,11 @@ class TestTriggerEventResolver:
 
     @pytest.mark.asyncio
     async def test_resolve_entire_event(self):
-        """Test resolving the entire trigger event as JSON when no path is provided."""
+        """Test resolving the entire trigger event as JSON when no path is provided.
+
+        Note: The resolver normalizes GitHub events by adding object_attributes
+        for cross-platform compatibility with GitLab.
+        """
         import json
 
         resolver = TriggerEventResolver()
@@ -134,13 +138,23 @@ class TestTriggerEventResolver:
         result = await resolver.resolve("", context)
         assert result is not None
         parsed = json.loads(result)
-        assert parsed == trigger_data
+
+        # The resolver normalizes GitHub events by adding object_attributes
+        assert parsed["source"] == "github"
+        assert parsed["action"] == "opened"
+        assert parsed["payload"]["issue"] == {"title": "Test Issue", "number": 123}
+        assert parsed["payload"]["repository"] == {"name": "test-repo"}
+        # Normalized object_attributes should be present for GitHub issue events
+        assert "object_attributes" in parsed["payload"]
+        assert parsed["payload"]["object_attributes"]["title"] == "Test Issue"
+        assert parsed["payload"]["object_attributes"]["number"] == 123
 
         # Test with whitespace-only path
         result = await resolver.resolve("  ", context)
         assert result is not None
         parsed = json.loads(result)
-        assert parsed == trigger_data
+        assert parsed["source"] == "github"
+        assert "object_attributes" in parsed["payload"]
 
     @pytest.mark.asyncio
     async def test_resolve_entire_event_complex_structure(self):
