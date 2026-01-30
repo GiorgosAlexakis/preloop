@@ -169,6 +169,7 @@ export class FlowView extends LitElement {
     agent_type: 'codex',
     allowed_mcp_servers: [],
     allowed_mcp_tools: [],
+    is_enabled: true,
   };
 
   @state()
@@ -1029,6 +1030,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     if (!this.flow.allowed_mcp_servers?.includes('preloop-mcp')) {
       this.flow.allowed_mcp_servers = ['preloop-mcp'];
     }
+
+    // New flows should be enabled by default (presets are stored as disabled)
+    this.flow.is_enabled = true;
 
     this.creationMode = 'scratch';
   }
