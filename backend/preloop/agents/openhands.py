@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from aiodocker.exceptions import DockerError
 
@@ -420,86 +420,5 @@ class OpenHandsAgent(ContainerAgentExecutor):
             self.logger.error(f"Error preparing git clone command: {e}", exc_info=True)
             return ""
 
-    def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
-        """Extract repository URL from trigger event data.
-
-        The trigger_data structure can be:
-        - {"payload": {"repository": {...}}} for GitHub webhooks
-        - {"payload": {"project": {...}}} for GitLab webhooks
-        - {"repository": {...}} if payload is at top level
-        """
-        try:
-            # Check if the actual payload is nested under "payload" key
-            payload = trigger_data.get("payload", trigger_data)
-            if not isinstance(payload, dict):
-                self.logger.debug(f"Payload is not a dict: {type(payload)}")
-                return ""
-
-            # GitHub structure
-            if "repository" in payload:
-                repo = payload["repository"]
-                if isinstance(repo, dict):
-                    url = repo.get("clone_url") or repo.get("html_url") or ""
-                    if url:
-                        self.logger.info(f"Found GitHub repo URL in trigger: {url}")
-                    return url
-
-            # GitLab structure
-            if "project" in payload:
-                project = payload["project"]
-                if isinstance(project, dict):
-                    url = (
-                        project.get("http_url_to_repo") or project.get("web_url") or ""
-                    )
-                    if url:
-                        self.logger.info(f"Found GitLab repo URL in trigger: {url}")
-                    return url
-
-            self.logger.debug(
-                f"No repository/project found in trigger data. "
-                f"Top-level keys: {list(trigger_data.keys())}, "
-                f"Payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'N/A'}"
-            )
-            return ""
-        except Exception as e:
-            self.logger.error(f"Error extracting repo URL from trigger: {e}")
-            return ""
-
-    def _get_token_from_project(
-        self, project_id: str, account_id: str
-    ) -> tuple[Optional[str], Optional[str]]:
-        """Get the API token and tracker type from a project's tracker.
-
-        Args:
-            project_id: Project ID
-            account_id: Account ID
-
-        Returns:
-            Tuple of (token, tracker_type) or (None, None) if not found
-        """
-        try:
-            from preloop.models.crud import crud_project, crud_tracker
-            from preloop.models.db.session import get_db_session
-
-            db = next(get_db_session())
-            try:
-                project = crud_project.get(db, id=str(project_id))
-                if not project:
-                    return None, None
-
-                organization = project.organization
-                if not organization:
-                    return None, None
-
-                tracker = crud_tracker.get(db, id=organization.tracker_id)
-                if not tracker or not tracker.api_key:
-                    return None, None
-
-                return tracker.api_key, tracker.tracker_type.lower()
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            self.logger.warning(f"Error getting token from project {project_id}: {e}")
-            return None, None
+    # Note: _extract_repo_url_from_trigger and _get_token_from_project are
+    # inherited from ContainerAgentExecutor

@@ -315,7 +315,9 @@ class FlowExecutionOrchestrator:
                 if base_url:
                     # Remove trailing slash if present
                     base_url = base_url.rstrip("/")
-                    target_url = f"{base_url}/console/flows/executions/{self.execution_log.id}"
+                    target_url = (
+                        f"{base_url}/console/flows/executions/{self.execution_log.id}"
+                    )
                 else:
                     # Fallback to relative path if no base URL configured
                     logger.warning(
