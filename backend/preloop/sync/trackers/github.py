@@ -2926,14 +2926,21 @@ class GitHubTracker(BaseTracker):
 
             # Find the reaction matching the content type AND created by us
             reaction_to_delete = None
+
+            # If we couldn't determine the authenticated user, refuse to delete
+            # to avoid accidentally deleting another user's reaction
+            if authenticated_user is None:
+                logger.warning(
+                    "Could not determine authenticated user - refusing to remove reaction "
+                    "to avoid deleting another user's reaction"
+                )
+                return False
+
             for r in reactions:
                 if r.get("content") == reaction:
                     reaction_user = r.get("user", {}).get("login")
-                    # Only delete if it's our reaction, or if we couldn't determine the user
-                    if (
-                        authenticated_user is None
-                        or reaction_user == authenticated_user
-                    ):
+                    # Only delete if it's our reaction
+                    if reaction_user == authenticated_user:
                         reaction_to_delete = r
                         break
                     else:

@@ -1947,46 +1947,62 @@ async def update_pull_request(
                         state_event = "reopen"
 
                 # Look up user IDs for assignees/reviewers
+                # Note: assignees/reviewers being None means "don't change"
+                # Empty list [] means "clear all assignees/reviewers"
                 assignee_ids = None
                 reviewer_ids = None
 
-                if assignees:
-                    try:
-                        assignee_ids = await tracker_client.get_user_ids_by_usernames(
-                            assignees
-                        )
-                        if len(assignee_ids) < len(assignees):
-                            not_found = len(assignees) - len(assignee_ids)
-                            gitlab_warnings.append(
-                                f"{not_found} assignee(s) not found in GitLab"
+                if assignees is not None:
+                    if len(assignees) == 0:
+                        # Explicitly clear assignees by passing empty list
+                        assignee_ids = []
+                        logger.info("Clearing all assignees from MR")
+                    else:
+                        try:
+                            assignee_ids = (
+                                await tracker_client.get_user_ids_by_usernames(
+                                    assignees
+                                )
                             )
-                        logger.info(
-                            f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to resolve assignee IDs: {e}")
-                        gitlab_warnings.append(
-                            f"assignees not applied (lookup failed: {e})"
-                        )
+                            if len(assignee_ids) < len(assignees):
+                                not_found = len(assignees) - len(assignee_ids)
+                                gitlab_warnings.append(
+                                    f"{not_found} assignee(s) not found in GitLab"
+                                )
+                            logger.info(
+                                f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to resolve assignee IDs: {e}")
+                            gitlab_warnings.append(
+                                f"assignees not applied (lookup failed: {e})"
+                            )
 
-                if reviewers:
-                    try:
-                        reviewer_ids = await tracker_client.get_user_ids_by_usernames(
-                            reviewers
-                        )
-                        if len(reviewer_ids) < len(reviewers):
-                            not_found = len(reviewers) - len(reviewer_ids)
-                            gitlab_warnings.append(
-                                f"{not_found} reviewer(s) not found in GitLab"
+                if reviewers is not None:
+                    if len(reviewers) == 0:
+                        # Explicitly clear reviewers by passing empty list
+                        reviewer_ids = []
+                        logger.info("Clearing all reviewers from MR")
+                    else:
+                        try:
+                            reviewer_ids = (
+                                await tracker_client.get_user_ids_by_usernames(
+                                    reviewers
+                                )
                             )
-                        logger.info(
-                            f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to resolve reviewer IDs: {e}")
-                        gitlab_warnings.append(
-                            f"reviewers not applied (lookup failed: {e})"
-                        )
+                            if len(reviewer_ids) < len(reviewers):
+                                not_found = len(reviewers) - len(reviewer_ids)
+                                gitlab_warnings.append(
+                                    f"{not_found} reviewer(s) not found in GitLab"
+                                )
+                            logger.info(
+                                f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to resolve reviewer IDs: {e}")
+                            gitlab_warnings.append(
+                                f"reviewers not applied (lookup failed: {e})"
+                            )
 
                 mr_data = await tracker_client.update_merge_request(
                     mr_identifier=pr_number,
@@ -2466,10 +2482,19 @@ async def update_comment(
         pr_mr_number = slug_parts[1]
         project_path = slug_parts[0]
         logger.info(f"Detected PR/MR slug format: {project_path}#{pr_mr_number}")
+    # Handle numeric-only target (just the PR/MR number)
+    elif target.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Numeric target '{target}' requires project context. "
+            "Use URL format (e.g., https://github.com/owner/repo/pull/123) or "
+            "slug format (e.g., owner/repo#123) to specify the project.",
+        )
     else:
         raise HTTPException(
             status_code=400,
-            detail="Invalid target format. Use URL or 'owner/repo#number' format.",
+            detail="Invalid target format. Use URL (e.g., https://github.com/owner/repo/pull/123) "
+            "or slug format (e.g., owner/repo#123).",
         )
 
     if not project_path:
