@@ -286,9 +286,26 @@ class OpenHandsAgent(ContainerAgentExecutor):
             git_config = execution_context.get("git_clone_config", {})
             repositories = git_config.get("repositories", [])
 
+            # If no repositories configured but git clone is enabled,
+            # create a default repository entry using trigger project
             if not repositories:
-                self.logger.warning("No repositories configured for git clone")
-                return ""
+                trigger_project_id = execution_context.get("trigger_project_id")
+                if trigger_project_id:
+                    self.logger.info(
+                        f"No repositories configured, using trigger project: {trigger_project_id}"
+                    )
+                    # Create a virtual repository entry using trigger project
+                    repositories = [
+                        {
+                            "project_id": trigger_project_id,
+                            "clone_path": "/workspace",
+                        }
+                    ]
+                else:
+                    self.logger.warning(
+                        "No repositories configured and no trigger project available for git clone"
+                    )
+                    return ""
 
             clone_commands = []
             trigger_data = execution_context.get("trigger_event_data", {})
