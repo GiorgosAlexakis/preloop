@@ -32,6 +32,20 @@ from preloop.services.flow_execution_logger import FlowExecutionLogger
 
 logger = logging.getLogger(__name__)
 
+# Sentinel string that agents should print when completing successfully.
+# This is used to reliably detect successful execution without false positives
+# from error-like patterns in code output.
+FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
+
+# Instruction appended to prompts to have agents signal success
+FLOW_SUCCESS_INSTRUCTION = f"""
+
+---
+IMPORTANT: When you have successfully completed your task, print exactly this text on its own line:
+{FLOW_SUCCESS_SENTINEL}
+This signals that the flow execution completed successfully.
+---"""
+
 
 def _make_json_serializable(obj: Any) -> Any:
     """Recursively convert non-JSON-serializable types to serializable ones."""
@@ -576,6 +590,9 @@ class FlowExecutionOrchestrator:
                     logger.warning(
                         f"No resolver found for prefix '{prefix}' and simple resolution failed for {{{{{placeholder}}}}}"
                     )
+
+        # Append the success sentinel instruction to help with reliable completion detection
+        resolved_prompt = resolved_prompt + FLOW_SUCCESS_INSTRUCTION
 
         logger.info("Prompt resolution complete")
         return resolved_prompt

@@ -705,20 +705,39 @@ class ContainerAgentExecutor(AgentExecutor):
                 error_message=str(e),
             )
 
+    # Success sentinel that agents print when completing successfully
+    # Must match FLOW_SUCCESS_SENTINEL in flow_orchestrator.py
+    FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
+
     def _detect_error_in_logs(self, logs_text: str) -> bool:
         """
         Detect if logs contain error patterns that indicate failure.
+
+        The detection follows this priority:
+        1. If the success sentinel is present, assume success (no error)
+        2. Check for critical error patterns that always indicate failure
+        3. Apply heuristics for other error patterns
 
         Args:
             logs_text: Full log text
 
         Returns:
-            True if error patterns detected
+            True if error patterns detected (failure), False if success or unclear
         """
+        # Priority 1: Check for success sentinel
+        # If the agent printed FLOW_EXECUTION_SUCCESS, trust that it succeeded.
+        # This avoids false positives from error-like patterns in code output.
+        if self.FLOW_SUCCESS_SENTINEL in logs_text:
+            self.logger.info(
+                f"Success sentinel '{self.FLOW_SUCCESS_SENTINEL}' found in logs - "
+                "treating as successful execution"
+            )
+            return False
+
         logs_lower = logs_text.lower()
 
-        # Critical error patterns that always indicate failure
-        # These take priority over benign patterns
+        # Priority 2: Critical error patterns that always indicate failure
+        # These are system-level errors, not user code output
         critical_error_patterns = [
             "litellm.badrequesterror",
             "litellm.authenticationerror",
@@ -734,7 +753,14 @@ class ContainerAgentExecutor(AgentExecutor):
 
         for pattern in critical_error_patterns:
             if pattern in logs_lower:
+                self.logger.info(
+                    f"Critical error pattern '{pattern}' found in logs - "
+                    "treating as failed execution"
+                )
                 return True
+
+        # Priority 3: Heuristic-based detection (legacy, for flows without sentinel)
+        # Only apply if no success sentinel was found
 
         # Benign patterns - these are informational messages that might contain
         # "error" but don't indicate actual failure
@@ -763,7 +789,12 @@ class ContainerAgentExecutor(AgentExecutor):
             )
 
             # Multiple errors without any benign patterns suggest real failure
-            if error_count >= 3 and not contains_benign_pattern:
+            # But be conservative - only flag if many errors and no benign context
+            if error_count >= 5 and not contains_benign_pattern:
+                self.logger.info(
+                    f"Heuristic detection: {error_count} 'error:' occurrences found "
+                    "without benign patterns - treating as failed execution"
+                )
                 return True
 
         return False
