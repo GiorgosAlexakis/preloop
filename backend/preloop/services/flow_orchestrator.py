@@ -79,6 +79,7 @@ class FlowExecutionOrchestrator:
         self._tracker_client = None
         self._commit_sha: Optional[str] = None
         self._status_context: str = "preloop"
+        self._is_recovered: bool = False  # Set to True during execution recovery
 
     def _extract_commit_sha(self) -> Optional[str]:
         """Extract the commit SHA from the trigger event data.
@@ -182,6 +183,12 @@ class FlowExecutionOrchestrator:
             state: Status state (pending, success, failure, error)
             description: Optional description text
         """
+        # Skip commit status updates during execution recovery
+        # to avoid making external API calls for old/stale executions
+        if self._is_recovered:
+            logger.debug("Skipping commit status update for recovered execution")
+            return
+
         if not self._commit_sha:
             self._commit_sha = self._extract_commit_sha()
 

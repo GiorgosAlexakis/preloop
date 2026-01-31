@@ -114,6 +114,9 @@ class ExecutionRecoveryService:
             nats_client=nats_client,
         )
         orchestrator.execution_log = execution
+        orchestrator._is_recovered = (
+            True  # Mark as recovered to skip external API calls
+        )
 
         # Resume monitoring as a background task
         task = asyncio.create_task(
