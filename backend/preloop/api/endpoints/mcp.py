@@ -1500,12 +1500,15 @@ async def get_pull_request(
             logger.info(f"Getting GitHub pull request {pr_number}")
             pr_data = await tracker_client.get_pull_request(pr_number)
 
-            # Fetch comments if requested
-            if include_comments:
-                comments = await tracker_client.get_pull_request_comments(
-                    pr_number=pr_number,
-                )
-                pr_data["comments"] = comments
+            # The tracker method already fetches comments by default.
+            # Strip them if not requested to avoid unnecessary data transfer.
+            if not include_comments:
+                pr_data["comments"] = []
+            else:
+                # Optionally fetch additional comments via dedicated method
+                # (tracker.get_pull_request already includes comments, but this
+                # could be used for more detailed filtering in the future)
+                pass
 
             # Include diff if already in pr_data or requested
             if not include_diff and "changes" in pr_data:
@@ -1518,12 +1521,13 @@ async def get_pull_request(
             logger.info(f"Getting GitLab merge request {pr_number}")
             mr_data = await tracker_client.get_merge_request(pr_number)
 
-            # Fetch discussions if comments requested
-            if include_comments:
-                discussions = await tracker_client.get_mr_discussions(
-                    mr_iid=pr_number,
-                )
-                mr_data["comments"] = discussions
+            # The tracker method already fetches comments/discussions by default.
+            # Strip them if not requested to avoid unnecessary data transfer.
+            if not include_comments:
+                mr_data["comments"] = []
+            else:
+                # Optionally fetch additional discussions via dedicated method
+                pass
 
             # Include diff if already in mr_data or requested
             if not include_diff and "changes" in mr_data:

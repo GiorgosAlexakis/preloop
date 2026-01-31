@@ -230,7 +230,7 @@ BUILTIN_TOOLS = [
     },
     {
         "name": "update_comment",
-        "description": "Update or resolve an existing comment on a pull request, merge request, or issue. To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false with thread_id. Both can be done in a single call.",
+        "description": "Update or resolve an existing review comment on a pull request or merge request. Only supports inline review comments (not issue comments or PR conversation comments). To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false with thread_id. Both can be done in a single call.",
         "source": "builtin",
         "requires_tracker": True,
         "required_tracker_types": ["github", "gitlab"],
@@ -239,11 +239,11 @@ BUILTIN_TOOLS = [
             "properties": {
                 "target": {
                     "type": "string",
-                    "description": "PR/MR/Issue identifier",
+                    "description": "PR/MR identifier (URL or owner/repo#number format)",
                 },
                 "comment_id": {
                     "type": "string",
-                    "description": "ID of the comment to update",
+                    "description": "ID of the review comment to update (must be a review/inline comment, not an issue comment)",
                 },
                 "body": {
                     "type": "string",
