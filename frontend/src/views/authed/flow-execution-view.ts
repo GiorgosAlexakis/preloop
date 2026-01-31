@@ -800,10 +800,31 @@ export class FlowExecutionView extends LitElement {
             </sl-card>
           </div>
 
-          <!-- Input Prompt (collapsible) -->
+          <!-- Trigger Event Details (collapsible) -->
+          ${this.execution.trigger_event_details
+            ? html`
+                <sl-details
+                  summary="Trigger Event"
+                  style="margin-bottom: 16px;"
+                >
+                  <sl-card>
+                    <pre
+                      style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 12px; line-height: 1.4; background: var(--sl-color-neutral-100); padding: 12px; border-radius: 4px; max-height: 400px; overflow-y: auto;"
+                    >
+${JSON.stringify(this.execution.trigger_event_details, null, 2)}</pre
+                    >
+                  </sl-card>
+                </sl-details>
+              `
+            : ''}
+
+          <!-- Resolved Input Prompt (collapsible) -->
           ${this.execution.resolved_input_prompt
             ? html`
-                <sl-details summary="Input Prompt" style="margin-bottom: 16px;">
+                <sl-details
+                  summary="Resolved Input Prompt"
+                  style="margin-bottom: 16px;"
+                >
                   <sl-card>
                     <pre
                       style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px; line-height: 1.5; background: var(--sl-color-neutral-100); padding: 12px; border-radius: 4px;"
@@ -936,6 +957,45 @@ ${log.payload.content}</pre
         log.payload.line || log.payload.message || log.payload.content || '';
       const stream = log.payload.stream || 'stdout';
       const streamClass = stream === 'stderr' ? 'log-stderr' : '';
+
+      // Check for Kubernetes status messages (pod initializing, etc.)
+      // These are JSON objects with "kind":"Status" - display a friendly message instead
+      if (content.startsWith('{"kind":"Status"')) {
+        try {
+          const statusObj = JSON.parse(content);
+          // Show a friendly message for pod initialization
+          if (
+            statusObj.reason === 'BadRequest' &&
+            statusObj.message?.includes('PodInitializing')
+          ) {
+            return html`
+              <div
+                class="log-entry log-metadata"
+                style="border-left-color: #dcdcaa;"
+              >
+                <span class="log-timestamp">${time}</span>
+                <span class="log-type log-type-warning">[Initializing]</span>
+                <span>Container is starting up, please wait...</span>
+              </div>
+            `;
+          }
+          // For other status messages, show a condensed version
+          if (statusObj.message) {
+            return html`
+              <div
+                class="log-entry log-metadata"
+                style="border-left-color: #858585;"
+              >
+                <span class="log-timestamp">${time}</span>
+                <span class="log-type">[K8s Status]</span>
+                <span>${statusObj.message}</span>
+              </div>
+            `;
+          }
+        } catch {
+          // Not valid JSON, fall through to regular display
+        }
+      }
 
       return html`
         <div class="log-entry ${streamClass}">

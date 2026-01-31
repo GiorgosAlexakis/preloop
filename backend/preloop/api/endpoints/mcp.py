@@ -62,6 +62,40 @@ from fastmcp.server.dependencies import get_http_request
 
 logger = logging.getLogger(__name__)
 
+
+def _detect_platform_from_url(url: str) -> Literal["github", "gitlab"]:
+    """
+    Detect if URL is GitHub or GitLab.
+
+    Args:
+        url: The URL to analyze.
+
+    Returns:
+        "github" or "gitlab" based on URL analysis.
+
+    Raises:
+        ValueError: If platform cannot be determined.
+    """
+    url_lower = url.lower()
+
+    # Check for GitHub indicators (must be github.com domain)
+    if "github.com" in url_lower:
+        return "github"
+
+    # Check for GitLab indicators (gitlab.com or contains gitlab in domain)
+    if "gitlab.com" in url_lower or "gitlab." in url_lower:
+        return "gitlab"
+
+    # Check URL structure patterns (use url_lower for consistency)
+    if "/pull/" in url_lower:
+        return "github"
+    if "/merge_requests/" in url_lower or "/-/" in url_lower:
+        return "gitlab"
+
+    # Default based on common patterns
+    raise ValueError(f"Cannot determine platform from URL: {url}")
+
+
 crud_issue = CRUDIssue(Issue)
 crud_project = CRUDProject(Project)
 crud_organization = CRUDOrganization(Organization)
@@ -880,18 +914,31 @@ async def improve_compliance(
     )
 
 
-async def add_comment(target: str, comment: str) -> "AddCommentResponse":
+async def add_comment(
+    target: str,
+    comment: str,
+    # New parameters for inline comments
+    path: Optional[str] = None,
+    line: Optional[int] = None,
+    side: Optional[str] = None,  # "LEFT" or "RIGHT", defaults to "RIGHT"
+    in_reply_to: Optional[str] = None,
+) -> "AddCommentResponse":
     """
     Handles the 'add_comment' tool call.
 
     Adds a comment to an issue, pull request, or merge request.
+    Supports inline diff comments when path and line are provided.
 
     Args:
-        target: Issue/PR/MR identifier (URL, key, or ID)
-        comment: Comment text to add
+        target: Issue/PR/MR identifier (URL, key, or ID).
+        comment: Comment text to add.
+        path: File path for inline diff comments.
+        line: Line number for inline diff comments.
+        side: Side of diff for inline comments - "LEFT" (old) or "RIGHT" (new).
+        in_reply_to: Comment ID to reply to (for threaded replies).
 
     Returns:
-        AddCommentResponse with comment details
+        AddCommentResponse with comment details.
     """
     from preloop.schemas.mcp import AddCommentResponse
 
@@ -906,17 +953,44 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
 
     target = target.strip()
 
+    # Validate that path and line must be provided together for inline comments
+    if (path is not None and line is None) or (path is None and line is not None):
+        raise HTTPException(
+            status_code=400,
+            detail="For inline comments, both 'path' and 'line' must be provided together. "
+            "Received only one of them.",
+        )
+
+    # Validate side parameter only for inline comments (when path and line provided)
+    # For non-inline comments, the side parameter is ignored
+    if path is not None and line is not None:
+        # This is an inline comment - validate/default the side parameter
+        if side is None:
+            side = "RIGHT"
+        elif side not in ("LEFT", "RIGHT"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid side parameter. Must be 'LEFT' or 'RIGHT'.",
+            )
+
     # Detect if target is a PR/MR URL and handle separately
-    # PRs and MRs are not stored in the issue table, so we need different logic
     is_pull_request = False
     is_merge_request = False
     project_path = None
     pr_mr_number = None
+    platform: Optional[Literal["github", "gitlab"]] = None
 
     if target.startswith("http"):
+        # Detect platform from URL
+        try:
+            platform = _detect_platform_from_url(target)
+        except ValueError:
+            pass
+
         # GitHub PR URL: https://github.com/owner/repo/pull/123
         if "github.com" in target and "/pull/" in target:
             is_pull_request = True
+            platform = "github"
             parts = target.split("/")
             if len(parts) >= 7:
                 owner = parts[3]
@@ -925,14 +999,15 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
                 project_path = f"{owner}/{repo}"
                 logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
         # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
-        elif "gitlab" in target and "merge_requests/" in target:
+        # Also handles self-hosted GitLab where platform was detected via URL patterns
+        # (e.g., https://git.example.com/owner/repo/-/merge_requests/123)
+        # platform is set from _detect_platform_from_url which checks for /merge_requests/ pattern
+        elif platform == "gitlab" and "/merge_requests/" in target:
             is_merge_request = True
-            mr_parts = target.split("merge_requests/")
+            mr_parts = target.split("/merge_requests/")
             pr_mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
-            # Extract project path from URL
             url_path = mr_parts[0].split("://")[1].split("/")
             if len(url_path) >= 3:
-                # Remove gitlab host and get project path (everything between host and /-/)
                 project_path = "/".join(url_path[1:]).rstrip("/-")
                 logger.info(f"Detected GitLab MR: {project_path}#{pr_mr_number}")
     # Parse slug format for PRs/MRs: owner/repo#123 or repo#123
@@ -940,8 +1015,6 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
         slug_parts = target.split("#")
         pr_mr_number = slug_parts[1]
         project_path = slug_parts[0]
-        # Try to determine if it's a GitHub or GitLab project
-        # We'll detect this after finding the project
         logger.info(f"Detected PR/MR slug format: {project_path}#{pr_mr_number}")
 
     # Handle PR/MR comments separately
@@ -969,19 +1042,220 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
             project_obj.organization_id, project_obj.id, db, current_user
         )
 
-        # If we didn't detect the type yet, check the tracker type
-        if not is_pull_request and not is_merge_request:
+        # Determine platform from tracker if not yet known
+        if platform is None:
             if tracker_client.tracker_type.lower() == "github":
+                platform = "github"
                 is_pull_request = True
             elif tracker_client.tracker_type.lower() == "gitlab":
+                platform = "gitlab"
                 is_merge_request = True
 
-        # Use the appropriate tracker method
         target_id = pr_mr_number
+
+        try:
+            # Handle inline comments (path and line provided)
+            if path and line is not None:
+                # Inline comments are only supported on GitHub and GitLab PRs/MRs
+                if platform not in ("github", "gitlab"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Inline comments (path/line) are only supported for "
+                        f"GitHub and GitLab pull/merge requests. "
+                        f"Tracker type '{tracker_client.tracker_type}' does not support this feature.",
+                    )
+
+                if platform == "github":
+                    # If replying to an existing review comment, use threaded reply
+                    if in_reply_to:
+                        logger.info(
+                            f"Replying to review comment {in_reply_to} on GitHub PR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_review_comment(
+                            pr_number=target_id,
+                            comment_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to comment {in_reply_to} on PR {target_id}",
+                            url=reply_result.get("html_url"),
+                        )
+
+                    # Otherwise, create a new inline comment
+                    logger.info(
+                        f"Adding inline comment to GitHub PR {target_id} "
+                        f"at {path}:{line}"
+                    )
+                    inline_comment = {
+                        "path": path,
+                        "line": line,
+                        "body": comment,
+                        "side": side,
+                    }
+
+                    review_result = await tracker_client.submit_pull_request_review(
+                        pr_number=target_id,
+                        body="Inline comment",  # GitHub requires non-empty body for COMMENT reviews
+                        event="COMMENT",
+                        comments=[inline_comment],
+                    )
+
+                    # Fetch the actual comment ID from the review
+                    # The review response contains the review ID, not the comment ID
+                    # We need to fetch the review's comments to get the actual comment ID
+                    review_id = str(review_result.get("id", ""))
+                    comment_id = (
+                        review_id  # Fallback to review ID if we can't get comment
+                    )
+                    comment_url = review_result.get("html_url")
+
+                    try:
+                        review_comments = await tracker_client.get_review_comments(
+                            pr_number=target_id,
+                            review_id=review_id,
+                        )
+                        if review_comments:
+                            # Get the first (and should be only) comment from this review
+                            comment_id = review_comments[0].get("id", review_id)
+                            comment_url = review_comments[0].get(
+                                "html_url", comment_url
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not fetch review comment ID, using review ID: {e}"
+                        )
+
+                    return AddCommentResponse(
+                        comment_id=str(comment_id),
+                        status="created",
+                        message=f"Successfully added inline comment to PR {target_id} at {path}:{line}",
+                        url=comment_url,
+                    )
+
+                else:  # GitLab (explicitly checked above)
+                    # If replying to an existing discussion, add a note to it
+                    if in_reply_to:
+                        logger.info(
+                            f"Replying to discussion {in_reply_to} on GitLab MR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_mr_discussion(
+                            mr_iid=target_id,
+                            discussion_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to discussion {in_reply_to} on MR {target_id}",
+                            url=None,
+                        )
+
+                    # GitLab inline diff comments require position data (base_sha, start_sha,
+                    # head_sha, new_path, new_line) which is not available in this context.
+                    # Return a clear error instead of silently creating a non-anchored discussion.
+                    raise HTTPException(
+                        status_code=501,
+                        detail="GitLab inline diff comments (path/line) are not yet supported. "
+                        "GitLab requires diff position data (base_sha, start_sha, head_sha) "
+                        "which is not available in this API. Use a general discussion instead "
+                        "by omitting path and line parameters, or use in_reply_to to reply "
+                        "to an existing discussion.",
+                    )
+
+            # Regular PR/MR comment (not inline)
+            else:
+                # Handle threaded replies
+                if in_reply_to:
+                    # Threaded replies are only supported on GitHub and GitLab
+                    if platform not in ("github", "gitlab"):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Threaded replies (in_reply_to) are only supported for "
+                            f"GitHub and GitLab pull/merge requests. "
+                            f"Tracker type '{tracker_client.tracker_type}' does not support this feature.",
+                        )
+
+                    if platform == "github":
+                        # GitHub: reply to a review comment
+                        logger.info(
+                            f"Replying to comment {in_reply_to} on GitHub PR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_review_comment(
+                            pr_number=target_id,
+                            comment_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to comment {in_reply_to} on PR {target_id}",
+                            url=reply_result.get("html_url"),
+                        )
+                    else:  # GitLab (explicitly checked above)
+                        # GitLab: reply to a discussion
+                        logger.info(
+                            f"Replying to discussion {in_reply_to} on GitLab MR {target_id}"
+                        )
+                        reply_result = await tracker_client.reply_to_mr_discussion(
+                            mr_iid=target_id,
+                            discussion_id=in_reply_to,
+                            body=comment,
+                        )
+                        return AddCommentResponse(
+                            comment_id=str(reply_result.get("id", "")),
+                            status="created",
+                            message=f"Successfully replied to discussion {in_reply_to} on MR {target_id}",
+                            url=None,
+                        )
+
+                logger.info(f"Adding comment to {target_id} via tracker client")
+                created_comment = await tracker_client.add_comment(target_id, comment)
+                logger.info(f"Successfully added comment to {target_id}")
+
+                return AddCommentResponse(
+                    comment_id=str(created_comment.id),
+                    status="created",
+                    message=f"Successfully added comment to {target_id}",
+                    url=created_comment.meta_data.get("url")
+                    if hasattr(created_comment, "meta_data")
+                    else None,
+                )
+
+        except NotImplementedError:
+            logger.warning(
+                f"Tracker type {tracker_client.tracker_type} does not support "
+                "adding comments."
+            )
+            raise HTTPException(
+                status_code=501,
+                detail="Adding comments not supported by this tracker type.",
+            )
+        except HTTPException:
+            # Re-raise HTTPException without wrapping
+            raise
+        except Exception as e:
+            logger.error(
+                f"Error adding comment to {target_id} via tracker client: {e}",
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to add comment to the external tracker: {str(e)}",
+            )
+
     else:
         # This is a regular issue - use the existing logic
         parsed_key = None
         if target.startswith("http"):
+            # Detect platform from URL for self-hosted instance support
+            issue_platform = None
+            try:
+                issue_platform = _detect_platform_from_url(target)
+            except ValueError:
+                pass
+
             # GitHub issue URL: https://github.com/owner/repo/issues/123
             if "github.com" in target and "/issues/" in target:
                 parts = target.split("/")
@@ -992,13 +1266,12 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
                     parsed_key = f"{owner}/{repo}#{issue_number}"
                     logger.info(f"Parsed GitHub issue URL to key: {parsed_key}")
             # GitLab issue URL: https://gitlab.com/owner/repo/-/issues/1
-            elif "gitlab" in target and "/issues/" in target:
+            # Also handles self-hosted GitLab (e.g., https://git.example.com/owner/repo/-/issues/1)
+            elif issue_platform == "gitlab" and "/issues/" in target:
                 issue_parts = target.split("/issues/")
                 issue_number = issue_parts[-1].rstrip("/").split("?")[0].split("#")[0]
-                # Extract project path from URL
                 url_path = issue_parts[0].split("://")[1].split("/")
                 if len(url_path) >= 3:
-                    # Remove gitlab host and get project path (everything between host and /-/)
                     project_path_tmp = "/".join(url_path[1:]).rstrip("/-")
                     parsed_key = f"{project_path_tmp}#{issue_number}"
                     logger.info(f"Parsed GitLab issue URL to key: {parsed_key}")
@@ -1006,7 +1279,6 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
         # Try to find the issue
         issue_obj = None
         try:
-            # First, try with the parsed key if we have one
             if parsed_key:
                 try:
                     issue_obj = _find_issue_by_identifier(
@@ -1015,10 +1287,10 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
                     logger.info(f"Found issue using parsed key: {parsed_key}")
                 except IssueNotFoundError:
                     logger.info(
-                        f"Could not find issue with parsed key {parsed_key}, trying original target"
+                        f"Could not find issue with parsed key {parsed_key}, "
+                        "trying original target"
                     )
 
-            # If not found with parsed key, try the original target
             if not issue_obj:
                 issue_obj = _find_issue_by_identifier(
                     db, target, current_user.account_id
@@ -1040,83 +1312,101 @@ async def add_comment(target: str, comment: str) -> "AddCommentResponse":
                 detail="Cannot add comment: Missing external identifier.",
             )
 
-        # Use key if available, otherwise use external_id
         target_id = issue_obj.key if issue_obj.key else issue_obj.external_id
 
-    try:
-        logger.info(f"Adding comment to {target_id} via tracker client")
-        created_comment = await tracker_client.add_comment(target_id, comment)
-        logger.info(f"Successfully added comment to {target_id}")
+        try:
+            logger.info(f"Adding comment to issue {target_id} via tracker client")
+            created_comment = await tracker_client.add_comment(target_id, comment)
+            logger.info(f"Successfully added comment to issue {target_id}")
 
-        return AddCommentResponse(
-            comment_id=created_comment.id,
-            status="created",
-            message=f"Successfully added comment to {target_id}",
-            url=created_comment.meta_data.get("url")
-            if hasattr(created_comment, "meta_data")
-            else None,
-        )
-    except NotImplementedError:
-        logger.warning(
-            f"Tracker type {tracker_client.tracker_type} does not support adding comments."
-        )
-        raise HTTPException(
-            status_code=501,
-            detail="Adding comments not supported by this tracker type.",
-        )
-    except Exception as e:
-        logger.error(
-            f"Error adding comment to {target_id} via tracker client: {e}",
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to add comment to the external tracker: {str(e)}",
-        )
+            return AddCommentResponse(
+                comment_id=str(created_comment.id),
+                status="created",
+                message=f"Successfully added comment to {target_id}",
+                url=created_comment.meta_data.get("url")
+                if hasattr(created_comment, "meta_data")
+                else None,
+            )
+        except NotImplementedError:
+            logger.warning(
+                f"Tracker type {tracker_client.tracker_type} does not support "
+                "adding comments."
+            )
+            raise HTTPException(
+                status_code=501,
+                detail="Adding comments not supported by this tracker type.",
+            )
+        except HTTPException:
+            # Re-raise HTTPException without wrapping
+            raise
+        except Exception as e:
+            logger.error(
+                f"Error adding comment to {target_id} via tracker client: {e}",
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to add comment to the external tracker: {str(e)}",
+            )
 
 
-async def get_pull_request(pull_request: str) -> "PullRequestResponse":
+async def get_pull_request(
+    pull_request: str,
+    include_comments: bool = True,
+    include_diff: bool = True,
+) -> "PullRequestResponse":
     """
     Handles the 'get_pull_request' tool call.
 
-    Gets details of a GitHub pull request.
+    Gets details of a GitHub pull request or GitLab merge request.
+    Auto-detects the platform from the URL.
 
     Args:
-        pull_request: PR identifier (URL, slug, or number)
+        pull_request: PR/MR identifier (URL, slug, or number).
+        include_comments: Whether to include comments in the response.
+        include_diff: Whether to include diff/changes in the response.
 
     Returns:
-        PullRequestResponse with PR details
+        PullRequestResponse with PR/MR details.
     """
     from preloop.schemas.mcp import PullRequestResponse
 
-    db = next(get_db())
     db, current_user = await _get_authenticated_user(get_http_request().headers)
-
-    # For PRs, we need to find the project by parsing the identifier
-    # Try to match it against projects in the database
-    # If it's a URL, extract org/repo from it
-    # If it's a slug like "org/repo#123", parse it
-    # If it's just a number, we'll need more context (use first GitHub project)
 
     pr_identifier = pull_request.strip()
     owner = None
     repo = None
+    project_path = None
     pr_number = pr_identifier
+    platform: Optional[Literal["github", "gitlab"]] = None
 
-    # Parse URL format: https://github.com/owner/repo/pull/123
+    # Parse URL format and detect platform
     if pr_identifier.startswith("http"):
-        if "github.com" in pr_identifier:
+        try:
+            platform = _detect_platform_from_url(pr_identifier)
+        except ValueError:
+            # Will try to detect from project tracker type later
+            pass
+
+        if platform == "github" or "github.com" in pr_identifier:
+            platform = "github"
             parts = pr_identifier.split("/")
             if len(parts) >= 5:
                 owner = parts[3]
                 repo = parts[4]
                 if "pull" in parts:
-                    pr_number = parts[parts.index("pull") + 1]
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Only GitHub pull requests are supported. Use get_merge_request for GitLab.",
-            )
+                    pull_idx = parts.index("pull")
+                    if pull_idx + 1 < len(parts):
+                        pr_number = parts[pull_idx + 1].split("?")[0].split("#")[0]
+        elif platform == "gitlab" or "gitlab" in pr_identifier.lower():
+            platform = "gitlab"
+            if "merge_requests" in pr_identifier:
+                mr_parts = pr_identifier.split("merge_requests/")
+                pr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+                # Extract project path from URL
+                url_path = mr_parts[0].split("://")[1].split("/")
+                if len(url_path) >= 3:
+                    project_path = "/".join(url_path[1:]).rstrip("/-")
     # Parse slug format: owner/repo#123
     elif "/" in pr_identifier and "#" in pr_identifier:
         slug_parts = pr_identifier.split("#")
@@ -1125,34 +1415,52 @@ async def get_pull_request(pull_request: str) -> "PullRequestResponse":
         if len(repo_parts) >= 2:
             owner = repo_parts[-2]
             repo = repo_parts[-1]
+        project_path = slug_parts[0]
 
     # Find the project
-    if owner and repo:
-        # Try to find project by slug (owner/repo format)
+    # For GitLab nested groups (e.g., "group/subgroup/project#123"), try full path first
+    project_obj = None
+    if project_path:
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=project_path,
+            account_id=str(current_user.account_id),
+        )
+    if not project_obj and owner and repo:
+        # Fall back to owner/repo for GitHub and simple paths
         project_obj = crud_project.get_by_slug_or_identifier(
             db,
             slug_or_identifier=f"{owner}/{repo}",
             account_id=str(current_user.account_id),
         )
-        if not project_obj:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Project not found for {owner}/{repo}",
-            )
-    else:
-        # Just a number - try to find first GitHub project
+
+    if not project_obj:
+        # Try to find first matching tracker project
         from preloop.models.crud import crud_tracker
 
-        trackers = crud_tracker.get_by_type(
-            db, tracker_type=TrackerType.GITHUB, account_id=str(current_user.account_id)
+        # Try GitHub first if platform not determined
+        tracker_type = (
+            TrackerType.GITHUB if platform != "gitlab" else TrackerType.GITLAB
         )
+        trackers = crud_tracker.get_by_type(
+            db, tracker_type=tracker_type, account_id=str(current_user.account_id)
+        )
+
+        if not trackers and platform is None:
+            # Try the other platform
+            tracker_type = TrackerType.GITLAB
+            trackers = crud_tracker.get_by_type(
+                db, tracker_type=tracker_type, account_id=str(current_user.account_id)
+            )
+            if trackers:
+                platform = "gitlab"
+
         if not trackers:
             raise HTTPException(
                 status_code=404,
-                detail="No GitHub tracker found. Please provide full PR identifier.",
+                detail="No tracker found. Please provide full PR/MR identifier.",
             )
 
-        # Get first project from first GitHub tracker
         tracker = trackers[0]
         from preloop.models.crud import crud_organization
 
@@ -1162,7 +1470,7 @@ async def get_pull_request(pull_request: str) -> "PullRequestResponse":
         if not organizations:
             raise HTTPException(
                 status_code=404,
-                detail="No organizations found for GitHub tracker.",
+                detail="No organizations found for tracker.",
             )
 
         projects = crud_project.get_for_organization(
@@ -1171,7 +1479,7 @@ async def get_pull_request(pull_request: str) -> "PullRequestResponse":
         if not projects:
             raise HTTPException(
                 status_code=404,
-                detail="No projects found. Please provide full PR identifier.",
+                detail="No projects found. Please provide full PR/MR identifier.",
             )
 
         project_obj = projects[0]
@@ -1181,148 +1489,82 @@ async def get_pull_request(pull_request: str) -> "PullRequestResponse":
         project_obj.organization_id, project_obj.id, db, current_user
     )
 
-    # Verify it's a GitHub tracker
-    if tracker_client.tracker_type.lower() != "github":
-        raise HTTPException(
-            status_code=400,
-            detail="get_pull_request only works with GitHub. Use get_merge_request for GitLab.",
+    # Determine platform from tracker if not yet known
+    if platform is None:
+        platform = (
+            "github" if tracker_client.tracker_type.lower() == "github" else "gitlab"
         )
 
     try:
-        logger.info(f"Getting pull request {pr_number} via tracker client")
-        pr_data = await tracker_client.get_pull_request(pr_number)
-        logger.info(f"Successfully retrieved pull request {pr_number}")
+        if platform == "github":
+            logger.info(f"Getting GitHub pull request {pr_number}")
+            pr_data = await tracker_client.get_pull_request(pr_number)
 
-        return PullRequestResponse(**pr_data)
+            # The tracker method already fetches comments by default.
+            # Strip them if not requested to avoid unnecessary data transfer.
+            if not include_comments:
+                pr_data["comments"] = []
+            else:
+                # Optionally fetch additional comments via dedicated method
+                # (tracker.get_pull_request already includes comments, but this
+                # could be used for more detailed filtering in the future)
+                pass
+
+            # Include diff if already in pr_data or requested
+            if not include_diff and "changes" in pr_data:
+                pr_data["changes"] = None
+
+            logger.info(f"Successfully retrieved pull request {pr_number}")
+            return PullRequestResponse(**pr_data)
+
+        else:  # GitLab
+            logger.info(f"Getting GitLab merge request {pr_number}")
+            mr_data = await tracker_client.get_merge_request(pr_number)
+
+            # The tracker method already fetches comments/discussions by default.
+            # Strip them if not requested to avoid unnecessary data transfer.
+            if not include_comments:
+                mr_data["comments"] = []
+            else:
+                # Optionally fetch additional discussions via dedicated method
+                pass
+
+            # Include diff if already in mr_data or requested
+            if not include_diff and "changes" in mr_data:
+                mr_data["changes"] = None
+
+            logger.info(f"Successfully retrieved merge request {pr_number}")
+
+            # Map GitLab MR fields to PullRequestResponse format for consistency
+            return PullRequestResponse(
+                id=mr_data.get("id", ""),
+                number=mr_data.get("iid", 0),
+                title=mr_data.get("title", ""),
+                description=mr_data.get("description"),
+                state=mr_data.get("state", ""),
+                author=mr_data.get("author"),
+                assignees=mr_data.get("assignees", []),
+                reviewers=mr_data.get("reviewers", []),
+                labels=mr_data.get("labels", []),
+                url=mr_data.get("url", ""),
+                source_branch=mr_data.get("source_branch"),
+                target_branch=mr_data.get("target_branch"),
+                created_at=mr_data.get("created_at"),
+                updated_at=mr_data.get("updated_at"),
+                merged_at=mr_data.get("merged_at"),
+                is_draft=mr_data.get("work_in_progress", False),
+                comments=mr_data.get("comments", []),
+                changes=mr_data.get("changes"),
+            )
 
     except Exception as e:
         logger.error(
-            f"Error getting pull request {pr_number} via tracker client: {e}",
+            f"Error getting pull request/merge request {pr_number}: {e}",
             exc_info=True,
         )
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to get pull request from GitHub: {str(e)}",
-        )
-
-
-async def get_merge_request(merge_request: str) -> "MergeRequestResponse":
-    """
-    Handles the 'get_merge_request' tool call.
-
-    Gets details of a GitLab merge request.
-
-    Args:
-        merge_request: MR identifier (URL, slug, or IID)
-
-    Returns:
-        MergeRequestResponse with MR details
-    """
-    from preloop.schemas.mcp import MergeRequestResponse
-
-    db = next(get_db())
-    db, current_user = await _get_authenticated_user(get_http_request().headers)
-
-    mr_identifier = merge_request.strip()
-    project_path = None
-    mr_iid = mr_identifier
-
-    # Parse URL format: https://gitlab.com/owner/repo/-/merge_requests/1
-    if mr_identifier.startswith("http"):
-        if "gitlab" in mr_identifier:
-            if "merge_requests" in mr_identifier:
-                parts = mr_identifier.split("merge_requests/")
-                mr_iid = parts[-1].rstrip("/")
-                # Extract project path from URL
-                url_parts = parts[0].split("://")[1].split("/")
-                if len(url_parts) >= 3:
-                    # Remove gitlab host and get project path
-                    project_path = "/".join(url_parts[1:]).rstrip("/-")
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Only GitLab merge requests are supported. Use get_pull_request for GitHub.",
-            )
-    # Parse slug format: owner/repo#1
-    elif "/" in mr_identifier and "#" in mr_identifier:
-        slug_parts = mr_identifier.split("#")
-        mr_iid = slug_parts[1]
-        project_path = slug_parts[0]
-
-    # Find the project
-    if project_path:
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db, slug_or_identifier=project_path, account_id=str(current_user.account_id)
-        )
-        if not project_obj:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Project not found for {project_path}",
-            )
-    else:
-        # Just a number - try to find first GitLab project
-        from preloop.models.crud import crud_tracker
-
-        trackers = crud_tracker.get_by_type(
-            db, tracker_type=TrackerType.GITLAB, account_id=str(current_user.account_id)
-        )
-        if not trackers:
-            raise HTTPException(
-                status_code=404,
-                detail="No GitLab tracker found. Please provide full MR identifier.",
-            )
-
-        # Get first project from first GitLab tracker
-        tracker = trackers[0]
-        from preloop.models.crud import crud_organization
-
-        organizations = crud_organization.get_for_tracker(
-            db, tracker_id=tracker.id, account_id=current_user.account_id
-        )
-        if not organizations:
-            raise HTTPException(
-                status_code=404,
-                detail="No organizations found for GitLab tracker.",
-            )
-
-        projects = crud_project.get_for_organization(
-            db, organization_id=organizations[0].id, account_id=current_user.account_id
-        )
-        if not projects:
-            raise HTTPException(
-                status_code=404,
-                detail="No projects found. Please provide full MR identifier.",
-            )
-
-        project_obj = projects[0]
-
-    # Get tracker client
-    tracker_client = await get_tracker_client(
-        project_obj.organization_id, project_obj.id, db, current_user
-    )
-
-    # Verify it's a GitLab tracker
-    if tracker_client.tracker_type.lower() != "gitlab":
-        raise HTTPException(
-            status_code=400,
-            detail="get_merge_request only works with GitLab. Use get_pull_request for GitHub.",
-        )
-
-    try:
-        logger.info(f"Getting merge request {mr_iid} via tracker client")
-        mr_data = await tracker_client.get_merge_request(mr_iid)
-        logger.info(f"Successfully retrieved merge request {mr_iid}")
-
-        return MergeRequestResponse(**mr_data)
-
-    except Exception as e:
-        logger.error(
-            f"Error getting merge request {mr_iid} via tracker client: {e}",
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to get merge request from GitLab: {str(e)}",
+            detail=f"Failed to get pull request/merge request: {str(e)}",
         )
 
 
@@ -1335,24 +1577,45 @@ async def update_pull_request(
     reviewers: Optional[List[str]] = None,
     labels: Optional[List[str]] = None,
     draft: Optional[bool] = None,
+    # Review parameters
+    review_action: Optional[str] = None,  # "approve", "request_changes", "comment"
+    review_body: Optional[str] = None,
+    review_comments: Optional[List[Dict]] = None,  # [{path, line, body, side}]
+    # Reaction parameters
+    add_reaction: Optional[
+        str
+    ] = None,  # Emoji name to add (e.g., "eyes", "+1", "rocket")
+    remove_reaction: Optional[str] = None,  # Emoji name to remove
 ) -> "UpdatePullRequestResponse":
     """
     Handles the 'update_pull_request' tool call.
 
-    Updates a GitHub pull request.
+    Updates a GitHub pull request or GitLab merge request.
+    Auto-detects the platform from the URL.
 
     Args:
-        pull_request: PR identifier (URL, slug, or number)
-        title: New title for the PR
-        description: New description for the PR
-        state: New state ("open" or "closed")
-        assignees: List of assignee usernames
-        reviewers: List of reviewer usernames
-        labels: List of label names
-        draft: Whether to mark as draft
+        pull_request: PR/MR identifier (URL, slug, or number).
+        title: New title for the PR/MR.
+        description: New description for the PR/MR.
+        state: New state ("open"/"closed" for GitHub, "close"/"reopen" for GitLab).
+        assignees: List of assignee usernames.
+        reviewers: List of reviewer usernames.
+        labels: List of label names.
+        draft: Whether to mark as draft.
+        review_action: Review action - "approve", "request_changes", or "comment".
+        review_body: Review summary/body text.
+        review_comments: List of inline review comments, each with:
+            - path: file path
+            - line: line number
+            - body: comment text
+            - side: "LEFT" (old) or "RIGHT" (new), default "RIGHT"
+        add_reaction: Emoji name to add as a reaction (e.g., "eyes", "+1", "rocket", "heart").
+            GitHub uses: +1, -1, laugh, confused, heart, hooray, rocket, eyes
+            GitLab uses: thumbsup, thumbsdown, smile, grinning, eyes, rocket, etc.
+        remove_reaction: Emoji name to remove from reactions.
 
     Returns:
-        UpdatePullRequestResponse with update status
+        UpdatePullRequestResponse with update status.
     """
     from preloop.schemas.mcp import UpdatePullRequestResponse
 
@@ -1361,22 +1624,35 @@ async def update_pull_request(
     pr_identifier = pull_request.strip()
     owner = None
     repo = None
+    project_path = None
     pr_number = pr_identifier
+    platform: Optional[Literal["github", "gitlab"]] = None
 
-    # Parse URL format: https://github.com/owner/repo/pull/123
+    # Parse URL format and detect platform
     if pr_identifier.startswith("http"):
-        if "github.com" in pr_identifier:
+        try:
+            platform = _detect_platform_from_url(pr_identifier)
+        except ValueError:
+            pass
+
+        if platform == "github" or "github.com" in pr_identifier:
+            platform = "github"
             parts = pr_identifier.split("/")
             if len(parts) >= 5:
                 owner = parts[3]
                 repo = parts[4]
                 if "pull" in parts:
-                    pr_number = parts[parts.index("pull") + 1]
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Only GitHub pull requests are supported. Use update_merge_request for GitLab.",
-            )
+                    pull_idx = parts.index("pull")
+                    if pull_idx + 1 < len(parts):
+                        pr_number = parts[pull_idx + 1].split("?")[0].split("#")[0]
+        elif platform == "gitlab" or "gitlab" in pr_identifier.lower():
+            platform = "gitlab"
+            if "merge_requests" in pr_identifier:
+                mr_parts = pr_identifier.split("merge_requests/")
+                pr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+                url_path = mr_parts[0].split("://")[1].split("/")
+                if len(url_path) >= 3:
+                    project_path = "/".join(url_path[1:]).rstrip("/-")
     # Parse slug format: owner/repo#123
     elif "/" in pr_identifier and "#" in pr_identifier:
         slug_parts = pr_identifier.split("#")
@@ -1385,30 +1661,47 @@ async def update_pull_request(
         if len(repo_parts) >= 2:
             owner = repo_parts[-2]
             repo = repo_parts[-1]
+        project_path = slug_parts[0]
 
     # Find the project
-    if owner and repo:
+    # For GitLab nested groups (e.g., "group/subgroup/project#123"), try full path first
+    project_obj = None
+    if project_path:
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=project_path,
+            account_id=str(current_user.account_id),
+        )
+    if not project_obj and owner and repo:
+        # Fall back to owner/repo for GitHub and simple paths
         project_obj = crud_project.get_by_slug_or_identifier(
             db,
             slug_or_identifier=f"{owner}/{repo}",
             account_id=str(current_user.account_id),
         )
-        if not project_obj:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Project not found for {owner}/{repo}",
-            )
-    else:
-        # Just a number - try to find first GitHub project
+
+    if not project_obj:
         from preloop.models.crud import crud_tracker
 
-        trackers = crud_tracker.get_by_type(
-            db, tracker_type=TrackerType.GITHUB, account_id=str(current_user.account_id)
+        tracker_type = (
+            TrackerType.GITHUB if platform != "gitlab" else TrackerType.GITLAB
         )
+        trackers = crud_tracker.get_by_type(
+            db, tracker_type=tracker_type, account_id=str(current_user.account_id)
+        )
+
+        if not trackers and platform is None:
+            tracker_type = TrackerType.GITLAB
+            trackers = crud_tracker.get_by_type(
+                db, tracker_type=tracker_type, account_id=str(current_user.account_id)
+            )
+            if trackers:
+                platform = "gitlab"
+
         if not trackers:
             raise HTTPException(
                 status_code=404,
-                detail="No GitHub tracker found. Please provide full PR identifier.",
+                detail="No tracker found. Please provide full PR/MR identifier.",
             )
 
         tracker = trackers[0]
@@ -1420,7 +1713,7 @@ async def update_pull_request(
         if not organizations:
             raise HTTPException(
                 status_code=404,
-                detail="No organizations found for GitHub tracker.",
+                detail="No organizations found for tracker.",
             )
 
         projects = crud_project.get_for_organization(
@@ -1429,7 +1722,7 @@ async def update_pull_request(
         if not projects:
             raise HTTPException(
                 status_code=404,
-                detail="No projects found. Please provide full PR identifier.",
+                detail="No projects found. Please provide full PR/MR identifier.",
             )
 
         project_obj = projects[0]
@@ -1439,188 +1732,933 @@ async def update_pull_request(
         project_obj.organization_id, project_obj.id, db, current_user
     )
 
-    # Verify it's a GitHub tracker
-    if tracker_client.tracker_type.lower() != "github":
-        raise HTTPException(
-            status_code=400,
-            detail="update_pull_request only works with GitHub. Use update_merge_request for GitLab.",
+    # Determine platform from tracker if not yet known
+    if platform is None:
+        platform = (
+            "github" if tracker_client.tracker_type.lower() == "github" else "gitlab"
         )
 
     try:
-        logger.info(f"Updating pull request {pr_number} via tracker client")
-        pr_data = await tracker_client.update_pull_request(
-            pr_identifier=pr_number,
-            title=title,
-            description=description,
-            state=state,
-            assignees=assignees,
-            reviewers=reviewers,
-            labels=labels,
-            draft=draft,
+        result_url = None
+        result_id = None
+
+        # Validate that review_comments requires review_action
+        if review_comments and not review_action:
+            raise HTTPException(
+                status_code=400,
+                detail="review_comments requires review_action to be set. "
+                "Provide review_action='comment' (or 'approve'/'request_changes') "
+                "along with review_comments.",
+            )
+
+        # Track GitLab-specific limitations encountered during the request
+        gitlab_warnings: list[str] = []
+
+        # Handle review action if provided
+        if review_action:
+            review_action_lower = review_action.lower()
+
+            if platform == "github":
+                # Map review_action to GitHub event
+                event_map = {
+                    "approve": "APPROVE",
+                    "request_changes": "REQUEST_CHANGES",
+                    "comment": "COMMENT",
+                }
+                event = event_map.get(review_action_lower)
+                if not event:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid review_action: {review_action}. "
+                        "Must be 'approve', 'request_changes', or 'comment'.",
+                    )
+
+                # Validate that comment reviews have content
+                if event == "COMMENT" and not review_body and not review_comments:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="review_action='comment' requires either review_body "
+                        "or review_comments to be provided.",
+                    )
+
+                # Validate review_comments structure if provided
+                if review_comments:
+                    for idx, rc in enumerate(review_comments):
+                        if not isinstance(rc, dict):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] must be an object, "
+                                f"got {type(rc).__name__}",
+                            )
+                        missing_fields = []
+                        if "path" not in rc:
+                            missing_fields.append("path")
+                        if "body" not in rc:
+                            missing_fields.append("body")
+                        # line is required for inline comments
+                        if "line" not in rc:
+                            missing_fields.append("line")
+                        if missing_fields:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] is missing required "
+                                f"field(s): {', '.join(missing_fields)}. "
+                                "Each comment must have 'path', 'line', and 'body'.",
+                            )
+
+                # GitHub COMMENT reviews require a non-empty body
+                # If review_comments are provided without a body, use a default
+                effective_body = review_body or ""
+                if event == "COMMENT" and not effective_body and review_comments:
+                    effective_body = "Inline comments"
+
+                logger.info(
+                    f"Submitting GitHub review for PR {pr_number} with action {event}"
+                )
+                review_result = await tracker_client.submit_pull_request_review(
+                    pr_number=pr_number,
+                    body=effective_body,
+                    event=event,
+                    comments=review_comments,
+                )
+                result_id = review_result.get("id")
+                result_url = review_result.get("html_url")
+                logger.info(f"Successfully submitted review for PR {pr_number}")
+
+            else:  # GitLab
+                if review_action_lower == "approve":
+                    logger.info(f"Approving GitLab MR {pr_number}")
+                    approval_result = await tracker_client.approve_merge_request(
+                        pr_number
+                    )
+                    result_id = approval_result.get("id")
+                    logger.info(f"Successfully approved MR {pr_number}")
+
+                elif review_action_lower == "request_changes":
+                    # GitLab doesn't have request_changes, so unapprove and add note
+                    logger.info(f"Unapproving GitLab MR {pr_number} (request changes)")
+                    await tracker_client.unapprove_merge_request(pr_number)
+
+                    # Add a comment explaining the change request
+                    if review_body:
+                        await tracker_client.create_mr_discussion(
+                            mr_iid=pr_number,
+                            body=f"**Changes Requested**\n\n{review_body}",
+                        )
+                    logger.info(f"Successfully requested changes on MR {pr_number}")
+
+                elif review_action_lower == "comment":
+                    # Validate that comment reviews have content
+                    if not review_body and not review_comments:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="review_action='comment' requires either review_body "
+                            "or review_comments to be provided.",
+                        )
+                    # Add a comment
+                    if review_body:
+                        logger.info(f"Adding comment to GitLab MR {pr_number}")
+                        discussion_result = await tracker_client.create_mr_discussion(
+                            mr_iid=pr_number,
+                            body=review_body,
+                        )
+                        result_id = discussion_result.get("id")
+                        logger.info(f"Successfully added comment to MR {pr_number}")
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid review_action: {review_action}. "
+                        "Must be 'approve', 'request_changes', or 'comment'.",
+                    )
+
+                # Handle inline review comments for GitLab
+                if review_comments:
+                    # Validate review_comments structure
+                    for idx, comment in enumerate(review_comments):
+                        if not isinstance(comment, dict):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] must be an object, "
+                                f"got {type(comment).__name__}",
+                            )
+                        missing_fields = []
+                        if "path" not in comment:
+                            missing_fields.append("path")
+                        if "body" not in comment:
+                            missing_fields.append("body")
+                        if "line" not in comment:
+                            missing_fields.append("line")
+                        if missing_fields:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] is missing required "
+                                f"field(s): {', '.join(missing_fields)}. "
+                                "Each comment must have 'path', 'line', and 'body'.",
+                            )
+
+                    # GitLab inline diff comments require position data (base_sha, start_sha,
+                    # head_sha) which we don't have access to. Instead, create general
+                    # discussions that reference the file/line in the body text.
+                    gitlab_warnings.append(
+                        "GitLab review_comments created as general discussions "
+                        "(inline diff positioning not available)"
+                    )
+                    for comment in review_comments:
+                        await tracker_client.create_mr_discussion(
+                            mr_iid=pr_number,
+                            body=f"**{comment['path']}:{comment['line']}**\n\n"
+                            f"{comment['body']}",
+                        )
+
+        # Handle PR/MR metadata updates
+        # Use 'is not None' checks to allow clearing fields with empty values
+        # (e.g., labels=[] to remove all labels, description="" to clear description)
+        has_updates = any(
+            x is not None
+            for x in [title, description, state, assignees, reviewers, labels, draft]
         )
-        logger.info(f"Successfully updated pull request {pr_number}")
+
+        if has_updates:
+            if platform == "github":
+                logger.info(f"Updating GitHub pull request {pr_number}")
+                pr_data = await tracker_client.update_pull_request(
+                    pr_identifier=pr_number,
+                    title=title,
+                    description=description,
+                    state=state,
+                    assignees=assignees,
+                    reviewers=reviewers,
+                    labels=labels,
+                    draft=draft,
+                )
+                result_id = result_id or pr_data.get("id")
+                result_url = result_url or pr_data.get("url")
+                logger.info(f"Successfully updated pull request {pr_number}")
+
+            else:  # GitLab
+                logger.info(f"Updating GitLab merge request {pr_number}")
+                # Convert state to state_event for GitLab
+                state_event = None
+                if state:
+                    state_lower = state.lower()
+                    if state_lower in ("closed", "close"):
+                        state_event = "close"
+                    elif state_lower in ("open", "reopen"):
+                        state_event = "reopen"
+
+                # Look up user IDs for assignees/reviewers
+                assignee_ids = None
+                reviewer_ids = None
+
+                if assignees:
+                    try:
+                        assignee_ids = await tracker_client.get_user_ids_by_usernames(
+                            assignees
+                        )
+                        if len(assignee_ids) < len(assignees):
+                            not_found = len(assignees) - len(assignee_ids)
+                            gitlab_warnings.append(
+                                f"{not_found} assignee(s) not found in GitLab"
+                            )
+                        logger.info(
+                            f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve assignee IDs: {e}")
+                        gitlab_warnings.append(
+                            f"assignees not applied (lookup failed: {e})"
+                        )
+
+                if reviewers:
+                    try:
+                        reviewer_ids = await tracker_client.get_user_ids_by_usernames(
+                            reviewers
+                        )
+                        if len(reviewer_ids) < len(reviewers):
+                            not_found = len(reviewers) - len(reviewer_ids)
+                            gitlab_warnings.append(
+                                f"{not_found} reviewer(s) not found in GitLab"
+                            )
+                        logger.info(
+                            f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve reviewer IDs: {e}")
+                        gitlab_warnings.append(
+                            f"reviewers not applied (lookup failed: {e})"
+                        )
+
+                mr_data = await tracker_client.update_merge_request(
+                    mr_identifier=pr_number,
+                    title=title,
+                    description=description,
+                    state_event=state_event,
+                    assignee_ids=assignee_ids,
+                    reviewer_ids=reviewer_ids,
+                    labels=labels,
+                    draft=draft,
+                )
+                result_id = result_id or mr_data.get("id")
+                result_url = result_url or mr_data.get("url")
+                logger.info(f"Successfully updated merge request {pr_number}")
+
+        # Handle reactions
+        reaction_added = False
+        reaction_removed = False
+        reaction_errors = []
+
+        if add_reaction or remove_reaction:
+            if platform == "github":
+                # GitHub uses issue reactions API (PRs are issues)
+                # Reaction names: +1, -1, laugh, confused, heart, hooray, rocket, eyes
+                if add_reaction:
+                    logger.info(
+                        f"Adding reaction '{add_reaction}' to GitHub PR {pr_number} "
+                        f"(owner={tracker_client.connection_details.get('owner')}, "
+                        f"repo={tracker_client.connection_details.get('repo')})"
+                    )
+                    try:
+                        await tracker_client.add_issue_reaction(
+                            issue_number=pr_number,
+                            reaction=add_reaction,
+                        )
+                        logger.info(f"Successfully added reaction to PR {pr_number}")
+                        reaction_added = True
+                    except Exception as e:
+                        error_msg = f"Failed to add reaction '{add_reaction}': {e}"
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
+
+                if remove_reaction:
+                    logger.info(
+                        f"Removing reaction '{remove_reaction}' from GitHub PR {pr_number}"
+                    )
+                    try:
+                        await tracker_client.remove_issue_reaction(
+                            issue_number=pr_number,
+                            reaction=remove_reaction,
+                        )
+                        logger.info(
+                            f"Successfully removed reaction from PR {pr_number}"
+                        )
+                        reaction_removed = True
+                    except Exception as e:
+                        error_msg = (
+                            f"Failed to remove reaction '{remove_reaction}': {e}"
+                        )
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
+
+            else:  # GitLab
+                # GitLab uses award emoji API
+                # Emoji names: thumbsup, thumbsdown, smile, grinning, eyes, rocket, etc.
+                if add_reaction:
+                    logger.info(
+                        f"Adding emoji '{add_reaction}' to GitLab MR {pr_number}"
+                    )
+                    try:
+                        await tracker_client.add_mr_award_emoji(
+                            mr_iid=pr_number,
+                            emoji_name=add_reaction,
+                        )
+                        logger.info(f"Successfully added emoji to MR {pr_number}")
+                        reaction_added = True
+                    except Exception as e:
+                        error_msg = f"Failed to add emoji '{add_reaction}': {e}"
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
+
+                if remove_reaction:
+                    logger.info(
+                        f"Removing emoji '{remove_reaction}' from GitLab MR {pr_number}"
+                    )
+                    try:
+                        await tracker_client.remove_mr_award_emoji(
+                            mr_iid=pr_number,
+                            emoji_name=remove_reaction,
+                        )
+                        logger.info(f"Successfully removed emoji from MR {pr_number}")
+                        reaction_removed = True
+                    except Exception as e:
+                        error_msg = f"Failed to remove emoji '{remove_reaction}': {e}"
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
+
+        # Build response message
+        actions_taken = []
+        actions_failed = []
+
+        if review_action:
+            actions_taken.append(f"review ({review_action})")
+        if has_updates:
+            actions_taken.append("metadata update")
+        if add_reaction:
+            if reaction_added:
+                actions_taken.append(f"added reaction ({add_reaction})")
+            else:
+                actions_failed.append(f"add reaction ({add_reaction})")
+        if remove_reaction:
+            if reaction_removed:
+                actions_taken.append(f"removed reaction ({remove_reaction})")
+            else:
+                actions_failed.append(f"remove reaction ({remove_reaction})")
+
+        # Build message based on what succeeded/failed
+        if actions_taken:
+            message = (
+                f"Successfully performed {', '.join(actions_taken)} on "
+                f"{'PR' if platform == 'github' else 'MR'} {pr_number}"
+            )
+        else:
+            message = f"No actions completed on {'PR' if platform == 'github' else 'MR'} {pr_number}"
+
+        if actions_failed:
+            message += f". FAILED: {', '.join(actions_failed)}"
+
+        if reaction_errors:
+            message += f". Errors: {'; '.join(reaction_errors)}"
+
+        # Add warnings for GitLab limitations
+        if gitlab_warnings:
+            message += f". Note: {'; '.join(gitlab_warnings)}"
 
         return UpdatePullRequestResponse(
-            pull_request_id=pr_data.get("id"),
-            status="updated",
-            message=f"Successfully updated pull request {pr_number}",
-            url=pr_data.get("url"),
+            pull_request_id=str(result_id) if result_id else pr_number,
+            status="updated" if actions_taken else "failed",
+            message=message,
+            url=result_url,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
-            f"Error updating pull request {pr_number} via tracker client: {e}",
+            f"Error updating pull request/merge request {pr_number}: {e}",
             exc_info=True,
         )
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to update pull request in GitHub: {str(e)}",
+            detail=f"Failed to update pull request/merge request: {str(e)}",
         )
 
 
-async def update_merge_request(
-    merge_request: str,
-    title: Optional[str] = None,
+async def create_pull_request(
+    project: str,
+    title: str,
+    source_branch: str,
+    target_branch: str,
     description: Optional[str] = None,
-    state_event: Optional[str] = None,
-    assignee_ids: Optional[List[int]] = None,
-    reviewer_ids: Optional[List[int]] = None,
+    draft: bool = False,
+    assignees: Optional[List[str]] = None,
+    reviewers: Optional[List[str]] = None,
     labels: Optional[List[str]] = None,
-    draft: Optional[bool] = None,
-) -> "UpdateMergeRequestResponse":
+    milestone: Optional[str] = None,
+    extra_options: Optional[Dict] = None,
+) -> "CreatePullRequestResponse":
     """
-    Handles the 'update_merge_request' tool call.
+    Handles the 'create_pull_request' tool call.
 
-    Updates a GitLab merge request.
+    Creates a GitHub pull request or GitLab merge request.
+    Auto-detects the platform from the project configuration.
 
     Args:
-        merge_request: MR identifier (URL, slug, or IID)
-        title: New title for the MR
-        description: New description for the MR
-        state_event: State event ("close" or "reopen")
-        assignee_ids: List of assignee user IDs
-        reviewer_ids: List of reviewer user IDs
-        labels: List of label names
-        draft: Whether to mark as draft/WIP
+        project: Project identifier (slug like "owner/repo", full path, or URL).
+        title: PR/MR title.
+        source_branch: Branch containing the changes (head branch).
+        target_branch: Branch to merge into (base branch).
+        description: PR/MR description/body.
+        draft: Whether to create as draft.
+        assignees: List of assignee usernames.
+        reviewers: List of reviewer usernames.
+        labels: List of label names.
+        milestone: Milestone number or title.
+        extra_options: Additional options (e.g., squash, remove_source_branch for GitLab).
 
     Returns:
-        UpdateMergeRequestResponse with update status
+        CreatePullRequestResponse with created PR/MR details.
     """
-    from preloop.schemas.mcp import UpdateMergeRequestResponse
+    from preloop.schemas.mcp import CreatePullRequestResponse
 
     db, current_user = await _get_authenticated_user(get_http_request().headers)
 
-    mr_identifier = merge_request.strip()
-    project_path = None
-    mr_iid = mr_identifier
+    # Parse project identifier
+    project_path = project
+    platform = None
 
-    # Parse URL format: https://gitlab.com/owner/repo/-/merge_requests/1
-    if mr_identifier.startswith("http"):
-        if "gitlab" in mr_identifier:
-            if "merge_requests" in mr_identifier:
-                parts = mr_identifier.split("merge_requests/")
-                mr_iid = parts[-1].rstrip("/")
-                # Extract project path from URL
-                url_parts = parts[0].split("://")[1].split("/")
-                if len(url_parts) >= 3:
-                    # Remove gitlab host and get project path
-                    project_path = "/".join(url_parts[1:]).rstrip("/-")
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Only GitLab merge requests are supported. Use update_pull_request for GitHub.",
+    # Detect platform from URL if provided
+    if "github.com" in project.lower():
+        platform = "github"
+        # Extract owner/repo from GitHub URL
+        if "github.com/" in project:
+            parts = project.split("github.com/")[1].split("/")
+            if len(parts) >= 2:
+                project_path = f"{parts[0]}/{parts[1].rstrip('/')}"
+    elif "gitlab" in project.lower():
+        platform = "gitlab"
+        # Extract project path from GitLab URL
+        if "://" in project:
+            url_parts = project.split("://")[1].split("/")
+            if len(url_parts) >= 2:
+                project_path = "/".join(url_parts[1:]).rstrip("/")
+
+    # Find the project in database
+    from preloop.models.crud import crud_project
+
+    # Try full project path first (handles GitLab nested groups)
+    project_obj = crud_project.get_by_slug_or_identifier(
+        db,
+        slug_or_identifier=project_path,
+        account_id=str(current_user.account_id),
+    )
+
+    # Fall back to simpler matching if not found
+    if not project_obj and "/" in project_path:
+        parts = project_path.split("/")
+        if len(parts) >= 2:
+            simple_path = f"{parts[-2]}/{parts[-1]}"
+            project_obj = crud_project.get_by_slug_or_identifier(
+                db,
+                slug_or_identifier=simple_path,
+                account_id=str(current_user.account_id),
             )
-    # Parse slug format: owner/repo#1
-    elif "/" in mr_identifier and "#" in mr_identifier:
-        slug_parts = mr_identifier.split("#")
-        mr_iid = slug_parts[1]
-        project_path = slug_parts[0]
 
-    # Find the project
-    if project_path:
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db, slug_or_identifier=project_path, account_id=str(current_user.account_id)
+    if not project_obj:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project not found: {project}. Make sure it's synced to your account.",
         )
-        if not project_obj:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Project not found for {project_path}",
-            )
-    else:
-        # Just a number - try to find first GitLab project
-        from preloop.models.crud import crud_tracker
-
-        trackers = crud_tracker.get_by_type(
-            db, tracker_type=TrackerType.GITLAB, account_id=str(current_user.account_id)
-        )
-        if not trackers:
-            raise HTTPException(
-                status_code=404,
-                detail="No GitLab tracker found. Please provide full MR identifier.",
-            )
-
-        tracker = trackers[0]
-        from preloop.models.crud import crud_organization
-
-        organizations = crud_organization.get_for_tracker(
-            db, tracker_id=tracker.id, account_id=current_user.account_id
-        )
-        if not organizations:
-            raise HTTPException(
-                status_code=404,
-                detail="No organizations found for GitLab tracker.",
-            )
-
-        projects = crud_project.get_for_organization(
-            db, organization_id=organizations[0].id, account_id=current_user.account_id
-        )
-        if not projects:
-            raise HTTPException(
-                status_code=404,
-                detail="No projects found. Please provide full MR identifier.",
-            )
-
-        project_obj = projects[0]
 
     # Get tracker client
     tracker_client = await get_tracker_client(
         project_obj.organization_id, project_obj.id, db, current_user
     )
 
-    # Verify it's a GitLab tracker
-    if tracker_client.tracker_type.lower() != "gitlab":
-        raise HTTPException(
-            status_code=400,
-            detail="update_merge_request only works with GitLab. Use update_pull_request for GitHub.",
-        )
+    # Determine platform from tracker if not already known
+    if platform is None:
+        platform = tracker_client.tracker_type.lower()
 
     try:
-        logger.info(f"Updating merge request {mr_iid} via tracker client")
-        mr_data = await tracker_client.update_merge_request(
-            mr_identifier=mr_iid,
-            title=title,
-            description=description,
-            state_event=state_event,
-            assignee_ids=assignee_ids,
-            reviewer_ids=reviewer_ids,
-            labels=labels,
-            draft=draft,
-        )
-        logger.info(f"Successfully updated merge request {mr_iid}")
+        if platform == "github":
+            logger.info(
+                f"Creating GitHub PR: {title} ({source_branch} -> {target_branch})"
+            )
+            result = await tracker_client.create_pull_request(
+                title=title,
+                source_branch=source_branch,
+                target_branch=target_branch,
+                description=description,
+                draft=draft,
+                assignees=assignees,
+                reviewers=reviewers,
+                labels=labels,
+                milestone=milestone,
+            )
 
-        return UpdateMergeRequestResponse(
-            merge_request_id=mr_data.get("id"),
-            status="updated",
-            message=f"Successfully updated merge request {mr_iid}",
-            url=mr_data.get("url"),
-        )
+            return CreatePullRequestResponse(
+                pull_request_id=str(result["id"]),
+                number=result["number"],
+                status="created",
+                message=f"Successfully created pull request #{result['number']}",
+                url=result["url"],
+                source_branch=source_branch,
+                target_branch=target_branch,
+                is_draft=result.get("is_draft", False),
+            )
 
+        else:  # GitLab
+            logger.info(
+                f"Creating GitLab MR: {title} ({source_branch} -> {target_branch})"
+            )
+
+            # Parse extra options for GitLab
+            squash = None
+            remove_source_branch = None
+            allow_collaboration = None
+
+            if extra_options:
+                squash = extra_options.get("squash")
+                remove_source_branch = extra_options.get("remove_source_branch")
+                allow_collaboration = extra_options.get("allow_collaboration")
+
+            # GitLab requires user IDs, not usernames, for assignees/reviewers
+            # Look up IDs from usernames, with fallback to extra_options
+            assignee_ids = None
+            reviewer_ids = None
+            warnings = []
+
+            if extra_options and "assignee_ids" in extra_options:
+                assignee_ids = extra_options["assignee_ids"]
+            elif assignees:
+                try:
+                    assignee_ids = await tracker_client.get_user_ids_by_usernames(
+                        assignees
+                    )
+                    if len(assignee_ids) < len(assignees):
+                        not_found = len(assignees) - len(assignee_ids)
+                        warnings.append(f"{not_found} assignee(s) not found in GitLab")
+                    logger.info(
+                        f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs for MR creation"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to resolve assignee IDs: {e}")
+                    warnings.append("assignees not applied (lookup failed)")
+
+            if extra_options and "reviewer_ids" in extra_options:
+                reviewer_ids = extra_options["reviewer_ids"]
+            elif reviewers:
+                try:
+                    reviewer_ids = await tracker_client.get_user_ids_by_usernames(
+                        reviewers
+                    )
+                    if len(reviewer_ids) < len(reviewers):
+                        not_found = len(reviewers) - len(reviewer_ids)
+                        warnings.append(f"{not_found} reviewer(s) not found in GitLab")
+                    logger.info(
+                        f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs for MR creation"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to resolve reviewer IDs: {e}")
+                    warnings.append("reviewers not applied (lookup failed)")
+
+            milestone_id = None
+            if milestone:
+                if milestone.isdigit():
+                    milestone_id = int(milestone)
+                elif extra_options and "milestone_id" in extra_options:
+                    milestone_id = extra_options["milestone_id"]
+                else:
+                    # Non-numeric milestone title provided but can't be resolved to ID
+                    # GitLab API requires milestone_id, not title
+                    warnings.append(
+                        f"milestone '{milestone}' ignored (use numeric ID or set "
+                        "extra_options.milestone_id for non-numeric milestones)"
+                    )
+                    logger.warning(
+                        f"Non-numeric milestone '{milestone}' provided for GitLab MR but "
+                        "milestone_id not in extra_options. Milestone will not be set."
+                    )
+            elif extra_options and "milestone_id" in extra_options:
+                milestone_id = extra_options["milestone_id"]
+
+            result = await tracker_client.create_merge_request(
+                title=title,
+                source_branch=source_branch,
+                target_branch=target_branch,
+                description=description,
+                draft=draft,
+                assignee_ids=assignee_ids,
+                reviewer_ids=reviewer_ids,
+                labels=labels,
+                milestone_id=milestone_id,
+                squash=squash,
+                remove_source_branch=remove_source_branch,
+                allow_collaboration=allow_collaboration,
+            )
+
+            message = f"Successfully created merge request !{result['iid']}"
+            if warnings:
+                message += f". Note: {' '.join(warnings)}"
+
+            return CreatePullRequestResponse(
+                pull_request_id=str(result["id"]),
+                number=result["iid"],
+                status="created",
+                message=message,
+                url=result["url"],
+                source_branch=source_branch,
+                target_branch=target_branch,
+                is_draft=result.get("work_in_progress", False),
+            )
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
-            f"Error updating merge request {mr_iid} via tracker client: {e}",
+            f"Error creating pull request/merge request: {e}",
             exc_info=True,
         )
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to update merge request in GitLab: {str(e)}",
+            detail=f"Failed to create pull request/merge request: {str(e)}",
+        )
+
+
+async def update_comment(
+    target: str,
+    comment_id: str,
+    body: Optional[str] = None,
+    resolved: Optional[bool] = None,
+    thread_id: Optional[str] = None,
+) -> "UpdateCommentResponse":
+    """
+    Handles the 'update_comment' tool call.
+
+    Updates or resolves a comment on a pull request or merge request.
+    Works with both GitHub review comments and GitLab MR notes.
+
+    Note: This tool only supports PR/MR review comments, not general issue comments.
+    For GitHub, this updates inline review comments (not PR conversation comments).
+    For GitLab, this updates MR discussion notes.
+
+    Args:
+        target: PR/MR identifier (URL, slug, or number). Issue URLs are not supported.
+        comment_id: The review comment/note ID to update (used for body updates).
+            For GitHub: Must be a review comment ID (from review threads), not an issue comment ID.
+        body: New body text for the comment (optional).
+        resolved: Whether to resolve/unresolve the comment thread (optional).
+        thread_id: The thread/discussion ID for resolution (optional).
+            For GitHub: The review thread node_id (e.g., "PRRT_...").
+            For GitLab: The discussion ID.
+            If not provided, comment_id is used for resolution (may fail if wrong ID type).
+
+    Returns:
+        UpdateCommentResponse with update status.
+    """
+    from preloop.schemas.mcp import UpdateCommentResponse
+
+    db, current_user = await _get_authenticated_user(get_http_request().headers)
+
+    # Validate that at least one update is requested
+    if body is None and resolved is None:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of 'body' or 'resolved' must be provided.",
+        )
+
+    target = target.strip()
+    comment_id = comment_id.strip()
+
+    # Detect platform and parse target
+    project_path = None
+    pr_mr_number = None
+    platform: Optional[Literal["github", "gitlab"]] = None
+
+    if target.startswith("http"):
+        try:
+            platform = _detect_platform_from_url(target)
+        except ValueError:
+            pass
+
+        # GitHub PR URL: https://github.com/owner/repo/pull/123
+        if "github.com" in target and "/pull/" in target:
+            platform = "github"
+            parts = target.split("/")
+            if len(parts) >= 7:
+                owner = parts[3]
+                repo = parts[4]
+                pr_mr_number = parts[6].rstrip("/").split("?")[0].split("#")[0]
+                project_path = f"{owner}/{repo}"
+                logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
+        # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
+        # Also handles self-hosted GitLab where platform was detected via URL patterns
+        # (e.g., https://git.example.com/owner/repo/-/merge_requests/123)
+        # platform is set from _detect_platform_from_url which checks for /merge_requests/ pattern
+        elif platform == "gitlab" and "/merge_requests/" in target:
+            mr_parts = target.split("/merge_requests/")
+            pr_mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
+            url_path = mr_parts[0].split("://")[1].split("/")
+            if len(url_path) >= 3:
+                project_path = "/".join(url_path[1:]).rstrip("/-")
+                logger.info(f"Detected GitLab MR: {project_path}#{pr_mr_number}")
+    # Parse slug format: owner/repo#123
+    elif "/" in target and "#" in target:
+        slug_parts = target.split("#")
+        pr_mr_number = slug_parts[1]
+        project_path = slug_parts[0]
+        logger.info(f"Detected PR/MR slug format: {project_path}#{pr_mr_number}")
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid target format. Use URL or 'owner/repo#number' format.",
+        )
+
+    if not project_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not parse project path from target identifier.",
+        )
+
+    # Find the project
+    project_obj = crud_project.get_by_slug_or_identifier(
+        db,
+        slug_or_identifier=project_path,
+        account_id=str(current_user.account_id),
+    )
+    if not project_obj:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project not found for {project_path}",
+        )
+
+    # Get tracker client
+    tracker_client = await get_tracker_client(
+        project_obj.organization_id, project_obj.id, db, current_user
+    )
+
+    # Determine platform from tracker if not yet known
+    if platform is None:
+        platform = (
+            "github" if tracker_client.tracker_type.lower() == "github" else "gitlab"
+        )
+
+    try:
+        result_url = None
+        actions_taken = []
+
+        if platform == "github":
+            # Update comment body if provided
+            if body is not None:
+                logger.info(f"Updating GitHub review comment {comment_id}")
+                try:
+                    update_result = await tracker_client.update_review_comment(
+                        comment_id=comment_id,
+                        body=body,
+                    )
+                    result_url = update_result.get("html_url")
+                    actions_taken.append("body updated")
+                    logger.info(f"Successfully updated review comment {comment_id}")
+                except Exception as e:
+                    error_msg = str(e)
+                    # Check if this is a 404 - likely means it's an issue comment, not a review comment
+                    if "404" in error_msg or "Not Found" in error_msg:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Comment {comment_id} not found as a review comment. "
+                            "This tool only supports PR inline review comments. "
+                            "Issue comments and PR conversation comments are not supported.",
+                        )
+                    raise
+
+            # Resolve/unresolve thread if requested
+            if resolved is not None:
+                # GitHub's resolve_review_thread requires the thread's GraphQL node_id
+                # (format: "PRRT_..."), not a comment ID (format: "PRRC_...").
+                if not thread_id:
+                    # Check if comment_id looks like a thread ID
+                    if comment_id.startswith("PRRT_"):
+                        # User passed thread_id as comment_id, use it
+                        thread_id = comment_id
+                        logger.info(
+                            "Using comment_id as thread_id since it has PRRT_ prefix"
+                        )
+                    else:
+                        # Try to look up the thread_id from the comment_id
+                        logger.info(
+                            f"Attempting to look up thread_id for comment {comment_id}"
+                        )
+                        try:
+                            looked_up_thread_id = (
+                                await tracker_client.get_thread_id_for_comment(
+                                    pr_number=pr_mr_number,
+                                    comment_id=comment_id,
+                                )
+                            )
+                            if looked_up_thread_id:
+                                thread_id = looked_up_thread_id
+                                logger.info(
+                                    f"Found thread_id {thread_id} for comment {comment_id}"
+                                )
+                            else:
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail=(
+                                        "Could not find thread_id for the given comment_id. "
+                                        f"The comment_id '{comment_id}' may not be a review comment. "
+                                        "Thread resolution only works for review comments (inline diff comments). "
+                                        "For issue comments, resolution is not supported."
+                                    ),
+                                )
+                        except HTTPException:
+                            raise
+                        except Exception as e:
+                            logger.warning(f"Thread lookup failed: {e}")
+                            raise HTTPException(
+                                status_code=400,
+                                detail=(
+                                    "GitHub thread resolution requires a thread_id parameter "
+                                    "(format: 'PRRT_...'). Automatic lookup failed. "
+                                    "To resolve a thread, provide the thread's GraphQL "
+                                    "node_id in the thread_id parameter."
+                                ),
+                            )
+                logger.info(
+                    f"{'Resolving' if resolved else 'Unresolving'} GitHub review "
+                    f"thread {thread_id}"
+                )
+                await tracker_client.resolve_review_thread(
+                    thread_id=thread_id,
+                    resolved=resolved,
+                )
+                actions_taken.append("resolved" if resolved else "unresolved")
+                logger.info(
+                    f"Successfully {'resolved' if resolved else 'unresolved'} "
+                    f"review thread {thread_id}"
+                )
+
+        else:  # GitLab
+            # Update note body if provided
+            if body is not None:
+                logger.info(
+                    f"Updating GitLab MR note {comment_id} for MR {pr_mr_number}"
+                )
+                update_result = await tracker_client.update_mr_note(
+                    mr_iid=pr_mr_number,
+                    note_id=comment_id,
+                    body=body,
+                )
+                actions_taken.append("body updated")
+                logger.info(f"Successfully updated MR note {comment_id}")
+
+            # Resolve/unresolve discussion if requested
+            if resolved is not None:
+                # GitLab's resolve_mr_discussion requires the discussion ID, not a note ID.
+                # We must have a valid thread_id (discussion_id) to proceed.
+                if not thread_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "GitLab discussion resolution requires a thread_id parameter "
+                            "(the discussion ID). The comment_id provided "
+                            f"('{comment_id}') is a note ID, not a discussion ID. "
+                            "To resolve a discussion, you must provide the discussion ID. "
+                            "You can find this in the 'discussion_id' field when "
+                            "fetching MR discussions."
+                        ),
+                    )
+                logger.info(
+                    f"{'Resolving' if resolved else 'Unresolving'} GitLab MR "
+                    f"discussion {thread_id}"
+                )
+                await tracker_client.resolve_mr_discussion(
+                    mr_iid=pr_mr_number,
+                    discussion_id=thread_id,
+                    resolved=resolved,
+                )
+                actions_taken.append("resolved" if resolved else "unresolved")
+                logger.info(
+                    f"Successfully {'resolved' if resolved else 'unresolved'} "
+                    f"MR discussion {thread_id}"
+                )
+
+        message = (
+            f"Successfully performed {', '.join(actions_taken)} on comment {comment_id}"
+        )
+
+        return UpdateCommentResponse(
+            comment_id=comment_id,
+            status="updated",
+            message=message,
+            url=result_url,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error updating comment {comment_id} for {target}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to update comment: {str(e)}",
         )

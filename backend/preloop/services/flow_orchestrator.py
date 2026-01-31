@@ -16,6 +16,7 @@ from preloop.models.crud import (
     crud_api_key,
     crud_flow,
     crud_flow_execution,
+    crud_user,
 )
 from preloop.models.models.flow import Flow
 from preloop.models.models.ai_model import AIModel
@@ -30,6 +31,20 @@ from preloop.services.prompt_resolvers import (
 from preloop.services.flow_execution_logger import FlowExecutionLogger
 
 logger = logging.getLogger(__name__)
+
+# Sentinel string that agents should print when completing successfully.
+# This is used to reliably detect successful execution without false positives
+# from error-like patterns in code output.
+FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
+
+# Instruction appended to prompts to have agents signal success
+FLOW_SUCCESS_INSTRUCTION = f"""
+
+---
+IMPORTANT: When you have successfully completed your task, print exactly this text on its own line:
+{FLOW_SUCCESS_SENTINEL}
+This signals that the flow execution completed successfully.
+---"""
 
 
 def _make_json_serializable(obj: Any) -> Any:
@@ -73,6 +88,282 @@ class FlowExecutionOrchestrator:
         self.total_tokens: int = 0
         self.tool_calls_count: int = 0
         self.estimated_cost: float = 0.0
+
+        # Commit status tracking
+        self._tracker_client = None
+        self._commit_sha: Optional[str] = None
+        self._status_context: str = "preloop"
+        self._is_recovered: bool = False  # Set to True during execution recovery
+
+    def _extract_commit_sha(self) -> Optional[str]:
+        """Extract the commit SHA from the trigger event data.
+
+        Looks for commit SHA in common locations for different event types.
+        """
+        payload = self.trigger_event_data.get("payload", {})
+
+        # Ensure payload is a dict (could be a string in edge cases)
+        if not isinstance(payload, dict):
+            logger.debug(f"Payload is not a dict: {type(payload)}")
+            return None
+
+        # Try common locations for commit SHA
+        # GitHub push event
+        if "head_commit" in payload:
+            sha = payload["head_commit"].get("id")
+            if sha:
+                logger.debug(f"Found commit SHA in head_commit.id: {sha[:8]}")
+                return sha
+
+        # GitHub/GitLab pull request / merge request events
+        object_attrs = payload.get("object_attributes", {})
+        if object_attrs:
+            # GitLab MR
+            if "last_commit" in object_attrs:
+                sha = object_attrs["last_commit"].get("id")
+                if sha:
+                    logger.debug(
+                        f"Found commit SHA in object_attributes.last_commit.id: {sha[:8]}"
+                    )
+                    return sha
+            # GitLab may also have sha directly
+            if "sha" in object_attrs:
+                sha = object_attrs["sha"]
+                if sha:
+                    logger.debug(
+                        f"Found commit SHA in object_attributes.sha: {sha[:8]}"
+                    )
+                    return sha
+
+        # GitHub PR event - check for head sha
+        if "pull_request" in payload:
+            pr = payload["pull_request"]
+            if "head" in pr:
+                sha = pr["head"].get("sha")
+                if sha:
+                    logger.debug(
+                        f"Found commit SHA in pull_request.head.sha: {sha[:8]}"
+                    )
+                    return sha
+
+        # Direct commit reference
+        if "commit" in payload:
+            commit = payload["commit"]
+            if isinstance(commit, dict):
+                sha = commit.get("sha") or commit.get("id")
+                if sha:
+                    logger.debug(f"Found commit SHA in commit: {sha[:8]}")
+                    return sha
+
+        # Check for sha at top level
+        if "sha" in payload:
+            logger.debug(f"Found commit SHA at top level: {payload['sha'][:8]}")
+            return payload["sha"]
+
+        # Check in after (for push events)
+        if "after" in payload:
+            logger.debug(f"Found commit SHA in after: {payload['after'][:8]}")
+            return payload["after"]
+
+        logger.debug(f"No commit SHA found in payload. Keys: {list(payload.keys())}")
+        return None
+
+    async def _get_tracker_client_for_status(self):
+        """Get a tracker client for updating commit status.
+
+        Returns None if we can't get a valid client (e.g., no project configured).
+        """
+        if self._tracker_client is not None:
+            logger.debug("[CommitStatus] Using cached tracker client")
+            return self._tracker_client
+
+        try:
+            # Get project from trigger_project_id on the flow
+            if not self.flow:
+                logger.warning("[CommitStatus] No flow object available")
+                return None
+
+            if not self.flow.trigger_project_id:
+                # This is expected for flows not tied to a specific project
+                logger.debug(
+                    "[CommitStatus] Flow has no trigger_project_id - skipping status update"
+                )
+                return None
+
+            from preloop.models.crud import crud_project
+            from preloop.api.common import get_tracker_client
+
+            project = crud_project.get(self.db, id=self.flow.trigger_project_id)
+            if not project:
+                logger.warning(
+                    f"[CommitStatus] Project not found for trigger_project_id: "
+                    f"{self.flow.trigger_project_id}"
+                )
+                return None
+
+            if not project.organization_id:
+                logger.warning(
+                    f"[CommitStatus] Project {project.id} has no organization_id"
+                )
+                return None
+
+            # Create a minimal user context for auth
+            account = crud_account.get(self.db, id=self.flow.account_id)
+            if not account:
+                logger.warning(
+                    f"[CommitStatus] Account not found: {self.flow.account_id}"
+                )
+                return None
+
+            # Get the account owner or first admin
+            users = crud_user.get_by_account(self.db, account_id=account.id, limit=1)
+            if not users:
+                logger.warning(
+                    f"[CommitStatus] No users found for account: {account.id}"
+                )
+                return None
+
+            logger.info(
+                f"[CommitStatus] Getting tracker client for project {project.id}, "
+                f"org {project.organization_id}, user {users[0].username}"
+            )
+
+            self._tracker_client = await get_tracker_client(
+                organization_id=project.organization_id,
+                project_id=project.id,
+                db=self.db,
+                current_user=users[0],
+            )
+            return self._tracker_client
+
+        except Exception as e:
+            logger.error(
+                f"[CommitStatus] Exception getting tracker client: {e}",
+                exc_info=True,
+            )
+            return None
+
+    async def _update_commit_status(
+        self,
+        state: str,
+        description: Optional[str] = None,
+    ):
+        """Update the commit status on the PR/MR.
+
+        Args:
+            state: Status state (pending, success, failure, error)
+            description: Optional description text
+        """
+        # Only log at debug level initially - upgrade to info if we actually update
+        logger.debug(
+            f"[CommitStatus] Checking if status update needed (state='{state}')"
+        )
+
+        # Skip commit status updates during execution recovery
+        # to avoid making external API calls for old/stale executions
+        if self._is_recovered:
+            logger.info("[CommitStatus] Skipping - execution is recovered")
+            return
+
+        if not self._commit_sha:
+            self._commit_sha = self._extract_commit_sha()
+            if self._commit_sha:
+                logger.info(
+                    f"[CommitStatus] Extracted commit SHA: {self._commit_sha[:8]}"
+                )
+            else:
+                # Log more details about what's in trigger_event_data
+                payload = self.trigger_event_data.get("payload", {})
+                logger.info(
+                    f"[CommitStatus] No commit SHA found. "
+                    f"trigger_event_data keys: {list(self.trigger_event_data.keys())}, "
+                    f"payload type: {type(payload).__name__}, "
+                    f"payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'N/A'}"
+                )
+
+        if not self._commit_sha:
+            # This is expected for flows not triggered by commit/PR events
+            logger.debug(
+                "[CommitStatus] No commit SHA available - skipping status update"
+            )
+            return
+
+        try:
+            logger.info(
+                f"[CommitStatus] Getting tracker client. "
+                f"Flow ID: {self.flow_id}, "
+                f"trigger_project_id: {self.flow.trigger_project_id if self.flow else None}"
+            )
+
+            tracker_client = await self._get_tracker_client_for_status()
+            if not tracker_client:
+                logger.warning(
+                    f"[CommitStatus] Could not get tracker client. "
+                    f"Flow trigger_project_id: {self.flow.trigger_project_id if self.flow else None}, "
+                    f"account_id: {self.flow.account_id if self.flow else None}"
+                )
+                return
+
+            logger.info(
+                f"[CommitStatus] Got tracker client: {type(tracker_client).__name__}, "
+                f"connection_details: {list(tracker_client.connection_details.keys()) if hasattr(tracker_client, 'connection_details') else 'N/A'}"
+            )
+
+            # Check if the tracker supports commit status
+            if not hasattr(tracker_client, "create_commit_status"):
+                logger.info(
+                    f"[CommitStatus] Tracker {type(tracker_client).__name__} doesn't support commit status"
+                )
+                return
+
+            # Build the target URL for the execution
+            target_url = None
+            if self.execution_log:
+                # Construct absolute URL to the execution details page
+                # GitHub/GitLab require absolute URLs for commit status links
+                from preloop.config import settings
+
+                base_url = getattr(settings, "preloop_url", None) or getattr(
+                    settings, "PRELOOP_URL", None
+                )
+                if base_url:
+                    # Remove trailing slash if present
+                    base_url = base_url.rstrip("/")
+                    target_url = (
+                        f"{base_url}/console/flows/executions/{self.execution_log.id}"
+                    )
+                else:
+                    # Fallback to relative path if no base URL configured
+                    logger.warning(
+                        "[CommitStatus] PRELOOP_URL not configured, using relative URL"
+                    )
+                    target_url = f"/console/flows/executions/{self.execution_log.id}"
+
+            # Log the API call we're about to make
+            logger.info(
+                f"[CommitStatus] Calling create_commit_status: "
+                f"sha={self._commit_sha[:8]}, state={state}, context={self._status_context}, "
+                f"target_url={target_url[:50] if target_url else None}..."
+            )
+
+            await tracker_client.create_commit_status(
+                sha=self._commit_sha,
+                state=state,
+                context=self._status_context,
+                description=description,
+                target_url=target_url,
+            )
+
+            logger.info(
+                f"[CommitStatus] SUCCESS - Updated to '{state}' on {self._commit_sha[:8]}"
+            )
+
+        except Exception as e:
+            # Don't fail the execution if status update fails
+            logger.error(
+                f"[CommitStatus] FAILED to update: {e}",
+                exc_info=True,
+            )
 
     @staticmethod
     async def send_command(
@@ -126,10 +417,14 @@ class FlowExecutionOrchestrator:
             logger.error(f"Failed to send command via NATS: {e}", exc_info=True)
             raise
 
+    # NATS max payload is typically 1MB; use 900KB to leave headroom
+    NATS_MAX_PAYLOAD_BYTES = 900 * 1024
+
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
         """
         Publishes a structured message to the NATS stream for real-time updates.
         Includes account_id for proper filtering to prevent cross-account data leaks.
+        Automatically truncates large payloads to avoid NATS MaxPayloadError.
         """
         if not self.nats_client or not self.nats_client.is_connected:
             logger.warning("NATS client not available, skipping update publish.")
@@ -151,7 +446,40 @@ class FlowExecutionOrchestrator:
                 "payload": payload,
             }
             subject = f"flow-updates.{self.execution_log.id}"
-            await self.nats_client.publish(subject, json.dumps(message).encode())
+            encoded_message = json.dumps(message).encode()
+
+            # Check if message exceeds NATS max payload
+            if len(encoded_message) > self.NATS_MAX_PAYLOAD_BYTES:
+                # Truncate the payload - specifically handle "line" field for log lines
+                truncated_payload = dict(payload)
+                if "line" in truncated_payload and isinstance(
+                    truncated_payload["line"], str
+                ):
+                    # Calculate how much we need to truncate
+                    excess = len(encoded_message) - self.NATS_MAX_PAYLOAD_BYTES
+                    line = truncated_payload["line"]
+                    # Truncate line with some extra margin
+                    max_line_len = max(1000, len(line) - excess - 1000)
+                    truncated_payload["line"] = (
+                        line[:max_line_len]
+                        + f"\n... [truncated {len(line) - max_line_len} chars]"
+                    )
+                    truncated_payload["truncated"] = True
+                    message["payload"] = truncated_payload
+                    encoded_message = json.dumps(message).encode()
+                    logger.warning(
+                        f"Truncated large log line ({len(line)} -> {max_line_len} chars) "
+                        f"to fit NATS max payload"
+                    )
+                else:
+                    # For other payload types, skip publishing this message
+                    logger.warning(
+                        f"Skipping {message_type} update: payload too large "
+                        f"({len(encoded_message)} bytes > {self.NATS_MAX_PAYLOAD_BYTES})"
+                    )
+                    return
+
+            await self.nats_client.publish(subject, encoded_message)
             logger.debug(f"Published {message_type} to NATS subject '{subject}'")
         except Exception as e:
             logger.error(f"Failed to publish update to NATS: {e}", exc_info=True)
@@ -262,6 +590,9 @@ class FlowExecutionOrchestrator:
                     logger.warning(
                         f"No resolver found for prefix '{prefix}' and simple resolution failed for {{{{{placeholder}}}}}"
                     )
+
+        # Append the success sentinel instruction to help with reliable completion detection
+        resolved_prompt = resolved_prompt + FLOW_SUCCESS_INSTRUCTION
 
         logger.info("Prompt resolution complete")
         return resolved_prompt
@@ -882,13 +1213,27 @@ class FlowExecutionOrchestrator:
 
     async def _cleanup_monitoring(self):
         """Cleanup monitoring resources (log streaming, command subscription)."""
-        # Cancel log streaming task
+        # Wait for log streaming task to complete naturally with a timeout
+        # This ensures buffered logs are fully streamed before cleanup
         if self._log_streaming_task and not self._log_streaming_task.done():
-            self._log_streaming_task.cancel()
             try:
-                await self._log_streaming_task
+                # Give the log streaming task time to finish naturally
+                # (container may have buffered logs to yield)
+                await asyncio.wait_for(self._log_streaming_task, timeout=30.0)
+                logger.info("Log streaming task completed successfully")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Log streaming task did not complete within timeout, cancelling"
+                )
+                self._log_streaming_task.cancel()
+                try:
+                    await self._log_streaming_task
+                except asyncio.CancelledError:
+                    pass
             except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                logger.warning(f"Error waiting for log streaming task: {e}")
 
         # Unsubscribe from commands
         if self._command_subscription:
@@ -1207,6 +1552,14 @@ class FlowExecutionOrchestrator:
             await self._publish_update("status_update", {"status": "PENDING"})
             logger.info(f"Flow execution started: {self.execution_log.id}")
 
+            # Update commit status to pending (appears in GitHub/GitLab checks)
+            await self._update_commit_status(
+                state="pending",
+                description=f"Preloop is reviewing: {self.flow.name}"
+                if self.flow
+                else "Preloop is reviewing",
+            )
+
             # Stage 3: Mark as initializing
             await self._update_execution_log(status="INITIALIZING")
 
@@ -1263,6 +1616,20 @@ class FlowExecutionOrchestrator:
                 estimated_cost=self.estimated_cost,
             )
 
+            # Update commit status to success/failure
+            status_state = "success" if final_status == "SUCCEEDED" else "failure"
+            status_description = (
+                f"Preloop review completed: {self.flow.name}"
+                if self.flow
+                else "Preloop review completed"
+            )
+            if final_status != "SUCCEEDED":
+                status_description = f"Preloop review failed: {agent_result.get('error_message', 'Unknown error')[:80]}"
+            await self._update_commit_status(
+                state=status_state,
+                description=status_description,
+            )
+
             logger.info(
                 f"Flow execution completed with status {final_status}: {self.execution_log.id}"
             )
@@ -1271,6 +1638,12 @@ class FlowExecutionOrchestrator:
             logger.error(
                 f"Flow execution {self.execution_log.id if self.execution_log else 'unknown'} failed: {e}",
                 exc_info=True,
+            )
+
+            # Update commit status to failure
+            await self._update_commit_status(
+                state="failure",
+                description=f"Preloop execution failed: {str(e)[:80]}",
             )
 
             if self.execution_log:

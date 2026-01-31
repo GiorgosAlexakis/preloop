@@ -7,7 +7,7 @@ Supports two authentication types:
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import httpx
 from sqlalchemy.orm import Session
@@ -2082,3 +2082,964 @@ class GitHubTracker(BaseTracker):
         except Exception as e:
             logger.error(f"Error updating pull request {pr_number}: {e}")
             raise TrackerResponseError(f"Failed to update pull request: {e}")
+
+    async def create_pull_request(
+        self,
+        title: str,
+        source_branch: str,
+        target_branch: str,
+        description: Optional[str] = None,
+        draft: bool = False,
+        assignees: Optional[List[str]] = None,
+        reviewers: Optional[List[str]] = None,
+        labels: Optional[List[str]] = None,
+        milestone: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a GitHub pull request.
+
+        Args:
+            title: PR title
+            source_branch: Branch containing the changes (head branch)
+            target_branch: Branch to merge into (base branch)
+            description: PR description/body
+            draft: Whether to create as draft PR
+            assignees: List of assignee usernames
+            reviewers: List of reviewer usernames
+            labels: List of label names
+            milestone: Milestone number or title
+
+        Returns:
+            Dict with created PR details including id, number, title, url
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        try:
+            # Create the pull request
+            create_data = {
+                "title": title,
+                "head": source_branch,
+                "base": target_branch,
+                "body": description or "",
+                "draft": draft,
+            }
+
+            pr_path = f"/repos/{owner}/{repo}/pulls"
+            pr_data = await self._request("POST", pr_path, data=create_data)
+            pr_number = pr_data["number"]
+
+            logger.info(f"Created pull request #{pr_number}: {title}")
+
+            # Add assignees if provided
+            if assignees:
+                try:
+                    assignees_path = (
+                        f"/repos/{owner}/{repo}/issues/{pr_number}/assignees"
+                    )
+                    await self._request(
+                        "POST", assignees_path, data={"assignees": assignees}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to add assignees to PR #{pr_number}: {e}")
+
+            # Request reviewers if provided
+            if reviewers:
+                try:
+                    reviewers_path = (
+                        f"/repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers"
+                    )
+                    await self._request(
+                        "POST", reviewers_path, data={"reviewers": reviewers}
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to add reviewers to PR #{pr_number}: {e}")
+
+            # Add labels if provided
+            if labels:
+                try:
+                    labels_path = f"/repos/{owner}/{repo}/issues/{pr_number}/labels"
+                    await self._request("POST", labels_path, data={"labels": labels})
+                except Exception as e:
+                    logger.warning(f"Failed to add labels to PR #{pr_number}: {e}")
+
+            # Set milestone if provided
+            if milestone:
+                try:
+                    # Try to get milestone by number first, then by title
+                    milestone_number = None
+                    if milestone.isdigit():
+                        milestone_number = int(milestone)
+                    else:
+                        # Search for milestone by title with pagination
+                        milestones_path = f"/repos/{owner}/{repo}/milestones"
+                        page = 1
+                        per_page = 100
+                        while milestone_number is None:
+                            milestones = await self._request(
+                                "GET",
+                                milestones_path,
+                                params={
+                                    "state": "all",
+                                    "page": page,
+                                    "per_page": per_page,
+                                },
+                            )
+                            if not milestones:
+                                break  # No more pages
+                            for m in milestones:
+                                if m["title"].lower() == milestone.lower():
+                                    milestone_number = m["number"]
+                                    break
+                            if len(milestones) < per_page:
+                                break  # Last page
+                            page += 1
+
+                    if milestone_number:
+                        issue_path = f"/repos/{owner}/{repo}/issues/{pr_number}"
+                        await self._request(
+                            "PATCH", issue_path, data={"milestone": milestone_number}
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to set milestone on PR #{pr_number}: {e}")
+
+            return {
+                "id": str(pr_data["id"]),
+                "number": pr_data["number"],
+                "title": pr_data["title"],
+                "description": pr_data.get("body", ""),
+                "state": pr_data["state"],
+                "url": pr_data["html_url"],
+                "is_draft": pr_data.get("draft", False),
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating pull request: {e}")
+            raise TrackerResponseError(f"Failed to create pull request: {e}")
+
+    @async_retry()
+    async def submit_pull_request_review(
+        self,
+        pr_number: str,
+        body: str,
+        event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+        comments: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Submit a review on a pull request.
+
+        Args:
+            pr_number: PR number.
+            body: Review summary comment.
+            event: Review action - APPROVE, REQUEST_CHANGES, or COMMENT.
+            comments: Optional list of inline review comments, each with:
+                - path: file path
+                - line: line number in the diff
+                - body: comment text
+                - side: "LEFT" (old) or "RIGHT" (new), default "RIGHT"
+
+        Returns:
+            Dict with review details including id, state, body.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Extract PR number from various formats
+        pr_num = pr_number
+        if "/" in pr_number:
+            parts = pr_number.split("/")
+            pr_num = parts[-1]
+        if "#" in pr_num:
+            pr_num = pr_num.split("#")[-1]
+
+        # Build the request payload
+        payload: Dict[str, Any] = {
+            "body": body,
+            "event": event,
+        }
+
+        # Add inline comments if provided
+        if comments:
+            formatted_comments = []
+            for comment in comments:
+                formatted_comment: Dict[str, Any] = {
+                    "path": comment["path"],
+                    "body": comment["body"],
+                }
+                # Use 'line' for single-line comments
+                if "line" in comment:
+                    formatted_comment["line"] = comment["line"]
+                # Use side if provided, default to RIGHT
+                if "side" in comment:
+                    formatted_comment["side"] = comment["side"]
+                else:
+                    formatted_comment["side"] = "RIGHT"
+                formatted_comments.append(formatted_comment)
+            payload["comments"] = formatted_comments
+
+        try:
+            review_path = f"/repos/{owner}/{repo}/pulls/{pr_num}/reviews"
+            review_data = await self._request("POST", review_path, data=payload)
+
+            return {
+                "id": str(review_data["id"]),
+                "node_id": review_data.get("node_id"),
+                "state": review_data["state"],
+                "body": review_data.get("body", ""),
+                "user": review_data["user"]["login"],
+                "submitted_at": review_data.get("submitted_at"),
+                "html_url": review_data.get("html_url"),
+            }
+
+        except Exception as e:
+            logger.error(f"Error submitting PR review for {pr_num}: {e}")
+            raise TrackerResponseError(f"Failed to submit pull request review: {e}")
+
+    @async_retry()
+    async def get_review_comments(
+        self,
+        pr_number: str,
+        review_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get comments for a specific pull request review.
+
+        Args:
+            pr_number: PR number.
+            review_id: The review ID to get comments for.
+
+        Returns:
+            List of comment dicts with id, body, path, line, etc.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Extract PR number from various formats
+        pr_num = pr_number
+        if "/" in pr_number:
+            parts = pr_number.split("/")
+            pr_num = parts[-1]
+        if "#" in pr_num:
+            pr_num = pr_num.split("#")[-1]
+
+        try:
+            comments_path = (
+                f"/repos/{owner}/{repo}/pulls/{pr_num}/reviews/{review_id}/comments"
+            )
+            comments_data = await self._request("GET", comments_path)
+
+            comments = []
+            for comment in comments_data:
+                comments.append(
+                    {
+                        "id": str(comment["id"]),
+                        "node_id": comment.get("node_id"),
+                        "body": comment.get("body", ""),
+                        "path": comment.get("path"),
+                        "line": comment.get("line"),
+                        "position": comment.get("position"),
+                        "author": comment["user"]["login"]
+                        if comment.get("user")
+                        else None,
+                        "created_at": comment.get("created_at"),
+                        "updated_at": comment.get("updated_at"),
+                        "html_url": comment.get("html_url"),
+                    }
+                )
+
+            return comments
+
+        except Exception as e:
+            logger.error(
+                f"Error getting review comments for PR {pr_num}, review {review_id}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to get review comments: {e}")
+
+    @async_retry()
+    async def get_pull_request_comments(
+        self,
+        pr_number: str,
+        filter_author: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all comments on a pull request, optionally filtered by author.
+
+        Fetches both review comments (inline code comments) and issue comments
+        (general PR discussion comments).
+
+        Args:
+            pr_number: PR number.
+            filter_author: Optional username to filter comments by.
+
+        Returns:
+            List of comment dicts with id, author, body, type, path, line, etc.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        # Extract PR number from various formats
+        pr_num = pr_number
+        if "/" in pr_number:
+            parts = pr_number.split("/")
+            pr_num = parts[-1]
+        if "#" in pr_num:
+            pr_num = pr_num.split("#")[-1]
+
+        all_comments: List[Dict[str, Any]] = []
+
+        try:
+            # Fetch review comments (inline code comments)
+            review_comments_path = f"/repos/{owner}/{repo}/pulls/{pr_num}/comments"
+            review_comments = await self._make_request(review_comments_path)
+
+            for comment in review_comments:
+                author = comment["user"]["login"]
+                if filter_author and author != filter_author:
+                    continue
+
+                all_comments.append(
+                    {
+                        "id": str(comment["id"]),
+                        "node_id": comment.get("node_id"),
+                        "author": author,
+                        "body": comment.get("body", ""),
+                        "type": "review_comment",
+                        "path": comment.get("path"),
+                        "line": comment.get("line"),
+                        "original_line": comment.get("original_line"),
+                        "side": comment.get("side"),
+                        "diff_hunk": comment.get("diff_hunk"),
+                        "commit_id": comment.get("commit_id"),
+                        "in_reply_to_id": comment.get("in_reply_to_id"),
+                        "created_at": comment["created_at"],
+                        "updated_at": comment["updated_at"],
+                        "html_url": comment.get("html_url"),
+                    }
+                )
+
+            # Fetch issue comments (general PR discussion)
+            issue_comments_path = f"/repos/{owner}/{repo}/issues/{pr_num}/comments"
+            issue_comments = await self._make_request(issue_comments_path)
+
+            for comment in issue_comments:
+                author = comment["user"]["login"]
+                if filter_author and author != filter_author:
+                    continue
+
+                all_comments.append(
+                    {
+                        "id": str(comment["id"]),
+                        "node_id": comment.get("node_id"),
+                        "author": author,
+                        "body": comment.get("body", ""),
+                        "type": "issue_comment",
+                        "path": None,
+                        "line": None,
+                        "original_line": None,
+                        "side": None,
+                        "diff_hunk": None,
+                        "commit_id": None,
+                        "in_reply_to_id": None,
+                        "created_at": comment["created_at"],
+                        "updated_at": comment["updated_at"],
+                        "html_url": comment.get("html_url"),
+                    }
+                )
+
+            return all_comments
+
+        except Exception as e:
+            logger.error(f"Error getting PR comments for {pr_num}: {e}")
+            raise TrackerResponseError(f"Failed to get pull request comments: {e}")
+
+    @async_retry()
+    async def update_review_comment(
+        self,
+        comment_id: str,
+        body: str,
+    ) -> Dict[str, Any]:
+        """
+        Update the body of an existing review comment.
+
+        Args:
+            comment_id: The comment ID to update.
+            body: New comment body.
+
+        Returns:
+            Dict with updated comment details.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        try:
+            comment_path = f"/repos/{owner}/{repo}/pulls/comments/{comment_id}"
+            payload = {"body": body}
+            comment_data = await self._request("PATCH", comment_path, data=payload)
+
+            return {
+                "id": str(comment_data["id"]),
+                "node_id": comment_data.get("node_id"),
+                "author": comment_data["user"]["login"],
+                "body": comment_data["body"],
+                "path": comment_data.get("path"),
+                "line": comment_data.get("line"),
+                "side": comment_data.get("side"),
+                "created_at": comment_data["created_at"],
+                "updated_at": comment_data["updated_at"],
+                "html_url": comment_data.get("html_url"),
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating review comment {comment_id}: {e}")
+            raise TrackerResponseError(f"Failed to update review comment: {e}")
+
+    @async_retry()
+    async def reply_to_review_comment(
+        self,
+        pr_number: str,
+        comment_id: str,
+        body: str,
+    ) -> Dict[str, Any]:
+        """
+        Reply to an existing pull request review comment (threaded reply).
+
+        Args:
+            pr_number: The pull request number.
+            comment_id: The ID of the comment to reply to.
+            body: The reply body text.
+
+        Returns:
+            Dict with the created reply comment details.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        try:
+            # GitHub REST API endpoint for replying to a review comment
+            # POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies
+            reply_path = (
+                f"/repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies"
+            )
+            payload = {"body": body}
+            reply_data = await self._request("POST", reply_path, data=payload)
+
+            return {
+                "id": str(reply_data["id"]),
+                "node_id": reply_data.get("node_id"),
+                "author": reply_data["user"]["login"],
+                "body": reply_data["body"],
+                "path": reply_data.get("path"),
+                "line": reply_data.get("line"),
+                "side": reply_data.get("side"),
+                "in_reply_to_id": reply_data.get("in_reply_to_id"),
+                "created_at": reply_data["created_at"],
+                "updated_at": reply_data["updated_at"],
+                "html_url": reply_data.get("html_url"),
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error replying to review comment {comment_id} on PR {pr_number}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to reply to review comment: {e}")
+
+    @async_retry()
+    async def resolve_review_thread(
+        self,
+        thread_id: str,
+        resolved: bool,
+    ) -> Dict[str, Any]:
+        """
+        Resolve or unresolve a review thread.
+
+        Note: This requires GitHub GraphQL API as the REST API doesn't support
+        thread resolution.
+
+        Args:
+            thread_id: The thread ID (GraphQL node_id).
+            resolved: True to resolve, False to unresolve.
+
+        Returns:
+            Dict with thread resolution status.
+
+        Raises:
+            TrackerResponseError: If API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        # GitHub GraphQL endpoint
+        graphql_url = "https://api.github.com/graphql"
+
+        # Choose the appropriate mutation
+        if resolved:
+            mutation = """
+                mutation ResolveThread($threadId: ID!) {
+                    resolveReviewThread(input: {threadId: $threadId}) {
+                        thread {
+                            id
+                            isResolved
+                            viewerCanResolve
+                            viewerCanUnresolve
+                        }
+                    }
+                }
+            """
+        else:
+            mutation = """
+                mutation UnresolveThread($threadId: ID!) {
+                    unresolveReviewThread(input: {threadId: $threadId}) {
+                        thread {
+                            id
+                            isResolved
+                            viewerCanResolve
+                            viewerCanUnresolve
+                        }
+                    }
+                }
+            """
+
+        variables = {"threadId": thread_id}
+
+        # Get auth headers
+        headers = await self._get_auth_headers()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    graphql_url,
+                    headers=headers,
+                    json={"query": mutation, "variables": variables},
+                )
+
+                if response.status_code == HTTP_STATUS_UNAUTHORIZED:
+                    raise TrackerAuthenticationError("GitHub authentication failed")
+                elif response.status_code >= 400:
+                    raise TrackerResponseError(
+                        f"GitHub GraphQL API error: {response.status_code} - {response.text}"
+                    )
+
+                data = response.json()
+
+                # Check for GraphQL errors
+                if "errors" in data:
+                    error_messages = [e.get("message", str(e)) for e in data["errors"]]
+                    raise TrackerResponseError(
+                        f"GraphQL errors: {'; '.join(error_messages)}"
+                    )
+
+                # Extract the thread data from the appropriate mutation response
+                if resolved:
+                    thread_data = (
+                        data.get("data", {})
+                        .get("resolveReviewThread", {})
+                        .get("thread", {})
+                    )
+                else:
+                    thread_data = (
+                        data.get("data", {})
+                        .get("unresolveReviewThread", {})
+                        .get("thread", {})
+                    )
+
+                return {
+                    "id": thread_data.get("id"),
+                    "is_resolved": thread_data.get("isResolved"),
+                    "viewer_can_resolve": thread_data.get("viewerCanResolve"),
+                    "viewer_can_unresolve": thread_data.get("viewerCanUnresolve"),
+                }
+
+        except httpx.RequestError as e:
+            raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+
+    @async_retry()
+    async def get_thread_id_for_comment(
+        self,
+        pr_number: str,
+        comment_id: str,
+    ) -> Optional[str]:
+        """Look up the review thread ID for a PR review comment.
+
+        Uses GraphQL to find the thread node_id (PRRT_*) that contains
+        a specific comment.
+
+        Args:
+            pr_number: The PR number.
+            comment_id: The comment's numeric ID or node_id.
+
+        Returns:
+            The thread node_id (PRRT_*) if found, None otherwise.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            logger.warning("Owner/repo not found for thread lookup")
+            return None
+
+        # GraphQL query to get review threads and their comments
+        query = """
+            query GetPRReviewThreads($owner: String!, $name: String!, $prNumber: Int!) {
+                repository(owner: $owner, name: $name) {
+                    pullRequest(number: $prNumber) {
+                        reviewThreads(first: 100) {
+                            nodes {
+                                id
+                                comments(first: 50) {
+                                    nodes {
+                                        id
+                                        databaseId
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        """
+
+        variables = {
+            "owner": owner,
+            "name": repo,
+            "prNumber": int(pr_number),
+        }
+
+        graphql_url = "https://api.github.com/graphql"
+        headers = await self._get_auth_headers()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    graphql_url,
+                    headers=headers,
+                    json={"query": query, "variables": variables},
+                    timeout=30.0,
+                )
+
+                if response.status_code >= 400:
+                    logger.warning(f"GraphQL query failed: {response.status_code}")
+                    return None
+
+                data = response.json()
+
+                if "errors" in data:
+                    logger.warning(f"GraphQL errors: {data['errors']}")
+                    return None
+
+                # Search through threads to find the comment
+                threads = (
+                    data.get("data", {})
+                    .get("repository", {})
+                    .get("pullRequest", {})
+                    .get("reviewThreads", {})
+                    .get("nodes", [])
+                )
+
+                # Try to match by comment_id (numeric) or node_id (string)
+                for thread in threads:
+                    thread_id = thread.get("id")
+                    comments = thread.get("comments", {}).get("nodes", [])
+
+                    for comment in comments:
+                        # Match by database ID (numeric)
+                        if str(comment.get("databaseId")) == str(comment_id):
+                            logger.info(
+                                f"Found thread {thread_id} for comment {comment_id}"
+                            )
+                            return thread_id
+                        # Match by node_id
+                        if comment.get("id") == comment_id:
+                            logger.info(
+                                f"Found thread {thread_id} for comment {comment_id}"
+                            )
+                            return thread_id
+
+                logger.warning(f"No thread found for comment {comment_id}")
+                return None
+
+        except Exception as e:
+            logger.warning(f"Error looking up thread for comment {comment_id}: {e}")
+            return None
+
+    @async_retry()
+    async def add_issue_reaction(
+        self,
+        issue_number: str,
+        reaction: str,
+    ) -> Dict[str, Any]:
+        """Add a reaction to an issue or pull request.
+
+        GitHub uses the same reaction API for issues and PRs.
+
+        Args:
+            issue_number: The issue or PR number.
+            reaction: The reaction type. Valid values:
+                +1, -1, laugh, confused, heart, hooray, rocket, eyes
+
+        Returns:
+            Dictionary with reaction details.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError(
+                "Owner and repo are required for GitHub reactions"
+            )
+
+        url = (
+            f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions"
+        )
+        headers = await self._get_auth_headers()
+        # Need special accept header for reactions API
+        headers["Accept"] = "application/vnd.github.squirrel-girl-preview+json"
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                headers=headers,
+                json={"content": reaction},
+                timeout=30.0,
+            )
+
+            if response.status_code in (HTTP_STATUS_OK, HTTP_STATUS_CREATED):
+                data = response.json()
+                logger.info(f"Added reaction '{reaction}' to issue {issue_number}")
+                return {
+                    "id": data.get("id"),
+                    "content": data.get("content"),
+                    "user": data.get("user", {}).get("login"),
+                }
+            else:
+                error_msg = response.text
+                logger.error(
+                    f"Failed to add reaction to issue {issue_number}: {error_msg}"
+                )
+                raise TrackerResponseError(
+                    f"Failed to add reaction: {response.status_code} - {error_msg}"
+                )
+
+    @async_retry()
+    async def remove_issue_reaction(
+        self,
+        issue_number: str,
+        reaction: str,
+    ) -> bool:
+        """Remove a reaction from an issue or pull request.
+
+        This finds the current user's reaction of the specified type and removes it.
+
+        Args:
+            issue_number: The issue or PR number.
+            reaction: The reaction type to remove.
+
+        Returns:
+            True if the reaction was removed, False if not found.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError(
+                "Owner and repo are required for GitHub reactions"
+            )
+
+        # First, list reactions to find the one to delete
+        list_url = (
+            f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions"
+        )
+        headers = await self._get_auth_headers()
+        headers["Accept"] = "application/vnd.github.squirrel-girl-preview+json"
+
+        async with httpx.AsyncClient() as client:
+            # Get current reactions
+            response = await client.get(
+                list_url,
+                headers=headers,
+                timeout=30.0,
+            )
+
+            if response.status_code != HTTP_STATUS_OK:
+                logger.warning(f"Could not list reactions: {response.text}")
+                return False
+
+            reactions = response.json()
+
+            # Get the authenticated user's login to only remove our own reactions
+            authenticated_user = None
+            try:
+                user_response = await client.get(
+                    f"{self.API_BASE_URL}/user",
+                    headers=headers,
+                    timeout=10.0,
+                )
+                if user_response.status_code == HTTP_STATUS_OK:
+                    user_data = user_response.json()
+                    authenticated_user = user_data.get("login")
+                    logger.debug(f"Authenticated as user: {authenticated_user}")
+            except Exception as e:
+                logger.warning(f"Could not get authenticated user: {e}")
+
+            # Find the reaction matching the content type AND created by us
+            reaction_to_delete = None
+            for r in reactions:
+                if r.get("content") == reaction:
+                    reaction_user = r.get("user", {}).get("login")
+                    # Only delete if it's our reaction, or if we couldn't determine the user
+                    if (
+                        authenticated_user is None
+                        or reaction_user == authenticated_user
+                    ):
+                        reaction_to_delete = r
+                        break
+                    else:
+                        logger.debug(
+                            f"Skipping reaction by {reaction_user} (not ours: {authenticated_user})"
+                        )
+
+            if not reaction_to_delete:
+                logger.info(
+                    f"No '{reaction}' reaction found on issue {issue_number} to remove"
+                )
+                return False
+
+            # Delete the reaction
+            reaction_id = reaction_to_delete.get("id")
+            delete_url = f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}"
+
+            delete_response = await client.delete(
+                delete_url,
+                headers=headers,
+                timeout=30.0,
+            )
+
+            if delete_response.status_code == HTTP_STATUS_NO_CONTENT:
+                logger.info(f"Removed reaction '{reaction}' from issue {issue_number}")
+                return True
+            else:
+                logger.warning(
+                    f"Failed to remove reaction: {delete_response.status_code}"
+                )
+                return False
+
+    @async_retry()
+    async def create_commit_status(
+        self,
+        sha: str,
+        state: Literal["pending", "success", "failure", "error"],
+        context: str = "preloop",
+        description: Optional[str] = None,
+        target_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a commit status (check) on a specific commit.
+
+        This appears as a check in the PR's "Checks" section.
+
+        Args:
+            sha: The commit SHA to create the status on.
+            state: The state of the status: pending, success, failure, or error.
+            context: A string label to differentiate this status from others.
+                     Default is "preloop".
+            description: A short description of the status (max 140 chars).
+            target_url: URL to link to for more details (e.g., flow execution page).
+
+        Returns:
+            Dictionary with status details.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError(
+                "Owner and repo are required for GitHub commit status"
+            )
+
+        url = f"{self.API_BASE_URL}/repos/{owner}/{repo}/statuses/{sha}"
+        logger.info(
+            f"[CommitStatus] GitHub API call: POST {url} "
+            f"(owner={owner}, repo={repo}, sha={sha[:8]})"
+        )
+
+        headers = await self._get_auth_headers()
+
+        payload = {
+            "state": state,
+            "context": context,
+        }
+        if description:
+            # GitHub limits description to 140 chars
+            payload["description"] = description[:140]
+        if target_url:
+            payload["target_url"] = target_url
+
+        logger.debug(f"[CommitStatus] Payload: {payload}")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=30.0,
+            )
+
+            if response.status_code == HTTP_STATUS_CREATED:
+                data = response.json()
+                logger.info(f"Created commit status '{context}' ({state}) on {sha[:8]}")
+                return {
+                    "id": data.get("id"),
+                    "state": data.get("state"),
+                    "context": data.get("context"),
+                    "description": data.get("description"),
+                    "target_url": data.get("target_url"),
+                    "url": data.get("url"),
+                }
+            else:
+                error_msg = response.text
+                logger.error(f"Failed to create commit status: {error_msg}")
+                raise TrackerResponseError(
+                    f"Failed to create commit status: {response.status_code} - {error_msg}"
+                )

@@ -1596,3 +1596,722 @@ class GitLabTracker(BaseTracker):
         except Exception as e:
             logger.error(f"Error updating merge request {mr_iid}: {e}")
             raise TrackerResponseError(f"Failed to update merge request: {e}")
+
+    async def create_merge_request(
+        self,
+        title: str,
+        source_branch: str,
+        target_branch: str,
+        description: Optional[str] = None,
+        draft: bool = False,
+        assignee_ids: Optional[List[int]] = None,
+        reviewer_ids: Optional[List[int]] = None,
+        labels: Optional[List[str]] = None,
+        milestone_id: Optional[int] = None,
+        squash: Optional[bool] = None,
+        remove_source_branch: Optional[bool] = None,
+        allow_collaboration: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a GitLab merge request.
+
+        Args:
+            title: MR title
+            source_branch: Branch containing the changes
+            target_branch: Branch to merge into
+            description: MR description
+            draft: Whether to create as draft (WIP)
+            assignee_ids: List of assignee user IDs
+            reviewer_ids: List of reviewer user IDs
+            labels: List of label names
+            milestone_id: Milestone ID
+            squash: Whether to squash commits when merging
+            remove_source_branch: Whether to remove source branch when merged
+            allow_collaboration: Allow commits from upstream members
+
+        Returns:
+            Dict with created MR details including id, iid, title, url
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+
+            # Build create data
+            create_data = {
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+                "title": f"Draft: {title}" if draft else title,
+            }
+
+            if description is not None:
+                create_data["description"] = description
+            if assignee_ids:
+                create_data["assignee_ids"] = assignee_ids
+            if reviewer_ids:
+                create_data["reviewer_ids"] = reviewer_ids
+            if labels:
+                create_data["labels"] = ",".join(labels)
+            if milestone_id is not None:
+                create_data["milestone_id"] = milestone_id
+            if squash is not None:
+                create_data["squash"] = squash
+            if remove_source_branch is not None:
+                create_data["remove_source_branch"] = remove_source_branch
+            if allow_collaboration is not None:
+                create_data["allow_collaboration"] = allow_collaboration
+
+            # Create the merge request
+            mr = await self._make_request(project.mergerequests.create, create_data)
+
+            logger.info(f"Created merge request !{mr.iid}: {title}")
+
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "title": mr.title,
+                "description": mr.description or "",
+                "state": mr.state,
+                "url": mr.web_url,
+                "work_in_progress": getattr(mr, "work_in_progress", False),
+                "source_branch": source_branch,
+                "target_branch": target_branch,
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating merge request: {e}")
+            raise TrackerResponseError(f"Failed to create merge request: {e}")
+
+    async def approve_merge_request(self, mr_iid: str) -> Dict[str, Any]:
+        """
+        Approve a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+
+        Returns:
+            Dict with approval details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Approve the merge request
+            approval = await self._make_request(mr.approve)
+
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "approved": True,
+                "approval_details": approval if approval else {},
+            }
+
+        except Exception as e:
+            logger.error(f"Error approving merge request {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to approve merge request: {e}")
+
+    async def unapprove_merge_request(self, mr_iid: str) -> Dict[str, Any]:
+        """
+        Remove approval from a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+
+        Returns:
+            Dict with unapproval confirmation.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Unapprove the merge request
+            await self._make_request(mr.unapprove)
+
+            return {
+                "id": str(mr.id),
+                "iid": mr.iid,
+                "approved": False,
+            }
+
+        except Exception as e:
+            logger.error(f"Error unapproving merge request {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to unapprove merge request: {e}")
+
+    async def get_mr_discussions(
+        self, mr_iid: str, filter_author: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all discussions on a merge request, optionally filtered by author.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            filter_author: Optional username to filter discussions by.
+
+        Returns:
+            List of discussion dicts with id, author, body, notes, resolved status.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get all discussions
+            discussions = await self._make_request(mr.discussions.list, all=True)
+
+            result = []
+            for discussion in discussions:
+                discussion_data = {
+                    "id": discussion.id,
+                    "individual_note": getattr(discussion, "individual_note", False),
+                    "notes": [],
+                }
+
+                # Get notes from discussion
+                notes = getattr(discussion, "notes", [])
+                for note in notes:
+                    note_author = None
+                    if isinstance(note, dict):
+                        note_author = note.get("author", {}).get("username")
+                        note_data = {
+                            "id": note.get("id"),
+                            "author": note_author,
+                            "body": note.get("body", ""),
+                            "created_at": note.get("created_at"),
+                            "updated_at": note.get("updated_at"),
+                            "resolvable": note.get("resolvable", False),
+                            "resolved": note.get("resolved", False),
+                            "system": note.get("system", False),
+                        }
+                    else:
+                        note_author = (
+                            note.author.get("username")
+                            if hasattr(note, "author") and isinstance(note.author, dict)
+                            else None
+                        )
+                        note_data = {
+                            "id": getattr(note, "id", None),
+                            "author": note_author,
+                            "body": getattr(note, "body", ""),
+                            "created_at": getattr(note, "created_at", None),
+                            "updated_at": getattr(note, "updated_at", None),
+                            "resolvable": getattr(note, "resolvable", False),
+                            "resolved": getattr(note, "resolved", False),
+                            "system": getattr(note, "system", False),
+                        }
+                    discussion_data["notes"].append(note_data)
+
+                # Apply author filter if specified
+                if filter_author:
+                    discussion_data["notes"] = [
+                        n
+                        for n in discussion_data["notes"]
+                        if n.get("author") == filter_author
+                    ]
+                    # Only include discussion if it has matching notes
+                    if not discussion_data["notes"]:
+                        continue
+
+                result.append(discussion_data)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting MR discussions for {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to get MR discussions: {e}")
+
+    async def update_mr_note(
+        self, mr_iid: str, note_id: str, body: str
+    ) -> Dict[str, Any]:
+        """
+        Update the body of an existing MR note.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            note_id: The note ID to update.
+            body: New note body.
+
+        Returns:
+            Dict with updated note details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get the note
+            note = await self._make_request(mr.notes.get, note_id)
+
+            # Update the note body
+            note.body = body
+            await self._make_request(note.save)
+
+            return {
+                "id": str(note.id),
+                "body": note.body,
+                "author": note.author.get("username")
+                if hasattr(note, "author") and isinstance(note.author, dict)
+                else None,
+                "updated_at": getattr(note, "updated_at", None),
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating MR note {note_id} for MR {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to update MR note: {e}")
+
+    async def resolve_mr_discussion(
+        self, mr_iid: str, discussion_id: str, resolved: bool
+    ) -> Dict[str, Any]:
+        """
+        Resolve or unresolve a discussion thread on a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            discussion_id: The discussion ID.
+            resolved: True to resolve, False to unresolve.
+
+        Returns:
+            Dict with discussion resolution status.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get the discussion
+            discussion = await self._make_request(mr.discussions.get, discussion_id)
+
+            # Update resolved status
+            discussion.resolved = resolved
+            await self._make_request(discussion.save)
+
+            return {
+                "id": discussion.id,
+                "resolved": resolved,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error resolving MR discussion {discussion_id} for MR {mr_iid}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to resolve MR discussion: {e}")
+
+    async def create_mr_discussion(
+        self, mr_iid: str, body: str, position: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new discussion on a merge request.
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            body: Discussion comment body.
+            position: Optional position dict for diff comments with:
+                - base_sha, start_sha, head_sha: Commit SHAs
+                - position_type: "text" for diff comments
+                - new_path: File path in new version
+                - new_line: Line number in new version
+                - old_path: File path in old version (optional)
+                - old_line: Line number in old version (optional)
+
+        Returns:
+            Dict with created discussion details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Build discussion data
+            discussion_data: Dict[str, Any] = {"body": body}
+
+            # Add position if provided (for diff comments)
+            if position:
+                discussion_data["position"] = {
+                    "base_sha": position.get("base_sha"),
+                    "start_sha": position.get("start_sha"),
+                    "head_sha": position.get("head_sha"),
+                    "position_type": position.get("position_type", "text"),
+                    "new_path": position.get("new_path"),
+                    "new_line": position.get("new_line"),
+                }
+                # Add optional old path/line if provided
+                if position.get("old_path"):
+                    discussion_data["position"]["old_path"] = position["old_path"]
+                if position.get("old_line"):
+                    discussion_data["position"]["old_line"] = position["old_line"]
+
+            # Create the discussion
+            discussion = await self._make_request(
+                mr.discussions.create, discussion_data
+            )
+
+            # Build response
+            notes = getattr(discussion, "notes", [])
+            first_note = notes[0] if notes else {}
+
+            return {
+                "id": discussion.id,
+                "individual_note": getattr(discussion, "individual_note", False),
+                "notes": [
+                    {
+                        "id": first_note.get("id")
+                        if isinstance(first_note, dict)
+                        else getattr(first_note, "id", None),
+                        "body": first_note.get("body")
+                        if isinstance(first_note, dict)
+                        else getattr(first_note, "body", body),
+                        "author": (
+                            first_note.get("author", {}).get("username")
+                            if isinstance(first_note, dict)
+                            else (
+                                first_note.author.get("username")
+                                if hasattr(first_note, "author")
+                                and isinstance(first_note.author, dict)
+                                else None
+                            )
+                        ),
+                    }
+                ],
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating MR discussion for MR {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to create MR discussion: {e}")
+
+    async def reply_to_mr_discussion(
+        self, mr_iid: str, discussion_id: str, body: str
+    ) -> Dict[str, Any]:
+        """
+        Reply to an existing merge request discussion (add a note to the thread).
+
+        Args:
+            mr_iid: MR internal ID (IID).
+            discussion_id: The discussion ID to reply to.
+            body: The reply body text.
+
+        Returns:
+            Dict with the created note details.
+
+        Raises:
+            TrackerResponseError: If project ID not found or API call fails.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Get the discussion
+            discussion = await self._make_request(mr.discussions.get, discussion_id)
+
+            # Add a note to the discussion
+            note = await self._make_request(discussion.notes.create, {"body": body})
+
+            # Handle both dict and object responses
+            if isinstance(note, dict):
+                return {
+                    "id": note.get("id"),
+                    "discussion_id": discussion_id,
+                    "body": note.get("body"),
+                    "author": note.get("author", {}).get("username"),
+                    "created_at": note.get("created_at"),
+                }
+            else:
+                return {
+                    "id": getattr(note, "id", None),
+                    "discussion_id": discussion_id,
+                    "body": getattr(note, "body", body),
+                    "author": (
+                        note.author.get("username")
+                        if hasattr(note, "author") and isinstance(note.author, dict)
+                        else None
+                    ),
+                    "created_at": getattr(note, "created_at", None),
+                }
+
+        except Exception as e:
+            logger.error(
+                f"Error replying to discussion {discussion_id} on MR {mr_iid}: {e}"
+            )
+            raise TrackerResponseError(f"Failed to reply to MR discussion: {e}")
+
+    async def add_mr_award_emoji(
+        self,
+        mr_iid: str,
+        emoji_name: str,
+    ) -> Dict[str, Any]:
+        """Add an award emoji (reaction) to a merge request.
+
+        GitLab uses "award emoji" instead of "reactions".
+
+        Args:
+            mr_iid: The merge request IID.
+            emoji_name: The emoji name (e.g., "thumbsup", "thumbsdown", "eyes", "rocket").
+
+        Returns:
+            Dictionary with award emoji details.
+        """
+        project_id = self._get_project_id()
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Create the award emoji
+            award = await self._make_request(
+                mr.awardemojis.create, {"name": emoji_name}
+            )
+
+            # Handle both dict and object responses
+            if isinstance(award, dict):
+                return {
+                    "id": award.get("id"),
+                    "name": award.get("name"),
+                    "user": award.get("user", {}).get("username"),
+                }
+            else:
+                return {
+                    "id": getattr(award, "id", None),
+                    "name": getattr(award, "name", emoji_name),
+                    "user": (
+                        award.user.get("username")
+                        if hasattr(award, "user") and isinstance(award.user, dict)
+                        else None
+                    ),
+                }
+
+        except Exception as e:
+            logger.error(f"Error adding award emoji to MR {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to add award emoji: {e}")
+
+    async def remove_mr_award_emoji(
+        self,
+        mr_iid: str,
+        emoji_name: str,
+    ) -> bool:
+        """Remove an award emoji (reaction) from a merge request.
+
+        This finds the current user's award emoji of the specified type and removes it.
+
+        Args:
+            mr_iid: The merge request IID.
+            emoji_name: The emoji name to remove.
+
+        Returns:
+            True if the emoji was removed, False if not found.
+        """
+        project_id = self._get_project_id()
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # List all award emojis on the MR
+            awards = await self._make_request(mr.awardemojis.list)
+
+            # Find the award matching the emoji name
+            award_to_delete = None
+            for award in awards:
+                award_name = (
+                    award.get("name")
+                    if isinstance(award, dict)
+                    else getattr(award, "name", None)
+                )
+                if award_name == emoji_name:
+                    award_to_delete = award
+                    break
+
+            if not award_to_delete:
+                logger.info(
+                    f"No '{emoji_name}' award emoji found on MR {mr_iid} to remove"
+                )
+                return False
+
+            # Get the award ID
+            award_id = (
+                award_to_delete.get("id")
+                if isinstance(award_to_delete, dict)
+                else getattr(award_to_delete, "id", None)
+            )
+
+            if not award_id:
+                logger.warning("Could not get award ID for deletion")
+                return False
+
+            # Delete the award emoji
+            await self._make_request(mr.awardemojis.delete, award_id)
+            logger.info(f"Removed award emoji '{emoji_name}' from MR {mr_iid}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to remove award emoji from MR {mr_iid}: {e}")
+            return False
+
+    async def create_commit_status(
+        self,
+        sha: str,
+        state: str,  # "pending", "running", "success", "failed", "canceled"
+        context: str = "preloop",
+        description: Optional[str] = None,
+        target_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a commit status (pipeline status) on a specific commit.
+
+        This appears as a pipeline/check in the MR's pipeline section.
+
+        Args:
+            sha: The commit SHA to create the status on.
+            state: The state of the status. GitLab accepts:
+                   pending, running, success, failed, canceled
+            context: A string label (called "name" in GitLab) to differentiate
+                     this status from others. Default is "preloop".
+            description: A short description of the status.
+            target_url: URL to link to for more details.
+
+        Returns:
+            Dictionary with status details.
+        """
+        project_id = self._get_project_id()
+
+        # Map common state names to GitLab's expected values
+        state_map = {
+            "pending": "pending",
+            "running": "running",
+            "success": "success",
+            "failure": "failed",
+            "failed": "failed",
+            "error": "failed",
+            "canceled": "canceled",
+        }
+        gitlab_state = state_map.get(state.lower(), state)
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+
+            # Create commit status using the commits API
+            commit = await self._make_request(project.commits.get, sha)
+
+            status_data = {
+                "state": gitlab_state,
+                "name": context,
+            }
+            if description:
+                status_data["description"] = description
+            if target_url:
+                status_data["target_url"] = target_url
+
+            # Create the status
+            status = await self._make_request(commit.statuses.create, status_data)
+
+            # Handle both dict and object responses
+            if isinstance(status, dict):
+                result = {
+                    "id": status.get("id"),
+                    "state": status.get("status"),
+                    "name": status.get("name"),
+                    "description": status.get("description"),
+                    "target_url": status.get("target_url"),
+                }
+            else:
+                result = {
+                    "id": getattr(status, "id", None),
+                    "state": getattr(status, "status", gitlab_state),
+                    "name": getattr(status, "name", context),
+                    "description": getattr(status, "description", description),
+                    "target_url": getattr(status, "target_url", target_url),
+                }
+
+            logger.info(
+                f"Created commit status '{context}' ({gitlab_state}) on {sha[:8]}"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Error creating commit status on {sha[:8]}: {e}")
+            raise TrackerResponseError(f"Failed to create commit status: {e}")
+
+    async def get_user_id_by_username(self, username: str) -> Optional[int]:
+        """Look up a GitLab user ID by username.
+
+        Args:
+            username: The GitLab username to look up.
+
+        Returns:
+            The user ID if found, None otherwise.
+        """
+        try:
+            # Search for users with matching username
+            users = await self._make_request(
+                self.gl.users.list, username=username, per_page=10
+            )
+
+            # Find exact username match (case-insensitive)
+            for user in users:
+                user_dict = user if isinstance(user, dict) else user.attributes
+                user_name = user_dict.get("username", "")
+                if user_name.lower() == username.lower():
+                    return user_dict.get("id")
+
+            logger.warning(f"GitLab user not found: {username}")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Error looking up GitLab user '{username}': {e}")
+            return None
+
+    async def get_user_ids_by_usernames(self, usernames: List[str]) -> List[int]:
+        """Look up multiple GitLab user IDs by usernames.
+
+        Args:
+            usernames: List of GitLab usernames to look up.
+
+        Returns:
+            List of found user IDs (may be shorter than input if some not found).
+        """
+        user_ids = []
+        for username in usernames:
+            user_id = await self.get_user_id_by_username(username)
+            if user_id is not None:
+                user_ids.append(user_id)
+        return user_ids

@@ -169,6 +169,7 @@ export class FlowView extends LitElement {
     agent_type: 'codex',
     allowed_mcp_servers: [],
     allowed_mcp_tools: [],
+    is_enabled: true,
   };
 
   @state()
@@ -194,6 +195,9 @@ export class FlowView extends LitElement {
 
   @state()
   private creationMode: 'scratch' | 'preset' = 'scratch';
+
+  @state()
+  private sourcePresetId: string | null = null;
 
   @state()
   private organizations: any[] = [];
@@ -1010,7 +1014,33 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   selectPreset(preset: any) {
+    // Copy preset to flow
     this.flow = { ...preset };
+
+    // Store the source preset ID for template tracking
+    // This links the new flow to the preset for auto-updates
+    this.sourcePresetId = preset.id;
+
+    // Transform allowed_mcp_tools from preset format [{name: "tool"}] to flow format [{server_name, tool_name}]
+    if (preset.allowed_mcp_tools && Array.isArray(preset.allowed_mcp_tools)) {
+      this.flow.allowed_mcp_tools = preset.allowed_mcp_tools.map(
+        (tool: { name: string }) => ({
+          server_name: 'preloop-mcp',
+          tool_name: tool.name,
+        })
+      );
+    } else {
+      this.flow.allowed_mcp_tools = [];
+    }
+
+    // Ensure preloop-mcp is in allowed_mcp_servers
+    if (!this.flow.allowed_mcp_servers?.includes('preloop-mcp')) {
+      this.flow.allowed_mcp_servers = ['preloop-mcp'];
+    }
+
+    // New flows should be enabled by default (presets are stored as disabled)
+    this.flow.is_enabled = true;
+
     this.creationMode = 'scratch';
   }
 
@@ -1043,19 +1073,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
   renderForm() {
     return html`
-      ${this.formError
-        ? html`
-            <sl-alert
-              variant="danger"
-              open
-              closable
-              @sl-after-hide=${() => (this.formError = null)}
-            >
-              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-              ${this.formError}
-            </sl-alert>
-          `
-        : ''}
       <form @submit=${this.handleSubmit}>
         <sl-card>
           <sl-input
@@ -1487,6 +1504,21 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             >Save as Preset</sl-checkbox
           >
         </div>
+
+        ${this.formError
+          ? html`
+              <sl-alert
+                variant="danger"
+                open
+                closable
+                @sl-after-hide=${() => (this.formError = null)}
+              >
+                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                ${this.formError}
+              </sl-alert>
+            `
+          : ''}
+
         <div style="display: flex; gap: var(--sl-spacing-small);">
           <sl-button type="submit" variant="primary"
             >${this.isNew ? 'Create' : 'Update'}</sl-button
@@ -1551,6 +1583,14 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
     try {
       if (this.isNew) {
+        // If creating from a preset, include template tracking fields
+        if (this.sourcePresetId) {
+          payload.source_preset_id = this.sourcePresetId;
+          // Mark as not customized initially - backend will compute hashes
+          payload.prompt_customized = false;
+          payload.tools_customized = false;
+          payload.preset_update_available = false;
+        }
         const newFlow = await createFlow(payload);
         Router.go(`/console/flows/${newFlow.id}`);
       } else {
@@ -1559,16 +1599,11 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
         Router.go(`/console/flows/${this.flowId}`);
       }
     } catch (error: any) {
-      // Extract error message from API response
-      let errorMessage = 'Failed to save flow. Please try again.';
-      if (error?.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error?.message) {
-        errorMessage = error.message;
-      }
-      this.formError = errorMessage;
-      // Scroll to top to show error
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Extract error message - API functions now throw with actual error messages
+      this.formError =
+        error?.message || 'Failed to save flow. Please try again.';
+      // Scroll to bottom where the error and submit button are
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     }
   }
   startPollingOrganizations(trackerId: string) {

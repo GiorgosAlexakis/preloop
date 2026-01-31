@@ -107,6 +107,12 @@ export class AppFooter extends LitElement {
         display: flex;
         gap: 16px;
       }
+
+      @media (max-width: 768px) {
+        .footer-nav {
+          margin-left: auto;
+        }
+      }
     `,
   ];
 

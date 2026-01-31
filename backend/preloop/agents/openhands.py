@@ -253,10 +253,31 @@ class OpenHandsAgent(ContainerAgentExecutor):
 
         # Prepare git clone command if enabled
         git_clone_config = execution_context.get("git_clone_config")
-        if git_clone_config and git_clone_config.get("enabled"):
-            git_cmd = self._prepare_git_clone_command(execution_context)
-            if git_cmd:
-                commands.append(git_cmd)
+        self.logger.info(f"Git clone config: {git_clone_config}")
+
+        if git_clone_config:
+            is_enabled = git_clone_config.get("enabled", False)
+            repositories = git_clone_config.get("repositories", [])
+            trigger_project_id = execution_context.get("trigger_project_id")
+
+            self.logger.info(
+                f"Git clone check: enabled={is_enabled}, "
+                f"repositories={len(repositories)}, "
+                f"trigger_project_id={trigger_project_id}"
+            )
+
+            # Attempt clone if: has repositories OR (enabled AND has trigger project)
+            if repositories or (is_enabled and trigger_project_id):
+                git_cmd = self._prepare_git_clone_command(execution_context)
+                if git_cmd:
+                    commands.append(git_cmd)
+                    self.logger.info(f"Git clone commands added: {git_cmd[:200]}...")
+                else:
+                    self.logger.warning(
+                        "Git clone was configured but no commands were generated"
+                    )
+        else:
+            self.logger.debug("No git_clone_config in execution context")
 
         # Prepare custom commands if enabled
         custom_commands = execution_context.get("custom_commands")
@@ -286,12 +307,30 @@ class OpenHandsAgent(ContainerAgentExecutor):
             git_config = execution_context.get("git_clone_config", {})
             repositories = git_config.get("repositories", [])
 
+            # If no repositories configured but git clone is enabled,
+            # create a default repository entry using trigger project
             if not repositories:
-                self.logger.warning("No repositories configured for git clone")
-                return ""
+                trigger_project_id = execution_context.get("trigger_project_id")
+                if trigger_project_id:
+                    self.logger.info(
+                        f"No repositories configured, using trigger project: {trigger_project_id}"
+                    )
+                    # Create a virtual repository entry using trigger project
+                    repositories = [
+                        {
+                            "project_id": trigger_project_id,
+                            "clone_path": "/workspace",
+                        }
+                    ]
+                else:
+                    self.logger.warning(
+                        "No repositories configured and no trigger project available for git clone"
+                    )
+                    return ""
 
             clone_commands = []
             trigger_data = execution_context.get("trigger_event_data", {})
+            trigger_project_id = execution_context.get("trigger_project_id")
 
             for idx, repo_config in enumerate(repositories):
                 # Get repository URL
@@ -299,45 +338,71 @@ class OpenHandsAgent(ContainerAgentExecutor):
 
                 # If no URL, try to get from project or trigger event
                 if not repo_url:
-                    project_id = repo_config.get("project_id")
+                    project_id = repo_config.get("project_id") or trigger_project_id
                     if project_id:
-                        # TODO: Fetch project details and get repository URL
-                        # For now, try trigger event if it matches
-                        trigger_project_id = trigger_data.get("project", {}).get("id")
-                        if str(project_id) == str(trigger_project_id):
-                            repo_url = self._extract_repo_url_from_trigger(trigger_data)
-                    else:
-                        # Use trigger event
+                        self.logger.info(
+                            f"Using project {project_id} for repository #{idx + 1}"
+                        )
+                        # Try to extract from trigger event data
                         repo_url = self._extract_repo_url_from_trigger(trigger_data)
 
                 if not repo_url:
-                    self.logger.warning(f"No repository URL found for repo #{idx + 1}")
+                    self.logger.warning(
+                        f"No repository URL found for repo #{idx + 1}. "
+                        f"Trigger project ID: {trigger_project_id}"
+                    )
                     continue
 
-                # Get tracker credentials from credentials map
-                tracker_id = repo_config.get("tracker_id")
-                git_credentials_map = execution_context.get("git_credentials_map", {})
+                # Inject token if URL doesn't have credentials
+                if repo_url and "@" not in repo_url:
+                    token = None
+                    tracker_type = None
 
-                # Get credentials for this tracker
-                tracker_creds = git_credentials_map.get(tracker_id)
-                if tracker_creds:
-                    token = tracker_creds.get("token")
-                    tracker_type = tracker_creds.get("tracker_type")
+                    # Try to get credentials from repo config's tracker_id
+                    tracker_id = repo_config.get("tracker_id")
+                    git_credentials_map = execution_context.get(
+                        "git_credentials_map", {}
+                    )
+
+                    if tracker_id and tracker_id in git_credentials_map:
+                        tracker_creds = git_credentials_map.get(tracker_id)
+                        token = tracker_creds.get("token")
+                        tracker_type = tracker_creds.get("tracker_type")
+                    elif trigger_project_id:
+                        # Fallback: try to get token from trigger project's tracker
+                        token, tracker_type = self._get_token_from_project(
+                            trigger_project_id, execution_context.get("account_id")
+                        )
 
                     if token:
                         # Inject token into URL
                         if "github.com" in repo_url or tracker_type == "github":
+                            repo_url = repo_url.replace("https://", f"https://{token}@")
+                            self.logger.info("Injected GitHub token into URL")
+                        elif "gitlab" in repo_url.lower() or tracker_type == "gitlab":
                             repo_url = repo_url.replace(
-                                "https://", f"https://oauth2:{token}@"
+                                "https://", f"https://gitlab-ci-token:{token}@"
                             )
-                        elif "gitlab.com" in repo_url or tracker_type == "gitlab":
-                            repo_url = repo_url.replace(
-                                "https://", f"https://oauth2:{token}@"
+                            self.logger.info("Injected GitLab token into URL")
+                        else:
+                            self.logger.warning(
+                                f"Could not determine tracker type for token injection. "
+                                f"URL: {repo_url[:50]}..., tracker_type: {tracker_type}"
                             )
+                    else:
+                        self.logger.warning(
+                            "No token available for repository URL. "
+                            "Clone may fail if the repository is private."
+                        )
 
-                # Get clone path (relative to workspace)
+                # Get clone path - if it starts with /, use as-is (absolute), otherwise make it relative to /workspace
                 clone_path = repo_config.get("clone_path", f"workspace-{idx + 1}")
-                full_path = f"/workspace/{clone_path}"
+                if clone_path.startswith("/"):
+                    # Absolute path - use as-is
+                    full_path = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    full_path = f"/workspace/{clone_path}"
 
                 # Get branch if specified
                 branch = repo_config.get("branch")
@@ -360,24 +425,5 @@ class OpenHandsAgent(ContainerAgentExecutor):
             self.logger.error(f"Error preparing git clone command: {e}", exc_info=True)
             return ""
 
-    def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
-        """Extract repository URL from trigger event data."""
-        try:
-            # GitHub structure
-            if "repository" in trigger_data:
-                repo = trigger_data["repository"]
-                if isinstance(repo, dict):
-                    return repo.get("clone_url") or repo.get("html_url") or ""
-
-            # GitLab structure
-            if "project" in trigger_data:
-                project = trigger_data["project"]
-                if isinstance(project, dict):
-                    return (
-                        project.get("http_url_to_repo") or project.get("web_url") or ""
-                    )
-
-            return ""
-        except Exception as e:
-            self.logger.error(f"Error extracting repo URL from trigger: {e}")
-            return ""
+    # Note: _extract_repo_url_from_trigger and _get_token_from_project are
+    # inherited from ContainerAgentExecutor

@@ -35,10 +35,7 @@ def db_session_mock():
 
 
 def test_register_user_success(db_session_mock):
-    with (
-        patch("preloop.api.auth.router.send_verification_email"),
-        patch("preloop.api.auth.router.send_product_notification_email"),
-    ):
+    with patch("preloop.api.auth.router.complete_new_account_setup_background"):
         response = client.post(
             "/auth/register",
             json={

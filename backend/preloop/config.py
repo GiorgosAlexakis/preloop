@@ -64,6 +64,9 @@ class GitHubAppSettings(BaseModel):
     webhook_secret: str = Field(
         "", description="GitHub App Webhook Secret for signature verification"
     )
+    slug: str = Field(
+        "", description="GitHub App slug (e.g., 'preloop' or 'preloop-staging')"
+    )
 
     @property
     def is_configured(self) -> bool:
@@ -74,6 +77,7 @@ class GitHubAppSettings(BaseModel):
             and self.client_secret
             and self.private_key
             and self.webhook_secret
+            and self.slug
         )
 
 
@@ -86,9 +90,7 @@ class Settings(BaseSettings):
         "development", description="Environment (development, production)"
     )
     log_level: str = Field("INFO", description="Log level")
-    product_team_email: str = Field(
-        "product@spacecode.ai", description="Product team email address"
-    )
+    product_team_email: str = Field("", description="Product team email address")
     nats_url: str = Field("nats://localhost:4222", description="NATS server URL")
     preloop_url: str = Field("http://localhost:8000", description="Preloop URL")
     PROMPTS_FILE: str = Field(
@@ -200,13 +202,14 @@ class Settings(BaseSettings):
             client_secret=os.getenv("GITHUB_APP_CLIENT_SECRET", ""),
             private_key=os.getenv("GITHUB_APP_PRIVATE_KEY", ""),
             webhook_secret=os.getenv("GITHUB_APP_WEBHOOK_SECRET", ""),
+            slug=os.getenv("GITHUB_APP_SLUG", ""),
         )
 
         return cls(
             app_name=os.getenv("APP_NAME", "Preloop"),
             environment=os.getenv("ENVIRONMENT", "development"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
-            product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", "product@spacecode.ai"),
+            product_team_email=os.getenv("PRODUCT_TEAM_EMAIL", ""),
             nats_url=os.getenv("NATS_URL", "nats://localhost:4222"),
             PROMPTS_FILE=prompts_file,
             registration_enabled=registration_enabled,

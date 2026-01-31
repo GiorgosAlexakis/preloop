@@ -1,5 +1,5 @@
-import logging
 import asyncio
+import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +27,99 @@ class FlowTriggerService:
 
     def _create_orchestrator_session(self) -> Session:
         return self.session_factory()
+
+    def _extract_resource_key(self, event_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract a unique resource identifier from the event payload.
+
+        This is used for deduplication - events about the same resource
+        (e.g., the same PR/MR) can be coalesced or skipped if an execution
+        is already running.
+
+        Returns:
+            A unique key like "github:owner/repo:pr:123" or None if not extractable.
+        """
+        source = event_data.get("source", "").lower()
+        payload = event_data.get("payload", {})
+
+        if source == "github":
+            # GitHub PR events
+            pr = payload.get("pull_request", {})
+            if pr:
+                repo = payload.get("repository", {})
+                repo_full_name = repo.get("full_name", "")
+                pr_number = pr.get("number")
+                if repo_full_name and pr_number:
+                    return f"github:{repo_full_name}:pr:{pr_number}"
+
+            # GitHub issue events
+            issue = payload.get("issue", {})
+            if issue:
+                repo = payload.get("repository", {})
+                repo_full_name = repo.get("full_name", "")
+                issue_number = issue.get("number")
+                if repo_full_name and issue_number:
+                    return f"github:{repo_full_name}:issue:{issue_number}"
+
+        elif source == "gitlab":
+            # GitLab MR/issue events
+            obj_attrs = payload.get("object_attributes", {})
+            project = payload.get("project", {})
+            project_path = project.get("path_with_namespace", "")
+
+            if obj_attrs:
+                iid = obj_attrs.get("iid")
+                obj_kind = payload.get("object_kind", "")
+                if project_path and iid:
+                    return f"gitlab:{project_path}:{obj_kind}:{iid}"
+
+        return None
+
+    def _has_running_execution(
+        self, flow_id: uuid.UUID, resource_key: str, account_id: str
+    ) -> bool:
+        """
+        Check if there's already a running execution for the same flow and resource.
+
+        Args:
+            flow_id: The flow to check
+            resource_key: The resource identifier (e.g., "github:owner/repo:pr:123")
+            account_id: Account ID for scoping
+
+        Returns:
+            True if there's already a running execution for this flow+resource.
+        """
+        # Query specifically for running executions (no limit - we need all of them)
+        # This ensures we don't miss long-running executions that might have
+        # fallen outside a limit window
+        executions = crud_flow_execution.get_running_by_flow(
+            self.db,
+            flow_id=flow_id,
+            account_id=uuid.UUID(account_id)
+            if isinstance(account_id, str)
+            else account_id,
+        )
+
+        for execution in executions:
+            # Check if the trigger_event_details contain the same resource
+            trigger_details = execution.trigger_event_details or {}
+            exec_payload = trigger_details.get("payload", {})
+
+            # Extract resource key from the execution's trigger event
+            exec_event_data = {
+                "source": trigger_details.get("source", ""),
+                "payload": exec_payload,
+            }
+            exec_resource_key = self._extract_resource_key(exec_event_data)
+
+            if exec_resource_key == resource_key:
+                logger.info(
+                    f"Found running execution {execution.id} for flow {flow_id} "
+                    f"and resource {resource_key} (status: {execution.status})"
+                )
+                return True
+
+        return False
 
     async def _run_orchestrator_with_session(
         self,
@@ -138,6 +231,62 @@ class FlowTriggerService:
 
         return True
 
+    def _is_preloop_triggered_event(self, event_data: Dict[str, Any]) -> bool:
+        """
+        Check if an event was triggered by Preloop's own actions.
+
+        This prevents infinite loops where:
+        1. Flow runs and updates a PR (adds comment, modifies body, etc.)
+        2. Update triggers a new webhook event (pull_request_updated, comment_created)
+        3. Event matches another flow -> triggers another execution
+        4. Repeat forever
+
+        We detect Preloop-triggered events by checking the sender/actor field
+        in the webhook payload for known Preloop bot usernames.
+        """
+        payload = event_data.get("payload", {})
+        source = event_data.get("source", "").lower()
+
+        # Get the sender/actor who triggered the event
+        sender = None
+        if source == "github":
+            sender_obj = payload.get("sender", {})
+            sender = sender_obj.get("login", "").lower() if sender_obj else ""
+        elif source == "gitlab":
+            # GitLab uses "user" for the actor in most events
+            user_obj = payload.get("user", {})
+            sender = user_obj.get("username", "").lower() if user_obj else ""
+            # Some events have object_attributes.author
+            if not sender:
+                obj_attrs = payload.get("object_attributes", {})
+                author = obj_attrs.get("author", {})
+                if isinstance(author, dict):
+                    sender = author.get("username", "").lower()
+
+        if not sender:
+            return False
+
+        # Known Preloop bot username patterns
+        # These are typically the usernames of GitHub Apps or GitLab service accounts
+        # that Preloop uses to interact with trackers
+        preloop_patterns = [
+            "preloop",
+            "preloop-bot",
+            "preloop-staging",
+            "preloop-dev",
+            "preloop[bot]",  # GitHub App format
+            "preloop-app",
+        ]
+
+        for pattern in preloop_patterns:
+            if sender == pattern or sender.startswith("preloop"):
+                logger.info(
+                    f"Ignoring event triggered by Preloop bot account: {sender}"
+                )
+                return True
+
+        return False
+
     async def process_event(self, event_data: Dict[str, Any]):
         """
         Process an incoming event and trigger any matching flows.
@@ -156,6 +305,14 @@ class FlowTriggerService:
         if not event_source or not event_type:
             logger.warning(
                 f"Event data is missing required fields: source={event_source}, type={event_type}"
+            )
+            return
+
+        # Check if this event was triggered by Preloop itself to prevent infinite loops
+        if self._is_preloop_triggered_event(event_data):
+            logger.info(
+                f"Skipping event triggered by Preloop bot to prevent infinite loop: "
+                f"source='{event_source}', type='{event_type}'"
             )
             return
 
@@ -208,9 +365,27 @@ class FlowTriggerService:
             # Get NATS client for publishing updates
             nats_client = await get_nats_client()
 
+            # Extract resource key for deduplication
+            resource_key = self._extract_resource_key(event_data)
+            if resource_key:
+                logger.info(f"Extracted resource key for deduplication: {resource_key}")
+
             # Trigger each matching flow
             for flow in flows_to_trigger:
                 try:
+                    # Check for running execution on the same resource
+                    if resource_key and account_id:
+                        if self._has_running_execution(
+                            flow.id, resource_key, account_id
+                        ):
+                            logger.info(
+                                f"Skipping flow '{flow.name}' ({flow.id}) - "
+                                f"already has a running execution for resource {resource_key}. "
+                                f"To avoid duplicate executions, events about the same resource "
+                                f"are not processed while an execution is in progress."
+                            )
+                            continue
+
                     logger.info(
                         f"Triggering flow '{flow.name}' ({flow.id}) for event {event_type}"
                     )

@@ -705,18 +705,65 @@ class ContainerAgentExecutor(AgentExecutor):
                 error_message=str(e),
             )
 
+    # Success sentinel that agents print when completing successfully
+    # Must match FLOW_SUCCESS_SENTINEL in flow_orchestrator.py
+    FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
+
     def _detect_error_in_logs(self, logs_text: str) -> bool:
         """
         Detect if logs contain error patterns that indicate failure.
+
+        The detection follows this priority:
+        1. If the success sentinel is present, assume success (no error)
+        2. Check for critical error patterns that always indicate failure
+        3. Apply heuristics for other error patterns
 
         Args:
             logs_text: Full log text
 
         Returns:
-            True if error patterns detected
+            True if error patterns detected (failure), False if success or unclear
         """
-        # Benign patterns that should NOT trigger failure detection
-        # These are informational messages that contain "error" but don't indicate failure
+        # Priority 1: Check for success sentinel
+        # If the agent printed FLOW_EXECUTION_SUCCESS, trust that it succeeded.
+        # This avoids false positives from error-like patterns in code output.
+        if self.FLOW_SUCCESS_SENTINEL in logs_text:
+            self.logger.info(
+                f"Success sentinel '{self.FLOW_SUCCESS_SENTINEL}' found in logs - "
+                "treating as successful execution"
+            )
+            return False
+
+        logs_lower = logs_text.lower()
+
+        # Priority 2: Critical error patterns that always indicate failure
+        # These are system-level errors, not user code output
+        critical_error_patterns = [
+            "litellm.badrequesterror",
+            "litellm.authenticationerror",
+            "litellm.ratelimiterror",
+            "openaiexception",
+            "anthropicexception",
+            "traceback (most recent call last)",
+            "fatal error",
+            "critical:",
+            "agent execution failed",
+            "unhandled exception",
+        ]
+
+        for pattern in critical_error_patterns:
+            if pattern in logs_lower:
+                self.logger.info(
+                    f"Critical error pattern '{pattern}' found in logs - "
+                    "treating as failed execution"
+                )
+                return True
+
+        # Priority 3: Heuristic-based detection (legacy, for flows without sentinel)
+        # Only apply if no success sentinel was found
+
+        # Benign patterns - these are informational messages that might contain
+        # "error" but don't indicate actual failure
         benign_patterns = [
             "no commits",
             "skipping push",
@@ -726,39 +773,28 @@ class ContainerAgentExecutor(AgentExecutor):
             "up-to-date",
             "already up to date",
             "everything up-to-date",
-            "failed to create pr (may already exist)",  # PR/MR creation failure is not critical
+            "failed to create pr (may already exist)",
             "failed to create mr (may already exist)",
         ]
 
-        logs_lower = logs_text.lower()
-
-        # Check for benign patterns first - if found, don't mark as error
-        for benign_pattern in benign_patterns:
-            if benign_pattern in logs_lower:
-                return False
-
-        # Critical error patterns that always indicate failure
-        critical_error_patterns = [
-            "litellm.BadRequestError",
-            "litellm.AuthenticationError",
-            "litellm.RateLimitError",
-            "OpenAIException",
-            "AnthropicException",
-            "Traceback (most recent call last)",
-            "FATAL ERROR",
-            "CRITICAL:",
-        ]
-
-        for pattern in critical_error_patterns:
-            if pattern.lower() in logs_lower:
-                return True
-
-        # Check for "ERROR:" but only if it's not a benign git-related message
-        # and if it appears multiple times (suggesting a real error, not just logging)
+        # Check for "ERROR:" but filter out benign cases
         if "error:" in logs_lower:
             # Count occurrences to filter out single informational errors
             error_count = logs_lower.count("error:")
-            if error_count >= 3:  # Multiple errors suggest real failure
+
+            # Check if any benign pattern is present in the logs
+            # If a benign pattern exists, we're more lenient with error count threshold
+            contains_benign_pattern = any(
+                pattern in logs_lower for pattern in benign_patterns
+            )
+
+            # Multiple errors without any benign patterns suggest real failure
+            # But be conservative - only flag if many errors and no benign context
+            if error_count >= 5 and not contains_benign_pattern:
+                self.logger.info(
+                    f"Heuristic detection: {error_count} 'error:' occurrences found "
+                    "without benign patterns - treating as failed execution"
+                )
                 return True
 
         return False
@@ -1104,26 +1140,42 @@ class ContainerAgentExecutor(AgentExecutor):
         """
         commands = []
 
-        # Prepare git clone command if repositories are configured
-        # Check for repositories existence rather than just enabled flag
+        # Prepare git clone command if enabled
         git_clone_config = execution_context.get("git_clone_config")
+        self.logger.info(f"Git clone config: {git_clone_config}")
+
         if git_clone_config:
+            is_enabled = git_clone_config.get("enabled", False)
             repositories = git_clone_config.get("repositories", [])
-            # If repositories exist, attempt to clone them
-            if repositories:
+            trigger_project_id = execution_context.get("trigger_project_id")
+
+            self.logger.info(
+                f"Git clone check: enabled={is_enabled}, "
+                f"repositories={len(repositories)}, "
+                f"trigger_project_id={trigger_project_id}"
+            )
+
+            # Attempt clone if: has repositories OR (enabled AND has trigger project)
+            if repositories or (is_enabled and trigger_project_id):
                 self.logger.info(
-                    f"Git clone configured with {len(repositories)} repositories"
+                    f"Attempting git clone with {len(repositories)} repositories "
+                    f"(trigger fallback: {not repositories and bool(trigger_project_id)})"
                 )
                 git_cmd = self._prepare_git_clone_command(execution_context)
                 if git_cmd:
                     commands.append(git_cmd)
-                    self.logger.info("Git clone commands added to init")
+                    self.logger.info(f"Git clone commands added: {git_cmd[:200]}...")
                 else:
                     self.logger.warning(
-                        "Git clone was configured but no commands were generated"
+                        "Git clone was configured but no commands were generated. "
+                        f"Check trigger_project_id={trigger_project_id} and credentials."
                     )
             else:
-                self.logger.debug("No repositories configured for git clone")
+                self.logger.info(
+                    f"Git clone skipped: enabled={is_enabled}, "
+                    f"repositories={len(repositories)}, "
+                    f"trigger_project_id={trigger_project_id}"
+                )
         else:
             self.logger.debug("No git_clone_config in execution context")
 
@@ -1155,9 +1207,26 @@ class ContainerAgentExecutor(AgentExecutor):
             git_config = execution_context.get("git_clone_config", {})
             repositories = git_config.get("repositories", [])
 
+            # If no repositories configured but git clone is enabled,
+            # create a default repository entry using trigger project
             if not repositories:
-                self.logger.warning("No repositories configured for git clone")
-                return ""
+                trigger_project_id = execution_context.get("trigger_project_id")
+                if trigger_project_id:
+                    self.logger.info(
+                        f"No repositories configured, using trigger project: {trigger_project_id}"
+                    )
+                    # Create a virtual repository entry using trigger project
+                    repositories = [
+                        {
+                            "project_id": trigger_project_id,
+                            "clone_path": "/workspace",
+                        }
+                    ]
+                else:
+                    self.logger.warning(
+                        "No repositories configured and no trigger project available for git clone"
+                    )
+                    return ""
 
             # Get git user configuration (defaults)
             git_user_name = git_config.get("git_user_name", "Preloop")
@@ -1234,32 +1303,50 @@ class ContainerAgentExecutor(AgentExecutor):
                     )
                     continue
 
-                # For manually specified URLs, inject token from credentials map
+                # For URLs without credentials, inject token
                 if repo_url and "@" not in repo_url:
                     # URL doesn't have credentials, need to inject
+                    token = None
+                    tracker_type = None
+
+                    # Try to get credentials from repo config's tracker_id
                     tracker_id = repo_config.get("tracker_id")
                     git_credentials_map = execution_context.get(
                         "git_credentials_map", {}
                     )
-                    tracker_creds = git_credentials_map.get(tracker_id)
 
-                    if tracker_creds:
+                    if tracker_id and tracker_id in git_credentials_map:
+                        tracker_creds = git_credentials_map.get(tracker_id)
                         token = tracker_creds.get("token")
                         tracker_type = tracker_creds.get("tracker_type")
-
-                        if token:
-                            # Inject token into manually specified URL
-                            if "github.com" in repo_url or tracker_type == "github":
-                                repo_url = repo_url.replace(
-                                    "https://", f"https://{token}@"
-                                )
-                            elif "gitlab" in repo_url or tracker_type == "gitlab":
-                                repo_url = repo_url.replace(
-                                    "https://", f"https://gitlab-ci-token:{token}@"
-                                )
-                            self.logger.info(
-                                f"Injected token into manually specified URL (tracker type: {tracker_type})"
+                    else:
+                        # Fallback: try to get token from trigger project's tracker
+                        trigger_project_id = execution_context.get("trigger_project_id")
+                        if trigger_project_id:
+                            token, tracker_type = self._get_token_from_project(
+                                trigger_project_id, execution_context.get("account_id")
                             )
+
+                    if token:
+                        # Inject token into URL
+                        if "github.com" in repo_url or tracker_type == "github":
+                            repo_url = repo_url.replace("https://", f"https://{token}@")
+                            self.logger.info("Injected GitHub token into URL")
+                        elif "gitlab" in repo_url.lower() or tracker_type == "gitlab":
+                            repo_url = repo_url.replace(
+                                "https://", f"https://gitlab-ci-token:{token}@"
+                            )
+                            self.logger.info("Injected GitLab token into URL")
+                        else:
+                            self.logger.warning(
+                                f"Could not determine tracker type for token injection. "
+                                f"URL: {repo_url[:50]}..., tracker_type: {tracker_type}"
+                            )
+                    else:
+                        self.logger.warning(
+                            "No token available to inject into repository URL. "
+                            "Clone may fail if the repository is private."
+                        )
 
                 # Get clone path - if it starts with /, use as-is (absolute), otherwise make it relative to /workspace
                 clone_path = repo_config.get("clone_path", f"/workspace-{idx + 1}")
@@ -1696,19 +1783,38 @@ MREOF
         Returns:
             Repository clone URL with token injected, or None if not found
         """
+        self.logger.info(
+            f"Looking up repo URL for project_id={project_id}, account_id={account_id}"
+        )
         try:
             from preloop.models.crud import crud_project, crud_tracker
             from preloop.models.db.session import get_db_session
 
             db = next(get_db_session())
             try:
-                # Get project from database
-                project = crud_project.get(db, id=project_id, account_id=account_id)
+                # Get project from database - don't filter by account_id since
+                # Project doesn't have a direct account_id field
+                project = crud_project.get(db, id=str(project_id))
                 if not project:
-                    self.logger.warning(
-                        f"Project {project_id} not found for account {account_id}"
+                    self.logger.info(
+                        f"Project {project_id} not found by ID, trying slug/identifier"
+                    )
+                    # Also try looking up by slug or identifier
+                    project = crud_project.get_by_slug_or_identifier(
+                        db, slug_or_identifier=str(project_id)
+                    )
+
+                if not project:
+                    self.logger.error(
+                        f"Project {project_id} not found in database by ID or slug. "
+                        f"Account: {account_id}"
                     )
                     return None
+
+                self.logger.info(
+                    f"Found project: id={project.id}, slug={project.slug}, "
+                    f"org_id={project.organization_id}"
+                )
 
                 if not project.slug:
                     self.logger.warning(
@@ -1797,23 +1903,85 @@ MREOF
             )
             return None
 
-    def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
-        """Extract repository URL from trigger event data."""
+    def _get_token_from_project(
+        self, project_id: str, account_id: str
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Get the API token and tracker type from a project's tracker.
+
+        Args:
+            project_id: Project ID
+            account_id: Account ID
+
+        Returns:
+            Tuple of (token, tracker_type) or (None, None) if not found
+        """
         try:
+            from preloop.models.crud import crud_project, crud_tracker
+            from preloop.models.db.session import get_db_session
+
+            db = next(get_db_session())
+            try:
+                project = crud_project.get(db, id=str(project_id))
+                if not project:
+                    return None, None
+
+                organization = project.organization
+                if not organization:
+                    return None, None
+
+                tracker = crud_tracker.get(db, id=organization.tracker_id)
+                if not tracker or not tracker.api_key:
+                    return None, None
+
+                return tracker.api_key, tracker.tracker_type.lower()
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            self.logger.warning(f"Error getting token from project {project_id}: {e}")
+            return None, None
+
+    def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
+        """Extract repository URL from trigger event data.
+
+        The trigger_data structure can be:
+        - {"payload": {"repository": {...}}} for GitHub webhooks
+        - {"payload": {"project": {...}}} for GitLab webhooks
+        - {"repository": {...}} if payload is at top level
+        """
+        try:
+            # Check if the actual payload is nested under "payload" key
+            payload = trigger_data.get("payload", trigger_data)
+            if not isinstance(payload, dict):
+                self.logger.debug(f"Payload is not a dict: {type(payload)}")
+                return ""
+
             # GitHub structure
-            if "repository" in trigger_data:
-                repo = trigger_data["repository"]
+            if "repository" in payload:
+                repo = payload["repository"]
                 if isinstance(repo, dict):
-                    return repo.get("clone_url") or repo.get("html_url") or ""
+                    url = repo.get("clone_url") or repo.get("html_url") or ""
+                    if url:
+                        self.logger.info(f"Found GitHub repo URL in trigger: {url}")
+                    return url
 
             # GitLab structure
-            if "project" in trigger_data:
-                project = trigger_data["project"]
+            if "project" in payload:
+                project = payload["project"]
                 if isinstance(project, dict):
-                    return (
+                    url = (
                         project.get("http_url_to_repo") or project.get("web_url") or ""
                     )
+                    if url:
+                        self.logger.info(f"Found GitLab repo URL in trigger: {url}")
+                    return url
 
+            self.logger.debug(
+                f"No repository/project found in trigger data. "
+                f"Top-level keys: {list(trigger_data.keys())}, "
+                f"Payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'N/A'}"
+            )
             return ""
         except Exception as e:
             self.logger.error(f"Error extracting repo URL from trigger: {e}")

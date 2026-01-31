@@ -1,0 +1,782 @@
+"""Tests for container agent executor."""
+
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from preloop.agents.base import AgentExecutionResult, AgentStatus
+from preloop.agents.container import ContainerAgentExecutor
+
+pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture
+def container_executor():
+    """Create a ContainerAgentExecutor instance for testing."""
+    return ContainerAgentExecutor(
+        agent_type="codex",
+        config={"test": True},
+        image="test-image:latest",
+        use_kubernetes=False,
+    )
+
+
+@pytest.fixture
+def kubernetes_executor():
+    """Create a ContainerAgentExecutor instance for Kubernetes testing."""
+    return ContainerAgentExecutor(
+        agent_type="codex",
+        config={"test": True},
+        image="test-image:latest",
+        use_kubernetes=True,
+    )
+
+
+@pytest.fixture
+def sample_execution_context():
+    """Sample execution context for testing."""
+    return {
+        "flow_id": str(uuid.uuid4()),
+        "execution_id": str(uuid.uuid4()),
+        "prompt": "Test prompt",
+        "agent_config": {},
+        "model_api_key": "test-key",
+        "model_identifier": "gpt-4",
+        "model_provider": "openai",
+    }
+
+
+class TestDetectErrorInLogs:
+    """Tests for _detect_error_in_logs method."""
+
+    def test_empty_logs_no_error(self, container_executor):
+        """Test that empty logs don't indicate error."""
+        result = container_executor._detect_error_in_logs("")
+        assert result is False
+
+    def test_normal_logs_no_error(self, container_executor):
+        """Test that normal logs don't indicate error."""
+        logs = """
+        Starting agent execution...
+        Processing request...
+        Task completed successfully.
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    # Critical error patterns
+    def test_litellm_bad_request_error(self, container_executor):
+        """Test detection of LiteLLM BadRequestError."""
+        logs = "litellm.BadRequestError: Invalid model"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_litellm_authentication_error(self, container_executor):
+        """Test detection of LiteLLM AuthenticationError."""
+        logs = "litellm.AuthenticationError: Invalid API key"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_litellm_rate_limit_error(self, container_executor):
+        """Test detection of LiteLLM RateLimitError."""
+        logs = "litellm.RateLimitError: Rate limit exceeded"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_openai_exception(self, container_executor):
+        """Test detection of OpenAI exception."""
+        logs = "OpenAIException: Connection failed"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_anthropic_exception(self, container_executor):
+        """Test detection of Anthropic exception."""
+        logs = "AnthropicException: Service unavailable"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_python_traceback(self, container_executor):
+        """Test detection of Python traceback."""
+        logs = """
+        Processing...
+        Traceback (most recent call last):
+          File "main.py", line 10, in <module>
+            raise ValueError("Error")
+        ValueError: Error
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_fatal_error(self, container_executor):
+        """Test detection of fatal error."""
+        logs = "fatal error: system failure"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_critical_error(self, container_executor):
+        """Test detection of critical error level."""
+        logs = "CRITICAL: Database connection failed"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_agent_execution_failed(self, container_executor):
+        """Test detection of agent execution failed message."""
+        logs = "Agent execution failed: timeout"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_unhandled_exception(self, container_executor):
+        """Test detection of unhandled exception."""
+        logs = "Unhandled exception in main thread"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    # Benign patterns that should NOT trigger errors
+    def test_no_commits_is_benign(self, container_executor):
+        """Test that 'no commits' message is benign."""
+        logs = """
+        Checking git status...
+        No commits to push
+        ERROR: no commits on branch
+        Task completed.
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_skipping_push_is_benign(self, container_executor):
+        """Test that 'skipping push' message is benign."""
+        logs = """
+        Git status: clean
+        Skipping push - no changes
+        ERROR: nothing to push
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_nothing_to_commit_is_benign(self, container_executor):
+        """Test that 'nothing to commit' message is benign."""
+        logs = """
+        Analyzing repository...
+        Nothing to commit, working tree clean
+        ERROR: nothing to commit
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_no_changes_is_benign(self, container_executor):
+        """Test that 'no changes' message is benign."""
+        logs = """
+        Checking for changes...
+        No changes detected
+        ERROR: no changes found
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_up_to_date_is_benign(self, container_executor):
+        """Test that 'up to date' message is benign."""
+        logs = """
+        Pulling latest...
+        Already up to date
+        ERROR: already up to date
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_up_to_date_hyphenated_is_benign(self, container_executor):
+        """Test that 'up-to-date' message is benign."""
+        logs = """
+        Repository is up-to-date
+        Everything up-to-date
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_pr_already_exists_is_benign(self, container_executor):
+        """Test that PR already exists error is benign."""
+        logs = """
+        Creating pull request...
+        Failed to create PR (may already exist)
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_mr_already_exists_is_benign(self, container_executor):
+        """Test that MR already exists error is benign."""
+        logs = """
+        Creating merge request...
+        Failed to create MR (may already exist)
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    # Edge cases for error counts
+    def test_multiple_errors_without_benign_pattern(self, container_executor):
+        """Test that multiple ERROR: lines without benign patterns indicate failure."""
+        logs = """
+        ERROR: first error
+        ERROR: second error
+        ERROR: third error
+        Some other stuff
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_single_error_with_benign_pattern(self, container_executor):
+        """Test that a single ERROR with benign context is benign."""
+        logs = """
+        Nothing to commit
+        ERROR: no changes to commit
+        """
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is False
+
+    def test_case_insensitive_detection(self, container_executor):
+        """Test that error detection is case-insensitive."""
+        logs = "LITELLM.BADREQUESTERROR: invalid request"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+    def test_mixed_case_fatal_error(self, container_executor):
+        """Test mixed case fatal error detection."""
+        logs = "Fatal Error: system crash"
+        result = container_executor._detect_error_in_logs(logs)
+        assert result is True
+
+
+class TestExtractErrorFromLogs:
+    """Tests for _extract_error_from_logs method."""
+
+    def test_empty_logs_returns_empty(self, container_executor):
+        """Test that empty logs return empty string."""
+        result = container_executor._extract_error_from_logs("")
+        assert result == ""
+
+    def test_no_error_returns_empty(self, container_executor):
+        """Test that logs without errors return empty string."""
+        logs = """
+        Starting process...
+        Processing complete.
+        Success!
+        """
+        result = container_executor._extract_error_from_logs(logs)
+        assert result == ""
+
+    def test_extracts_error_context(self, container_executor):
+        """Test that error context is extracted."""
+        logs = """line 1
+line 2
+line 3
+error occurred here
+line 5
+line 6
+line 7
+line 8
+"""
+        result = container_executor._extract_error_from_logs(logs)
+        assert "error occurred here" in result
+        # Should include context lines
+        assert "line 2" in result or "line 3" in result
+
+    def test_extracts_exception_context(self, container_executor):
+        """Test extraction of exception context."""
+        logs = """
+        Starting...
+        Processing data...
+        Exception: Something went wrong
+        Cleanup started...
+        """
+        result = container_executor._extract_error_from_logs(logs)
+        assert "Exception: Something went wrong" in result
+
+    def test_extracts_failed_message(self, container_executor):
+        """Test extraction of failed message."""
+        logs = """
+        Step 1 complete
+        Step 2 complete
+        Step 3 failed with error
+        Attempting recovery
+        """
+        result = container_executor._extract_error_from_logs(logs)
+        assert "failed" in result
+
+    def test_extracts_fatal_context(self, container_executor):
+        """Test extraction of fatal error context."""
+        logs = """
+        Initializing...
+        Fatal: Out of memory
+        Shutting down
+        """
+        result = container_executor._extract_error_from_logs(logs)
+        assert "Fatal" in result
+
+
+class TestGetStatus:
+    """Tests for get_status method with Docker."""
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_status_running(self, mock_get_client, container_executor):
+        """Test getting running status from container."""
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {
+            "State": {"Running": True, "Status": "running"}
+        }
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_status("container-123")
+
+        assert result == AgentStatus.RUNNING
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_status_starting(self, mock_get_client, container_executor):
+        """Test getting starting status from container."""
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {
+            "State": {"Running": False, "Status": "created"}
+        }
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_status("container-123")
+
+        assert result == AgentStatus.STARTING
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_status_succeeded(self, mock_get_client, container_executor):
+        """Test getting succeeded status from container."""
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {
+            "State": {"Running": False, "Status": "exited", "ExitCode": 0}
+        }
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_status("container-123")
+
+        assert result == AgentStatus.SUCCEEDED
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_status_failed_nonzero_exit(
+        self, mock_get_client, container_executor
+    ):
+        """Test getting failed status from container with non-zero exit."""
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {
+            "State": {"Running": False, "Status": "exited", "ExitCode": 1}
+        }
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_status("container-123")
+
+        assert result == AgentStatus.FAILED
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_status_stopped(self, mock_get_client, container_executor):
+        """Test getting stopped status from container."""
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {
+            "State": {"Running": False, "Status": "stopped"}
+        }
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_status("container-123")
+
+        assert result == AgentStatus.STOPPED
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_status_docker_error(self, mock_get_client, container_executor):
+        """Test handling Docker error when getting status."""
+        from aiodocker.exceptions import DockerError
+
+        mock_docker = AsyncMock()
+        mock_docker.containers.get.side_effect = DockerError(
+            404, {"message": "Not found"}
+        )
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_status("container-123")
+
+        assert result == AgentStatus.FAILED
+
+
+class TestGetResult:
+    """Tests for get_result method."""
+
+    @patch.object(ContainerAgentExecutor, "get_logs")
+    @patch.object(ContainerAgentExecutor, "get_status")
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_result_succeeded(
+        self, mock_get_client, mock_get_status, mock_get_logs, container_executor
+    ):
+        """Test getting result from successful container."""
+        mock_get_status.return_value = AgentStatus.SUCCEEDED
+        mock_get_logs.return_value = ["Log line 1", "Log line 2", "Success"]
+
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {"State": {"ExitCode": 0, "Error": ""}}
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_result("container-123")
+
+        assert isinstance(result, AgentExecutionResult)
+        assert result.status == AgentStatus.SUCCEEDED
+        assert result.exit_code == 0
+        assert result.error_message is None
+
+    @patch.object(ContainerAgentExecutor, "get_logs")
+    @patch.object(ContainerAgentExecutor, "get_status")
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_result_failed_with_error(
+        self, mock_get_client, mock_get_status, mock_get_logs, container_executor
+    ):
+        """Test getting result from failed container."""
+        mock_get_status.return_value = AgentStatus.FAILED
+        mock_get_logs.return_value = ["Error: Something went wrong"]
+
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {
+            "State": {"ExitCode": 1, "Error": "Container crashed"}
+        }
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_result("container-123")
+
+        assert result.status == AgentStatus.FAILED
+        assert result.exit_code == 1
+        assert result.error_message is not None
+
+    @patch.object(ContainerAgentExecutor, "get_logs")
+    @patch.object(ContainerAgentExecutor, "get_status")
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_result_succeeded_but_logs_show_error(
+        self, mock_get_client, mock_get_status, mock_get_logs, container_executor
+    ):
+        """Test that exit code 0 with critical errors in logs is marked FAILED."""
+        mock_get_status.return_value = AgentStatus.SUCCEEDED
+        mock_get_logs.return_value = [
+            "Starting agent...",
+            "litellm.AuthenticationError: Invalid API key",
+            "Exiting",
+        ]
+
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {"State": {"ExitCode": 0, "Error": ""}}
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_result("container-123")
+
+        # Should be marked as failed due to critical error in logs
+        assert result.status == AgentStatus.FAILED
+
+    @patch.object(ContainerAgentExecutor, "get_logs")
+    @patch.object(ContainerAgentExecutor, "get_status")
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_result_succeeded_with_benign_error_messages(
+        self, mock_get_client, mock_get_status, mock_get_logs, container_executor
+    ):
+        """Test that exit code 0 with benign 'error' messages remains SUCCEEDED."""
+        mock_get_status.return_value = AgentStatus.SUCCEEDED
+        mock_get_logs.return_value = [
+            "Checking repository...",
+            "No commits to push",
+            "ERROR: nothing to commit",
+            "Task completed successfully",
+        ]
+
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.show.return_value = {"State": {"ExitCode": 0, "Error": ""}}
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_result("container-123")
+
+        # Should remain succeeded because the error is benign
+        assert result.status == AgentStatus.SUCCEEDED
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_result_docker_error(self, mock_get_client, container_executor):
+        """Test handling Docker error when getting result."""
+        from aiodocker.exceptions import DockerError
+
+        mock_docker = AsyncMock()
+        mock_docker.containers.get.side_effect = DockerError(
+            404, {"message": "Not found"}
+        )
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_result("container-123")
+
+        assert result.status == AgentStatus.FAILED
+        assert result.error_message is not None
+
+
+class TestGetLogs:
+    """Tests for get_logs method."""
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_get_logs_success(self, mock_get_client, container_executor):
+        """Test successful log retrieval."""
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.log.return_value = [
+            "Line 1",
+            "Line 2",
+            "Line 3",
+        ]
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_logs("container-123", tail=100)
+
+        assert len(result) == 3
+        assert "Line 1" in result
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_get_logs_handles_bytes(self, mock_get_client, container_executor):
+        """Test that bytes logs are decoded properly."""
+        mock_docker = AsyncMock()
+        mock_container = AsyncMock()
+        mock_container.log.return_value = [
+            b"Line 1",
+            b"Line 2",
+        ]
+        mock_docker.containers.get.return_value = mock_container
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_logs("container-123")
+
+        assert len(result) == 2
+        assert result[0] == "Line 1"
+        assert result[1] == "Line 2"
+
+    @patch.object(ContainerAgentExecutor, "_get_docker_client")
+    async def test_get_logs_docker_error(self, mock_get_client, container_executor):
+        """Test handling Docker error when getting logs."""
+        from aiodocker.exceptions import DockerError
+
+        mock_docker = AsyncMock()
+        mock_docker.containers.get.side_effect = DockerError(
+            404, {"message": "Not found"}
+        )
+        mock_get_client.return_value = mock_docker
+
+        result = await container_executor.get_logs("container-123")
+
+        assert result == []
+
+
+class TestKubernetesStatus:
+    """Tests for Kubernetes status detection."""
+
+    @patch.object(ContainerAgentExecutor, "_init_kubernetes_clients")
+    async def test_k8s_status_running(self, mock_init, kubernetes_executor):
+        """Test Kubernetes job running status."""
+        mock_init.return_value = None
+        kubernetes_executor._k8s_batch_api = AsyncMock()
+
+        mock_job = MagicMock()
+        mock_job.status.active = 1
+        mock_job.status.succeeded = None
+        mock_job.status.failed = None
+        kubernetes_executor._k8s_batch_api.read_namespaced_job_status.return_value = (
+            mock_job
+        )
+
+        result = await kubernetes_executor._get_kubernetes_status("job-123")
+
+        assert result == AgentStatus.RUNNING
+
+    @patch.object(ContainerAgentExecutor, "_init_kubernetes_clients")
+    async def test_k8s_status_succeeded(self, mock_init, kubernetes_executor):
+        """Test Kubernetes job succeeded status."""
+        mock_init.return_value = None
+        kubernetes_executor._k8s_batch_api = AsyncMock()
+
+        mock_job = MagicMock()
+        mock_job.status.active = None
+        mock_job.status.succeeded = 1
+        mock_job.status.failed = None
+        kubernetes_executor._k8s_batch_api.read_namespaced_job_status.return_value = (
+            mock_job
+        )
+
+        result = await kubernetes_executor._get_kubernetes_status("job-123")
+
+        assert result == AgentStatus.SUCCEEDED
+
+    @patch.object(ContainerAgentExecutor, "_init_kubernetes_clients")
+    async def test_k8s_status_failed(self, mock_init, kubernetes_executor):
+        """Test Kubernetes job failed status."""
+        mock_init.return_value = None
+        kubernetes_executor._k8s_batch_api = AsyncMock()
+
+        mock_job = MagicMock()
+        mock_job.status.active = None
+        mock_job.status.succeeded = None
+        mock_job.status.failed = 1
+        kubernetes_executor._k8s_batch_api.read_namespaced_job_status.return_value = (
+            mock_job
+        )
+
+        result = await kubernetes_executor._get_kubernetes_status("job-123")
+
+        assert result == AgentStatus.FAILED
+
+    @patch.object(ContainerAgentExecutor, "_init_kubernetes_clients")
+    async def test_k8s_status_starting(self, mock_init, kubernetes_executor):
+        """Test Kubernetes job starting status."""
+        mock_init.return_value = None
+        kubernetes_executor._k8s_batch_api = AsyncMock()
+
+        mock_job = MagicMock()
+        mock_job.status.active = None
+        mock_job.status.succeeded = None
+        mock_job.status.failed = None
+        kubernetes_executor._k8s_batch_api.read_namespaced_job_status.return_value = (
+            mock_job
+        )
+
+        result = await kubernetes_executor._get_kubernetes_status("job-123")
+
+        assert result == AgentStatus.STARTING
+
+
+class TestPrepareInitCommands:
+    """Tests for _prepare_init_commands method."""
+
+    def test_no_git_config_returns_empty(self, container_executor):
+        """Test that no git config returns empty string."""
+        context = {"flow_id": "123", "execution_id": "456"}
+        result = container_executor._prepare_init_commands(context)
+        assert result == ""
+
+    def test_empty_repositories_returns_empty(self, container_executor):
+        """Test that empty repositories returns empty string."""
+        context = {
+            "flow_id": "123",
+            "execution_id": "456",
+            "git_clone_config": {"repositories": []},
+        }
+        result = container_executor._prepare_init_commands(context)
+        assert result == ""
+
+    def test_custom_commands_added(self, container_executor):
+        """Test that custom commands are added."""
+        context = {
+            "flow_id": "123",
+            "execution_id": "456",
+            "custom_commands": {
+                "enabled": True,
+                "commands": ["npm install", "npm run build"],
+            },
+        }
+        result = container_executor._prepare_init_commands(context)
+        assert "npm install" in result
+        assert "npm run build" in result
+
+
+class TestExtractRepoUrlFromTrigger:
+    """Tests for _extract_repo_url_from_trigger method."""
+
+    def test_github_repository_structure(self, container_executor):
+        """Test extraction from GitHub repository structure."""
+        trigger_data = {
+            "repository": {
+                "clone_url": "https://github.com/owner/repo.git",
+                "html_url": "https://github.com/owner/repo",
+            }
+        }
+        result = container_executor._extract_repo_url_from_trigger(trigger_data)
+        assert result == "https://github.com/owner/repo.git"
+
+    def test_github_repository_fallback_to_html_url(self, container_executor):
+        """Test fallback to html_url when clone_url is missing."""
+        trigger_data = {
+            "repository": {
+                "html_url": "https://github.com/owner/repo",
+            }
+        }
+        result = container_executor._extract_repo_url_from_trigger(trigger_data)
+        assert result == "https://github.com/owner/repo"
+
+    def test_gitlab_project_structure(self, container_executor):
+        """Test extraction from GitLab project structure."""
+        trigger_data = {
+            "project": {
+                "http_url_to_repo": "https://gitlab.com/group/project.git",
+                "web_url": "https://gitlab.com/group/project",
+            }
+        }
+        result = container_executor._extract_repo_url_from_trigger(trigger_data)
+        assert result == "https://gitlab.com/group/project.git"
+
+    def test_gitlab_project_fallback_to_web_url(self, container_executor):
+        """Test fallback to web_url when http_url_to_repo is missing."""
+        trigger_data = {
+            "project": {
+                "web_url": "https://gitlab.com/group/project",
+            }
+        }
+        result = container_executor._extract_repo_url_from_trigger(trigger_data)
+        assert result == "https://gitlab.com/group/project"
+
+    def test_empty_trigger_data(self, container_executor):
+        """Test handling empty trigger data."""
+        result = container_executor._extract_repo_url_from_trigger({})
+        assert result == ""
+
+    def test_invalid_structure(self, container_executor):
+        """Test handling invalid structure."""
+        trigger_data = {"repository": "not a dict"}
+        result = container_executor._extract_repo_url_from_trigger(trigger_data)
+        assert result == ""
+
+
+class TestCleanup:
+    """Tests for cleanup method."""
+
+    async def test_cleanup_closes_docker_client(self, container_executor):
+        """Test that cleanup closes Docker client."""
+        mock_client = AsyncMock()
+        container_executor._docker_client = mock_client
+
+        await container_executor.cleanup()
+
+        mock_client.close.assert_called_once()
+        assert container_executor._docker_client is None
+
+    async def test_cleanup_closes_kubernetes_client(self, kubernetes_executor):
+        """Test that cleanup closes Kubernetes client."""
+        mock_client = AsyncMock()
+        kubernetes_executor._k8s_api_client = mock_client
+        kubernetes_executor._k8s_initialized = True
+
+        await kubernetes_executor.cleanup()
+
+        mock_client.close.assert_called_once()
+        assert kubernetes_executor._k8s_api_client is None
+        assert kubernetes_executor._k8s_initialized is False
+
+    async def test_cleanup_handles_no_clients(self, container_executor):
+        """Test that cleanup handles case with no active clients."""
+        container_executor._docker_client = None
+        container_executor._k8s_api_client = None
+
+        # Should not raise
+        await container_executor.cleanup()

@@ -163,6 +163,51 @@ class CRUDTracker(CRUDBase[Tracker]):
             .first()
         ) is not None
 
+    def count_by_oauth_installation(
+        self, db: Session, *, oauth_installation_id: Any
+    ) -> int:
+        """Count trackers using a specific OAuth installation.
+
+        Args:
+            db: Database session
+            oauth_installation_id: OAuth installation ID
+
+        Returns:
+            Number of trackers using this installation
+        """
+        return (
+            db.query(Tracker)
+            .filter(Tracker.oauth_installation_id == oauth_installation_id)
+            .count()
+        )
+
+    def get_by_oauth_installation(
+        self,
+        db: Session,
+        *,
+        oauth_installation_id: Any,
+        active_only: bool = True,
+    ) -> List[Tracker]:
+        """Get trackers using a specific OAuth installation.
+
+        Args:
+            db: Database session
+            oauth_installation_id: OAuth installation ID
+            active_only: Only return active, non-deleted trackers
+
+        Returns:
+            List of trackers using this installation
+        """
+        query = db.query(Tracker).filter(
+            Tracker.oauth_installation_id == oauth_installation_id
+        )
+        if active_only:
+            query = query.filter(
+                Tracker.is_active.is_(True),
+                Tracker.is_deleted.is_(False),
+            )
+        return query.all()
+
 
 # Create instance
 crud_tracker = CRUDTracker(Tracker)

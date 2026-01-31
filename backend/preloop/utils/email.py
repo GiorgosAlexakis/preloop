@@ -326,6 +326,11 @@ async def send_product_notification_email(
         EmailError: If email sending fails.
     """
     recipient_email = settings.product_team_email
+    if not recipient_email:
+        logger.warning(
+            "Product notification email not sent: PRODUCT_TEAM_EMAIL not configured"
+        )
+        return
     subject = "Product Notification: User Activity"
 
     # Filter sensitive fields

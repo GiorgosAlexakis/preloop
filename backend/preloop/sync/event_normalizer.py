@@ -107,10 +107,23 @@ def normalize_event_type(
                         normalized = "issue_closed"
                     elif action == "reopened":
                         normalized = "issue_reopened"
+                    elif action == "labeled":
+                        normalized = "issue_labeled"
+                    elif action == "unlabeled":
+                        normalized = "issue_unlabeled"
+                    elif action == "assigned":
+                        normalized = "issue_assigned"
+                    elif action == "unassigned":
+                        normalized = "issue_unassigned"
                 elif normalized == "pull_request_opened":
                     if action == "opened":
                         pass  # Keep as pull_request_opened
                     elif action == "edited":
+                        # Title, description, or base branch changed
+                        normalized = "pull_request_updated"
+                    elif action == "synchronize":
+                        # New commits pushed to the PR - also treated as "updated"
+                        # This matches user expectation that "PR Updated" includes new commits
                         normalized = "pull_request_updated"
                     elif action == "closed":
                         normalized = "pull_request_closed"
@@ -118,8 +131,6 @@ def normalize_event_type(
                         normalized = "pull_request_reopened"
                     elif action == "review_requested":
                         normalized = "pull_request_review_requested"
-                    elif action == "synchronize":
-                        normalized = "pull_request_synchronized"
                     elif action == "ready_for_review":
                         normalized = "pull_request_ready_for_review"
                 elif normalized == "comment_created":

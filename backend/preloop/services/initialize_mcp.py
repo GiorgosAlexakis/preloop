@@ -472,9 +472,13 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
     async def add_comment(
         target: str,
         comment: str,
+        path: str | None = None,
+        line: int | None = None,
+        side: str | None = None,
+        in_reply_to: str | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Add a comment to an issue, pull request, or merge request."""
+        """Add a comment to an issue, pull request, or merge request. For general comments: provide just target and comment. For inline code comments: also provide path and line. To reply to a thread: provide in_reply_to with the comment ID."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -491,6 +495,10 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             arguments={
                 "target": target,
                 "comment": comment,
+                "path": path,
+                "line": line,
+                "side": side,
+                "in_reply_to": in_reply_to,
             },
             ctx=ctx,
         )
@@ -501,6 +509,56 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         result = await mcp_router.add_comment(
             target=target,
             comment=comment,
+            path=path,
+            line=line,
+            side=side,
+            in_reply_to=in_reply_to,
+        )
+        return result.model_dump_json()
+
+    # Register Tool 8b: update_comment
+    @mcp.tool()
+    async def update_comment(
+        target: str,
+        comment_id: str,
+        body: str | None = None,
+        resolved: bool | None = None,
+        thread_id: str | None = None,
+        ctx: Optional[Context] = None,
+    ) -> str:
+        """Update or resolve an existing review comment on a pull request or merge request. Only supports inline review comments (not issue comments or PR conversation comments). To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false. For resolution, you may need to provide thread_id (GitHub thread node_id like 'PRRT_...' or GitLab discussion ID) if the comment_id doesn't work for resolution."""
+        # Get user context for approval checking
+        from preloop.services.dynamic_fastmcp_http import get_current_user_context
+
+        user_context = get_current_user_context()
+
+        if not user_context:
+            return "Error: No user context available"
+
+        # Check approval with streaming
+        approved, error = await require_approval(
+            tool_name="update_comment",
+            tool_source="builtin",
+            account_id=user_context.account_id,
+            arguments={
+                "target": target,
+                "comment_id": comment_id,
+                "body": body,
+                "resolved": resolved,
+                "thread_id": thread_id,
+            },
+            ctx=ctx,
+        )
+
+        if not approved:
+            return error
+
+        result = await mcp_router.update_comment(
+            target=target,
+            comment_id=comment_id,
+            body=body,
+            resolved=resolved,
+            thread_id=thread_id,
         )
         return result.model_dump_json()
 
@@ -508,9 +566,11 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
     @mcp.tool()
     async def get_pull_request(
         pull_request: str,
+        include_comments: bool = True,
+        include_diff: bool = True,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Get details of a GitHub pull request."""
+        """Get details of a pull request (GitHub) or merge request (GitLab). Auto-detects platform from URL. Returns PR metadata, comments, and file changes."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -524,60 +584,43 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             tool_name="get_pull_request",
             tool_source="builtin",
             account_id=user_context.account_id,
-            arguments={"pull_request": pull_request},
+            arguments={
+                "pull_request": pull_request,
+                "include_comments": include_comments,
+                "include_diff": include_diff,
+            },
             ctx=ctx,
         )
 
         if not approved:
             return error
 
-        result = await mcp_router.get_pull_request(pull_request=pull_request)
-        return result.model_dump_json()
-
-    # Register Tool 10: get_merge_request
-    @mcp.tool()
-    async def get_merge_request(
-        merge_request: str,
-        ctx: Optional[Context] = None,
-    ) -> str:
-        """Get details of a GitLab merge request."""
-        # Get user context for approval checking
-        from preloop.services.dynamic_fastmcp_http import get_current_user_context
-
-        user_context = get_current_user_context()
-
-        if not user_context:
-            return "Error: No user context available"
-
-        # Check approval with streaming
-        approved, error = await require_approval(
-            tool_name="get_merge_request",
-            tool_source="builtin",
-            account_id=user_context.account_id,
-            arguments={"merge_request": merge_request},
-            ctx=ctx,
+        result = await mcp_router.get_pull_request(
+            pull_request=pull_request,
+            include_comments=include_comments,
+            include_diff=include_diff,
         )
-
-        if not approved:
-            return error
-
-        result = await mcp_router.get_merge_request(merge_request=merge_request)
         return result.model_dump_json()
 
-    # Register Tool 11: update_pull_request
+    # Register Tool 10: update_pull_request
     @mcp.tool()
     async def update_pull_request(
         pull_request: str,
         title: str | None = None,
         description: str | None = None,
         state: str | None = None,
+        labels: list[str] | None = None,
         assignees: list[str] | None = None,
         reviewers: list[str] | None = None,
-        labels: list[str] | None = None,
         draft: bool | None = None,
+        review_action: str | None = None,
+        review_body: str | None = None,
+        review_comments: list[dict] | None = None,
+        add_reaction: str | None = None,
+        remove_reaction: str | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Update a GitHub pull request."""
+        """Update a pull request's metadata, submit a review, and/or manage reactions. To update PR properties: provide title, description, labels, state (open/closed), etc. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback. To add/remove reactions: use add_reaction or remove_reaction with emoji names (GitHub: +1, -1, laugh, confused, heart, hooray, rocket, eyes; GitLab: thumbsup, thumbsdown, smile, eyes, rocket, etc.)."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -596,10 +639,15 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "title": title,
                 "description": description,
                 "state": state,
+                "labels": labels,
                 "assignees": assignees,
                 "reviewers": reviewers,
-                "labels": labels,
                 "draft": draft,
+                "review_action": review_action,
+                "review_body": review_body,
+                "review_comments": review_comments,
+                "add_reaction": add_reaction,
+                "remove_reaction": remove_reaction,
             },
             ctx=ctx,
         )
@@ -612,27 +660,35 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             title=title,
             description=description,
             state=state,
+            labels=labels,
             assignees=assignees,
             reviewers=reviewers,
-            labels=labels,
             draft=draft,
+            review_action=review_action,
+            review_body=review_body,
+            review_comments=review_comments,
+            add_reaction=add_reaction,
+            remove_reaction=remove_reaction,
         )
         return result.model_dump_json()
 
-    # Register Tool 12: update_merge_request
+    # Register Tool 12: create_pull_request
     @mcp.tool()
-    async def update_merge_request(
-        merge_request: str,
-        title: str | None = None,
+    async def create_pull_request(
+        project: str,
+        title: str,
+        source_branch: str,
+        target_branch: str,
         description: str | None = None,
-        state_event: str | None = None,
-        assignee_ids: list[int] | None = None,
-        reviewer_ids: list[int] | None = None,
+        draft: bool = False,
+        assignees: list[str] | None = None,
+        reviewers: list[str] | None = None,
         labels: list[str] | None = None,
-        draft: bool | None = None,
+        milestone: str | None = None,
+        extra_options: dict | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Update a GitLab merge request."""
+        """Create a pull request (GitHub) or merge request (GitLab). Auto-detects platform from project. Provide project as slug (owner/repo), full path, or URL. Use extra_options for GitLab-specific options like squash, remove_source_branch, assignee_ids, reviewer_ids, milestone_id."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -643,18 +699,21 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
 
         # Check approval with streaming
         approved, error = await require_approval(
-            tool_name="update_merge_request",
+            tool_name="create_pull_request",
             tool_source="builtin",
             account_id=user_context.account_id,
             arguments={
-                "merge_request": merge_request,
+                "project": project,
                 "title": title,
+                "source_branch": source_branch,
+                "target_branch": target_branch,
                 "description": description,
-                "state_event": state_event,
-                "assignee_ids": assignee_ids,
-                "reviewer_ids": reviewer_ids,
-                "labels": labels,
                 "draft": draft,
+                "assignees": assignees,
+                "reviewers": reviewers,
+                "labels": labels,
+                "milestone": milestone,
+                "extra_options": extra_options,
             },
             ctx=ctx,
         )
@@ -662,15 +721,18 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         if not approved:
             return error
 
-        result = await mcp_router.update_merge_request(
-            merge_request=merge_request,
+        result = await mcp_router.create_pull_request(
+            project=project,
             title=title,
+            source_branch=source_branch,
+            target_branch=target_branch,
             description=description,
-            state_event=state_event,
-            assignee_ids=assignee_ids,
-            reviewer_ids=reviewer_ids,
-            labels=labels,
             draft=draft,
+            assignees=assignees,
+            reviewers=reviewers,
+            labels=labels,
+            milestone=milestone,
+            extra_options=extra_options,
         )
         return result.model_dump_json()
 

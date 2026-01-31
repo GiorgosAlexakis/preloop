@@ -68,6 +68,11 @@ from .user_invitation import CRUDUserInvitation, crud_user_invitation
 from .registration_token import CRUDRegistrationToken, crud_registration_token
 from .issue_duplicate import CRUDIssueDuplicate, crud_issue_duplicate
 from .instance import CRUDInstance, crud_instance
+from .oauth_app_installation import (
+    CRUDOAuthAppInstallation,
+    crud_oauth_app_installation,
+)
+from .oauth_token import CRUDOAuthToken, crud_oauth_token
 from . import tool_approval_condition
 from . import notification_preferences
 
@@ -169,6 +174,10 @@ __all__ = [
     "crud_issue_duplicate",
     "CRUDInstance",
     "crud_instance",
+    "CRUDOAuthAppInstallation",
+    "crud_oauth_app_installation",
+    "CRUDOAuthToken",
+    "crud_oauth_token",
     "tool_approval_condition",
     "notification_preferences",
 ]

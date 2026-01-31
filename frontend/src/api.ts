@@ -585,7 +585,8 @@ export async function createFlow(flow: any): Promise<any> {
     body: JSON.stringify(flow),
   });
   if (!response.ok) {
-    throw new Error('Failed to create flow');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to create flow');
   }
   return response.json();
 }
@@ -597,7 +598,8 @@ export async function updateFlow(flowId: string, flow: any): Promise<any> {
     body: JSON.stringify(flow),
   });
   if (!response.ok) {
-    throw new Error('Failed to update flow');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update flow');
   }
   return response.json();
 }

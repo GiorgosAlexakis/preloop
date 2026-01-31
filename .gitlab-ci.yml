@@ -112,7 +112,7 @@ frontend:format-check:
 frontend:unit-tests:
   stage: test
   needs: []
-  image: mcr.microsoft.com/playwright:v1.56.1-noble
+  image: mcr.microsoft.com/playwright:v1.58.0-noble
   before_script:
     - cd frontend && npm install
   script:
@@ -169,7 +169,7 @@ test:unit:preloop-sync:
 test:unit:preloop-other:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/tests/test_*.py backend/tests/tools backend/tests/services"
+    TEST_PATHS: "backend/tests/test_*.py backend/tests/tools backend/tests/services backend/tests/utils backend/tests/middleware backend/tests/test_plugin_system"
 
 test:unit:preloop-endpoints-ai-models:
   extends: .test:unit:template
@@ -266,6 +266,51 @@ test:unit:preloop-endpoints-tools:
   variables:
     TEST_PATHS: "backend/tests/endpoints/test_tools.py"
 
+test:unit:preloop-endpoints-api-keys:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_api_keys.py"
+
+test:unit:preloop-endpoints-approval-requests:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_approval_requests.py"
+
+test:unit:preloop-endpoints-auth-comprehensive:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_auth_comprehensive.py"
+
+test:unit:preloop-endpoints-features:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_features.py"
+
+test:unit:preloop-endpoints-jwt:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_jwt.py"
+
+test:unit:preloop-endpoints-notification-preferences:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_notification_preferences.py"
+
+test:unit:preloop-endpoints-organizations:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_organizations.py"
+
+test:unit:preloop-endpoints-projects:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_projects.py"
+
+test:unit:preloop-endpoints-websockets:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_websockets.py"
+
 # test:unit:preloop-endpoints-issue-duplicate-stats:
 #   NOTE: This test was moved to plugins/analytics/tests/test_issue_duplicate_stats.py
 #   and is now run as part of the plugin tests
@@ -310,8 +355,8 @@ test:coverage:
     - test:unit:preloop-endpoints-issue-dependencies
     - test:unit:preloop-endpoints-issue-duplicates
     - test:unit:preloop-endpoints-issues
-    # - test:unit:preloop-endpoints-organizations
-    # - test:unit:preloop-endpoints-projects
+    - test:unit:preloop-endpoints-organizations
+    - test:unit:preloop-endpoints-projects
     - test:unit:preloop-endpoints-search
     - test:unit:preloop-endpoints-trackers
     # - test:unit:preloop-endpoints-version
@@ -319,8 +364,14 @@ test:coverage:
     - test:unit:preloop-endpoints-mcp
     - test:unit:preloop-endpoints-mcp-servers
     - test:unit:preloop-endpoints-tools
+    - test:unit:preloop-endpoints-api-keys
+    - test:unit:preloop-endpoints-approval-requests
+    - test:unit:preloop-endpoints-auth-comprehensive
+    - test:unit:preloop-endpoints-features
+    - test:unit:preloop-endpoints-jwt
+    - test:unit:preloop-endpoints-notification-preferences
+    - test:unit:preloop-endpoints-websockets
     # - test:unit:preloop-endpoints-issue-duplicate-stats
-    # - test:unit:preloop-endpoints-websockets
     - test:unit:preloop-agents
     - test:unit:preloop-api
     - test:unit:preloop-scripts
@@ -398,6 +449,7 @@ test:coverage:
 
   artifacts:
     reports:
+      junit: merged-report.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage.xml

@@ -530,7 +530,9 @@ export class LandingView extends LitElement {
           ? html`
               <section class="featured-video-section main-section">
                 <div class="section-container text-center">
-                  <h2>${this._featuredVideo.title || 'See It in Action'}</h2>
+                  ${this._featuredVideo.title
+                    ? html`<h2>${this._featuredVideo.title}</h2>`
+                    : ''}
                   <div class="featured-video-wrapper">
                     <iframe
                       width="560"
@@ -714,10 +716,6 @@ export class LandingView extends LitElement {
                     )}
                   </div>`
                 : ``}
-              ${this._mcpSetupTitle
-                ? html` <h3>${this._mcpSetupTitle}</h3> `
-                : ``}
-
               <ide-setup-tabs
                 .configs=${getIdeConfigs()}
                 defaultTab="claude-code"

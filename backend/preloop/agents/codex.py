@@ -284,8 +284,19 @@ class CodexAgent(ContainerAgentExecutor):
             or "gpt-4"
         )
 
-        # Escape prompt for shell
-        escaped_prompt = prompt.replace('"', '\\"').replace("'", "\\'")
+        # Escape prompt for shell - must escape:
+        # - Double quotes (for string delimiter)
+        # - Single quotes (for shell quoting)
+        # - Backticks (prevent command substitution - critical for markdown code blocks)
+        # - Dollar signs (prevent variable expansion)
+        # - Backslashes (prevent escape sequence interpretation)
+        escaped_prompt = (
+            prompt.replace("\\", "\\\\")  # Backslashes first
+            .replace('"', '\\"')
+            .replace("'", "\\'")
+            .replace("`", "\\`")  # Backticks for markdown code fences
+            .replace("$", "\\$")  # Dollar signs for variables
+        )
 
         # Prepare initialization commands (git clone, custom commands)
         init_commands = self._prepare_init_commands(execution_context)

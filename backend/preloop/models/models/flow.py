@@ -84,6 +84,24 @@ class Flow(Base):
         index=True,
     )
 
+    # Template tracking for flows cloned from presets
+    # Allows auto-updating non-customized flows when presets change
+    source_preset_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("flow.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Hash of the original prompt_template when cloned (for detecting changes)
+    source_prompt_hash = Column(String(32), nullable=True)
+    # Hash of the original allowed_mcp_tools when cloned
+    source_tools_hash = Column(String(32), nullable=True)
+    # Flags indicating if user customized these fields (prevents auto-update)
+    prompt_customized = Column(Boolean, default=False, nullable=False)
+    tools_customized = Column(Boolean, default=False, nullable=False)
+    # Flag indicating if a newer preset version is available (for notifications)
+    preset_update_available = Column(Boolean, default=False, nullable=False)
+
     ai_model = relationship("AIModel", back_populates="flows")
     account = relationship("Account", back_populates="flows", foreign_keys=[account_id])
     executions = relationship(

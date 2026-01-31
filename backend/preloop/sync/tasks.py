@@ -31,21 +31,49 @@ async def poll_tracker(tracker_id: int, since=None, force_update=False):
 
 
 def notify_admins(subject: str, message: str, message_html: str = None):
+    """Send admin notifications via email, Slack, and Mattermost.
+
+    Skips all notifications during testing (when TESTING=true environment variable is set).
+    Includes instance URL in Slack/Mattermost notifications for context.
+
+    Args:
+        subject: Notification subject/title.
+        message: Plain text message body.
+        message_html: Optional HTML version of the message for email.
+    """
+    import os
+
     from preloop.utils.email import send_email  # noqa: E402
     from preloop.config import settings  # noqa: E402
     import requests
 
+    # Skip notifications during testing
+    if os.getenv("TESTING") == "true":
+        logger.info(f"Skipping admin notification (TESTING mode): {subject}")
+        return
+
     logger.info(f"Notifying admins: {subject} - {message}")
 
-    # Send email notification
+    # Get instance URL for context in notifications
+    instance_url = settings.preloop_url or "unknown instance"
+
+    # Prefix subject with instance URL for chat notifications
+    instance_prefix = f"[{instance_url}] "
+
+    # Send email notification (only if product_team_email is configured)
     admin_email = settings.product_team_email
-    send_email(admin_email, subject, message, message_html)
+    if admin_email:
+        # Include instance URL in email subject
+        email_subject = f"{instance_prefix}{subject}"
+        send_email(admin_email, email_subject, message, message_html)
 
     # Send Slack notification if webhook is configured
     slack_webhook = settings.slack_webhook_url
     if slack_webhook:
         try:
-            slack_payload = {"text": f"*{subject}*\n{message}"}
+            # Include instance URL in Slack notification
+            slack_text = f"*{instance_prefix}{subject}*\n{message}"
+            slack_payload = {"text": slack_text}
             response = requests.post(slack_webhook, json=slack_payload, timeout=5)
             response.raise_for_status()
             logger.info("Slack notification sent successfully")
@@ -56,7 +84,9 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     mattermost_webhook = settings.mattermost_webhook_url
     if mattermost_webhook:
         try:
-            mattermost_payload = {"text": f"**{subject}**\n{message}"}
+            # Include instance URL in Mattermost notification
+            mattermost_text = f"**{instance_prefix}{subject}**\n{message}"
+            mattermost_payload = {"text": mattermost_text}
             response = requests.post(
                 mattermost_webhook, json=mattermost_payload, timeout=5
             )

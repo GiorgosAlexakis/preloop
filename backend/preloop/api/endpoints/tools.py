@@ -191,7 +191,7 @@ BUILTIN_TOOLS = [
     },
     {
         "name": "add_comment",
-        "description": "Add a comment to an issue, pull request, or merge request",
+        "description": "Add a comment to an issue, pull request, or merge request. For general comments: provide just target and comment. For inline code comments: also provide path and line. To reply to a thread: provide in_reply_to with the comment ID.",
         "source": "builtin",
         "requires_tracker": True,
         "required_tracker_types": [],
@@ -202,61 +202,191 @@ BUILTIN_TOOLS = [
                     "type": "string",
                     "description": "Issue, PR, or MR identifier (URL, key, or ID)",
                 },
-                "comment": {"type": "string", "description": "Comment text"},
+                "comment": {
+                    "type": "string",
+                    "description": "Comment text (supports markdown)",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "File path for inline comment",
+                },
+                "line": {
+                    "type": "integer",
+                    "description": "Line number in the diff",
+                },
+                "side": {
+                    "type": "string",
+                    "enum": ["LEFT", "RIGHT"],
+                    "description": "OLD or NEW file",
+                    "default": "RIGHT",
+                },
+                "in_reply_to": {
+                    "type": "string",
+                    "description": "Comment ID to reply to (creates thread)",
+                },
             },
             "required": ["target", "comment"],
         },
     },
     {
-        "name": "get_pull_request",
-        "description": "Get details of a GitHub pull request",
+        "name": "update_comment",
+        "description": "Update or resolve an existing review comment on a pull request or merge request. Only supports inline review comments (not issue comments or PR conversation comments). To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false with thread_id. Both can be done in a single call.",
         "source": "builtin",
         "requires_tracker": True,
-        "required_tracker_types": ["github"],
+        "required_tracker_types": ["github", "gitlab"],
+        "schema": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "PR/MR identifier (URL or owner/repo#number format)",
+                },
+                "comment_id": {
+                    "type": "string",
+                    "description": "ID of the review comment to update (must be a review/inline comment, not an issue comment)",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "New comment content",
+                },
+                "resolved": {
+                    "type": "boolean",
+                    "description": "Resolve or unresolve the thread",
+                },
+                "thread_id": {
+                    "type": "string",
+                    "description": "Thread/discussion ID for resolution. For GitHub: the review thread node_id (e.g., 'PRRT_...'). For GitLab: the discussion ID. Required when using resolved parameter.",
+                },
+            },
+            "required": ["target", "comment_id"],
+        },
+    },
+    {
+        "name": "get_pull_request",
+        "description": "Get details of a pull request (GitHub) or merge request (GitLab). Auto-detects platform from URL. Returns PR metadata, comments, and file changes.",
+        "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": ["github", "gitlab"],
         "schema": {
             "type": "object",
             "properties": {
                 "pull_request": {
                     "type": "string",
-                    "description": "PR identifier (URL, slug, or number)",
-                }
+                    "description": "PR/MR identifier (URL, slug, or number)",
+                },
+                "include_comments": {
+                    "type": "boolean",
+                    "description": "Include all comments/discussions",
+                    "default": True,
+                },
+                "include_diff": {
+                    "type": "boolean",
+                    "description": "Include file changes",
+                    "default": True,
+                },
             },
             "required": ["pull_request"],
         },
     },
     {
-        "name": "get_merge_request",
-        "description": "Get details of a GitLab merge request",
-        "source": "builtin",
-        "requires_tracker": True,
-        "required_tracker_types": ["gitlab"],
-        "schema": {
-            "type": "object",
-            "properties": {
-                "merge_request": {
-                    "type": "string",
-                    "description": "MR identifier (URL, slug, or IID)",
-                }
-            },
-            "required": ["merge_request"],
-        },
-    },
-    {
         "name": "update_pull_request",
-        "description": "Update a GitHub pull request",
+        "description": "Update a pull request's metadata, submit a review, and/or manage reactions. To update PR properties: provide title, description, labels, state, assignees, reviewers, draft. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback. To add/remove reactions: use add_reaction or remove_reaction with emoji names.",
         "source": "builtin",
         "requires_tracker": True,
-        "required_tracker_types": ["github"],
+        "required_tracker_types": ["github", "gitlab"],
         "schema": {
             "type": "object",
             "properties": {
                 "pull_request": {
                     "type": "string",
-                    "description": "PR identifier (URL, slug, or number)",
+                    "description": "PR/MR identifier",
                 },
-                "title": {"type": "string", "description": "New PR title"},
-                "description": {"type": "string", "description": "New PR description"},
-                "state": {"type": "string", "description": "New state (open/closed)"},
+                "title": {"type": "string", "description": "New title"},
+                "description": {
+                    "type": "string",
+                    "description": "New description/body",
+                },
+                "state": {
+                    "type": "string",
+                    "enum": ["open", "closed"],
+                    "description": "New state (open/closed for GitHub, close/reopen for GitLab)",
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Label names",
+                },
+                "assignees": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Assignee usernames",
+                },
+                "reviewers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Reviewer usernames",
+                },
+                "draft": {"type": "boolean", "description": "Mark as draft"},
+                "review_action": {
+                    "type": "string",
+                    "enum": ["approve", "request_changes", "comment"],
+                    "description": "Submit a review with this action",
+                },
+                "review_body": {
+                    "type": "string",
+                    "description": "Summary comment for the review",
+                },
+                "review_comments": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Inline comments: [{path, line, body, side}]. Each comment requires path, line, and body.",
+                },
+                "add_reaction": {
+                    "type": "string",
+                    "description": "Add a reaction emoji. GitHub: +1, -1, laugh, confused, heart, hooray, rocket, eyes. GitLab: thumbsup, thumbsdown, smile, eyes, rocket, etc.",
+                },
+                "remove_reaction": {
+                    "type": "string",
+                    "description": "Remove a reaction emoji (same names as add_reaction)",
+                },
+            },
+            "required": ["pull_request"],
+        },
+    },
+    {
+        "name": "create_pull_request",
+        "description": "Create a pull request (GitHub) or merge request (GitLab). Auto-detects platform from project. Use extra_options for GitLab-specific options like squash, remove_source_branch, assignee_ids, reviewer_ids, milestone_id.",
+        "source": "builtin",
+        "requires_tracker": True,
+        "required_tracker_types": ["github", "gitlab"],
+        "schema": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "description": "Project identifier (slug like owner/repo, full path, or URL)",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "PR/MR title",
+                },
+                "source_branch": {
+                    "type": "string",
+                    "description": "Branch containing the changes (head branch)",
+                },
+                "target_branch": {
+                    "type": "string",
+                    "description": "Branch to merge into (base branch)",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "PR/MR description/body",
+                },
+                "draft": {
+                    "type": "boolean",
+                    "description": "Create as draft",
+                    "default": False,
+                },
                 "assignees": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -272,48 +402,16 @@ BUILTIN_TOOLS = [
                     "items": {"type": "string"},
                     "description": "Label names",
                 },
-                "draft": {"type": "boolean", "description": "Mark as draft"},
-            },
-            "required": ["pull_request"],
-        },
-    },
-    {
-        "name": "update_merge_request",
-        "description": "Update a GitLab merge request",
-        "source": "builtin",
-        "requires_tracker": True,
-        "required_tracker_types": ["gitlab"],
-        "schema": {
-            "type": "object",
-            "properties": {
-                "merge_request": {
+                "milestone": {
                     "type": "string",
-                    "description": "MR identifier (URL, slug, or IID)",
+                    "description": "Milestone number or title",
                 },
-                "title": {"type": "string", "description": "New MR title"},
-                "description": {"type": "string", "description": "New MR description"},
-                "state_event": {
-                    "type": "string",
-                    "description": "State event (close/reopen)",
+                "extra_options": {
+                    "type": "object",
+                    "description": "Additional options (GitLab: squash, remove_source_branch, assignee_ids, reviewer_ids, milestone_id, allow_collaboration)",
                 },
-                "assignee_ids": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "Assignee user IDs",
-                },
-                "reviewer_ids": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "Reviewer user IDs",
-                },
-                "labels": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Label names",
-                },
-                "draft": {"type": "boolean", "description": "Mark as draft/WIP"},
             },
-            "required": ["merge_request"],
+            "required": ["project", "title", "source_branch", "target_branch"],
         },
     },
 ]
