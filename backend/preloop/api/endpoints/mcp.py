@@ -1097,7 +1097,7 @@ async def add_comment(
 
                     review_result = await tracker_client.submit_pull_request_review(
                         pr_number=target_id,
-                        body="",  # Empty body for inline-only review
+                        body="Inline comment",  # GitHub requires non-empty body for COMMENT reviews
                         event="COMMENT",
                         comments=[inline_comment],
                     )
@@ -1883,9 +1883,14 @@ async def update_pull_request(
                                 "Each comment must have 'path', 'line', and 'body'.",
                             )
 
+                    # GitLab inline diff comments require position data (base_sha, start_sha,
+                    # head_sha) which we don't have access to. Instead, create general
+                    # discussions that reference the file/line in the body text.
+                    gitlab_warnings.append(
+                        "GitLab review_comments created as general discussions "
+                        "(inline diff positioning not available)"
+                    )
                     for comment in review_comments:
-                        # For GitLab inline comments, we need position info
-                        # which requires MR diff details - create basic discussion
                         await tracker_client.create_mr_discussion(
                             mr_iid=pr_number,
                             body=f"**{comment['path']}:{comment['line']}**\n\n"

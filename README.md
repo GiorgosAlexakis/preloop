@@ -536,7 +536,7 @@ Preloop Enterprise Edition extends the open-source core with additional features
 
 | Feature | Open Source | Enterprise |
 |---------|:-----------:|:----------:|
-| MCP Server with 6 built-in tools | ✅ | ✅ |
+| MCP Server with 11 built-in tools | ✅ | ✅ |
 | Basic approval workflows | ✅ | ✅ |
 | Email notifications | ✅ | ✅ |
 | Mobile app notifications (iOS/Watch; Android) | ✅ | ✅ |
