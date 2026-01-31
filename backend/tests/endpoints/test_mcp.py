@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from preloop.api.endpoints import mcp

@@ -1164,28 +1164,6 @@ async def add_comment(
                         "to an existing discussion.",
                     )
 
-                    # NOTE: The code below is preserved but unreachable as a reference
-                    # for future implementation of true GitLab diff comments
-                    # Format the comment to clearly indicate the affected file and line
-                    formatted_body = f"**Affected file:** `{path}:{line}`\n\n{comment}"
-
-                    discussion_result = await tracker_client.create_mr_discussion(
-                        mr_iid=target_id,
-                        body=formatted_body,
-                    )
-
-                    notes = discussion_result.get("notes", [])
-                    note_id = (
-                        notes[0].get("id") if notes else discussion_result.get("id")
-                    )
-
-                    return AddCommentResponse(
-                        comment_id=str(note_id or discussion_result.get("id", "")),
-                        status="created",
-                        message=f"Successfully added inline comment to MR {target_id} at {path}:{line}",
-                        url=None,
-                    )
-
             # Regular PR/MR comment (not inline)
             else:
                 # Handle threaded replies
