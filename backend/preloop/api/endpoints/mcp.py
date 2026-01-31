@@ -1893,8 +1893,11 @@ async def update_pull_request(
                         )
 
         # Handle PR/MR metadata updates
+        # Use 'is not None' checks to allow clearing fields with empty values
+        # (e.g., labels=[] to remove all labels, description="" to clear description)
         has_updates = any(
-            [title, description, state, assignees, reviewers, labels, draft is not None]
+            x is not None
+            for x in [title, description, state, assignees, reviewers, labels, draft]
         )
         gitlab_warnings = []  # Track any GitLab-specific limitations
 
