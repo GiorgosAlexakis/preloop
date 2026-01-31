@@ -2974,23 +2974,38 @@ class GitHubTracker(BaseTracker):
                     logger.debug(f"Authenticated as user: {authenticated_user}")
                 elif user_response.status_code == 403:
                     # This might be a GitHub App installation token
-                    # Try to get the app info instead
-                    logger.debug(
-                        "GET /user returned 403, trying GET /app for GitHub App auth"
-                    )
-                    app_response = await client.get(
-                        f"{self.API_BASE_URL}/app",
-                        headers=headers,
-                        timeout=10.0,
-                    )
-                    if app_response.status_code == HTTP_STATUS_OK:
-                        app_data = app_response.json()
-                        app_slug = app_data.get("slug")
-                        if app_slug:
-                            # GitHub App bot username is {slug}[bot]
-                            authenticated_user = f"{app_slug}[bot]"
+                    # Installation tokens can't call /user or /app
+                    # Check if we have an app_slug in connection_details
+                    app_slug = self.connection_details.get("app_slug")
+                    if app_slug:
+                        # GitHub App bot username is {slug}[bot]
+                        authenticated_user = f"{app_slug}[bot]"
+                        logger.debug(
+                            f"Using app_slug from connection_details: {authenticated_user}"
+                        )
+                    else:
+                        # Try GET /app as a fallback (works with JWT tokens, not installation tokens)
+                        logger.debug(
+                            "GET /user returned 403, trying GET /app for GitHub App auth"
+                        )
+                        app_response = await client.get(
+                            f"{self.API_BASE_URL}/app",
+                            headers=headers,
+                            timeout=10.0,
+                        )
+                        if app_response.status_code == HTTP_STATUS_OK:
+                            app_data = app_response.json()
+                            app_slug = app_data.get("slug")
+                            if app_slug:
+                                authenticated_user = f"{app_slug}[bot]"
+                                logger.debug(
+                                    f"Authenticated as GitHub App bot: {authenticated_user}"
+                                )
+                        else:
                             logger.debug(
-                                f"Authenticated as GitHub App bot: {authenticated_user}"
+                                f"GET /app also failed with {app_response.status_code}. "
+                                "For GitHub App installation tokens, set 'app_slug' in "
+                                "connection_details to enable reaction removal."
                             )
             except Exception as e:
                 logger.warning(f"Could not get authenticated user: {e}")

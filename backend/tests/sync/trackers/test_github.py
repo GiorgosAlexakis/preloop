@@ -1202,8 +1202,10 @@ class TestGitHubTrackerReactions(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/reactions/123", delete_call[0][0])
 
     @patch("preloop.sync.trackers.github.httpx.AsyncClient")
-    async def test_remove_issue_reaction_with_app_auth(self, mock_client_class):
-        """Test removing a reaction with GitHub App installation token."""
+    async def test_remove_issue_reaction_with_app_slug_in_connection_details(
+        self, mock_client_class
+    ):
+        """Test removing a reaction with GitHub App when app_slug is in connection_details."""
         from unittest.mock import AsyncMock
 
         # Setup mock responses
@@ -1214,28 +1216,25 @@ class TestGitHubTrackerReactions(unittest.IsolatedAsyncioTestCase):
             {"id": 456, "content": "eyes", "user": {"login": "humanuser"}},
         ]
 
-        # GET /user returns 403 for app tokens
+        # GET /user returns 403 for app installation tokens
         user_response = MagicMock()
         user_response.status_code = 403
-
-        # GET /app returns app info
-        app_response = MagicMock()
-        app_response.status_code = 200
-        app_response.json.return_value = {"slug": "my-app", "name": "My App"}
 
         delete_response = MagicMock()
         delete_response.status_code = 204
 
         mock_client = AsyncMock()
-        mock_client.get.side_effect = [reactions_response, user_response, app_response]
+        mock_client.get.side_effect = [reactions_response, user_response]
         mock_client.delete.return_value = delete_response
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
         mock_client_class.return_value = mock_client
 
-        # Create tracker with owner/repo
+        # Create tracker with owner/repo AND app_slug in connection_details
         tracker = GitHubTracker(
-            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+            str(uuid4()),
+            "test-token",
+            {"owner": "testowner", "repo": "testrepo", "app_slug": "my-app"},
         )
         result = await tracker.remove_issue_reaction("42", "eyes")
 
@@ -1244,6 +1243,50 @@ class TestGitHubTrackerReactions(unittest.IsolatedAsyncioTestCase):
         mock_client.delete.assert_called_once()
         delete_call = mock_client.delete.call_args
         self.assertIn("/reactions/789", delete_call[0][0])
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_installation_token_without_app_slug(
+        self, mock_client_class
+    ):
+        """Test that reaction removal fails for installation tokens without app_slug.
+
+        GitHub App installation tokens cannot call GET /user or GET /app.
+        Without app_slug in connection_details, we cannot determine the bot identity.
+        """
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 789, "content": "eyes", "user": {"login": "my-app[bot]"}},
+        ]
+
+        # GET /user returns 403 for app installation tokens
+        user_response = MagicMock()
+        user_response.status_code = 403
+
+        # GET /app also returns 403 for installation tokens (requires JWT)
+        app_response = MagicMock()
+        app_response.status_code = 403
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response, app_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker WITHOUT app_slug in connection_details
+        tracker = GitHubTracker(
+            str(uuid4()),
+            "test-token",
+            {"owner": "testowner", "repo": "testrepo"},
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should return False - cannot determine identity
+        self.assertFalse(result)
+        mock_client.delete.assert_not_called()
 
     @patch("preloop.sync.trackers.github.httpx.AsyncClient")
     async def test_remove_issue_reaction_refuses_without_auth(self, mock_client_class):
