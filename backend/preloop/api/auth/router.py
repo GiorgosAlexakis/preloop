@@ -47,10 +47,7 @@ from preloop.schemas.auth import (
     AuthUserUpdate,
 )
 from preloop.utils import get_client_ip
-from preloop.utils.email import (
-    send_password_reset_email,
-    send_product_notification_email,
-)
+from preloop.utils.email import send_password_reset_email
 from preloop.utils.tokens import (
     TokenError,
     create_password_reset_token,
@@ -224,31 +221,6 @@ async def register(
                 send_verification=True,
             )
             logger.info("[REGISTER] Account setup tasks scheduled")
-
-            # Send product notification email (for analytics/CRM integration)
-            logger.info("[REGISTER] Sending product notification email")
-            try:
-                user_info_for_email = {
-                    "username": new_user.username,
-                    "email": new_user.email,
-                    "full_name": new_user.full_name,
-                    "is_active": new_user.is_active,
-                    "email_verified": new_user.email_verified,
-                    "id": str(new_user.id) if new_user.id else None,
-                    "created_at": new_user.created_at.isoformat()
-                    if new_user.created_at
-                    else None,
-                }
-                await send_product_notification_email(
-                    user_data=user_info_for_email,
-                    source_ip=get_client_ip(request),
-                    tracker_data=None,
-                )
-                logger.info("[REGISTER] Product notification email sent")
-            except Exception as e:
-                logger.error(
-                    f"Failed to send product notification email for user {new_user.email}: {str(e)}"
-                )
 
             logger.info("[REGISTER] Registration complete, returning response")
             return {
