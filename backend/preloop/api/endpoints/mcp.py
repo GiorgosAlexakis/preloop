@@ -2534,6 +2534,16 @@ async def update_comment(
             "github" if tracker_client.tracker_type.lower() == "github" else "gitlab"
         )
 
+    # Upfront validation: issue comments cannot be resolved
+    # Check this before any updates to avoid partial success states
+    if comment_type == "issue_comment" and resolved is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Thread resolution is not supported for issue comments "
+            "(PR conversation comments). Only inline review comments can be resolved. "
+            "Remove the 'resolved' parameter or use comment_type='review_comment'.",
+        )
+
     try:
         result_url = None
         actions_taken = []
@@ -2620,14 +2630,16 @@ async def update_comment(
 
             # Resolve/unresolve thread if requested
             if resolved is not None:
-                # Thread resolution only works for review comments, not issue comments
-                if comment_type == "issue_comment" or (
-                    body is not None and actual_comment_type == "issue_comment"
-                ):
+                # Thread resolution only works for review comments, not issue comments.
+                # Note: explicit comment_type="issue_comment" + resolved is validated upfront.
+                # This check handles the auto-detect fallback case where we updated an
+                # issue comment but the caller also requested resolution.
+                if body is not None and actual_comment_type == "issue_comment":
                     raise HTTPException(
                         status_code=400,
                         detail="Thread resolution is not supported for issue comments "
-                        "(PR conversation comments). Only inline review comments can be resolved.",
+                        "(PR conversation comments). The comment was updated but cannot "
+                        "be resolved. Only inline review comments can be resolved.",
                     )
 
                 # GitHub's resolve_review_thread requires the thread's GraphQL node_id
