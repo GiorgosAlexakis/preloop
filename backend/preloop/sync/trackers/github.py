@@ -2909,14 +2909,37 @@ class GitHubTracker(BaseTracker):
 
             reactions = response.json()
 
-            # Find the reaction matching the content type
-            # Note: We look for reactions by the authenticated user (via the app)
+            # Get the authenticated user's login to only remove our own reactions
+            authenticated_user = None
+            try:
+                user_response = await client.get(
+                    f"{self.API_BASE_URL}/user",
+                    headers=headers,
+                    timeout=10.0,
+                )
+                if user_response.status_code == HTTP_STATUS_OK:
+                    user_data = user_response.json()
+                    authenticated_user = user_data.get("login")
+                    logger.debug(f"Authenticated as user: {authenticated_user}")
+            except Exception as e:
+                logger.warning(f"Could not get authenticated user: {e}")
+
+            # Find the reaction matching the content type AND created by us
             reaction_to_delete = None
             for r in reactions:
                 if r.get("content") == reaction:
-                    # For GitHub App auth, the reaction would be from the app's bot account
-                    reaction_to_delete = r
-                    break
+                    reaction_user = r.get("user", {}).get("login")
+                    # Only delete if it's our reaction, or if we couldn't determine the user
+                    if (
+                        authenticated_user is None
+                        or reaction_user == authenticated_user
+                    ):
+                        reaction_to_delete = r
+                        break
+                    else:
+                        logger.debug(
+                            f"Skipping reaction by {reaction_user} (not ours: {authenticated_user})"
+                        )
 
             if not reaction_to_delete:
                 logger.info(
