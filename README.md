@@ -173,6 +173,21 @@ When registration is disabled:
 
 To invite users when registration is disabled, use the admin API or CLI (Enterprise Edition includes a full admin dashboard for user management).
 
+#### GitHub App (Optional)
+
+For enhanced GitHub integration including PR status checks and bot reactions:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GITHUB_APP_ID` | | GitHub App ID (from app settings page) |
+| `GITHUB_APP_SLUG` | | GitHub App slug (the URL-friendly name) |
+| `GITHUB_APP_PRIVATE_KEY` | | Base64-encoded private key from GitHub App |
+| `GITHUB_APP_CLIENT_ID` | | OAuth client ID for user authentication |
+| `GITHUB_APP_CLIENT_SECRET` | | OAuth client secret |
+| `GITHUB_APP_WEBHOOK_SECRET` | | Secret for verifying webhook payloads |
+
+These are optional and only needed if you're using a GitHub App for authentication or advanced features like reaction management on PRs.
+
 ### Docker Setup
 
 ```bash

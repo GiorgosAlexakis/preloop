@@ -3,7 +3,7 @@ Pydantic schemas for the MCP API endpoints.
 """
 
 from pydantic import BaseModel, field_validator
-from typing import Optional, List
+from typing import Literal, Optional, List
 from uuid import UUID
 
 from preloop.schemas.issue import IssueResponse
@@ -286,6 +286,10 @@ class UpdateCommentRequest(BaseModel):
     body: Optional[str] = None  # New comment body
     resolved: Optional[bool] = None  # Whether to resolve/unresolve the thread
     thread_id: Optional[str] = None  # Thread/discussion ID for resolution
+    comment_type: Optional[Literal["review_comment", "issue_comment"]] = None
+    # Type of comment: review_comment for inline code comments,
+    # issue_comment for PR conversation comments.
+    # If not provided, tries review_comment first then issue_comment.
 
 
 class UpdateCommentResponse(BaseModel):
