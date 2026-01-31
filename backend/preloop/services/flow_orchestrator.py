@@ -307,7 +307,7 @@ class FlowExecutionOrchestrator:
             if self.execution_log:
                 # Construct absolute URL to the execution details page
                 # GitHub/GitLab require absolute URLs for commit status links
-                from preloop.core.config import settings
+                from preloop.config import settings
 
                 base_url = getattr(settings, "preloop_url", None) or getattr(
                     settings, "PRELOOP_URL", None
