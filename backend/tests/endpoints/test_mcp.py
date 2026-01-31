@@ -1738,7 +1738,10 @@ async def test_update_comment_resolve_issue_comment_fails(
             )
 
         assert exc_info.value.status_code == 400
-        assert "not supported for issue comments" in str(exc_info.value.detail).lower()
+        assert (
+            "not supported for github issue comments"
+            in str(exc_info.value.detail).lower()
+        )
 
 
 @pytest.mark.asyncio
@@ -1810,7 +1813,10 @@ async def test_update_comment_issue_comment_body_and_resolve_fails_upfront(
             )
 
         assert exc_info.value.status_code == 400
-        assert "not supported for issue comments" in str(exc_info.value.detail).lower()
+        assert (
+            "not supported for github issue comments"
+            in str(exc_info.value.detail).lower()
+        )
         # Verify no update calls were made (failed upfront)
         mock_tracker.update_issue_comment.assert_not_called()
         mock_tracker.update_review_comment.assert_not_called()

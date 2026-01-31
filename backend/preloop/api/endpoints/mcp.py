@@ -2534,12 +2534,17 @@ async def update_comment(
             "github" if tracker_client.tracker_type.lower() == "github" else "gitlab"
         )
 
-    # Upfront validation: issue comments cannot be resolved
+    # Upfront validation: GitHub issue comments cannot be resolved
     # Check this before any updates to avoid partial success states
-    if comment_type == "issue_comment" and resolved is not None:
+    # Note: GitLab discussions CAN be resolved regardless of type, so only block GitHub
+    if (
+        platform == "github"
+        and comment_type == "issue_comment"
+        and resolved is not None
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Thread resolution is not supported for issue comments "
+            detail="Thread resolution is not supported for GitHub issue comments "
             "(PR conversation comments). Only inline review comments can be resolved. "
             "Remove the 'resolved' parameter or use comment_type='review_comment'.",
         )
