@@ -1232,6 +1232,9 @@ async def add_comment(
                 status_code=501,
                 detail="Adding comments not supported by this tracker type.",
             )
+        except HTTPException:
+            # Re-raise HTTPException without wrapping
+            raise
         except Exception as e:
             logger.error(
                 f"Error adding comment to {target_id} via tracker client: {e}",
@@ -1333,6 +1336,9 @@ async def add_comment(
                 status_code=501,
                 detail="Adding comments not supported by this tracker type.",
             )
+        except HTTPException:
+            # Re-raise HTTPException without wrapping
+            raise
         except Exception as e:
             logger.error(
                 f"Error adding comment to {target_id} via tracker client: {e}",
