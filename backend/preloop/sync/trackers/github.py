@@ -2834,7 +2834,7 @@ class GitHubTracker(BaseTracker):
         url = (
             f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions"
         )
-        headers = await self._get_headers()
+        headers = await self._get_auth_headers()
         # Need special accept header for reactions API
         headers["Accept"] = "application/vnd.github.squirrel-girl-preview+json"
 
@@ -2892,7 +2892,7 @@ class GitHubTracker(BaseTracker):
         list_url = (
             f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions"
         )
-        headers = await self._get_headers()
+        headers = await self._get_auth_headers()
         headers["Accept"] = "application/vnd.github.squirrel-girl-preview+json"
 
         async with httpx.AsyncClient() as client:
@@ -2976,7 +2976,7 @@ class GitHubTracker(BaseTracker):
             )
 
         url = f"{self.API_BASE_URL}/repos/{owner}/{repo}/statuses/{sha}"
-        headers = await self._get_headers()
+        headers = await self._get_auth_headers()
 
         payload = {
             "state": state,
