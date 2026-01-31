@@ -2438,6 +2438,110 @@ class GitHubTracker(BaseTracker):
             )
             raise TrackerResponseError(f"Failed to get review comments: {e}")
 
+    async def _get_comment_thread_id_map(
+        self, pr_number: str
+    ) -> Dict[str, Optional[str]]:
+        """
+        Fetch a mapping of comment database IDs to their thread node_ids.
+
+        Uses GraphQL to get all review threads and their comments for a PR,
+        then builds a mapping from comment ID to thread ID. This allows
+        get_pull_request_comments to include thread_id for each review comment.
+
+        Args:
+            pr_number: The PR number.
+
+        Returns:
+            Dict mapping comment database ID (str) to thread node_id (PRRT_*).
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            logger.warning("Owner/repo not found for thread mapping")
+            return {}
+
+        query = """
+            query GetPRReviewThreads($owner: String!, $name: String!, $prNumber: Int!) {
+                repository(owner: $owner, name: $name) {
+                    pullRequest(number: $prNumber) {
+                        reviewThreads(first: 100) {
+                            nodes {
+                                id
+                                isResolved
+                                comments(first: 50) {
+                                    nodes {
+                                        databaseId
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        """
+
+        variables = {
+            "owner": owner,
+            "name": repo,
+            "prNumber": int(pr_number),
+        }
+
+        graphql_url = "https://api.github.com/graphql"
+        headers = await self._get_auth_headers()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    graphql_url,
+                    headers=headers,
+                    json={"query": query, "variables": variables},
+                    timeout=30.0,
+                )
+
+                if response.status_code >= 400:
+                    logger.warning(
+                        f"GraphQL query for thread mapping failed: {response.status_code}"
+                    )
+                    return {}
+
+                data = response.json()
+
+                if "errors" in data:
+                    logger.warning(
+                        f"GraphQL errors in thread mapping: {data['errors']}"
+                    )
+                    return {}
+
+                # Build mapping from comment database ID to thread ID
+                mapping: Dict[str, Optional[str]] = {}
+                threads = (
+                    data.get("data", {})
+                    .get("repository", {})
+                    .get("pullRequest", {})
+                    .get("reviewThreads", {})
+                    .get("nodes", [])
+                )
+
+                for thread in threads:
+                    thread_id = thread.get("id")
+                    comments = thread.get("comments", {}).get("nodes", [])
+
+                    for comment in comments:
+                        db_id = comment.get("databaseId")
+                        if db_id is not None:
+                            mapping[str(db_id)] = thread_id
+
+                logger.debug(
+                    f"Built thread_id mapping for PR {pr_number}: "
+                    f"{len(mapping)} comments mapped"
+                )
+                return mapping
+
+        except Exception as e:
+            logger.warning(f"Error building thread_id mapping for PR {pr_number}: {e}")
+            return {}
+
     @async_retry()
     async def get_pull_request_comments(
         self,
@@ -2483,15 +2587,21 @@ class GitHubTracker(BaseTracker):
             review_comments_path = f"/repos/{owner}/{repo}/pulls/{pr_num}/comments"
             review_comments = await self._make_request(review_comments_path)
 
+            # Fetch thread_id mappings for review comments via GraphQL
+            # This allows agents to resolve threads without extra lookups
+            thread_id_map = await self._get_comment_thread_id_map(pr_num)
+
             for comment in review_comments:
                 author = comment["user"]["login"]
                 if filter_author and author != filter_author:
                     continue
 
+                comment_id = str(comment["id"])
                 all_comments.append(
                     {
-                        "id": str(comment["id"]),
+                        "id": comment_id,
                         "node_id": comment.get("node_id"),
+                        "thread_id": thread_id_map.get(comment_id),
                         "author": author,
                         "body": comment.get("body", ""),
                         "type": "review_comment",
