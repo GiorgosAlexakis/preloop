@@ -220,10 +220,12 @@ class TestFlowExecutionOrchestrator:
 
             await orchestrator.run()
 
-            assert (
-                orchestrator.execution_log.resolved_input_prompt
-                == "Commit: Fixed bug #123"
-            )
+            # The prompt should contain the resolved template
+            # (plus the success sentinel instruction appended by the orchestrator)
+            resolved_prompt = orchestrator.execution_log.resolved_input_prompt
+            assert resolved_prompt.startswith("Commit: Fixed bug #123")
+            # Verify the success sentinel instruction is appended
+            assert "FLOW_EXECUTION_SUCCESS" in resolved_prompt
 
     @pytest.mark.asyncio
     async def test_prompt_resolution_nested(

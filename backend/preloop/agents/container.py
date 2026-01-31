@@ -789,8 +789,7 @@ class ContainerAgentExecutor(AgentExecutor):
             )
 
             # Multiple errors without any benign patterns suggest real failure
-            # But be conservative - only flag if many errors and no benign context
-            if error_count >= 5 and not contains_benign_pattern:
+            if error_count >= 3 and not contains_benign_pattern:
                 self.logger.info(
                     f"Heuristic detection: {error_count} 'error:' occurrences found "
                     "without benign patterns - treating as failed execution"
