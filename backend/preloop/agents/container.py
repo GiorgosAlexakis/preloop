@@ -1110,26 +1110,42 @@ class ContainerAgentExecutor(AgentExecutor):
         """
         commands = []
 
-        # Prepare git clone command if repositories are configured
-        # Check for repositories existence rather than just enabled flag
+        # Prepare git clone command if enabled
         git_clone_config = execution_context.get("git_clone_config")
+        self.logger.info(f"Git clone config: {git_clone_config}")
+
         if git_clone_config:
+            is_enabled = git_clone_config.get("enabled", False)
             repositories = git_clone_config.get("repositories", [])
-            # If repositories exist, attempt to clone them
-            if repositories:
+            trigger_project_id = execution_context.get("trigger_project_id")
+
+            self.logger.info(
+                f"Git clone check: enabled={is_enabled}, "
+                f"repositories={len(repositories)}, "
+                f"trigger_project_id={trigger_project_id}"
+            )
+
+            # Attempt clone if: has repositories OR (enabled AND has trigger project)
+            if repositories or (is_enabled and trigger_project_id):
                 self.logger.info(
-                    f"Git clone configured with {len(repositories)} repositories"
+                    f"Attempting git clone with {len(repositories)} repositories "
+                    f"(trigger fallback: {not repositories and bool(trigger_project_id)})"
                 )
                 git_cmd = self._prepare_git_clone_command(execution_context)
                 if git_cmd:
                     commands.append(git_cmd)
-                    self.logger.info("Git clone commands added to init")
+                    self.logger.info(f"Git clone commands added: {git_cmd[:200]}...")
                 else:
                     self.logger.warning(
-                        "Git clone was configured but no commands were generated"
+                        "Git clone was configured but no commands were generated. "
+                        f"Check trigger_project_id={trigger_project_id} and credentials."
                     )
             else:
-                self.logger.debug("No repositories configured for git clone")
+                self.logger.info(
+                    f"Git clone skipped: enabled={is_enabled}, "
+                    f"repositories={len(repositories)}, "
+                    f"trigger_project_id={trigger_project_id}"
+                )
         else:
             self.logger.debug("No git_clone_config in execution context")
 
@@ -1719,19 +1735,38 @@ MREOF
         Returns:
             Repository clone URL with token injected, or None if not found
         """
+        self.logger.info(
+            f"Looking up repo URL for project_id={project_id}, account_id={account_id}"
+        )
         try:
             from preloop.models.crud import crud_project, crud_tracker
             from preloop.models.db.session import get_db_session
 
             db = next(get_db_session())
             try:
-                # Get project from database
-                project = crud_project.get(db, id=project_id, account_id=account_id)
+                # Get project from database - don't filter by account_id since
+                # Project doesn't have a direct account_id field
+                project = crud_project.get(db, id=str(project_id))
                 if not project:
-                    self.logger.warning(
-                        f"Project {project_id} not found for account {account_id}"
+                    self.logger.info(
+                        f"Project {project_id} not found by ID, trying slug/identifier"
+                    )
+                    # Also try looking up by slug or identifier
+                    project = crud_project.get_by_slug_or_identifier(
+                        db, slug_or_identifier=str(project_id)
+                    )
+
+                if not project:
+                    self.logger.error(
+                        f"Project {project_id} not found in database by ID or slug. "
+                        f"Account: {account_id}"
                     )
                     return None
+
+                self.logger.info(
+                    f"Found project: id={project.id}, slug={project.slug}, "
+                    f"org_id={project.organization_id}"
+                )
 
                 if not project.slug:
                     self.logger.warning(

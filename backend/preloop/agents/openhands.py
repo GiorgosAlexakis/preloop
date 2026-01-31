@@ -253,10 +253,31 @@ class OpenHandsAgent(ContainerAgentExecutor):
 
         # Prepare git clone command if enabled
         git_clone_config = execution_context.get("git_clone_config")
-        if git_clone_config and git_clone_config.get("enabled"):
-            git_cmd = self._prepare_git_clone_command(execution_context)
-            if git_cmd:
-                commands.append(git_cmd)
+        self.logger.info(f"Git clone config: {git_clone_config}")
+
+        if git_clone_config:
+            is_enabled = git_clone_config.get("enabled", False)
+            repositories = git_clone_config.get("repositories", [])
+            trigger_project_id = execution_context.get("trigger_project_id")
+
+            self.logger.info(
+                f"Git clone check: enabled={is_enabled}, "
+                f"repositories={len(repositories)}, "
+                f"trigger_project_id={trigger_project_id}"
+            )
+
+            # Attempt clone if: has repositories OR (enabled AND has trigger project)
+            if repositories or (is_enabled and trigger_project_id):
+                git_cmd = self._prepare_git_clone_command(execution_context)
+                if git_cmd:
+                    commands.append(git_cmd)
+                    self.logger.info(f"Git clone commands added: {git_cmd[:200]}...")
+                else:
+                    self.logger.warning(
+                        "Git clone was configured but no commands were generated"
+                    )
+        else:
+            self.logger.debug("No git_clone_config in execution context")
 
         # Prepare custom commands if enabled
         custom_commands = execution_context.get("custom_commands")
