@@ -2557,6 +2557,57 @@ async def update_comment(
             # Track which comment type was actually used for logging
             actual_comment_type = None
 
+            # Pre-check: If resolved is requested with body but no comment_type,
+            # we need to determine the type upfront to avoid partial success
+            # (updating body then failing on resolution).
+            if resolved is not None and body is not None and comment_type is None:
+                logger.info(
+                    f"Pre-checking comment type for {comment_id} since both body "
+                    "and resolved are requested without explicit comment_type"
+                )
+                # Try to get the review comment - if it 404s, it's an issue comment
+                try:
+                    # Use a lightweight check - try to get the comment
+                    owner = tracker_client.connection_details.get("owner")
+                    repo = tracker_client.connection_details.get("repo")
+                    if owner and repo:
+                        import httpx
+
+                        headers = await tracker_client._get_auth_headers()
+                        async with httpx.AsyncClient() as client:
+                            check_url = (
+                                f"https://api.github.com/repos/{owner}/{repo}"
+                                f"/pulls/comments/{comment_id}"
+                            )
+                            response = await client.get(
+                                check_url, headers=headers, timeout=10.0
+                            )
+                            if response.status_code == 404:
+                                # It's an issue comment - fail upfront
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail=(
+                                        "Thread resolution is not supported for GitHub "
+                                        "issue comments. The comment appears to be a PR "
+                                        "conversation comment, not an inline review comment. "
+                                        "Remove the 'resolved' parameter or set "
+                                        "comment_type='review_comment' if this is actually "
+                                        "an inline comment."
+                                    ),
+                                )
+                            elif response.status_code == 200:
+                                # It's a review comment - proceed
+                                actual_comment_type = "review_comment"
+                                logger.info(
+                                    f"Pre-check: comment {comment_id} is a review_comment"
+                                )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(
+                        f"Pre-check failed, proceeding with auto-detect: {e}"
+                    )
+
             # Update comment body if provided
             if body is not None:
                 # If comment_type is specified, use only that API
