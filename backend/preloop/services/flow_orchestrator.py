@@ -401,10 +401,14 @@ class FlowExecutionOrchestrator:
             logger.error(f"Failed to send command via NATS: {e}", exc_info=True)
             raise
 
+    # NATS max payload is typically 1MB; use 900KB to leave headroom
+    NATS_MAX_PAYLOAD_BYTES = 900 * 1024
+
     async def _publish_update(self, message_type: str, payload: Dict[str, Any]):
         """
         Publishes a structured message to the NATS stream for real-time updates.
         Includes account_id for proper filtering to prevent cross-account data leaks.
+        Automatically truncates large payloads to avoid NATS MaxPayloadError.
         """
         if not self.nats_client or not self.nats_client.is_connected:
             logger.warning("NATS client not available, skipping update publish.")
@@ -426,7 +430,39 @@ class FlowExecutionOrchestrator:
                 "payload": payload,
             }
             subject = f"flow-updates.{self.execution_log.id}"
-            await self.nats_client.publish(subject, json.dumps(message).encode())
+            encoded_message = json.dumps(message).encode()
+
+            # Check if message exceeds NATS max payload
+            if len(encoded_message) > self.NATS_MAX_PAYLOAD_BYTES:
+                # Truncate the payload - specifically handle "line" field for log lines
+                truncated_payload = dict(payload)
+                if "line" in truncated_payload and isinstance(
+                    truncated_payload["line"], str
+                ):
+                    # Calculate how much we need to truncate
+                    excess = len(encoded_message) - self.NATS_MAX_PAYLOAD_BYTES
+                    line = truncated_payload["line"]
+                    # Truncate line with some extra margin
+                    max_line_len = max(1000, len(line) - excess - 1000)
+                    truncated_payload["line"] = (
+                        line[:max_line_len] + f"\n... [truncated {len(line) - max_line_len} chars]"
+                    )
+                    truncated_payload["truncated"] = True
+                    message["payload"] = truncated_payload
+                    encoded_message = json.dumps(message).encode()
+                    logger.warning(
+                        f"Truncated large log line ({len(line)} -> {max_line_len} chars) "
+                        f"to fit NATS max payload"
+                    )
+                else:
+                    # For other payload types, skip publishing this message
+                    logger.warning(
+                        f"Skipping {message_type} update: payload too large "
+                        f"({len(encoded_message)} bytes > {self.NATS_MAX_PAYLOAD_BYTES})"
+                    )
+                    return
+
+            await self.nats_client.publish(subject, encoded_message)
             logger.debug(f"Published {message_type} to NATS subject '{subject}'")
         except Exception as e:
             logger.error(f"Failed to publish update to NATS: {e}", exc_info=True)
