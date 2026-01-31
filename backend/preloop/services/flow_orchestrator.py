@@ -87,6 +87,10 @@ class FlowExecutionOrchestrator:
         """
         payload = self.trigger_event_data.get("payload", {})
 
+        # Ensure payload is a dict (could be a string in edge cases)
+        if not isinstance(payload, dict):
+            return None
+
         # Try common locations for commit SHA
         # GitHub push event
         if "head_commit" in payload:
