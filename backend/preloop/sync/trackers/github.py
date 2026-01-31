@@ -2999,6 +2999,11 @@ class GitHubTracker(BaseTracker):
             )
 
         url = f"{self.API_BASE_URL}/repos/{owner}/{repo}/statuses/{sha}"
+        logger.info(
+            f"[CommitStatus] GitHub API call: POST {url} "
+            f"(owner={owner}, repo={repo}, sha={sha[:8]})"
+        )
+
         headers = await self._get_auth_headers()
 
         payload = {
@@ -3010,6 +3015,8 @@ class GitHubTracker(BaseTracker):
             payload["description"] = description[:140]
         if target_url:
             payload["target_url"] = target_url
+
+        logger.debug(f"[CommitStatus] Payload: {payload}")
 
         async with httpx.AsyncClient() as client:
             response = await client.post(

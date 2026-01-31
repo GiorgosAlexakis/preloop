@@ -160,37 +160,73 @@ class FlowExecutionOrchestrator:
         Returns None if we can't get a valid client (e.g., no project configured).
         """
         if self._tracker_client is not None:
+            logger.debug("[CommitStatus] Using cached tracker client")
             return self._tracker_client
 
         try:
             # Get project from trigger_project_id on the flow
-            if self.flow and self.flow.trigger_project_id:
-                from preloop.models.crud import crud_project
-                from preloop.api.common import get_tracker_client
+            if not self.flow:
+                logger.warning("[CommitStatus] No flow object available")
+                return None
 
-                project = crud_project.get(self.db, id=self.flow.trigger_project_id)
-                if project and project.organization_id:
-                    # Create a minimal user context for auth
-                    account = crud_account.get(self.db, id=self.flow.account_id)
-                    if account:
-                        # Get the account owner or first admin
-                        users = crud_user.get_by_account(
-                            self.db, account_id=account.id, limit=1
-                        )
-                        if users:
-                            self._tracker_client = await get_tracker_client(
-                                organization_id=project.organization_id,
-                                project_id=project.id,
-                                db=self.db,
-                                current_user=users[0],
-                            )
-                            return self._tracker_client
+            if not self.flow.trigger_project_id:
+                # This is expected for flows not tied to a specific project
+                logger.debug(
+                    "[CommitStatus] Flow has no trigger_project_id - skipping status update"
+                )
+                return None
 
-            logger.debug("Could not get tracker client for commit status")
-            return None
+            from preloop.models.crud import crud_project
+            from preloop.api.common import get_tracker_client
+
+            project = crud_project.get(self.db, id=self.flow.trigger_project_id)
+            if not project:
+                logger.warning(
+                    f"[CommitStatus] Project not found for trigger_project_id: "
+                    f"{self.flow.trigger_project_id}"
+                )
+                return None
+
+            if not project.organization_id:
+                logger.warning(
+                    f"[CommitStatus] Project {project.id} has no organization_id"
+                )
+                return None
+
+            # Create a minimal user context for auth
+            account = crud_account.get(self.db, id=self.flow.account_id)
+            if not account:
+                logger.warning(
+                    f"[CommitStatus] Account not found: {self.flow.account_id}"
+                )
+                return None
+
+            # Get the account owner or first admin
+            users = crud_user.get_by_account(self.db, account_id=account.id, limit=1)
+            if not users:
+                logger.warning(
+                    f"[CommitStatus] No users found for account: {account.id}"
+                )
+                return None
+
+            logger.info(
+                f"[CommitStatus] Getting tracker client for project {project.id}, "
+                f"org {project.organization_id}, user {users[0].username}"
+            )
+
+            self._tracker_client = await get_tracker_client(
+                organization_id=project.organization_id,
+                project_id=project.id,
+                db=self.db,
+                current_user=users[0],
+            )
+            return self._tracker_client
 
         except Exception as e:
-            logger.warning(f"Failed to get tracker client for status updates: {e}")
+            logger.error(
+                f"[CommitStatus] Exception getting tracker client: {e}",
+                exc_info=True,
+            )
             return None
 
     async def _update_commit_status(
@@ -204,37 +240,65 @@ class FlowExecutionOrchestrator:
             state: Status state (pending, success, failure, error)
             description: Optional description text
         """
+        # Only log at debug level initially - upgrade to info if we actually update
+        logger.debug(
+            f"[CommitStatus] Checking if status update needed (state='{state}')"
+        )
+
         # Skip commit status updates during execution recovery
         # to avoid making external API calls for old/stale executions
         if self._is_recovered:
-            logger.info("Skipping commit status update for recovered execution")
+            logger.info("[CommitStatus] Skipping - execution is recovered")
             return
 
         if not self._commit_sha:
             self._commit_sha = self._extract_commit_sha()
             if self._commit_sha:
-                logger.info(f"Extracted commit SHA: {self._commit_sha[:8]}")
+                logger.info(
+                    f"[CommitStatus] Extracted commit SHA: {self._commit_sha[:8]}"
+                )
+            else:
+                # Log more details about what's in trigger_event_data
+                payload = self.trigger_event_data.get("payload", {})
+                logger.info(
+                    f"[CommitStatus] No commit SHA found. "
+                    f"trigger_event_data keys: {list(self.trigger_event_data.keys())}, "
+                    f"payload type: {type(payload).__name__}, "
+                    f"payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'N/A'}"
+                )
 
         if not self._commit_sha:
-            logger.info(
-                f"No commit SHA found in trigger event, skipping commit status update. "
-                f"Trigger data keys: {list(self.trigger_event_data.keys())}"
+            # This is expected for flows not triggered by commit/PR events
+            logger.debug(
+                "[CommitStatus] No commit SHA available - skipping status update"
             )
             return
 
         try:
+            logger.info(
+                f"[CommitStatus] Getting tracker client. "
+                f"Flow ID: {self.flow_id}, "
+                f"trigger_project_id: {self.flow.trigger_project_id if self.flow else None}"
+            )
+
             tracker_client = await self._get_tracker_client_for_status()
             if not tracker_client:
                 logger.warning(
-                    f"Could not get tracker client for commit status update. "
-                    f"Flow trigger_project_id: {self.flow.trigger_project_id if self.flow else None}"
+                    f"[CommitStatus] Could not get tracker client. "
+                    f"Flow trigger_project_id: {self.flow.trigger_project_id if self.flow else None}, "
+                    f"account_id: {self.flow.account_id if self.flow else None}"
                 )
                 return
+
+            logger.info(
+                f"[CommitStatus] Got tracker client: {type(tracker_client).__name__}, "
+                f"connection_details: {list(tracker_client.connection_details.keys()) if hasattr(tracker_client, 'connection_details') else 'N/A'}"
+            )
 
             # Check if the tracker supports commit status
             if not hasattr(tracker_client, "create_commit_status"):
                 logger.info(
-                    f"Tracker type {type(tracker_client).__name__} doesn't support commit status"
+                    f"[CommitStatus] Tracker {type(tracker_client).__name__} doesn't support commit status"
                 )
                 return
 
@@ -255,9 +319,16 @@ class FlowExecutionOrchestrator:
                 else:
                     # Fallback to relative path if no base URL configured
                     logger.warning(
-                        "PRELOOP_URL not configured, commit status will have relative URL"
+                        "[CommitStatus] PRELOOP_URL not configured, using relative URL"
                     )
                     target_url = f"/console/flows/{self.flow_id}/executions/{self.execution_log.id}"
+
+            # Log the API call we're about to make
+            logger.info(
+                f"[CommitStatus] Calling create_commit_status: "
+                f"sha={self._commit_sha[:8]}, state={state}, context={self._status_context}, "
+                f"target_url={target_url[:50] if target_url else None}..."
+            )
 
             await tracker_client.create_commit_status(
                 sha=self._commit_sha,
@@ -267,11 +338,16 @@ class FlowExecutionOrchestrator:
                 target_url=target_url,
             )
 
-            logger.info(f"Updated commit status to '{state}' on {self._commit_sha[:8]}")
+            logger.info(
+                f"[CommitStatus] SUCCESS - Updated to '{state}' on {self._commit_sha[:8]}"
+            )
 
         except Exception as e:
             # Don't fail the execution if status update fails
-            logger.warning(f"Failed to update commit status: {e}")
+            logger.error(
+                f"[CommitStatus] FAILED to update: {e}",
+                exc_info=True,
+            )
 
     @staticmethod
     async def send_command(
