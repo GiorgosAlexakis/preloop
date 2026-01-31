@@ -1273,32 +1273,50 @@ class ContainerAgentExecutor(AgentExecutor):
                     )
                     continue
 
-                # For manually specified URLs, inject token from credentials map
+                # For URLs without credentials, inject token
                 if repo_url and "@" not in repo_url:
                     # URL doesn't have credentials, need to inject
+                    token = None
+                    tracker_type = None
+
+                    # Try to get credentials from repo config's tracker_id
                     tracker_id = repo_config.get("tracker_id")
                     git_credentials_map = execution_context.get(
                         "git_credentials_map", {}
                     )
-                    tracker_creds = git_credentials_map.get(tracker_id)
 
-                    if tracker_creds:
+                    if tracker_id and tracker_id in git_credentials_map:
+                        tracker_creds = git_credentials_map.get(tracker_id)
                         token = tracker_creds.get("token")
                         tracker_type = tracker_creds.get("tracker_type")
-
-                        if token:
-                            # Inject token into manually specified URL
-                            if "github.com" in repo_url or tracker_type == "github":
-                                repo_url = repo_url.replace(
-                                    "https://", f"https://{token}@"
-                                )
-                            elif "gitlab" in repo_url or tracker_type == "gitlab":
-                                repo_url = repo_url.replace(
-                                    "https://", f"https://gitlab-ci-token:{token}@"
-                                )
-                            self.logger.info(
-                                f"Injected token into manually specified URL (tracker type: {tracker_type})"
+                    else:
+                        # Fallback: try to get token from trigger project's tracker
+                        trigger_project_id = execution_context.get("trigger_project_id")
+                        if trigger_project_id:
+                            token, tracker_type = self._get_token_from_project(
+                                trigger_project_id, execution_context.get("account_id")
                             )
+
+                    if token:
+                        # Inject token into URL
+                        if "github.com" in repo_url or tracker_type == "github":
+                            repo_url = repo_url.replace("https://", f"https://{token}@")
+                            self.logger.info("Injected GitHub token into URL")
+                        elif "gitlab" in repo_url.lower() or tracker_type == "gitlab":
+                            repo_url = repo_url.replace(
+                                "https://", f"https://gitlab-ci-token:{token}@"
+                            )
+                            self.logger.info("Injected GitLab token into URL")
+                        else:
+                            self.logger.warning(
+                                f"Could not determine tracker type for token injection. "
+                                f"URL: {repo_url[:50]}..., tracker_type: {tracker_type}"
+                            )
+                    else:
+                        self.logger.warning(
+                            "No token available to inject into repository URL. "
+                            "Clone may fail if the repository is private."
+                        )
 
                 # Get clone path - if it starts with /, use as-is (absolute), otherwise make it relative to /workspace
                 clone_path = repo_config.get("clone_path", f"/workspace-{idx + 1}")
@@ -1855,23 +1873,85 @@ MREOF
             )
             return None
 
-    def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
-        """Extract repository URL from trigger event data."""
+    def _get_token_from_project(
+        self, project_id: str, account_id: str
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Get the API token and tracker type from a project's tracker.
+
+        Args:
+            project_id: Project ID
+            account_id: Account ID
+
+        Returns:
+            Tuple of (token, tracker_type) or (None, None) if not found
+        """
         try:
+            from preloop.models.crud import crud_project, crud_tracker
+            from preloop.models.db.session import get_db_session
+
+            db = next(get_db_session())
+            try:
+                project = crud_project.get(db, id=str(project_id))
+                if not project:
+                    return None, None
+
+                organization = project.organization
+                if not organization:
+                    return None, None
+
+                tracker = crud_tracker.get(db, id=organization.tracker_id)
+                if not tracker or not tracker.api_key:
+                    return None, None
+
+                return tracker.api_key, tracker.tracker_type.lower()
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            self.logger.warning(f"Error getting token from project {project_id}: {e}")
+            return None, None
+
+    def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
+        """Extract repository URL from trigger event data.
+
+        The trigger_data structure can be:
+        - {"payload": {"repository": {...}}} for GitHub webhooks
+        - {"payload": {"project": {...}}} for GitLab webhooks
+        - {"repository": {...}} if payload is at top level
+        """
+        try:
+            # Check if the actual payload is nested under "payload" key
+            payload = trigger_data.get("payload", trigger_data)
+            if not isinstance(payload, dict):
+                self.logger.debug(f"Payload is not a dict: {type(payload)}")
+                return ""
+
             # GitHub structure
-            if "repository" in trigger_data:
-                repo = trigger_data["repository"]
+            if "repository" in payload:
+                repo = payload["repository"]
                 if isinstance(repo, dict):
-                    return repo.get("clone_url") or repo.get("html_url") or ""
+                    url = repo.get("clone_url") or repo.get("html_url") or ""
+                    if url:
+                        self.logger.info(f"Found GitHub repo URL in trigger: {url}")
+                    return url
 
             # GitLab structure
-            if "project" in trigger_data:
-                project = trigger_data["project"]
+            if "project" in payload:
+                project = payload["project"]
                 if isinstance(project, dict):
-                    return (
+                    url = (
                         project.get("http_url_to_repo") or project.get("web_url") or ""
                     )
+                    if url:
+                        self.logger.info(f"Found GitLab repo URL in trigger: {url}")
+                    return url
 
+            self.logger.debug(
+                f"No repository/project found in trigger data. "
+                f"Top-level keys: {list(trigger_data.keys())}, "
+                f"Payload keys: {list(payload.keys()) if isinstance(payload, dict) else 'N/A'}"
+            )
             return ""
         except Exception as e:
             self.logger.error(f"Error extracting repo URL from trigger: {e}")
