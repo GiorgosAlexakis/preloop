@@ -139,9 +139,6 @@ class FlowExecutionOrchestrator:
             return self._tracker_client
 
         try:
-            # We need project info from the trigger event
-            payload = self.trigger_event_data.get("payload", {})
-
             # Get project from trigger_project_id on the flow
             if self.flow and self.flow.trigger_project_id:
                 from preloop.models.crud import crud_project
@@ -212,12 +209,23 @@ class FlowExecutionOrchestrator:
             # Build the target URL for the execution
             target_url = None
             if self.execution_log:
-                # Construct URL to the execution details page
-                # This would be the frontend URL - we'll use a relative path
-                # that can be resolved by the frontend
-                target_url = (
-                    f"/console/flows/{self.flow_id}/executions/{self.execution_log.id}"
+                # Construct absolute URL to the execution details page
+                # GitHub/GitLab require absolute URLs for commit status links
+                from preloop.core.config import settings
+
+                base_url = getattr(settings, "preloop_url", None) or getattr(
+                    settings, "PRELOOP_URL", None
                 )
+                if base_url:
+                    # Remove trailing slash if present
+                    base_url = base_url.rstrip("/")
+                    target_url = f"{base_url}/console/flows/{self.flow_id}/executions/{self.execution_log.id}"
+                else:
+                    # Fallback to relative path if no base URL configured
+                    logger.warning(
+                        "PRELOOP_URL not configured, commit status will have relative URL"
+                    )
+                    target_url = f"/console/flows/{self.flow_id}/executions/{self.execution_log.id}"
 
             await tracker_client.create_commit_status(
                 sha=self._commit_sha,
