@@ -17,9 +17,10 @@ Preloop acts as an MCP proxy and can be integrated in existing workflows without
 - **Event-Driven Automation**: AI agents respond to events across your tools automatically
 - **Human-in-the-Loop Safety**: Intercept sensitive operations and route for human approval
 - **MCP Server**: Standards-based Model Context Protocol (MCP) server
-  - 10 built-in tools for issue and PR/MR management:
+  - 11 built-in tools for issue and PR/MR management:
     - **Issues**: get_issue, create_issue, update_issue, search, estimate_compliance, improve_compliance
-    - **Pull Requests/Merge Requests**: get_pull_request, update_pull_request, add_comment, update_comment
+    - **Pull Requests/Merge Requests**: get_pull_request, update_pull_request, create_pull_request, add_comment, update_comment
+  - Full GitHub and GitLab support including reviews, inline comments, reactions, and thread resolution
   - JWT authentication with per-user tool visibility
   - StreamableHTTP transport for Claude Code and other MCP clients
 - **Tool Management**: Configure and manage tool access

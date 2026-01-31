@@ -290,7 +290,7 @@ BUILTIN_TOOLS = [
     },
     {
         "name": "update_pull_request",
-        "description": "Update a pull request's metadata and/or submit a review. To update PR properties: provide title, description, labels, etc. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback.",
+        "description": "Update a pull request's metadata, submit a review, and/or manage reactions. To update PR properties: provide title, description, labels, state, assignees, reviewers, draft. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback. To add/remove reactions: use add_reaction or remove_reaction with emoji names.",
         "source": "builtin",
         "requires_tracker": True,
         "required_tracker_types": ["github", "gitlab"],
@@ -339,7 +339,15 @@ BUILTIN_TOOLS = [
                 "review_comments": {
                     "type": "array",
                     "items": {"type": "object"},
-                    "description": "Inline comments: [{path, line, body, side}]",
+                    "description": "Inline comments: [{path, line, body, side}]. Each comment requires path, line, and body.",
+                },
+                "add_reaction": {
+                    "type": "string",
+                    "description": "Add a reaction emoji. GitHub: +1, -1, laugh, confused, heart, hooray, rocket, eyes. GitLab: thumbsup, thumbsdown, smile, eyes, rocket, etc.",
+                },
+                "remove_reaction": {
+                    "type": "string",
+                    "description": "Remove a reaction emoji (same names as add_reaction)",
                 },
             },
             "required": ["pull_request"],
