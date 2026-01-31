@@ -608,24 +608,102 @@ class TestApplyPresetUpdateToFlow:
             apply_preset_update_to_flow(mock_db, flow_id)
 
     @patch("preloop.services.flow_presets_service.crud_flow")
-    def test_applies_update_successfully(self, mock_crud):
-        """Test that preset update is applied correctly."""
+    def test_raises_error_if_source_is_not_preset(self, mock_crud):
+        """Test that error is raised if source flow is not a preset."""
         mock_db = MagicMock(spec=Session)
         flow_id = uuid.uuid4()
         preset_id = uuid.uuid4()
 
         mock_flow = MagicMock()
+        mock_flow.source_preset_id = preset_id
+        mock_flow.account_id = uuid.uuid4()
+
+        mock_not_preset = MagicMock()
+        mock_not_preset.id = preset_id
+        mock_not_preset.is_preset = False  # Not a preset
+        mock_not_preset.account_id = None
+
+        mock_crud.get.side_effect = [mock_flow, mock_not_preset]
+
+        with pytest.raises(ValueError, match="is not a preset"):
+            apply_preset_update_to_flow(mock_db, flow_id)
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_raises_error_if_preset_from_different_account(self, mock_crud):
+        """Test that error is raised if preset belongs to different account."""
+        mock_db = MagicMock(spec=Session)
+        flow_id = uuid.uuid4()
+        preset_id = uuid.uuid4()
+        flow_account_id = uuid.uuid4()
+        preset_account_id = uuid.uuid4()  # Different account
+
+        mock_flow = MagicMock()
+        mock_flow.source_preset_id = preset_id
+        mock_flow.account_id = flow_account_id
+
+        mock_preset = MagicMock()
+        mock_preset.id = preset_id
+        mock_preset.is_preset = True
+        mock_preset.account_id = preset_account_id  # Different account
+
+        mock_crud.get.side_effect = [mock_flow, mock_preset]
+
+        with pytest.raises(ValueError, match="not accessible to this account"):
+            apply_preset_update_to_flow(mock_db, flow_id)
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_allows_same_account_preset(self, mock_crud):
+        """Test that preset from same account is allowed."""
+        mock_db = MagicMock(spec=Session)
+        flow_id = uuid.uuid4()
+        preset_id = uuid.uuid4()
+        account_id = uuid.uuid4()  # Same account for both
+
+        mock_flow = MagicMock()
         mock_flow.id = flow_id
         mock_flow.name = "Test Flow"
         mock_flow.source_preset_id = preset_id
+        mock_flow.account_id = account_id
+
+        mock_preset = MagicMock()
+        mock_preset.id = preset_id
+        mock_preset.prompt_template = "Updated prompt"
+        mock_preset.allowed_mcp_tools = ["tool"]
+        mock_preset.name = "Source Preset"
+        mock_preset.is_preset = True
+        mock_preset.account_id = account_id  # Same account
+
+        mock_crud.get.side_effect = [mock_flow, mock_preset]
+
+        result = apply_preset_update_to_flow(mock_db, flow_id)
+
+        assert result == mock_flow
+        mock_db.commit.assert_called_once()
+
+    @patch("preloop.services.flow_presets_service.crud_flow")
+    def test_applies_update_successfully(self, mock_crud):
+        """Test that preset update is applied correctly."""
+        mock_db = MagicMock(spec=Session)
+        flow_id = uuid.uuid4()
+        preset_id = uuid.uuid4()
+        account_id = uuid.uuid4()
+
+        mock_flow = MagicMock()
+        mock_flow.id = flow_id
+        mock_flow.name = "Test Flow"
+        mock_flow.source_preset_id = preset_id
+        mock_flow.account_id = account_id
         mock_flow.prompt_customized = True
         mock_flow.tools_customized = True
         mock_flow.preset_update_available = True
 
         mock_preset = MagicMock()
+        mock_preset.id = preset_id
         mock_preset.prompt_template = "Updated prompt"
         mock_preset.allowed_mcp_tools = ["new_tool"]
         mock_preset.name = "Source Preset"
+        mock_preset.is_preset = True
+        mock_preset.account_id = None  # Global preset
 
         mock_crud.get.side_effect = [mock_flow, mock_preset]
 
@@ -897,16 +975,21 @@ class TestApplyPresetUpdateToFlowEdgeCases:
         mock_db = MagicMock(spec=Session)
         flow_id = uuid.uuid4()
         preset_id = uuid.uuid4()
+        account_id = uuid.uuid4()
 
         mock_flow = MagicMock()
         mock_flow.id = flow_id
         mock_flow.name = "Test Flow"
         mock_flow.source_preset_id = preset_id
+        mock_flow.account_id = account_id
 
         mock_preset = MagicMock()
+        mock_preset.id = preset_id
         mock_preset.prompt_template = "Updated prompt"
         mock_preset.allowed_mcp_tools = None  # None instead of list
         mock_preset.name = "Source Preset"
+        mock_preset.is_preset = True
+        mock_preset.account_id = None  # Global preset
 
         mock_crud.get.side_effect = [mock_flow, mock_preset]
 
@@ -921,19 +1004,24 @@ class TestApplyPresetUpdateToFlowEdgeCases:
         mock_db = MagicMock(spec=Session)
         flow_id = uuid.uuid4()
         preset_id = uuid.uuid4()
+        account_id = uuid.uuid4()
 
         mock_flow = MagicMock()
         mock_flow.id = flow_id
         mock_flow.name = "Test Flow"
         mock_flow.source_preset_id = preset_id
+        mock_flow.account_id = account_id
         mock_flow.prompt_customized = True
         mock_flow.tools_customized = True
         mock_flow.preset_update_available = True
 
         mock_preset = MagicMock()
+        mock_preset.id = preset_id
         mock_preset.prompt_template = "Updated prompt"
         mock_preset.allowed_mcp_tools = ["tool"]
         mock_preset.name = "Source Preset"
+        mock_preset.is_preset = True
+        mock_preset.account_id = None  # Global preset
 
         mock_crud.get.side_effect = [mock_flow, mock_preset]
 
