@@ -2910,6 +2910,7 @@ class GitHubTracker(BaseTracker):
             reactions = response.json()
 
             # Get the authenticated user's login to only remove our own reactions
+            # This could be a user token or a GitHub App installation token
             authenticated_user = None
             try:
                 user_response = await client.get(
@@ -2921,6 +2922,26 @@ class GitHubTracker(BaseTracker):
                     user_data = user_response.json()
                     authenticated_user = user_data.get("login")
                     logger.debug(f"Authenticated as user: {authenticated_user}")
+                elif user_response.status_code == 403:
+                    # This might be a GitHub App installation token
+                    # Try to get the app info instead
+                    logger.debug(
+                        "GET /user returned 403, trying GET /app for GitHub App auth"
+                    )
+                    app_response = await client.get(
+                        f"{self.API_BASE_URL}/app",
+                        headers=headers,
+                        timeout=10.0,
+                    )
+                    if app_response.status_code == HTTP_STATUS_OK:
+                        app_data = app_response.json()
+                        app_slug = app_data.get("slug")
+                        if app_slug:
+                            # GitHub App bot username is {slug}[bot]
+                            authenticated_user = f"{app_slug}[bot]"
+                            logger.debug(
+                                f"Authenticated as GitHub App bot: {authenticated_user}"
+                            )
             except Exception as e:
                 logger.warning(f"Could not get authenticated user: {e}")
 

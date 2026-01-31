@@ -2373,6 +2373,89 @@ async def test_update_pull_request_gitlab_assignee_warning(
 
 
 @pytest.mark.asyncio
+async def test_update_pull_request_gitlab_empty_list_clears_assignees_reviewers(
+    db_session: Session, test_user: User
+):
+    """
+    Tests that passing empty lists for assignees/reviewers clears them on GitLab MRs.
+    This is distinct from passing None (which means "don't change").
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="gitlab",
+        api_key="test_key",
+        url="https://gitlab.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="group/project",
+        identifier="group/project",
+        slug="group/project",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("preloop.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "preloop.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "preloop.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "gitlab"
+        mock_tracker.update_merge_request = AsyncMock(
+            return_value={
+                "id": 999,
+                "url": "https://gitlab.com/group/project/-/merge_requests/10",
+            }
+        )
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.update_pull_request(
+            pull_request="group/project#10",
+            title="Updated Title",
+            assignees=[],  # Empty list should clear assignees
+            reviewers=[],  # Empty list should clear reviewers
+        )
+
+    assert response.status == "updated"
+
+    # Verify that update_merge_request was called with empty lists (not None)
+    mock_tracker.update_merge_request.assert_called_once()
+    call_kwargs = mock_tracker.update_merge_request.call_args.kwargs
+
+    # Empty lists should be passed through, not converted to None
+    assert call_kwargs.get("assignee_ids") == [], (
+        "Empty assignees list should pass empty list to update_merge_request"
+    )
+    assert call_kwargs.get("reviewer_ids") == [], (
+        "Empty reviewers list should pass empty list to update_merge_request"
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_pull_request_comment_without_content_gitlab(
     db_session: Session, test_user: User
 ):

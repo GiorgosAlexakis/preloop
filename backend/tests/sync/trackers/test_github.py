@@ -1156,3 +1156,123 @@ class TestGitHubTrackerTokenValidation(unittest.IsolatedAsyncioTestCase):
             any("not an admin" in w for w in result["warnings"]),
             "Should warn that user is not an admin",
         )
+
+
+@pytest.mark.asyncio
+class TestGitHubTrackerReactions(unittest.IsolatedAsyncioTestCase):
+    """Tests for reaction add/remove functionality."""
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_with_user_auth(self, mock_client_class):
+        """Test removing a reaction with user token auth."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 123, "content": "eyes", "user": {"login": "testuser"}},
+            {"id": 456, "content": "eyes", "user": {"login": "otheruser"}},
+        ]
+
+        user_response = MagicMock()
+        user_response.status_code = 200
+        user_response.json.return_value = {"login": "testuser"}
+
+        delete_response = MagicMock()
+        delete_response.status_code = 204
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response]
+        mock_client.delete.return_value = delete_response
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker with owner/repo
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should delete the reaction owned by testuser (id 123), not otheruser
+        self.assertTrue(result)
+        mock_client.delete.assert_called_once()
+        delete_call = mock_client.delete.call_args
+        self.assertIn("/reactions/123", delete_call[0][0])
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_with_app_auth(self, mock_client_class):
+        """Test removing a reaction with GitHub App installation token."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 789, "content": "eyes", "user": {"login": "my-app[bot]"}},
+            {"id": 456, "content": "eyes", "user": {"login": "humanuser"}},
+        ]
+
+        # GET /user returns 403 for app tokens
+        user_response = MagicMock()
+        user_response.status_code = 403
+
+        # GET /app returns app info
+        app_response = MagicMock()
+        app_response.status_code = 200
+        app_response.json.return_value = {"slug": "my-app", "name": "My App"}
+
+        delete_response = MagicMock()
+        delete_response.status_code = 204
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response, app_response]
+        mock_client.delete.return_value = delete_response
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker with owner/repo
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should delete the reaction owned by my-app[bot] (id 789)
+        self.assertTrue(result)
+        mock_client.delete.assert_called_once()
+        delete_call = mock_client.delete.call_args
+        self.assertIn("/reactions/789", delete_call[0][0])
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_refuses_without_auth(self, mock_client_class):
+        """Test that reaction removal refuses when auth cannot be determined."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 123, "content": "eyes", "user": {"login": "someuser"}},
+        ]
+
+        # GET /user fails
+        user_response = MagicMock()
+        user_response.status_code = 401
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker with owner/repo
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should return False and not attempt to delete
+        self.assertFalse(result)
+        mock_client.delete.assert_not_called()
