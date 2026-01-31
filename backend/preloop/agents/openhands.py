@@ -384,6 +384,11 @@ class OpenHandsAgent(ContainerAgentExecutor):
                                 "https://", f"https://gitlab-ci-token:{token}@"
                             )
                             self.logger.info("Injected GitLab token into URL")
+                        else:
+                            self.logger.warning(
+                                f"Could not determine tracker type for token injection. "
+                                f"URL: {repo_url[:50]}..., tracker_type: {tracker_type}"
+                            )
                     else:
                         self.logger.warning(
                             "No token available for repository URL. "
