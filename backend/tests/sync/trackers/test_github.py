@@ -1319,3 +1319,109 @@ class TestGitHubTrackerReactions(unittest.IsolatedAsyncioTestCase):
         # Should return False and not attempt to delete
         self.assertFalse(result)
         mock_client.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+class TestGitHubTrackerPullRequestUpdates(unittest.IsolatedAsyncioTestCase):
+    """Tests for PR update functionality including assignees/reviewers."""
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_update_pull_request_empty_assignees_clears_all(
+        self, mock_client_class
+    ):
+        """Test that assignees=[] removes all existing assignees."""
+        from unittest.mock import AsyncMock
+
+        # PR data with existing assignees
+        pr_data = {
+            "id": 123,
+            "number": 42,
+            "title": "Test PR",
+            "body": "Description",
+            "state": "open",
+            "html_url": "https://github.com/owner/repo/pull/42",
+            "draft": False,
+            "assignees": [{"login": "user1"}, {"login": "user2"}],
+            "requested_reviewers": [],
+        }
+
+        patch_response = MagicMock()
+        patch_response.status_code = 200
+        patch_response.json.return_value = pr_data
+
+        delete_response = MagicMock()
+        delete_response.status_code = 200
+        delete_response.json.return_value = {}
+
+        mock_client = AsyncMock()
+        # PATCH for PR update, DELETE for clearing assignees
+        mock_client.request.side_effect = [patch_response, delete_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        await tracker.update_pull_request(pr_identifier="42", assignees=[])
+
+        # Verify DELETE was called with existing assignees
+        calls = mock_client.request.call_args_list
+        self.assertEqual(len(calls), 2)
+
+        # Second call should be DELETE for assignees
+        delete_call = calls[1]
+        self.assertEqual(delete_call[0][0], "DELETE")
+        self.assertIn("/assignees", delete_call[0][1])
+        self.assertEqual(delete_call[1]["json"]["assignees"], ["user1", "user2"])
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_update_pull_request_empty_reviewers_clears_all(
+        self, mock_client_class
+    ):
+        """Test that reviewers=[] removes all existing reviewers."""
+        from unittest.mock import AsyncMock
+
+        # PR data with existing reviewers
+        pr_data = {
+            "id": 123,
+            "number": 42,
+            "title": "Test PR",
+            "body": "Description",
+            "state": "open",
+            "html_url": "https://github.com/owner/repo/pull/42",
+            "draft": False,
+            "assignees": [],
+            "requested_reviewers": [{"login": "reviewer1"}, {"login": "reviewer2"}],
+        }
+
+        patch_response = MagicMock()
+        patch_response.status_code = 200
+        patch_response.json.return_value = pr_data
+
+        delete_response = MagicMock()
+        delete_response.status_code = 200
+        delete_response.json.return_value = {}
+
+        mock_client = AsyncMock()
+        mock_client.request.side_effect = [patch_response, delete_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        await tracker.update_pull_request(pr_identifier="42", reviewers=[])
+
+        # Verify DELETE was called with existing reviewers
+        calls = mock_client.request.call_args_list
+        self.assertEqual(len(calls), 2)
+
+        # Second call should be DELETE for reviewers
+        delete_call = calls[1]
+        self.assertEqual(delete_call[0][0], "DELETE")
+        self.assertIn("/requested_reviewers", delete_call[0][1])
+        self.assertEqual(
+            delete_call[1]["json"]["reviewers"], ["reviewer1", "reviewer2"]
+        )

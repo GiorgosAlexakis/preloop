@@ -2048,20 +2048,82 @@ class GitHubTracker(BaseTracker):
             pr_data = await self._request("PATCH", pr_path, data=update_data)
 
             # Update assignees if provided
+            # Note: GitHub's POST endpoint only adds assignees, it doesn't replace.
+            # To clear or replace assignees, we need to remove existing ones first.
             if assignees is not None:
                 assignees_path = f"/repos/{owner}/{repo}/issues/{pr_number}/assignees"
-                await self._request(
-                    "POST", assignees_path, data={"assignees": assignees}
-                )
+                if len(assignees) == 0:
+                    # Clear all assignees: get current assignees and remove them
+                    current_assignees = [
+                        a["login"] for a in pr_data.get("assignees", [])
+                    ]
+                    if current_assignees:
+                        await self._request(
+                            "DELETE",
+                            assignees_path,
+                            data={"assignees": current_assignees},
+                        )
+                        logger.info(
+                            f"Cleared {len(current_assignees)} assignees from PR {pr_number}"
+                        )
+                else:
+                    # First remove existing assignees, then add new ones
+                    # This ensures we replace rather than just add
+                    current_assignees = [
+                        a["login"] for a in pr_data.get("assignees", [])
+                    ]
+                    assignees_to_remove = [
+                        a for a in current_assignees if a not in assignees
+                    ]
+                    if assignees_to_remove:
+                        await self._request(
+                            "DELETE",
+                            assignees_path,
+                            data={"assignees": assignees_to_remove},
+                        )
+                    # Add the new assignees
+                    await self._request(
+                        "POST", assignees_path, data={"assignees": assignees}
+                    )
 
             # Update reviewers if provided
+            # Note: GitHub's POST endpoint only adds reviewers, it doesn't replace.
             if reviewers is not None:
                 reviewers_path = (
                     f"/repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers"
                 )
-                await self._request(
-                    "POST", reviewers_path, data={"reviewers": reviewers}
-                )
+                if len(reviewers) == 0:
+                    # Clear all reviewers: get current reviewers and remove them
+                    current_reviewers = [
+                        r["login"] for r in pr_data.get("requested_reviewers", [])
+                    ]
+                    if current_reviewers:
+                        await self._request(
+                            "DELETE",
+                            reviewers_path,
+                            data={"reviewers": current_reviewers},
+                        )
+                        logger.info(
+                            f"Cleared {len(current_reviewers)} reviewers from PR {pr_number}"
+                        )
+                else:
+                    # First remove existing reviewers not in the new list
+                    current_reviewers = [
+                        r["login"] for r in pr_data.get("requested_reviewers", [])
+                    ]
+                    reviewers_to_remove = [
+                        r for r in current_reviewers if r not in reviewers
+                    ]
+                    if reviewers_to_remove:
+                        await self._request(
+                            "DELETE",
+                            reviewers_path,
+                            data={"reviewers": reviewers_to_remove},
+                        )
+                    # Add the new reviewers
+                    await self._request(
+                        "POST", reviewers_path, data={"reviewers": reviewers}
+                    )
 
             # Update labels if provided
             if labels is not None:
