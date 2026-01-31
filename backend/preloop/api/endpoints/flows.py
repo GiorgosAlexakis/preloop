@@ -60,18 +60,40 @@ def create_flow(
         flow_in.trigger_event_source = "webhook"
         flow_in.trigger_event_type = "webhook"
 
-    # If creating from a preset, compute source hashes for template tracking
+    # If creating from a preset, validate and compute source hashes for template tracking
     if flow_in.source_preset_id:
         preset = crud_flow.get(db=db, id=flow_in.source_preset_id)
-        if preset and preset.is_preset:
-            # Compute hashes of the preset's current prompt and tools
-            flow_in.source_prompt_hash = compute_content_hash(preset.prompt_template)
-            flow_in.source_tools_hash = compute_content_hash(
-                preset.allowed_mcp_tools or []
+
+        # Security: Validate the source is a valid, accessible preset
+        if not preset:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source preset {flow_in.source_preset_id} not found",
             )
-            flow_in.prompt_customized = False
-            flow_in.tools_customized = False
-            flow_in.preset_update_available = False
+
+        if not preset.is_preset:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source flow {flow_in.source_preset_id} is not a preset. "
+                "Only preset flows can be used as a source.",
+            )
+
+        # Security: Preset must be global (account_id is None) or belong to the user's account
+        if (
+            preset.account_id is not None
+            and preset.account_id != current_user.account_id
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot create flow from a preset belonging to another account",
+            )
+
+        # Compute hashes of the preset's current prompt and tools
+        flow_in.source_prompt_hash = compute_content_hash(preset.prompt_template)
+        flow_in.source_tools_hash = compute_content_hash(preset.allowed_mcp_tools or [])
+        flow_in.prompt_customized = False
+        flow_in.tools_customized = False
+        flow_in.preset_update_available = False
 
     flow = crud_flow.create(db=db, flow_in=flow_in, account_id=current_user.account_id)
     return flow
@@ -607,6 +629,17 @@ def update_flow(
     flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
+
+    # Security: Prevent modifying source_preset_id during update
+    # The preset link should only be set during creation (via clone_preset or create)
+    # Allowing arbitrary changes could let users pull content from other accounts' flows
+    if hasattr(flow_in, "source_preset_id") and flow_in.source_preset_id is not None:
+        if str(flow_in.source_preset_id) != str(flow.source_preset_id or ""):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot change source_preset_id after flow creation. "
+                "Use the 'Apply Preset Update' action instead.",
+            )
 
     # Check for name uniqueness if name is being changed
     # Note: We intentionally allow flows to have the same name as global presets

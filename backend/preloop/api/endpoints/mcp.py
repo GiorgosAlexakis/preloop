@@ -1747,6 +1747,9 @@ async def update_pull_request(
                 "along with review_comments.",
             )
 
+        # Track GitLab-specific limitations encountered during the request
+        gitlab_warnings: list[str] = []
+
         # Handle review action if provided
         if review_action:
             review_action_lower = review_action.lower()
@@ -1799,12 +1802,18 @@ async def update_pull_request(
                                 "Each comment must have 'path', 'line', and 'body'.",
                             )
 
+                # GitHub COMMENT reviews require a non-empty body
+                # If review_comments are provided without a body, use a default
+                effective_body = review_body or ""
+                if event == "COMMENT" and not effective_body and review_comments:
+                    effective_body = "Inline comments"
+
                 logger.info(
                     f"Submitting GitHub review for PR {pr_number} with action {event}"
                 )
                 review_result = await tracker_client.submit_pull_request_review(
                     pr_number=pr_number,
-                    body=review_body or "",
+                    body=effective_body,
                     event=event,
                     comments=review_comments,
                 )
@@ -1904,7 +1913,6 @@ async def update_pull_request(
             x is not None
             for x in [title, description, state, assignees, reviewers, labels, draft]
         )
-        gitlab_warnings = []  # Track any GitLab-specific limitations
 
         if has_updates:
             if platform == "github":
@@ -1935,7 +1943,6 @@ async def update_pull_request(
                         state_event = "reopen"
 
                 # Look up user IDs for assignees/reviewers
-                gitlab_warnings = []
                 assignee_ids = None
                 reviewer_ids = None
 

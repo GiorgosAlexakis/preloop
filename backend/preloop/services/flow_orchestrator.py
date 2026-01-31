@@ -445,7 +445,8 @@ class FlowExecutionOrchestrator:
                     # Truncate line with some extra margin
                     max_line_len = max(1000, len(line) - excess - 1000)
                     truncated_payload["line"] = (
-                        line[:max_line_len] + f"\n... [truncated {len(line) - max_line_len} chars]"
+                        line[:max_line_len]
+                        + f"\n... [truncated {len(line) - max_line_len} chars]"
                     )
                     truncated_payload["truncated"] = True
                     message["payload"] = truncated_payload

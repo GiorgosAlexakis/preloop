@@ -370,6 +370,28 @@ def apply_preset_update_to_flow(db: Session, flow_id: UUID) -> Flow:
     if not preset:
         raise ValueError(f"Source preset {flow.source_preset_id} not found")
 
+    # Security: Verify the source is actually a preset (not an arbitrary flow)
+    if not preset.is_preset:
+        logger.warning(
+            f"Security: Flow {flow_id} has source_preset_id={flow.source_preset_id} "
+            f"which is not a preset (is_preset=False). Refusing to apply."
+        )
+        raise ValueError(
+            f"Source flow {flow.source_preset_id} is not a preset. "
+            "Cannot apply updates from non-preset flows."
+        )
+
+    # Security: Verify the preset is accessible to this flow's account
+    # Presets must be either global (account_id is None) or belong to the same account
+    if preset.account_id is not None and preset.account_id != flow.account_id:
+        logger.warning(
+            f"Security: Flow {flow_id} (account={flow.account_id}) attempted to apply "
+            f"preset {preset.id} (account={preset.account_id}). Access denied."
+        )
+        raise ValueError(
+            f"Preset {flow.source_preset_id} is not accessible to this account."
+        )
+
     # Update flow with preset content
     flow.prompt_template = preset.prompt_template
     flow.allowed_mcp_tools = preset.allowed_mcp_tools
