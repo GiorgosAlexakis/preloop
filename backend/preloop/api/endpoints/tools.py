@@ -230,7 +230,7 @@ BUILTIN_TOOLS = [
     },
     {
         "name": "update_comment",
-        "description": "Update or resolve an existing review comment on a pull request or merge request. Only supports inline review comments (not issue comments or PR conversation comments). To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false with thread_id. Both can be done in a single call.",
+        "description": "Update or resolve an existing comment on a pull request or merge request. Supports both inline review comments and PR conversation comments (issue comments). To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false (only works for review_comment type). Use comment_type to specify the comment type, or omit to auto-detect.",
         "source": "builtin",
         "requires_tracker": True,
         "required_tracker_types": ["github", "gitlab"],
@@ -243,7 +243,7 @@ BUILTIN_TOOLS = [
                 },
                 "comment_id": {
                     "type": "string",
-                    "description": "ID of the review comment to update (must be a review/inline comment, not an issue comment)",
+                    "description": "ID of the comment to update",
                 },
                 "body": {
                     "type": "string",
@@ -251,11 +251,16 @@ BUILTIN_TOOLS = [
                 },
                 "resolved": {
                     "type": "boolean",
-                    "description": "Resolve or unresolve the thread",
+                    "description": "Resolve or unresolve the thread (only works for review_comment type)",
                 },
                 "thread_id": {
                     "type": "string",
-                    "description": "Thread/discussion ID for resolution. For GitHub: the review thread node_id (e.g., 'PRRT_...'). For GitLab: the discussion ID. Required when using resolved parameter.",
+                    "description": "Thread/discussion ID for resolution. For GitHub: the review thread node_id (e.g., 'PRRT_...'). For GitLab: the discussion ID.",
+                },
+                "comment_type": {
+                    "type": "string",
+                    "enum": ["review_comment", "issue_comment"],
+                    "description": "Type of comment: 'review_comment' for inline code review comments, 'issue_comment' for PR conversation comments. If omitted, tries review_comment first then issue_comment. Tip: get_pull_request includes 'type' field for each comment.",
                 },
             },
             "required": ["target", "comment_id"],

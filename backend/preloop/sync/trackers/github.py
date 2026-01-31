@@ -2531,6 +2531,56 @@ class GitHubTracker(BaseTracker):
             raise TrackerResponseError(f"Failed to update review comment: {e}")
 
     @async_retry()
+    async def update_issue_comment(
+        self,
+        comment_id: str,
+        body: str,
+    ) -> Dict[str, Any]:
+        """
+        Update the body of an existing issue comment (PR conversation comment).
+
+        This is for comments on the PR's "Conversation" tab, not inline code review
+        comments. In GitHub's API, these are accessed via the issues endpoint even
+        for pull requests.
+
+        Args:
+            comment_id: The comment ID to update.
+            body: New comment body.
+
+        Returns:
+            Dict with updated comment details.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        try:
+            comment_path = f"/repos/{owner}/{repo}/issues/comments/{comment_id}"
+            payload = {"body": body}
+            comment_data = await self._request("PATCH", comment_path, data=payload)
+
+            return {
+                "id": str(comment_data["id"]),
+                "node_id": comment_data.get("node_id"),
+                "author": comment_data["user"]["login"],
+                "body": comment_data["body"],
+                "created_at": comment_data["created_at"],
+                "updated_at": comment_data["updated_at"],
+                "html_url": comment_data.get("html_url"),
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating issue comment {comment_id}: {e}")
+            raise TrackerResponseError(f"Failed to update issue comment: {e}")
+
+    @async_retry()
     async def reply_to_review_comment(
         self,
         pr_number: str,

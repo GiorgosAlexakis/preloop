@@ -2405,6 +2405,7 @@ async def update_comment(
     body: Optional[str] = None,
     resolved: Optional[bool] = None,
     thread_id: Optional[str] = None,
+    comment_type: Optional[Literal["review_comment", "issue_comment"]] = None,
 ) -> "UpdateCommentResponse":
     """
     Handles the 'update_comment' tool call.
@@ -2412,20 +2413,27 @@ async def update_comment(
     Updates or resolves a comment on a pull request or merge request.
     Works with both GitHub review comments and GitLab MR notes.
 
-    Note: This tool only supports PR/MR review comments, not general issue comments.
-    For GitHub, this updates inline review comments (not PR conversation comments).
-    For GitLab, this updates MR discussion notes.
+    Supports two types of GitHub comments:
+    - review_comment: Inline code review comments (on specific lines of code)
+    - issue_comment: PR conversation comments (general discussion)
+
+    For GitLab, this updates MR discussion notes (both inline and general).
 
     Args:
         target: PR/MR identifier (URL, slug, or number). Issue URLs are not supported.
-        comment_id: The review comment/note ID to update (used for body updates).
-            For GitHub: Must be a review comment ID (from review threads), not an issue comment ID.
+        comment_id: The comment ID to update.
         body: New body text for the comment (optional).
         resolved: Whether to resolve/unresolve the comment thread (optional).
+            Note: Thread resolution only works for review_comment types on GitHub.
         thread_id: The thread/discussion ID for resolution (optional).
             For GitHub: The review thread node_id (e.g., "PRRT_...").
             For GitLab: The discussion ID.
             If not provided, comment_id is used for resolution (may fail if wrong ID type).
+        comment_type: Type of comment being updated (optional).
+            For GitHub: "review_comment" for inline code comments,
+                       "issue_comment" for PR conversation comments.
+            If not provided, attempts review_comment first, then issue_comment.
+            Tip: The get_pull_request response includes a "type" field for each comment.
 
     Returns:
         UpdateCommentResponse with update status.
@@ -2531,31 +2539,97 @@ async def update_comment(
         actions_taken = []
 
         if platform == "github":
+            # Track which comment type was actually used for logging
+            actual_comment_type = None
+
             # Update comment body if provided
             if body is not None:
-                logger.info(f"Updating GitHub review comment {comment_id}")
-                try:
-                    update_result = await tracker_client.update_review_comment(
-                        comment_id=comment_id,
-                        body=body,
-                    )
-                    result_url = update_result.get("html_url")
-                    actions_taken.append("body updated")
-                    logger.info(f"Successfully updated review comment {comment_id}")
-                except Exception as e:
-                    error_msg = str(e)
-                    # Check if this is a 404 - likely means it's an issue comment, not a review comment
-                    if "404" in error_msg or "Not Found" in error_msg:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Comment {comment_id} not found as a review comment. "
-                            "This tool only supports PR inline review comments. "
-                            "Issue comments and PR conversation comments are not supported.",
+                # If comment_type is specified, use only that API
+                # If not specified, try review_comment first, then issue_comment
+                if comment_type == "issue_comment":
+                    # Directly use issue comment API
+                    logger.info(f"Updating GitHub issue comment {comment_id}")
+                    try:
+                        update_result = await tracker_client.update_issue_comment(
+                            comment_id=comment_id,
+                            body=body,
                         )
-                    raise
+                        result_url = update_result.get("html_url")
+                        actions_taken.append("body updated")
+                        actual_comment_type = "issue_comment"
+                        logger.info(f"Successfully updated issue comment {comment_id}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        if "404" in error_msg or "Not Found" in error_msg:
+                            raise HTTPException(
+                                status_code=404,
+                                detail=f"Issue comment {comment_id} not found.",
+                            )
+                        raise
+                else:
+                    # Try review_comment first
+                    logger.info(f"Updating GitHub review comment {comment_id}")
+                    try:
+                        update_result = await tracker_client.update_review_comment(
+                            comment_id=comment_id,
+                            body=body,
+                        )
+                        result_url = update_result.get("html_url")
+                        actions_taken.append("body updated")
+                        actual_comment_type = "review_comment"
+                        logger.info(f"Successfully updated review comment {comment_id}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Check if this is a 404 - might be an issue comment
+                        if "404" in error_msg or "Not Found" in error_msg:
+                            if comment_type == "review_comment":
+                                # User explicitly specified review_comment, don't try fallback
+                                raise HTTPException(
+                                    status_code=404,
+                                    detail=f"Review comment {comment_id} not found.",
+                                )
+                            # Try issue_comment as fallback
+                            logger.info(
+                                f"Review comment {comment_id} not found, "
+                                "trying as issue comment"
+                            )
+                            try:
+                                update_result = (
+                                    await tracker_client.update_issue_comment(
+                                        comment_id=comment_id,
+                                        body=body,
+                                    )
+                                )
+                                result_url = update_result.get("html_url")
+                                actions_taken.append("body updated")
+                                actual_comment_type = "issue_comment"
+                                logger.info(
+                                    f"Successfully updated issue comment {comment_id}"
+                                )
+                            except Exception as e2:
+                                error_msg2 = str(e2)
+                                if "404" in error_msg2 or "Not Found" in error_msg2:
+                                    raise HTTPException(
+                                        status_code=404,
+                                        detail=f"Comment {comment_id} not found as either "
+                                        "a review comment or issue comment.",
+                                    )
+                                raise
+                        else:
+                            raise
 
             # Resolve/unresolve thread if requested
             if resolved is not None:
+                # Thread resolution only works for review comments, not issue comments
+                if comment_type == "issue_comment" or (
+                    body is not None and actual_comment_type == "issue_comment"
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Thread resolution is not supported for issue comments "
+                        "(PR conversation comments). Only inline review comments can be resolved.",
+                    )
+
                 # GitHub's resolve_review_thread requires the thread's GraphQL node_id
                 # (format: "PRRT_..."), not a comment ID (format: "PRRC_...").
                 if not thread_id:
