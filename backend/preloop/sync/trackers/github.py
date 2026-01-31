@@ -2174,13 +2174,29 @@ class GitHubTracker(BaseTracker):
                     if milestone.isdigit():
                         milestone_number = int(milestone)
                     else:
-                        # Search for milestone by title
+                        # Search for milestone by title with pagination
                         milestones_path = f"/repos/{owner}/{repo}/milestones"
-                        milestones = await self._request("GET", milestones_path)
-                        for m in milestones:
-                            if m["title"].lower() == milestone.lower():
-                                milestone_number = m["number"]
-                                break
+                        page = 1
+                        per_page = 100
+                        while milestone_number is None:
+                            milestones = await self._request(
+                                "GET",
+                                milestones_path,
+                                params={
+                                    "state": "all",
+                                    "page": page,
+                                    "per_page": per_page,
+                                },
+                            )
+                            if not milestones:
+                                break  # No more pages
+                            for m in milestones:
+                                if m["title"].lower() == milestone.lower():
+                                    milestone_number = m["number"]
+                                    break
+                            if len(milestones) < per_page:
+                                break  # Last page
+                            page += 1
 
                     if milestone_number:
                         issue_path = f"/repos/{owner}/{repo}/issues/{pr_number}"

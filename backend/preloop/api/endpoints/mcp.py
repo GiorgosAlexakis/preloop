@@ -1768,6 +1768,31 @@ async def update_pull_request(
                         "or review_comments to be provided.",
                     )
 
+                # Validate review_comments structure if provided
+                if review_comments:
+                    for idx, rc in enumerate(review_comments):
+                        if not isinstance(rc, dict):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] must be an object, "
+                                f"got {type(rc).__name__}",
+                            )
+                        missing_fields = []
+                        if "path" not in rc:
+                            missing_fields.append("path")
+                        if "body" not in rc:
+                            missing_fields.append("body")
+                        # line is required for inline comments
+                        if "line" not in rc:
+                            missing_fields.append("line")
+                        if missing_fields:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] is missing required "
+                                f"field(s): {', '.join(missing_fields)}. "
+                                "Each comment must have 'path', 'line', and 'body'.",
+                            )
+
                 logger.info(
                     f"Submitting GitHub review for PR {pr_number} with action {event}"
                 )
@@ -1829,13 +1854,36 @@ async def update_pull_request(
 
                 # Handle inline review comments for GitLab
                 if review_comments:
+                    # Validate review_comments structure
+                    for idx, comment in enumerate(review_comments):
+                        if not isinstance(comment, dict):
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] must be an object, "
+                                f"got {type(comment).__name__}",
+                            )
+                        missing_fields = []
+                        if "path" not in comment:
+                            missing_fields.append("path")
+                        if "body" not in comment:
+                            missing_fields.append("body")
+                        if "line" not in comment:
+                            missing_fields.append("line")
+                        if missing_fields:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"review_comments[{idx}] is missing required "
+                                f"field(s): {', '.join(missing_fields)}. "
+                                "Each comment must have 'path', 'line', and 'body'.",
+                            )
+
                     for comment in review_comments:
                         # For GitLab inline comments, we need position info
                         # which requires MR diff details - create basic discussion
                         await tracker_client.create_mr_discussion(
                             mr_iid=pr_number,
-                            body=f"**{comment.get('path')}:{comment.get('line')}**\n\n"
-                            f"{comment.get('body', '')}",
+                            body=f"**{comment['path']}:{comment['line']}**\n\n"
+                            f"{comment['body']}",
                         )
 
         # Handle PR/MR metadata updates
