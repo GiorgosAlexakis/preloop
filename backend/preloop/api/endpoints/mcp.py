@@ -1984,13 +1984,19 @@ async def update_pull_request(
                 logger.info(f"Successfully updated merge request {pr_number}")
 
         # Handle reactions
+        reaction_added = False
+        reaction_removed = False
+        reaction_errors = []
+
         if add_reaction or remove_reaction:
             if platform == "github":
                 # GitHub uses issue reactions API (PRs are issues)
                 # Reaction names: +1, -1, laugh, confused, heart, hooray, rocket, eyes
                 if add_reaction:
                     logger.info(
-                        f"Adding reaction '{add_reaction}' to GitHub PR {pr_number}"
+                        f"Adding reaction '{add_reaction}' to GitHub PR {pr_number} "
+                        f"(owner={tracker_client.connection_details.get('owner')}, "
+                        f"repo={tracker_client.connection_details.get('repo')})"
                     )
                     try:
                         await tracker_client.add_issue_reaction(
@@ -1998,8 +2004,11 @@ async def update_pull_request(
                             reaction=add_reaction,
                         )
                         logger.info(f"Successfully added reaction to PR {pr_number}")
+                        reaction_added = True
                     except Exception as e:
-                        logger.warning(f"Failed to add reaction: {e}")
+                        error_msg = f"Failed to add reaction '{add_reaction}': {e}"
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
 
                 if remove_reaction:
                     logger.info(
@@ -2013,8 +2022,13 @@ async def update_pull_request(
                         logger.info(
                             f"Successfully removed reaction from PR {pr_number}"
                         )
+                        reaction_removed = True
                     except Exception as e:
-                        logger.warning(f"Failed to remove reaction: {e}")
+                        error_msg = (
+                            f"Failed to remove reaction '{remove_reaction}': {e}"
+                        )
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
 
             else:  # GitLab
                 # GitLab uses award emoji API
@@ -2029,8 +2043,11 @@ async def update_pull_request(
                             emoji_name=add_reaction,
                         )
                         logger.info(f"Successfully added emoji to MR {pr_number}")
+                        reaction_added = True
                     except Exception as e:
-                        logger.warning(f"Failed to add emoji: {e}")
+                        error_msg = f"Failed to add emoji '{add_reaction}': {e}"
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
 
                 if remove_reaction:
                     logger.info(
@@ -2042,24 +2059,45 @@ async def update_pull_request(
                             emoji_name=remove_reaction,
                         )
                         logger.info(f"Successfully removed emoji from MR {pr_number}")
+                        reaction_removed = True
                     except Exception as e:
-                        logger.warning(f"Failed to remove emoji: {e}")
+                        error_msg = f"Failed to remove emoji '{remove_reaction}': {e}"
+                        logger.error(error_msg)
+                        reaction_errors.append(error_msg)
 
         # Build response message
         actions_taken = []
+        actions_failed = []
+
         if review_action:
             actions_taken.append(f"review ({review_action})")
         if has_updates:
             actions_taken.append("metadata update")
         if add_reaction:
-            actions_taken.append(f"added reaction ({add_reaction})")
+            if reaction_added:
+                actions_taken.append(f"added reaction ({add_reaction})")
+            else:
+                actions_failed.append(f"add reaction ({add_reaction})")
         if remove_reaction:
-            actions_taken.append(f"removed reaction ({remove_reaction})")
+            if reaction_removed:
+                actions_taken.append(f"removed reaction ({remove_reaction})")
+            else:
+                actions_failed.append(f"remove reaction ({remove_reaction})")
 
-        message = (
-            f"Successfully performed {', '.join(actions_taken)} on "
-            f"{'PR' if platform == 'github' else 'MR'} {pr_number}"
-        )
+        # Build message based on what succeeded/failed
+        if actions_taken:
+            message = (
+                f"Successfully performed {', '.join(actions_taken)} on "
+                f"{'PR' if platform == 'github' else 'MR'} {pr_number}"
+            )
+        else:
+            message = f"No actions completed on {'PR' if platform == 'github' else 'MR'} {pr_number}"
+
+        if actions_failed:
+            message += f". FAILED: {', '.join(actions_failed)}"
+
+        if reaction_errors:
+            message += f". Errors: {'; '.join(reaction_errors)}"
 
         # Add warnings for GitLab limitations
         if gitlab_warnings:
@@ -2067,7 +2105,7 @@ async def update_pull_request(
 
         return UpdatePullRequestResponse(
             pull_request_id=str(result_id) if result_id else pr_number,
-            status="updated",
+            status="updated" if actions_taken else "failed",
             message=message,
             url=result_url,
         )

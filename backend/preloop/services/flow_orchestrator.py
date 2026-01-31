@@ -90,44 +90,68 @@ class FlowExecutionOrchestrator:
 
         # Ensure payload is a dict (could be a string in edge cases)
         if not isinstance(payload, dict):
+            logger.debug(f"Payload is not a dict: {type(payload)}")
             return None
 
         # Try common locations for commit SHA
         # GitHub push event
         if "head_commit" in payload:
-            return payload["head_commit"].get("id")
+            sha = payload["head_commit"].get("id")
+            if sha:
+                logger.debug(f"Found commit SHA in head_commit.id: {sha[:8]}")
+                return sha
 
         # GitHub/GitLab pull request / merge request events
         object_attrs = payload.get("object_attributes", {})
         if object_attrs:
             # GitLab MR
             if "last_commit" in object_attrs:
-                return object_attrs["last_commit"].get("id")
-            # Try source_branch SHA
-            if "source_branch" in object_attrs:
-                # For MRs, we might have the SHA in different places
-                pass
+                sha = object_attrs["last_commit"].get("id")
+                if sha:
+                    logger.debug(
+                        f"Found commit SHA in object_attributes.last_commit.id: {sha[:8]}"
+                    )
+                    return sha
+            # GitLab may also have sha directly
+            if "sha" in object_attrs:
+                sha = object_attrs["sha"]
+                if sha:
+                    logger.debug(
+                        f"Found commit SHA in object_attributes.sha: {sha[:8]}"
+                    )
+                    return sha
 
         # GitHub PR event - check for head sha
         if "pull_request" in payload:
             pr = payload["pull_request"]
             if "head" in pr:
-                return pr["head"].get("sha")
+                sha = pr["head"].get("sha")
+                if sha:
+                    logger.debug(
+                        f"Found commit SHA in pull_request.head.sha: {sha[:8]}"
+                    )
+                    return sha
 
         # Direct commit reference
         if "commit" in payload:
             commit = payload["commit"]
             if isinstance(commit, dict):
-                return commit.get("sha") or commit.get("id")
+                sha = commit.get("sha") or commit.get("id")
+                if sha:
+                    logger.debug(f"Found commit SHA in commit: {sha[:8]}")
+                    return sha
 
         # Check for sha at top level
         if "sha" in payload:
+            logger.debug(f"Found commit SHA at top level: {payload['sha'][:8]}")
             return payload["sha"]
 
         # Check in after (for push events)
         if "after" in payload:
+            logger.debug(f"Found commit SHA in after: {payload['after'][:8]}")
             return payload["after"]
 
+        logger.debug(f"No commit SHA found in payload. Keys: {list(payload.keys())}")
         return None
 
     async def _get_tracker_client_for_status(self):
@@ -183,25 +207,33 @@ class FlowExecutionOrchestrator:
         # Skip commit status updates during execution recovery
         # to avoid making external API calls for old/stale executions
         if self._is_recovered:
-            logger.debug("Skipping commit status update for recovered execution")
+            logger.info("Skipping commit status update for recovered execution")
             return
 
         if not self._commit_sha:
             self._commit_sha = self._extract_commit_sha()
+            if self._commit_sha:
+                logger.info(f"Extracted commit SHA: {self._commit_sha[:8]}")
 
         if not self._commit_sha:
-            logger.debug("No commit SHA found, skipping commit status update")
+            logger.info(
+                f"No commit SHA found in trigger event, skipping commit status update. "
+                f"Trigger data keys: {list(self.trigger_event_data.keys())}"
+            )
             return
 
         try:
             tracker_client = await self._get_tracker_client_for_status()
             if not tracker_client:
-                logger.debug("No tracker client available for status update")
+                logger.warning(
+                    f"Could not get tracker client for commit status update. "
+                    f"Flow trigger_project_id: {self.flow.trigger_project_id if self.flow else None}"
+                )
                 return
 
             # Check if the tracker supports commit status
             if not hasattr(tracker_client, "create_commit_status"):
-                logger.debug(
+                logger.info(
                     f"Tracker type {type(tracker_client).__name__} doesn't support commit status"
                 )
                 return
