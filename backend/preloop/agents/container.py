@@ -756,15 +756,14 @@ class ContainerAgentExecutor(AgentExecutor):
             # Count occurrences to filter out single informational errors
             error_count = logs_lower.count("error:")
 
-            # If we have errors, check if they're all benign
-            has_only_benign = False
-            for benign_pattern in benign_patterns:
-                if benign_pattern in logs_lower:
-                    has_only_benign = True
-                    break
+            # Check if any benign pattern is present in the logs
+            # If a benign pattern exists, we're more lenient with error count threshold
+            contains_benign_pattern = any(
+                pattern in logs_lower for pattern in benign_patterns
+            )
 
-            # Multiple errors that aren't covered by benign patterns suggest real failure
-            if error_count >= 3 and not has_only_benign:
+            # Multiple errors without any benign patterns suggest real failure
+            if error_count >= 3 and not contains_benign_pattern:
                 return True
 
         return False
