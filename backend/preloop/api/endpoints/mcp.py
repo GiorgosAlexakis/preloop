@@ -1000,12 +1000,11 @@ async def add_comment(
                 logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
         # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
         # Also handles self-hosted GitLab where platform was detected via URL patterns
-        elif (
-            platform == "gitlab" or "gitlab" in target.lower()
-        ) and "merge_requests/" in target:
+        # (e.g., https://git.example.com/owner/repo/-/merge_requests/123)
+        # platform is set from _detect_platform_from_url which checks for /merge_requests/ pattern
+        elif platform == "gitlab" and "/merge_requests/" in target:
             is_merge_request = True
-            platform = "gitlab"
-            mr_parts = target.split("merge_requests/")
+            mr_parts = target.split("/merge_requests/")
             pr_mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
             url_path = mr_parts[0].split("://")[1].split("/")
             if len(url_path) >= 3:
@@ -1153,15 +1152,20 @@ async def add_comment(
                             url=None,
                         )
 
-                    # For new inline comments, creating true diff comments requires position data
-                    # (base_sha, start_sha, head_sha, new_path, new_line)
-                    # Since we don't have this context, we create a discussion that references
-                    # the file and line in a clear, machine-readable format
-                    logger.warning(
-                        f"GitLab inline comments require diff position data. "
-                        f"Creating discussion with file context instead: {path}:{line}"
+                    # GitLab inline diff comments require position data (base_sha, start_sha,
+                    # head_sha, new_path, new_line) which is not available in this context.
+                    # Return a clear error instead of silently creating a non-anchored discussion.
+                    raise HTTPException(
+                        status_code=501,
+                        detail="GitLab inline diff comments (path/line) are not yet supported. "
+                        "GitLab requires diff position data (base_sha, start_sha, head_sha) "
+                        "which is not available in this API. Use a general discussion instead "
+                        "by omitting path and line parameters, or use in_reply_to to reply "
+                        "to an existing discussion.",
                     )
 
+                    # NOTE: The code below is preserved but unreachable as a reference
+                    # for future implementation of true GitLab diff comments
                     # Format the comment to clearly indicate the affected file and line
                     formatted_body = f"**Affected file:** `{path}:{line}`\n\n{comment}"
 
@@ -1264,6 +1268,13 @@ async def add_comment(
         # This is a regular issue - use the existing logic
         parsed_key = None
         if target.startswith("http"):
+            # Detect platform from URL for self-hosted instance support
+            issue_platform = None
+            try:
+                issue_platform = _detect_platform_from_url(target)
+            except ValueError:
+                pass
+
             # GitHub issue URL: https://github.com/owner/repo/issues/123
             if "github.com" in target and "/issues/" in target:
                 parts = target.split("/")
@@ -1274,7 +1285,8 @@ async def add_comment(
                     parsed_key = f"{owner}/{repo}#{issue_number}"
                     logger.info(f"Parsed GitHub issue URL to key: {parsed_key}")
             # GitLab issue URL: https://gitlab.com/owner/repo/-/issues/1
-            elif "gitlab" in target.lower() and "/issues/" in target:
+            # Also handles self-hosted GitLab (e.g., https://git.example.com/owner/repo/-/issues/1)
+            elif issue_platform == "gitlab" and "/issues/" in target:
                 issue_parts = target.split("/issues/")
                 issue_number = issue_parts[-1].rstrip("/").split("?")[0].split("#")[0]
                 url_path = issue_parts[0].split("://")[1].split("/")
@@ -1577,10 +1589,15 @@ async def update_pull_request(
     reviewers: Optional[List[str]] = None,
     labels: Optional[List[str]] = None,
     draft: Optional[bool] = None,
-    # New review parameters
+    # Review parameters
     review_action: Optional[str] = None,  # "approve", "request_changes", "comment"
     review_body: Optional[str] = None,
     review_comments: Optional[List[Dict]] = None,  # [{path, line, body, side}]
+    # Reaction parameters
+    add_reaction: Optional[
+        str
+    ] = None,  # Emoji name to add (e.g., "eyes", "+1", "rocket")
+    remove_reaction: Optional[str] = None,  # Emoji name to remove
 ) -> "UpdatePullRequestResponse":
     """
     Handles the 'update_pull_request' tool call.
@@ -1604,6 +1621,10 @@ async def update_pull_request(
             - line: line number
             - body: comment text
             - side: "LEFT" (old) or "RIGHT" (new), default "RIGHT"
+        add_reaction: Emoji name to add as a reaction (e.g., "eyes", "+1", "rocket", "heart").
+            GitHub uses: +1, -1, laugh, confused, heart, hooray, rocket, eyes
+            GitLab uses: thumbsup, thumbsdown, smile, grinning, eyes, rocket, etc.
+        remove_reaction: Emoji name to remove from reactions.
 
     Returns:
         UpdatePullRequestResponse with update status.
@@ -1732,6 +1753,15 @@ async def update_pull_request(
     try:
         result_url = None
         result_id = None
+
+        # Validate that review_comments requires review_action
+        if review_comments and not review_action:
+            raise HTTPException(
+                status_code=400,
+                detail="review_comments requires review_action to be set. "
+                "Provide review_action='comment' (or 'approve'/'request_changes') "
+                "along with review_comments.",
+            )
 
         # Handle review action if provided
         if review_action:
@@ -1864,31 +1894,56 @@ async def update_pull_request(
                     elif state_lower in ("open", "reopen"):
                         state_event = "reopen"
 
-                # Note: GitLab requires user IDs for assignees/reviewers, not usernames
-                # We would need to look up user IDs by username, which is not implemented
+                # Look up user IDs for assignees/reviewers
                 gitlab_warnings = []
+                assignee_ids = None
+                reviewer_ids = None
+
                 if assignees:
-                    logger.warning(
-                        f"Assignees parameter not supported for GitLab MRs via this API. "
-                        f"GitLab requires user IDs, not usernames. Skipping: {assignees}"
-                    )
-                    gitlab_warnings.append(
-                        "assignees not applied (GitLab requires user IDs)"
-                    )
+                    try:
+                        assignee_ids = await tracker_client.get_user_ids_by_usernames(
+                            assignees
+                        )
+                        if len(assignee_ids) < len(assignees):
+                            not_found = len(assignees) - len(assignee_ids)
+                            gitlab_warnings.append(
+                                f"{not_found} assignee(s) not found in GitLab"
+                            )
+                        logger.info(
+                            f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve assignee IDs: {e}")
+                        gitlab_warnings.append(
+                            f"assignees not applied (lookup failed: {e})"
+                        )
+
                 if reviewers:
-                    logger.warning(
-                        f"Reviewers parameter not supported for GitLab MRs via this API. "
-                        f"GitLab requires user IDs, not usernames. Skipping: {reviewers}"
-                    )
-                    gitlab_warnings.append(
-                        "reviewers not applied (GitLab requires user IDs)"
-                    )
+                    try:
+                        reviewer_ids = await tracker_client.get_user_ids_by_usernames(
+                            reviewers
+                        )
+                        if len(reviewer_ids) < len(reviewers):
+                            not_found = len(reviewers) - len(reviewer_ids)
+                            gitlab_warnings.append(
+                                f"{not_found} reviewer(s) not found in GitLab"
+                            )
+                        logger.info(
+                            f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve reviewer IDs: {e}")
+                        gitlab_warnings.append(
+                            f"reviewers not applied (lookup failed: {e})"
+                        )
 
                 mr_data = await tracker_client.update_merge_request(
                     mr_identifier=pr_number,
                     title=title,
                     description=description,
                     state_event=state_event,
+                    assignee_ids=assignee_ids,
+                    reviewer_ids=reviewer_ids,
                     labels=labels,
                     draft=draft,
                 )
@@ -1896,12 +1951,78 @@ async def update_pull_request(
                 result_url = result_url or mr_data.get("url")
                 logger.info(f"Successfully updated merge request {pr_number}")
 
+        # Handle reactions
+        if add_reaction or remove_reaction:
+            if platform == "github":
+                # GitHub uses issue reactions API (PRs are issues)
+                # Reaction names: +1, -1, laugh, confused, heart, hooray, rocket, eyes
+                if add_reaction:
+                    logger.info(
+                        f"Adding reaction '{add_reaction}' to GitHub PR {pr_number}"
+                    )
+                    try:
+                        await tracker_client.add_issue_reaction(
+                            issue_number=pr_number,
+                            reaction=add_reaction,
+                        )
+                        logger.info(f"Successfully added reaction to PR {pr_number}")
+                    except Exception as e:
+                        logger.warning(f"Failed to add reaction: {e}")
+
+                if remove_reaction:
+                    logger.info(
+                        f"Removing reaction '{remove_reaction}' from GitHub PR {pr_number}"
+                    )
+                    try:
+                        await tracker_client.remove_issue_reaction(
+                            issue_number=pr_number,
+                            reaction=remove_reaction,
+                        )
+                        logger.info(
+                            f"Successfully removed reaction from PR {pr_number}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to remove reaction: {e}")
+
+            else:  # GitLab
+                # GitLab uses award emoji API
+                # Emoji names: thumbsup, thumbsdown, smile, grinning, eyes, rocket, etc.
+                if add_reaction:
+                    logger.info(
+                        f"Adding emoji '{add_reaction}' to GitLab MR {pr_number}"
+                    )
+                    try:
+                        await tracker_client.add_mr_award_emoji(
+                            mr_iid=pr_number,
+                            emoji_name=add_reaction,
+                        )
+                        logger.info(f"Successfully added emoji to MR {pr_number}")
+                    except Exception as e:
+                        logger.warning(f"Failed to add emoji: {e}")
+
+                if remove_reaction:
+                    logger.info(
+                        f"Removing emoji '{remove_reaction}' from GitLab MR {pr_number}"
+                    )
+                    try:
+                        await tracker_client.remove_mr_award_emoji(
+                            mr_iid=pr_number,
+                            emoji_name=remove_reaction,
+                        )
+                        logger.info(f"Successfully removed emoji from MR {pr_number}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove emoji: {e}")
+
         # Build response message
         actions_taken = []
         if review_action:
             actions_taken.append(f"review ({review_action})")
         if has_updates:
             actions_taken.append("metadata update")
+        if add_reaction:
+            actions_taken.append(f"added reaction ({add_reaction})")
+        if remove_reaction:
+            actions_taken.append(f"removed reaction ({remove_reaction})")
 
         message = (
             f"Successfully performed {', '.join(actions_taken)} on "
@@ -2071,7 +2192,7 @@ async def create_pull_request(
                 allow_collaboration = extra_options.get("allow_collaboration")
 
             # GitLab requires user IDs, not usernames, for assignees/reviewers
-            # Warn if usernames were provided but can't be used
+            # Look up IDs from usernames, with fallback to extra_options
             assignee_ids = None
             reviewer_ids = None
             warnings = []
@@ -2079,24 +2200,36 @@ async def create_pull_request(
             if extra_options and "assignee_ids" in extra_options:
                 assignee_ids = extra_options["assignee_ids"]
             elif assignees:
-                warnings.append(
-                    "assignees parameter ignored for GitLab (requires user IDs). "
-                    "Use extra_options.assignee_ids instead."
-                )
-                logger.warning(
-                    f"GitLab MR creation: assignees={assignees} ignored - GitLab requires user IDs"
-                )
+                try:
+                    assignee_ids = await tracker_client.get_user_ids_by_usernames(
+                        assignees
+                    )
+                    if len(assignee_ids) < len(assignees):
+                        not_found = len(assignees) - len(assignee_ids)
+                        warnings.append(f"{not_found} assignee(s) not found in GitLab")
+                    logger.info(
+                        f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs for MR creation"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to resolve assignee IDs: {e}")
+                    warnings.append("assignees not applied (lookup failed)")
 
             if extra_options and "reviewer_ids" in extra_options:
                 reviewer_ids = extra_options["reviewer_ids"]
             elif reviewers:
-                warnings.append(
-                    "reviewers parameter ignored for GitLab (requires user IDs). "
-                    "Use extra_options.reviewer_ids instead."
-                )
-                logger.warning(
-                    f"GitLab MR creation: reviewers={reviewers} ignored - GitLab requires user IDs"
-                )
+                try:
+                    reviewer_ids = await tracker_client.get_user_ids_by_usernames(
+                        reviewers
+                    )
+                    if len(reviewer_ids) < len(reviewers):
+                        not_found = len(reviewers) - len(reviewer_ids)
+                        warnings.append(f"{not_found} reviewer(s) not found in GitLab")
+                    logger.info(
+                        f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs for MR creation"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to resolve reviewer IDs: {e}")
+                    warnings.append("reviewers not applied (lookup failed)")
 
             milestone_id = None
             if milestone and milestone.isdigit():
@@ -2210,11 +2343,10 @@ async def update_comment(
                 logger.info(f"Detected GitHub PR: {project_path}#{pr_mr_number}")
         # GitLab MR URL: https://gitlab.com/owner/repo/-/merge_requests/1
         # Also handles self-hosted GitLab where platform was detected via URL patterns
-        elif (
-            platform == "gitlab" or "gitlab" in target.lower()
-        ) and "merge_requests/" in target:
-            platform = "gitlab"
-            mr_parts = target.split("merge_requests/")
+        # (e.g., https://git.example.com/owner/repo/-/merge_requests/123)
+        # platform is set from _detect_platform_from_url which checks for /merge_requests/ pattern
+        elif platform == "gitlab" and "/merge_requests/" in target:
+            mr_parts = target.split("/merge_requests/")
             pr_mr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
             url_path = mr_parts[0].split("://")[1].split("/")
             if len(url_path) >= 3:
@@ -2281,7 +2413,6 @@ async def update_comment(
             if resolved is not None:
                 # GitHub's resolve_review_thread requires the thread's GraphQL node_id
                 # (format: "PRRT_..."), not a comment ID (format: "PRRC_...").
-                # We must have a valid thread_id to proceed.
                 if not thread_id:
                     # Check if comment_id looks like a thread ID
                     if comment_id.startswith("PRRT_"):
@@ -2291,17 +2422,45 @@ async def update_comment(
                             "Using comment_id as thread_id since it has PRRT_ prefix"
                         )
                     else:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=(
-                                "GitHub thread resolution requires a thread_id parameter "
-                                "(format: 'PRRT_...'). The comment_id provided "
-                                f"('{comment_id[:20]}...') is a comment ID, not a thread ID. "
-                                "To resolve a thread, you must provide the thread's GraphQL "
-                                "node_id. You can find this in the 'thread_id' field when "
-                                "fetching PR comments."
-                            ),
+                        # Try to look up the thread_id from the comment_id
+                        logger.info(
+                            f"Attempting to look up thread_id for comment {comment_id}"
                         )
+                        try:
+                            looked_up_thread_id = (
+                                await tracker_client.get_thread_id_for_comment(
+                                    pr_number=pr_mr_number,
+                                    comment_id=comment_id,
+                                )
+                            )
+                            if looked_up_thread_id:
+                                thread_id = looked_up_thread_id
+                                logger.info(
+                                    f"Found thread_id {thread_id} for comment {comment_id}"
+                                )
+                            else:
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail=(
+                                        "Could not find thread_id for the given comment_id. "
+                                        f"The comment_id '{comment_id}' may not be a review comment. "
+                                        "Thread resolution only works for review comments (inline diff comments). "
+                                        "For issue comments, resolution is not supported."
+                                    ),
+                                )
+                        except HTTPException:
+                            raise
+                        except Exception as e:
+                            logger.warning(f"Thread lookup failed: {e}")
+                            raise HTTPException(
+                                status_code=400,
+                                detail=(
+                                    "GitHub thread resolution requires a thread_id parameter "
+                                    "(format: 'PRRT_...'). Automatic lookup failed. "
+                                    "To resolve a thread, provide the thread's GraphQL "
+                                    "node_id in the thread_id parameter."
+                                ),
+                            )
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitHub review "
                     f"thread {thread_id}"

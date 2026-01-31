@@ -233,7 +233,7 @@ BUILTIN_TOOLS = [
         "description": "Update or resolve an existing comment on a pull request, merge request, or issue. To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false with thread_id. Both can be done in a single call.",
         "source": "builtin",
         "requires_tracker": True,
-        "required_tracker_types": [],
+        "required_tracker_types": ["github", "gitlab"],
         "schema": {
             "type": "object",
             "properties": {

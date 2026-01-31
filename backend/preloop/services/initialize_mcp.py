@@ -616,9 +616,11 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         review_action: str | None = None,
         review_body: str | None = None,
         review_comments: list[dict] | None = None,
+        add_reaction: str | None = None,
+        remove_reaction: str | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Update a pull request's metadata and/or submit a review. To update PR properties: provide title, description, labels, state (open/closed), etc. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback."""
+        """Update a pull request's metadata, submit a review, and/or manage reactions. To update PR properties: provide title, description, labels, state (open/closed), etc. To submit a review: provide review_action (approve/request_changes/comment) with optional review_body and review_comments for inline feedback. To add/remove reactions: use add_reaction or remove_reaction with emoji names (GitHub: +1, -1, laugh, confused, heart, hooray, rocket, eyes; GitLab: thumbsup, thumbsdown, smile, eyes, rocket, etc.)."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -644,6 +646,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "review_action": review_action,
                 "review_body": review_body,
                 "review_comments": review_comments,
+                "add_reaction": add_reaction,
+                "remove_reaction": remove_reaction,
             },
             ctx=ctx,
         )
@@ -663,6 +667,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             review_action=review_action,
             review_body=review_body,
             review_comments=review_comments,
+            add_reaction=add_reaction,
+            remove_reaction=remove_reaction,
         )
         return result.model_dump_json()
 

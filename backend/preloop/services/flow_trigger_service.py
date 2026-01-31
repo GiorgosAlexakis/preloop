@@ -231,6 +231,62 @@ class FlowTriggerService:
 
         return True
 
+    def _is_preloop_triggered_event(self, event_data: Dict[str, Any]) -> bool:
+        """
+        Check if an event was triggered by Preloop's own actions.
+
+        This prevents infinite loops where:
+        1. Flow runs and updates a PR (adds comment, modifies body, etc.)
+        2. Update triggers a new webhook event (pull_request_updated, comment_created)
+        3. Event matches another flow -> triggers another execution
+        4. Repeat forever
+
+        We detect Preloop-triggered events by checking the sender/actor field
+        in the webhook payload for known Preloop bot usernames.
+        """
+        payload = event_data.get("payload", {})
+        source = event_data.get("source", "").lower()
+
+        # Get the sender/actor who triggered the event
+        sender = None
+        if source == "github":
+            sender_obj = payload.get("sender", {})
+            sender = sender_obj.get("login", "").lower() if sender_obj else ""
+        elif source == "gitlab":
+            # GitLab uses "user" for the actor in most events
+            user_obj = payload.get("user", {})
+            sender = user_obj.get("username", "").lower() if user_obj else ""
+            # Some events have object_attributes.author
+            if not sender:
+                obj_attrs = payload.get("object_attributes", {})
+                author = obj_attrs.get("author", {})
+                if isinstance(author, dict):
+                    sender = author.get("username", "").lower()
+
+        if not sender:
+            return False
+
+        # Known Preloop bot username patterns
+        # These are typically the usernames of GitHub Apps or GitLab service accounts
+        # that Preloop uses to interact with trackers
+        preloop_patterns = [
+            "preloop",
+            "preloop-bot",
+            "preloop-staging",
+            "preloop-dev",
+            "preloop[bot]",  # GitHub App format
+            "preloop-app",
+        ]
+
+        for pattern in preloop_patterns:
+            if sender == pattern or sender.startswith("preloop"):
+                logger.info(
+                    f"Ignoring event triggered by Preloop bot account: {sender}"
+                )
+                return True
+
+        return False
+
     async def process_event(self, event_data: Dict[str, Any]):
         """
         Process an incoming event and trigger any matching flows.
@@ -249,6 +305,14 @@ class FlowTriggerService:
         if not event_source or not event_type:
             logger.warning(
                 f"Event data is missing required fields: source={event_source}, type={event_type}"
+            )
+            return
+
+        # Check if this event was triggered by Preloop itself to prevent infinite loops
+        if self._is_preloop_triggered_event(event_data):
+            logger.info(
+                f"Skipping event triggered by Preloop bot to prevent infinite loop: "
+                f"source='{event_source}', type='{event_type}'"
             )
             return
 

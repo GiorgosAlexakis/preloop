@@ -2075,3 +2075,243 @@ class GitLabTracker(BaseTracker):
                 f"Error replying to discussion {discussion_id} on MR {mr_iid}: {e}"
             )
             raise TrackerResponseError(f"Failed to reply to MR discussion: {e}")
+
+    async def add_mr_award_emoji(
+        self,
+        mr_iid: str,
+        emoji_name: str,
+    ) -> Dict[str, Any]:
+        """Add an award emoji (reaction) to a merge request.
+
+        GitLab uses "award emoji" instead of "reactions".
+
+        Args:
+            mr_iid: The merge request IID.
+            emoji_name: The emoji name (e.g., "thumbsup", "thumbsdown", "eyes", "rocket").
+
+        Returns:
+            Dictionary with award emoji details.
+        """
+        project_id = self._get_project_id()
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # Create the award emoji
+            award = await self._make_request(
+                mr.awardemojis.create, {"name": emoji_name}
+            )
+
+            # Handle both dict and object responses
+            if isinstance(award, dict):
+                return {
+                    "id": award.get("id"),
+                    "name": award.get("name"),
+                    "user": award.get("user", {}).get("username"),
+                }
+            else:
+                return {
+                    "id": getattr(award, "id", None),
+                    "name": getattr(award, "name", emoji_name),
+                    "user": (
+                        award.user.get("username")
+                        if hasattr(award, "user") and isinstance(award.user, dict)
+                        else None
+                    ),
+                }
+
+        except Exception as e:
+            logger.error(f"Error adding award emoji to MR {mr_iid}: {e}")
+            raise TrackerResponseError(f"Failed to add award emoji: {e}")
+
+    async def remove_mr_award_emoji(
+        self,
+        mr_iid: str,
+        emoji_name: str,
+    ) -> bool:
+        """Remove an award emoji (reaction) from a merge request.
+
+        This finds the current user's award emoji of the specified type and removes it.
+
+        Args:
+            mr_iid: The merge request IID.
+            emoji_name: The emoji name to remove.
+
+        Returns:
+            True if the emoji was removed, False if not found.
+        """
+        project_id = self._get_project_id()
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+            mr = await self._make_request(project.mergerequests.get, mr_iid)
+
+            # List all award emojis on the MR
+            awards = await self._make_request(mr.awardemojis.list)
+
+            # Find the award matching the emoji name
+            award_to_delete = None
+            for award in awards:
+                award_name = (
+                    award.get("name")
+                    if isinstance(award, dict)
+                    else getattr(award, "name", None)
+                )
+                if award_name == emoji_name:
+                    award_to_delete = award
+                    break
+
+            if not award_to_delete:
+                logger.info(
+                    f"No '{emoji_name}' award emoji found on MR {mr_iid} to remove"
+                )
+                return False
+
+            # Get the award ID
+            award_id = (
+                award_to_delete.get("id")
+                if isinstance(award_to_delete, dict)
+                else getattr(award_to_delete, "id", None)
+            )
+
+            if not award_id:
+                logger.warning("Could not get award ID for deletion")
+                return False
+
+            # Delete the award emoji
+            await self._make_request(mr.awardemojis.delete, award_id)
+            logger.info(f"Removed award emoji '{emoji_name}' from MR {mr_iid}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"Failed to remove award emoji from MR {mr_iid}: {e}")
+            return False
+
+    async def create_commit_status(
+        self,
+        sha: str,
+        state: str,  # "pending", "running", "success", "failed", "canceled"
+        context: str = "preloop",
+        description: Optional[str] = None,
+        target_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a commit status (pipeline status) on a specific commit.
+
+        This appears as a pipeline/check in the MR's pipeline section.
+
+        Args:
+            sha: The commit SHA to create the status on.
+            state: The state of the status. GitLab accepts:
+                   pending, running, success, failed, canceled
+            context: A string label (called "name" in GitLab) to differentiate
+                     this status from others. Default is "preloop".
+            description: A short description of the status.
+            target_url: URL to link to for more details.
+
+        Returns:
+            Dictionary with status details.
+        """
+        project_id = self._get_project_id()
+
+        # Map common state names to GitLab's expected values
+        state_map = {
+            "pending": "pending",
+            "running": "running",
+            "success": "success",
+            "failure": "failed",
+            "failed": "failed",
+            "error": "failed",
+            "canceled": "canceled",
+        }
+        gitlab_state = state_map.get(state.lower(), state)
+
+        try:
+            project = await self._make_request(self.gl.projects.get, project_id)
+
+            # Create commit status using the commits API
+            commit = await self._make_request(project.commits.get, sha)
+
+            status_data = {
+                "state": gitlab_state,
+                "name": context,
+            }
+            if description:
+                status_data["description"] = description
+            if target_url:
+                status_data["target_url"] = target_url
+
+            # Create the status
+            status = await self._make_request(commit.statuses.create, status_data)
+
+            # Handle both dict and object responses
+            if isinstance(status, dict):
+                result = {
+                    "id": status.get("id"),
+                    "state": status.get("status"),
+                    "name": status.get("name"),
+                    "description": status.get("description"),
+                    "target_url": status.get("target_url"),
+                }
+            else:
+                result = {
+                    "id": getattr(status, "id", None),
+                    "state": getattr(status, "status", gitlab_state),
+                    "name": getattr(status, "name", context),
+                    "description": getattr(status, "description", description),
+                    "target_url": getattr(status, "target_url", target_url),
+                }
+
+            logger.info(
+                f"Created commit status '{context}' ({gitlab_state}) on {sha[:8]}"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Error creating commit status on {sha[:8]}: {e}")
+            raise TrackerResponseError(f"Failed to create commit status: {e}")
+
+    async def get_user_id_by_username(self, username: str) -> Optional[int]:
+        """Look up a GitLab user ID by username.
+
+        Args:
+            username: The GitLab username to look up.
+
+        Returns:
+            The user ID if found, None otherwise.
+        """
+        try:
+            # Search for users with matching username
+            users = await self._make_request(
+                self.gl.users.list, username=username, per_page=10
+            )
+
+            # Find exact username match (case-insensitive)
+            for user in users:
+                user_dict = user if isinstance(user, dict) else user.attributes
+                user_name = user_dict.get("username", "")
+                if user_name.lower() == username.lower():
+                    return user_dict.get("id")
+
+            logger.warning(f"GitLab user not found: {username}")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Error looking up GitLab user '{username}': {e}")
+            return None
+
+    async def get_user_ids_by_usernames(self, usernames: List[str]) -> List[int]:
+        """Look up multiple GitLab user IDs by usernames.
+
+        Args:
+            usernames: List of GitLab usernames to look up.
+
+        Returns:
+            List of found user IDs (may be shorter than input if some not found).
+        """
+        user_ids = []
+        for username in usernames:
+            user_id = await self.get_user_id_by_username(username)
+            if user_id is not None:
+                user_ids.append(user_id)
+        return user_ids

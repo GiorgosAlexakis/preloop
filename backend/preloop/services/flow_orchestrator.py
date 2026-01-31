@@ -16,6 +16,7 @@ from preloop.models.crud import (
     crud_api_key,
     crud_flow,
     crud_flow_execution,
+    crud_user,
 )
 from preloop.models.models.flow import Flow
 from preloop.models.models.ai_model import AIModel
@@ -73,6 +74,153 @@ class FlowExecutionOrchestrator:
         self.total_tokens: int = 0
         self.tool_calls_count: int = 0
         self.estimated_cost: float = 0.0
+
+        # Commit status tracking
+        self._tracker_client = None
+        self._commit_sha: Optional[str] = None
+        self._status_context: str = "preloop"
+
+    def _extract_commit_sha(self) -> Optional[str]:
+        """Extract the commit SHA from the trigger event data.
+
+        Looks for commit SHA in common locations for different event types.
+        """
+        payload = self.trigger_event_data.get("payload", {})
+
+        # Try common locations for commit SHA
+        # GitHub push event
+        if "head_commit" in payload:
+            return payload["head_commit"].get("id")
+
+        # GitHub/GitLab pull request / merge request events
+        object_attrs = payload.get("object_attributes", {})
+        if object_attrs:
+            # GitLab MR
+            if "last_commit" in object_attrs:
+                return object_attrs["last_commit"].get("id")
+            # Try source_branch SHA
+            if "source_branch" in object_attrs:
+                # For MRs, we might have the SHA in different places
+                pass
+
+        # GitHub PR event - check for head sha
+        if "pull_request" in payload:
+            pr = payload["pull_request"]
+            if "head" in pr:
+                return pr["head"].get("sha")
+
+        # Direct commit reference
+        if "commit" in payload:
+            commit = payload["commit"]
+            if isinstance(commit, dict):
+                return commit.get("sha") or commit.get("id")
+
+        # Check for sha at top level
+        if "sha" in payload:
+            return payload["sha"]
+
+        # Check in after (for push events)
+        if "after" in payload:
+            return payload["after"]
+
+        return None
+
+    async def _get_tracker_client_for_status(self):
+        """Get a tracker client for updating commit status.
+
+        Returns None if we can't get a valid client (e.g., no project configured).
+        """
+        if self._tracker_client is not None:
+            return self._tracker_client
+
+        try:
+            # We need project info from the trigger event
+            payload = self.trigger_event_data.get("payload", {})
+
+            # Get project from trigger_project_id on the flow
+            if self.flow and self.flow.trigger_project_id:
+                from preloop.models.crud import crud_project
+                from preloop.api.common import get_tracker_client
+
+                project = crud_project.get(self.db, id=self.flow.trigger_project_id)
+                if project and project.organization_id:
+                    # Create a minimal user context for auth
+                    account = crud_account.get(self.db, id=self.flow.account_id)
+                    if account:
+                        # Get the account owner or first admin
+                        users = crud_user.get_by_account(
+                            self.db, account_id=account.id, limit=1
+                        )
+                        if users:
+                            self._tracker_client = await get_tracker_client(
+                                organization_id=project.organization_id,
+                                project_id=project.id,
+                                db=self.db,
+                                current_user=users[0],
+                            )
+                            return self._tracker_client
+
+            logger.debug("Could not get tracker client for commit status")
+            return None
+
+        except Exception as e:
+            logger.warning(f"Failed to get tracker client for status updates: {e}")
+            return None
+
+    async def _update_commit_status(
+        self,
+        state: str,
+        description: Optional[str] = None,
+    ):
+        """Update the commit status on the PR/MR.
+
+        Args:
+            state: Status state (pending, success, failure, error)
+            description: Optional description text
+        """
+        if not self._commit_sha:
+            self._commit_sha = self._extract_commit_sha()
+
+        if not self._commit_sha:
+            logger.debug("No commit SHA found, skipping commit status update")
+            return
+
+        try:
+            tracker_client = await self._get_tracker_client_for_status()
+            if not tracker_client:
+                logger.debug("No tracker client available for status update")
+                return
+
+            # Check if the tracker supports commit status
+            if not hasattr(tracker_client, "create_commit_status"):
+                logger.debug(
+                    f"Tracker type {type(tracker_client).__name__} doesn't support commit status"
+                )
+                return
+
+            # Build the target URL for the execution
+            target_url = None
+            if self.execution_log:
+                # Construct URL to the execution details page
+                # This would be the frontend URL - we'll use a relative path
+                # that can be resolved by the frontend
+                target_url = (
+                    f"/console/flows/{self.flow_id}/executions/{self.execution_log.id}"
+                )
+
+            await tracker_client.create_commit_status(
+                sha=self._commit_sha,
+                state=state,
+                context=self._status_context,
+                description=description,
+                target_url=target_url,
+            )
+
+            logger.info(f"Updated commit status to '{state}' on {self._commit_sha[:8]}")
+
+        except Exception as e:
+            # Don't fail the execution if status update fails
+            logger.warning(f"Failed to update commit status: {e}")
 
     @staticmethod
     async def send_command(
@@ -1221,6 +1369,14 @@ class FlowExecutionOrchestrator:
             await self._publish_update("status_update", {"status": "PENDING"})
             logger.info(f"Flow execution started: {self.execution_log.id}")
 
+            # Update commit status to pending (appears in GitHub/GitLab checks)
+            await self._update_commit_status(
+                state="pending",
+                description=f"Preloop is reviewing: {self.flow.name}"
+                if self.flow
+                else "Preloop is reviewing",
+            )
+
             # Stage 3: Mark as initializing
             await self._update_execution_log(status="INITIALIZING")
 
@@ -1277,6 +1433,20 @@ class FlowExecutionOrchestrator:
                 estimated_cost=self.estimated_cost,
             )
 
+            # Update commit status to success/failure
+            status_state = "success" if final_status == "SUCCEEDED" else "failure"
+            status_description = (
+                f"Preloop review completed: {self.flow.name}"
+                if self.flow
+                else "Preloop review completed"
+            )
+            if final_status != "SUCCEEDED":
+                status_description = f"Preloop review failed: {agent_result.get('error_message', 'Unknown error')[:80]}"
+            await self._update_commit_status(
+                state=status_state,
+                description=status_description,
+            )
+
             logger.info(
                 f"Flow execution completed with status {final_status}: {self.execution_log.id}"
             )
@@ -1285,6 +1455,12 @@ class FlowExecutionOrchestrator:
             logger.error(
                 f"Flow execution {self.execution_log.id if self.execution_log else 'unknown'} failed: {e}",
                 exc_info=True,
+            )
+
+            # Update commit status to failure
+            await self._update_commit_status(
+                state="failure",
+                description=f"Preloop execution failed: {str(e)[:80]}",
             )
 
             if self.execution_log:

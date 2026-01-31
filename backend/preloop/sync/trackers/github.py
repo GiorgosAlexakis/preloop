@@ -2679,3 +2679,321 @@ class GitHubTracker(BaseTracker):
 
         except httpx.RequestError as e:
             raise TrackerConnectionError(f"GitHub connection error: {str(e)}")
+
+    @async_retry()
+    async def get_thread_id_for_comment(
+        self,
+        pr_number: str,
+        comment_id: str,
+    ) -> Optional[str]:
+        """Look up the review thread ID for a PR review comment.
+
+        Uses GraphQL to find the thread node_id (PRRT_*) that contains
+        a specific comment.
+
+        Args:
+            pr_number: The PR number.
+            comment_id: The comment's numeric ID or node_id.
+
+        Returns:
+            The thread node_id (PRRT_*) if found, None otherwise.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            logger.warning("Owner/repo not found for thread lookup")
+            return None
+
+        # GraphQL query to get review threads and their comments
+        query = """
+            query GetPRReviewThreads($owner: String!, $name: String!, $prNumber: Int!) {
+                repository(owner: $owner, name: $name) {
+                    pullRequest(number: $prNumber) {
+                        reviewThreads(first: 100) {
+                            nodes {
+                                id
+                                comments(first: 50) {
+                                    nodes {
+                                        id
+                                        databaseId
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        """
+
+        variables = {
+            "owner": owner,
+            "name": repo,
+            "prNumber": int(pr_number),
+        }
+
+        graphql_url = "https://api.github.com/graphql"
+        headers = await self._get_auth_headers()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    graphql_url,
+                    headers=headers,
+                    json={"query": query, "variables": variables},
+                    timeout=30.0,
+                )
+
+                if response.status_code >= 400:
+                    logger.warning(f"GraphQL query failed: {response.status_code}")
+                    return None
+
+                data = response.json()
+
+                if "errors" in data:
+                    logger.warning(f"GraphQL errors: {data['errors']}")
+                    return None
+
+                # Search through threads to find the comment
+                threads = (
+                    data.get("data", {})
+                    .get("repository", {})
+                    .get("pullRequest", {})
+                    .get("reviewThreads", {})
+                    .get("nodes", [])
+                )
+
+                # Try to match by comment_id (numeric) or node_id (string)
+                for thread in threads:
+                    thread_id = thread.get("id")
+                    comments = thread.get("comments", {}).get("nodes", [])
+
+                    for comment in comments:
+                        # Match by database ID (numeric)
+                        if str(comment.get("databaseId")) == str(comment_id):
+                            logger.info(
+                                f"Found thread {thread_id} for comment {comment_id}"
+                            )
+                            return thread_id
+                        # Match by node_id
+                        if comment.get("id") == comment_id:
+                            logger.info(
+                                f"Found thread {thread_id} for comment {comment_id}"
+                            )
+                            return thread_id
+
+                logger.warning(f"No thread found for comment {comment_id}")
+                return None
+
+        except Exception as e:
+            logger.warning(f"Error looking up thread for comment {comment_id}: {e}")
+            return None
+
+    @async_retry()
+    async def add_issue_reaction(
+        self,
+        issue_number: str,
+        reaction: str,
+    ) -> Dict[str, Any]:
+        """Add a reaction to an issue or pull request.
+
+        GitHub uses the same reaction API for issues and PRs.
+
+        Args:
+            issue_number: The issue or PR number.
+            reaction: The reaction type. Valid values:
+                +1, -1, laugh, confused, heart, hooray, rocket, eyes
+
+        Returns:
+            Dictionary with reaction details.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError(
+                "Owner and repo are required for GitHub reactions"
+            )
+
+        url = (
+            f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions"
+        )
+        headers = await self._get_headers()
+        # Need special accept header for reactions API
+        headers["Accept"] = "application/vnd.github.squirrel-girl-preview+json"
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                headers=headers,
+                json={"content": reaction},
+                timeout=30.0,
+            )
+
+            if response.status_code in (HTTP_STATUS_OK, HTTP_STATUS_CREATED):
+                data = response.json()
+                logger.info(f"Added reaction '{reaction}' to issue {issue_number}")
+                return {
+                    "id": data.get("id"),
+                    "content": data.get("content"),
+                    "user": data.get("user", {}).get("login"),
+                }
+            else:
+                error_msg = response.text
+                logger.error(
+                    f"Failed to add reaction to issue {issue_number}: {error_msg}"
+                )
+                raise TrackerResponseError(
+                    f"Failed to add reaction: {response.status_code} - {error_msg}"
+                )
+
+    @async_retry()
+    async def remove_issue_reaction(
+        self,
+        issue_number: str,
+        reaction: str,
+    ) -> bool:
+        """Remove a reaction from an issue or pull request.
+
+        This finds the current user's reaction of the specified type and removes it.
+
+        Args:
+            issue_number: The issue or PR number.
+            reaction: The reaction type to remove.
+
+        Returns:
+            True if the reaction was removed, False if not found.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError(
+                "Owner and repo are required for GitHub reactions"
+            )
+
+        # First, list reactions to find the one to delete
+        list_url = (
+            f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions"
+        )
+        headers = await self._get_headers()
+        headers["Accept"] = "application/vnd.github.squirrel-girl-preview+json"
+
+        async with httpx.AsyncClient() as client:
+            # Get current reactions
+            response = await client.get(
+                list_url,
+                headers=headers,
+                timeout=30.0,
+            )
+
+            if response.status_code != HTTP_STATUS_OK:
+                logger.warning(f"Could not list reactions: {response.text}")
+                return False
+
+            reactions = response.json()
+
+            # Find the reaction matching the content type
+            # Note: We look for reactions by the authenticated user (via the app)
+            reaction_to_delete = None
+            for r in reactions:
+                if r.get("content") == reaction:
+                    # For GitHub App auth, the reaction would be from the app's bot account
+                    reaction_to_delete = r
+                    break
+
+            if not reaction_to_delete:
+                logger.info(
+                    f"No '{reaction}' reaction found on issue {issue_number} to remove"
+                )
+                return False
+
+            # Delete the reaction
+            reaction_id = reaction_to_delete.get("id")
+            delete_url = f"{self.API_BASE_URL}/repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}"
+
+            delete_response = await client.delete(
+                delete_url,
+                headers=headers,
+                timeout=30.0,
+            )
+
+            if delete_response.status_code == HTTP_STATUS_NO_CONTENT:
+                logger.info(f"Removed reaction '{reaction}' from issue {issue_number}")
+                return True
+            else:
+                logger.warning(
+                    f"Failed to remove reaction: {delete_response.status_code}"
+                )
+                return False
+
+    @async_retry()
+    async def create_commit_status(
+        self,
+        sha: str,
+        state: Literal["pending", "success", "failure", "error"],
+        context: str = "preloop",
+        description: Optional[str] = None,
+        target_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a commit status (check) on a specific commit.
+
+        This appears as a check in the PR's "Checks" section.
+
+        Args:
+            sha: The commit SHA to create the status on.
+            state: The state of the status: pending, success, failure, or error.
+            context: A string label to differentiate this status from others.
+                     Default is "preloop".
+            description: A short description of the status (max 140 chars).
+            target_url: URL to link to for more details (e.g., flow execution page).
+
+        Returns:
+            Dictionary with status details.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError(
+                "Owner and repo are required for GitHub commit status"
+            )
+
+        url = f"{self.API_BASE_URL}/repos/{owner}/{repo}/statuses/{sha}"
+        headers = await self._get_headers()
+
+        payload = {
+            "state": state,
+            "context": context,
+        }
+        if description:
+            # GitHub limits description to 140 chars
+            payload["description"] = description[:140]
+        if target_url:
+            payload["target_url"] = target_url
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=30.0,
+            )
+
+            if response.status_code == HTTP_STATUS_CREATED:
+                data = response.json()
+                logger.info(f"Created commit status '{context}' ({state}) on {sha[:8]}")
+                return {
+                    "id": data.get("id"),
+                    "state": data.get("state"),
+                    "context": data.get("context"),
+                    "description": data.get("description"),
+                    "target_url": data.get("target_url"),
+                    "url": data.get("url"),
+                }
+            else:
+                error_msg = response.text
+                logger.error(f"Failed to create commit status: {error_msg}")
+                raise TrackerResponseError(
+                    f"Failed to create commit status: {response.status_code} - {error_msg}"
+                )
