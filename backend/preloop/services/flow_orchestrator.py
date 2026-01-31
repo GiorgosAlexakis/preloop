@@ -315,13 +315,13 @@ class FlowExecutionOrchestrator:
                 if base_url:
                     # Remove trailing slash if present
                     base_url = base_url.rstrip("/")
-                    target_url = f"{base_url}/console/flows/{self.flow_id}/executions/{self.execution_log.id}"
+                    target_url = f"{base_url}/console/flows/executions/{self.execution_log.id}"
                 else:
                     # Fallback to relative path if no base URL configured
                     logger.warning(
                         "[CommitStatus] PRELOOP_URL not configured, using relative URL"
                     )
-                    target_url = f"/console/flows/{self.flow_id}/executions/{self.execution_log.id}"
+                    target_url = f"/console/flows/executions/{self.execution_log.id}"
 
             # Log the API call we're about to make
             logger.info(
