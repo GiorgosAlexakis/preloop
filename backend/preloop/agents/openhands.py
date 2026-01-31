@@ -395,9 +395,14 @@ class OpenHandsAgent(ContainerAgentExecutor):
                             "Clone may fail if the repository is private."
                         )
 
-                # Get clone path (relative to workspace)
+                # Get clone path - if it starts with /, use as-is (absolute), otherwise make it relative to /workspace
                 clone_path = repo_config.get("clone_path", f"workspace-{idx + 1}")
-                full_path = f"/workspace/{clone_path}"
+                if clone_path.startswith("/"):
+                    # Absolute path - use as-is
+                    full_path = clone_path
+                else:
+                    # Relative path - prepend /workspace/
+                    full_path = f"/workspace/{clone_path}"
 
                 # Get branch if specified
                 branch = repo_config.get("branch")

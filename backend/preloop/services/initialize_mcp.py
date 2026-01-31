@@ -526,7 +526,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         thread_id: str | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Update or resolve an existing comment on a pull request, merge request, or issue. To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false. For resolution, you may need to provide thread_id (GitHub thread node_id like 'PRRT_...' or GitLab discussion ID) if the comment_id doesn't work for resolution."""
+        """Update or resolve an existing review comment on a pull request or merge request. Only supports inline review comments (not issue comments or PR conversation comments). To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false. For resolution, you may need to provide thread_id (GitHub thread node_id like 'PRRT_...' or GitLab discussion ID) if the comment_id doesn't work for resolution."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 

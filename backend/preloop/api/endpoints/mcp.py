@@ -2317,8 +2317,22 @@ async def create_pull_request(
                     warnings.append("reviewers not applied (lookup failed)")
 
             milestone_id = None
-            if milestone and milestone.isdigit():
-                milestone_id = int(milestone)
+            if milestone:
+                if milestone.isdigit():
+                    milestone_id = int(milestone)
+                elif extra_options and "milestone_id" in extra_options:
+                    milestone_id = extra_options["milestone_id"]
+                else:
+                    # Non-numeric milestone title provided but can't be resolved to ID
+                    # GitLab API requires milestone_id, not title
+                    warnings.append(
+                        f"milestone '{milestone}' ignored (use numeric ID or set "
+                        "extra_options.milestone_id for non-numeric milestones)"
+                    )
+                    logger.warning(
+                        f"Non-numeric milestone '{milestone}' provided for GitLab MR but "
+                        "milestone_id not in extra_options. Milestone will not be set."
+                    )
             elif extra_options and "milestone_id" in extra_options:
                 milestone_id = extra_options["milestone_id"]
 
@@ -2378,9 +2392,14 @@ async def update_comment(
     Updates or resolves a comment on a pull request or merge request.
     Works with both GitHub review comments and GitLab MR notes.
 
+    Note: This tool only supports PR/MR review comments, not general issue comments.
+    For GitHub, this updates inline review comments (not PR conversation comments).
+    For GitLab, this updates MR discussion notes.
+
     Args:
-        target: PR/MR identifier (URL, slug, or number).
-        comment_id: The comment/note ID to update (used for body updates).
+        target: PR/MR identifier (URL, slug, or number). Issue URLs are not supported.
+        comment_id: The review comment/note ID to update (used for body updates).
+            For GitHub: Must be a review comment ID (from review threads), not an issue comment ID.
         body: New body text for the comment (optional).
         resolved: Whether to resolve/unresolve the comment thread (optional).
         thread_id: The thread/discussion ID for resolution (optional).
@@ -2486,13 +2505,25 @@ async def update_comment(
             # Update comment body if provided
             if body is not None:
                 logger.info(f"Updating GitHub review comment {comment_id}")
-                update_result = await tracker_client.update_review_comment(
-                    comment_id=comment_id,
-                    body=body,
-                )
-                result_url = update_result.get("html_url")
-                actions_taken.append("body updated")
-                logger.info(f"Successfully updated review comment {comment_id}")
+                try:
+                    update_result = await tracker_client.update_review_comment(
+                        comment_id=comment_id,
+                        body=body,
+                    )
+                    result_url = update_result.get("html_url")
+                    actions_taken.append("body updated")
+                    logger.info(f"Successfully updated review comment {comment_id}")
+                except Exception as e:
+                    error_msg = str(e)
+                    # Check if this is a 404 - likely means it's an issue comment, not a review comment
+                    if "404" in error_msg or "Not Found" in error_msg:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Comment {comment_id} not found as a review comment. "
+                            "This tool only supports PR inline review comments. "
+                            "Issue comments and PR conversation comments are not supported.",
+                        )
+                    raise
 
             # Resolve/unresolve thread if requested
             if resolved is not None:

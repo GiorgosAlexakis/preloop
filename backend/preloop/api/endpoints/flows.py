@@ -633,13 +633,9 @@ def update_flow(
     # Security: Prevent modifying source_preset_id during update
     # The preset link should only be set during creation (via clone_preset or create)
     # Allowing arbitrary changes could let users pull content from other accounts' flows
-    if hasattr(flow_in, "source_preset_id") and flow_in.source_preset_id is not None:
-        if str(flow_in.source_preset_id) != str(flow.source_preset_id or ""):
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot change source_preset_id after flow creation. "
-                "Use the 'Apply Preset Update' action instead.",
-            )
+    # We forcibly preserve the existing source_preset_id to prevent any modification,
+    # including unlinking by setting to None.
+    flow_in.source_preset_id = flow.source_preset_id
 
     # Check for name uniqueness if name is being changed
     # Note: We intentionally allow flows to have the same name as global presets
