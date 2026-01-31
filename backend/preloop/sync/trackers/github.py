@@ -2699,7 +2699,13 @@ class GitHubTracker(BaseTracker):
             }
 
         except Exception as e:
-            logger.error(f"Error updating review comment {comment_id}: {e}")
+            error_msg = str(e)
+            # Use debug level for 404s since they're expected when comment type is unknown
+            # and caller will try issue_comment as fallback
+            if "404" in error_msg or "Not Found" in error_msg:
+                logger.debug(f"Review comment {comment_id} not found (404): {e}")
+            else:
+                logger.error(f"Error updating review comment {comment_id}: {e}")
             raise TrackerResponseError(f"Failed to update review comment: {e}")
 
     @async_retry()
@@ -2749,7 +2755,12 @@ class GitHubTracker(BaseTracker):
             }
 
         except Exception as e:
-            logger.error(f"Error updating issue comment {comment_id}: {e}")
+            error_msg = str(e)
+            # 404s for issue comments are actual errors (not fallback cases)
+            if "404" in error_msg or "Not Found" in error_msg:
+                logger.warning(f"Issue comment {comment_id} not found (404): {e}")
+            else:
+                logger.error(f"Error updating issue comment {comment_id}: {e}")
             raise TrackerResponseError(f"Failed to update issue comment: {e}")
 
     @async_retry()
