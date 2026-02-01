@@ -46,7 +46,11 @@ import '../views/authed/flow-execution-view.ts';
 import '../views/authed/approval-view.ts';
 import '../views/authed/approvals-view.ts';
 import '../views/authed/policies-view.ts';
-import '../../../../plugins/audit/frontend/audit-view.ts';
+// EE plugins are loaded dynamically to avoid breaking OSS builds
+// where the plugins directory doesn't exist
+import('../../../../plugins/frontend/ee-plugins.ts').catch(() => {
+  // EE plugins not available (open source build)
+});
 import './app-header.ts';
 import './app-footer.ts';
 import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
@@ -313,7 +317,18 @@ export class LitApp extends LitElement {
           { path: 'approvals', component: 'approvals-view' },
           { path: 'approval/:requestId', component: 'approval-view' },
           { path: 'policies', component: 'policies-view' },
-          { path: 'audit', component: 'audit-view' },
+          {
+            path: 'audit',
+            action: (_context, commands) => {
+              // Audit view is an EE-only feature
+              if (!customElements.get('audit-view')) {
+                // Redirect to dashboard if audit view not available
+                return commands.redirect('/console');
+              }
+              return undefined;
+            },
+            component: 'audit-view',
+          },
         ],
       },
     ]);
