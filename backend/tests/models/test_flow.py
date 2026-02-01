@@ -35,7 +35,7 @@ def test_create_flow(db_session: Session, create_account) -> None:
         name=flow_name,
         description="A test flow description",
         trigger_event_source="test_source",
-        trigger_event_type="test_event",
+        trigger_event_types=["test_event"],  # Use array field
         prompt_template="Test prompt {{data}}",
         agent_type="openhands",
         agent_config={"agent": "TestAgent"},
@@ -57,7 +57,7 @@ def test_get_flow(db_session: Session, create_account) -> None:
     flow_in = FlowCreate(
         name=flow_name,
         trigger_event_source="test_get_source",
-        trigger_event_type="test_get_event",
+        trigger_event_types=["test_get_event"],  # Use array field
         prompt_template="Test get prompt",
         agent_type="openhands",
         agent_config={"agent": "GetAgent"},
@@ -84,7 +84,7 @@ def test_get_flows_by_account(
     flow_in1 = FlowCreate(
         name=flow_name1,
         trigger_event_source="org_source1",
-        trigger_event_type="org_event1",
+        trigger_event_types=["org_event1"],  # Use array field
         prompt_template="Org prompt1",
         agent_type="openhands",
         agent_config={"agent": "OrgAgent1"},
@@ -96,7 +96,7 @@ def test_get_flows_by_account(
     flow_in2 = FlowCreate(
         name=flow_name2,
         trigger_event_source="org_source2",
-        trigger_event_type="org_event2",
+        trigger_event_types=["org_event2"],  # Use array field
         prompt_template="Org prompt2",
         agent_type="openhands",
         agent_config={"agent": "OrgAgent2"},
@@ -113,7 +113,7 @@ def test_get_flows_by_account(
     other_flow_in = FlowCreate(
         name="Other Org Flow",
         trigger_event_source="other_org_source",
-        trigger_event_type="other_org_event",
+        trigger_event_types=["other_org_event"],  # Use array field
         prompt_template="Other org prompt",
         agent_type="openhands",
         agent_config={"agent": "OtherOrgAgent"},
@@ -139,7 +139,7 @@ def test_update_flow(db_session: Session, create_account) -> None:
     flow_in = FlowCreate(
         name=flow_name,
         trigger_event_source="update_source_initial",
-        trigger_event_type="update_event_initial",
+        trigger_event_types=["update_event_initial"],  # Use array field
         prompt_template="Update prompt initial",
         agent_type="openhands",
         agent_config={"agent": "UpdateAgentInitial"},
@@ -183,7 +183,7 @@ def test_remove_flow(db_session: Session, create_account) -> None:
     flow_in = FlowCreate(
         name=flow_name,
         trigger_event_source="remove_source",
-        trigger_event_type="remove_event",
+        trigger_event_types=["remove_event"],  # Use array field
         prompt_template="Remove prompt",
         agent_type="openhands",
         agent_config={"agent": "RemoveAgent"},

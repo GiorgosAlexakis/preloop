@@ -70,7 +70,7 @@ def test_flow(
         name="Test Flow",
         description="Test flow for integration testing",
         trigger_event_source="github",
-        trigger_event_type="push",
+        trigger_event_types=["push"],  # Use array field
         trigger_config={"branch": "main"},
         prompt_template="Test commit: {{trigger_event.payload.commit.message}}",
         ai_model_id=test_ai_model.id,

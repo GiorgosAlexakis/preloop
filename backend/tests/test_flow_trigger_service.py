@@ -52,7 +52,7 @@ def test_flow(db_session: Session, test_account: Account) -> Flow:
         name="Test Flow",
         description="A test flow",
         trigger_event_source="github",
-        trigger_event_type="push",
+        trigger_event_types=["push"],  # Use array field
         prompt_template="Test prompt: {{payload.message}}",
         agent_type="openhands",
         agent_config={"max_iterations": 10},
@@ -71,7 +71,7 @@ def disabled_flow(db_session: Session, test_account: Account) -> Flow:
         name="Disabled Flow",
         description="A disabled test flow",
         trigger_event_source="github",
-        trigger_event_type="push",
+        trigger_event_types=["push"],  # Use array field
         prompt_template="Disabled prompt",
         agent_type="openhands",
         agent_config={"max_iterations": 5},
@@ -91,7 +91,7 @@ def conditional_flow(db_session: Session, test_account: Account) -> Flow:
         name="Conditional Flow",
         description="Flow with branch condition",
         trigger_event_source="github",
-        trigger_event_type="push",
+        trigger_event_types=["push"],  # Use array field
         trigger_config={"branch": "main"},
         prompt_template="Main branch push: {{payload.message}}",
         agent_type="openhands",
@@ -250,7 +250,7 @@ class TestFlowTriggerService:
         flow_in = FlowCreate(
             name="Label Flow",
             trigger_event_source="github",
-            trigger_event_type="issue_created",
+            trigger_event_types=["issue_created"],  # Use array field
             trigger_config={"labels": ["bug", "critical"]},
             prompt_template="Critical bug: {{payload.title}}",
             agent_type="openhands",
@@ -295,7 +295,7 @@ class TestFlowTriggerService:
         flow1_in = FlowCreate(
             name="Flow 1",
             trigger_event_source="github",
-            trigger_event_type="push",
+            trigger_event_types=["push"],  # Use array field
             prompt_template="Flow 1 prompt",
             agent_type="openhands",
             agent_config={},
@@ -308,7 +308,7 @@ class TestFlowTriggerService:
         flow2_in = FlowCreate(
             name="Flow 2",
             trigger_event_source="github",
-            trigger_event_type="push",
+            trigger_event_types=["push"],  # Use array field
             prompt_template="Flow 2 prompt",
             agent_type="openhands",
             agent_config={},

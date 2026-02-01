@@ -594,7 +594,7 @@ class TestListPolicyVersions:
         mock_crud = MagicMock()
         mock_crud.count_by_account.return_value = 0
         mocker.patch(
-            "preloop.api.endpoints.policies.crud_policy_snapshot",
+            "preloop.models.crud.policy_snapshot.crud_policy_snapshot",
             mock_crud,
         )
 
@@ -623,7 +623,7 @@ class TestListPolicyVersions:
         mock_crud = MagicMock()
         mock_crud.count_by_account.return_value = 1
         mocker.patch(
-            "preloop.api.endpoints.policies.crud_policy_snapshot",
+            "preloop.models.crud.policy_snapshot.crud_policy_snapshot",
             mock_crud,
         )
 
@@ -654,7 +654,7 @@ class TestListPolicyVersions:
         mock_crud = MagicMock()
         mock_crud.count_by_account.return_value = 50  # 50 total versions
         mocker.patch(
-            "preloop.api.endpoints.policies.crud_policy_snapshot",
+            "preloop.models.crud.policy_snapshot.crud_policy_snapshot",
             mock_crud,
         )
 
