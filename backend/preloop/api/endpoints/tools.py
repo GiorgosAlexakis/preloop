@@ -18,7 +18,6 @@ from preloop.models.crud import (
     crud_mcp_server,
     crud_mcp_tool,
     crud_tool_configuration,
-    tool_approval_condition,
 )
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
@@ -456,23 +455,24 @@ async def list_all_tools(
         for tc in tool_configs
     }
 
-    # Get all approval conditions to check which tools have them
+    # Get all access rules to check which tools have them
+    # (ToolAccessRule replaced the old ToolApprovalCondition table)
     from sqlalchemy import select
     from preloop.models import models
 
     result = db.execute(
-        select(models.ToolApprovalCondition).where(
-            models.ToolApprovalCondition.account_id == str(account.id),
-            models.ToolApprovalCondition.is_enabled,
+        select(models.ToolAccessRule).where(
+            models.ToolAccessRule.account_id == str(account.id),
+            models.ToolAccessRule.is_enabled == True,  # noqa: E712
         )
     )
-    approval_conditions = result.scalars().all()
+    access_rules = result.scalars().all()
 
-    # Create map of config_id -> has condition
+    # Create map of config_id -> has access rules
     condition_map = {
-        str(cond.tool_configuration_id): True
-        for cond in approval_conditions
-        if cond.condition_expression
+        str(rule.tool_configuration_id): True
+        for rule in access_rules
+        if rule.condition_expression
     }
 
     from preloop.models.crud import crud_tracker
@@ -778,6 +778,9 @@ async def update_tool_approval_condition(
 ) -> ToolConfigurationResponse:
     """Update or create approval condition for a tool configuration.
 
+    This endpoint uses the new ToolAccessRule model (replaced ToolApprovalCondition).
+    For backward compatibility, it manages a single 'require_approval' rule per tool.
+
     Args:
         config_id: Tool configuration ID
         condition_data: Condition data with 'approval_condition' field
@@ -790,8 +793,8 @@ async def update_tool_approval_condition(
     Raises:
         HTTPException: If configuration not found or update fails
     """
-    from preloop.models.crud import tool_approval_condition
-    from preloop.models.models import ToolApprovalCondition
+    from sqlalchemy import select
+    from preloop.models.models import ToolAccessRule
 
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
@@ -806,37 +809,44 @@ async def update_tool_approval_condition(
     approval_condition_expr = condition_data.get("approval_condition")
 
     try:
-        # Get existing condition
-        existing_condition = tool_approval_condition.get_by_tool_configuration(
-            db, tool_configuration_id=config_id, account_id=account.id
+        # Get existing access rule (first one with require_approval action)
+        result = db.execute(
+            select(ToolAccessRule).where(
+                ToolAccessRule.tool_configuration_id == config_id,
+                ToolAccessRule.account_id == str(account.id),
+                ToolAccessRule.action == "require_approval",
+            ).order_by(ToolAccessRule.priority.asc())
         )
+        existing_rule = result.scalar_one_or_none()
 
         if approval_condition_expr:
-            # Create or update condition
-            if existing_condition:
-                # Update existing condition
-                existing_condition.condition_expression = approval_condition_expr
-                existing_condition.is_enabled = True
+            # Create or update access rule
+            if existing_rule:
+                # Update existing rule
+                existing_rule.condition_expression = approval_condition_expr
+                existing_rule.is_enabled = True
                 db.commit()
-                logger.info(f"Updated approval condition for tool config {config_id}")
+                logger.info(f"Updated access rule for tool config {config_id}")
             else:
-                # Create new condition
-                new_condition = ToolApprovalCondition(
+                # Create new access rule
+                new_rule = ToolAccessRule(
                     tool_configuration_id=config_id,
-                    account_id=account.id,
-                    condition_type="argument",  # Default to argument-based
+                    account_id=str(account.id),
+                    condition_type="cel",  # Default to CEL expression
                     condition_expression=approval_condition_expr,
+                    action="require_approval",
+                    priority=0,  # Highest priority
                     is_enabled=True,
                 )
-                db.add(new_condition)
+                db.add(new_rule)
                 db.commit()
-                logger.info(f"Created approval condition for tool config {config_id}")
+                logger.info(f"Created access rule for tool config {config_id}")
         else:
-            # Delete condition if expression is empty
-            if existing_condition:
-                db.delete(existing_condition)
+            # Delete rule if expression is empty
+            if existing_rule:
+                db.delete(existing_rule)
                 db.commit()
-                logger.info(f"Deleted approval condition for tool config {config_id}")
+                logger.info(f"Deleted access rule for tool config {config_id}")
 
         db.refresh(config)
         return ToolConfigurationResponse.model_validate(config)
@@ -1140,7 +1150,7 @@ async def delete_approval_policy(
         )
 
 
-# Tool Approval Condition endpoints
+# Tool Access Rule endpoints (replaces Tool Approval Condition endpoints)
 
 
 @router.get(
@@ -1152,7 +1162,10 @@ async def get_tool_approval_condition(
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ToolApprovalConditionResponse:
-    """Get the approval condition for a tool configuration.
+    """Get the access rule (approval condition) for a tool configuration.
+
+    This endpoint uses the new ToolAccessRule model (replaced ToolApprovalCondition).
+    For backward compatibility, it returns the first 'require_approval' rule.
 
     Args:
         config_id: Tool configuration ID
@@ -1160,11 +1173,14 @@ async def get_tool_approval_condition(
         db: Database session
 
     Returns:
-        Tool approval condition
+        Tool access rule as approval condition response
 
     Raises:
-        HTTPException: If tool configuration not found or condition not found
+        HTTPException: If tool configuration not found or no rules found
     """
+    from sqlalchemy import select
+    from preloop.models.models import ToolAccessRule
+
     # Verify tool configuration exists and belongs to account
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
@@ -1176,18 +1192,35 @@ async def get_tool_approval_condition(
             detail="Tool configuration not found or access denied",
         )
 
-    # Get approval condition
-    condition = tool_approval_condition.get_by_tool_configuration(
-        db, tool_configuration_id=config_id, account_id=account.id
+    # Get first access rule (for backward compatibility)
+    result = db.execute(
+        select(ToolAccessRule).where(
+            ToolAccessRule.tool_configuration_id == config_id,
+            ToolAccessRule.account_id == str(account.id),
+        ).order_by(ToolAccessRule.priority.asc())
     )
+    rule = result.scalar_one_or_none()
 
-    if not condition:
+    if not rule:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No approval condition found for this tool configuration",
+            detail="No access rule found for this tool configuration",
         )
 
-    return ToolApprovalConditionResponse.model_validate(condition)
+    # Map ToolAccessRule to ToolApprovalConditionResponse format
+    return ToolApprovalConditionResponse(
+        id=rule.id,
+        account_id=rule.account_id,
+        tool_configuration_id=rule.tool_configuration_id,
+        name=rule.description,  # Map description -> name
+        description=rule.description,
+        is_enabled=rule.is_enabled,
+        condition_type=rule.condition_type,
+        condition_expression=rule.condition_expression,
+        condition_config=None,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+    )
 
 
 @router.put(
@@ -1200,7 +1233,10 @@ async def create_or_update_tool_approval_condition(
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> ToolApprovalConditionResponse:
-    """Create or update the approval condition for a tool configuration.
+    """Create or update the access rule for a tool configuration.
+
+    This endpoint uses the new ToolAccessRule model (replaced ToolApprovalCondition).
+    For backward compatibility, it manages a single 'require_approval' rule per tool.
 
     Args:
         config_id: Tool configuration ID
@@ -1209,11 +1245,14 @@ async def create_or_update_tool_approval_condition(
         db: Database session
 
     Returns:
-        Created or updated tool approval condition
+        Created or updated access rule as approval condition response
 
     Raises:
         HTTPException: If tool configuration not found or creation fails
     """
+    from sqlalchemy import select
+    from preloop.models.models import ToolAccessRule
+
     # Verify tool configuration exists and belongs to account
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
@@ -1237,28 +1276,57 @@ async def create_or_update_tool_approval_condition(
             )
 
     try:
-        # Create or update condition
-        condition = tool_approval_condition.create_or_update(
-            db,
-            tool_configuration_id=config_id,
-            account_id=account.id,
-            name=condition_in.name,
-            description=condition_in.description,
-            is_enabled=condition_in.is_enabled,
-            condition_type=condition_in.condition_type,
-            condition_expression=condition_in.condition_expression,
-            condition_config=condition_in.condition_config,
+        # Get existing rule or create new one
+        result = db.execute(
+            select(ToolAccessRule).where(
+                ToolAccessRule.tool_configuration_id == config_id,
+                ToolAccessRule.account_id == str(account.id),
+            ).order_by(ToolAccessRule.priority.asc())
         )
+        rule = result.scalar_one_or_none()
+
+        if rule:
+            # Update existing rule
+            rule.description = condition_in.description or condition_in.name
+            rule.is_enabled = condition_in.is_enabled
+            rule.condition_type = condition_in.condition_type or "cel"
+            rule.condition_expression = condition_in.condition_expression
+        else:
+            # Create new rule
+            rule = ToolAccessRule(
+                tool_configuration_id=config_id,
+                account_id=str(account.id),
+                description=condition_in.description or condition_in.name,
+                is_enabled=condition_in.is_enabled,
+                condition_type=condition_in.condition_type or "cel",
+                condition_expression=condition_in.condition_expression,
+                action="require_approval",  # Default action for approval conditions
+                priority=0,
+            )
+            db.add(rule)
 
         db.commit()
-        db.refresh(condition)
+        db.refresh(rule)
 
         logger.info(
-            f"Created/updated approval condition for tool config {config_id} "
+            f"Created/updated access rule for tool config {config_id} "
             f"(account: {account.id})"
         )
 
-        return ToolApprovalConditionResponse.model_validate(condition)
+        # Return in ToolApprovalConditionResponse format
+        return ToolApprovalConditionResponse(
+            id=rule.id,
+            account_id=rule.account_id,
+            tool_configuration_id=rule.tool_configuration_id,
+            name=rule.description,
+            description=rule.description,
+            is_enabled=rule.is_enabled,
+            condition_type=rule.condition_type,
+            condition_expression=rule.condition_expression,
+            condition_config=None,
+            created_at=rule.created_at,
+            updated_at=rule.updated_at,
+        )
 
     except Exception as e:
         db.rollback()
@@ -1281,7 +1349,10 @@ async def delete_tool_approval_condition(
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
-    """Delete the approval condition for a tool configuration.
+    """Delete the access rules for a tool configuration.
+
+    This endpoint uses the new ToolAccessRule model (replaced ToolApprovalCondition).
+    It deletes all access rules for the specified tool configuration.
 
     Args:
         config_id: Tool configuration ID
@@ -1292,8 +1363,11 @@ async def delete_tool_approval_condition(
         Success message
 
     Raises:
-        HTTPException: If tool configuration not found or condition not found
+        HTTPException: If tool configuration not found or no rules found
     """
+    from sqlalchemy import select, delete
+    from preloop.models.models import ToolAccessRule
+
     # Verify tool configuration exists and belongs to account
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
@@ -1305,27 +1379,37 @@ async def delete_tool_approval_condition(
             detail="Tool configuration not found or access denied",
         )
 
-    # Get and delete approval condition
-    condition = tool_approval_condition.get_by_tool_configuration(
-        db, tool_configuration_id=config_id, account_id=account.id
+    # Check if any rules exist
+    result = db.execute(
+        select(ToolAccessRule).where(
+            ToolAccessRule.tool_configuration_id == config_id,
+            ToolAccessRule.account_id == str(account.id),
+        )
     )
+    rules = result.scalars().all()
 
-    if not condition:
+    if not rules:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No approval condition found for this tool configuration",
+            detail="No access rules found for this tool configuration",
         )
 
     try:
-        tool_approval_condition.remove(db, id=condition.id)
+        # Delete all access rules for this tool configuration
+        db.execute(
+            delete(ToolAccessRule).where(
+                ToolAccessRule.tool_configuration_id == config_id,
+                ToolAccessRule.account_id == str(account.id),
+            )
+        )
         db.commit()
 
         logger.info(
-            f"Deleted approval condition for tool config {config_id} "
+            f"Deleted {len(rules)} access rules for tool config {config_id} "
             f"(account: {account.id})"
         )
 
-        return {"message": "Approval condition deleted successfully"}
+        return {"message": "Access rules deleted successfully"}
 
     except Exception as e:
         db.rollback()
