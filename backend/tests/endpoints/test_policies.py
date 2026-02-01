@@ -1,6 +1,7 @@
 """Tests for policies API endpoints."""
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,7 +9,10 @@ from fastapi import HTTPException, status
 
 from preloop.api.endpoints import policies
 from preloop.models.models.account import Account
+from preloop.models.models.policy_snapshot import PolicySnapshot
+from preloop.models.models.user import User
 from preloop.services.policy import (
+    PolicyDiffResult,
     PolicyDocument,
     PolicyImportResult,
     PolicyValidationResult,
@@ -27,9 +31,48 @@ def mock_account():
 
 
 @pytest.fixture
+def mock_user():
+    """Create mock user for testing."""
+    user = MagicMock(spec=User)
+    user.id = uuid.uuid4()
+    user.email = "testuser@example.com"
+    return user
+
+
+@pytest.fixture
 def mock_db():
     """Create mock database session."""
     return MagicMock()
+
+
+@pytest.fixture
+def mock_snapshot():
+    """Create a mock PolicySnapshot for testing."""
+    snapshot = MagicMock(spec=PolicySnapshot)
+    snapshot.id = uuid.uuid4()
+    snapshot.account_id = str(uuid.uuid4())
+    snapshot.version_number = 1
+    snapshot.tag = None
+    snapshot.description = "Test snapshot"
+    snapshot.is_active = True
+    snapshot.mcp_servers_count = 2
+    snapshot.policies_count = 1
+    snapshot.tools_count = 5
+    snapshot.created_at = datetime.now(timezone.utc)
+    snapshot.created_by_user_id = uuid.uuid4()
+    snapshot.snapshot_data = {
+        "version": "1.0",
+        "metadata": {"name": "Test Policy"},
+        "tools": [],
+    }
+    return snapshot
+
+
+@pytest.fixture
+def mock_snapshot_with_tag(mock_snapshot):
+    """Create a mock PolicySnapshot with a tag."""
+    mock_snapshot.tag = "production"
+    return mock_snapshot
 
 
 @pytest.fixture
@@ -529,3 +572,556 @@ tools:
         assert len(result.errors) > 0
         # Should mention the unknown policy
         assert any("nonexistent-policy" in e.message for e in result.errors)
+
+
+# ============================================================================
+# Policy Version Management Endpoint Tests
+# ============================================================================
+
+
+class TestListPolicyVersions:
+    """Test list_policy_versions endpoint."""
+
+    async def test_list_versions_empty(self, mock_db, mock_account, mocker):
+        """Test listing versions when none exist."""
+        mock_service = MagicMock()
+        mock_service.list_snapshots.return_value = []
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        mock_crud = MagicMock()
+        mock_crud.count_by_account.return_value = 0
+        mocker.patch(
+            "preloop.api.endpoints.policies.crud_policy_snapshot",
+            mock_crud,
+        )
+
+        result = await policies.list_policy_versions(
+            limit=100,
+            offset=0,
+            include_snapshots=False,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.versions == []
+        assert result.total == 0
+
+    async def test_list_versions_with_results(
+        self, mock_db, mock_account, mock_snapshot, mocker
+    ):
+        """Test listing versions returns correct data."""
+        mock_service = MagicMock()
+        mock_service.list_snapshots.return_value = [mock_snapshot]
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        mock_crud = MagicMock()
+        mock_crud.count_by_account.return_value = 1
+        mocker.patch(
+            "preloop.api.endpoints.policies.crud_policy_snapshot",
+            mock_crud,
+        )
+
+        result = await policies.list_policy_versions(
+            limit=100,
+            offset=0,
+            include_snapshots=False,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert len(result.versions) == 1
+        assert result.total == 1
+        assert result.versions[0].version_number == 1
+        assert result.versions[0].is_active is True
+
+    async def test_list_versions_with_pagination(
+        self, mock_db, mock_account, mock_snapshot, mocker
+    ):
+        """Test listing versions respects pagination."""
+        mock_service = MagicMock()
+        mock_service.list_snapshots.return_value = [mock_snapshot]
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        mock_crud = MagicMock()
+        mock_crud.count_by_account.return_value = 50  # 50 total versions
+        mocker.patch(
+            "preloop.api.endpoints.policies.crud_policy_snapshot",
+            mock_crud,
+        )
+
+        result = await policies.list_policy_versions(
+            limit=10,
+            offset=5,
+            include_snapshots=False,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        # Verify pagination was passed to service
+        mock_service.list_snapshots.assert_called_once_with(
+            limit=10,
+            offset=5,
+            include_snapshots=False,
+        )
+        assert result.total == 50
+
+
+class TestGetPolicyVersion:
+    """Test get_policy_version endpoint."""
+
+    async def test_get_version_success(self, mock_db, mock_account, mock_snapshot, mocker):
+        """Test retrieving a specific version."""
+        mock_service = MagicMock()
+        mock_service.get_snapshot.return_value = mock_snapshot
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        result = await policies.get_policy_version(
+            version_id=mock_snapshot.id,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.id == mock_snapshot.id
+        assert result.version_number == mock_snapshot.version_number
+        assert result.snapshot_data == mock_snapshot.snapshot_data
+
+    async def test_get_version_not_found(self, mock_db, mock_account, mocker):
+        """Test retrieving a non-existent version returns 404."""
+        mock_service = MagicMock()
+        mock_service.get_snapshot.return_value = None
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await policies.get_policy_version(
+                version_id=uuid.uuid4(),
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+        assert "not found" in exc_info.value.detail.lower()
+
+
+class TestCreatePolicyVersion:
+    """Test create_policy_version endpoint."""
+
+    async def test_create_version_success(
+        self, mock_db, mock_account, mock_user, mock_snapshot, mocker
+    ):
+        """Test creating a new policy version."""
+        mock_service = MagicMock()
+        mock_service.create_snapshot.return_value = mock_snapshot
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.CreateVersionRequest(
+            description="My snapshot",
+            tag="staging",
+        )
+
+        result = await policies.create_policy_version(
+            request=request,
+            account=mock_account,
+            user=mock_user,
+            db=mock_db,
+        )
+
+        assert result.id == mock_snapshot.id
+        assert result.version_number == mock_snapshot.version_number
+        mock_service.create_snapshot.assert_called_once_with(
+            description="My snapshot",
+            tag="staging",
+            user_id=mock_user.id,
+            set_active=True,
+        )
+        mock_db.commit.assert_called_once()
+
+    async def test_create_version_without_tag(
+        self, mock_db, mock_account, mock_user, mock_snapshot, mocker
+    ):
+        """Test creating a version without a tag."""
+        mock_service = MagicMock()
+        mock_service.create_snapshot.return_value = mock_snapshot
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.CreateVersionRequest(
+            description="Simple snapshot",
+        )
+
+        result = await policies.create_policy_version(
+            request=request,
+            account=mock_account,
+            user=mock_user,
+            db=mock_db,
+        )
+
+        assert result is not None
+        mock_service.create_snapshot.assert_called_once_with(
+            description="Simple snapshot",
+            tag=None,
+            user_id=mock_user.id,
+            set_active=True,
+        )
+
+
+class TestUpdateVersionTag:
+    """Test update_version_tag endpoint."""
+
+    async def test_update_tag_success(
+        self, mock_db, mock_account, mock_snapshot_with_tag, mocker
+    ):
+        """Test updating a version's tag."""
+        mock_service = MagicMock()
+        mock_service.update_tag.return_value = (mock_snapshot_with_tag, None)
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.UpdateTagRequest(tag="production")
+
+        result = await policies.update_version_tag(
+            version_id=mock_snapshot_with_tag.id,
+            request=request,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.tag == "production"
+        mock_db.commit.assert_called_once()
+
+    async def test_update_tag_version_not_found(self, mock_db, mock_account, mocker):
+        """Test updating tag on non-existent version returns 404."""
+        mock_service = MagicMock()
+        mock_service.update_tag.return_value = (None, "Snapshot not found")
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.UpdateTagRequest(tag="production")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await policies.update_version_tag(
+                version_id=uuid.uuid4(),
+                request=request,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestRemoveVersionTag:
+    """Test remove_version_tag endpoint."""
+
+    async def test_remove_tag_success(self, mock_db, mock_account, mock_snapshot, mocker):
+        """Test removing a tag from a version."""
+        mock_snapshot.tag = None  # Tag was removed
+        mock_service = MagicMock()
+        mock_service.remove_tag.return_value = (mock_snapshot, None)
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        result = await policies.remove_version_tag(
+            version_id=mock_snapshot.id,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.tag is None
+        mock_db.commit.assert_called_once()
+
+    async def test_remove_tag_version_not_found(self, mock_db, mock_account, mocker):
+        """Test removing tag from non-existent version returns 404."""
+        mock_service = MagicMock()
+        mock_service.remove_tag.return_value = (None, "Snapshot not found")
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await policies.remove_version_tag(
+                version_id=uuid.uuid4(),
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestRollbackToVersion:
+    """Test rollback_to_version endpoint."""
+
+    async def test_rollback_preview_only(self, mock_db, mock_account, mocker):
+        """Test rollback with preview_only=True only returns diff."""
+        mock_diff = PolicyDiffResult(
+            has_changes=True,
+            changes=[],
+            summary="1 tool added",
+        )
+        mock_service = MagicMock()
+        mock_service.rollback_to_snapshot.return_value = (mock_diff, True, None)
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.RollbackRequest(preview_only=True)
+
+        result = await policies.rollback_to_version(
+            version_id=uuid.uuid4(),
+            request=request,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.success is True
+        assert result.diff is not None
+        assert result.diff.has_changes is True
+        # Should NOT commit when preview_only is True
+        mock_db.commit.assert_not_called()
+
+    async def test_rollback_apply(self, mock_db, mock_account, mocker):
+        """Test rollback with preview_only=False applies changes."""
+        mock_diff = PolicyDiffResult(
+            has_changes=True,
+            changes=[],
+            summary="Restored 2 tools",
+        )
+        mock_service = MagicMock()
+        mock_service.rollback_to_snapshot.return_value = (mock_diff, True, None)
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.RollbackRequest(preview_only=False)
+
+        result = await policies.rollback_to_version(
+            version_id=uuid.uuid4(),
+            request=request,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.success is True
+        mock_db.commit.assert_called_once()
+
+    async def test_rollback_version_not_found(self, mock_db, mock_account, mocker):
+        """Test rollback to non-existent version returns 404."""
+        mock_service = MagicMock()
+        mock_service.rollback_to_snapshot.return_value = (None, False, "Snapshot not found")
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.RollbackRequest(preview_only=False)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await policies.rollback_to_version(
+                version_id=uuid.uuid4(),
+                request=request,
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_rollback_failure_returns_error(self, mock_db, mock_account, mocker):
+        """Test rollback failure returns error in response."""
+        mock_diff = PolicyDiffResult(
+            has_changes=True,
+            changes=[],
+            summary="Would restore 2 tools",
+        )
+        mock_service = MagicMock()
+        mock_service.rollback_to_snapshot.return_value = (
+            mock_diff,
+            False,
+            "Failed to apply snapshot: Database error",
+        )
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.RollbackRequest(preview_only=False)
+
+        result = await policies.rollback_to_version(
+            version_id=uuid.uuid4(),
+            request=request,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.success is False
+        assert result.error is not None
+        assert "Failed to apply" in result.error
+
+
+class TestDeletePolicyVersion:
+    """Test delete_policy_version endpoint."""
+
+    async def test_delete_version_success(self, mock_db, mock_account, mocker):
+        """Test successfully deleting a version."""
+        mock_service = MagicMock()
+        mock_service.delete_snapshot.return_value = (True, None)
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        # Should not raise
+        await policies.delete_policy_version(
+            version_id=uuid.uuid4(),
+            account=mock_account,
+            db=mock_db,
+        )
+
+        mock_db.commit.assert_called_once()
+
+    async def test_delete_version_not_found(self, mock_db, mock_account, mocker):
+        """Test deleting non-existent version returns 404."""
+        mock_service = MagicMock()
+        mock_service.delete_snapshot.return_value = (False, "Snapshot not found")
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await policies.delete_policy_version(
+                version_id=uuid.uuid4(),
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_delete_active_version_returns_400(self, mock_db, mock_account, mocker):
+        """Test deleting the active version returns 400."""
+        mock_service = MagicMock()
+        mock_service.delete_snapshot.return_value = (
+            False,
+            "Cannot delete the active snapshot",
+        )
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await policies.delete_policy_version(
+                version_id=uuid.uuid4(),
+                account=mock_account,
+                db=mock_db,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
+        assert "active" in exc_info.value.detail.lower()
+
+
+class TestPrunePolicyVersions:
+    """Test prune_policy_versions endpoint."""
+
+    async def test_prune_versions_success(self, mock_db, mock_account, mocker):
+        """Test pruning old versions."""
+        mock_service = MagicMock()
+        mock_service.prune_snapshots.return_value = 5  # 5 versions deleted
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.PruneRequest(
+            older_than_days=30,
+            keep_tagged=True,
+            keep_count=5,
+        )
+
+        result = await policies.prune_policy_versions(
+            request=request,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.deleted_count == 5
+        mock_service.prune_snapshots.assert_called_once_with(
+            older_than_days=30,
+            keep_tagged=True,
+            keep_count=5,
+        )
+        mock_db.commit.assert_called_once()
+
+    async def test_prune_versions_none_deleted(self, mock_db, mock_account, mocker):
+        """Test pruning when no versions match criteria."""
+        mock_service = MagicMock()
+        mock_service.prune_snapshots.return_value = 0
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.PruneRequest(
+            older_than_days=90,
+            keep_tagged=True,
+            keep_count=10,
+        )
+
+        result = await policies.prune_policy_versions(
+            request=request,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.deleted_count == 0
+
+    async def test_prune_with_default_values(self, mock_db, mock_account, mocker):
+        """Test pruning with default request values."""
+        mock_service = MagicMock()
+        mock_service.prune_snapshots.return_value = 3
+        mocker.patch(
+            "preloop.api.endpoints.policies.PolicyVersionService",
+            return_value=mock_service,
+        )
+
+        request = policies.PruneRequest()  # Use all defaults
+
+        result = await policies.prune_policy_versions(
+            request=request,
+            account=mock_account,
+            db=mock_db,
+        )
+
+        assert result.deleted_count == 3
+        # Verify default values were passed
+        mock_service.prune_snapshots.assert_called_once_with(
+            older_than_days=90,  # default
+            keep_tagged=True,  # default
+            keep_count=10,  # default
+        )
