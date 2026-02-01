@@ -1192,14 +1192,9 @@ ${log.payload.content}</pre
       const result = await retryFlowExecution(this.executionId);
 
       // Navigate to the new execution
-      const executionId = result.execution_id ?? result.id;
-      if (executionId) {
-        window.location.href = `/console/flows/executions/${executionId}`;
-      }
-      if (executionId) {
-        window.location.href = `/console/flows/executions/${executionId}`;
-      }
-        window.location.href = `/console/flows/executions/${result.execution_id}`;
+      // Backend returns { id, status, flow_id }
+      if (result.id) {
+        window.location.href = `/console/flows/executions/${result.id}`;
       }
     } catch (error) {
       console.error('Failed to retry execution:', error);

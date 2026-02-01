@@ -885,7 +885,11 @@ async def test_retry_flow_execution_success_failed(
     # Mock the FlowTriggerService - patch at the source since it's imported inside the function
     mock_trigger_service = MagicMock()
     mock_trigger_service.trigger_flow = mocker.AsyncMock(
-        return_value={"execution_id": str(new_execution_id), "status": "triggered"}
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
     )
     mocker.patch(
         "preloop.services.flow_trigger_service.FlowTriggerService",
@@ -899,9 +903,9 @@ async def test_retry_flow_execution_success_failed(
         )
     )
 
-    # Assert
-    assert result["execution_id"] == str(new_execution_id)
-    assert result["status"] == "triggered"
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
+    assert result["status"] == "PENDING"
 
     # Verify trigger_flow was called with correct parameters
     mock_trigger_service.trigger_flow.assert_called_once()
@@ -945,7 +949,11 @@ async def test_retry_flow_execution_success_stopped(
     # Mock the FlowTriggerService - patch at the source since it's imported inside the function
     mock_trigger_service = MagicMock()
     mock_trigger_service.trigger_flow = mocker.AsyncMock(
-        return_value={"execution_id": str(new_execution_id), "status": "triggered"}
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
     )
     mocker.patch(
         "preloop.services.flow_trigger_service.FlowTriggerService",
@@ -959,8 +967,8 @@ async def test_retry_flow_execution_success_stopped(
         )
     )
 
-    # Assert
-    assert result["execution_id"] == str(new_execution_id)
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
 
     # Verify retry_of_execution_id is passed
     call_kwargs = mock_trigger_service.trigger_flow.call_args.kwargs
@@ -1000,7 +1008,11 @@ async def test_retry_flow_execution_success_timeout(
     # Mock the FlowTriggerService - patch at the source since it's imported inside the function
     mock_trigger_service = MagicMock()
     mock_trigger_service.trigger_flow = mocker.AsyncMock(
-        return_value={"execution_id": str(new_execution_id), "status": "triggered"}
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
     )
     mocker.patch(
         "preloop.services.flow_trigger_service.FlowTriggerService",
@@ -1014,8 +1026,8 @@ async def test_retry_flow_execution_success_timeout(
         )
     )
 
-    # Assert
-    assert result["execution_id"] == str(new_execution_id)
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
 
 
 @pytest.mark.asyncio
@@ -1053,7 +1065,11 @@ async def test_retry_flow_execution_success_cancelled(
     # Mock the FlowTriggerService - patch at the source since it's imported inside the function
     mock_trigger_service = MagicMock()
     mock_trigger_service.trigger_flow = mocker.AsyncMock(
-        return_value={"execution_id": str(new_execution_id), "status": "triggered"}
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
     )
     mocker.patch(
         "preloop.services.flow_trigger_service.FlowTriggerService",
@@ -1067,8 +1083,8 @@ async def test_retry_flow_execution_success_cancelled(
         )
     )
 
-    # Assert
-    assert result["execution_id"] == str(new_execution_id)
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
 
     # Verify trigger_event_data is preserved from original execution
     call_kwargs = mock_trigger_service.trigger_flow.call_args.kwargs
