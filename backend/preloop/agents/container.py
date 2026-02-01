@@ -802,6 +802,9 @@ class ContainerAgentExecutor(AgentExecutor):
         """
         Extract error message from logs.
 
+        Searches from the END of logs for the most relevant error, filtering
+        out status/metadata lines that don't contain useful error information.
+
         Args:
             logs_text: Full log text
 
@@ -809,24 +812,59 @@ class ContainerAgentExecutor(AgentExecutor):
             Extracted error message or empty string
         """
         lines = logs_text.split("\n")
-        error_lines = []
 
-        # Look for exception or error messages
-        for i, line in enumerate(lines):
-            line_lower = line.lower()
+        # Filter out status/metadata lines that aren't useful for error display
+        status_prefixes = (
+            "[Agent Status]",
+            "[Status Update]",
+            "Status:",
+            '{"status":',
+        )
+
+        # Get content lines (non-empty, non-status lines)
+        content_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith(status_prefixes):
+                content_lines.append(line)
+
+        if not content_lines:
+            return ""
+
+        # Priority 1: Look for explicit ERROR: lines from the end (most relevant)
+        # These are typically agent-generated errors like "ERROR: Quota exceeded"
+        for i in range(len(content_lines) - 1, -1, -1):
+            line = content_lines[i]
+            if line.strip().upper().startswith("ERROR:"):
+                # Found an explicit error line - return it with some context
+                start = max(0, i - 2)
+                end = min(len(content_lines), i + 3)
+                return "\n".join(content_lines[start:end])
+
+        # Priority 2: Look for Python exceptions/tracebacks from the end
+        for i in range(len(content_lines) - 1, -1, -1):
+            line_lower = content_lines[i].lower()
             if any(
                 pattern in line_lower
-                for pattern in ["error", "exception", "failed", "fatal"]
+                for pattern in ["traceback", "exception:", "raise "]
             ):
+                # Found exception - include context
+                start = max(0, i)
+                end = min(len(content_lines), i + 10)
+                return "\n".join(content_lines[start:end])
+
+        # Priority 3: Look for other error patterns from the end
+        for i in range(len(content_lines) - 1, -1, -1):
+            line_lower = content_lines[i].lower()
+            if any(pattern in line_lower for pattern in ["error", "failed", "fatal"]):
                 # Include some context around the error
                 start = max(0, i - 2)
-                end = min(len(lines), i + 5)
-                error_lines = lines[start:end]
-                break
+                end = min(len(content_lines), i + 3)
+                return "\n".join(content_lines[start:end])
 
-        if error_lines:
-            return "\n".join(error_lines)
-        return ""
+        # Priority 4: If no error patterns found, return last few content lines
+        # as they may contain relevant information about why the execution failed
+        return "\n".join(content_lines[-5:])
 
     async def stop(self, session_reference: str) -> None:
         """
