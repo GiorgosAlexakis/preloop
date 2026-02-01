@@ -5,7 +5,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from ..models.policy_snapshot import PolicySnapshot
 from .base import CRUDBase
@@ -117,14 +117,21 @@ class CRUDPolicySnapshot(CRUDBase[PolicySnapshot]):
             skip: Number of records to skip.
             limit: Maximum number of records to return.
             include_snapshots: Whether to include full snapshot data.
+                When False (default), the snapshot_data column is deferred
+                to avoid loading large JSONB data for metadata-only queries.
 
         Returns:
             List of PolicySnapshot objects.
         """
+        query = db.query(self.model).filter(self.model.account_id == account_id)
+
+        # Defer loading of snapshot_data when not needed (performance optimization)
+        # This avoids loading potentially large JSONB data for list/metadata queries
+        if not include_snapshots:
+            query = query.options(defer(self.model.snapshot_data))
+
         query = (
-            db.query(self.model)
-            .filter(self.model.account_id == account_id)
-            .order_by(self.model.version_number.desc())
+            query.order_by(self.model.version_number.desc())
             .offset(skip)
             .limit(limit)
         )

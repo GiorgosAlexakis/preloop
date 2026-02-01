@@ -253,10 +253,32 @@ def evaluate_policy(
                 )
 
         except Exception as e:
-            logger.warning(
-                f"Error evaluating rule {rule.id}: {e}. Skipping to next rule."
+            # SECURITY: Fail closed on evaluation errors
+            # Rather than skipping to the next rule (which could lead to default-allow),
+            # we require approval when rule evaluation fails. This ensures that:
+            # 1. Malformed rules don't silently get bypassed
+            # 2. Unexpected errors don't result in unauthorized access
+            # 3. The action is conservative (require human review) rather than permissive
+            logger.error(
+                f"Error evaluating rule {rule.id}: {e}. "
+                f"Failing closed with require_approval for security."
             )
-            continue
+            error_desc = f"Rule evaluation error: {e} (failing closed)"
+            _log_policy_decision_async(
+                account_id=account_id,
+                tool_name=tool_name,
+                action="require_approval",
+                rule_description=error_desc,
+                condition_matched=rule.condition_expression,
+                tool_args=tool_args,
+                user_id=user_id,
+                execution_id=execution_id,
+            )
+            return (
+                "require_approval",
+                tool_config.approval_policy_id,
+                error_desc,
+            )
 
     # No rules matched, default allow
     _log_policy_decision_async(
@@ -675,10 +697,32 @@ async def evaluate_policy_async(
                 )
 
         except Exception as e:
-            logger.warning(
-                f"Error evaluating rule {rule.id}: {e}. Skipping to next rule."
+            # SECURITY: Fail closed on evaluation errors
+            # Rather than skipping to the next rule (which could lead to default-allow),
+            # we require approval when rule evaluation fails. This ensures that:
+            # 1. Malformed rules don't silently get bypassed
+            # 2. Unexpected errors don't result in unauthorized access
+            # 3. The action is conservative (require human review) rather than permissive
+            logger.error(
+                f"Error evaluating rule {rule.id}: {e}. "
+                f"Failing closed with require_approval for security."
             )
-            continue
+            error_desc = f"Rule evaluation error: {e} (failing closed)"
+            _log_policy_decision_async(
+                account_id=account_id,
+                tool_name=tool_name,
+                action="require_approval",
+                rule_description=error_desc,
+                condition_matched=rule.condition_expression,
+                tool_args=tool_args,
+                user_id=user_id,
+                execution_id=execution_id,
+            )
+            return (
+                "require_approval",
+                tool_config.approval_policy_id,
+                error_desc,
+            )
 
     # No rules matched, default allow
     _log_policy_decision_async(
