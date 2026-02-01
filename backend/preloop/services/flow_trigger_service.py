@@ -570,10 +570,13 @@ class FlowTriggerService:
             logger.info(f"Triggering test execution for flow '{flow.name}' ({flow.id})")
 
         # Pre-create the execution record so we can return its ID immediately
-        # Merge test_mode flag with custom trigger_event_data if provided
-        trigger_details = {"test_mode": test_mode}
+        # Merge custom trigger_event_data with test_mode flag
+        # Important: Set test_mode AFTER updating from trigger_event_data to ensure
+        # retries don't inherit test_mode=True from the original test execution
+        trigger_details = {}
         if trigger_event_data:
             trigger_details.update(trigger_event_data)
+        trigger_details["test_mode"] = test_mode
 
         execution_data = FlowExecutionCreate(
             flow_id=flow_id,
