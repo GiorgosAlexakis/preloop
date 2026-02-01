@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from preloop.services.policy.schema import (
     ApprovalPolicyDefinition,
     ConditionAction,
+    ConditionType,
     DefaultsDefinition,
     MCPServerDefinition,
     PolicyDiffItem,
@@ -52,6 +53,17 @@ CEL_FUNCTIONS = [
     " in ",
 ]
 
+# CEL operators that indicate a complex expression requiring CEL evaluator
+# These are distinct from simple Python-like comparisons (==, !=, >, <, >=, <=)
+CEL_OPERATORS = [
+    "&&",  # Logical AND
+    "||",  # Logical OR
+    "!",  # Logical NOT (but not !=)
+    "?",  # Ternary operator (condition ? true : false)
+    "[",  # List/map access
+    "{",  # Map literal
+]
+
 
 def _detect_condition_type(expression: str) -> str:
     """Detect whether an expression is simple or requires CEL.
@@ -60,14 +72,27 @@ def _detect_condition_type(expression: str) -> str:
         expression: The condition expression to analyze.
 
     Returns:
-        'cel' if expression uses CEL-specific functions, 'simple' otherwise.
+        'cel' if expression uses CEL-specific functions or operators, 'simple' otherwise.
     """
     if not expression:
         return "simple"
 
     expression_lower = expression.lower()
+
+    # Check for CEL functions
     for func in CEL_FUNCTIONS:
         if func.lower() in expression_lower:
+            return "cel"
+
+    # Check for CEL operators
+    for op in CEL_OPERATORS:
+        if op == "!":
+            # Match '!' but not '!=' (which is a simple operator)
+            import re
+
+            if re.search(r"(?<!=)!(?!=)", expression):
+                return "cel"
+        elif op in expression:
             return "cel"
 
     return "simple"
@@ -859,27 +884,53 @@ class PolicyApplier:
                 self.db, account_id=self.account_id, name=server_def.name
             )
 
+            # Check if auth_config is a redaction marker (from exported snapshots)
+            # If so, we should NOT overwrite existing credentials
+            auth_config_is_redacted = (
+                isinstance(server_def.auth_config, dict)
+                and server_def.auth_config.get("redacted") is True
+            )
+
             if existing:
                 # Update existing server
                 if not dry_run:
                     existing.url = server_def.url
                     existing.transport = server_def.transport
                     existing.auth_type = server_def.auth_type
-                    if server_def.auth_config:
+                    # Only update auth_config if:
+                    # 1. It's provided AND
+                    # 2. It's NOT a redaction marker
+                    # This prevents rollbacks from wiping credentials
+                    if server_def.auth_config and not auth_config_is_redacted:
                         existing.auth_config = server_def.auth_config
+                    elif auth_config_is_redacted:
+                        logger.debug(
+                            f"Skipping auth_config update for {server_def.name} "
+                            "(redacted in snapshot, preserving existing credentials)"
+                        )
                 self._mcp_server_map[server_def.name] = existing.id
                 self._result.mcp_servers_updated += 1
                 logger.info(f"Updated MCP server: {server_def.name}")
             else:
                 # Create new server
                 if not dry_run:
+                    # For new servers with redacted auth, set to None
+                    # (user will need to configure credentials)
+                    actual_auth_config = (
+                        None if auth_config_is_redacted else server_def.auth_config
+                    )
+                    if auth_config_is_redacted:
+                        logger.warning(
+                            f"Creating MCP server {server_def.name} without credentials "
+                            "(redacted in snapshot). Configure auth_config manually."
+                        )
                     new_server = MCPServer(
                         account_id=self.account_id,
                         name=server_def.name,
                         url=server_def.url,
                         transport=server_def.transport,
                         auth_type=server_def.auth_type,
-                        auth_config=server_def.auth_config,
+                        auth_config=actual_auth_config,
                         status="active",
                     )
                     self.db.add(new_server)
@@ -1152,8 +1203,31 @@ class PolicyApplier:
             else:
                 action = str(condition.action)
 
-            # Detect condition type based on expression complexity
-            condition_type = _detect_condition_type(condition.expression)
+            # Determine condition type:
+            # 1. If explicitly set to 'cel' in the policy, always honor it
+            # 2. If 'simple' (or default), auto-detect and upgrade to 'cel' if needed
+            # This prevents CEL expressions from being silently downgraded to 'simple'
+            # which would cause them to fail parsing and fall back to default-allow
+            explicit_type = getattr(condition, "condition_type", None)
+            if isinstance(explicit_type, ConditionType):
+                explicit_type = explicit_type.value
+
+            detected_type = _detect_condition_type(condition.expression)
+
+            if explicit_type == "cel":
+                # Explicitly marked as CEL - always honor
+                condition_type = "cel"
+            elif detected_type == "cel":
+                # Detection suggests CEL - upgrade to prevent policy bypass
+                if explicit_type == "simple":
+                    logger.warning(
+                        f"Condition expression appears to be CEL but was marked as 'simple': "
+                        f"{condition.expression[:50]}... Upgrading to 'cel' to prevent policy bypass."
+                    )
+                condition_type = "cel"
+            else:
+                # Use the explicit type or default to simple
+                condition_type = explicit_type if explicit_type else "simple"
 
             new_rule = ToolAccessRule(
                 account_id=self.account_id,
@@ -1174,18 +1248,59 @@ class PolicyApplier:
     ) -> None:
         """Apply default behavior settings.
 
-        Note: Defaults are stored at the account level and may require
-        custom handling depending on your account model.
+        NOTE: Default settings are not yet implemented. This method will raise
+        an error if restrictive defaults are specified that would be silently
+        ignored (leading to fail-open behavior).
+
+        Safe defaults (that match current behavior):
+        - unknown_tools: "allow"
+        - require_approval_for_new_tools: false
+
+        Restrictive defaults (not yet supported, will error):
+        - unknown_tools: "deny" or "require_approval"
+        - require_approval_for_new_tools: true
         """
-        # TODO: Implement default settings storage
-        # This might involve:
-        # 1. An account_settings table
-        # 2. A dedicated defaults column on the account table
-        # 3. Creating catch-all tool configurations
-        logger.info(
-            f"Default settings would be applied: unknown_tools={defaults.unknown_tools}"
+        # Check for restrictive settings that would be silently ignored
+        unsupported_settings = []
+
+        # Check unknown_tools - only "allow" is supported (current default behavior)
+        unknown_tools_value = (
+            defaults.unknown_tools.value
+            if hasattr(defaults.unknown_tools, "value")
+            else defaults.unknown_tools
         )
-        pass
+        if unknown_tools_value != "allow":
+            unsupported_settings.append(
+                f"unknown_tools='{unknown_tools_value}' (only 'allow' is currently supported)"
+            )
+
+        # Check require_approval_for_new_tools - only False is supported
+        if defaults.require_approval_for_new_tools:
+            unsupported_settings.append(
+                "require_approval_for_new_tools=true (not yet implemented)"
+            )
+
+        # Check default_approval_policy - not yet enforced
+        if defaults.default_approval_policy:
+            unsupported_settings.append(
+                f"default_approval_policy='{defaults.default_approval_policy}' (not yet implemented)"
+            )
+
+        if unsupported_settings:
+            error_msg = (
+                "Policy contains restrictive default settings that are not yet supported. "
+                "These settings would be silently ignored, leading to permissive behavior. "
+                f"Unsupported settings: {'; '.join(unsupported_settings)}. "
+                "Remove these settings or wait for implementation."
+            )
+            self._result.errors.append(error_msg)
+            raise PolicyValidationError(error_msg)
+
+        # Safe defaults - just log and continue
+        logger.info(
+            f"Default settings validated (using built-in defaults): "
+            f"unknown_tools={unknown_tools_value}"
+        )
 
 
 def export_current_policy(
@@ -1193,6 +1308,7 @@ def export_current_policy(
     account_id: Union[str, UUID],
     policy_name: str = "Exported Policy",
     include_mcp_servers: bool = True,
+    include_credentials: bool = False,
 ) -> PolicyDocument:
     """Export the current configuration as a policy document.
 
@@ -1201,8 +1317,12 @@ def export_current_policy(
         account_id: The account ID to export from.
         policy_name: Name for the exported policy.
         include_mcp_servers: Whether to include MCP server definitions.
-            When True, servers are included but credentials are redacted.
+            When True, servers are included but credentials are redacted by default.
             When False, the mcp_servers section is omitted entirely.
+        include_credentials: Whether to include MCP server credentials.
+            When False (default), auth_config is set to {"redacted": True}.
+            When True, actual credentials are included (for internal snapshots).
+            SECURITY: Only use True for internal operations like versioning.
 
     Returns:
         PolicyDocument representing the current configuration.
@@ -1225,18 +1345,25 @@ def export_current_policy(
         mcp_servers = crud_mcp_server.get_active_by_account(
             db, account_id=account_id_str
         )
-        server_defs = [
-            MCPServerDefinition(
-                name=server.name,
-                url=server.url,
-                transport=server.transport,
-                auth_type=server.auth_type,
+        server_defs = []
+        for server in mcp_servers:
+            if include_credentials:
+                # Include actual credentials (for internal snapshots/versioning)
+                auth_config = server.auth_config
+            else:
                 # Redact credentials for security - set to placeholder indicating
                 # they need to be configured
-                auth_config={"redacted": True} if server.auth_config else None,
+                auth_config = {"redacted": True} if server.auth_config else None
+
+            server_defs.append(
+                MCPServerDefinition(
+                    name=server.name,
+                    url=server.url,
+                    transport=server.transport,
+                    auth_type=server.auth_type,
+                    auth_config=auth_config,
+                )
             )
-            for server in mcp_servers
-        ]
         server_name_map = {str(s.id): s.name for s in mcp_servers}
     else:
         # Still need to build the server name map for tool source references
@@ -1321,9 +1448,11 @@ def export_current_policy(
             name=config.tool_name,
             source=source,
             enabled=config.is_enabled,
-            approval_policy=policy_name_map.get(str(config.approval_policy_id))
-            if config.approval_policy_id
-            else None,
+            approval_policy=(
+                policy_name_map.get(str(config.approval_policy_id))
+                if config.approval_policy_id
+                else None
+            ),
             conditions=conditions if conditions else None,
             description=config.tool_description,
             custom_config=config.custom_config,

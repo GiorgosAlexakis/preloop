@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Policy-as-Code**: Define and manage policies declaratively via YAML files
+  - `POST /api/v1/policies/import`: Import policy from YAML with validation and diff preview
+  - `GET /api/v1/policies/export`: Export current configuration as YAML
+  - `POST /api/v1/policies/validate`: Validate policy syntax without applying
+  - `POST /api/v1/policies/diff`: Compare policy document against current state
+  - Supports MCP servers, approval policies, tool configurations, and access rules
+- **Policy Versioning & Rollback**: Version control for policy configurations
+  - `GET /api/v1/policies/versions`: List all policy versions
+  - `POST /api/v1/policies/versions`: Create a snapshot of current policy state
+  - `PUT /api/v1/policies/versions/{id}/tag`: Tag versions for identification (e.g., "production", "v1.0")
+  - `POST /api/v1/policies/versions/{id}/rollback`: Rollback to a previous version with diff preview
+  - `DELETE /api/v1/policies/versions/{id}`: Delete old versions (supports pruning by age)
+  - Credential-safe rollbacks: MCP server credentials are preserved during rollback
+- **AI-Driven Approvals**: New approval type where an AI model evaluates tool call requests
+  - Configure approval policies with `approval_mode: "ai_driven"`
+  - Set AI model, custom guidelines, confidence threshold (0.0-1.0)
+  - Fallback behavior when AI is uncertain: escalate to human, auto-approve, or auto-deny
+  - Full audit logging of AI decisions with reasoning and confidence scores
+- **Tool Access Rules**: Fine-grained access control for tools beyond approvals
+  - Define multiple rules per tool with `allow`, `deny`, or `require_approval` actions
+  - Priority-based rule evaluation (higher priority rules are checked first)
+  - Condition expressions for parameter-based rules (e.g., `args.amount > 500`)
+  - Replaces the simpler `tool_approval_conditions` table
+- **Policy Analysis**: Analyze policies for potential issues
+  - `POST /api/v1/policies/analyze`: Detect always-match, never-match, unreachable, or conflicting rules
+  - Natural language policy authoring assistance via configured AI model
+- **CLI Tool**: Go-based command-line interface for policy management (`preloop/cli/`)
+  - `preloop auth login/logout/status`: Authentication management
+  - `preloop policy import/export/validate/diff`: Policy operations
+  - `preloop tools list/configure`: Tool management
+  - Daily version check with update prompts
 - **Flow Execution Retry**: Failed, stopped, timed out, or cancelled flow executions can now be retried via `POST /api/v1/flows/executions/{id}/retry`. The new execution is linked to the original via `retry_of_execution_id` and uses the same trigger event data. UI retry button available in the execution detail view.
 - **update_comment Issue Comment Support**: The `update_comment` tool now supports PR conversation comments (issue comments) in addition to inline review comments. Use the optional `comment_type` parameter to specify the type, or let the tool auto-detect by trying review_comment first then issue_comment.
 - **Pull Request/Merge Request MCP Tools**: New built-in tools for PR/MR management:
@@ -29,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Tool Access Control**: Replaced `tool_approval_conditions` table with `tool_access_rules` supporting multiple rules per tool with allow/deny/require_approval actions and priority-based evaluation
+- **Approval Policy Schema**: Added AI-driven approval fields (`approval_mode`, `ai_model`, `ai_guidelines`, `ai_context`, `ai_confidence_threshold`, `ai_fallback_behavior`, `escalation_policy_id`)
 - **FCM Service**: Moved Firebase SDK calls to thread pool executor to avoid blocking the event loop
 - **Session Manager**: Database writes now run in thread pool to prevent event loop blocking during connection spikes
 - **WebSocket Endpoints**: Updated to support message-based authentication for browsers
@@ -66,3 +99,12 @@ New environment variables (see `.env.example`):
 - `PUSH_PROXY_URL` / `PUSH_PROXY_API_KEY`: Push proxy configuration for OSS instances
 - `PRELOOP_DISABLE_TELEMETRY`: Disable version check telemetry
 - `VERSION_CHECK_INTERVAL`: Seconds between version checks (default: 86400 = 24h)
+
+### Database
+
+New migration `20260201_policy_engine_enhancements`:
+- Creates `tool_access_rules` table (replaces `tool_approval_conditions`)
+- Creates `policy_snapshot` table for policy versioning
+- Adds AI approval columns to `approval_policy` table
+- Migrates existing `tool_approval_conditions` data to new schema
+- Run `alembic upgrade head` after updating

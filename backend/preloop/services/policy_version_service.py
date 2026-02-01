@@ -69,10 +69,13 @@ class PolicyVersionService:
             The created PolicySnapshot.
         """
         # Export current policy state
+        # IMPORTANT: include_credentials=True for internal snapshots
+        # so rollbacks preserve MCP server credentials
         policy = export_current_policy(
             self.db,
             account_id=self.account_id,
             policy_name=f"Snapshot {datetime.now(timezone.utc).isoformat()}",
+            include_credentials=True,
         )
 
         # Get counts for summary

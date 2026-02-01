@@ -422,6 +422,14 @@ class TestApprovalPolicyEndpoints:
         policy.escalation_team_ids = None
         policy.notification_channels = ["email"]
         policy.channel_configs = None
+        # AI approval fields
+        policy.approval_mode = "standard"
+        policy.ai_model = None
+        policy.ai_guidelines = None
+        policy.ai_context = None
+        policy.ai_confidence_threshold = 0.8
+        policy.ai_fallback_behavior = "escalate"
+        policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -478,6 +486,14 @@ class TestApprovalPolicyEndpoints:
         created_policy.escalation_team_ids = None
         created_policy.notification_channels = ["email"]
         created_policy.channel_configs = None
+        # AI approval fields
+        created_policy.approval_mode = "standard"
+        created_policy.ai_model = None
+        created_policy.ai_guidelines = None
+        created_policy.ai_context = None
+        created_policy.ai_confidence_threshold = 0.8
+        created_policy.ai_fallback_behavior = "escalate"
+        created_policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         created_policy.created_at = datetime.now(UTC)
@@ -553,6 +569,14 @@ class TestApprovalPolicyEndpoints:
         policy.escalation_team_ids = None
         policy.notification_channels = ["email"]
         policy.channel_configs = None
+        # AI approval fields
+        policy.approval_mode = "standard"
+        policy.ai_model = None
+        policy.ai_guidelines = None
+        policy.ai_context = None
+        policy.ai_confidence_threshold = 0.8
+        policy.ai_fallback_behavior = "escalate"
+        policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -597,6 +621,14 @@ class TestApprovalPolicyEndpoints:
         policy.escalation_team_ids = None
         policy.notification_channels = ["email"]
         policy.channel_configs = None
+        # AI approval fields
+        policy.approval_mode = "standard"
+        policy.ai_model = None
+        policy.ai_guidelines = None
+        policy.ai_context = None
+        policy.ai_confidence_threshold = 0.8
+        policy.ai_fallback_behavior = "escalate"
+        policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)

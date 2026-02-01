@@ -13,7 +13,7 @@ This migration combines multiple enhancements to the policy engine:
    - Drops the old tool_approval_conditions table
 
 2. Policy Versioning:
-   - Creates policy_version table for storing complete policy snapshots
+   - Creates policy_snapshot table for storing complete policy snapshots
    - Enables version tracking, tagging, and rollback capabilities
 
 3. AI-Driven Approvals:
@@ -172,11 +172,11 @@ def upgrade() -> None:
     op.drop_table("tool_approval_conditions")
 
     # ==========================================================================
-    # Part 2: Policy Version Table
+    # Part 2: Policy Snapshot Table
     # ==========================================================================
 
     op.create_table(
-        "policy_version",
+        "policy_snapshot",
         # Primary key
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         # Account reference
@@ -187,13 +187,15 @@ def upgrade() -> None:
         ),
         # Version info
         sa.Column("version_number", sa.Integer(), nullable=False),
-        sa.Column("tag", sa.String(length=100), nullable=True),
+        sa.Column("tag", sa.String(length=255), nullable=True),
         sa.Column("description", sa.Text(), nullable=True),
         # Complete snapshot as JSONB
-        sa.Column("snapshot", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "snapshot_data", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
         # Metadata
         sa.Column(
-            "created_by_id",
+            "created_by_user_id",
             postgresql.UUID(as_uuid=True),
             nullable=True,
         ),
@@ -204,16 +206,24 @@ def upgrade() -> None:
             nullable=False,
             server_default="false",
         ),
+        # Summary stats for quick reference
         sa.Column(
-            "applied_at",
-            sa.DateTime(timezone=True),
-            nullable=True,
+            "mcp_servers_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
         ),
-        # For pruning
         sa.Column(
-            "last_used_at",
-            sa.DateTime(timezone=True),
-            nullable=True,
+            "policies_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
+        sa.Column(
+            "tools_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
         ),
         # Timestamps
         sa.Column(
@@ -233,43 +243,47 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["account_id"],
             ["account.id"],
-            name="fk_policy_version_account_id",
+            name="fk_policy_snapshot_account_id",
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["created_by_id"],
+            ["created_by_user_id"],
             ["user.id"],
-            name="fk_policy_version_created_by_id",
+            name="fk_policy_snapshot_created_by_user_id",
             ondelete="SET NULL",
         ),
         # Unique constraint on (account_id, version_number)
         sa.UniqueConstraint(
             "account_id",
             "version_number",
-            name="uq_policy_version_account_version",
+            name="uq_policy_snapshot_account_version",
         ),
     )
 
-    # Create indexes for policy_version
+    # Create indexes for policy_snapshot
     op.create_index(
-        op.f("ix_policy_version_account_id"),
-        "policy_version",
+        op.f("ix_policy_snapshot_account_id"),
+        "policy_snapshot",
         ["account_id"],
         unique=False,
     )
     op.create_index(
-        "ix_policy_version_account_is_active",
-        "policy_version",
+        "ix_policy_snapshot_account_is_active",
+        "policy_snapshot",
         ["account_id", "is_active"],
         unique=False,
     )
-    # Partial unique index on (account_id, tag) where tag is not null
     op.create_index(
-        "ix_policy_version_account_tag_unique",
-        "policy_version",
-        ["account_id", "tag"],
-        unique=True,
-        postgresql_where=sa.text("tag IS NOT NULL"),
+        op.f("ix_policy_snapshot_version_number"),
+        "policy_snapshot",
+        ["version_number"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_policy_snapshot_tag"),
+        "policy_snapshot",
+        ["tag"],
+        unique=False,
     )
 
     # ==========================================================================
@@ -416,22 +430,26 @@ def downgrade() -> None:
     op.drop_column("approval_policy", "approval_mode")
 
     # ==========================================================================
-    # Part 2: Drop Policy Version Table
+    # Part 2: Drop Policy Snapshot Table
     # ==========================================================================
 
     op.drop_index(
-        "ix_policy_version_account_tag_unique",
-        table_name="policy_version",
+        op.f("ix_policy_snapshot_tag"),
+        table_name="policy_snapshot",
     )
     op.drop_index(
-        "ix_policy_version_account_is_active",
-        table_name="policy_version",
+        op.f("ix_policy_snapshot_version_number"),
+        table_name="policy_snapshot",
     )
     op.drop_index(
-        op.f("ix_policy_version_account_id"),
-        table_name="policy_version",
+        "ix_policy_snapshot_account_is_active",
+        table_name="policy_snapshot",
     )
-    op.drop_table("policy_version")
+    op.drop_index(
+        op.f("ix_policy_snapshot_account_id"),
+        table_name="policy_snapshot",
+    )
+    op.drop_table("policy_snapshot")
 
     # ==========================================================================
     # Part 1: Recreate tool_approval_conditions, migrate data, drop tool_access_rules
