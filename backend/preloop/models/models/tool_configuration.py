@@ -3,8 +3,8 @@
 import uuid
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, Integer
-from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, Integer, Float
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Boolean, JSON
 
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
     from .tool_approval_condition import ToolApprovalCondition
+    from .tool_access_rule import ToolAccessRule
 
 
 class ToolConfiguration(Base):
@@ -120,6 +121,11 @@ class ToolConfiguration(Base):
         "ToolApprovalCondition",
         back_populates="tool_configuration",
         uselist=False,  # 1:1 relationship
+        cascade="all, delete-orphan",
+    )
+    access_rules: Mapped[list["ToolAccessRule"]] = relationship(
+        "ToolAccessRule",
+        back_populates="tool_configuration",
         cascade="all, delete-orphan",
     )
 
@@ -287,6 +293,50 @@ class ApprovalPolicy(Base):
         comment="Configuration for notification channels (Slack/Mattermost/webhook settings)",
     )
 
+    # AI-driven approval settings
+    approval_mode: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="standard",
+        server_default="standard",
+        comment="Approval mode: 'standard' (human) or 'ai_driven' (AI makes decision)",
+    )
+    ai_model: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="AI model to use for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
+    )
+    ai_guidelines: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="User-defined guidelines for AI approval decisions",
+    )
+    ai_context: Mapped[Optional[Dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Additional context for AI decisions (e.g., examples, constraints)",
+    )
+    ai_confidence_threshold: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.8,
+        server_default="0.8",
+        comment="Minimum confidence score required for AI to make a decision",
+    )
+    ai_fallback_behavior: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="escalate",
+        server_default="escalate",
+        comment="Behavior when AI confidence is below threshold: 'escalate', 'approve', 'deny'",
+    )
+    escalation_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("approval_policy.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Policy to escalate to when fallback_behavior='escalate'",
+    )
+
     # Relationships
     account: Mapped["Account"] = relationship("Account")
     tool_configurations: Mapped[list["ToolConfiguration"]] = relationship(
@@ -296,6 +346,13 @@ class ApprovalPolicy(Base):
         "ApprovalRequest",
         back_populates="approval_policy",
         cascade="all, delete-orphan",
+    )
+    # The policy to escalate to when AI confidence is below threshold
+    escalation_policy: Mapped[Optional["ApprovalPolicy"]] = relationship(
+        "ApprovalPolicy",
+        remote_side="ApprovalPolicy.id",
+        foreign_keys=[escalation_policy_id],
+        uselist=False,
     )
 
     # Unique constraint: one policy name per account

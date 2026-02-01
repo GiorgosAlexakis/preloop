@@ -75,6 +75,7 @@ from .oauth_app_installation import (
 from .oauth_token import CRUDOAuthToken, crud_oauth_token
 from . import tool_approval_condition
 from . import notification_preferences
+from .policy_snapshot import CRUDPolicySnapshot, crud_policy_snapshot
 
 crud_account = CRUDAccount(Account)
 # crud_tracker is already instantiated in tracker.py
@@ -180,4 +181,6 @@ __all__ = [
     "crud_oauth_token",
     "tool_approval_condition",
     "notification_preferences",
+    "CRUDPolicySnapshot",
+    "crud_policy_snapshot",
 ]

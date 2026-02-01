@@ -39,6 +39,11 @@ class ApprovalRequestUpdate(BaseModel):
     resolved_at: Optional[datetime] = None
     webhook_posted_at: Optional[datetime] = None
     webhook_error: Optional[str] = None
+    # AI decision tracking fields
+    decided_by_ai: Optional[bool] = None
+    ai_model: Optional[str] = None
+    ai_confidence: Optional[float] = None
+    ai_reasoning: Optional[str] = None
 
 
 class ApprovalRequestResponse(ApprovalRequestBase):
@@ -55,6 +60,11 @@ class ApprovalRequestResponse(ApprovalRequestBase):
     approver_comment: Optional[str]
     webhook_posted_at: Optional[datetime]
     webhook_error: Optional[str]
+    # AI decision tracking fields
+    decided_by_ai: bool = False
+    ai_model: Optional[str] = None
+    ai_confidence: Optional[float] = None
+    ai_reasoning: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

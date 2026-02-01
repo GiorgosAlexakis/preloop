@@ -147,6 +147,13 @@ class ApprovalPolicyDefinition(BaseModel):
         escalation_users: Users to escalate to on timeout.
         escalation_teams: Teams to escalate to on timeout.
         channel_configs: Per-channel configuration.
+        approval_type: Type of approval - 'standard' for human or 'ai_driven' for AI.
+        ai_model: AI model to use for evaluation (required if ai_driven).
+        ai_guidelines: Guidelines for the AI to follow when making decisions.
+        ai_context: Additional context for the AI (examples, domain knowledge).
+        ai_confidence_threshold: Minimum confidence for AI to auto-decide (0.0-1.0).
+        ai_fallback_behavior: What to do when AI is uncertain.
+        escalation_policy: Policy to escalate to when AI is uncertain.
     """
 
     name: str = Field(..., description="Unique name for this policy")
@@ -181,7 +188,49 @@ class ApprovalPolicyDefinition(BaseModel):
         None, description="Per-channel configuration"
     )
 
+    # AI-driven approval settings
+    approval_type: Literal["standard", "ai_driven"] = Field(
+        "standard",
+        description="Type of approval: 'standard' for human approvers, 'ai_driven' for AI evaluation",
+    )
+    ai_model: Optional[str] = Field(
+        None,
+        description="AI model to use for evaluation (e.g., 'claude-sonnet-4-20250514', 'gpt-4o')",
+    )
+    ai_guidelines: Optional[str] = Field(
+        None,
+        description="Guidelines for the AI to follow when making decisions",
+    )
+    ai_context: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional context for the AI (e.g., examples, domain knowledge)",
+    )
+    ai_confidence_threshold: float = Field(
+        0.8,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence score for AI to auto-decide (0.0-1.0)",
+    )
+    ai_fallback_behavior: Literal["escalate", "approve", "deny"] = Field(
+        "escalate",
+        description="What to do when AI is uncertain: escalate to humans, auto-approve, or auto-deny",
+    )
+    escalation_policy: Optional[str] = Field(
+        None,
+        description="Name of policy to escalate to when AI is uncertain (for fallback_behavior='escalate')",
+    )
+
     model_config = ConfigDict(use_enum_values=True)
+
+    @model_validator(mode="after")
+    def validate_ai_driven_settings(self) -> "ApprovalPolicyDefinition":
+        """Validate AI-driven approval policy settings."""
+        if self.approval_type == "ai_driven":
+            if not self.ai_model:
+                raise ValueError(
+                    "ai_model is required when approval_type is 'ai_driven'"
+                )
+        return self
 
 
 class ConditionAction(str, Enum):
@@ -190,29 +239,73 @@ class ConditionAction(str, Enum):
     REQUIRE_APPROVAL = "require_approval"
     DENY = "deny"
     ALLOW = "allow"
-    LOG = "log"
+
+
+class ConditionType(str, Enum):
+    """Type of condition expression.
+
+    This enum supports the open core licensing model:
+
+    - SIMPLE (open source): Basic comparisons using Python-like syntax.
+      Supports operators: ==, !=, >, <, >=, <=
+      Examples:
+        - "args.amount > 500"
+        - "args.recipient == 'bob'"
+        - "args.priority != 'low'"
+
+    - CEL (enterprise): Full CEL (Common Expression Language) expressions
+      with advanced functions and capabilities.
+      Examples:
+        - "args.command.contains('rm -rf')"
+        - "args.path.startsWith('/etc/')"
+        - "args.tags.exists(t, t == 'production')"
+        - "args.amount > 1000 && args.approved == false"
+    """
+
+    SIMPLE = "simple"
+    CEL = "cel"
 
 
 class ToolCondition(BaseModel):
     """Condition for when to apply actions to tool invocations.
 
-    Uses CEL (Common Expression Language) for expression evaluation.
+    Supports two types of conditions for the open core model:
 
-    Example expressions:
-        - "args.amount > 1000"
-        - "args.environment == 'production'"
-        - "args.path.startsWith('/etc/')"
-        - "args.priority in ['critical', 'high']"
+    Simple conditions (open source):
+        Basic comparisons using Python-like syntax. These are evaluated
+        using a lightweight parser that supports basic operators.
+
+        Supported operators: ==, !=, >, <, >=, <=
+
+        Examples:
+            - "args.amount > 500"
+            - "args.recipient == 'bob'"
+            - "args.count <= 10"
+
+    CEL conditions (enterprise):
+        Full CEL (Common Expression Language) expressions with advanced
+        functions like contains(), startsWith(), endsWith(), exists(), etc.
+
+        Examples:
+            - "args.command.contains('rm -rf')"
+            - "args.path.startsWith('/etc/')"
+            - "args.environment == 'production' && args.force == true"
+            - "args.tags.exists(t, t == 'sensitive')"
 
     Attributes:
-        expression: CEL expression to evaluate against tool arguments.
+        expression: Expression to evaluate against tool arguments.
         action: Action to take when condition matches.
+        condition_type: Type of expression - 'simple' (open source) or 'cel' (enterprise).
         description: Optional human-readable description.
     """
 
-    expression: str = Field(..., description="CEL expression to evaluate")
+    expression: str = Field(..., description="Expression to evaluate against tool args")
     action: ConditionAction = Field(
         ConditionAction.REQUIRE_APPROVAL, description="Action when condition matches"
+    )
+    condition_type: ConditionType = Field(
+        ConditionType.SIMPLE,
+        description="Expression type: 'simple' (open source) or 'cel' (enterprise)",
     )
     description: Optional[str] = Field(
         None, description="Human-readable description of this condition"
@@ -392,6 +485,19 @@ class PolicyDocument(BaseModel):
                     f"not found. Available policies: {policy_names}"
                 )
 
+        # Validate escalation_policy references in AI-driven policies
+        if self.approval_policies:
+            for policy in self.approval_policies:
+                if (
+                    policy.escalation_policy
+                    and policy.escalation_policy not in policy_names
+                ):
+                    raise ValueError(
+                        f"Approval policy '{policy.name}' references unknown "
+                        f"escalation_policy '{policy.escalation_policy}'. "
+                        f"Available policies: {policy_names}"
+                    )
+
         return self
 
 
@@ -448,5 +554,12 @@ class PolicyImportResult(BaseModel):
     policies_updated: int = Field(0, description="Number of approval policies updated")
     tools_created: int = Field(0, description="Number of tool configs created")
     tools_updated: int = Field(0, description="Number of tool configs updated")
+    tools_skipped: int = Field(
+        0,
+        description=(
+            "Number of tools skipped due to missing server references "
+            "(when skip_missing_servers=true)"
+        ),
+    )
     warnings: List[str] = Field(default_factory=list, description="Non-fatal warnings")
     errors: List[str] = Field(default_factory=list, description="Errors that occurred")

@@ -5,18 +5,32 @@ This module provides API endpoints for declarative policy-as-code management:
 - Export current configuration as YAML policy
 - Preview changes (diff) before applying
 - Validate policy files without applying
+- Version management (snapshots, rollback, tagging)
 """
 
 import logging
-from typing import Literal
+from typing import Any, Dict, List, Literal, Optional
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from preloop.api.auth.jwt import get_current_user
 from preloop.api.common import get_account_for_user
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
+from preloop.models.models.user import User
 from preloop.services.policy import (
     PolicyApplier,
     PolicyDiffResult,
@@ -29,6 +43,86 @@ from preloop.services.policy import (
     export_policy_to_yaml,
     load_policy_from_string,
 )
+from preloop.services.policy_version_service import PolicyVersionService
+
+
+# Pydantic models for version management endpoints
+class PolicyVersionMetadata(BaseModel):
+    """Metadata for a policy version (without full snapshot data)."""
+
+    id: UUID
+    version_number: int
+    tag: Optional[str] = None
+    description: Optional[str] = None
+    is_active: bool
+    mcp_servers_count: int
+    policies_count: int
+    tools_count: int
+    created_at: str
+    created_by_user_id: Optional[UUID] = None
+
+
+class PolicyVersionFull(PolicyVersionMetadata):
+    """Full policy version including snapshot data."""
+
+    snapshot_data: Dict[str, Any]
+
+
+class PolicyVersionListResponse(BaseModel):
+    """Response for listing policy versions."""
+
+    versions: List[PolicyVersionMetadata]
+    total: int
+
+
+class CreateVersionRequest(BaseModel):
+    """Request to create a new policy version."""
+
+    description: Optional[str] = Field(None, description="Description of the version")
+    tag: Optional[str] = Field(
+        None, description="Tag for the version (e.g., 'production')"
+    )
+
+
+class UpdateTagRequest(BaseModel):
+    """Request to update a version's tag."""
+
+    tag: str = Field(..., description="New tag value")
+
+
+class RollbackRequest(BaseModel):
+    """Request to rollback to a previous version."""
+
+    preview_only: bool = Field(
+        False, description="If true, return diff without applying changes"
+    )
+
+
+class RollbackResponse(BaseModel):
+    """Response from a rollback operation."""
+
+    success: bool
+    diff: Optional[PolicyDiffResult] = None
+    error: Optional[str] = None
+
+
+class PruneRequest(BaseModel):
+    """Request to prune old versions."""
+
+    older_than_days: int = Field(
+        90, description="Delete versions older than this many days"
+    )
+    keep_tagged: bool = Field(
+        True, description="Keep tagged versions regardless of age"
+    )
+    keep_count: int = Field(10, description="Always keep at least this many versions")
+
+
+class PruneResponse(BaseModel):
+    """Response from a prune operation."""
+
+    deleted_count: int
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -42,6 +136,13 @@ router = APIRouter()
 )
 async def validate_policy(
     file: UploadFile = File(..., description="YAML or JSON policy file to validate"),
+    check_server_references: bool = Form(
+        True,
+        description=(
+            "If true, validate that MCP server references exist in your account. "
+            "Set to false for standalone schema validation."
+        ),
+    ),
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> PolicyValidationResult:
@@ -53,15 +154,21 @@ async def validate_policy(
     - Required fields
     - Valid references (approval policies, MCP servers)
     - Expression syntax
+    - MCP server availability (if check_server_references=true)
 
     Args:
         file: The policy file to validate (YAML or JSON).
+        check_server_references: If True, also validate that referenced MCP
+            servers exist in your account.
         account: Current user's account.
         db: Database session.
 
     Returns:
         PolicyValidationResult with validation status and any errors.
     """
+    from preloop.models.crud import crud_approval_policy, crud_mcp_server
+    from preloop.services.policy.schema import PolicyValidationError
+
     # Read file content
     try:
         content = await file.read()
@@ -80,10 +187,88 @@ async def validate_policy(
     else:
         format = "yaml"
 
-    # Validate the policy
+    # Validate the policy schema
     policy, result = load_policy_from_string(content_str, format=format)
 
-    if policy:
+    # If schema is valid and we should check server references, do additional validation
+    if policy and result.is_valid and check_server_references:
+        # Build set of servers defined in the policy file
+        policy_servers = set()
+        if policy.mcp_servers:
+            policy_servers = {server.name.lower() for server in policy.mcp_servers}
+
+        # Build set of policies defined in the policy file
+        policy_approval_policies = set()
+        if policy.approval_policies:
+            policy_approval_policies = {p.name for p in policy.approval_policies}
+
+        # Get existing servers from the database
+        existing_servers = crud_mcp_server.get_active_by_account(
+            db, account_id=str(account.id)
+        )
+        existing_server_names = {s.name.lower() for s in existing_servers}
+        all_available_servers = policy_servers | existing_server_names
+
+        # Get existing policies from the database
+        existing_policies = crud_approval_policy.get_multi_by_account(
+            db, account_id=str(account.id)
+        )
+        existing_policy_names = {p.name for p in existing_policies}
+        all_available_policies = policy_approval_policies | existing_policy_names
+
+        # Check tool references
+        if policy.tools:
+            for idx, tool in enumerate(policy.tools):
+                # Check MCP server references
+                source_lower = tool.source.lower()
+                if source_lower not in ["builtin", "mcp", "http"]:
+                    if source_lower not in all_available_servers:
+                        available_list = ", ".join(sorted(all_available_servers))
+                        result.errors.append(
+                            PolicyValidationError(
+                                path=f"$.tools[{idx}].source",
+                                message=(
+                                    f"Tool '{tool.name}' references MCP server "
+                                    f"'{tool.source}' which is not configured. "
+                                    f"Either add the server to your policy file "
+                                    f"under 'mcp_servers', or configure it in the "
+                                    f"console first."
+                                ),
+                                value=tool.source,
+                            )
+                        )
+                        if all_available_servers:
+                            result.warnings.append(
+                                f"Available MCP servers: [{available_list}]"
+                            )
+
+                # Check approval policy references
+                if tool.approval_policy:
+                    if tool.approval_policy not in all_available_policies:
+                        available_list = ", ".join(sorted(all_available_policies))
+                        result.errors.append(
+                            PolicyValidationError(
+                                path=f"$.tools[{idx}].approval_policy",
+                                message=(
+                                    f"Tool '{tool.name}' references approval policy "
+                                    f"'{tool.approval_policy}' which is not defined. "
+                                    f"Either add the policy to your policy file "
+                                    f"under 'approval_policies', or configure it in "
+                                    f"the console first."
+                                ),
+                                value=tool.approval_policy,
+                            )
+                        )
+                        if all_available_policies:
+                            result.warnings.append(
+                                f"Available approval policies: [{available_list}]"
+                            )
+
+        # Update validity based on new errors
+        if result.errors:
+            result.is_valid = False
+
+    if policy and result.is_valid:
         logger.info(
             f"Policy '{policy.metadata.name}' validated successfully "
             f"for account {account.id}"
@@ -106,6 +291,13 @@ async def upload_policy(
     resolve_env: bool = Form(
         True, description="If true, resolve ${VAR} environment variable references"
     ),
+    skip_missing_servers: bool = Form(
+        False,
+        description=(
+            "If true, skip tools that reference MCP servers not configured in your "
+            "account instead of failing. Skipped tools are reported as warnings."
+        ),
+    ),
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> PolicyImportResult:
@@ -118,10 +310,19 @@ async def upload_policy(
     4. Creates/updates tool configurations
     5. Applies default behavior settings
 
+    When `mcp_servers` is omitted from the policy file, tools that reference
+    server names (sources that aren't 'builtin', 'mcp', or 'http') will be
+    validated against servers already configured in your account. If a
+    referenced server doesn't exist:
+    - With `skip_missing_servers=false` (default): Returns an error
+    - With `skip_missing_servers=true`: Skips the tool and adds a warning
+
     Args:
         file: The policy file to apply (YAML or JSON).
         dry_run: If True, validate without applying changes.
         resolve_env: If True, resolve environment variable references.
+        skip_missing_servers: If True, skip tools with missing servers
+            instead of failing.
         account: Current user's account.
         db: Database session.
 
@@ -167,7 +368,12 @@ async def upload_policy(
 
     # Apply the policy
     applier = PolicyApplier(db, account_id=account.id)
-    result = applier.apply(policy, dry_run=dry_run, resolve_env=resolve_env)
+    result = applier.apply(
+        policy,
+        dry_run=dry_run,
+        resolve_env=resolve_env,
+        skip_missing_servers=skip_missing_servers,
+    )
 
     if not result.success:
         logger.error(
@@ -205,27 +411,42 @@ async def upload_policy(
 async def export_policy(
     format: Literal["yaml", "json"] = "yaml",
     policy_name: str = "Exported Policy",
+    include_mcp_servers: bool = True,
+    include_credentials: bool = False,  # Ignored for security, always False
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> Response:
     """Export current configuration as a policy file.
 
     This endpoint exports:
-    - MCP server configurations (without auth credentials)
+    - MCP server configurations (without auth credentials) - optional
     - Approval policies
     - Tool configurations with approval conditions
 
     Args:
         format: Output format ('yaml' or 'json').
         policy_name: Name to give the exported policy.
+        include_mcp_servers: Whether to include MCP server definitions.
+        include_credentials: Ignored for security - credentials are never exported.
         account: Current user's account.
         db: Database session.
 
     Returns:
         YAML or JSON file response.
     """
+    # Note: include_credentials is always treated as False for security
+    _ = include_credentials  # Explicitly ignored
+
     # Export current configuration
-    policy = export_current_policy(db, account_id=account.id, policy_name=policy_name)
+    policy = export_current_policy(
+        db,
+        account_id=account.id,
+        policy_name=policy_name,
+        include_mcp_servers=include_mcp_servers,
+    )
+
+    # Get account name for header comment
+    account_name = account.organization_name or str(account.id)
 
     # Convert to requested format
     if format == "json":
@@ -233,7 +454,11 @@ async def export_policy(
         media_type = "application/json"
         filename = "policy.json"
     else:
-        content = export_policy_to_yaml(policy)
+        content = export_policy_to_yaml(
+            policy,
+            account_name=account_name,
+            include_mcp_servers=include_mcp_servers,
+        )
         media_type = "application/x-yaml"
         filename = "policy.yaml"
 
@@ -363,3 +588,386 @@ async def get_policy_schema() -> dict:
     )
 
     return schema
+
+
+# ============================================================================
+# Policy Version Management Endpoints
+# ============================================================================
+
+
+def _snapshot_to_metadata(snapshot) -> PolicyVersionMetadata:
+    """Convert a PolicySnapshot to PolicyVersionMetadata."""
+    return PolicyVersionMetadata(
+        id=snapshot.id,
+        version_number=snapshot.version_number,
+        tag=snapshot.tag,
+        description=snapshot.description,
+        is_active=snapshot.is_active,
+        mcp_servers_count=snapshot.mcp_servers_count,
+        policies_count=snapshot.policies_count,
+        tools_count=snapshot.tools_count,
+        created_at=snapshot.created_at.isoformat(),
+        created_by_user_id=snapshot.created_by_user_id,
+    )
+
+
+def _snapshot_to_full(snapshot) -> PolicyVersionFull:
+    """Convert a PolicySnapshot to PolicyVersionFull."""
+    return PolicyVersionFull(
+        id=snapshot.id,
+        version_number=snapshot.version_number,
+        tag=snapshot.tag,
+        description=snapshot.description,
+        is_active=snapshot.is_active,
+        mcp_servers_count=snapshot.mcp_servers_count,
+        policies_count=snapshot.policies_count,
+        tools_count=snapshot.tools_count,
+        created_at=snapshot.created_at.isoformat(),
+        created_by_user_id=snapshot.created_by_user_id,
+        snapshot_data=snapshot.snapshot_data,
+    )
+
+
+@router.get(
+    "/policies/versions",
+    response_model=PolicyVersionListResponse,
+    summary="List policy versions",
+    description="List all policy versions for the account with optional pagination.",
+)
+async def list_policy_versions(
+    limit: int = Query(
+        100, ge=1, le=1000, description="Maximum number of versions to return"
+    ),
+    offset: int = Query(0, ge=0, description="Number of versions to skip"),
+    include_snapshots: bool = Query(False, description="Include full snapshot data"),
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> PolicyVersionListResponse:
+    """List all policy versions for the account.
+
+    Args:
+        limit: Maximum number of versions to return.
+        offset: Number of versions to skip.
+        include_snapshots: Whether to include full snapshot data.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        List of policy versions with metadata.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    snapshots = service.list_snapshots(
+        limit=limit,
+        offset=offset,
+        include_snapshots=include_snapshots,
+    )
+
+    # Get total count
+    from preloop.models.crud.policy_snapshot import crud_policy_snapshot
+
+    total = crud_policy_snapshot.count_by_account(db, str(account.id))
+
+    versions = [_snapshot_to_metadata(s) for s in snapshots]
+
+    return PolicyVersionListResponse(versions=versions, total=total)
+
+
+@router.get(
+    "/policies/versions/{version_id}",
+    response_model=PolicyVersionFull,
+    summary="Get a specific policy version",
+    description="Get a specific policy version with full snapshot data.",
+)
+async def get_policy_version(
+    version_id: UUID,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> PolicyVersionFull:
+    """Get a specific policy version with full snapshot data.
+
+    Args:
+        version_id: The ID of the version to retrieve.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        Complete policy version with snapshot data.
+
+    Raises:
+        HTTPException: If version not found.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    snapshot = service.get_snapshot(version_id)
+
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Policy version not found",
+        )
+
+    return _snapshot_to_full(snapshot)
+
+
+@router.post(
+    "/policies/versions",
+    response_model=PolicyVersionFull,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new policy version",
+    description="Create a snapshot of the current policy state.",
+)
+async def create_policy_version(
+    request: CreateVersionRequest,
+    account: Account = Depends(get_account_for_user),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+) -> PolicyVersionFull:
+    """Create a new policy version snapshot.
+
+    Takes a snapshot of the current MCP servers, approval policies,
+    tool configurations, and defaults.
+
+    Args:
+        request: The version creation request with description and optional tag.
+        account: Current user's account.
+        user: Current user.
+        db: Database session.
+
+    Returns:
+        The created policy version.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    snapshot = service.create_snapshot(
+        description=request.description,
+        tag=request.tag,
+        user_id=user.id,
+        set_active=True,
+    )
+
+    db.commit()
+
+    logger.info(
+        f"Created policy version v{snapshot.version_number} for account {account.id}"
+    )
+
+    return _snapshot_to_full(snapshot)
+
+
+@router.put(
+    "/policies/versions/{version_id}/tag",
+    response_model=PolicyVersionMetadata,
+    summary="Add or update tag on a version",
+    description="Add or update the tag on a policy version.",
+)
+async def update_version_tag(
+    version_id: UUID,
+    request: UpdateTagRequest,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> PolicyVersionMetadata:
+    """Add or update the tag on a policy version.
+
+    Tags are unique per account - if the tag is already used on another
+    version, it will be moved to this version.
+
+    Args:
+        version_id: The ID of the version to update.
+        request: The tag update request.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        Updated policy version metadata.
+
+    Raises:
+        HTTPException: If version not found.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    snapshot, error = service.update_tag(version_id, request.tag)
+
+    if error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error,
+        )
+
+    db.commit()
+
+    logger.info(
+        f"Updated tag to '{request.tag}' on version {version_id} for account {account.id}"
+    )
+
+    return _snapshot_to_metadata(snapshot)
+
+
+@router.delete(
+    "/policies/versions/{version_id}/tag",
+    response_model=PolicyVersionMetadata,
+    summary="Remove tag from a version",
+    description="Remove the tag from a policy version.",
+)
+async def remove_version_tag(
+    version_id: UUID,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> PolicyVersionMetadata:
+    """Remove the tag from a policy version.
+
+    Args:
+        version_id: The ID of the version to update.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        Updated policy version metadata.
+
+    Raises:
+        HTTPException: If version not found.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    snapshot, error = service.remove_tag(version_id)
+
+    if error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error,
+        )
+
+    db.commit()
+
+    logger.info(f"Removed tag from version {version_id} for account {account.id}")
+
+    return _snapshot_to_metadata(snapshot)
+
+
+@router.post(
+    "/policies/versions/{version_id}/rollback",
+    response_model=RollbackResponse,
+    summary="Rollback to a previous version",
+    description="Apply a previous policy version to restore that configuration.",
+)
+async def rollback_to_version(
+    version_id: UUID,
+    request: RollbackRequest,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> RollbackResponse:
+    """Rollback to a previous policy version.
+
+    This endpoint applies the snapshot from a previous version, restoring
+    MCP servers, approval policies, and tool configurations to that state.
+
+    If preview_only is True, returns the diff without making changes.
+
+    Args:
+        version_id: The ID of the version to rollback to.
+        request: The rollback request with preview_only flag.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        RollbackResponse with diff and success status.
+
+    Raises:
+        HTTPException: If version not found.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    diff, success, error = service.rollback_to_snapshot(
+        version_id,
+        preview_only=request.preview_only,
+    )
+
+    if error and not diff:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error,
+        )
+
+    if not request.preview_only and success:
+        db.commit()
+        logger.info(f"Rolled back to version {version_id} for account {account.id}")
+
+    return RollbackResponse(success=success, diff=diff, error=error)
+
+
+@router.delete(
+    "/policies/versions/{version_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a policy version",
+    description="Delete a policy version. Cannot delete the active version.",
+)
+async def delete_policy_version(
+    version_id: UUID,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> None:
+    """Delete a policy version.
+
+    Cannot delete the currently active version.
+
+    Args:
+        version_id: The ID of the version to delete.
+        account: Current user's account.
+        db: Database session.
+
+    Raises:
+        HTTPException: If version not found or is active.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    success, error = service.delete_snapshot(version_id)
+
+    if not success:
+        if "not found" in error.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error,
+            )
+
+    db.commit()
+
+    logger.info(f"Deleted version {version_id} for account {account.id}")
+
+
+@router.post(
+    "/policies/versions/prune",
+    response_model=PruneResponse,
+    summary="Prune old policy versions",
+    description="Delete old unused policy versions based on age and count criteria.",
+)
+async def prune_policy_versions(
+    request: PruneRequest,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> PruneResponse:
+    """Delete old unused policy versions.
+
+    Deletes versions that are:
+    - Older than older_than_days
+    - Not the active version
+    - Not tagged (if keep_tagged is True)
+    - Beyond the keep_count most recent versions
+
+    Args:
+        request: The prune request with criteria.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        PruneResponse with count of deleted versions.
+    """
+    service = PolicyVersionService(db, str(account.id))
+    deleted_count = service.prune_snapshots(
+        older_than_days=request.older_than_days,
+        keep_tagged=request.keep_tagged,
+        keep_count=request.keep_count,
+    )
+
+    db.commit()
+
+    logger.info(f"Pruned {deleted_count} versions for account {account.id}")
+
+    return PruneResponse(deleted_count=deleted_count)

@@ -35,6 +35,121 @@ from preloop.services.policy.schema import (
     ToolDefinition,
 )
 
+# CEL functions that indicate a complex expression requiring CEL evaluator
+CEL_FUNCTIONS = [
+    "contains(",
+    "startsWith(",
+    "endsWith(",
+    "matches(",
+    "exists(",
+    "all(",
+    "filter(",
+    "map(",
+    "size(",
+    "type(",
+    "has(",
+    ".in(",
+    " in ",
+]
+
+
+def _detect_condition_type(expression: str) -> str:
+    """Detect whether an expression is simple or requires CEL.
+
+    Args:
+        expression: The condition expression to analyze.
+
+    Returns:
+        'cel' if expression uses CEL-specific functions, 'simple' otherwise.
+    """
+    if not expression:
+        return "simple"
+
+    expression_lower = expression.lower()
+    for func in CEL_FUNCTIONS:
+        if func.lower() in expression_lower:
+            return "cel"
+
+    return "simple"
+
+
+def _get_cel_validation_service():
+    """Get the CEL validation service if available (lazy import to avoid circular deps).
+
+    Returns:
+        CEL validation service instance or None if not available.
+    """
+    try:
+        from plugins.cel_validation.service import get_cel_validation_service
+
+        return get_cel_validation_service()
+    except ImportError:
+        return None
+
+
+def _validate_cel_expressions_in_policy(
+    policy: "PolicyDocument",
+) -> List["PolicyValidationError"]:
+    """Validate all CEL expressions in a policy document.
+
+    This function checks all CEL expressions in tool conditions for syntax errors.
+    It's called during policy loading to catch errors early.
+
+    Args:
+        policy: The policy document to validate.
+
+    Returns:
+        List of validation errors for invalid CEL expressions.
+    """
+    errors: List[PolicyValidationError] = []
+
+    # Get the CEL validation service (if available)
+    cel_service = _get_cel_validation_service()
+    if cel_service is None:
+        # CEL validation plugin not available, skip validation
+        return errors
+
+    if not policy.tools:
+        return errors
+
+    for tool_idx, tool in enumerate(policy.tools):
+        if not tool.conditions:
+            continue
+
+        for cond_idx, condition in enumerate(tool.conditions):
+            # Only validate CEL expressions
+            # Check both explicit 'cel' type and auto-detected type
+            condition_type = condition.condition_type
+            if isinstance(condition_type, str):
+                is_cel = condition_type == "cel"
+            else:
+                is_cel = condition_type.value == "cel"
+
+            # Also check if expression uses CEL functions even if marked as simple
+            if not is_cel:
+                detected_type = _detect_condition_type(condition.expression)
+                is_cel = detected_type == "cel"
+
+            if not is_cel:
+                continue
+
+            # Validate the CEL expression
+            is_valid, error_message = cel_service.validate_cel_expression(
+                condition.expression
+            )
+
+            if not is_valid:
+                errors.append(
+                    PolicyValidationError(
+                        path=f"$.tools[{tool_idx}].conditions[{cond_idx}].expression",
+                        message=f"Invalid CEL expression: {error_message}",
+                        value=condition.expression,
+                    )
+                )
+
+    return errors
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,6 +246,28 @@ def load_policy_from_string(
                     "Conditions with 'require_approval' action will have no effect."
                 )
 
+    # Add warnings for AI-driven policies with escalate behavior but no escalation_policy
+    if policy.approval_policies:
+        for ap in policy.approval_policies:
+            if (
+                ap.approval_type == "ai_driven"
+                and ap.ai_fallback_behavior == "escalate"
+                and not ap.escalation_policy
+            ):
+                warnings.append(
+                    f"AI-driven policy '{ap.name}' has fallback_behavior='escalate' "
+                    "but no escalation_policy specified. Requests will fail to escalate "
+                    "when AI confidence is below threshold."
+                )
+
+    # Validate CEL expressions if the CEL validation plugin is available
+    cel_errors = _validate_cel_expressions_in_policy(policy)
+    if cel_errors:
+        errors.extend(cel_errors)
+        return None, PolicyValidationResult(
+            is_valid=False, errors=errors, warnings=warnings
+        )
+
     return policy, PolicyValidationResult(is_valid=True, errors=[], warnings=warnings)
 
 
@@ -187,27 +324,66 @@ def load_policy_from_file(
     return load_policy_from_string(content, format=format)
 
 
-def export_policy_to_yaml(policy: PolicyDocument) -> str:
+def export_policy_to_yaml(
+    policy: PolicyDocument,
+    account_name: Optional[str] = None,
+    include_mcp_servers: bool = True,
+) -> str:
     """Export a policy document to YAML string.
 
     Args:
         policy: The policy document to export.
+        account_name: Optional account name for header comment.
+        include_mcp_servers: Whether MCP servers were included (affects header comment).
 
     Returns:
-        YAML string representation.
+        YAML string representation with header comments.
     """
+    from datetime import datetime, timezone
+
     # Convert to dict, excluding None values for cleaner output
     # mode='json' ensures enums are serialized as their values, not Python objects
     data = policy.model_dump(exclude_none=True, mode="json")
 
     # Use safe_dump to avoid Python-specific YAML tags
-    return yaml.safe_dump(
+    yaml_content = yaml.safe_dump(
         data,
         default_flow_style=False,
         sort_keys=False,
         allow_unicode=True,
         width=120,
     )
+
+    # Build header comment
+    header_lines = [
+        "# Preloop Policy Export",
+        f"# Exported at: {datetime.now(timezone.utc).isoformat()}",
+    ]
+
+    if account_name:
+        header_lines.append(f"# Account: {account_name}")
+
+    header_lines.append("#")
+
+    if include_mcp_servers:
+        header_lines.extend(
+            [
+                "# NOTE: MCP server credentials have been redacted for security.",
+                "# Configure auth_config before importing.",
+            ]
+        )
+    else:
+        header_lines.extend(
+            [
+                "# NOTE: MCP server definitions were excluded from this export.",
+                "# Add mcp_servers section if needed.",
+            ]
+        )
+
+    header_lines.append("")  # Empty line before content
+
+    header = "\n".join(header_lines)
+    return header + yaml_content
 
 
 def export_policy_to_json(policy: PolicyDocument, indent: int = 2) -> str:
@@ -381,6 +557,38 @@ def resolve_env_vars(value: Any) -> Any:
         return value
 
 
+class MissingServerError:
+    """Details about a missing MCP server reference."""
+
+    def __init__(self, tool_name: str, server_name: str, suggestion: str):
+        self.tool_name = tool_name
+        self.server_name = server_name
+        self.suggestion = suggestion
+
+    def to_message(self) -> str:
+        """Format as a user-friendly error message."""
+        return (
+            f"Tool '{self.tool_name}' references MCP server '{self.server_name}' "
+            f"which is not configured. {self.suggestion}"
+        )
+
+
+class MissingPolicyError:
+    """Details about a missing approval policy reference."""
+
+    def __init__(self, tool_name: str, policy_name: str, suggestion: str):
+        self.tool_name = tool_name
+        self.policy_name = policy_name
+        self.suggestion = suggestion
+
+    def to_message(self) -> str:
+        """Format as a user-friendly error message."""
+        return (
+            f"Tool '{self.tool_name}' references approval policy '{self.policy_name}' "
+            f"which is not defined. {self.suggestion}"
+        )
+
+
 class PolicyApplier:
     """Apply a policy document to the database.
 
@@ -408,11 +616,15 @@ class PolicyApplier:
         self._mcp_server_map: Dict[str, UUID] = {}
         self._policy_map: Dict[str, UUID] = {}
 
+        # Track skipped tools for reporting
+        self._skipped_tools: List[str] = []
+
     def apply(
         self,
         policy: PolicyDocument,
         dry_run: bool = False,
         resolve_env: bool = True,
+        skip_missing_servers: bool = False,
     ) -> PolicyImportResult:
         """Apply a policy document to the database.
 
@@ -420,17 +632,28 @@ class PolicyApplier:
             policy: The policy document to apply.
             dry_run: If True, validate only without making changes.
             resolve_env: If True, resolve environment variable references.
+            skip_missing_servers: If True, skip tools that reference missing
+                MCP servers instead of failing. Skipped tools are reported
+                in warnings.
 
         Returns:
             PolicyImportResult with details of what was created/updated.
         """
         self._result.policy_name = policy.metadata.name
+        self._skipped_tools = []
 
         try:
             # Resolve environment variables if requested
             if resolve_env:
                 policy_dict = resolve_env_vars(policy.model_dump())
                 policy = PolicyDocument.model_validate(policy_dict)
+
+            # Pre-validation phase: check all references before making changes
+            validation_errors = self._validate_references(policy, skip_missing_servers)
+            if validation_errors:
+                for error in validation_errors:
+                    self._result.errors.append(error)
+                return self._result
 
             # Apply in order: servers, policies, tools, defaults
             if policy.mcp_servers:
@@ -440,7 +663,7 @@ class PolicyApplier:
                 self._apply_approval_policies(policy.approval_policies, dry_run)
 
             if policy.tools:
-                self._apply_tools(policy.tools, dry_run)
+                self._apply_tools(policy.tools, dry_run, skip_missing_servers)
 
             if policy.defaults:
                 self._apply_defaults(policy.defaults, dry_run)
@@ -449,6 +672,7 @@ class PolicyApplier:
                 self.db.commit()
 
             self._result.success = True
+            self._result.tools_skipped = len(self._skipped_tools)
 
         except Exception as e:
             logger.error(f"Failed to apply policy: {e}", exc_info=True)
@@ -457,6 +681,168 @@ class PolicyApplier:
                 self.db.rollback()
 
         return self._result
+
+    def _validate_references(
+        self,
+        policy: PolicyDocument,
+        skip_missing_servers: bool = False,
+    ) -> List[str]:
+        """Validate all server and policy references before applying.
+
+        This pre-check phase validates that:
+        1. All MCP server references can be resolved (either defined in the
+           policy file or already configured in the account)
+        2. All approval policy references can be resolved (either defined
+           in the policy file or already configured in the account)
+
+        Args:
+            policy: The policy document to validate.
+            skip_missing_servers: If True, don't error on missing servers
+                (they will be skipped during apply).
+
+        Returns:
+            List of error messages. Empty list if validation passes.
+        """
+        from preloop.models.crud import crud_approval_policy, crud_mcp_server
+
+        errors: List[str] = []
+
+        # Build set of servers defined in the policy file
+        policy_servers = set()
+        if policy.mcp_servers:
+            policy_servers = {server.name.lower() for server in policy.mcp_servers}
+
+        # Build set of policies defined in the policy file
+        policy_approval_policies = set()
+        if policy.approval_policies:
+            policy_approval_policies = {p.name for p in policy.approval_policies}
+
+        # Get existing servers from the database
+        existing_servers = crud_mcp_server.get_active_by_account(
+            self.db, account_id=self.account_id
+        )
+        existing_server_names = {s.name.lower() for s in existing_servers}
+        all_available_servers = policy_servers | existing_server_names
+
+        # Get existing policies from the database
+        existing_policies = crud_approval_policy.get_multi_by_account(
+            self.db, account_id=self.account_id
+        )
+        existing_policy_names = {p.name for p in existing_policies}
+        all_available_policies = policy_approval_policies | existing_policy_names
+
+        # Validate tool references
+        if policy.tools:
+            missing_servers: List[MissingServerError] = []
+            missing_policies: List[MissingPolicyError] = []
+
+            for tool in policy.tools:
+                # Check MCP server references
+                source_lower = tool.source.lower()
+                if source_lower not in ["builtin", "mcp", "http"]:
+                    # It's a custom MCP server name reference
+                    if source_lower not in all_available_servers:
+                        suggestion = self._get_server_suggestion(
+                            tool.source, all_available_servers
+                        )
+                        missing_servers.append(
+                            MissingServerError(
+                                tool_name=tool.name,
+                                server_name=tool.source,
+                                suggestion=suggestion,
+                            )
+                        )
+
+                # Check approval policy references
+                if tool.approval_policy:
+                    if tool.approval_policy not in all_available_policies:
+                        suggestion = self._get_policy_suggestion(
+                            tool.approval_policy, all_available_policies
+                        )
+                        missing_policies.append(
+                            MissingPolicyError(
+                                tool_name=tool.name,
+                                policy_name=tool.approval_policy,
+                                suggestion=suggestion,
+                            )
+                        )
+
+            # Handle missing servers
+            if missing_servers:
+                if skip_missing_servers:
+                    # Add warnings instead of errors
+                    for missing in missing_servers:
+                        self._result.warnings.append(
+                            f"Skipping tool '{missing.tool_name}': "
+                            f"MCP server '{missing.server_name}' is not configured. "
+                            f"Configure the server first to enable this tool."
+                        )
+                        self._skipped_tools.append(missing.tool_name)
+                else:
+                    # Add errors
+                    for missing in missing_servers:
+                        errors.append(missing.to_message())
+
+            # Missing policies are always errors (can't be skipped)
+            for missing in missing_policies:
+                errors.append(missing.to_message())
+
+        # Validate defaults.default_approval_policy
+        if policy.defaults and policy.defaults.default_approval_policy:
+            if policy.defaults.default_approval_policy not in all_available_policies:
+                suggestion = self._get_policy_suggestion(
+                    policy.defaults.default_approval_policy, all_available_policies
+                )
+                errors.append(
+                    f"Default approval policy '{policy.defaults.default_approval_policy}' "
+                    f"is not defined. {suggestion}"
+                )
+
+        return errors
+
+    def _get_server_suggestion(self, server_name: str, available_servers: set) -> str:
+        """Generate a helpful suggestion for missing server references.
+
+        Args:
+            server_name: The missing server name.
+            available_servers: Set of available server names.
+
+        Returns:
+            A suggestion string for how to fix the issue.
+        """
+        if available_servers:
+            available_list = ", ".join(sorted(available_servers))
+            return (
+                f"Either add the server to your policy file under 'mcp_servers', "
+                f"or configure it in the console first. "
+                f"Available servers: [{available_list}]"
+            )
+        return (
+            "Add the server to your policy file under 'mcp_servers', "
+            "or configure it in the console first."
+        )
+
+    def _get_policy_suggestion(self, policy_name: str, available_policies: set) -> str:
+        """Generate a helpful suggestion for missing policy references.
+
+        Args:
+            policy_name: The missing policy name.
+            available_policies: Set of available policy names.
+
+        Returns:
+            A suggestion string for how to fix the issue.
+        """
+        if available_policies:
+            available_list = ", ".join(sorted(available_policies))
+            return (
+                f"Either add the policy to your policy file under 'approval_policies', "
+                f"or configure it in the console first. "
+                f"Available policies: [{available_list}]"
+            )
+        return (
+            "Add the policy to your policy file under 'approval_policies', "
+            "or configure it in the console first."
+        )
 
     def _apply_mcp_servers(
         self,
@@ -511,11 +897,19 @@ class PolicyApplier:
 
         Note: notification_channels is no longer used. Approvers configure their
         own notification preferences in user settings.
+
+        Handles both standard (human) and AI-driven approval policies.
         """
         from preloop.models.crud import crud_approval_policy
         from preloop.models.models.tool_configuration import ApprovalPolicy
 
         for policy_def in policies:
+            # Map YAML approval_type to database approval_type
+            # 'standard' -> 'manual', 'ai_driven' -> 'ai_driven'
+            db_approval_type = (
+                "ai_driven" if policy_def.approval_type == "ai_driven" else "manual"
+            )
+
             # Check if policy exists by name
             existing = crud_approval_policy.get_by_name(
                 self.db, account_id=self.account_id, name=policy_def.name
@@ -530,8 +924,19 @@ class PolicyApplier:
                     existing.is_default = policy_def.is_default
                     existing.workflow_type = policy_def.workflow_type
                     existing.approvals_required = policy_def.approvals_required
+                    existing.approval_type = db_approval_type
                     if policy_def.channel_configs:
                         existing.channel_configs = policy_def.channel_configs
+
+                    # Update AI-driven settings
+                    existing.ai_model = policy_def.ai_model
+                    existing.ai_guidelines = policy_def.ai_guidelines
+                    existing.ai_context = policy_def.ai_context
+                    existing.ai_confidence_threshold = (
+                        policy_def.ai_confidence_threshold
+                    )
+                    existing.ai_fallback_behavior = policy_def.ai_fallback_behavior
+                    existing.escalation_policy_name = policy_def.escalation_policy
                     # Note: user/team references would need resolution here
                 self._policy_map[policy_def.name] = existing.id
                 self._result.policies_updated += 1
@@ -543,13 +948,20 @@ class PolicyApplier:
                         account_id=self.account_id,
                         name=policy_def.name,
                         description=policy_def.description,
-                        approval_type="manual",  # Default for YAML-defined policies
+                        approval_type=db_approval_type,
                         timeout_seconds=policy_def.timeout_seconds,
                         require_reason=policy_def.require_reason,
                         is_default=policy_def.is_default,
                         workflow_type=policy_def.workflow_type,
                         approvals_required=policy_def.approvals_required,
                         channel_configs=policy_def.channel_configs,
+                        # AI-driven settings
+                        ai_model=policy_def.ai_model,
+                        ai_guidelines=policy_def.ai_guidelines,
+                        ai_context=policy_def.ai_context,
+                        ai_confidence_threshold=policy_def.ai_confidence_threshold,
+                        ai_fallback_behavior=policy_def.ai_fallback_behavior,
+                        escalation_policy_name=policy_def.escalation_policy,
                     )
                     self.db.add(new_policy)
                     self.db.flush()
@@ -561,12 +973,26 @@ class PolicyApplier:
         self,
         tools: List[ToolDefinition],
         dry_run: bool,
+        skip_missing_servers: bool = False,
     ) -> None:
-        """Apply tool configuration definitions."""
+        """Apply tool configuration definitions.
+
+        Args:
+            tools: List of tool definitions from the policy.
+            dry_run: If True, don't make database changes.
+            skip_missing_servers: If True, skip tools that reference
+                missing MCP servers (they were validated in pre-check).
+        """
         from preloop.models.crud import crud_tool_configuration
         from preloop.models.models.tool_configuration import ToolConfiguration
 
         for tool_def in tools:
+            # Skip tools that were marked for skipping during validation
+            if tool_def.name in self._skipped_tools:
+                logger.info(
+                    f"Skipping tool '{tool_def.name}' due to missing MCP server"
+                )
+                continue
             # Determine tool source and MCP server ID
             source_lower = tool_def.source.lower()
             if source_lower in ["builtin", "http"]:
@@ -682,55 +1108,64 @@ class PolicyApplier:
         conditions: List[ToolCondition],
         dry_run: bool,
     ) -> None:
-        """Apply tool approval conditions.
+        """Apply tool access rules for a tool configuration.
 
-        Note: Currently supports a single condition per tool (1:1 relationship).
-        Multiple conditions are combined with OR logic into a single expression.
+        Creates ToolAccessRule records for each condition defined in the policy.
+        Each condition is stored as a separate rule with:
+        - priority: Based on order in YAML (first = 0, second = 1, etc.)
+        - action: The action to take (allow, deny, require_approval)
+        - condition_type: 'simple' or 'cel' based on expression complexity
+        - condition_expression: The CEL or simple expression
+
+        Existing rules for the tool are replaced with the new set.
+
+        Args:
+            tool_config_id: The tool configuration ID to attach rules to.
+            conditions: List of ToolCondition from the policy YAML.
+            dry_run: If True, don't make database changes.
         """
-        from preloop.models.crud import tool_approval_condition
-        from preloop.models.models.tool_approval_condition import ToolApprovalCondition
+        from preloop.models.models.tool_access_rule import ToolAccessRule
+
+        if dry_run:
+            return
+
+        # Delete existing rules for this tool configuration
+        existing_rules = (
+            self.db.query(ToolAccessRule)
+            .filter(
+                ToolAccessRule.tool_configuration_id == tool_config_id,
+                ToolAccessRule.account_id == self.account_id,
+            )
+            .all()
+        )
+        for rule in existing_rules:
+            self.db.delete(rule)
 
         if not conditions:
             return
 
-        # Combine multiple conditions into a single CEL expression with OR
-        # Only include conditions that require approval
-        approval_conditions = [
-            c
-            for c in conditions
-            if c.action in [ConditionAction.REQUIRE_APPROVAL, "require_approval"]
-        ]
+        # Create a new ToolAccessRule for each condition
+        for priority, condition in enumerate(conditions):
+            # Determine action string from enum or string value
+            if isinstance(condition.action, ConditionAction):
+                action = condition.action.value
+            else:
+                action = str(condition.action)
 
-        if not approval_conditions:
-            return
+            # Detect condition type based on expression complexity
+            condition_type = _detect_condition_type(condition.expression)
 
-        if len(approval_conditions) == 1:
-            expression = approval_conditions[0].expression
-        else:
-            # Combine with OR
-            expression = " || ".join(f"({c.expression})" for c in approval_conditions)
-
-        # Get or create the condition
-        existing = tool_approval_condition.get_by_tool_configuration(
-            self.db,
-            tool_configuration_id=tool_config_id,
-            account_id=self.account_id,
-        )
-
-        if existing:
-            if not dry_run:
-                existing.condition_expression = expression
-                existing.is_enabled = True
-        else:
-            if not dry_run:
-                new_condition = ToolApprovalCondition(
-                    account_id=self.account_id,
-                    tool_configuration_id=tool_config_id,
-                    condition_type="argument",
-                    condition_expression=expression,
-                    is_enabled=True,
-                )
-                self.db.add(new_condition)
+            new_rule = ToolAccessRule(
+                account_id=self.account_id,
+                tool_configuration_id=tool_config_id,
+                condition_expression=condition.expression,
+                condition_type=condition_type,
+                action=action,
+                priority=priority,
+                description=condition.description,
+                is_enabled=True,
+            )
+            self.db.add(new_rule)
 
     def _apply_defaults(
         self,
@@ -757,6 +1192,7 @@ def export_current_policy(
     db: Session,
     account_id: Union[str, UUID],
     policy_name: str = "Exported Policy",
+    include_mcp_servers: bool = True,
 ) -> PolicyDocument:
     """Export the current configuration as a policy document.
 
@@ -764,6 +1200,9 @@ def export_current_policy(
         db: SQLAlchemy database session.
         account_id: The account ID to export from.
         policy_name: Name for the exported policy.
+        include_mcp_servers: Whether to include MCP server definitions.
+            When True, servers are included but credentials are redacted.
+            When False, the mcp_servers section is omitted entirely.
 
     Returns:
         PolicyDocument representing the current configuration.
@@ -778,23 +1217,47 @@ def export_current_policy(
 
     account_id_str = str(account_id)
 
-    # Export MCP servers
-    mcp_servers = crud_mcp_server.get_active_by_account(db, account_id=account_id_str)
-    server_defs = [
-        MCPServerDefinition(
-            name=server.name,
-            url=server.url,
-            transport=server.transport,
-            auth_type=server.auth_type,
-            # Don't export auth_config for security
+    # Export MCP servers (if requested)
+    server_defs: Optional[List[MCPServerDefinition]] = None
+    server_name_map: Dict[str, str] = {}
+
+    if include_mcp_servers:
+        mcp_servers = crud_mcp_server.get_active_by_account(
+            db, account_id=account_id_str
         )
-        for server in mcp_servers
-    ]
+        server_defs = [
+            MCPServerDefinition(
+                name=server.name,
+                url=server.url,
+                transport=server.transport,
+                auth_type=server.auth_type,
+                # Redact credentials for security - set to placeholder indicating
+                # they need to be configured
+                auth_config={"redacted": True} if server.auth_config else None,
+            )
+            for server in mcp_servers
+        ]
+        server_name_map = {str(s.id): s.name for s in mcp_servers}
+    else:
+        # Still need to build the server name map for tool source references
+        mcp_servers = crud_mcp_server.get_active_by_account(
+            db, account_id=account_id_str
+        )
+        server_name_map = {str(s.id): s.name for s in mcp_servers}
 
     # Export approval policies
     policies = crud_approval_policy.get_multi_by_account(db, account_id=account_id_str)
-    policy_defs = [
-        ApprovalPolicyDefinition(
+    policy_defs = []
+    for policy in policies:
+        # Map database approval_type to YAML approval_type
+        # 'manual' -> 'standard', 'ai_driven' -> 'ai_driven'
+        yaml_approval_type = (
+            "ai_driven"
+            if getattr(policy, "approval_type", None) == "ai_driven"
+            else "standard"
+        )
+
+        policy_def = ApprovalPolicyDefinition(
             name=policy.name,
             description=policy.description,
             timeout_seconds=policy.timeout_seconds,
@@ -803,13 +1266,19 @@ def export_current_policy(
             workflow_type=policy.workflow_type,
             approvals_required=policy.approvals_required,
             channel_configs=policy.channel_configs,
+            # AI-driven settings
+            approval_type=yaml_approval_type,
+            ai_model=getattr(policy, "ai_model", None),
+            ai_guidelines=getattr(policy, "ai_guidelines", None),
+            ai_context=getattr(policy, "ai_context", None),
+            ai_confidence_threshold=getattr(policy, "ai_confidence_threshold", 0.8),
+            ai_fallback_behavior=getattr(policy, "ai_fallback_behavior", "escalate"),
+            escalation_policy=getattr(policy, "escalation_policy_name", None),
         )
-        for policy in policies
-    ]
+        policy_defs.append(policy_def)
 
     # Build policy name lookup
     policy_name_map = {str(p.id): p.name for p in policies}
-    server_name_map = {str(s.id): s.name for s in mcp_servers}
 
     # Export tool configurations
     tool_configs = crud_tool_configuration.get_multi_by_account(
@@ -824,18 +1293,29 @@ def export_current_policy(
         else:
             source = config.tool_source
 
-        # Get approval conditions
+        # Get access rules and convert to conditions
+        # Rules are stored with priority, so sort by priority for consistent export
         conditions = []
-        if config.approval_condition:
-            cond = config.approval_condition
-            if cond.condition_expression:
-                conditions.append(
-                    ToolCondition(
-                        expression=cond.condition_expression,
-                        action=ConditionAction.REQUIRE_APPROVAL,
-                        description=cond.description,
+        if config.access_rules:
+            sorted_rules = sorted(config.access_rules, key=lambda r: r.priority)
+            for rule in sorted_rules:
+                if rule.is_enabled and rule.condition_expression:
+                    # Map action string to ConditionAction enum
+                    action_map = {
+                        "allow": ConditionAction.ALLOW,
+                        "deny": ConditionAction.DENY,
+                        "require_approval": ConditionAction.REQUIRE_APPROVAL,
+                    }
+                    action = action_map.get(
+                        rule.action, ConditionAction.REQUIRE_APPROVAL
                     )
-                )
+                    conditions.append(
+                        ToolCondition(
+                            expression=rule.condition_expression,
+                            action=action,
+                            description=rule.description,
+                        )
+                    )
 
         tool_def = ToolDefinition(
             name=config.tool_name,

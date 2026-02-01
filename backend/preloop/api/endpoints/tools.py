@@ -37,7 +37,7 @@ from preloop.schemas.tool_approval_condition import (
     ConditionTestRequest,
     ConditionTestResponse,
 )
-from preloop.services.tool_approval_evaluator import evaluate_cel_expression
+from preloop.services.policy_evaluator import evaluate_cel_expression
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

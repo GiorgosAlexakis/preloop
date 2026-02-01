@@ -26,6 +26,7 @@ from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
 from .approval_request import ApprovalRequest, ApprovalRequestStatus
 from .tool_approval_condition import ToolApprovalCondition
+from .tool_access_rule import ToolAccessRule
 from .notification_preferences import NotificationPreferences
 from .registration_token import RegistrationToken
 from .team import Team, TeamMembership
@@ -36,6 +37,7 @@ from .event import Event
 from .instance import Instance
 from .github_app_installation import OAuthAppInstallation, GitHubAppInstallation
 from .github_oauth_token import OAuthToken, GitHubOAuthToken
+from .policy_snapshot import PolicySnapshot
 
 __all__ = [
     "Base",
@@ -71,6 +73,7 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalRequestStatus",
     "ToolApprovalCondition",
+    "ToolAccessRule",
     "NotificationPreferences",
     "RegistrationToken",
     "Team",
@@ -90,4 +93,5 @@ __all__ = [
     "GitHubAppInstallation",  # Backward compatibility alias
     "OAuthToken",
     "GitHubOAuthToken",  # Backward compatibility alias
+    "PolicySnapshot",
 ]
