@@ -110,15 +110,13 @@ export class FlowExecutionView extends LitElement {
       .loading-indicator {
         display: flex;
         align-items: center;
-        padding: 8px 0 40px 0;
         color: #858585;
         font-size: 13px;
-        min-height: 60px;
+        height: 20px;
       }
       .loading-dots {
         display: inline-flex;
         gap: 4px;
-        margin-left: 8px;
       }
       .loading-dots span {
         width: 6px;
@@ -474,9 +472,9 @@ export class FlowExecutionView extends LitElement {
         this.budgetUsed = message.payload.budget_used || 0;
       }
 
-      // Auto-scroll to bottom when new log arrives
+      // Auto-scroll to bottom when new log arrives (after DOM updates)
       if (this.isAutoScroll) {
-        this.scrollToBottom();
+        this.updateComplete.then(() => this.scrollToBottom());
       }
     }
   }
@@ -488,19 +486,24 @@ export class FlowExecutionView extends LitElement {
     this.logContainerRef = this.shadowRoot?.querySelector(
       '.log-container'
     ) as HTMLElement;
-    this.logContainerRef.addEventListener('scroll', () => this.handleScroll());
-    // Check scroll position every 200ms and force scroll if auto-scroll is enabled
+    if (this.logContainerRef) {
+      this.logContainerRef.addEventListener('scroll', () =>
+        this.handleScroll()
+      );
+    }
+    // Fallback: check scroll position every 500ms and force scroll if needed
+    // Primary scrolling is done via updateComplete in handleWebSocketMessage
     this.autoScrollInterval = window.setInterval(() => {
       if (this.isAutoScroll && this.logContainerRef) {
         const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
         const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
 
-        // If not at bottom, force scroll
+        // If not at bottom, force scroll (fallback for missed updates)
         if (!isAtBottom) {
           this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
         }
       }
-    }, 200);
+    }, 500);
   }
 
   stopAutoScrollChecker() {
@@ -511,8 +514,16 @@ export class FlowExecutionView extends LitElement {
   }
 
   scrollToBottom() {
-    if (this.logContainerRef) {
-      this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+    // Get fresh reference in case DOM was updated
+    const container =
+      this.logContainerRef ||
+      (this.shadowRoot?.querySelector('.log-container') as HTMLElement);
+    if (container) {
+      this.logContainerRef = container;
+      // Use requestAnimationFrame for smoother scrolling after DOM paint
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
     }
   }
 
@@ -943,7 +954,6 @@ ${this.execution.resolved_input_prompt}</pre
               ${isRunning
                 ? html`
                     <div class="loading-indicator">
-                      <span>Receiving output</span>
                       <div class="loading-dots">
                         <span></span>
                         <span></span>
