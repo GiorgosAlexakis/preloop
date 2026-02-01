@@ -678,7 +678,9 @@ class TestListPolicyVersions:
 class TestGetPolicyVersion:
     """Test get_policy_version endpoint."""
 
-    async def test_get_version_success(self, mock_db, mock_account, mock_snapshot, mocker):
+    async def test_get_version_success(
+        self, mock_db, mock_account, mock_snapshot, mocker
+    ):
         """Test retrieving a specific version."""
         mock_service = MagicMock()
         mock_service.get_snapshot.return_value = mock_snapshot
@@ -835,7 +837,9 @@ class TestUpdateVersionTag:
 class TestRemoveVersionTag:
     """Test remove_version_tag endpoint."""
 
-    async def test_remove_tag_success(self, mock_db, mock_account, mock_snapshot, mocker):
+    async def test_remove_tag_success(
+        self, mock_db, mock_account, mock_snapshot, mocker
+    ):
         """Test removing a tag from a version."""
         mock_snapshot.tag = None  # Tag was removed
         mock_service = MagicMock()
@@ -934,7 +938,11 @@ class TestRollbackToVersion:
     async def test_rollback_version_not_found(self, mock_db, mock_account, mocker):
         """Test rollback to non-existent version returns 404."""
         mock_service = MagicMock()
-        mock_service.rollback_to_snapshot.return_value = (None, False, "Snapshot not found")
+        mock_service.rollback_to_snapshot.return_value = (
+            None,
+            False,
+            "Snapshot not found",
+        )
         mocker.patch(
             "preloop.api.endpoints.policies.PolicyVersionService",
             return_value=mock_service,
@@ -1023,7 +1031,9 @@ class TestDeletePolicyVersion:
 
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_delete_active_version_returns_400(self, mock_db, mock_account, mocker):
+    async def test_delete_active_version_returns_400(
+        self, mock_db, mock_account, mocker
+    ):
         """Test deleting the active version returns 400."""
         mock_service = MagicMock()
         mock_service.delete_snapshot.return_value = (

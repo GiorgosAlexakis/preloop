@@ -131,9 +131,7 @@ class CRUDPolicySnapshot(CRUDBase[PolicySnapshot]):
             query = query.options(defer(self.model.snapshot_data))
 
         query = (
-            query.order_by(self.model.version_number.desc())
-            .offset(skip)
-            .limit(limit)
+            query.order_by(self.model.version_number.desc()).offset(skip).limit(limit)
         )
 
         return query.all()

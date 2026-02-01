@@ -178,26 +178,31 @@ class FlowExecutionOrchestrator:
             return self._tracker_client
 
         try:
-            # Get project from trigger_project_id on the flow
+            # Get project from trigger_project_ids on the flow
             if not self.flow:
                 logger.warning("[CommitStatus] No flow object available")
                 return None
 
-            if not self.flow.trigger_project_id:
+            # Get the first project ID from the array (if any)
+            trigger_project_id = None
+            if self.flow.trigger_project_ids and len(self.flow.trigger_project_ids) > 0:
+                trigger_project_id = self.flow.trigger_project_ids[0]
+
+            if not trigger_project_id:
                 # This is expected for flows not tied to a specific project
                 logger.debug(
-                    "[CommitStatus] Flow has no trigger_project_id - skipping status update"
+                    "[CommitStatus] Flow has no trigger_project_ids - skipping status update"
                 )
                 return None
 
             from preloop.models.crud import crud_project
             from preloop.api.common import get_tracker_client
 
-            project = crud_project.get(self.db, id=self.flow.trigger_project_id)
+            project = crud_project.get(self.db, id=trigger_project_id)
             if not project:
                 logger.warning(
                     f"[CommitStatus] Project not found for trigger_project_id: "
-                    f"{self.flow.trigger_project_id}"
+                    f"{trigger_project_id}"
                 )
                 return None
 
@@ -292,14 +297,14 @@ class FlowExecutionOrchestrator:
             logger.info(
                 f"[CommitStatus] Getting tracker client. "
                 f"Flow ID: {self.flow_id}, "
-                f"trigger_project_id: {self.flow.trigger_project_id if self.flow else None}"
+                f"trigger_project_ids: {self.flow.trigger_project_ids if self.flow else None}"
             )
 
             tracker_client = await self._get_tracker_client_for_status()
             if not tracker_client:
                 logger.warning(
                     f"[CommitStatus] Could not get tracker client. "
-                    f"Flow trigger_project_id: {self.flow.trigger_project_id if self.flow else None}, "
+                    f"Flow trigger_project_ids: {self.flow.trigger_project_ids if self.flow else None}, "
                     f"account_id: {self.flow.account_id if self.flow else None}"
                 )
                 return
@@ -1096,8 +1101,8 @@ class FlowExecutionOrchestrator:
             "git_clone_config": self.flow.git_clone_config,
             "custom_commands": self.flow.custom_commands,
             "trigger_event_data": self.trigger_event_data,
-            "trigger_project_id": str(self.flow.trigger_project_id)
-            if self.flow.trigger_project_id
+            "trigger_project_ids": [str(pid) for pid in self.flow.trigger_project_ids]
+            if self.flow.trigger_project_ids
             else None,  # For git clone fallback
         }
 

@@ -52,13 +52,13 @@ def create_flow(
 
     # If this is a webhook trigger, auto-generate a secure webhook secret
     if flow_in.trigger_event_source == "webhook" or (
-        not flow_in.trigger_event_source and not flow_in.trigger_event_type
+        not flow_in.trigger_event_source and not flow_in.trigger_event_types
     ):
         # Generate a secure 32-byte URL-safe token
         webhook_secret = secrets.token_urlsafe(32)
         flow_in.webhook_config = schemas.WebhookConfig(webhook_secret=webhook_secret)
         flow_in.trigger_event_source = "webhook"
-        flow_in.trigger_event_type = "webhook"
+        flow_in.trigger_event_types = ["webhook"]
 
     # If creating from a preset, validate and compute source hashes for template tracking
     if flow_in.source_preset_id:
