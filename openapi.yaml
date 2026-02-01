@@ -4579,6 +4579,17 @@ components:
           - type: 'null'
           title: Escalation Team Ids
           description: List of team IDs to escalate to on timeout (proprietary)
+        notification_channels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Notification Channels
+          description: 'Notification channels: email, mobile_push, slack, mattermost,
+            webhook'
+          default:
+          - email
         channel_configs:
           anyOf:
           - additionalProperties: true
@@ -4695,6 +4706,17 @@ components:
           - type: 'null'
           title: Escalation Team Ids
           description: List of team IDs to escalate to on timeout (proprietary)
+        notification_channels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Notification Channels
+          description: 'Notification channels: email, mobile_push, slack, mattermost,
+            webhook'
+          default:
+          - email
         channel_configs:
           anyOf:
           - additionalProperties: true
@@ -4851,6 +4873,17 @@ components:
           - type: 'null'
           title: Escalation Team Ids
           description: List of team IDs to escalate to on timeout (proprietary)
+        notification_channels:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Notification Channels
+          description: 'Notification channels: email, mobile_push, slack, mattermost,
+            webhook'
+          default:
+          - email
         channel_configs:
           anyOf:
           - additionalProperties: true
