@@ -2372,6 +2372,52 @@ class GitHubTracker(BaseTracker):
                 "html_url": review_data.get("html_url"),
             }
 
+        except TrackerResponseError as e:
+            error_str = str(e).lower()
+            # Handle 422 "Line could not be resolved" errors
+            # This happens when inline comments reference lines not in the diff
+            if "422" in error_str and (
+                "line could not be resolved" in error_str
+                or "unprocessable" in error_str
+            ):
+                if comments:
+                    logger.warning(
+                        f"PR review for {pr_num} failed due to invalid line references. "
+                        f"Retrying without {len(formatted_comments)} inline comment(s). "
+                        f"Original error: {e}"
+                    )
+                    # Retry without inline comments - just submit the review body
+                    payload_without_comments = {
+                        "body": body,
+                        "event": event,
+                    }
+                    try:
+                        review_data = await self._request(
+                            "POST", review_path, data=payload_without_comments
+                        )
+                        return {
+                            "id": str(review_data["id"]),
+                            "node_id": review_data.get("node_id"),
+                            "state": review_data["state"],
+                            "body": review_data.get("body", ""),
+                            "user": review_data["user"]["login"],
+                            "submitted_at": review_data.get("submitted_at"),
+                            "html_url": review_data.get("html_url"),
+                            "warning": (
+                                f"Submitted without {len(formatted_comments)} inline "
+                                "comment(s) due to invalid line references"
+                            ),
+                        }
+                    except Exception as retry_error:
+                        logger.error(
+                            f"Retry without comments also failed for {pr_num}: {retry_error}"
+                        )
+                        raise TrackerResponseError(
+                            f"Failed to submit PR review (even without comments): {retry_error}"
+                        )
+            # Re-raise for other errors
+            raise
+
         except Exception as e:
             logger.error(f"Error submitting PR review for {pr_num}: {e}")
             raise TrackerResponseError(f"Failed to submit pull request review: {e}")
