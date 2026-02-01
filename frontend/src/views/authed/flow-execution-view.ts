@@ -1196,6 +1196,9 @@ ${log.payload.content}</pre
       if (executionId) {
         window.location.href = `/console/flows/executions/${executionId}`;
       }
+      if (executionId) {
+        window.location.href = `/console/flows/executions/${executionId}`;
+      }
         window.location.href = `/console/flows/executions/${result.execution_id}`;
       }
     } catch (error) {
