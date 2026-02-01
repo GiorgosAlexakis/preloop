@@ -240,11 +240,11 @@ def test_get_by_trigger_with_account_id(db_session: Session, create_account) -> 
     """Test retrieving flows by trigger event with account filter."""
     account: Account = create_account()
 
-    # Create a flow with specific trigger
+    # Create a flow with specific trigger using the new array fields
     flow_in = FlowCreate(
         name=f"Trigger Test Flow {uuid4()}",
         trigger_event_source="github",
-        trigger_event_type="pull_request",
+        trigger_event_types=["pull_request"],  # Use array field
         prompt_template="Test prompt",
         agent_type="openhands",
         agent_config={"agent": "TestAgent"},
