@@ -762,8 +762,11 @@ class FlowExecutionOrchestrator:
             clone_path = git_config.get("clone_path", "./workspace")
             full_clone_path = f"{work_dir}/{clone_path}"
 
-            # Get branch
+            # Get branch from config or try to extract from trigger event (for PRs)
             branch = git_config.get("branch")
+            if not branch:
+                branch = self._extract_pr_branch_from_trigger()
+
             branch_arg = f" -b {branch}" if branch else ""
 
             # Prepare git clone command
@@ -798,10 +801,99 @@ class FlowExecutionOrchestrator:
                 return None
 
             logger.info(f"Git clone successful: {stdout.decode()}")
+
+            # Checkout the specific commit SHA from trigger event if available
+            # This ensures we're reviewing the exact code from the PR/push event
+            commit_sha = self._extract_commit_sha()
+            if commit_sha:
+                logger.info(
+                    f"Checking out specific commit SHA from trigger event: {commit_sha[:8]}"
+                )
+                checkout_process = await asyncio.create_subprocess_shell(
+                    f"git checkout {commit_sha}",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=full_clone_path,
+                )
+                checkout_stdout, checkout_stderr = await checkout_process.communicate()
+
+                if checkout_process.returncode != 0:
+                    # If checkout fails, try fetching first (commit might not be in cloned branch)
+                    logger.warning(
+                        f"Direct checkout failed, trying fetch first: {checkout_stderr.decode()}"
+                    )
+                    fetch_process = await asyncio.create_subprocess_shell(
+                        f"git fetch origin {commit_sha}",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=full_clone_path,
+                    )
+                    await fetch_process.communicate()
+
+                    # Retry checkout after fetch
+                    checkout_process = await asyncio.create_subprocess_shell(
+                        f"git checkout {commit_sha}",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=full_clone_path,
+                    )
+                    (
+                        checkout_stdout,
+                        checkout_stderr,
+                    ) = await checkout_process.communicate()
+
+                    if checkout_process.returncode != 0:
+                        logger.error(
+                            f"Failed to checkout commit {commit_sha[:8]}: {checkout_stderr.decode()}"
+                        )
+                        # Continue anyway - we at least have the branch cloned
+                    else:
+                        logger.info(
+                            f"Successfully checked out commit {commit_sha[:8]} after fetch"
+                        )
+                else:
+                    logger.info(f"Successfully checked out commit {commit_sha[:8]}")
+            else:
+                logger.debug(
+                    "No commit SHA in trigger event - using default branch HEAD"
+                )
+
             return full_clone_path
 
         except Exception as e:
             logger.error(f"Error during git clone: {e}", exc_info=True)
+            return None
+
+    def _extract_pr_branch_from_trigger(self) -> Optional[str]:
+        """Extract the PR/MR source branch name from the trigger event.
+
+        For pull requests, we want to clone the head/source branch so we have
+        all the commits from the PR available for checkout.
+        """
+        try:
+            payload = self.trigger_event_data.get("payload", {})
+
+            if not isinstance(payload, dict):
+                return None
+
+            # GitHub PR - get the head branch (source branch of PR)
+            if "pull_request" in payload:
+                pr = payload["pull_request"]
+                if "head" in pr and "ref" in pr["head"]:
+                    branch = pr["head"]["ref"]
+                    logger.debug(f"Extracted PR head branch: {branch}")
+                    return branch
+
+            # GitLab MR - get the source branch
+            object_attrs = payload.get("object_attributes", {})
+            if object_attrs and "source_branch" in object_attrs:
+                branch = object_attrs["source_branch"]
+                logger.debug(f"Extracted MR source branch: {branch}")
+                return branch
+
+            return None
+        except Exception as e:
+            logger.debug(f"Error extracting PR branch: {e}")
             return None
 
     def _resolve_repository_url_from_trigger(self) -> Optional[str]:
