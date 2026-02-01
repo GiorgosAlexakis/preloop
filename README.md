@@ -354,10 +354,13 @@ Preloop provides a RESTful API with the following key endpoints:
 - `GET /api/v1/flows/{id}` - Get flow details
 - `PUT /api/v1/flows/{id}` - Update flow
 - `DELETE /api/v1/flows/{id}` - Delete flow
+- `POST /api/v1/flows/{id}/trigger` - Trigger a test execution for a flow
 - `GET /api/v1/flows/{id}/executions` - List flow executions
 - `GET /api/v1/flows/executions/{id}` - Get execution details
 - `GET /api/v1/flows/executions/{id}/logs` - Get execution logs (from container or database)
 - `GET /api/v1/flows/executions/{id}/metrics` - Get execution metrics (tool calls, tokens, cost)
+- `POST /api/v1/flows/executions/{id}/command` - Send command to execution (e.g., stop)
+- `POST /api/v1/flows/executions/{id}/retry` - Retry a failed/stopped/cancelled execution
 
 ## Trackers
 - `GET /api/v1/trackers` - List trackers
