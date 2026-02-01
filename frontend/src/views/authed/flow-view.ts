@@ -74,9 +74,11 @@ interface Flow {
   description?: string;
   icon?: string;
   trigger_event_source?: string;
-  trigger_event_type?: string;
+  // Event types that trigger this flow (e.g., ['pull_request_created', 'pull_request_updated'])
+  trigger_event_types?: string[];
   trigger_organization_id?: string;
-  trigger_project_id?: string;
+  // Project IDs that can trigger this flow (empty = all projects in org)
+  trigger_project_ids?: string[];
   trigger_config?: any;
   webhook_config?: WebhookConfig;
   ai_model_id?: string;
@@ -327,7 +329,10 @@ export class FlowView extends LitElement {
             (proj: any) =>
               proj.organization_id === this.flow.trigger_organization_id
           );
-          if (orgProjects.length === 0 && this.flow.trigger_project_id) {
+          if (
+            orgProjects.length === 0 &&
+            this.flow.trigger_project_ids?.length
+          ) {
             this.startPollingProjects(this.flow.trigger_organization_id);
           }
         }
@@ -564,7 +569,7 @@ export class FlowView extends LitElement {
               <span>
                 ${this.flow.trigger_event_source === 'webhook'
                   ? 'Webhook'
-                  : `${this.getTrackerName(this.flow.trigger_event_source)} - ${this.flow.trigger_event_type}`}
+                  : `${this.getTrackerName(this.flow.trigger_event_source)} - ${this.flow.trigger_event_types?.join(', ') || 'No events'}`}
               </span>
 
               ${this.flow.trigger_organization_id
@@ -577,13 +582,13 @@ export class FlowView extends LitElement {
                     >
                   `
                 : ''}
-              ${this.flow.trigger_project_id
+              ${this.flow.trigger_project_ids?.length
                 ? html`
-                    <strong>Project:</strong>
+                    <strong>Projects:</strong>
                     <span
-                      >${this.getProjectName(
-                        this.flow.trigger_project_id
-                      )}</span
+                      >${this.flow.trigger_project_ids
+                        .map((id) => this.getProjectName(id))
+                        .join(', ')}</span
                     >
                   `
                 : ''}
@@ -1559,9 +1564,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       'description',
       'icon',
       'trigger_event_source',
-      'trigger_event_type',
+      'trigger_event_types',
       'trigger_organization_id',
-      'trigger_project_id',
+      'trigger_project_ids',
       'trigger_config',
       'webhook_config',
       'ai_model_id',
@@ -1669,9 +1674,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
     // Normal tracker selected
     this.flow.trigger_event_source = trackerId;
-    this.flow.trigger_event_type = undefined; // Reset event type when tracker changes
+    this.flow.trigger_event_types = undefined; // Reset event types when tracker changes
     this.flow.trigger_organization_id = undefined;
-    this.flow.trigger_project_id = undefined;
+    this.flow.trigger_project_ids = undefined;
 
     const allOrganizations = await listOrganizations();
     this.organizations = allOrganizations.filter(
@@ -1689,7 +1694,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   async handleOrganizationChange(e: any) {
     const orgId = e.target.value;
     this.flow.trigger_organization_id = orgId;
-    this.flow.trigger_project_id = undefined;
+    this.flow.trigger_project_ids = undefined;
 
     // Load all projects (needed for git clone project selection)
     const allProjects = await listProjects();
@@ -1768,11 +1773,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   handleEventChange(e: any) {
-    const value = e.target.value;
-    if (value === 'other') {
-      this.flow.trigger_event_type = 'other';
-    } else {
-      this.flow.trigger_event_type = value;
+    const values = Array.from(e.target.value || []) as string[];
+    this.flow.trigger_event_types = values.length > 0 ? values : undefined;
+    if (!values.includes('other')) {
       this.customEventType = '';
     }
     this.requestUpdate();
@@ -2139,14 +2142,14 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     if (newType === 'webhook') {
       // Set webhook trigger
       this.flow.trigger_event_source = 'webhook';
-      this.flow.trigger_event_type = 'webhook';
+      this.flow.trigger_event_types = ['webhook'];
       // Clear tracker-specific fields
       this.flow.trigger_organization_id = undefined;
-      this.flow.trigger_project_id = undefined;
+      this.flow.trigger_project_ids = undefined;
     } else {
       // Clear webhook fields
       this.flow.trigger_event_source = undefined;
-      this.flow.trigger_event_type = undefined;
+      this.flow.trigger_event_types = undefined;
     }
 
     this.requestUpdate();
@@ -2335,12 +2338,19 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 )}
         </sl-select>
         <sl-select
-          label="Project"
-          .value=${this.flow.trigger_project_id || ''}
-          @sl-change=${(e: any) =>
-            (this.flow.trigger_project_id = e.target.value)}
+          label="Projects"
+          multiple
+          clearable
+          .value=${this.flow.trigger_project_ids || []}
+          @sl-change=${(e: any) => {
+            const values = Array.from(e.target.value || []) as string[];
+            this.flow.trigger_project_ids =
+              values.length > 0 ? values : undefined;
+            this.requestUpdate();
+          }}
           ?disabled=${this.isPollingProjects ||
           !this.flow.trigger_organization_id}
+          help-text="Select one or more projects, or leave empty for all projects in the organization"
         >
           ${this.isPollingProjects
             ? html`<sl-option value="">
@@ -2353,22 +2363,23 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                   (proj: any) =>
                     proj.organization_id === this.flow.trigger_organization_id
                 );
-                return orgProjects.length === 0 && this.flow.trigger_project_id
-                  ? html`<sl-option value=${this.flow.trigger_project_id}>
-                      ${this.flow.trigger_project_id} (syncing...)
-                    </sl-option>`
-                  : orgProjects.map(
-                      (proj: any) =>
-                        html`<sl-option value=${proj.id}
-                          >${proj.name}</sl-option
-                        >`
-                    );
+                return orgProjects.map(
+                  (proj: any) =>
+                    html`<sl-option value=${proj.id}>${proj.name}</sl-option>`
+                );
               })()}
         </sl-select>
         <sl-select
-          label="Event"
-          .value=${this.flow.trigger_event_type || ''}
-          @sl-change=${this.handleEventChange}
+          label="Events"
+          multiple
+          .value=${this.flow.trigger_event_types || []}
+          @sl-change=${(e: any) => {
+            const values = Array.from(e.target.value || []) as string[];
+            this.flow.trigger_event_types =
+              values.length > 0 ? values : undefined;
+            this.requestUpdate();
+          }}
+          help-text="Select one or more events to trigger this flow"
         >
           ${this.getEventOptions().map(
             (event) =>
@@ -2376,7 +2387,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
           )}
           <sl-option value="other">Other</sl-option>
         </sl-select>
-        ${this.flow.trigger_event_type === 'other'
+        ${this.flow.trigger_event_types?.includes('other')
           ? html`
               <sl-input
                 label="Custom Event"
@@ -2410,9 +2421,10 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     const showFilters = this.filtersExpanded || hasFilters;
 
     // Determine if this is a PR/MR event
-    const isMREvent =
-      this.flow.trigger_event_type?.includes('merge_request') ||
-      this.flow.trigger_event_type?.includes('pull_request');
+    const eventTypes = this.flow.trigger_event_types || [];
+    const isMREvent = eventTypes.some(
+      (et) => et?.includes('merge_request') || et?.includes('pull_request')
+    );
 
     return html`
       <div style="margin-top: 1.5rem;">

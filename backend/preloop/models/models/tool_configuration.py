@@ -277,16 +277,6 @@ class ApprovalPolicy(Base):
     )
 
     # Notification configuration
-    # DEPRECATED: notification_channels is no longer used.
-    # Approvers configure their own notification preferences in user settings.
-    # This field is kept for backwards compatibility but should not be used
-    # in new code. It will be removed in a future version.
-    notification_channels: Mapped[List[str]] = mapped_column(
-        ARRAY(String),
-        nullable=False,
-        default=["email"],
-        comment="DEPRECATED: Notification channels - approvers use user settings instead",
-    )
     channel_configs: Mapped[Optional[Dict]] = mapped_column(
         JSON,
         nullable=True,

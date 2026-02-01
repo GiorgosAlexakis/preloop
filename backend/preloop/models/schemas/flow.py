@@ -86,9 +86,11 @@ class FlowBase(BaseModel):
     description: Optional[str] = None
     icon: Optional[str] = None
     trigger_event_source: Optional[str] = None
-    trigger_event_type: Optional[str] = None
+    # Event types that trigger this flow (e.g., ['pull_request_created', 'pull_request_updated'])
+    trigger_event_types: Optional[List[str]] = None
     trigger_organization_id: Optional[UUID] = None
-    trigger_project_id: Optional[UUID] = None
+    # Project IDs that can trigger this flow (empty = all projects in org)
+    trigger_project_ids: Optional[List[UUID]] = None
     trigger_config: Optional[Dict[str, Any]] = None
     webhook_config: Optional[WebhookConfig] = None
     prompt_template: Optional[str] = None
@@ -144,9 +146,13 @@ class FlowResponse(FlowBase):
         "account_id",
         "ai_model_id",
         "trigger_organization_id",
-        "trigger_project_id",
         "source_preset_id",
     )
     def serialize_uuids(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID fields to strings."""
         return str(value) if value is not None else None
+
+    @field_serializer("trigger_project_ids")
+    def serialize_uuid_list(self, value: Optional[List[UUID]]) -> Optional[List[str]]:
+        """Serialize UUID list fields to string list."""
+        return [str(v) for v in value] if value is not None else None

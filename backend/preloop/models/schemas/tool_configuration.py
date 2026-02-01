@@ -130,10 +130,6 @@ class ApprovalPolicyBase(BaseModel):
     escalation_team_ids: Optional[List[UUID]] = Field(
         None, description="List of team IDs to escalate to on timeout (proprietary)"
     )
-    notification_channels: Optional[List[str]] = Field(
-        ["email"],
-        description="Notification channels: email, mobile_push, slack, mattermost, webhook",
-    )
     channel_configs: Optional[Dict[str, Any]] = Field(
         None,
         description="Configuration for notification channels (Slack/Mattermost/webhook settings)",

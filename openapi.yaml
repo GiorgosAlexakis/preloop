@@ -5989,23 +5989,27 @@ components:
           - type: string
           - type: 'null'
           title: Trigger Event Source
-        trigger_event_type:
+        trigger_event_types:
           anyOf:
-          - type: string
+          - items:
+              type: string
+            type: array
           - type: 'null'
-          title: Trigger Event Type
+          title: Trigger Event Types
         trigger_organization_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
           title: Trigger Organization Id
-        trigger_project_id:
+        trigger_project_ids:
           anyOf:
-          - type: string
-            format: uuid
+          - items:
+              type: string
+              format: uuid
+            type: array
           - type: 'null'
-          title: Trigger Project Id
+          title: Trigger Project Ids
         trigger_config:
           anyOf:
           - additionalProperties: true
@@ -6284,21 +6288,25 @@ components:
           - type: string
           - type: 'null'
           title: Trigger Event Source
-        trigger_event_type:
+        trigger_event_types:
           anyOf:
-          - type: string
+          - items:
+              type: string
+            type: array
           - type: 'null'
-          title: Trigger Event Type
+          title: Trigger Event Types
         trigger_organization_id:
           anyOf:
           - type: string
           - type: 'null'
           title: Trigger Organization Id
-        trigger_project_id:
+        trigger_project_ids:
           anyOf:
-          - type: string
+          - items:
+              type: string
+            type: array
           - type: 'null'
-          title: Trigger Project Id
+          title: Trigger Project Ids
         trigger_config:
           anyOf:
           - additionalProperties: true
@@ -6439,23 +6447,27 @@ components:
           - type: string
           - type: 'null'
           title: Trigger Event Source
-        trigger_event_type:
+        trigger_event_types:
           anyOf:
-          - type: string
+          - items:
+              type: string
+            type: array
           - type: 'null'
-          title: Trigger Event Type
+          title: Trigger Event Types
         trigger_organization_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
           title: Trigger Organization Id
-        trigger_project_id:
+        trigger_project_ids:
           anyOf:
-          - type: string
-            format: uuid
+          - items:
+              type: string
+              format: uuid
+            type: array
           - type: 'null'
-          title: Trigger Project Id
+          title: Trigger Project Ids
         trigger_config:
           anyOf:
           - additionalProperties: true
