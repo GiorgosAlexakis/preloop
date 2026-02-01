@@ -118,8 +118,9 @@ class WebSocketManager:
                     f"Failed to send message to connection {connection_id}: {e}"
                 )
 
-        if account_id:
-            logger.info(
+        # Only log broadcast completion at debug level to avoid log spam
+        if account_id and sent_count > 0:
+            logger.debug(
                 f"Broadcast complete: sent to {sent_count} connection(s) for account {account_id}"
             )
 
@@ -131,21 +132,32 @@ class WebSocketManager:
             data: Data to broadcast as JSON
             account_id: If provided, only send to connections with matching account_id
         """
+        # Skip logging for high-frequency message types when no one is listening
+        # to avoid log spam that can crash the pod
         msg_type = data.get("type", "unknown")
-        logger.info(
-            f"Broadcasting JSON message type={msg_type} to account_id={account_id}, "
-            f"active_connections={len(self.active_connections)}"
-        )
+        high_freq_types = {"agent_log_line", "token_usage_update", "tool_calls_update"}
 
-        # Log matching connections for debugging
         if account_id:
-            matching = [
-                cid
-                for cid, acc in self.connection_accounts.items()
-                if acc == account_id
-            ]
+            matching_count = sum(
+                1 for acc in self.connection_accounts.values() if acc == account_id
+            )
+            # Only log high-frequency messages at debug level, or when someone is listening
+            if msg_type in high_freq_types:
+                if matching_count > 0:
+                    logger.debug(
+                        f"Broadcasting {msg_type} to {matching_count} connection(s) "
+                        f"for account {account_id}"
+                    )
+                # Skip logging entirely when no one is listening for high-freq messages
+            else:
+                # Non-high-frequency messages (status updates, etc.) always log at INFO
+                logger.info(
+                    f"Broadcasting {msg_type} to account_id={account_id}, "
+                    f"matching_connections={matching_count}"
+                )
+        else:
             logger.info(
-                f"Connections matching account_id={account_id}: {len(matching)}"
+                f"Broadcasting {msg_type} to all {len(self.active_connections)} connections"
             )
 
         await self.broadcast(json.dumps(data), account_id=account_id)
