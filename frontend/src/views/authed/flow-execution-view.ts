@@ -8,6 +8,7 @@ import {
   sendCommandToExecution,
   getFlowExecutionMetrics,
   getFlowExecutionLogs,
+  retryFlowExecution,
 } from '../../api';
 import {
   parseUTCDate,
@@ -217,6 +218,9 @@ export class FlowExecutionView extends LitElement {
 
   @state()
   private isLoading = false;
+
+  @state()
+  private isRetrying = false;
 
   private logContainerRef?: HTMLElement;
   private wsConnected = false;
@@ -689,6 +693,19 @@ export class FlowExecutionView extends LitElement {
                   </sl-button>
                 `
               : ''}
+            ${this.canRetry()
+              ? html`
+                  <sl-button
+                    size="small"
+                    variant="warning"
+                    ?loading=${this.isRetrying}
+                    @click=${this.retryExecution}
+                  >
+                    <sl-icon name="arrow-repeat"></sl-icon>
+                    Retry
+                  </sl-button>
+                `
+              : ''}
           </div>
 
           <!-- Execution Metadata Card -->
@@ -1158,6 +1175,34 @@ ${log.payload.content}</pre
     } catch (error) {
       console.error('Failed to stop execution:', error);
       // TODO: Show error notification to user
+    }
+  }
+
+  canRetry(): boolean {
+    if (!this.execution) return false;
+    const retryableStatuses = ['FAILED', 'STOPPED', 'TIMEOUT', 'CANCELLED'];
+    return retryableStatuses.includes(this.execution.status);
+  }
+
+  async retryExecution() {
+    if (!this.executionId) return;
+
+    try {
+      this.isRetrying = true;
+      const result = await retryFlowExecution(this.executionId);
+
+      // Navigate to the new execution
+      if (result.execution_id) {
+        window.location.href = `/console/flows/executions/${result.execution_id}`;
+      }
+    } catch (error) {
+      console.error('Failed to retry execution:', error);
+      // Show error message
+      const message =
+        error instanceof Error ? error.message : 'Failed to retry execution';
+      alert(message); // TODO: Use proper notification
+    } finally {
+      this.isRetrying = false;
     }
   }
 

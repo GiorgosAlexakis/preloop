@@ -710,6 +710,20 @@ export async function sendCommandToExecution(
   }
 }
 
+export async function retryFlowExecution(executionId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/retry`,
+    {
+      method: 'POST',
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Failed to retry flow execution');
+  }
+  return response.json();
+}
+
 export async function cloneFlowPreset(presetId: string): Promise<any> {
   const response = await fetchWithAuth(
     `/api/v1/flows/presets/${presetId}/clone`,
