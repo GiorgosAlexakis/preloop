@@ -1192,7 +1192,10 @@ ${log.payload.content}</pre
       const result = await retryFlowExecution(this.executionId);
 
       // Navigate to the new execution
-      if (result.execution_id) {
+      const executionId = result.execution_id ?? result.id;
+      if (executionId) {
+        window.location.href = `/console/flows/executions/${executionId}`;
+      }
         window.location.href = `/console/flows/executions/${result.execution_id}`;
       }
     } catch (error) {
