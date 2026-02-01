@@ -134,17 +134,20 @@ class FlowTriggerService:
             return None
 
         # GitHub push event
-        if "head_commit" in payload:
-            sha = payload["head_commit"].get("id")
+        # Note: head_commit can be None for branch deletions
+        head_commit = payload.get("head_commit")
+        if head_commit and isinstance(head_commit, dict):
+            sha = head_commit.get("id")
             if sha:
                 return sha
 
         # GitHub/GitLab pull request / merge request events
         object_attrs = payload.get("object_attributes", {})
-        if object_attrs:
-            # GitLab MR - last_commit
-            if "last_commit" in object_attrs:
-                sha = object_attrs["last_commit"].get("id")
+        if object_attrs and isinstance(object_attrs, dict):
+            # GitLab MR - last_commit (can be None)
+            last_commit = object_attrs.get("last_commit")
+            if last_commit and isinstance(last_commit, dict):
+                sha = last_commit.get("id")
                 if sha:
                     return sha
             # GitLab MR - sha
@@ -154,10 +157,11 @@ class FlowTriggerService:
                     return sha
 
         # GitHub PR event
-        if "pull_request" in payload:
-            pr = payload["pull_request"]
-            if "head" in pr:
-                sha = pr["head"].get("sha")
+        pr = payload.get("pull_request")
+        if pr and isinstance(pr, dict):
+            head = pr.get("head")
+            if head and isinstance(head, dict):
+                sha = head.get("sha")
                 if sha:
                     return sha
 
