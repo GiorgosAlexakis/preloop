@@ -2050,14 +2050,21 @@ async def update_pull_request(
                         f"Removing reaction '{remove_reaction}' from GitHub PR {pr_number}"
                     )
                     try:
-                        await tracker_client.remove_issue_reaction(
+                        removed = await tracker_client.remove_issue_reaction(
                             issue_number=pr_number,
                             reaction=remove_reaction,
                         )
-                        logger.info(
-                            f"Successfully removed reaction from PR {pr_number}"
-                        )
-                        reaction_removed = True
+                        if removed:
+                            logger.info(
+                                f"Successfully removed reaction from PR {pr_number}"
+                            )
+                            reaction_removed = True
+                        else:
+                            # Reaction not found - not an error, but note it
+                            logger.info(
+                                f"Reaction '{remove_reaction}' not found on PR {pr_number} "
+                                "(may have been already removed or never added)"
+                            )
                     except Exception as e:
                         error_msg = (
                             f"Failed to remove reaction '{remove_reaction}': {e}"

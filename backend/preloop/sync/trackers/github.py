@@ -2043,9 +2043,15 @@ class GitHubTracker(BaseTracker):
             if draft is not None:
                 update_data["draft"] = draft
 
-            # Update PR
             pr_path = f"/repos/{owner}/{repo}/pulls/{pr_number}"
-            pr_data = await self._request("PATCH", pr_path, data=update_data)
+
+            # Only PATCH the PR if there's data to update
+            # An empty PATCH can result in 422 errors
+            if update_data:
+                pr_data = await self._request("PATCH", pr_path, data=update_data)
+            else:
+                # Just fetch current PR data for assignee/reviewer updates
+                pr_data = await self._request("GET", pr_path)
 
             # Update assignees if provided
             # Note: GitHub's POST endpoint only adds assignees, it doesn't replace.
