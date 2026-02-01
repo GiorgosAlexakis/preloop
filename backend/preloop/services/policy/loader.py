@@ -955,10 +955,12 @@ class PolicyApplier:
         from preloop.models.models.tool_configuration import ApprovalPolicy
 
         for policy_def in policies:
-            # Map YAML approval_type to database approval_type
-            # 'standard' -> 'manual', 'ai_driven' -> 'ai_driven'
-            db_approval_type = (
-                "ai_driven" if policy_def.approval_type == "ai_driven" else "manual"
+            # Map YAML approval_type to database approval_mode
+            # The model has:
+            # - approval_type: mechanism (slack, mattermost, webhook, manual)
+            # - approval_mode: who approves (standard=human, ai_driven=AI)
+            db_approval_mode = (
+                "ai_driven" if policy_def.approval_type == "ai_driven" else "standard"
             )
 
             # Check if policy exists by name
@@ -975,7 +977,7 @@ class PolicyApplier:
                     existing.is_default = policy_def.is_default
                     existing.workflow_type = policy_def.workflow_type
                     existing.approvals_required = policy_def.approvals_required
-                    existing.approval_type = db_approval_type
+                    existing.approval_mode = db_approval_mode  # standard or ai_driven
                     if policy_def.channel_configs:
                         existing.channel_configs = policy_def.channel_configs
 
@@ -987,8 +989,8 @@ class PolicyApplier:
                         policy_def.ai_confidence_threshold
                     )
                     existing.ai_fallback_behavior = policy_def.ai_fallback_behavior
-                    existing.escalation_policy_name = policy_def.escalation_policy
-                    # Note: user/team references would need resolution here
+                    # Note: escalation_policy references user/team IDs, not policy names
+                    # Escalation policy resolution would need user/team lookup here
                 self._policy_map[policy_def.name] = existing.id
                 self._result.policies_updated += 1
                 logger.info(f"Updated approval policy: {policy_def.name}")
@@ -999,7 +1001,8 @@ class PolicyApplier:
                         account_id=self.account_id,
                         name=policy_def.name,
                         description=policy_def.description,
-                        approval_type=db_approval_type,
+                        approval_type="manual",  # Mechanism: manual approval via UI
+                        approval_mode=db_approval_mode,  # Who approves: standard or ai_driven
                         timeout_seconds=policy_def.timeout_seconds,
                         require_reason=policy_def.require_reason,
                         is_default=policy_def.is_default,
@@ -1012,7 +1015,7 @@ class PolicyApplier:
                         ai_context=policy_def.ai_context,
                         ai_confidence_threshold=policy_def.ai_confidence_threshold,
                         ai_fallback_behavior=policy_def.ai_fallback_behavior,
-                        escalation_policy_name=policy_def.escalation_policy,
+                        # Note: escalation uses user/team IDs, resolved separately
                     )
                     self.db.add(new_policy)
                     self.db.flush()
