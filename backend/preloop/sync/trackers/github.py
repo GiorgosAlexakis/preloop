@@ -2333,10 +2333,22 @@ class GitHubTracker(BaseTracker):
         if "#" in pr_num:
             pr_num = pr_num.split("#")[-1]
 
+        # Helper to clean string values that may have extra quotes from AI output
+        # e.g., "'REQUEST_CHANGES'" -> "REQUEST_CHANGES"
+        def clean_str(val: Any) -> str:
+            s = str(val)
+            if s.startswith("'") and s.endswith("'"):
+                s = s[1:-1]
+            return s
+
         # Build the request payload
+        # Clean body and event in case they have extra quotes from AI output parsing
+        clean_body = clean_str(body) if body else ""
+        clean_event = clean_str(event)
+
         payload: Dict[str, Any] = {
-            "body": body,
-            "event": event,
+            "body": clean_body,
+            "event": clean_event,
         }
 
         # Add inline comments if provided
@@ -2344,15 +2356,28 @@ class GitHubTracker(BaseTracker):
             formatted_comments = []
             for comment in comments:
                 formatted_comment: Dict[str, Any] = {
-                    "path": comment["path"],
-                    "body": comment["body"],
+                    "path": clean_str(comment["path"]),
+                    "body": clean_str(comment["body"]),
                 }
                 # Use 'line' for single-line comments
+                # Must be an integer for GitHub API
                 if "line" in comment:
-                    formatted_comment["line"] = comment["line"]
+                    line_val = comment["line"]
+                    # Handle string line numbers (may come from AI output)
+                    if isinstance(line_val, str):
+                        # Strip surrounding quotes if present
+                        line_val = line_val.strip("'\"")
+                        try:
+                            line_val = int(line_val)
+                        except ValueError:
+                            logger.warning(
+                                f"Invalid line number '{comment['line']}', skipping"
+                            )
+                            continue
+                    formatted_comment["line"] = int(line_val)
                 # Use side if provided, default to RIGHT
                 if "side" in comment:
-                    formatted_comment["side"] = comment["side"]
+                    formatted_comment["side"] = clean_str(comment["side"])
                 else:
                     formatted_comment["side"] = "RIGHT"
                 formatted_comments.append(formatted_comment)
