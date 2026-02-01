@@ -266,12 +266,23 @@ export class FlowExecutionView extends LitElement {
   private autoScrollInterval?: number;
   private unsubscribe?: () => void;
 
+  // Buffered log rendering - prevents scroll issues when many lines arrive at once
+  private logBuffer: FlowExecutionUpdate[] = [];
+  private bufferFlushInterval?: number;
+  private readonly BUFFER_FLUSH_INTERVAL_MS = 500;
+  private readonly MAX_LINES_PER_FLUSH = 5;
+
   disconnectedCallback() {
     super.disconnectedCallback();
     // Clean up auto-scroll interval when component is removed
     if (this.autoScrollInterval) {
       clearInterval(this.autoScrollInterval);
       this.autoScrollInterval = undefined;
+    }
+    // Clean up buffer flush interval
+    if (this.bufferFlushInterval) {
+      clearInterval(this.bufferFlushInterval);
+      this.bufferFlushInterval = undefined;
     }
     // Unsubscribe from WebSocket
     this.unsubscribe?.();
@@ -341,6 +352,7 @@ export class FlowExecutionView extends LitElement {
         this.wsConnected = true;
         this.isAutoScroll = true; // Enable auto-scroll for streaming
         this.startAutoScrollChecker(); // Start periodic scroll checker
+        this.startBufferFlush(); // Start buffered log rendering
 
         // Subscribe to flow execution updates for this specific execution
         this.unsubscribe = unifiedWebSocketManager.subscribe(
@@ -372,9 +384,10 @@ export class FlowExecutionView extends LitElement {
             ];
           }
 
-          // Stop auto-scroll when disconnected
+          // Stop auto-scroll and buffer flush when disconnected
           if (state !== 'connected') {
             this.stopAutoScrollChecker();
+            this.stopBufferFlush();
           }
         });
       } else {
@@ -395,7 +408,13 @@ export class FlowExecutionView extends LitElement {
 
     // Handle NATS forwarded messages
     if (message.execution_id === this.executionId) {
-      this.logs = [...this.logs, message];
+      // For agent log lines, add to buffer for controlled rendering
+      // For other message types (status updates, etc.), add directly
+      if (message.type === 'agent_log_line') {
+        this.logBuffer.push(message);
+      } else {
+        this.logs = [...this.logs, message];
+      }
 
       // Update execution status
       if (message.type === 'status_update' && this.execution) {
@@ -425,8 +444,11 @@ export class FlowExecutionView extends LitElement {
             this.execution.status !== 'INITIALIZING' &&
             this.execution.status !== 'PENDING';
 
-          // If execution just finished, add the model output to logs
+          // If execution just finished, flush remaining buffer and add model output
           if (wasRunning && isNowFinished) {
+            // Flush any remaining buffered logs first
+            this.stopBufferFlush();
+
             // Check if we haven't already added it
             const hasModelOutput = this.logs.some(
               (log) => log.type === 'model_output'
@@ -445,11 +467,6 @@ export class FlowExecutionView extends LitElement {
           }
         }
         this.requestUpdate();
-      }
-
-      // Handle agent log lines
-      if (message.type === 'agent_log_line') {
-        // Log lines are already added to this.logs above
       }
 
       // Track tool calls
@@ -472,8 +489,8 @@ export class FlowExecutionView extends LitElement {
         this.budgetUsed = message.payload.budget_used || 0;
       }
 
-      // Auto-scroll to bottom when new log arrives (after DOM updates)
-      if (this.isAutoScroll) {
+      // For non-buffered messages, scroll immediately
+      if (message.type !== 'agent_log_line' && this.isAutoScroll) {
         this.updateComplete.then(() => this.scrollToBottom());
       }
     }
@@ -510,6 +527,44 @@ export class FlowExecutionView extends LitElement {
     if (this.autoScrollInterval) {
       clearInterval(this.autoScrollInterval);
       this.autoScrollInterval = undefined;
+    }
+  }
+
+  startBufferFlush() {
+    // Clear any existing interval
+    this.stopBufferFlush();
+
+    // Flush buffer periodically
+    this.bufferFlushInterval = window.setInterval(() => {
+      this.flushLogBuffer();
+    }, this.BUFFER_FLUSH_INTERVAL_MS);
+  }
+
+  stopBufferFlush() {
+    if (this.bufferFlushInterval) {
+      clearInterval(this.bufferFlushInterval);
+      this.bufferFlushInterval = undefined;
+    }
+    // Flush any remaining logs when stopping
+    if (this.logBuffer.length > 0) {
+      this.logs = [...this.logs, ...this.logBuffer];
+      this.logBuffer = [];
+      if (this.isAutoScroll) {
+        this.updateComplete.then(() => this.scrollToBottom());
+      }
+    }
+  }
+
+  flushLogBuffer() {
+    if (this.logBuffer.length === 0) return;
+
+    // Take up to MAX_LINES_PER_FLUSH from buffer
+    const linesToAdd = this.logBuffer.splice(0, this.MAX_LINES_PER_FLUSH);
+    this.logs = [...this.logs, ...linesToAdd];
+
+    // Scroll after adding lines
+    if (this.isAutoScroll) {
+      this.updateComplete.then(() => this.scrollToBottom());
     }
   }
 
@@ -1230,8 +1285,9 @@ ${log.payload.content}</pre
         console.error('Failed to fetch logs after stop:', error);
       }
 
-      // Stop auto-scroll checker
+      // Stop auto-scroll checker and flush remaining buffer
       this.stopAutoScrollChecker();
+      this.stopBufferFlush();
       this.isAutoScroll = false;
 
       // Force UI update
