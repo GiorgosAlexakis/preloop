@@ -107,6 +107,47 @@ export class FlowExecutionView extends LitElement {
       .log-container::-webkit-scrollbar-thumb:hover {
         background: #666;
       }
+      .loading-indicator {
+        display: flex;
+        align-items: center;
+        padding: 8px 0 40px 0;
+        color: #858585;
+        font-size: 13px;
+        min-height: 60px;
+      }
+      .loading-dots {
+        display: inline-flex;
+        gap: 4px;
+        margin-left: 8px;
+      }
+      .loading-dots span {
+        width: 6px;
+        height: 6px;
+        background-color: #858585;
+        border-radius: 50%;
+        animation: loadingDot 1.4s infinite ease-in-out both;
+      }
+      .loading-dots span:nth-child(1) {
+        animation-delay: -0.32s;
+      }
+      .loading-dots span:nth-child(2) {
+        animation-delay: -0.16s;
+      }
+      .loading-dots span:nth-child(3) {
+        animation-delay: 0s;
+      }
+      @keyframes loadingDot {
+        0%,
+        80%,
+        100% {
+          transform: scale(0.6);
+          opacity: 0.5;
+        }
+        40% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
       .log-entry {
         display: flex;
         margin-bottom: 4px;
@@ -670,7 +711,8 @@ export class FlowExecutionView extends LitElement {
     const isRunning =
       this.execution.status === 'RUNNING' ||
       this.execution.status === 'STARTING' ||
-      this.execution.status === 'INITIALIZING';
+      this.execution.status === 'INITIALIZING' ||
+      this.execution.status === 'PENDING';
 
     return html`
       <view-header
@@ -898,6 +940,18 @@ ${this.execution.resolved_input_prompt}</pre
                     </div>
                   `
                 : this.logs.map((log) => this.renderLogEntry(log))}
+              ${isRunning
+                ? html`
+                    <div class="loading-indicator">
+                      <span>Receiving output</span>
+                      <div class="loading-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                    </div>
+                  `
+                : ''}
             </div>
 
             ${isRunning
