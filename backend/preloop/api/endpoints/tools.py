@@ -811,11 +811,13 @@ async def update_tool_approval_condition(
     try:
         # Get existing access rule (first one with require_approval action)
         result = db.execute(
-            select(ToolAccessRule).where(
+            select(ToolAccessRule)
+            .where(
                 ToolAccessRule.tool_configuration_id == config_id,
                 ToolAccessRule.account_id == str(account.id),
                 ToolAccessRule.action == "require_approval",
-            ).order_by(ToolAccessRule.priority.asc())
+            )
+            .order_by(ToolAccessRule.priority.asc())
         )
         existing_rule = result.scalar_one_or_none()
 
@@ -1194,10 +1196,12 @@ async def get_tool_approval_condition(
 
     # Get first access rule (for backward compatibility)
     result = db.execute(
-        select(ToolAccessRule).where(
+        select(ToolAccessRule)
+        .where(
             ToolAccessRule.tool_configuration_id == config_id,
             ToolAccessRule.account_id == str(account.id),
-        ).order_by(ToolAccessRule.priority.asc())
+        )
+        .order_by(ToolAccessRule.priority.asc())
     )
     rule = result.scalar_one_or_none()
 
@@ -1278,10 +1282,12 @@ async def create_or_update_tool_approval_condition(
     try:
         # Get existing rule or create new one
         result = db.execute(
-            select(ToolAccessRule).where(
+            select(ToolAccessRule)
+            .where(
                 ToolAccessRule.tool_configuration_id == config_id,
                 ToolAccessRule.account_id == str(account.id),
-            ).order_by(ToolAccessRule.priority.asc())
+            )
+            .order_by(ToolAccessRule.priority.asc())
         )
         rule = result.scalar_one_or_none()
 

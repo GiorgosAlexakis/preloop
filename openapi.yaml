@@ -1173,10 +1173,12 @@ paths:
       - Tools
       summary: Update Tool Approval Condition
       description: "Update or create approval condition for a tool configuration.\n\
-        \nArgs:\n    config_id: Tool configuration ID\n    condition_data: Condition\
-        \ data with 'approval_condition' field\n    account: Current user's account\n\
-        \    db: Database session\n\nReturns:\n    Updated tool configuration\n\n\
-        Raises:\n    HTTPException: If configuration not found or update fails"
+        \nThis endpoint uses the new ToolAccessRule model (replaced ToolApprovalCondition).\n\
+        For backward compatibility, it manages a single 'require_approval' rule per\
+        \ tool.\n\nArgs:\n    config_id: Tool configuration ID\n    condition_data:\
+        \ Condition data with 'approval_condition' field\n    account: Current user's\
+        \ account\n    db: Database session\n\nReturns:\n    Updated tool configuration\n\
+        \nRaises:\n    HTTPException: If configuration not found or update fails"
       operationId: update_tool_approval_condition_api_v1_tool_configurations__config_id__condition_put
       security:
       - bearerAuth: []
@@ -1375,11 +1377,13 @@ paths:
       tags:
       - Tools
       summary: Get Tool Approval Condition
-      description: "Get the approval condition for a tool configuration.\n\nArgs:\n\
-        \    config_id: Tool configuration ID\n    account: Current user's account\
-        \ (from dependency)\n    db: Database session\n\nReturns:\n    Tool approval\
-        \ condition\n\nRaises:\n    HTTPException: If tool configuration not found\
-        \ or condition not found"
+      description: "Get the access rule (approval condition) for a tool configuration.\n\
+        \nThis endpoint uses the new ToolAccessRule model (replaced ToolApprovalCondition).\n\
+        For backward compatibility, it returns the first 'require_approval' rule.\n\
+        \nArgs:\n    config_id: Tool configuration ID\n    account: Current user's\
+        \ account (from dependency)\n    db: Database session\n\nReturns:\n    Tool\
+        \ access rule as approval condition response\n\nRaises:\n    HTTPException:\
+        \ If tool configuration not found or no rules found"
       operationId: get_tool_approval_condition_api_v1_tool_configurations__config_id__approval_condition_get
       security:
       - bearerAuth: []
@@ -1408,11 +1412,14 @@ paths:
       tags:
       - Tools
       summary: Create Or Update Tool Approval Condition
-      description: "Create or update the approval condition for a tool configuration.\n\
-        \nArgs:\n    config_id: Tool configuration ID\n    condition_in: Condition\
-        \ data\n    account: Current user's account (from dependency)\n    db: Database\
-        \ session\n\nReturns:\n    Created or updated tool approval condition\n\n\
-        Raises:\n    HTTPException: If tool configuration not found or creation fails"
+      description: "Create or update the access rule for a tool configuration.\n\n\
+        This endpoint uses the new ToolAccessRule model (replaced ToolApprovalCondition).\n\
+        For backward compatibility, it manages a single 'require_approval' rule per\
+        \ tool.\n\nArgs:\n    config_id: Tool configuration ID\n    condition_in:\
+        \ Condition data\n    account: Current user's account (from dependency)\n\
+        \    db: Database session\n\nReturns:\n    Created or updated access rule\
+        \ as approval condition response\n\nRaises:\n    HTTPException: If tool configuration\
+        \ not found or creation fails"
       operationId: create_or_update_tool_approval_condition_api_v1_tool_configurations__config_id__approval_condition_put
       security:
       - bearerAuth: []
@@ -1447,11 +1454,13 @@ paths:
       tags:
       - Tools
       summary: Delete Tool Approval Condition
-      description: "Delete the approval condition for a tool configuration.\n\nArgs:\n\
+      description: "Delete the access rules for a tool configuration.\n\nThis endpoint\
+        \ uses the new ToolAccessRule model (replaced ToolApprovalCondition).\nIt\
+        \ deletes all access rules for the specified tool configuration.\n\nArgs:\n\
         \    config_id: Tool configuration ID\n    account: Current user's account\
         \ (from dependency)\n    db: Database session\n\nReturns:\n    Success message\n\
-        \nRaises:\n    HTTPException: If tool configuration not found or condition\
-        \ not found"
+        \nRaises:\n    HTTPException: If tool configuration not found or no rules\
+        \ found"
       operationId: delete_tool_approval_condition_api_v1_tool_configurations__config_id__approval_condition_delete
       security:
       - bearerAuth: []

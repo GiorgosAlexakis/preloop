@@ -990,7 +990,7 @@ class TestApprovalConditionEndpoints:
     async def test_get_approval_condition_not_found(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test getting approval condition when no condition exists."""
+        """Test getting approval condition when no access rules exist."""
         config_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
         config.id = config_id
@@ -999,10 +999,11 @@ class TestApprovalConditionEndpoints:
             "preloop.api.endpoints.tools.crud_tool_configuration.get",
             return_value=config,
         )
-        mocker.patch(
-            "preloop.api.endpoints.tools.tool_approval_condition.get_by_tool_configuration",
-            return_value=None,
-        )
+
+        # Mock db.execute to return no results (empty scalars)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.get_tool_approval_condition(
@@ -1012,7 +1013,7 @@ class TestApprovalConditionEndpoints:
             )
 
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
-        assert "No approval condition found" in exc_info.value.detail
+        assert "No access rule found" in exc_info.value.detail
 
     async def test_delete_approval_condition_tool_not_found(
         self, mock_db, mock_user, mock_account, mocker
@@ -1037,7 +1038,7 @@ class TestApprovalConditionEndpoints:
     async def test_delete_approval_condition_not_found(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test deleting approval condition when no condition exists."""
+        """Test deleting approval condition when no access rules exist."""
         config_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
         config.id = config_id
@@ -1046,10 +1047,11 @@ class TestApprovalConditionEndpoints:
             "preloop.api.endpoints.tools.crud_tool_configuration.get",
             return_value=config,
         )
-        mocker.patch(
-            "preloop.api.endpoints.tools.tool_approval_condition.get_by_tool_configuration",
-            return_value=None,
-        )
+
+        # Mock db.execute to return no results (empty scalars)
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute.return_value = mock_result
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.delete_tool_approval_condition(
