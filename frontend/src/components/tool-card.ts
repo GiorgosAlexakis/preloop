@@ -207,15 +207,6 @@ export class ToolCard extends LitElement {
   @state()
   private isCelTesting = false;
 
-  @state()
-  private isImporting = false;
-
-  @state()
-  private isExporting = false;
-
-  @state()
-  private importExportError: string | null = null;
-
   connectedCallback() {
     super.connectedCallback();
     this.loadCurrentUser();
@@ -488,89 +479,6 @@ export class ToolCard extends LitElement {
       };
     } finally {
       this.isCelTesting = false;
-    }
-  }
-
-  private handleImportPolicy() {
-    // Trigger the hidden file input
-    const fileInput = this.shadowRoot?.querySelector(
-      '#policy-import-input'
-    ) as HTMLInputElement;
-    if (fileInput) {
-      fileInput.click();
-    }
-  }
-
-  private async handleFileSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    this.isImporting = true;
-    this.importExportError = null;
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetchWithAuth('/api/v1/policies/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to import policy');
-      }
-
-      // Dispatch event to refresh policies list
-      this.dispatchEvent(
-        new CustomEvent('policies-updated', {
-          bubbles: true,
-          composed: true,
-        })
-      );
-
-      // Show success message (using alert for simplicity, could use a toast)
-      alert('Policy imported successfully!');
-    } catch (error: any) {
-      this.importExportError = error.message || 'Failed to import policy';
-      alert(`Import failed: ${this.importExportError}`);
-    } finally {
-      this.isImporting = false;
-      // Reset file input so the same file can be selected again
-      input.value = '';
-    }
-  }
-
-  private async handleExportPolicy() {
-    this.isExporting = true;
-    this.importExportError = null;
-
-    try {
-      const response = await fetchWithAuth(
-        '/api/v1/policies/export?format=yaml'
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to export policies');
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'policies.yaml';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error: any) {
-      this.importExportError = error.message || 'Failed to export policies';
-      alert(`Export failed: ${this.importExportError}`);
-    } finally {
-      this.isExporting = false;
     }
   }
 
@@ -1860,15 +1768,6 @@ export class ToolCard extends LitElement {
           ${
             !this.isCreatingPolicy
               ? html`
-                  <!-- Hidden file input for import -->
-                  <input
-                    type="file"
-                    id="policy-import-input"
-                    accept=".yaml,.yml,.json"
-                    @change=${this.handleFileSelected}
-                    style="display: none"
-                  />
-
                   <!-- Existing Policies List -->
                   <div>
                     <div
@@ -1879,39 +1778,13 @@ export class ToolCard extends LitElement {
                       >
                         Select Existing Policy
                       </h4>
-                      <div
-                        style="display: flex; gap: var(--sl-spacing-x-small);"
+                      <sl-button
+                        size="small"
+                        @click=${this.handleToggleCreatePolicy}
                       >
-                        <sl-button
-                          size="small"
-                          variant="default"
-                          @click=${this.handleImportPolicy}
-                          ?loading=${this.isImporting}
-                          ?disabled=${this.isImporting || this.isExporting}
-                        >
-                          <sl-icon slot="prefix" name="upload"></sl-icon>
-                          Import
-                        </sl-button>
-                        <sl-button
-                          size="small"
-                          variant="default"
-                          @click=${this.handleExportPolicy}
-                          ?loading=${this.isExporting}
-                          ?disabled=${this.isImporting ||
-                          this.isExporting ||
-                          this.policies.length === 0}
-                        >
-                          <sl-icon slot="prefix" name="download"></sl-icon>
-                          Export
-                        </sl-button>
-                        <sl-button
-                          size="small"
-                          @click=${this.handleToggleCreatePolicy}
-                        >
-                          <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                          Create New
-                        </sl-button>
-                      </div>
+                        <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                        Create New
+                      </sl-button>
                     </div>
                     ${this.policies.length > 0
                       ? html`

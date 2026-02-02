@@ -2581,7 +2581,7 @@ defaults:
 
   render() {
     return html`
-      <view-header headerText="Policies" width="extra-wide"></view-header>
+      <view-header headerText="Governance" width="extra-wide"></view-header>
 
       <div class="column-layout extra-wide">
         <div class="main-column">
@@ -2612,7 +2612,7 @@ defaults:
                       name="shield-lock"
                       style="margin-right: var(--sl-spacing-x-small);"
                     ></sl-icon>
-                    Access Policies
+                    Access Rules
                   </sl-tab>
                   <sl-tab
                     slot="nav"
@@ -2623,7 +2623,7 @@ defaults:
                       name="person-check"
                       style="margin-right: var(--sl-spacing-x-small);"
                     ></sl-icon>
-                    Approval Policies
+                    Approval Workflows
                   </sl-tab>
                   <sl-tab
                     slot="nav"
@@ -2634,7 +2634,7 @@ defaults:
                       name="file-earmark-code"
                       style="margin-right: var(--sl-spacing-x-small);"
                     ></sl-icon>
-                    Policy Files
+                    Import / Export
                   </sl-tab>
 
                   <sl-tab-panel name="access">

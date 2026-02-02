@@ -316,7 +316,7 @@ export class LitApp extends LitElement {
           { path: 'pricing', component: 'pricing-view' },
           { path: 'approvals', component: 'approvals-view' },
           { path: 'approval/:requestId', component: 'approval-view' },
-          { path: 'policies', component: 'policies-view' },
+          { path: 'governance', component: 'policies-view' },
           {
             path: 'audit',
             action: (_context, commands) => {
