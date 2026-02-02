@@ -989,8 +989,8 @@ class PolicyApplier:
                         policy_def.ai_confidence_threshold
                     )
                     existing.ai_fallback_behavior = policy_def.ai_fallback_behavior
-                    # Note: escalation_policy references user/team IDs, not policy names
-                    # Escalation policy resolution would need user/team lookup here
+                    # Store escalation_policy name for second-pass resolution
+                    existing._pending_escalation_policy = policy_def.escalation_policy
                 self._policy_map[policy_def.name] = existing.id
                 self._result.policies_updated += 1
                 logger.info(f"Updated approval policy: {policy_def.name}")
@@ -1015,13 +1015,68 @@ class PolicyApplier:
                         ai_context=policy_def.ai_context,
                         ai_confidence_threshold=policy_def.ai_confidence_threshold,
                         ai_fallback_behavior=policy_def.ai_fallback_behavior,
-                        # Note: escalation uses user/team IDs, resolved separately
+                        # escalation_policy_id resolved in second pass
                     )
+                    # Store escalation_policy name for second-pass resolution
+                    new_policy._pending_escalation_policy = policy_def.escalation_policy
                     self.db.add(new_policy)
                     self.db.flush()
                     self._policy_map[policy_def.name] = new_policy.id
                 self._result.policies_created += 1
                 logger.info(f"Created approval policy: {policy_def.name}")
+
+        # Second pass: resolve escalation_policy references
+        if not dry_run:
+            self._resolve_escalation_policies(policies)
+
+    def _resolve_escalation_policies(
+        self, policies: List[ApprovalPolicyDefinition]
+    ) -> None:
+        """Resolve escalation_policy names to IDs (second pass).
+
+        This is called after all policies are created/updated, so we can
+        resolve cross-references between policies.
+        """
+        from preloop.models.crud import crud_approval_policy
+
+        for policy_def in policies:
+            if not policy_def.escalation_policy:
+                continue
+
+            # Get the policy we just created/updated
+            policy = crud_approval_policy.get_by_name(
+                self.db, account_id=self.account_id, name=policy_def.name
+            )
+            if not policy:
+                continue
+
+            # Look up the escalation policy by name
+            escalation_policy_id = self._policy_map.get(policy_def.escalation_policy)
+            if not escalation_policy_id:
+                # Try to find it in the database
+                escalation_policy = crud_approval_policy.get_by_name(
+                    self.db,
+                    account_id=self.account_id,
+                    name=policy_def.escalation_policy,
+                )
+                if escalation_policy:
+                    escalation_policy_id = escalation_policy.id
+
+            if escalation_policy_id:
+                policy.escalation_policy_id = escalation_policy_id
+                logger.info(
+                    f"Resolved escalation policy '{policy_def.escalation_policy}' "
+                    f"for policy '{policy_def.name}'"
+                )
+            else:
+                logger.warning(
+                    f"Escalation policy '{policy_def.escalation_policy}' not found "
+                    f"for policy '{policy_def.name}'"
+                )
+                self._result.warnings.append(
+                    f"Escalation policy '{policy_def.escalation_policy}' not found "
+                    f"for policy '{policy_def.name}'"
+                )
 
     def _apply_tools(
         self,
@@ -1116,18 +1171,20 @@ class PolicyApplier:
                 if not dry_run:
                     existing.is_enabled = tool_def.enabled
                     existing.approval_policy_id = approval_policy_id
+                    # Always update tool_source and mcp_server_id to keep consistent
+                    # with YAML (including None to clear old references)
+                    existing.tool_source = tool_source
+                    existing.mcp_server_id = mcp_server_id
                     if tool_def.description:
                         existing.tool_description = tool_def.description
                     if tool_def.custom_config:
                         existing.custom_config = tool_def.custom_config
-                    if mcp_server_id:
-                        existing.mcp_server_id = mcp_server_id
 
-                    # Handle conditions
-                    if tool_def.conditions:
-                        self._apply_tool_conditions(
-                            existing.id, tool_def.conditions, dry_run
-                        )
+                    # Handle conditions - always apply to clear stale rules
+                    # when conditions is empty/None
+                    self._apply_tool_conditions(
+                        existing.id, tool_def.conditions or [], dry_run
+                    )
 
                 self._result.tools_updated += 1
                 logger.info(f"Updated tool config: {tool_def.name}")

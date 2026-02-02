@@ -127,13 +127,27 @@ class AIApprovalService:
         Returns:
             AIApprovalResult with the decision, confidence, and reasoning.
         """
-        # Extract AI configuration from approval_config
+        # Extract AI configuration - prefer dedicated columns, fall back to approval_config
+        # for backward compatibility with older policies
         ai_config = policy.approval_config or {}
-        model = ai_config.get("model", self._default_model)
+
+        # Use dedicated AI columns if available (set by policy-as-code and API)
+        model = getattr(policy, "ai_model", None) or ai_config.get(
+            "model", self._default_model
+        )
+        guidelines = getattr(policy, "ai_guidelines", None) or ai_config.get(
+            "guidelines", ""
+        )
+        ai_context = getattr(policy, "ai_context", None) or ai_config.get("context", {})
+
+        # These are still from approval_config (no dedicated columns for secrets/provider)
         api_key = ai_config.get("api_key")
         provider = ai_config.get("provider")
         timeout = ai_config.get("timeout", self._default_timeout)
-        guidelines = ai_config.get("guidelines", "")
+
+        # Merge ai_context into the evaluation context
+        if ai_context and isinstance(ai_context, dict):
+            context = {**(context or {}), **ai_context}
 
         # If no guidelines provided, use a sensible default
         if not guidelines:
