@@ -164,19 +164,39 @@ class DynamicMCPServer:
                         )
                     ]
 
-                # Check if tool requires approval
-                approval_required = await self._check_approval_required(
-                    user_context, name
+                # Evaluate policy rules to determine action (allow/deny/require_approval)
+                (
+                    action,
+                    approval_policy_id,
+                    rule_description,
+                ) = await self._evaluate_policy(user_context, name, arguments or {})
+
+                logger.info(
+                    f"Policy evaluation for tool '{name}': "
+                    f"action={action}, rule='{rule_description}'"
                 )
 
-                if approval_required:
+                # Handle deny action - block execution
+                if action == "deny":
+                    logger.warning(
+                        f"Tool {name} execution DENIED by policy rule: {rule_description}"
+                    )
+                    return [
+                        types.TextContent(
+                            type="text",
+                            text=f"Tool execution denied: {rule_description}",
+                        )
+                    ]
+
+                # Handle require_approval action
+                if action == "require_approval":
                     logger.info(
                         f"Tool {name} requires approval - initiating approval flow"
                     )
                     try:
                         # Wait for approval
                         await self._request_and_wait_for_approval(
-                            user_context, name, arguments or {}
+                            user_context, name, arguments or {}, approval_policy_id
                         )
                         logger.info(f"Tool {name} approved - proceeding with execution")
                     except TimeoutError as e:
@@ -286,26 +306,34 @@ class DynamicMCPServer:
             logger.error(f"Error extracting user context: {e}", exc_info=True)
             return None
 
-    async def _check_approval_required(
-        self, user_context: UserContext, tool_name: str
-    ) -> bool:
-        """Check if a tool requires approval for this user.
+    async def _evaluate_policy(
+        self, user_context: UserContext, tool_name: str, tool_args: dict
+    ) -> tuple:
+        """Evaluate policy rules to determine tool access action.
+
+        Uses the policy evaluator to check ToolAccessRule entries and determine
+        whether to allow, deny, or require approval for the tool call.
 
         Args:
             user_context: User context
             tool_name: Name of the tool
+            tool_args: Tool arguments for condition evaluation
 
         Returns:
-            True if approval is required, False otherwise
+            Tuple of (action, approval_policy_id, rule_description)
+            - action: 'allow', 'deny', or 'require_approval'
+            - approval_policy_id: UUID of approval policy (if require_approval)
+            - rule_description: Description of the matched rule
         """
         try:
             from preloop.models.db.session import get_async_db_session
             from preloop.models.crud.tool_configuration import (
                 get_tool_config_by_name_and_source_async,
             )
+            from preloop.services.policy_evaluator import evaluate_policy_async
 
             logger.info(
-                f"Checking approval requirement for tool '{tool_name}' "
+                f"Evaluating policy for tool '{tool_name}' "
                 f"(account_id={user_context.account_id})"
             )
 
@@ -320,18 +348,7 @@ class DynamicMCPServer:
                     tool_source="builtin",
                 )
 
-                if config:
-                    logger.info(
-                        f"Found builtin tool config for '{tool_name}': "
-                        f"requires_approval={bool(config.approval_policy_id)}, "
-                        f"approval_policy_id={config.approval_policy_id}"
-                    )
-                else:
-                    logger.info(
-                        f"No builtin tool config found for '{tool_name}', checking MCP tools"
-                    )
-
-                # If not found in default tools, check proxied tools using CRUD
+                # If not found in default tools, check proxied tools
                 if not config:
                     config = await get_tool_config_by_name_and_source_async(
                         db,
@@ -340,30 +357,33 @@ class DynamicMCPServer:
                         tool_source="mcp",
                     )
 
-                    if config:
-                        logger.info(
-                            f"Found MCP tool config for '{tool_name}': "
-                            f"requires_approval={bool(config.approval_policy_id)}, "
-                            f"approval_policy_id={config.approval_policy_id}, "
-                            f"mcp_server_id={config.mcp_server_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"No tool configuration found for '{tool_name}' "
-                            f"(account_id={user_context.account_id})"
-                        )
-
-                # Return whether approval is required
-                # A tool requires approval if it has an approval_policy_id set
-                requires_approval = bool(config.approval_policy_id) if config else False
-                logger.info(
-                    f"Approval requirement check result for '{tool_name}': {requires_approval}"
+                # Evaluate policy rules
+                (
+                    action,
+                    approval_policy_id,
+                    rule_description,
+                ) = await evaluate_policy_async(
+                    db=db,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    account_id=user_context.account_id,
+                    tool_configuration_id=config.id if config else None,
+                    user_id=getattr(user_context, "user_id", None),
+                    execution_id=getattr(user_context, "execution_id", None),
                 )
-                return requires_approval
+
+                logger.info(
+                    f"Policy evaluation result for '{tool_name}': "
+                    f"action={action}, approval_policy_id={approval_policy_id}, "
+                    f"rule='{rule_description}'"
+                )
+
+                return action, approval_policy_id, rule_description
 
         except Exception as e:
-            logger.error(f"Error checking approval requirement: {e}", exc_info=True)
-            return False
+            # SECURITY: Fail closed on errors
+            logger.error(f"Error evaluating policy for {tool_name}: {e}", exc_info=True)
+            return "require_approval", None, f"Policy evaluation error: {e}"
 
     async def _request_and_wait_for_approval(
         self, user_context: UserContext, tool_name: str, tool_args: dict
