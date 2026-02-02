@@ -4,18 +4,15 @@ import { repeat } from 'lit/directives/repeat.js';
 import {
   getTools,
   getApprovalPolicies,
-  createApprovalPolicy,
-  updateApprovalPolicy,
   deleteApprovalPolicy,
   createToolConfiguration,
   updateToolConfiguration,
-  getUsers,
-  getTeams,
   getFeatures,
   fetchWithAuth,
 } from '../../api';
 import type { Tool, ApprovalPolicy } from '../../components/tool-card';
 import '../../components/view-header';
+import '../../components/approval-policy-dialog';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -137,31 +134,6 @@ export class PoliciesView extends LitElement {
   // Approval policies state
   @state() private _showPolicyDialog = false;
   @state() private _editingPolicy: ApprovalPolicy | null = null;
-  @state() private _policyForm = {
-    name: '',
-    description: '',
-    approvalType: 'standard',
-    approvalsRequired: 1,
-    timeoutSeconds: 300,
-    isDefault: false,
-    webhookUrl: '',
-    channel: '',
-    user: '',
-    approverUserIds: [] as string[],
-    approverTeamIds: [] as string[],
-    // AI-driven fields
-    aiModel: '',
-    aiGuidelines: '',
-    aiConfidenceThreshold: 0.8,
-    aiFallbackBehavior: 'escalate' as 'escalate' | 'approve' | 'deny',
-    escalationPolicyId: '',
-  };
-  @state() private _availableUsers: Array<{
-    id: string;
-    username: string;
-    email: string;
-  }> = [];
-  @state() private _availableTeams: Array<{ id: string; name: string }> = [];
 
   // Policy files state
   @state() private _policyFileHistory: PolicyFileHistory[] = [];
@@ -703,29 +675,11 @@ export class PoliciesView extends LitElement {
         isEnabled: tool.is_enabled,
         configId: tool.config_id,
       }));
-
-      // Load users and teams if advanced approvals feature is enabled
-      if (this._features['advanced_approvals']) {
-        await this.loadUsersAndTeams();
-      }
     } catch (err: any) {
       this._error = err.message || 'Failed to load data';
       console.error('Error loading policies data:', err);
     } finally {
       this._loading = false;
-    }
-  }
-
-  private async loadUsersAndTeams() {
-    try {
-      const [usersResponse, teamsResponse] = await Promise.all([
-        getUsers(),
-        getTeams(),
-      ]);
-      this._availableUsers = usersResponse.users || [];
-      this._availableTeams = teamsResponse.teams || [];
-    } catch (error) {
-      console.error('Failed to load users and teams:', error);
     }
   }
 
@@ -823,108 +777,12 @@ export class PoliciesView extends LitElement {
 
   private openPolicyDialog(policy: ApprovalPolicy | null = null) {
     this._editingPolicy = policy;
-    if (policy) {
-      this._policyForm = {
-        name: policy.name,
-        description: policy.description || '',
-        approvalType: policy.approval_type,
-        approvalsRequired: policy.approvals_required || 1,
-        timeoutSeconds: policy.timeout_seconds || 300,
-        isDefault: policy.is_default || false,
-        webhookUrl: policy.approval_config?.webhook_url || '',
-        channel: policy.channel || '',
-        user: policy.user || '',
-        approverUserIds: policy.approver_user_ids || [],
-        approverTeamIds: policy.approver_team_ids || [],
-        // AI-driven fields
-        aiModel: policy.ai_model || '',
-        aiGuidelines: policy.ai_guidelines || '',
-        aiConfidenceThreshold: policy.ai_confidence_threshold ?? 0.8,
-        aiFallbackBehavior: policy.ai_fallback_behavior || 'escalate',
-        escalationPolicyId: policy.escalation_policy_id || '',
-      };
-    } else {
-      this._policyForm = {
-        name: '',
-        description: '',
-        approvalType: 'standard',
-        approvalsRequired: 1,
-        timeoutSeconds: 300,
-        isDefault: false,
-        webhookUrl: '',
-        channel: '',
-        user: '',
-        approverUserIds: [],
-        approverTeamIds: [],
-        // AI-driven fields
-        aiModel: '',
-        aiGuidelines: '',
-        aiConfidenceThreshold: 0.8,
-        aiFallbackBehavior: 'escalate',
-        escalationPolicyId: '',
-      };
-    }
     this._showPolicyDialog = true;
   }
 
   private closePolicyDialog() {
     this._showPolicyDialog = false;
     this._editingPolicy = null;
-  }
-
-  private async savePolicy() {
-    try {
-      const policyData: any = {
-        name: this._policyForm.name,
-        description: this._policyForm.description || null,
-        approval_type: this._policyForm.approvalType,
-        approvals_required: this._policyForm.approvalsRequired,
-        timeout_seconds: this._policyForm.timeoutSeconds,
-        is_default: this._policyForm.isDefault,
-        channel: this._policyForm.channel || null,
-        user: this._policyForm.user || null,
-      };
-
-      if (this._policyForm.webhookUrl) {
-        policyData.approval_config = {
-          webhook_url: this._policyForm.webhookUrl,
-        };
-      }
-
-      if (this._policyForm.approverUserIds.length > 0) {
-        policyData.approver_user_ids = this._policyForm.approverUserIds;
-      }
-
-      if (this._policyForm.approverTeamIds.length > 0) {
-        policyData.approver_team_ids = this._policyForm.approverTeamIds;
-      }
-
-      // AI-driven fields
-      if (this._policyForm.approvalType === 'ai_driven') {
-        policyData.ai_model = this._policyForm.aiModel;
-        policyData.ai_guidelines = this._policyForm.aiGuidelines || null;
-        policyData.ai_confidence_threshold =
-          this._policyForm.aiConfidenceThreshold;
-        policyData.ai_fallback_behavior = this._policyForm.aiFallbackBehavior;
-        if (
-          this._policyForm.aiFallbackBehavior === 'escalate' &&
-          this._policyForm.escalationPolicyId
-        ) {
-          policyData.escalation_policy_id = this._policyForm.escalationPolicyId;
-        }
-      }
-
-      if (this._editingPolicy) {
-        await updateApprovalPolicy(this._editingPolicy.id, policyData);
-      } else {
-        await createApprovalPolicy(policyData);
-      }
-
-      this.closePolicyDialog();
-      await this.loadData();
-    } catch (err: any) {
-      this._error = err.message || 'Failed to save policy';
-    }
   }
 
   private async deletePolicy(policy: ApprovalPolicy) {
@@ -1408,7 +1266,7 @@ export class PoliciesView extends LitElement {
       <div style="margin-bottom: var(--sl-spacing-large);">
         <sl-button variant="primary" @click=${() => this.openPolicyDialog()}>
           <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-          Create Policy
+          Create Approval Policy
         </sl-button>
       </div>
 
@@ -1420,8 +1278,8 @@ export class PoliciesView extends LitElement {
               <p
                 style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500);"
               >
-                Create an approval policy to require human review before tool
-                executions.
+                Create an approval policy to define how tool executions are
+                approved (human, AI, Slack, etc.).
               </p>
             </div>
           `
@@ -1434,8 +1292,26 @@ export class PoliciesView extends LitElement {
               )}
             </div>
           `}
-      ${this.renderPolicyDialog()}
+
+      <approval-policy-dialog
+        ?open=${this._showPolicyDialog}
+        .policy=${this._editingPolicy}
+        .existingPolicies=${this._approvalPolicies}
+        .features=${this._features}
+        @close=${this.closePolicyDialog}
+        @saved=${this._handlePolicySaved}
+        @add-model=${this._handleAddModel}
+      ></approval-policy-dialog>
     `;
+  }
+
+  private async _handlePolicySaved() {
+    await this.loadData();
+  }
+
+  private _handleAddModel() {
+    // Navigate to model configuration
+    window.location.href = '/console/settings/models';
   }
 
   private renderPolicyCard(policy: ApprovalPolicy) {
@@ -1519,319 +1395,6 @@ export class PoliciesView extends LitElement {
           </sl-button>
         </div>
       </sl-card>
-    `;
-  }
-
-  private renderPolicyDialog() {
-    // Get standard policies for escalation dropdown
-    const standardPolicies = this._approvalPolicies.filter(
-      (p) => p.approval_type === 'standard'
-    );
-
-    return html`
-      <sl-dialog
-        label=${this._editingPolicy ? 'Edit Policy' : 'Create Policy'}
-        ?open=${this._showPolicyDialog}
-        @sl-request-close=${this.closePolicyDialog}
-        style="--width: 650px;"
-      >
-        <div class="form-field">
-          <label class="form-label">Policy Name *</label>
-          <sl-input
-            placeholder="e.g., Production Safeguards"
-            .value=${this._policyForm.name}
-            @sl-input=${(e: any) =>
-              (this._policyForm = {
-                ...this._policyForm,
-                name: e.target.value,
-              })}
-          ></sl-input>
-        </div>
-
-        <div class="form-field">
-          <label class="form-label">Description</label>
-          <sl-textarea
-            placeholder="Optional description"
-            .value=${this._policyForm.description}
-            @sl-input=${(e: any) =>
-              (this._policyForm = {
-                ...this._policyForm,
-                description: e.target.value,
-              })}
-            rows="2"
-          ></sl-textarea>
-        </div>
-
-        ${this.hasAdvancedApprovals()
-          ? html`
-              <div class="form-field">
-                <label class="form-label">Approval Type</label>
-                <sl-radio-group
-                  .value=${this._policyForm.approvalType}
-                  @sl-change=${(e: any) =>
-                    (this._policyForm = {
-                      ...this._policyForm,
-                      approvalType: e.target.value,
-                    })}
-                >
-                  <sl-radio value="standard">
-                    Standard - Human approvers review requests
-                  </sl-radio>
-                  <sl-radio value="ai_driven">
-                    AI-Driven - AI model automatically evaluates requests
-                  </sl-radio>
-                  <sl-radio value="slack">
-                    Slack - Send approval requests to Slack
-                  </sl-radio>
-                  <sl-radio value="mattermost">
-                    Mattermost - Send approval requests to Mattermost
-                  </sl-radio>
-                  <sl-radio value="webhook">
-                    Webhook - Send approval requests to a webhook
-                  </sl-radio>
-                </sl-radio-group>
-              </div>
-            `
-          : ''}
-
-        <!-- AI Configuration Section -->
-        ${this.hasAdvancedApprovals() &&
-        this._policyForm.approvalType === 'ai_driven'
-          ? html`
-              <div
-                class="ai-config-section"
-                style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium); padding: var(--sl-spacing-medium); background: var(--sl-color-primary-50); border: 1px solid var(--sl-color-primary-200); border-radius: var(--sl-border-radius-medium); margin-bottom: var(--sl-spacing-medium);"
-              >
-                <div
-                  style="display: flex; align-items: center; gap: var(--sl-spacing-small); color: var(--sl-color-primary-700); font-weight: 500;"
-                >
-                  <sl-icon name="robot"></sl-icon>
-                  AI Configuration
-                </div>
-
-                <div class="form-field">
-                  <label class="form-label">AI Model *</label>
-                  <sl-select
-                    .value=${this._policyForm.aiModel}
-                    @sl-change=${(e: any) =>
-                      (this._policyForm = {
-                        ...this._policyForm,
-                        aiModel: e.target.value,
-                      })}
-                    placeholder="Select an AI model..."
-                  >
-                    <sl-option value="claude-sonnet-4-20250514"
-                      >Claude Sonnet 4</sl-option
-                    >
-                    <sl-option value="gpt-4o">GPT-4o</sl-option>
-                    <sl-option value="gpt-4-turbo">GPT-4 Turbo</sl-option>
-                    <sl-option value="gemini-2.5-pro">Gemini 2.5 Pro</sl-option>
-                  </sl-select>
-                </div>
-
-                <div class="form-field">
-                  <label class="form-label">Guidelines</label>
-                  <sl-textarea
-                    .value=${this._policyForm.aiGuidelines}
-                    @sl-input=${(e: any) =>
-                      (this._policyForm = {
-                        ...this._policyForm,
-                        aiGuidelines: e.target.value,
-                      })}
-                    placeholder="APPROVE if:
-- Read-only operations
-- Non-production environments
-
-DENY if:
-- Production data modifications
-- Credential access"
-                    rows="8"
-                    help-text="Instructions for the AI to determine when to approve or deny requests"
-                  ></sl-textarea>
-                </div>
-
-                <div class="form-field">
-                  <label class="form-label"
-                    >Confidence Threshold:
-                    ${Math.round(
-                      this._policyForm.aiConfidenceThreshold * 100
-                    )}%</label
-                  >
-                  <sl-range
-                    .value=${this._policyForm.aiConfidenceThreshold * 100}
-                    @sl-input=${(e: any) =>
-                      (this._policyForm = {
-                        ...this._policyForm,
-                        aiConfidenceThreshold:
-                          (parseFloat(e.target.value) || 80) / 100,
-                      })}
-                    min="0"
-                    max="100"
-                    step="5"
-                    style="--thumb-size: 18px;"
-                  ></sl-range>
-                  <div
-                    style="display: flex; justify-content: space-between; font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-500); margin-top: var(--sl-spacing-2x-small);"
-                  >
-                    <span>0% (always escalate)</span>
-                    <span>100% (very confident)</span>
-                  </div>
-                </div>
-
-                <div class="form-field">
-                  <label class="form-label">When Uncertain</label>
-                  <sl-radio-group
-                    .value=${this._policyForm.aiFallbackBehavior}
-                    @sl-change=${(e: any) =>
-                      (this._policyForm = {
-                        ...this._policyForm,
-                        aiFallbackBehavior: e.target.value,
-                      })}
-                  >
-                    <sl-radio value="escalate"
-                      >Escalate to human approvers</sl-radio
-                    >
-                    <sl-radio value="approve">Approve automatically</sl-radio>
-                    <sl-radio value="deny">Deny automatically</sl-radio>
-                  </sl-radio-group>
-                </div>
-
-                ${this._policyForm.aiFallbackBehavior === 'escalate'
-                  ? html`
-                      <div class="form-field">
-                        <label class="form-label">Escalation Policy</label>
-                        <sl-select
-                          .value=${this._policyForm.escalationPolicyId}
-                          @sl-change=${(e: any) =>
-                            (this._policyForm = {
-                              ...this._policyForm,
-                              escalationPolicyId: e.target.value,
-                            })}
-                          placeholder="Select a policy for escalation..."
-                          help-text="The approval policy to use when AI confidence is below threshold"
-                        >
-                          ${standardPolicies.map(
-                            (p) => html`
-                              <sl-option value=${p.id}>${p.name}</sl-option>
-                            `
-                          )}
-                        </sl-select>
-                        ${!this._policyForm.escalationPolicyId &&
-                        standardPolicies.length > 0
-                          ? html`
-                              <div
-                                style="display: flex; align-items: center; gap: var(--sl-spacing-x-small); margin-top: var(--sl-spacing-x-small); color: var(--sl-color-warning-700); font-size: var(--sl-font-size-small);"
-                              >
-                                <sl-icon name="exclamation-triangle"></sl-icon>
-                                <span
-                                  >No escalation policy selected. AI decisions
-                                  below threshold will have no fallback.</span
-                                >
-                              </div>
-                            `
-                          : ''}
-                        ${standardPolicies.length === 0
-                          ? html`
-                              <div
-                                style="display: flex; align-items: center; gap: var(--sl-spacing-x-small); margin-top: var(--sl-spacing-x-small); color: var(--sl-color-warning-700); font-size: var(--sl-font-size-small);"
-                              >
-                                <sl-icon name="exclamation-triangle"></sl-icon>
-                                <span
-                                  >No standard policies available for
-                                  escalation. Create one first.</span
-                                >
-                              </div>
-                            `
-                          : ''}
-                      </div>
-                    `
-                  : ''}
-              </div>
-            `
-          : ''}
-
-        <!-- Standard approval settings (only for non-AI types) -->
-        ${this._policyForm.approvalType !== 'ai_driven'
-          ? html`
-              <div class="form-row">
-                <div class="form-field">
-                  <label class="form-label">Approvals Required</label>
-                  <sl-input
-                    type="number"
-                    min="1"
-                    .value=${String(this._policyForm.approvalsRequired)}
-                    @sl-input=${(e: any) =>
-                      (this._policyForm = {
-                        ...this._policyForm,
-                        approvalsRequired: parseInt(e.target.value) || 1,
-                      })}
-                  ></sl-input>
-                </div>
-                <div class="form-field">
-                  <label class="form-label">Timeout (seconds)</label>
-                  <sl-input
-                    type="number"
-                    min="30"
-                    .value=${String(this._policyForm.timeoutSeconds)}
-                    @sl-input=${(e: any) =>
-                      (this._policyForm = {
-                        ...this._policyForm,
-                        timeoutSeconds: parseInt(e.target.value) || 300,
-                      })}
-                  ></sl-input>
-                </div>
-              </div>
-            `
-          : ''}
-        ${this.hasAdvancedApprovals() &&
-        this._policyForm.approvalType !== 'standard' &&
-        this._policyForm.approvalType !== 'ai_driven'
-          ? html`
-              <div class="form-field">
-                <label class="form-label">Webhook URL</label>
-                <sl-input
-                  type="url"
-                  placeholder="https://..."
-                  .value=${this._policyForm.webhookUrl}
-                  @sl-input=${(e: any) =>
-                    (this._policyForm = {
-                      ...this._policyForm,
-                      webhookUrl: e.target.value,
-                    })}
-                ></sl-input>
-              </div>
-            `
-          : ''}
-
-        <div class="form-field">
-          <div
-            style="display: flex; justify-content: space-between; align-items: center;"
-          >
-            <label class="form-label">Set as Default</label>
-            <sl-switch
-              ?checked=${this._policyForm.isDefault}
-              @sl-change=${(e: any) =>
-                (this._policyForm = {
-                  ...this._policyForm,
-                  isDefault: e.target.checked,
-                })}
-            ></sl-switch>
-          </div>
-        </div>
-
-        <div slot="footer" class="dialog-footer">
-          <sl-button @click=${this.closePolicyDialog}>Cancel</sl-button>
-          <sl-button
-            variant="primary"
-            @click=${this.savePolicy}
-            ?disabled=${!this._policyForm.name.trim() ||
-            (this._policyForm.approvalType === 'ai_driven' &&
-              !this._policyForm.aiModel)}
-          >
-            ${this._editingPolicy ? 'Save Changes' : 'Create Policy'}
-          </sl-button>
-        </div>
-      </sl-dialog>
     `;
   }
 

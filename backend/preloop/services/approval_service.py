@@ -1018,19 +1018,42 @@ class ApprovalService:
                     ),
                 )
 
-                # If escalation_policy_id is set, we could switch to that policy
-                # For now, just send notifications for human review
+                # If escalation_policy_id is set, load and use that policy for notifications
+                notification_policy = approval_policy
                 if approval_policy.escalation_policy_id:
-                    logger.info(
-                        f"Escalation policy configured: {approval_policy.escalation_policy_id} "
-                        f"(using current policy for notifications)"
+                    from preloop.models.crud.approval_policy import (
+                        get_approval_policy_async,
                     )
+
+                    escalation_policy = await get_approval_policy_async(
+                        self.db, policy_id=approval_policy.escalation_policy_id
+                    )
+                    if escalation_policy:
+                        logger.info(
+                            f"Using escalation policy '{escalation_policy.name}' "
+                            f"(id={escalation_policy.id}) for human review notifications"
+                        )
+                        notification_policy = escalation_policy
+
+                        # Update the approval request to reference the escalation policy
+                        # so approvers from that policy are used
+                        await self.update_approval_request(
+                            approval_request.id,
+                            ApprovalRequestUpdate(
+                                approval_policy_id=escalation_policy.id,
+                            ),
+                        )
+                    else:
+                        logger.warning(
+                            f"Escalation policy {approval_policy.escalation_policy_id} "
+                            f"not found, using original policy for notifications"
+                        )
 
                 # Refresh the approval request to get updated fields
                 approval_request = await self.get_approval_request(approval_request.id)
 
-                # Send notifications for human review
-                await self.send_notifications(approval_request, approval_policy)
+                # Send notifications for human review using the appropriate policy
+                await self.send_notifications(approval_request, notification_policy)
 
                 return approval_request
 

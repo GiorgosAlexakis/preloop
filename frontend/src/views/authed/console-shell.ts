@@ -208,12 +208,23 @@ export class ConsoleShell extends LitElement {
                 Tools
               </sl-menu-item>
             </a>
-            <a href="/console/approvals">
-              <sl-menu-item>
-                <sl-icon name="shield-check" slot="prefix"></sl-icon>
-                Approvals
-              </sl-menu-item>
-            </a>
+            ${this.features['audit_logs']
+              ? html`
+                  <a href="/console/audit">
+                    <sl-menu-item>
+                      <sl-icon name="journal-text" slot="prefix"></sl-icon>
+                      Audit
+                    </sl-menu-item>
+                  </a>
+                `
+              : html`
+                  <a href="/console/approvals">
+                    <sl-menu-item>
+                      <sl-icon name="shield-check" slot="prefix"></sl-icon>
+                      Approvals
+                    </sl-menu-item>
+                  </a>
+                `}
             <a href="/console/governance">
               <sl-menu-item>
                 <sl-icon name="shield-lock" slot="prefix"></sl-icon>

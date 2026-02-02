@@ -123,7 +123,7 @@ class FlowTriggerService:
 
         # Look up project by name/identifier within the tracker
         # This is a simple lookup - projects are identified by name within a tracker
-        projects = crud_project.get_multi_by_tracker(
+        projects = crud_project.get_for_tracker(
             self.db, tracker_id=tracker_id, limit=1000
         )
 

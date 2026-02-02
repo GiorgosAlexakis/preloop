@@ -9,7 +9,9 @@ For Phase 1B: Add support for proxied tools from external MCP servers.
 """
 
 import logging
+import time
 from typing import Dict, List, Optional, Any
+from uuid import UUID
 
 from mcp.server import Server
 from mcp import types
@@ -18,6 +20,76 @@ from sqlalchemy.orm import Session
 from preloop.models.models.account import Account
 
 logger = logging.getLogger(__name__)
+
+
+def _get_audit_service():
+    """Get the audit service instance (lazy import to avoid circular deps)."""
+    try:
+        from plugins.audit.service import get_audit_service
+
+        return get_audit_service()
+    except ImportError:
+        logger.debug("Audit service not available")
+        return None
+
+
+def _get_db_factory():
+    """Get a database session factory for async audit logging."""
+    try:
+        from preloop.models.db.session import get_db_session
+
+        return lambda: next(get_db_session())
+    except ImportError:
+        return None
+
+
+def _log_tool_execution_async(
+    account_id: str,
+    user_id: Optional[str],
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    status: str = "executed",
+    result: Optional[str] = None,
+    execution_time_ms: Optional[int] = None,
+    execution_id: Optional[str] = None,
+) -> None:
+    """Log a tool execution asynchronously (fire-and-forget)."""
+    try:
+        audit_service = _get_audit_service()
+        if not audit_service:
+            return
+
+        db_factory = _get_db_factory()
+        if not db_factory:
+            return
+
+        # Convert string IDs to UUIDs where needed
+        user_uuid = None
+        execution_uuid = None
+        if user_id:
+            try:
+                user_uuid = UUID(user_id)
+            except (ValueError, TypeError):
+                pass
+        if execution_id:
+            try:
+                execution_uuid = UUID(execution_id)
+            except (ValueError, TypeError):
+                pass
+
+        audit_service.log_tool_execution_async(
+            db_factory=db_factory,
+            account_id=account_id,
+            user_id=user_uuid,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            status=status,
+            result=result,
+            execution_time_ms=execution_time_ms,
+            execution_id=execution_uuid,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to log tool execution to audit: {e}")
 
 
 class UserContext:
@@ -242,8 +314,14 @@ class DynamicMCPServer:
                     f"with args: {arguments}"
                 )
 
+                # Track execution time
+                start_time = time.time()
+
                 # Call the handler (existing MCP router functions)
                 result = await handler(**(arguments or {}))
+
+                # Calculate execution time
+                execution_time_ms = int((time.time() - start_time) * 1000)
 
                 # Convert result to MCP TextContent
                 # The handlers return Pydantic models, we need to serialize them
@@ -253,10 +331,31 @@ class DynamicMCPServer:
                     else str(result)
                 )
 
+                # Log successful tool execution to audit (fire-and-forget)
+                _log_tool_execution_async(
+                    account_id=user_context.account_id,
+                    user_id=user_context.user_id,
+                    tool_name=name,
+                    tool_args=arguments or {},
+                    status="executed",
+                    result=result_text[:500] if result_text else None,
+                    execution_time_ms=execution_time_ms,
+                    execution_id=user_context.flow_execution_id,
+                )
+
                 return [types.TextContent(type="text", text=result_text)]
 
             except Exception as e:
                 logger.error(f"Error executing tool {name}: {e}", exc_info=True)
+                # Log failed tool execution to audit
+                _log_tool_execution_async(
+                    account_id=user_context.account_id if user_context else "unknown",
+                    user_id=user_context.user_id if user_context else None,
+                    tool_name=name,
+                    tool_args=arguments or {},
+                    status="failed",
+                    result=str(e)[:500],
+                )
                 return [
                     types.TextContent(
                         type="text", text=f"Error executing tool: {str(e)}"

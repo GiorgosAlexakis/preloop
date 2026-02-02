@@ -1586,6 +1586,23 @@ export class ToolCard extends LitElement {
               >
                 ${this.tool.source_name}
               </sl-badge>
+              ${
+                this.tool.approval_policy_id || this.tool.has_approval_condition
+                  ? html`
+                      <sl-tooltip
+                        content="This tool has governance rules configured"
+                      >
+                        <sl-badge variant="warning" size="small">
+                          <sl-icon
+                            name="shield-lock"
+                            style="font-size: 0.8em; margin-right: 2px;"
+                          ></sl-icon>
+                          Governed
+                        </sl-badge>
+                      </sl-tooltip>
+                    `
+                  : ''
+              }
             </p>
           </div>
           <p class="tool-description" title=${this.tool.description}>
@@ -1778,12 +1795,9 @@ export class ToolCard extends LitElement {
                       >
                         Select Existing Policy
                       </h4>
-                      <sl-button
-                        size="small"
-                        @click=${this.handleToggleCreatePolicy}
-                      >
-                        <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                        Create New
+                      <sl-button size="small" href="/console/governance">
+                        <sl-icon slot="prefix" name="shield-lock"></sl-icon>
+                        Manage in Governance
                       </sl-button>
                     </div>
                     ${this.policies.length > 0

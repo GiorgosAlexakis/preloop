@@ -159,6 +159,49 @@ export class ToolsView extends LitElement {
         height: 200px;
       }
 
+      .governance-summary {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-medium);
+        padding: var(--sl-spacing-medium);
+        background: var(--sl-color-warning-50);
+        border: 1px solid var(--sl-color-warning-200);
+        border-radius: var(--sl-border-radius-medium);
+        margin-bottom: var(--sl-spacing-large);
+      }
+
+      .governance-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background: var(--sl-color-warning-100);
+        border-radius: var(--sl-border-radius-circle);
+        color: var(--sl-color-warning-700);
+      }
+
+      .governance-icon sl-icon {
+        font-size: 1.25rem;
+      }
+
+      .governance-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-2x-small);
+      }
+
+      .governance-count {
+        font-weight: var(--sl-font-weight-semibold);
+        color: var(--sl-color-neutral-900);
+      }
+
+      .governance-details {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+      }
+
       .builtin-server-card {
         display: flex;
         flex-direction: column;
@@ -787,6 +830,38 @@ export class ToolsView extends LitElement {
     });
   }
 
+  private renderGovernanceSummary() {
+    const governedTools = this.tools.filter(
+      (t) => t.approval_policy_id || t.has_approval_condition
+    );
+    const enabledGovernedTools = governedTools.filter((t) => t.is_enabled);
+
+    if (governedTools.length === 0) {
+      return html``;
+    }
+
+    return html`
+      <div class="governance-summary">
+        <div class="governance-icon">
+          <sl-icon name="shield-lock"></sl-icon>
+        </div>
+        <div class="governance-info">
+          <span class="governance-count">
+            ${enabledGovernedTools.length} of ${this.tools.length} tools have
+            governance rules
+          </span>
+          <span class="governance-details">
+            Approval required before execution
+          </span>
+        </div>
+        <sl-button size="small" href="/console/governance">
+          <sl-icon slot="prefix" name="gear"></sl-icon>
+          Manage Governance
+        </sl-button>
+      </div>
+    `;
+  }
+
   private renderBuiltinMCPCard() {
     const apiUrl = window.location.origin;
     const mcpUrl = `${apiUrl}/mcp/v1`;
@@ -915,6 +990,7 @@ export class ToolsView extends LitElement {
               appropriate users before allowing tool executions to run.
             </div>
           </div>
+          ${this.renderGovernanceSummary()}
           ${this.loading
             ? html`<div class="loading-indicator">
                 <sl-spinner></sl-spinner>
