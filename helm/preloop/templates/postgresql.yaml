@@ -15,7 +15,6 @@ spec:
       {{ $key }}: {{ $value | quote }}
       {{- end }}
       {{- if .Values.database.cnpg.resilience.enabled }}
-      # Resilience settings - prevent stuck queries and connections
       statement_timeout: {{ .Values.database.cnpg.resilience.statement_timeout | quote }}
       idle_in_transaction_session_timeout: {{ .Values.database.cnpg.resilience.idle_in_transaction_session_timeout | quote }}
       lock_timeout: {{ .Values.database.cnpg.resilience.lock_timeout | quote }}

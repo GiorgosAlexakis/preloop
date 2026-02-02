@@ -209,12 +209,12 @@ database:
     # These settings add timeouts to prevent cascading failures
     resilience:
       enabled: false  # Set to true in production
-      # Kill queries that run longer than this (milliseconds)
-      statement_timeout: "60000"  # 60 seconds
+      # Kill queries that run longer than this (milliseconds) - 5 min to allow migrations
+      statement_timeout: "300000"  # 5 minutes
       # Kill connections that are idle in a transaction longer than this (milliseconds)
-      idle_in_transaction_session_timeout: "120000"  # 2 minutes
+      idle_in_transaction_session_timeout: "300000"  # 5 minutes
       # Maximum time to wait for a lock (milliseconds)
-      lock_timeout: "30000"  # 30 seconds
+      lock_timeout: "60000"  # 60 seconds
       # WAL settings to reduce checkpoint frequency issues
       max_wal_size: "2GB"
       min_wal_size: "1GB"

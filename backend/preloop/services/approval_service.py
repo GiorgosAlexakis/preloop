@@ -1284,6 +1284,16 @@ class ApprovalService:
                 # Get the approval policy to check for escalation configuration
                 approval_policy = approval_request.approval_policy
 
+                # Debug logging for escalation check
+                logger.info(
+                    f"Checking escalation for request {request_id}: "
+                    f"approval_policy={approval_policy}, "
+                    f"approval_policy_id={approval_request.approval_policy_id}, "
+                    f"escalation_user_ids={getattr(approval_policy, 'escalation_user_ids', None) if approval_policy else None}, "
+                    f"escalation_team_ids={getattr(approval_policy, 'escalation_team_ids', None) if approval_policy else None}, "
+                    f"escalation_triggered_at={approval_request.escalation_triggered_at}"
+                )
+
                 # Check if escalation is configured and hasn't been triggered yet
                 has_escalation = approval_policy and (
                     approval_policy.escalation_user_ids
@@ -1291,6 +1301,12 @@ class ApprovalService:
                 )
                 escalation_already_triggered = (
                     approval_request.escalation_triggered_at is not None
+                )
+
+                logger.info(
+                    f"Escalation decision for request {request_id}: "
+                    f"has_escalation={has_escalation}, "
+                    f"escalation_already_triggered={escalation_already_triggered}"
                 )
 
                 if has_escalation and not escalation_already_triggered:
