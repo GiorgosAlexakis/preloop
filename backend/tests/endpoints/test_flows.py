@@ -717,3 +717,375 @@ async def test_send_execution_command_nats_failure(
 
     assert exc_info.value.status_code == 500
     assert "Failed to send command" in str(exc_info.value.detail)
+
+
+# ============================================================================
+# Retry Flow Execution Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_not_found(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying a non-existent execution raises 404."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = None
+
+    # Act & Assert
+    with pytest.raises(HTTPException) as exc_info:
+        await maybe_await(
+            flows.retry_flow_execution(
+                db=MagicMock(), execution_id=execution_id, current_user=mock_account
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+    assert "not found" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_non_retryable_status(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying an execution in a non-retryable status raises 400."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "RUNNING"  # Not retryable
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    # Act & Assert
+    with pytest.raises(HTTPException) as exc_info:
+        await maybe_await(
+            flows.retry_flow_execution(
+                db=MagicMock(), execution_id=execution_id, current_user=mock_account
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "cannot be retried" in str(exc_info.value.detail).lower()
+    assert "RUNNING" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_succeeded_not_retryable(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying a succeeded execution raises 400."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "SUCCEEDED"  # Not retryable
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    # Act & Assert
+    with pytest.raises(HTTPException) as exc_info:
+        await maybe_await(
+            flows.retry_flow_execution(
+                db=MagicMock(), execution_id=execution_id, current_user=mock_account
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "cannot be retried" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_flow_deleted(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying an execution whose flow was deleted raises 404."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "FAILED"  # Retryable
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    mock_crud_flow = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow.get.return_value = None  # Flow no longer exists
+
+    # Act & Assert
+    with pytest.raises(HTTPException) as exc_info:
+        await maybe_await(
+            flows.retry_flow_execution(
+                db=MagicMock(), execution_id=execution_id, current_user=mock_account
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+    assert "no longer exists" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_success_failed(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying a failed execution works correctly."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+    new_execution_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "FAILED"
+    mock_execution.trigger_event_details = {"event": "test", "data": {"pr": 123}}
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    mock_flow = MagicMock()
+    mock_flow.id = flow_id
+    mock_crud_flow = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow.get.return_value = mock_flow
+
+    # Mock the FlowTriggerService - patch at the source since it's imported inside the function
+    mock_trigger_service = MagicMock()
+    mock_trigger_service.trigger_flow = mocker.AsyncMock(
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
+    )
+    mocker.patch(
+        "preloop.services.flow_trigger_service.FlowTriggerService",
+        return_value=mock_trigger_service,
+    )
+
+    # Act
+    result = await maybe_await(
+        flows.retry_flow_execution(
+            db=MagicMock(), execution_id=execution_id, current_user=mock_account
+        )
+    )
+
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
+    assert result["status"] == "PENDING"
+
+    # Verify trigger_flow was called with correct parameters
+    mock_trigger_service.trigger_flow.assert_called_once()
+    call_kwargs = mock_trigger_service.trigger_flow.call_args.kwargs
+    assert call_kwargs["flow_id"] == flow_id
+    assert call_kwargs["test_mode"] is False
+    assert call_kwargs["trigger_event_data"] == mock_execution.trigger_event_details
+    assert call_kwargs["retry_of_execution_id"] == execution_id
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_success_stopped(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying a stopped execution works correctly."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+    new_execution_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "STOPPED"
+    mock_execution.trigger_event_details = {"event": "push"}
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    mock_flow = MagicMock()
+    mock_flow.id = flow_id
+    mock_crud_flow = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow.get.return_value = mock_flow
+
+    # Mock the FlowTriggerService - patch at the source since it's imported inside the function
+    mock_trigger_service = MagicMock()
+    mock_trigger_service.trigger_flow = mocker.AsyncMock(
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
+    )
+    mocker.patch(
+        "preloop.services.flow_trigger_service.FlowTriggerService",
+        return_value=mock_trigger_service,
+    )
+
+    # Act
+    result = await maybe_await(
+        flows.retry_flow_execution(
+            db=MagicMock(), execution_id=execution_id, current_user=mock_account
+        )
+    )
+
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
+
+    # Verify retry_of_execution_id is passed
+    call_kwargs = mock_trigger_service.trigger_flow.call_args.kwargs
+    assert call_kwargs["retry_of_execution_id"] == execution_id
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_success_timeout(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying a timed-out execution works correctly."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+    new_execution_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "TIMEOUT"
+    mock_execution.trigger_event_details = {}
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    mock_flow = MagicMock()
+    mock_flow.id = flow_id
+    mock_crud_flow = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow.get.return_value = mock_flow
+
+    # Mock the FlowTriggerService - patch at the source since it's imported inside the function
+    mock_trigger_service = MagicMock()
+    mock_trigger_service.trigger_flow = mocker.AsyncMock(
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
+    )
+    mocker.patch(
+        "preloop.services.flow_trigger_service.FlowTriggerService",
+        return_value=mock_trigger_service,
+    )
+
+    # Act
+    result = await maybe_await(
+        flows.retry_flow_execution(
+            db=MagicMock(), execution_id=execution_id, current_user=mock_account
+        )
+    )
+
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
+
+
+@pytest.mark.asyncio
+async def test_retry_flow_execution_success_cancelled(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Tests that retrying a cancelled execution works correctly."""
+    # Arrange
+    execution_id = uuid.uuid4()
+    flow_id = uuid.uuid4()
+    new_execution_id = uuid.uuid4()
+
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+    mock_execution.flow_id = flow_id
+    mock_execution.status = "CANCELLED"
+    mock_execution.trigger_event_details = {
+        "pr_url": "https://github.com/org/repo/pull/1"
+    }
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    mock_flow = MagicMock()
+    mock_flow.id = flow_id
+    mock_crud_flow = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow.get.return_value = mock_flow
+
+    # Mock the FlowTriggerService - patch at the source since it's imported inside the function
+    mock_trigger_service = MagicMock()
+    mock_trigger_service.trigger_flow = mocker.AsyncMock(
+        return_value={
+            "id": str(new_execution_id),
+            "status": "PENDING",
+            "flow_id": str(flow_id),
+        }
+    )
+    mocker.patch(
+        "preloop.services.flow_trigger_service.FlowTriggerService",
+        return_value=mock_trigger_service,
+    )
+
+    # Act
+    result = await maybe_await(
+        flows.retry_flow_execution(
+            db=MagicMock(), execution_id=execution_id, current_user=mock_account
+        )
+    )
+
+    # Assert - backend returns { id, status, flow_id }
+    assert result["id"] == str(new_execution_id)
+
+    # Verify trigger_event_data is preserved from original execution
+    call_kwargs = mock_trigger_service.trigger_flow.call_args.kwargs
+    assert call_kwargs["trigger_event_data"] == mock_execution.trigger_event_details

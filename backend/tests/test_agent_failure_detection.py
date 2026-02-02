@@ -88,16 +88,21 @@ class TestAgentFailureDetection:
         assert "Error occurred" in error_message
         assert "Line 4" in error_message or "Line 5" in error_message
 
-    def test_no_error_extraction_from_clean_logs(self):
-        """Test that no error is extracted from clean logs."""
+    def test_no_error_pattern_returns_last_lines(self):
+        """Test that logs without explicit errors return last lines as context.
+
+        When an execution fails, the last few lines often contain relevant
+        context even if they don't match explicit error patterns.
+        """
         logs = """
         Starting execution
         Processing task
         Task completed
-        Finished successfully
+        Process terminated unexpectedly
         """
         error_message = self.agent._extract_error_from_logs(logs)
-        assert error_message == ""
+        # Should return last content lines as fallback context
+        assert "terminated unexpectedly" in error_message
 
     def test_detect_openai_exception(self):
         """Test detection of OpenAI exceptions."""

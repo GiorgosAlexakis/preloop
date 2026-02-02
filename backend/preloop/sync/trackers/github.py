@@ -2043,25 +2043,93 @@ class GitHubTracker(BaseTracker):
             if draft is not None:
                 update_data["draft"] = draft
 
-            # Update PR
             pr_path = f"/repos/{owner}/{repo}/pulls/{pr_number}"
-            pr_data = await self._request("PATCH", pr_path, data=update_data)
+
+            # Only PATCH the PR if there's data to update
+            # An empty PATCH can result in 422 errors
+            if update_data:
+                pr_data = await self._request("PATCH", pr_path, data=update_data)
+            else:
+                # Just fetch current PR data for assignee/reviewer updates
+                pr_data = await self._request("GET", pr_path)
 
             # Update assignees if provided
+            # Note: GitHub's POST endpoint only adds assignees, it doesn't replace.
+            # To clear or replace assignees, we need to remove existing ones first.
             if assignees is not None:
                 assignees_path = f"/repos/{owner}/{repo}/issues/{pr_number}/assignees"
-                await self._request(
-                    "POST", assignees_path, data={"assignees": assignees}
-                )
+                if len(assignees) == 0:
+                    # Clear all assignees: get current assignees and remove them
+                    current_assignees = [
+                        a["login"] for a in pr_data.get("assignees", [])
+                    ]
+                    if current_assignees:
+                        await self._request(
+                            "DELETE",
+                            assignees_path,
+                            data={"assignees": current_assignees},
+                        )
+                        logger.info(
+                            f"Cleared {len(current_assignees)} assignees from PR {pr_number}"
+                        )
+                else:
+                    # First remove existing assignees, then add new ones
+                    # This ensures we replace rather than just add
+                    current_assignees = [
+                        a["login"] for a in pr_data.get("assignees", [])
+                    ]
+                    assignees_to_remove = [
+                        a for a in current_assignees if a not in assignees
+                    ]
+                    if assignees_to_remove:
+                        await self._request(
+                            "DELETE",
+                            assignees_path,
+                            data={"assignees": assignees_to_remove},
+                        )
+                    # Add the new assignees
+                    await self._request(
+                        "POST", assignees_path, data={"assignees": assignees}
+                    )
 
             # Update reviewers if provided
+            # Note: GitHub's POST endpoint only adds reviewers, it doesn't replace.
             if reviewers is not None:
                 reviewers_path = (
                     f"/repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers"
                 )
-                await self._request(
-                    "POST", reviewers_path, data={"reviewers": reviewers}
-                )
+                if len(reviewers) == 0:
+                    # Clear all reviewers: get current reviewers and remove them
+                    current_reviewers = [
+                        r["login"] for r in pr_data.get("requested_reviewers", [])
+                    ]
+                    if current_reviewers:
+                        await self._request(
+                            "DELETE",
+                            reviewers_path,
+                            data={"reviewers": current_reviewers},
+                        )
+                        logger.info(
+                            f"Cleared {len(current_reviewers)} reviewers from PR {pr_number}"
+                        )
+                else:
+                    # First remove existing reviewers not in the new list
+                    current_reviewers = [
+                        r["login"] for r in pr_data.get("requested_reviewers", [])
+                    ]
+                    reviewers_to_remove = [
+                        r for r in current_reviewers if r not in reviewers
+                    ]
+                    if reviewers_to_remove:
+                        await self._request(
+                            "DELETE",
+                            reviewers_path,
+                            data={"reviewers": reviewers_to_remove},
+                        )
+                    # Add the new reviewers
+                    await self._request(
+                        "POST", reviewers_path, data={"reviewers": reviewers}
+                    )
 
             # Update labels if provided
             if labels is not None:
@@ -2265,10 +2333,22 @@ class GitHubTracker(BaseTracker):
         if "#" in pr_num:
             pr_num = pr_num.split("#")[-1]
 
+        # Helper to clean string values that may have extra quotes from AI output
+        # e.g., "'REQUEST_CHANGES'" -> "REQUEST_CHANGES"
+        def clean_str(val: Any) -> str:
+            s = str(val)
+            if s.startswith("'") and s.endswith("'"):
+                s = s[1:-1]
+            return s
+
         # Build the request payload
+        # Clean body and event in case they have extra quotes from AI output parsing
+        clean_body = clean_str(body) if body else ""
+        clean_event = clean_str(event)
+
         payload: Dict[str, Any] = {
-            "body": body,
-            "event": event,
+            "body": clean_body,
+            "event": clean_event,
         }
 
         # Add inline comments if provided
@@ -2276,15 +2356,28 @@ class GitHubTracker(BaseTracker):
             formatted_comments = []
             for comment in comments:
                 formatted_comment: Dict[str, Any] = {
-                    "path": comment["path"],
-                    "body": comment["body"],
+                    "path": clean_str(comment["path"]),
+                    "body": clean_str(comment["body"]),
                 }
                 # Use 'line' for single-line comments
+                # Must be an integer for GitHub API
                 if "line" in comment:
-                    formatted_comment["line"] = comment["line"]
+                    line_val = comment["line"]
+                    # Handle string line numbers (may come from AI output)
+                    if isinstance(line_val, str):
+                        # Strip surrounding quotes if present
+                        line_val = line_val.strip("'\"")
+                        try:
+                            line_val = int(line_val)
+                        except ValueError:
+                            logger.warning(
+                                f"Invalid line number '{comment['line']}', skipping"
+                            )
+                            continue
+                    formatted_comment["line"] = int(line_val)
                 # Use side if provided, default to RIGHT
                 if "side" in comment:
-                    formatted_comment["side"] = comment["side"]
+                    formatted_comment["side"] = clean_str(comment["side"])
                 else:
                     formatted_comment["side"] = "RIGHT"
                 formatted_comments.append(formatted_comment)
@@ -2303,6 +2396,52 @@ class GitHubTracker(BaseTracker):
                 "submitted_at": review_data.get("submitted_at"),
                 "html_url": review_data.get("html_url"),
             }
+
+        except TrackerResponseError as e:
+            error_str = str(e).lower()
+            # Handle 422 "Line could not be resolved" errors
+            # This happens when inline comments reference lines not in the diff
+            if "422" in error_str and (
+                "line could not be resolved" in error_str
+                or "unprocessable" in error_str
+            ):
+                if comments:
+                    logger.warning(
+                        f"PR review for {pr_num} failed due to invalid line references. "
+                        f"Retrying without {len(formatted_comments)} inline comment(s). "
+                        f"Original error: {e}"
+                    )
+                    # Retry without inline comments - just submit the review body
+                    payload_without_comments = {
+                        "body": body,
+                        "event": event,
+                    }
+                    try:
+                        review_data = await self._request(
+                            "POST", review_path, data=payload_without_comments
+                        )
+                        return {
+                            "id": str(review_data["id"]),
+                            "node_id": review_data.get("node_id"),
+                            "state": review_data["state"],
+                            "body": review_data.get("body", ""),
+                            "user": review_data["user"]["login"],
+                            "submitted_at": review_data.get("submitted_at"),
+                            "html_url": review_data.get("html_url"),
+                            "warning": (
+                                f"Submitted without {len(formatted_comments)} inline "
+                                "comment(s) due to invalid line references"
+                            ),
+                        }
+                    except Exception as retry_error:
+                        logger.error(
+                            f"Retry without comments also failed for {pr_num}: {retry_error}"
+                        )
+                        raise TrackerResponseError(
+                            f"Failed to submit PR review (even without comments): {retry_error}"
+                        )
+            # Re-raise for other errors
+            raise
 
         except Exception as e:
             logger.error(f"Error submitting PR review for {pr_num}: {e}")
@@ -2376,6 +2515,110 @@ class GitHubTracker(BaseTracker):
             )
             raise TrackerResponseError(f"Failed to get review comments: {e}")
 
+    async def _get_comment_thread_id_map(
+        self, pr_number: str
+    ) -> Dict[str, Optional[str]]:
+        """
+        Fetch a mapping of comment database IDs to their thread node_ids.
+
+        Uses GraphQL to get all review threads and their comments for a PR,
+        then builds a mapping from comment ID to thread ID. This allows
+        get_pull_request_comments to include thread_id for each review comment.
+
+        Args:
+            pr_number: The PR number.
+
+        Returns:
+            Dict mapping comment database ID (str) to thread node_id (PRRT_*).
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            logger.warning("Owner/repo not found for thread mapping")
+            return {}
+
+        query = """
+            query GetPRReviewThreads($owner: String!, $name: String!, $prNumber: Int!) {
+                repository(owner: $owner, name: $name) {
+                    pullRequest(number: $prNumber) {
+                        reviewThreads(first: 100) {
+                            nodes {
+                                id
+                                isResolved
+                                comments(first: 50) {
+                                    nodes {
+                                        databaseId
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        """
+
+        variables = {
+            "owner": owner,
+            "name": repo,
+            "prNumber": int(pr_number),
+        }
+
+        graphql_url = "https://api.github.com/graphql"
+        headers = await self._get_auth_headers()
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    graphql_url,
+                    headers=headers,
+                    json={"query": query, "variables": variables},
+                    timeout=30.0,
+                )
+
+                if response.status_code >= 400:
+                    logger.warning(
+                        f"GraphQL query for thread mapping failed: {response.status_code}"
+                    )
+                    return {}
+
+                data = response.json()
+
+                if "errors" in data:
+                    logger.warning(
+                        f"GraphQL errors in thread mapping: {data['errors']}"
+                    )
+                    return {}
+
+                # Build mapping from comment database ID to thread ID
+                mapping: Dict[str, Optional[str]] = {}
+                threads = (
+                    data.get("data", {})
+                    .get("repository", {})
+                    .get("pullRequest", {})
+                    .get("reviewThreads", {})
+                    .get("nodes", [])
+                )
+
+                for thread in threads:
+                    thread_id = thread.get("id")
+                    comments = thread.get("comments", {}).get("nodes", [])
+
+                    for comment in comments:
+                        db_id = comment.get("databaseId")
+                        if db_id is not None:
+                            mapping[str(db_id)] = thread_id
+
+                logger.debug(
+                    f"Built thread_id mapping for PR {pr_number}: "
+                    f"{len(mapping)} comments mapped"
+                )
+                return mapping
+
+        except Exception as e:
+            logger.warning(f"Error building thread_id mapping for PR {pr_number}: {e}")
+            return {}
+
     @async_retry()
     async def get_pull_request_comments(
         self,
@@ -2421,15 +2664,21 @@ class GitHubTracker(BaseTracker):
             review_comments_path = f"/repos/{owner}/{repo}/pulls/{pr_num}/comments"
             review_comments = await self._make_request(review_comments_path)
 
+            # Fetch thread_id mappings for review comments via GraphQL
+            # This allows agents to resolve threads without extra lookups
+            thread_id_map = await self._get_comment_thread_id_map(pr_num)
+
             for comment in review_comments:
                 author = comment["user"]["login"]
                 if filter_author and author != filter_author:
                     continue
 
+                comment_id = str(comment["id"])
                 all_comments.append(
                     {
-                        "id": str(comment["id"]),
+                        "id": comment_id,
                         "node_id": comment.get("node_id"),
+                        "thread_id": thread_id_map.get(comment_id),
                         "author": author,
                         "body": comment.get("body", ""),
                         "type": "review_comment",
@@ -2527,8 +2776,69 @@ class GitHubTracker(BaseTracker):
             }
 
         except Exception as e:
-            logger.error(f"Error updating review comment {comment_id}: {e}")
+            error_msg = str(e)
+            # Use debug level for 404s since they're expected when comment type is unknown
+            # and caller will try issue_comment as fallback
+            if "404" in error_msg or "Not Found" in error_msg:
+                logger.debug(f"Review comment {comment_id} not found (404): {e}")
+            else:
+                logger.error(f"Error updating review comment {comment_id}: {e}")
             raise TrackerResponseError(f"Failed to update review comment: {e}")
+
+    @async_retry()
+    async def update_issue_comment(
+        self,
+        comment_id: str,
+        body: str,
+    ) -> Dict[str, Any]:
+        """
+        Update the body of an existing issue comment (PR conversation comment).
+
+        This is for comments on the PR's "Conversation" tab, not inline code review
+        comments. In GitHub's API, these are accessed via the issues endpoint even
+        for pull requests.
+
+        Args:
+            comment_id: The comment ID to update.
+            body: New comment body.
+
+        Returns:
+            Dict with updated comment details.
+
+        Raises:
+            TrackerResponseError: If owner/repo not found or API call fails.
+            TrackerAuthenticationError: If authentication fails.
+            TrackerConnectionError: If connection fails.
+        """
+        owner = self.connection_details.get("owner")
+        repo = self.connection_details.get("repo")
+
+        if not owner or not repo:
+            raise TrackerResponseError("Owner/repo not found in connection details")
+
+        try:
+            comment_path = f"/repos/{owner}/{repo}/issues/comments/{comment_id}"
+            payload = {"body": body}
+            comment_data = await self._request("PATCH", comment_path, data=payload)
+
+            return {
+                "id": str(comment_data["id"]),
+                "node_id": comment_data.get("node_id"),
+                "author": comment_data["user"]["login"],
+                "body": comment_data["body"],
+                "created_at": comment_data["created_at"],
+                "updated_at": comment_data["updated_at"],
+                "html_url": comment_data.get("html_url"),
+            }
+
+        except Exception as e:
+            error_msg = str(e)
+            # 404s for issue comments are actual errors (not fallback cases)
+            if "404" in error_msg or "Not Found" in error_msg:
+                logger.warning(f"Issue comment {comment_id} not found (404): {e}")
+            else:
+                logger.error(f"Error updating issue comment {comment_id}: {e}")
+            raise TrackerResponseError(f"Failed to update issue comment: {e}")
 
     @async_retry()
     async def reply_to_review_comment(
@@ -2910,6 +3220,7 @@ class GitHubTracker(BaseTracker):
             reactions = response.json()
 
             # Get the authenticated user's login to only remove our own reactions
+            # This could be a user token or a GitHub App installation token
             authenticated_user = None
             try:
                 user_response = await client.get(
@@ -2921,19 +3232,61 @@ class GitHubTracker(BaseTracker):
                     user_data = user_response.json()
                     authenticated_user = user_data.get("login")
                     logger.debug(f"Authenticated as user: {authenticated_user}")
+                elif user_response.status_code == 403:
+                    # This might be a GitHub App installation token
+                    # Installation tokens can't call /user or /app
+                    # Check if we have an app_slug in connection_details
+                    app_slug = self.connection_details.get("app_slug")
+                    if app_slug:
+                        # GitHub App bot username is {slug}[bot]
+                        authenticated_user = f"{app_slug}[bot]"
+                        logger.debug(
+                            f"Using app_slug from connection_details: {authenticated_user}"
+                        )
+                    else:
+                        # Try GET /app as a fallback (works with JWT tokens, not installation tokens)
+                        logger.debug(
+                            "GET /user returned 403, trying GET /app for GitHub App auth"
+                        )
+                        app_response = await client.get(
+                            f"{self.API_BASE_URL}/app",
+                            headers=headers,
+                            timeout=10.0,
+                        )
+                        if app_response.status_code == HTTP_STATUS_OK:
+                            app_data = app_response.json()
+                            app_slug = app_data.get("slug")
+                            if app_slug:
+                                authenticated_user = f"{app_slug}[bot]"
+                                logger.debug(
+                                    f"Authenticated as GitHub App bot: {authenticated_user}"
+                                )
+                        else:
+                            logger.debug(
+                                f"GET /app also failed with {app_response.status_code}. "
+                                "For GitHub App installation tokens, set 'app_slug' in "
+                                "connection_details to enable reaction removal."
+                            )
             except Exception as e:
                 logger.warning(f"Could not get authenticated user: {e}")
 
             # Find the reaction matching the content type AND created by us
             reaction_to_delete = None
+
+            # If we couldn't determine the authenticated user, refuse to delete
+            # to avoid accidentally deleting another user's reaction
+            if authenticated_user is None:
+                logger.warning(
+                    "Could not determine authenticated user - refusing to remove reaction "
+                    "to avoid deleting another user's reaction"
+                )
+                return False
+
             for r in reactions:
                 if r.get("content") == reaction:
                     reaction_user = r.get("user", {}).get("login")
-                    # Only delete if it's our reaction, or if we couldn't determine the user
-                    if (
-                        authenticated_user is None
-                        or reaction_user == authenticated_user
-                    ):
+                    # Only delete if it's our reaction
+                    if reaction_user == authenticated_user:
                         reaction_to_delete = r
                         break
                     else:

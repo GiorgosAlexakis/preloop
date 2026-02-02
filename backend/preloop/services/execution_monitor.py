@@ -183,12 +183,21 @@ class ExecutionMonitor:
                     execution.end_time = now
 
                 elif status == AgentStatus.STOPPED:
-                    logger.warning(
-                        f"Execution {execution.id} container stopped, updating status"
-                    )
-                    execution.status = "FAILED"
-                    execution.error_message = "Agent container was stopped"
-                    execution.end_time = now
+                    # Only update if not already in a terminal state
+                    # Preserve STOPPED status if the user stopped the execution
+                    if execution.status not in ("STOPPED", "FAILED", "SUCCEEDED"):
+                        logger.info(
+                            f"Execution {execution.id} container stopped, "
+                            f"updating status to STOPPED"
+                        )
+                        execution.status = "STOPPED"
+                        execution.error_message = "Execution was stopped"
+                        execution.end_time = now
+                    else:
+                        logger.debug(
+                            f"Execution {execution.id} already in terminal state "
+                            f"({execution.status}), not updating"
+                        )
 
                 elif status in (AgentStatus.RUNNING, AgentStatus.STARTING):
                     # Container is still running, no action needed

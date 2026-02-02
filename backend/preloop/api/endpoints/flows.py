@@ -601,6 +601,64 @@ async def trigger_flow_execution(
     return result
 
 
+@router.post("/flows/executions/{execution_id}/retry")
+@require_permission("execute_flows")
+async def retry_flow_execution(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Retry a failed, stopped, or cancelled flow execution.
+
+    Creates a new execution with the same trigger event data as the original.
+    The new execution is linked to the original via retry_of_execution_id.
+
+    Args:
+        execution_id: The execution to retry
+
+    Returns:
+        New execution details
+    """
+    # Get the original execution
+    original = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not original:
+        raise HTTPException(status_code=404, detail="Execution not found")
+
+    # Verify execution is in a retryable state
+    retryable_statuses = {"FAILED", "STOPPED", "TIMEOUT", "CANCELLED"}
+    if original.status not in retryable_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Execution cannot be retried in status '{original.status}'. "
+            f"Only executions with status {retryable_statuses} can be retried.",
+        )
+
+    # Verify the flow still exists
+    flow = crud_flow.get(db=db, id=original.flow_id, account_id=current_user.account_id)
+    if not flow:
+        raise HTTPException(
+            status_code=404,
+            detail="The flow associated with this execution no longer exists.",
+        )
+
+    # Trigger a new execution with the same trigger event data
+    from preloop.services.flow_trigger_service import FlowTriggerService
+
+    trigger_service = FlowTriggerService(db)
+    result = await trigger_service.trigger_flow(
+        flow_id=original.flow_id,
+        test_mode=False,
+        trigger_event_data=original.trigger_event_details,
+        retry_of_execution_id=original.id,
+    )
+
+    return result
+
+
 @router.get("/flows/{flow_id}", response_model=schemas.FlowResponse)
 @require_permission("view_flows")
 def read_flow(

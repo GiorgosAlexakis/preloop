@@ -8,6 +8,7 @@ import {
   sendCommandToExecution,
   getFlowExecutionMetrics,
   getFlowExecutionLogs,
+  retryFlowExecution,
 } from '../../api';
 import {
   parseUTCDate,
@@ -105,6 +106,45 @@ export class FlowExecutionView extends LitElement {
       }
       .log-container::-webkit-scrollbar-thumb:hover {
         background: #666;
+      }
+      .loading-indicator {
+        display: flex;
+        align-items: center;
+        color: #858585;
+        font-size: 13px;
+        height: 20px;
+      }
+      .loading-dots {
+        display: inline-flex;
+        gap: 4px;
+      }
+      .loading-dots span {
+        width: 6px;
+        height: 6px;
+        background-color: #858585;
+        border-radius: 50%;
+        animation: loadingDot 1.4s infinite ease-in-out both;
+      }
+      .loading-dots span:nth-child(1) {
+        animation-delay: -0.32s;
+      }
+      .loading-dots span:nth-child(2) {
+        animation-delay: -0.16s;
+      }
+      .loading-dots span:nth-child(3) {
+        animation-delay: 0s;
+      }
+      @keyframes loadingDot {
+        0%,
+        80%,
+        100% {
+          transform: scale(0.6);
+          opacity: 0.5;
+        }
+        40% {
+          transform: scale(1);
+          opacity: 1;
+        }
       }
       .log-entry {
         display: flex;
@@ -218,10 +258,19 @@ export class FlowExecutionView extends LitElement {
   @state()
   private isLoading = false;
 
+  @state()
+  private isRetrying = false;
+
   private logContainerRef?: HTMLElement;
   private wsConnected = false;
   private autoScrollInterval?: number;
   private unsubscribe?: () => void;
+
+  // Buffered log rendering - prevents scroll issues when many lines arrive at once
+  private logBuffer: FlowExecutionUpdate[] = [];
+  private bufferFlushInterval?: number;
+  private readonly BUFFER_FLUSH_INTERVAL_MS = 500;
+  private readonly MAX_LINES_PER_FLUSH = 5;
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -229,6 +278,11 @@ export class FlowExecutionView extends LitElement {
     if (this.autoScrollInterval) {
       clearInterval(this.autoScrollInterval);
       this.autoScrollInterval = undefined;
+    }
+    // Clean up buffer flush interval
+    if (this.bufferFlushInterval) {
+      clearInterval(this.bufferFlushInterval);
+      this.bufferFlushInterval = undefined;
     }
     // Unsubscribe from WebSocket
     this.unsubscribe?.();
@@ -298,6 +352,7 @@ export class FlowExecutionView extends LitElement {
         this.wsConnected = true;
         this.isAutoScroll = true; // Enable auto-scroll for streaming
         this.startAutoScrollChecker(); // Start periodic scroll checker
+        this.startBufferFlush(); // Start buffered log rendering
 
         // Subscribe to flow execution updates for this specific execution
         this.unsubscribe = unifiedWebSocketManager.subscribe(
@@ -329,9 +384,10 @@ export class FlowExecutionView extends LitElement {
             ];
           }
 
-          // Stop auto-scroll when disconnected
+          // Stop auto-scroll and buffer flush when disconnected
           if (state !== 'connected') {
             this.stopAutoScrollChecker();
+            this.stopBufferFlush();
           }
         });
       } else {
@@ -352,7 +408,13 @@ export class FlowExecutionView extends LitElement {
 
     // Handle NATS forwarded messages
     if (message.execution_id === this.executionId) {
-      this.logs = [...this.logs, message];
+      // For agent log lines, add to buffer for controlled rendering
+      // For other message types (status updates, etc.), add directly
+      if (message.type === 'agent_log_line') {
+        this.logBuffer.push(message);
+      } else {
+        this.logs = [...this.logs, message];
+      }
 
       // Update execution status
       if (message.type === 'status_update' && this.execution) {
@@ -382,8 +444,11 @@ export class FlowExecutionView extends LitElement {
             this.execution.status !== 'INITIALIZING' &&
             this.execution.status !== 'PENDING';
 
-          // If execution just finished, add the model output to logs
+          // If execution just finished, flush remaining buffer and add model output
           if (wasRunning && isNowFinished) {
+            // Flush any remaining buffered logs first
+            this.stopBufferFlush();
+
             // Check if we haven't already added it
             const hasModelOutput = this.logs.some(
               (log) => log.type === 'model_output'
@@ -402,11 +467,6 @@ export class FlowExecutionView extends LitElement {
           }
         }
         this.requestUpdate();
-      }
-
-      // Handle agent log lines
-      if (message.type === 'agent_log_line') {
-        // Log lines are already added to this.logs above
       }
 
       // Track tool calls
@@ -429,9 +489,9 @@ export class FlowExecutionView extends LitElement {
         this.budgetUsed = message.payload.budget_used || 0;
       }
 
-      // Auto-scroll to bottom when new log arrives
-      if (this.isAutoScroll) {
-        this.scrollToBottom();
+      // For non-buffered messages, scroll immediately
+      if (message.type !== 'agent_log_line' && this.isAutoScroll) {
+        this.updateComplete.then(() => this.scrollToBottom());
       }
     }
   }
@@ -443,19 +503,24 @@ export class FlowExecutionView extends LitElement {
     this.logContainerRef = this.shadowRoot?.querySelector(
       '.log-container'
     ) as HTMLElement;
-    this.logContainerRef.addEventListener('scroll', () => this.handleScroll());
-    // Check scroll position every 200ms and force scroll if auto-scroll is enabled
+    if (this.logContainerRef) {
+      this.logContainerRef.addEventListener('scroll', () =>
+        this.handleScroll()
+      );
+    }
+    // Fallback: check scroll position every 500ms and force scroll if needed
+    // Primary scrolling is done via updateComplete in handleWebSocketMessage
     this.autoScrollInterval = window.setInterval(() => {
       if (this.isAutoScroll && this.logContainerRef) {
         const { scrollTop, scrollHeight, clientHeight } = this.logContainerRef;
         const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
 
-        // If not at bottom, force scroll
+        // If not at bottom, force scroll (fallback for missed updates)
         if (!isAtBottom) {
           this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
         }
       }
-    }, 200);
+    }, 500);
   }
 
   stopAutoScrollChecker() {
@@ -465,9 +530,55 @@ export class FlowExecutionView extends LitElement {
     }
   }
 
+  startBufferFlush() {
+    // Clear any existing interval
+    this.stopBufferFlush();
+
+    // Flush buffer periodically
+    this.bufferFlushInterval = window.setInterval(() => {
+      this.flushLogBuffer();
+    }, this.BUFFER_FLUSH_INTERVAL_MS);
+  }
+
+  stopBufferFlush() {
+    if (this.bufferFlushInterval) {
+      clearInterval(this.bufferFlushInterval);
+      this.bufferFlushInterval = undefined;
+    }
+    // Flush any remaining logs when stopping
+    if (this.logBuffer.length > 0) {
+      this.logs = [...this.logs, ...this.logBuffer];
+      this.logBuffer = [];
+      if (this.isAutoScroll) {
+        this.updateComplete.then(() => this.scrollToBottom());
+      }
+    }
+  }
+
+  flushLogBuffer() {
+    if (this.logBuffer.length === 0) return;
+
+    // Take up to MAX_LINES_PER_FLUSH from buffer
+    const linesToAdd = this.logBuffer.splice(0, this.MAX_LINES_PER_FLUSH);
+    this.logs = [...this.logs, ...linesToAdd];
+
+    // Scroll after adding lines
+    if (this.isAutoScroll) {
+      this.updateComplete.then(() => this.scrollToBottom());
+    }
+  }
+
   scrollToBottom() {
-    if (this.logContainerRef) {
-      this.logContainerRef.scrollTop = this.logContainerRef.scrollHeight;
+    // Get fresh reference in case DOM was updated
+    const container =
+      this.logContainerRef ||
+      (this.shadowRoot?.querySelector('.log-container') as HTMLElement);
+    if (container) {
+      this.logContainerRef = container;
+      // Use requestAnimationFrame for smoother scrolling after DOM paint
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
     }
   }
 
@@ -666,7 +777,8 @@ export class FlowExecutionView extends LitElement {
     const isRunning =
       this.execution.status === 'RUNNING' ||
       this.execution.status === 'STARTING' ||
-      this.execution.status === 'INITIALIZING';
+      this.execution.status === 'INITIALIZING' ||
+      this.execution.status === 'PENDING';
 
     return html`
       <view-header
@@ -686,6 +798,19 @@ export class FlowExecutionView extends LitElement {
                   <sl-button size="small" href="/console/flows/${this.flow.id}">
                     <sl-icon name="diagram-3"></sl-icon>
                     View Flow
+                  </sl-button>
+                `
+              : ''}
+            ${this.canRetry()
+              ? html`
+                  <sl-button
+                    size="small"
+                    variant="warning"
+                    ?loading=${this.isRetrying}
+                    @click=${this.retryExecution}
+                  >
+                    <sl-icon name="arrow-repeat"></sl-icon>
+                    Retry
                   </sl-button>
                 `
               : ''}
@@ -881,6 +1006,17 @@ ${this.execution.resolved_input_prompt}</pre
                     </div>
                   `
                 : this.logs.map((log) => this.renderLogEntry(log))}
+              ${isRunning
+                ? html`
+                    <div class="loading-indicator">
+                      <div class="loading-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                    </div>
+                  `
+                : ''}
             </div>
 
             ${isRunning
@@ -1149,8 +1285,9 @@ ${log.payload.content}</pre
         console.error('Failed to fetch logs after stop:', error);
       }
 
-      // Stop auto-scroll checker
+      // Stop auto-scroll checker and flush remaining buffer
       this.stopAutoScrollChecker();
+      this.stopBufferFlush();
       this.isAutoScroll = false;
 
       // Force UI update
@@ -1158,6 +1295,35 @@ ${log.payload.content}</pre
     } catch (error) {
       console.error('Failed to stop execution:', error);
       // TODO: Show error notification to user
+    }
+  }
+
+  canRetry(): boolean {
+    if (!this.execution) return false;
+    const retryableStatuses = ['FAILED', 'STOPPED', 'TIMEOUT', 'CANCELLED'];
+    return retryableStatuses.includes(this.execution.status);
+  }
+
+  async retryExecution() {
+    if (!this.executionId) return;
+
+    try {
+      this.isRetrying = true;
+      const result = await retryFlowExecution(this.executionId);
+
+      // Navigate to the new execution
+      // Backend returns { id, status, flow_id }
+      if (result.id) {
+        window.location.href = `/console/flows/executions/${result.id}`;
+      }
+    } catch (error) {
+      console.error('Failed to retry execution:', error);
+      // Show error message
+      const message =
+        error instanceof Error ? error.message : 'Failed to retry execution';
+      alert(message); // TODO: Use proper notification
+    } finally {
+      this.isRetrying = false;
     }
   }
 

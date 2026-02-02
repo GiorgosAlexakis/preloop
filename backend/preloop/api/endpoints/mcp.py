@@ -1947,46 +1947,62 @@ async def update_pull_request(
                         state_event = "reopen"
 
                 # Look up user IDs for assignees/reviewers
+                # Note: assignees/reviewers being None means "don't change"
+                # Empty list [] means "clear all assignees/reviewers"
                 assignee_ids = None
                 reviewer_ids = None
 
-                if assignees:
-                    try:
-                        assignee_ids = await tracker_client.get_user_ids_by_usernames(
-                            assignees
-                        )
-                        if len(assignee_ids) < len(assignees):
-                            not_found = len(assignees) - len(assignee_ids)
-                            gitlab_warnings.append(
-                                f"{not_found} assignee(s) not found in GitLab"
+                if assignees is not None:
+                    if len(assignees) == 0:
+                        # Explicitly clear assignees by passing empty list
+                        assignee_ids = []
+                        logger.info("Clearing all assignees from MR")
+                    else:
+                        try:
+                            assignee_ids = (
+                                await tracker_client.get_user_ids_by_usernames(
+                                    assignees
+                                )
                             )
-                        logger.info(
-                            f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to resolve assignee IDs: {e}")
-                        gitlab_warnings.append(
-                            f"assignees not applied (lookup failed: {e})"
-                        )
+                            if len(assignee_ids) < len(assignees):
+                                not_found = len(assignees) - len(assignee_ids)
+                                gitlab_warnings.append(
+                                    f"{not_found} assignee(s) not found in GitLab"
+                                )
+                            logger.info(
+                                f"Resolved {len(assignee_ids)}/{len(assignees)} assignee IDs"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to resolve assignee IDs: {e}")
+                            gitlab_warnings.append(
+                                f"assignees not applied (lookup failed: {e})"
+                            )
 
-                if reviewers:
-                    try:
-                        reviewer_ids = await tracker_client.get_user_ids_by_usernames(
-                            reviewers
-                        )
-                        if len(reviewer_ids) < len(reviewers):
-                            not_found = len(reviewers) - len(reviewer_ids)
-                            gitlab_warnings.append(
-                                f"{not_found} reviewer(s) not found in GitLab"
+                if reviewers is not None:
+                    if len(reviewers) == 0:
+                        # Explicitly clear reviewers by passing empty list
+                        reviewer_ids = []
+                        logger.info("Clearing all reviewers from MR")
+                    else:
+                        try:
+                            reviewer_ids = (
+                                await tracker_client.get_user_ids_by_usernames(
+                                    reviewers
+                                )
                             )
-                        logger.info(
-                            f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to resolve reviewer IDs: {e}")
-                        gitlab_warnings.append(
-                            f"reviewers not applied (lookup failed: {e})"
-                        )
+                            if len(reviewer_ids) < len(reviewers):
+                                not_found = len(reviewers) - len(reviewer_ids)
+                                gitlab_warnings.append(
+                                    f"{not_found} reviewer(s) not found in GitLab"
+                                )
+                            logger.info(
+                                f"Resolved {len(reviewer_ids)}/{len(reviewers)} reviewer IDs"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to resolve reviewer IDs: {e}")
+                            gitlab_warnings.append(
+                                f"reviewers not applied (lookup failed: {e})"
+                            )
 
                 mr_data = await tracker_client.update_merge_request(
                     mr_identifier=pr_number,
@@ -2034,14 +2050,21 @@ async def update_pull_request(
                         f"Removing reaction '{remove_reaction}' from GitHub PR {pr_number}"
                     )
                     try:
-                        await tracker_client.remove_issue_reaction(
+                        removed = await tracker_client.remove_issue_reaction(
                             issue_number=pr_number,
                             reaction=remove_reaction,
                         )
-                        logger.info(
-                            f"Successfully removed reaction from PR {pr_number}"
-                        )
-                        reaction_removed = True
+                        if removed:
+                            logger.info(
+                                f"Successfully removed reaction from PR {pr_number}"
+                            )
+                            reaction_removed = True
+                        else:
+                            # Reaction not found - not an error, but note it
+                            logger.info(
+                                f"Reaction '{remove_reaction}' not found on PR {pr_number} "
+                                "(may have been already removed or never added)"
+                            )
                     except Exception as e:
                         error_msg = (
                             f"Failed to remove reaction '{remove_reaction}': {e}"
@@ -2389,6 +2412,7 @@ async def update_comment(
     body: Optional[str] = None,
     resolved: Optional[bool] = None,
     thread_id: Optional[str] = None,
+    comment_type: Optional[Literal["review_comment", "issue_comment"]] = None,
 ) -> "UpdateCommentResponse":
     """
     Handles the 'update_comment' tool call.
@@ -2396,20 +2420,27 @@ async def update_comment(
     Updates or resolves a comment on a pull request or merge request.
     Works with both GitHub review comments and GitLab MR notes.
 
-    Note: This tool only supports PR/MR review comments, not general issue comments.
-    For GitHub, this updates inline review comments (not PR conversation comments).
-    For GitLab, this updates MR discussion notes.
+    Supports two types of GitHub comments:
+    - review_comment: Inline code review comments (on specific lines of code)
+    - issue_comment: PR conversation comments (general discussion)
+
+    For GitLab, this updates MR discussion notes (both inline and general).
 
     Args:
         target: PR/MR identifier (URL, slug, or number). Issue URLs are not supported.
-        comment_id: The review comment/note ID to update (used for body updates).
-            For GitHub: Must be a review comment ID (from review threads), not an issue comment ID.
+        comment_id: The comment ID to update.
         body: New body text for the comment (optional).
         resolved: Whether to resolve/unresolve the comment thread (optional).
+            Note: Thread resolution only works for review_comment types on GitHub.
         thread_id: The thread/discussion ID for resolution (optional).
             For GitHub: The review thread node_id (e.g., "PRRT_...").
             For GitLab: The discussion ID.
             If not provided, comment_id is used for resolution (may fail if wrong ID type).
+        comment_type: Type of comment being updated (optional).
+            For GitHub: "review_comment" for inline code comments,
+                       "issue_comment" for PR conversation comments.
+            If not provided, attempts review_comment first, then issue_comment.
+            Tip: The get_pull_request response includes a "type" field for each comment.
 
     Returns:
         UpdateCommentResponse with update status.
@@ -2466,10 +2497,19 @@ async def update_comment(
         pr_mr_number = slug_parts[1]
         project_path = slug_parts[0]
         logger.info(f"Detected PR/MR slug format: {project_path}#{pr_mr_number}")
+    # Handle numeric-only target (just the PR/MR number)
+    elif target.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Numeric target '{target}' requires project context. "
+            "Use URL format (e.g., https://github.com/owner/repo/pull/123) or "
+            "slug format (e.g., owner/repo#123) to specify the project.",
+        )
     else:
         raise HTTPException(
             status_code=400,
-            detail="Invalid target format. Use URL or 'owner/repo#number' format.",
+            detail="Invalid target format. Use URL (e.g., https://github.com/owner/repo/pull/123) "
+            "or slug format (e.g., owner/repo#123).",
         )
 
     if not project_path:
@@ -2501,36 +2541,170 @@ async def update_comment(
             "github" if tracker_client.tracker_type.lower() == "github" else "gitlab"
         )
 
+    # Upfront validation: GitHub issue comments cannot be resolved
+    # Check this before any updates to avoid partial success states
+    # Note: GitLab discussions CAN be resolved regardless of type, so only block GitHub
+    if (
+        platform == "github"
+        and comment_type == "issue_comment"
+        and resolved is not None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Thread resolution is not supported for GitHub issue comments "
+            "(PR conversation comments). Only inline review comments can be resolved. "
+            "Remove the 'resolved' parameter or use comment_type='review_comment'.",
+        )
+
     try:
         result_url = None
         actions_taken = []
 
         if platform == "github":
+            # Track which comment type was actually used for logging
+            actual_comment_type = None
+
+            # Pre-check: If resolved is requested with body but no comment_type,
+            # we need to determine the type upfront to avoid partial success
+            # (updating body then failing on resolution).
+            if resolved is not None and body is not None and comment_type is None:
+                logger.info(
+                    f"Pre-checking comment type for {comment_id} since both body "
+                    "and resolved are requested without explicit comment_type"
+                )
+                # Try to get the review comment - if it 404s, it's an issue comment
+                try:
+                    # Use a lightweight check - try to get the comment
+                    owner = tracker_client.connection_details.get("owner")
+                    repo = tracker_client.connection_details.get("repo")
+                    if owner and repo:
+                        import httpx
+
+                        headers = await tracker_client._get_auth_headers()
+                        async with httpx.AsyncClient() as client:
+                            check_url = (
+                                f"https://api.github.com/repos/{owner}/{repo}"
+                                f"/pulls/comments/{comment_id}"
+                            )
+                            response = await client.get(
+                                check_url, headers=headers, timeout=10.0
+                            )
+                            if response.status_code == 404:
+                                # It's an issue comment - fail upfront
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail=(
+                                        "Thread resolution is not supported for GitHub "
+                                        "issue comments. The comment appears to be a PR "
+                                        "conversation comment, not an inline review comment. "
+                                        "Remove the 'resolved' parameter or set "
+                                        "comment_type='review_comment' if this is actually "
+                                        "an inline comment."
+                                    ),
+                                )
+                            elif response.status_code == 200:
+                                # It's a review comment - proceed
+                                actual_comment_type = "review_comment"
+                                logger.info(
+                                    f"Pre-check: comment {comment_id} is a review_comment"
+                                )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.warning(
+                        f"Pre-check failed, proceeding with auto-detect: {e}"
+                    )
+
             # Update comment body if provided
             if body is not None:
-                logger.info(f"Updating GitHub review comment {comment_id}")
-                try:
-                    update_result = await tracker_client.update_review_comment(
-                        comment_id=comment_id,
-                        body=body,
-                    )
-                    result_url = update_result.get("html_url")
-                    actions_taken.append("body updated")
-                    logger.info(f"Successfully updated review comment {comment_id}")
-                except Exception as e:
-                    error_msg = str(e)
-                    # Check if this is a 404 - likely means it's an issue comment, not a review comment
-                    if "404" in error_msg or "Not Found" in error_msg:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Comment {comment_id} not found as a review comment. "
-                            "This tool only supports PR inline review comments. "
-                            "Issue comments and PR conversation comments are not supported.",
+                # If comment_type is specified, use only that API
+                # If not specified, try review_comment first, then issue_comment
+                if comment_type == "issue_comment":
+                    # Directly use issue comment API
+                    logger.info(f"Updating GitHub issue comment {comment_id}")
+                    try:
+                        update_result = await tracker_client.update_issue_comment(
+                            comment_id=comment_id,
+                            body=body,
                         )
-                    raise
+                        result_url = update_result.get("html_url")
+                        actions_taken.append("body updated")
+                        actual_comment_type = "issue_comment"
+                        logger.info(f"Successfully updated issue comment {comment_id}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        if "404" in error_msg or "Not Found" in error_msg:
+                            raise HTTPException(
+                                status_code=404,
+                                detail=f"Issue comment {comment_id} not found.",
+                            )
+                        raise
+                else:
+                    # Try review_comment first
+                    logger.info(f"Updating GitHub review comment {comment_id}")
+                    try:
+                        update_result = await tracker_client.update_review_comment(
+                            comment_id=comment_id,
+                            body=body,
+                        )
+                        result_url = update_result.get("html_url")
+                        actions_taken.append("body updated")
+                        actual_comment_type = "review_comment"
+                        logger.info(f"Successfully updated review comment {comment_id}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Check if this is a 404 - might be an issue comment
+                        if "404" in error_msg or "Not Found" in error_msg:
+                            if comment_type == "review_comment":
+                                # User explicitly specified review_comment, don't try fallback
+                                raise HTTPException(
+                                    status_code=404,
+                                    detail=f"Review comment {comment_id} not found.",
+                                )
+                            # Try issue_comment as fallback
+                            logger.info(
+                                f"Review comment {comment_id} not found, "
+                                "trying as issue comment"
+                            )
+                            try:
+                                update_result = (
+                                    await tracker_client.update_issue_comment(
+                                        comment_id=comment_id,
+                                        body=body,
+                                    )
+                                )
+                                result_url = update_result.get("html_url")
+                                actions_taken.append("body updated")
+                                actual_comment_type = "issue_comment"
+                                logger.info(
+                                    f"Successfully updated issue comment {comment_id}"
+                                )
+                            except Exception as e2:
+                                error_msg2 = str(e2)
+                                if "404" in error_msg2 or "Not Found" in error_msg2:
+                                    raise HTTPException(
+                                        status_code=404,
+                                        detail=f"Comment {comment_id} not found as either "
+                                        "a review comment or issue comment.",
+                                    )
+                                raise
+                        else:
+                            raise
 
             # Resolve/unresolve thread if requested
             if resolved is not None:
+                # Thread resolution only works for review comments, not issue comments.
+                # Note: explicit comment_type="issue_comment" + resolved is validated upfront.
+                # This check handles the auto-detect fallback case where we updated an
+                # issue comment but the caller also requested resolution.
+                if body is not None and actual_comment_type == "issue_comment":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Thread resolution is not supported for issue comments "
+                        "(PR conversation comments). The comment was updated but cannot "
+                        "be resolved. Only inline review comments can be resolved.",
+                    )
+
                 # GitHub's resolve_review_thread requires the thread's GraphQL node_id
                 # (format: "PRRT_..."), not a comment ID (format: "PRRC_...").
                 if not thread_id:

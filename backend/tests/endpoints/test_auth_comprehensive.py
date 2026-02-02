@@ -492,7 +492,6 @@ class TestRegistrationFlows:
             patch("preloop.api.auth.router.crud_role") as mock_role,
             patch("preloop.api.auth.router.crud_user_role") as mock_user_role,
             patch("preloop.api.auth.router.complete_new_account_setup_background"),
-            patch("preloop.api.auth.router.send_product_notification_email"),
         ):
             mock_account_obj = MagicMock()
             mock_account_obj.id = uuid.uuid4()
@@ -647,7 +646,6 @@ class TestRegistrationFlows:
             patch("preloop.api.auth.router.crud_role") as mock_role,
             patch("preloop.api.auth.router.crud_user_role") as mock_user_role,
             patch("preloop.api.auth.router.complete_new_account_setup_background"),
-            patch("preloop.api.auth.router.send_product_notification_email"),
         ):
             mock_account_obj = MagicMock()
             mock_account_obj.id = uuid.uuid4()

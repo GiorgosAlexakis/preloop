@@ -121,6 +121,107 @@ class FlowTriggerService:
 
         return False
 
+    def _extract_commit_sha(self, event_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract the commit SHA from the event data.
+
+        Looks for commit SHA in common locations for different event types.
+        """
+        payload = event_data.get("payload", {})
+
+        # Ensure payload is a dict
+        if not isinstance(payload, dict):
+            return None
+
+        # GitHub push event
+        # Note: head_commit can be None for branch deletions
+        head_commit = payload.get("head_commit")
+        if head_commit and isinstance(head_commit, dict):
+            sha = head_commit.get("id")
+            if sha:
+                return sha
+
+        # GitHub/GitLab pull request / merge request events
+        object_attrs = payload.get("object_attributes", {})
+        if object_attrs and isinstance(object_attrs, dict):
+            # GitLab MR - last_commit (can be None)
+            last_commit = object_attrs.get("last_commit")
+            if last_commit and isinstance(last_commit, dict):
+                sha = last_commit.get("id")
+                if sha:
+                    return sha
+            # GitLab MR - sha
+            if "sha" in object_attrs:
+                sha = object_attrs["sha"]
+                if sha:
+                    return sha
+
+        # GitHub PR event
+        pr = payload.get("pull_request")
+        if pr and isinstance(pr, dict):
+            head = pr.get("head")
+            if head and isinstance(head, dict):
+                sha = head.get("sha")
+                if sha:
+                    return sha
+
+        # Direct commit reference
+        if "commit" in payload:
+            commit = payload["commit"]
+            if isinstance(commit, dict):
+                sha = commit.get("sha") or commit.get("id")
+                if sha:
+                    return sha
+
+        # Top-level sha
+        if "sha" in payload:
+            return payload["sha"]
+
+        # Push events - after field
+        if "after" in payload:
+            return payload["after"]
+
+        return None
+
+    def _has_execution_for_commit(
+        self, flow_id: uuid.UUID, commit_sha: str, account_id: str
+    ) -> bool:
+        """
+        Check if there's already an execution (running or recent) for this commit.
+
+        This prevents duplicate executions when multiple events are triggered
+        for the same commit (e.g., push + PR description update).
+
+        Args:
+            flow_id: The flow to check
+            commit_sha: The commit SHA to check
+            account_id: Account ID for scoping
+
+        Returns:
+            True if there's already an execution for this commit.
+        """
+        # Query for executions of this flow
+        executions = crud_flow_execution.get_running_by_flow(
+            self.db,
+            flow_id=flow_id,
+            account_id=uuid.UUID(account_id)
+            if isinstance(account_id, str)
+            else account_id,
+        )
+
+        for execution in executions:
+            trigger_details = execution.trigger_event_details or {}
+            exec_sha = self._extract_commit_sha(trigger_details)
+
+            if exec_sha and exec_sha == commit_sha:
+                logger.info(
+                    f"Found running execution {execution.id} for flow {flow_id} "
+                    f"and commit {commit_sha[:8]} (status: {execution.status})"
+                )
+                return True
+
+        return False
+
     async def _run_orchestrator_with_session(
         self,
         flow: Flow,
@@ -370,6 +471,11 @@ class FlowTriggerService:
             if resource_key:
                 logger.info(f"Extracted resource key for deduplication: {resource_key}")
 
+            # Extract commit SHA for deduplication
+            commit_sha = self._extract_commit_sha(event_data)
+            if commit_sha:
+                logger.info(f"Extracted commit SHA for deduplication: {commit_sha[:8]}")
+
             # Trigger each matching flow
             for flow in flows_to_trigger:
                 try:
@@ -383,6 +489,21 @@ class FlowTriggerService:
                                 f"already has a running execution for resource {resource_key}. "
                                 f"To avoid duplicate executions, events about the same resource "
                                 f"are not processed while an execution is in progress."
+                            )
+                            continue
+
+                    # Check for running execution with the same commit SHA
+                    # This catches cases where multiple events are triggered for the same
+                    # commit (e.g., push event + PR update when description is edited)
+                    if commit_sha and account_id:
+                        if self._has_execution_for_commit(
+                            flow.id, commit_sha, account_id
+                        ):
+                            logger.info(
+                                f"Skipping flow '{flow.name}' ({flow.id}) - "
+                                f"already has a running execution for commit {commit_sha[:8]}. "
+                                f"This prevents duplicate executions when multiple events "
+                                f"are triggered for the same commit."
                             )
                             continue
 
@@ -418,14 +539,16 @@ class FlowTriggerService:
         flow_id: uuid.UUID,
         test_mode: bool = False,
         trigger_event_data: Optional[Dict[str, Any]] = None,
+        retry_of_execution_id: Optional[uuid.UUID] = None,
     ) -> Dict[str, Any]:
         """
-        Manually trigger a flow execution for testing purposes.
+        Manually trigger a flow execution for testing purposes or as a retry.
 
         Args:
             flow_id: The ID of the flow to trigger
             test_mode: Whether this is a test execution
             trigger_event_data: Optional custom trigger event data for testing
+            retry_of_execution_id: If this is a retry, the ID of the original execution
 
         Returns:
             Dict with execution_id and status
@@ -438,18 +561,28 @@ class FlowTriggerService:
         if not flow:
             raise ValueError(f"Flow {flow_id} not found")
 
-        logger.info(f"Triggering test execution for flow '{flow.name}' ({flow.id})")
+        if retry_of_execution_id:
+            logger.info(
+                f"Triggering retry execution for flow '{flow.name}' ({flow.id}), "
+                f"retrying execution {retry_of_execution_id}"
+            )
+        else:
+            logger.info(f"Triggering test execution for flow '{flow.name}' ({flow.id})")
 
         # Pre-create the execution record so we can return its ID immediately
-        # Merge test_mode flag with custom trigger_event_data if provided
-        trigger_details = {"test_mode": test_mode}
+        # Merge custom trigger_event_data with test_mode flag
+        # Important: Set test_mode AFTER updating from trigger_event_data to ensure
+        # retries don't inherit test_mode=True from the original test execution
+        trigger_details = {}
         if trigger_event_data:
             trigger_details.update(trigger_event_data)
+        trigger_details["test_mode"] = test_mode
 
         execution_data = FlowExecutionCreate(
             flow_id=flow_id,
             status="PENDING",
             trigger_event_details=trigger_details,
+            retry_of_execution_id=retry_of_execution_id,
         )
 
         execution = crud_flow_execution.create(self.db, obj_in=execution_data)

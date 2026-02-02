@@ -1156,3 +1156,272 @@ class TestGitHubTrackerTokenValidation(unittest.IsolatedAsyncioTestCase):
             any("not an admin" in w for w in result["warnings"]),
             "Should warn that user is not an admin",
         )
+
+
+@pytest.mark.asyncio
+class TestGitHubTrackerReactions(unittest.IsolatedAsyncioTestCase):
+    """Tests for reaction add/remove functionality."""
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_with_user_auth(self, mock_client_class):
+        """Test removing a reaction with user token auth."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 123, "content": "eyes", "user": {"login": "testuser"}},
+            {"id": 456, "content": "eyes", "user": {"login": "otheruser"}},
+        ]
+
+        user_response = MagicMock()
+        user_response.status_code = 200
+        user_response.json.return_value = {"login": "testuser"}
+
+        delete_response = MagicMock()
+        delete_response.status_code = 204
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response]
+        mock_client.delete.return_value = delete_response
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker with owner/repo
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should delete the reaction owned by testuser (id 123), not otheruser
+        self.assertTrue(result)
+        mock_client.delete.assert_called_once()
+        delete_call = mock_client.delete.call_args
+        self.assertIn("/reactions/123", delete_call[0][0])
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_with_app_slug_in_connection_details(
+        self, mock_client_class
+    ):
+        """Test removing a reaction with GitHub App when app_slug is in connection_details."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 789, "content": "eyes", "user": {"login": "my-app[bot]"}},
+            {"id": 456, "content": "eyes", "user": {"login": "humanuser"}},
+        ]
+
+        # GET /user returns 403 for app installation tokens
+        user_response = MagicMock()
+        user_response.status_code = 403
+
+        delete_response = MagicMock()
+        delete_response.status_code = 204
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response]
+        mock_client.delete.return_value = delete_response
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker with owner/repo AND app_slug in connection_details
+        tracker = GitHubTracker(
+            str(uuid4()),
+            "test-token",
+            {"owner": "testowner", "repo": "testrepo", "app_slug": "my-app"},
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should delete the reaction owned by my-app[bot] (id 789)
+        self.assertTrue(result)
+        mock_client.delete.assert_called_once()
+        delete_call = mock_client.delete.call_args
+        self.assertIn("/reactions/789", delete_call[0][0])
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_installation_token_without_app_slug(
+        self, mock_client_class
+    ):
+        """Test that reaction removal fails for installation tokens without app_slug.
+
+        GitHub App installation tokens cannot call GET /user or GET /app.
+        Without app_slug in connection_details, we cannot determine the bot identity.
+        """
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 789, "content": "eyes", "user": {"login": "my-app[bot]"}},
+        ]
+
+        # GET /user returns 403 for app installation tokens
+        user_response = MagicMock()
+        user_response.status_code = 403
+
+        # GET /app also returns 403 for installation tokens (requires JWT)
+        app_response = MagicMock()
+        app_response.status_code = 403
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response, app_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker WITHOUT app_slug in connection_details
+        tracker = GitHubTracker(
+            str(uuid4()),
+            "test-token",
+            {"owner": "testowner", "repo": "testrepo"},
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should return False - cannot determine identity
+        self.assertFalse(result)
+        mock_client.delete.assert_not_called()
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_remove_issue_reaction_refuses_without_auth(self, mock_client_class):
+        """Test that reaction removal refuses when auth cannot be determined."""
+        from unittest.mock import AsyncMock
+
+        # Setup mock responses
+        reactions_response = MagicMock()
+        reactions_response.status_code = 200
+        reactions_response.json.return_value = [
+            {"id": 123, "content": "eyes", "user": {"login": "someuser"}},
+        ]
+
+        # GET /user fails
+        user_response = MagicMock()
+        user_response.status_code = 401
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [reactions_response, user_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        # Create tracker with owner/repo
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        result = await tracker.remove_issue_reaction("42", "eyes")
+
+        # Should return False and not attempt to delete
+        self.assertFalse(result)
+        mock_client.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+class TestGitHubTrackerPullRequestUpdates(unittest.IsolatedAsyncioTestCase):
+    """Tests for PR update functionality including assignees/reviewers."""
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_update_pull_request_empty_assignees_clears_all(
+        self, mock_client_class
+    ):
+        """Test that assignees=[] removes all existing assignees."""
+        from unittest.mock import AsyncMock
+
+        # PR data with existing assignees
+        pr_data = {
+            "id": 123,
+            "number": 42,
+            "title": "Test PR",
+            "body": "Description",
+            "state": "open",
+            "html_url": "https://github.com/owner/repo/pull/42",
+            "draft": False,
+            "assignees": [{"login": "user1"}, {"login": "user2"}],
+            "requested_reviewers": [],
+        }
+
+        patch_response = MagicMock()
+        patch_response.status_code = 200
+        patch_response.json.return_value = pr_data
+
+        delete_response = MagicMock()
+        delete_response.status_code = 200
+        delete_response.json.return_value = {}
+
+        mock_client = AsyncMock()
+        # PATCH for PR update, DELETE for clearing assignees
+        mock_client.request.side_effect = [patch_response, delete_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        await tracker.update_pull_request(pr_identifier="42", assignees=[])
+
+        # Verify DELETE was called with existing assignees
+        calls = mock_client.request.call_args_list
+        self.assertEqual(len(calls), 2)
+
+        # Second call should be DELETE for assignees
+        delete_call = calls[1]
+        self.assertEqual(delete_call[0][0], "DELETE")
+        self.assertIn("/assignees", delete_call[0][1])
+        self.assertEqual(delete_call[1]["json"]["assignees"], ["user1", "user2"])
+
+    @patch("preloop.sync.trackers.github.httpx.AsyncClient")
+    async def test_update_pull_request_empty_reviewers_clears_all(
+        self, mock_client_class
+    ):
+        """Test that reviewers=[] removes all existing reviewers."""
+        from unittest.mock import AsyncMock
+
+        # PR data with existing reviewers
+        pr_data = {
+            "id": 123,
+            "number": 42,
+            "title": "Test PR",
+            "body": "Description",
+            "state": "open",
+            "html_url": "https://github.com/owner/repo/pull/42",
+            "draft": False,
+            "assignees": [],
+            "requested_reviewers": [{"login": "reviewer1"}, {"login": "reviewer2"}],
+        }
+
+        patch_response = MagicMock()
+        patch_response.status_code = 200
+        patch_response.json.return_value = pr_data
+
+        delete_response = MagicMock()
+        delete_response.status_code = 200
+        delete_response.json.return_value = {}
+
+        mock_client = AsyncMock()
+        mock_client.request.side_effect = [patch_response, delete_response]
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client_class.return_value = mock_client
+
+        tracker = GitHubTracker(
+            str(uuid4()), "test-token", {"owner": "testowner", "repo": "testrepo"}
+        )
+        await tracker.update_pull_request(pr_identifier="42", reviewers=[])
+
+        # Verify DELETE was called with existing reviewers
+        calls = mock_client.request.call_args_list
+        self.assertEqual(len(calls), 2)
+
+        # Second call should be DELETE for reviewers
+        delete_call = calls[1]
+        self.assertEqual(delete_call[0][0], "DELETE")
+        self.assertIn("/requested_reviewers", delete_call[0][1])
+        self.assertEqual(
+            delete_call[1]["json"]["reviewers"], ["reviewer1", "reviewer2"]
+        )

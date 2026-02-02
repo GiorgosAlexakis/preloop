@@ -1522,6 +1522,399 @@ async def test_update_comment_invalid_target_format(
         assert "Invalid target format" in str(exc_info.value.detail)
 
 
+@pytest.mark.asyncio
+async def test_update_comment_issue_comment_explicit(
+    db_session: Session, test_user: User
+):
+    """
+    Tests updating an issue comment (PR conversation comment) with explicit comment_type.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="owner/repo",
+        identifier="owner/repo",
+        slug="owner/repo",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("preloop.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "preloop.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "preloop.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "github"
+        mock_tracker.update_issue_comment = AsyncMock(
+            return_value={
+                "id": "issue-comment-456",
+                "html_url": "https://github.com/owner/repo/pull/123#issuecomment-456",
+            }
+        )
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.update_comment(
+            target="owner/repo#123",
+            comment_id="456",
+            body="Updated issue comment text",
+            comment_type="issue_comment",
+        )
+
+    assert response.status == "updated"
+    assert "body updated" in response.message.lower()
+    mock_tracker.update_issue_comment.assert_called_once_with(
+        comment_id="456",
+        body="Updated issue comment text",
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_comment_fallback_to_issue_comment(
+    db_session: Session, test_user: User
+):
+    """
+    Tests auto-detection fallback: when review_comment 404s, tries issue_comment.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="owner/repo",
+        identifier="owner/repo",
+        slug="owner/repo",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("preloop.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "preloop.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "preloop.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "github"
+        # First call (review_comment) raises 404
+        mock_tracker.update_review_comment = AsyncMock(
+            side_effect=Exception("404 Not Found")
+        )
+        # Second call (issue_comment) succeeds
+        mock_tracker.update_issue_comment = AsyncMock(
+            return_value={
+                "id": "issue-comment-789",
+                "html_url": "https://github.com/owner/repo/pull/123#issuecomment-789",
+            }
+        )
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.update_comment(
+            target="owner/repo#123",
+            comment_id="789",
+            body="Updated via fallback",
+        )
+
+    assert response.status == "updated"
+    mock_tracker.update_review_comment.assert_called_once()
+    mock_tracker.update_issue_comment.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_comment_resolve_issue_comment_fails(
+    db_session: Session, test_user: User
+):
+    """
+    Tests that resolving an issue_comment returns 400 (not supported).
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="owner/repo",
+        identifier="owner/repo",
+        slug="owner/repo",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("preloop.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "preloop.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "preloop.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "github"
+        mock_get_tracker.return_value = mock_tracker
+
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await mcp.update_comment(
+                target="owner/repo#123",
+                comment_id="456",
+                resolved=True,
+                comment_type="issue_comment",
+            )
+
+        assert exc_info.value.status_code == 400
+        assert (
+            "not supported for github issue comments"
+            in str(exc_info.value.detail).lower()
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_comment_issue_comment_body_and_resolve_fails_upfront(
+    db_session: Session, test_user: User
+):
+    """
+    Tests that issue_comment + body + resolved fails upfront without partial update.
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="owner/repo",
+        identifier="owner/repo",
+        slug="owner/repo",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("preloop.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "preloop.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "preloop.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "github"
+        # These should NOT be called - validation should fail upfront
+        mock_tracker.update_issue_comment = AsyncMock()
+        mock_tracker.update_review_comment = AsyncMock()
+        mock_get_tracker.return_value = mock_tracker
+
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await mcp.update_comment(
+                target="owner/repo#123",
+                comment_id="456",
+                body="New body text",
+                resolved=True,
+                comment_type="issue_comment",
+            )
+
+        assert exc_info.value.status_code == 400
+        assert (
+            "not supported for github issue comments"
+            in str(exc_info.value.detail).lower()
+        )
+        # Verify no update calls were made (failed upfront)
+        mock_tracker.update_issue_comment.assert_not_called()
+        mock_tracker.update_review_comment.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_comment_autodetect_body_and_resolve_precheck_fails(
+    db_session: Session, test_user: User
+):
+    """
+    Tests that auto-detect mode with body + resolved pre-checks the comment type
+    and fails upfront if it's an issue comment (avoids partial success).
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="github",
+        api_key="test_key",
+        url="https://github.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="owner/repo",
+        identifier="owner/repo",
+        slug="owner/repo",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("preloop.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "preloop.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "preloop.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+        patch("httpx.AsyncClient") as mock_httpx,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "github"
+        mock_tracker.connection_details = {"owner": "testowner", "repo": "testrepo"}
+        mock_tracker._get_auth_headers = AsyncMock(
+            return_value={"Authorization": "Bearer token"}
+        )
+        # These should NOT be called - pre-check should fail upfront
+        mock_tracker.update_issue_comment = AsyncMock()
+        mock_tracker.update_review_comment = AsyncMock()
+        mock_get_tracker.return_value = mock_tracker
+
+        # Mock httpx to return 404 (comment is an issue comment)
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_httpx.return_value = mock_client
+
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await mcp.update_comment(
+                target="owner/repo#123",
+                comment_id="456",
+                body="New body text",
+                resolved=True,
+                # comment_type not specified - auto-detect mode
+            )
+
+        assert exc_info.value.status_code == 400
+        assert (
+            "not supported for github issue comments"
+            in str(exc_info.value.detail).lower()
+        )
+        # Verify no update calls were made (failed upfront via pre-check)
+        mock_tracker.update_issue_comment.assert_not_called()
+        mock_tracker.update_review_comment.assert_not_called()
+
+
 # =============================================================================
 # get_pull_request tests - include_comments, include_diff flags
 # =============================================================================
@@ -2370,6 +2763,89 @@ async def test_update_pull_request_gitlab_assignee_warning(
 
     assert response.status == "updated"
     assert "assignees not applied" in response.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_update_pull_request_gitlab_empty_list_clears_assignees_reviewers(
+    db_session: Session, test_user: User
+):
+    """
+    Tests that passing empty lists for assignees/reviewers clears them on GitLab MRs.
+    This is distinct from passing None (which means "don't change").
+    """
+    tracker = Tracker(
+        name="test-tracker",
+        account_id=test_user.account_id,
+        tracker_type="gitlab",
+        api_key="test_key",
+        url="https://gitlab.com",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    organization = Organization(
+        name="test-org",
+        identifier="test-org",
+        tracker_id=tracker.id,
+    )
+    db_session.add(organization)
+    db_session.commit()
+
+    project = Project(
+        name="group/project",
+        identifier="group/project",
+        slug="group/project",
+        organization_id=organization.id,
+    )
+    db_session.add(project)
+    db_session.commit()
+
+    with (
+        patch("preloop.api.endpoints.mcp.get_http_request") as mock_get_request,
+        patch("preloop.api.endpoints.mcp.get_db") as mock_get_db,
+        patch(
+            "preloop.api.endpoints.mcp._get_authenticated_user",
+            new_callable=AsyncMock,
+        ) as mock_auth,
+        patch(
+            "preloop.api.endpoints.mcp.get_tracker_client",
+            new_callable=AsyncMock,
+        ) as mock_get_tracker,
+    ):
+        mock_get_request.return_value.headers = {"authorization": "Bearer testtoken"}
+        mock_get_db.return_value = iter([db_session])
+        mock_auth.return_value = (db_session, test_user)
+
+        mock_tracker = MagicMock()
+        mock_tracker.tracker_type = "gitlab"
+        mock_tracker.update_merge_request = AsyncMock(
+            return_value={
+                "id": 999,
+                "url": "https://gitlab.com/group/project/-/merge_requests/10",
+            }
+        )
+        mock_get_tracker.return_value = mock_tracker
+
+        response = await mcp.update_pull_request(
+            pull_request="group/project#10",
+            title="Updated Title",
+            assignees=[],  # Empty list should clear assignees
+            reviewers=[],  # Empty list should clear reviewers
+        )
+
+    assert response.status == "updated"
+
+    # Verify that update_merge_request was called with empty lists (not None)
+    mock_tracker.update_merge_request.assert_called_once()
+    call_kwargs = mock_tracker.update_merge_request.call_args.kwargs
+
+    # Empty lists should be passed through, not converted to None
+    assert call_kwargs.get("assignee_ids") == [], (
+        "Empty assignees list should pass empty list to update_merge_request"
+    )
+    assert call_kwargs.get("reviewer_ids") == [], (
+        "Empty reviewers list should pass empty list to update_merge_request"
+    )
 
 
 @pytest.mark.asyncio

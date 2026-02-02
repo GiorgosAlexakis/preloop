@@ -3810,6 +3810,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/retry:
+    post:
+      tags:
+      - Flows
+      summary: Retry Flow Execution
+      description: "Retry a failed, stopped, or cancelled flow execution.\n\nCreates\
+        \ a new execution with the same trigger event data as the original.\nThe new\
+        \ execution is linked to the original via retry_of_execution_id.\n\nArgs:\n\
+        \    execution_id: The execution to retry\n\nReturns:\n    New execution details"
+      operationId: retry_flow_execution_api_v1_flows_executions__execution_id__retry_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/flows/{flow_id}:
     get:
       tags:
@@ -5535,6 +5567,13 @@ components:
           - type: 'null'
           title: Error Message
           description: Error message if the execution failed
+        retry_of_execution_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Retry Of Execution Id
+          description: ID of the original execution if this is a retry
         tool_calls_count:
           anyOf:
           - type: integer

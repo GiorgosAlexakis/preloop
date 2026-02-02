@@ -253,15 +253,20 @@ class TestExtractErrorFromLogs:
         result = container_executor._extract_error_from_logs("")
         assert result == ""
 
-    def test_no_error_returns_empty(self, container_executor):
-        """Test that logs without errors return empty string."""
+    def test_no_error_pattern_returns_last_lines(self, container_executor):
+        """Test that logs without explicit errors return last lines as context.
+
+        This is useful because when an execution fails, the last few lines
+        often contain relevant context even if they don't match error patterns.
+        """
         logs = """
         Starting process...
         Processing complete.
-        Success!
+        Unexpected termination!
         """
         result = container_executor._extract_error_from_logs(logs)
-        assert result == ""
+        # Should return last content lines as fallback context
+        assert "Unexpected termination" in result
 
     def test_extracts_error_context(self, container_executor):
         """Test that error context is extracted."""
@@ -310,6 +315,50 @@ line 8
         """
         result = container_executor._extract_error_from_logs(logs)
         assert "Fatal" in result
+
+    def test_filters_status_lines_and_finds_real_error(self, container_executor):
+        """Test that status lines are filtered and error is found from end.
+
+        This tests the real-world scenario where agent output ends with
+        status updates but the actual error is right before them.
+        """
+        logs = """Processing PR description...
+Some unrelated content about the PR
+ERROR: Quota exceeded. Check your plan and billing details.
+[Agent Status]
+{"status":"RUNNING","elapsed":50}
+[Agent Status]
+{"status":"FAILED","elapsed":55}
+[Status Update]
+Status: FAILED"""
+        result = container_executor._extract_error_from_logs(logs)
+        # Should find the actual error, not the status lines
+        assert "Quota exceeded" in result
+        assert "Check your plan and billing details" in result
+        # Status lines should be filtered out
+        assert "[Agent Status]" not in result
+        assert '{"status":"' not in result
+
+    def test_prioritizes_explicit_error_prefix(self, container_executor):
+        """Test that ERROR: prefixed lines are prioritized."""
+        logs = """This line has the word error in it but isn't an error
+Processing failed to complete quickly (just informational)
+ERROR: This is the actual error message
+More context here"""
+        result = container_executor._extract_error_from_logs(logs)
+        # Should prioritize the explicit ERROR: line
+        assert "This is the actual error message" in result
+
+    def test_finds_error_from_end_not_beginning(self, container_executor):
+        """Test that errors at end of logs are found first."""
+        logs = """error: some early warning
+Lots of normal processing output
+More normal output
+Final processing step
+ERROR: This is the final real error"""
+        result = container_executor._extract_error_from_logs(logs)
+        # Should find the error from the end
+        assert "This is the final real error" in result
 
 
 class TestGetStatus:

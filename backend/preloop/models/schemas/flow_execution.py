@@ -47,6 +47,9 @@ class FlowExecutionBase(BaseModel):
     error_message: Optional[str] = Field(
         None, description="Error message if the execution failed"
     )
+    retry_of_execution_id: Optional[uuid.UUID] = Field(
+        None, description="ID of the original execution if this is a retry"
+    )
     tool_calls_count: Optional[int] = Field(
         0, description="Total number of tool/MCP calls made during execution"
     )

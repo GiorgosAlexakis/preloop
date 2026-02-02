@@ -5,7 +5,7 @@ preloop/api/endpoints/tools.py to ensure consistency between MCP and REST API.
 """
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastmcp import Context
 
@@ -524,9 +524,10 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         body: str | None = None,
         resolved: bool | None = None,
         thread_id: str | None = None,
+        comment_type: Literal["review_comment", "issue_comment"] | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
-        """Update or resolve an existing review comment on a pull request or merge request. Only supports inline review comments (not issue comments or PR conversation comments). To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false. For resolution, you may need to provide thread_id (GitHub thread node_id like 'PRRT_...' or GitLab discussion ID) if the comment_id doesn't work for resolution."""
+        """Update or resolve an existing comment on a pull request or merge request. Supports both inline review comments and PR conversation comments. To update the comment text: provide body with new content. To resolve/unresolve a thread: provide resolved as true/false (only works for review_comment type). Use comment_type to specify the type ('review_comment' for inline code comments, 'issue_comment' for PR conversation comments), or omit to auto-detect. Tip: get_pull_request includes a 'type' field for each comment."""
         # Get user context for approval checking
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
 
@@ -546,6 +547,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "body": body,
                 "resolved": resolved,
                 "thread_id": thread_id,
+                "comment_type": comment_type,
             },
             ctx=ctx,
         )
@@ -559,6 +561,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             body=body,
             resolved=resolved,
             thread_id=thread_id,
+            comment_type=comment_type,
         )
         return result.model_dump_json()
 

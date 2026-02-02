@@ -282,7 +282,9 @@ class TestCheckExecution:
         ):
             await execution_monitor._check_execution(mock_db_session, sample_execution)
 
-            assert sample_execution.status == "FAILED"
+            # Container stopped should result in STOPPED status (not FAILED)
+            # This preserves user-initiated stops
+            assert sample_execution.status == "STOPPED"
             assert "stopped" in sample_execution.error_message.lower()
             assert sample_execution.end_time is not None
 
