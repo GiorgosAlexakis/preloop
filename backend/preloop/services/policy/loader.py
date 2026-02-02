@@ -1377,15 +1377,25 @@ def export_current_policy(
 
     # Export approval policies
     policies = crud_approval_policy.get_multi_by_account(db, account_id=account_id_str)
+
+    # Build policy name lookup first (needed for escalation policy resolution)
+    policy_name_map = {str(p.id): p.name for p in policies}
+
     policy_defs = []
     for policy in policies:
-        # Map database approval_type to YAML approval_type
-        # 'manual' -> 'standard', 'ai_driven' -> 'ai_driven'
+        # Map database approval_mode to YAML approval_type
+        # approval_mode controls who approves: 'standard' (human) or 'ai_driven' (AI)
         yaml_approval_type = (
             "ai_driven"
-            if getattr(policy, "approval_type", None) == "ai_driven"
+            if getattr(policy, "approval_mode", None) == "ai_driven"
             else "standard"
         )
+
+        # Resolve escalation policy name from ID
+        escalation_policy_name = None
+        escalation_policy_id = getattr(policy, "escalation_policy_id", None)
+        if escalation_policy_id:
+            escalation_policy_name = policy_name_map.get(str(escalation_policy_id))
 
         policy_def = ApprovalPolicyDefinition(
             name=policy.name,
@@ -1403,12 +1413,9 @@ def export_current_policy(
             ai_context=getattr(policy, "ai_context", None),
             ai_confidence_threshold=getattr(policy, "ai_confidence_threshold", 0.8),
             ai_fallback_behavior=getattr(policy, "ai_fallback_behavior", "escalate"),
-            escalation_policy=getattr(policy, "escalation_policy_name", None),
+            escalation_policy=escalation_policy_name,
         )
         policy_defs.append(policy_def)
-
-    # Build policy name lookup
-    policy_name_map = {str(p.id): p.name for p in policies}
 
     # Export tool configurations
     tool_configs = crud_tool_configuration.get_multi_by_account(
