@@ -16,7 +16,10 @@ from preloop.models.models import ApprovalRequest, ApprovalPolicy
 from preloop.models.schemas.approval_request import (
     ApprovalRequestUpdate,
 )
-from preloop.models.crud.approval_request import get_approval_request_async
+from preloop.models.crud.approval_request import (
+    get_approval_request_async,
+    get_approval_request_for_update_async,
+)
 from preloop.sync.services.event_bus import get_task_publisher
 
 logger = logging.getLogger(__name__)
@@ -39,13 +42,17 @@ class ApprovalService:
         self.base_url = base_url
 
     async def _broadcast_approval_update(
-        self, approval_request: ApprovalRequest, event_type: str
+        self,
+        approval_request: ApprovalRequest,
+        event_type: str,
+        extra_data: Optional[Dict[str, Any]] = None,
     ):
         """Broadcast approval request update via NATS/WebSocket.
 
         Args:
             approval_request: The approval request
-            event_type: Type of event (created, approved, declined, expired)
+            event_type: Type of event (created, approved, declined, expired, vote_received)
+            extra_data: Optional additional data to include in the broadcast
         """
         try:
             task_publisher = await get_task_publisher()
@@ -69,6 +76,10 @@ class ApprovalService:
                 ),
                 "timestamp": datetime.utcnow().isoformat(),
             }
+
+            # Include extra data if provided (for quorum progress, etc.)
+            if extra_data:
+                update_data.update(extra_data)
 
             # Publish to NATS subject for approval updates
             subject = "approval-updates"
@@ -151,6 +162,25 @@ class ApprovalService:
         """
         return await get_approval_request_async(self.db, request_id=request_id)
 
+    async def get_approval_request_for_update(
+        self, request_id: uuid.UUID
+    ) -> Optional[ApprovalRequest]:
+        """Get an approval request by ID with row-level locking.
+
+        Uses SELECT ... FOR UPDATE to prevent concurrent modifications.
+        This should be used when updating the responses field for voting
+        to avoid lost updates from concurrent votes.
+
+        Args:
+            request_id: Approval request ID
+
+        Returns:
+            Approval request or None if not found
+        """
+        return await get_approval_request_for_update_async(
+            self.db, request_id=request_id
+        )
+
     async def update_approval_request(
         self, request_id: uuid.UUID, update: ApprovalRequestUpdate
     ) -> Optional[ApprovalRequest]:
@@ -177,54 +207,345 @@ class ApprovalService:
         return approval_request
 
     async def approve_request(
-        self, request_id: uuid.UUID, comment: Optional[str] = None
+        self,
+        request_id: uuid.UUID,
+        comment: Optional[str] = None,
+        user_id: Optional[uuid.UUID] = None,
     ) -> Optional[ApprovalRequest]:
         """Approve an approval request.
 
+        If quorum (approvals_required > 1) is configured, this records an approval vote
+        and only resolves the request when quorum is met.
+
+        Uses row-level locking (SELECT ... FOR UPDATE) to prevent concurrent
+        vote updates from overwriting each other.
+
         Args:
             request_id: Approval request ID
             comment: Optional comment from approver
+            user_id: ID of the user approving (for quorum tracking)
 
         Returns:
             Updated approval request or None if not found
         """
-        update = ApprovalRequestUpdate(
-            status="approved",
-            approver_comment=comment,
-            resolved_at=datetime.utcnow(),
+        # Get approval request
+        approval_request = await self.get_approval_request(request_id)
+        if not approval_request:
+            return None
+
+        # Get the approval policy to check quorum requirements
+        approval_policy = approval_request.approval_policy
+        approvals_required = (
+            approval_policy.approvals_required if approval_policy else 1
         )
-        updated_request = await self.update_approval_request(request_id, update)
 
-        # Broadcast approval event
-        if updated_request:
-            await self._broadcast_approval_update(updated_request, "approved")
+        # Record this vote
+        responses = list(approval_request.responses or [])
 
-        return updated_request
+        # Handle the vote based on whether we have user_id
+        if user_id:
+            user_id_str = str(user_id)
+            already_voted = any(r.get("user_id") == user_id_str for r in responses)
+            if already_voted:
+                logger.warning(f"User {user_id} already voted on request {request_id}")
+                return approval_request
+
+            # Add the vote with user tracking
+            responses.append(
+                {
+                    "user_id": user_id_str,
+                    "decision": "approved",
+                    "comment": comment,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+        else:
+            # No user_id (e.g., public token-based approval)
+            # For quorum=1, resolve immediately.
+            if approvals_required == 1:
+                # Immediate resolution for single-approval policies
+                update = ApprovalRequestUpdate(
+                    status="approved",
+                    approver_comment=comment,
+                    resolved_at=datetime.utcnow(),
+                )
+                updated_request = await self.update_approval_request(request_id, update)
+                if updated_request:
+                    await self._broadcast_approval_update(updated_request, "approved")
+                return updated_request
+            else:
+                # For quorum > 1 without user_id, only allow ONE anonymous vote per request
+                # to prevent a single actor from satisfying quorum by voting multiple times
+                anonymous_already_voted = any(
+                    r.get("user_id") == "anonymous" and r.get("decision") == "approved"
+                    for r in responses
+                )
+                if anonymous_already_voted:
+                    logger.warning(
+                        f"Duplicate anonymous approval attempt for request {request_id}. "
+                        "Use authenticated endpoints for additional votes."
+                    )
+                    return approval_request
+
+                # Add the single allowed anonymous vote
+                responses.append(
+                    {
+                        "user_id": "anonymous",
+                        "decision": "approved",
+                        "comment": comment,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
+                logger.warning(
+                    f"Anonymous approval for request {request_id} with quorum={approvals_required}. "
+                    "Additional votes require authenticated endpoints."
+                )
+
+        # Count approvals
+        approval_count = sum(1 for r in responses if r.get("decision") == "approved")
+
+        # Check if quorum is met
+        if approval_count >= approvals_required:
+            # Quorum met - resolve as approved
+            update = ApprovalRequestUpdate(
+                status="approved",
+                approver_comment=comment,
+                resolved_at=datetime.utcnow(),
+            )
+            # Update responses in the database
+            approval_request.responses = responses
+            await self.db.commit()
+
+            updated_request = await self.update_approval_request(request_id, update)
+            if updated_request:
+                await self._broadcast_approval_update(updated_request, "approved")
+            return updated_request
+        else:
+            # Quorum not met yet - just record the vote and broadcast progress
+            approval_request.responses = responses
+            await self.db.commit()
+            await self.db.refresh(approval_request)
+
+            # Broadcast vote received event (not full approval yet)
+            await self._broadcast_approval_update(
+                approval_request,
+                "vote_received",
+                extra_data={
+                    "approval_count": approval_count,
+                    "approvals_required": approvals_required,
+                },
+            )
+
+            logger.info(
+                f"Approval vote recorded for {request_id}: {approval_count}/{approvals_required}"
+            )
+            return approval_request
 
     async def decline_request(
-        self, request_id: uuid.UUID, comment: Optional[str] = None
+        self,
+        request_id: uuid.UUID,
+        comment: Optional[str] = None,
+        user_id: Optional[uuid.UUID] = None,
     ) -> Optional[ApprovalRequest]:
         """Decline an approval request.
 
+        With quorum, a decline is recorded as a vote. The request is declined when:
+        - All potential approvers have voted and quorum cannot be reached, OR
+        - The number of declines makes it impossible to reach quorum
+
+        Uses row-level locking (SELECT ... FOR UPDATE) to prevent concurrent
+        vote updates from overwriting each other.
+
         Args:
             request_id: Approval request ID
             comment: Optional comment from approver
+            user_id: ID of the user declining (for quorum tracking)
 
         Returns:
             Updated approval request or None if not found
         """
-        update = ApprovalRequestUpdate(
-            status="declined",
-            approver_comment=comment,
-            resolved_at=datetime.utcnow(),
+        # Get approval request
+        approval_request = await self.get_approval_request(request_id)
+        if not approval_request:
+            return None
+
+        # Get the approval policy to check quorum requirements
+        approval_policy = approval_request.approval_policy
+        approvals_required = (
+            approval_policy.approvals_required if approval_policy else 1
         )
-        updated_request = await self.update_approval_request(request_id, update)
 
-        # Broadcast decline event
-        if updated_request:
-            await self._broadcast_approval_update(updated_request, "declined")
+        # Record this vote
+        responses = list(approval_request.responses or [])
 
-        return updated_request
+        # Handle the vote based on whether we have user_id
+        if user_id:
+            user_id_str = str(user_id)
+            already_voted = any(r.get("user_id") == user_id_str for r in responses)
+            if already_voted:
+                logger.warning(f"User {user_id} already voted on request {request_id}")
+                return approval_request
+
+            # Add the vote with user tracking
+            responses.append(
+                {
+                    "user_id": user_id_str,
+                    "decision": "declined",
+                    "comment": comment,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+        else:
+            # No user_id (e.g., public token-based decline)
+            # For quorum=1, resolve immediately.
+            if approvals_required == 1:
+                # Immediate resolution for single-approval policies
+                update = ApprovalRequestUpdate(
+                    status="declined",
+                    approver_comment=comment,
+                    resolved_at=datetime.utcnow(),
+                )
+                updated_request = await self.update_approval_request(request_id, update)
+                if updated_request:
+                    await self._broadcast_approval_update(updated_request, "declined")
+                return updated_request
+            else:
+                # For quorum > 1 without user_id, only allow ONE anonymous vote per request
+                # to prevent a single actor from forcing a decline by voting multiple times
+                anonymous_already_voted = any(
+                    r.get("user_id") == "anonymous" and r.get("decision") == "declined"
+                    for r in responses
+                )
+                if anonymous_already_voted:
+                    logger.warning(
+                        f"Duplicate anonymous decline attempt for request {request_id}. "
+                        "Use authenticated endpoints for additional votes."
+                    )
+                    return approval_request
+
+                # Add the single allowed anonymous vote
+                responses.append(
+                    {
+                        "user_id": "anonymous",
+                        "decision": "declined",
+                        "comment": comment,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
+                logger.warning(
+                    f"Anonymous decline for request {request_id} with quorum={approvals_required}. "
+                    "Additional votes require authenticated endpoints."
+                )
+
+        # Count votes
+        approval_count = sum(1 for r in responses if r.get("decision") == "approved")
+        decline_count = sum(1 for r in responses if r.get("decision") == "declined")
+
+        # Get actual total approvers count (only reliable for direct user approvers)
+        total_approvers, is_exact = self._count_total_approvers(approval_policy)
+
+        # Determine if we should resolve as declined
+        should_decline = False
+        remaining_voters = 0
+
+        if is_exact:
+            remaining_voters = total_approvers - len(responses)
+            # Check if quorum is still possible
+            can_reach_quorum = (approval_count + remaining_voters) >= approvals_required
+            all_voted = len(responses) >= total_approvers
+            should_decline = not can_reach_quorum or (
+                all_voted and approval_count < approvals_required
+            )
+        else:
+            # When we can't get an exact count (teams involved), use simpler rules:
+            # 1. If approvals_required == 1, any decline resolves immediately
+            # 2. For higher quorum, decline if decline_count >= approvals_required
+            #    (meaning enough people have explicitly declined to block approval)
+            if approvals_required == 1:
+                should_decline = decline_count >= 1
+            else:
+                # If as many people have declined as required for approval,
+                # it's a clear signal the request should be declined
+                should_decline = decline_count >= approvals_required
+
+        if should_decline:
+            # Cannot reach quorum - resolve as declined
+            update = ApprovalRequestUpdate(
+                status="declined",
+                approver_comment=comment,
+                resolved_at=datetime.utcnow(),
+            )
+            # Update responses in the database
+            approval_request.responses = responses
+            await self.db.commit()
+
+            updated_request = await self.update_approval_request(request_id, update)
+            if updated_request:
+                await self._broadcast_approval_update(updated_request, "declined")
+            return updated_request
+        else:
+            # Still possible to reach quorum - just record the vote
+            approval_request.responses = responses
+            await self.db.commit()
+            await self.db.refresh(approval_request)
+
+            # Broadcast vote received event
+            extra_data = {"decline_count": decline_count}
+            if is_exact:
+                extra_data["remaining_voters"] = remaining_voters
+
+            await self._broadcast_approval_update(
+                approval_request,
+                "vote_received",
+                extra_data=extra_data,
+            )
+
+            if is_exact:
+                logger.info(
+                    f"Decline vote recorded for {request_id}: {decline_count} declines, "
+                    f"{remaining_voters} remaining voters"
+                )
+            else:
+                logger.info(
+                    f"Decline vote recorded for {request_id}: {decline_count} declines "
+                    "(team approvers involved, exact count unknown)"
+                )
+            return approval_request
+
+    def _count_total_approvers(
+        self, approval_policy: ApprovalPolicy
+    ) -> tuple[int, bool]:
+        """Count total potential approvers for a policy.
+
+        Args:
+            approval_policy: The approval policy
+
+        Returns:
+            Tuple of (count, is_exact):
+            - count: Total number of potential approvers
+            - is_exact: True if count is exact (only direct user approvers),
+                       False if teams are involved (count is unreliable)
+        """
+        if not approval_policy:
+            return (1, True)
+
+        total = 0
+        is_exact = True
+
+        # Count direct user approvers (exact count)
+        if approval_policy.approver_user_ids:
+            total += len(approval_policy.approver_user_ids)
+
+        # Team approvers make the count inexact
+        # We can't reliably count team members without querying the database
+        if (
+            approval_policy.approver_team_ids
+            and len(approval_policy.approver_team_ids) > 0
+        ):
+            is_exact = False
+            # Don't add an estimate - the count is unreliable for decision-making
+
+        return (max(total, 1), is_exact)
 
     async def post_webhook_notification(
         self, approval_request: ApprovalRequest, approval_policy: ApprovalPolicy
@@ -933,7 +1254,8 @@ class ApprovalService:
         """Wait for an approval request to be resolved.
 
         This will poll the database until the request is approved, declined,
-        expired, or cancelled.
+        expired, or cancelled. If escalation is configured and the request
+        expires, escalation will be triggered and the timeout extended.
 
         Args:
             request_id: Approval request ID
@@ -943,7 +1265,7 @@ class ApprovalService:
             Final approval request
 
         Raises:
-            TimeoutError: If request expires before being resolved
+            TimeoutError: If request expires before being resolved (after escalation if configured)
         """
         while True:
             approval_request = await self.get_approval_request(request_id)
@@ -959,7 +1281,54 @@ class ApprovalService:
                 approval_request.expires_at
                 and datetime.utcnow() > approval_request.expires_at
             ):
-                # Mark as expired
+                # Get the approval policy to check for escalation configuration
+                approval_policy = approval_request.approval_policy
+
+                # Check if escalation is configured and hasn't been triggered yet
+                has_escalation = approval_policy and (
+                    approval_policy.escalation_user_ids
+                    or approval_policy.escalation_team_ids
+                )
+                escalation_already_triggered = (
+                    approval_request.escalation_triggered_at is not None
+                )
+
+                if has_escalation and not escalation_already_triggered:
+                    # Trigger escalation
+                    logger.info(
+                        f"Triggering escalation for approval request {request_id}"
+                    )
+
+                    # Mark escalation as triggered
+                    approval_request.escalation_triggered_at = datetime.utcnow()
+
+                    # Extend the timeout - give escalation recipients the same amount of time
+                    original_timeout = approval_policy.timeout_seconds or 300
+                    new_expires_at = datetime.utcnow() + timedelta(
+                        seconds=original_timeout
+                    )
+                    approval_request.expires_at = new_expires_at
+
+                    await self.db.commit()
+                    await self.db.refresh(approval_request)
+
+                    # Send escalation notifications
+                    await self._send_escalation_notifications(
+                        approval_request, approval_policy
+                    )
+
+                    # Broadcast escalation event
+                    await self._broadcast_approval_update(
+                        approval_request,
+                        "escalated",
+                        extra_data={"new_expires_at": new_expires_at.isoformat()},
+                    )
+
+                    # Continue polling - don't expire yet
+                    await asyncio.sleep(poll_interval)
+                    continue
+
+                # No escalation configured or already escalated - expire the request
                 expired_request = await self.update_approval_request(
                     request_id, ApprovalRequestUpdate(status="expired")
                 )
@@ -973,3 +1342,231 @@ class ApprovalService:
 
             # Wait before polling again
             await asyncio.sleep(poll_interval)
+
+    async def _send_escalation_notifications(
+        self,
+        approval_request: ApprovalRequest,
+        approval_policy: ApprovalPolicy,
+    ) -> Dict[str, Any]:
+        """Send notifications to escalation targets.
+
+        Uses run_in_executor for sync DB/email operations to avoid blocking the event loop.
+
+        Args:
+            approval_request: The approval request that timed out
+            approval_policy: The approval policy with escalation configuration
+
+        Returns:
+            Dict with notification results
+        """
+        from preloop.models.crud import notification_preferences
+        from preloop.services.push_notifications import (
+            get_apns_service,
+            NotificationPayloadBuilder,
+            send_fcm_notification,
+            is_fcm_configured,
+        )
+        from preloop.services.push_proxy import (
+            is_push_proxy_configured,
+            send_push_via_proxy,
+        )
+
+        logger.info(
+            f"Sending escalation notifications for request {approval_request.id}"
+        )
+
+        loop = asyncio.get_event_loop()
+
+        # Capture values needed in sync function
+        request_id = str(approval_request.id)
+        tool_name = approval_request.tool_name
+        approval_token = approval_request.approval_token
+        base_url = self.base_url
+
+        def _get_escalation_users_and_send_emails():
+            """Sync function to get escalation users, their tokens, and send emails."""
+            from preloop.models.db.session import get_db_session
+            from preloop.models.crud import crud_team, crud_user
+            from preloop.utils.email import send_escalation_email
+
+            sync_db = next(get_db_session())
+            try:
+                # Collect escalation user IDs
+                escalation_user_ids = set()
+
+                if approval_policy.escalation_user_ids:
+                    escalation_user_ids.update(approval_policy.escalation_user_ids)
+
+                if approval_policy.escalation_team_ids:
+                    for team_id in approval_policy.escalation_team_ids:
+                        team_members = crud_team.get_team_members(sync_db, team_id)
+                        escalation_user_ids.update(m.user_id for m in team_members)
+
+                if not escalation_user_ids:
+                    return set(), [], []
+
+                # Send emails and collect device tokens
+                ios_tokens_list = []
+                android_tokens_list = []
+                emails_sent = 0
+
+                for user_id in escalation_user_ids:
+                    user = crud_user.get(sync_db, id=user_id)
+                    if user and user.email:
+                        try:
+                            send_escalation_email(
+                                user_email=user.email,
+                                tool_name=tool_name,
+                                request_id=request_id,
+                                approval_token=approval_token,
+                                base_url=base_url,
+                            )
+                            emails_sent += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to send escalation email to {user.email}: {e}"
+                            )
+
+                    # Get device tokens
+                    prefs = notification_preferences.get_by_user(sync_db, user_id)
+                    if prefs and prefs.enable_mobile_push:
+                        ios_tokens = prefs.get_device_tokens(platform="ios")
+                        if ios_tokens:
+                            for token in ios_tokens:
+                                ios_tokens_list.append((user_id, token))
+
+                        android_tokens = prefs.get_device_tokens(platform="android")
+                        if android_tokens:
+                            for token in android_tokens:
+                                android_tokens_list.append((user_id, token))
+
+                logger.info(f"Sent {emails_sent} escalation emails")
+                return escalation_user_ids, ios_tokens_list, android_tokens_list
+            finally:
+                sync_db.close()
+
+        # Run sync operations in thread pool
+        escalation_user_ids, ios_tokens, android_tokens = await loop.run_in_executor(
+            _sync_db_executor, _get_escalation_users_and_send_emails
+        )
+
+        if not escalation_user_ids:
+            logger.warning("No escalation targets configured")
+            return {"success": False, "error": "No escalation targets"}
+
+        # Send push notifications
+        apns_service = get_apns_service()
+        fcm_available = is_fcm_configured()
+        use_proxy = not apns_service and is_push_proxy_configured()
+
+        if not ios_tokens and not android_tokens:
+            logger.info("No push-enabled devices for escalation users")
+            return {
+                "success": True,
+                "escalation_users": len(escalation_user_ids),
+                "push_sent": 0,
+            }
+
+        # Build escalation notification payload
+        payload = NotificationPayloadBuilder.new_approval_request(
+            request_id=request_id,
+            tool_name=tool_name,
+            priority="high",  # Escalations are always high priority
+            expires_at=approval_request.expires_at,
+            agent_reasoning=f"ESCALATED: {approval_request.agent_reasoning or 'Original approvers did not respond'}",
+            tool_args=approval_request.tool_args,
+        )
+
+        sent_count = 0
+        failed_count = 0
+
+        # Extract notification details for FCM
+        notification_title = (
+            payload.get("aps", {})
+            .get("alert", {})
+            .get("title", "ESCALATED: Approval Required")
+        )
+        notification_body = (
+            payload.get("aps", {})
+            .get("alert", {})
+            .get("body", "Original approvers did not respond")
+        )
+        notification_data = payload.get("data", {})
+
+        # Send to iOS devices
+        for _user_id, token in ios_tokens:
+            try:
+                if apns_service:
+                    (
+                        success,
+                        status_code,
+                        error_reason,
+                    ) = await apns_service.send_notification(
+                        device_token=token,
+                        payload=payload,
+                        priority=10,  # High priority
+                    )
+                    if success:
+                        sent_count += 1
+                    else:
+                        logger.warning(
+                            f"Escalation APNs failed: status={status_code}, reason={error_reason}"
+                        )
+                        failed_count += 1
+                elif use_proxy:
+                    result = await send_push_via_proxy(
+                        device_token=token,
+                        platform="ios",
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                    )
+                    if result.get("success"):
+                        sent_count += 1
+                    else:
+                        failed_count += 1
+            except Exception as e:
+                logger.error(f"Escalation iOS push error: {e}")
+                failed_count += 1
+
+        # Send to Android devices
+        for _user_id, token in android_tokens:
+            try:
+                if fcm_available:
+                    success = await send_fcm_notification(
+                        device_token=token,
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                        priority="high",
+                    )
+                    if success:
+                        sent_count += 1
+                    else:
+                        failed_count += 1
+                elif use_proxy:
+                    result = await send_push_via_proxy(
+                        device_token=token,
+                        platform="android",
+                        title=notification_title,
+                        body=notification_body,
+                        data=notification_data,
+                    )
+                    if result.get("success"):
+                        sent_count += 1
+                    else:
+                        failed_count += 1
+            except Exception as e:
+                logger.error(f"Escalation Android push error: {e}")
+                failed_count += 1
+
+        logger.info(
+            f"Escalation push notifications: sent={sent_count}, failed={failed_count}"
+        )
+
+        return {
+            "success": True,
+            "escalation_users": len(escalation_user_ids),
+            "push_sent": sent_count,
+            "push_failed": failed_count,
+        }

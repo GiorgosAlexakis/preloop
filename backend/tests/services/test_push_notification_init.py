@@ -174,13 +174,19 @@ class TestGetAPNsService:
                 assert service is not None
                 assert service.bundle_id == "spacecode.ai.Preloop"
 
-    def test_get_apns_service_default_sandbox_mode(self):
-        """Test that sandbox mode is default if APNS_USE_SANDBOX not specified."""
+    def test_get_apns_service_default_production_mode(self):
+        """Test that production mode is default if APNS_USE_SANDBOX not specified.
+
+        Production is the default because:
+        1. Most deployments are production environments
+        2. App Store/Google Play apps use production push tokens
+        3. Sandbox mode should be explicitly enabled for development
+        """
         env_vars = {
             "APNS_TEAM_ID": "TESTTEAM12",
             "APNS_KEY_ID": "TESTKEY123",
             "APNS_AUTH_KEY_PATH": "/fake/path.p8",
-            # APNS_USE_SANDBOX not specified
+            # APNS_USE_SANDBOX not specified - defaults to production
         }
 
         with patch(
@@ -190,4 +196,4 @@ class TestGetAPNsService:
                 service = get_apns_service()
 
                 assert service is not None
-                assert service.apns_server == "https://api.sandbox.push.apple.com"
+                assert service.apns_server == "https://api.push.apple.com"

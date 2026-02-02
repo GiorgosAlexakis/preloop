@@ -125,6 +125,22 @@ class ApprovalRequest(Base):
         comment="Comment from the approver",
     )
 
+    # Quorum tracking: stores individual votes
+    # Format: [{"user_id": "uuid", "decision": "approved"|"declined", "comment": "...", "timestamp": "iso"}]
+    responses: Mapped[Optional[list]] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="Individual approval/decline responses for quorum tracking",
+    )
+
+    # Escalation tracking
+    escalation_triggered_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        comment="When escalation was triggered (if applicable)",
+    )
+
     webhook_posted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime,
         nullable=True,

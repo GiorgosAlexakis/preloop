@@ -237,83 +237,131 @@ class TestApproveRequest:
     """Test approve_request method."""
 
     async def test_approve_request_success(
-        self, approval_service, sample_approval_request
+        self, approval_service, sample_approval_request, sample_approval_policy
     ):
         """Test approving a request."""
         request_id = sample_approval_request.id
         comment = "Approved for production use"
 
-        # Mock update_approval_request
+        # Set up the approval request with policy (quorum=1 by default)
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = []
+        sample_approval_policy.approvals_required = 1
+
+        # Mock get_approval_request_for_update (used for row-level locking) and update_approval_request
         with patch.object(
             approval_service,
-            "update_approval_request",
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
             return_value=sample_approval_request,
-        ) as mock_update:
-            result = await approval_service.approve_request(request_id, comment)
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                result = await approval_service.approve_request(request_id, comment)
 
-            assert result == sample_approval_request
-            # Verify update was called with correct parameters
-            assert mock_update.called
-            call_args = mock_update.call_args
-            assert call_args[0][0] == request_id
-            update = call_args[0][1]
-            assert update.status == "approved"
-            assert update.approver_comment == comment
+                assert result == sample_approval_request
+                # Verify update was called with correct parameters
+                assert mock_update.called
+                call_args = mock_update.call_args
+                assert call_args[0][0] == request_id
+                update = call_args[0][1]
+                assert update.status == "approved"
+                assert update.approver_comment == comment
 
     async def test_approve_request_without_comment(
-        self, approval_service, sample_approval_request
+        self, approval_service, sample_approval_request, sample_approval_policy
     ):
         """Test approving a request without a comment."""
         request_id = sample_approval_request.id
 
+        # Set up the approval request with policy
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = []
+        sample_approval_policy.approvals_required = 1
+
         with patch.object(
             approval_service,
-            "update_approval_request",
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
-            result = await approval_service.approve_request(request_id)
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ):
+                result = await approval_service.approve_request(request_id)
 
-            assert result == sample_approval_request
+                assert result == sample_approval_request
 
 
 class TestDeclineRequest:
     """Test decline_request method."""
 
     async def test_decline_request_success(
-        self, approval_service, sample_approval_request
+        self, approval_service, sample_approval_request, sample_approval_policy
     ):
         """Test declining a request."""
         request_id = sample_approval_request.id
         comment = "Security concerns"
 
+        # Set up the approval request with policy
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = []
+        sample_approval_policy.approvals_required = 1
+
         with patch.object(
             approval_service,
-            "update_approval_request",
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
             return_value=sample_approval_request,
-        ) as mock_update:
-            result = await approval_service.decline_request(request_id, comment)
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                result = await approval_service.decline_request(request_id, comment)
 
-            assert result == sample_approval_request
-            call_args = mock_update.call_args
-            assert call_args[0][0] == request_id
-            update = call_args[0][1]
-            assert update.status == "declined"
-            assert update.approver_comment == comment
+                assert result == sample_approval_request
+                call_args = mock_update.call_args
+                assert call_args[0][0] == request_id
+                update = call_args[0][1]
+                assert update.status == "declined"
+                assert update.approver_comment == comment
 
     async def test_decline_request_without_comment(
-        self, approval_service, sample_approval_request
+        self, approval_service, sample_approval_request, sample_approval_policy
     ):
         """Test declining a request without a comment."""
         request_id = sample_approval_request.id
 
+        # Set up the approval request with policy
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = []
+        sample_approval_policy.approvals_required = 1
+
         with patch.object(
             approval_service,
-            "update_approval_request",
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
-            result = await approval_service.decline_request(request_id)
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ):
+                result = await approval_service.decline_request(request_id)
 
-            assert result == sample_approval_request
+                assert result == sample_approval_request
 
 
 class TestPostWebhookNotification:
@@ -695,3 +743,293 @@ class TestWaitForApproval:
             )
 
             assert result == sample_approval_request
+
+
+class TestQuorumVoteTracking:
+    """Regression tests for quorum > 1 vote tracking."""
+
+    async def test_approve_request_quorum_not_met_records_vote(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that approval vote is recorded when quorum is not yet met."""
+        request_id = sample_approval_request.id
+        user_id = uuid.uuid4()
+
+        # Set up quorum > 1
+        sample_approval_policy.approvals_required = 2
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = []
+        sample_approval_request.status = "pending"
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "_broadcast_approval_update",
+                new_callable=AsyncMock,
+            ) as mock_broadcast:
+                result = await approval_service.approve_request(
+                    request_id, "First approval", user_id=user_id
+                )
+
+                # Vote should be recorded but status still pending
+                assert result.status == "pending"
+                assert len(result.responses) == 1
+                assert result.responses[0]["user_id"] == str(user_id)
+                assert result.responses[0]["decision"] == "approved"
+
+                # Should broadcast vote_received, not approved
+                mock_broadcast.assert_called()
+                call_args = mock_broadcast.call_args
+                assert call_args[0][1] == "vote_received"
+
+    async def test_approve_request_quorum_met_resolves(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that request resolves when quorum is met."""
+        request_id = sample_approval_request.id
+        user_id_1 = uuid.uuid4()
+        user_id_2 = uuid.uuid4()
+
+        # Set up quorum = 2 with one existing vote
+        sample_approval_policy.approvals_required = 2
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = [
+            {
+                "user_id": str(user_id_1),
+                "decision": "approved",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+        sample_approval_request.status = "pending"
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    result = await approval_service.approve_request(
+                        request_id, "Second approval", user_id=user_id_2
+                    )
+
+                    # Should call update_approval_request with approved status
+                    assert mock_update.called
+                    update_arg = mock_update.call_args[0][1]
+                    assert update_arg.status == "approved"
+
+    async def test_approve_request_duplicate_vote_rejected(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that duplicate votes from same user are rejected."""
+        request_id = sample_approval_request.id
+        user_id = uuid.uuid4()
+
+        # Set up with existing vote from same user
+        sample_approval_policy.approvals_required = 2
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = [
+            {
+                "user_id": str(user_id),
+                "decision": "approved",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+        sample_approval_request.status = "pending"
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            result = await approval_service.approve_request(
+                request_id, "Duplicate vote", user_id=user_id
+            )
+
+            # Should return unchanged - no new vote added
+            assert len(result.responses) == 1
+
+    async def test_anonymous_vote_capped_at_one(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that only one anonymous vote is allowed per request."""
+        request_id = sample_approval_request.id
+
+        # Set up with existing anonymous vote
+        sample_approval_policy.approvals_required = 3
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = [
+            {
+                "user_id": "anonymous",
+                "decision": "approved",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+        sample_approval_request.status = "pending"
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            # Try to add another anonymous vote (no user_id)
+            result = await approval_service.approve_request(
+                request_id, "Second anonymous vote", user_id=None
+            )
+
+            # Should return unchanged - duplicate anonymous vote rejected
+            assert len(result.responses) == 1
+
+
+class TestEscalationBehavior:
+    """Regression tests for escalation timeout behavior."""
+
+    @patch("asyncio.sleep", new_callable=AsyncMock)
+    async def test_wait_for_approval_triggers_escalation(
+        self,
+        mock_sleep,
+        approval_service,
+        sample_approval_request,
+        sample_approval_policy,
+    ):
+        """Test that escalation is triggered when timeout expires with escalation configured."""
+        # Set up expired request with escalation configured
+        sample_approval_request.status = "pending"
+        sample_approval_request.expires_at = datetime.utcnow() - timedelta(seconds=10)
+        sample_approval_request.escalation_triggered_at = None
+        sample_approval_policy.escalation_user_ids = [uuid.uuid4()]
+        sample_approval_policy.timeout_seconds = 60
+        sample_approval_request.approval_policy = sample_approval_policy
+
+        call_count = 0
+
+        async def mock_get_request(request_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call: expired, escalation not triggered
+                return sample_approval_request
+            else:
+                # After escalation: return approved
+                approved = MagicMock(spec=ApprovalRequest)
+                approved.status = "approved"
+                return approved
+
+        with patch.object(
+            approval_service,
+            "get_approval_request",
+            side_effect=mock_get_request,
+        ):
+            with patch.object(
+                approval_service,
+                "_send_escalation_notifications",
+                new_callable=AsyncMock,
+                return_value={"success": True},
+            ) as mock_escalation:
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    result = await approval_service.wait_for_approval(
+                        sample_approval_request.id, poll_interval=0.1
+                    )
+
+                    # Escalation should have been triggered
+                    assert mock_escalation.called
+                    assert result.status == "approved"
+
+    async def test_wait_for_approval_no_escalation_when_already_triggered(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that escalation is not triggered twice."""
+        # Set up expired request with escalation already triggered
+        sample_approval_request.status = "pending"
+        sample_approval_request.expires_at = datetime.utcnow() - timedelta(seconds=10)
+        sample_approval_request.escalation_triggered_at = datetime.utcnow() - timedelta(
+            seconds=5
+        )
+        sample_approval_policy.escalation_user_ids = [uuid.uuid4()]
+        sample_approval_request.approval_policy = sample_approval_policy
+
+        with patch.object(
+            approval_service,
+            "get_approval_request",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ):
+                with patch.object(
+                    approval_service,
+                    "_send_escalation_notifications",
+                    new_callable=AsyncMock,
+                ) as mock_escalation:
+                    with patch.object(
+                        approval_service,
+                        "_broadcast_approval_update",
+                        new_callable=AsyncMock,
+                    ):
+                        with pytest.raises(TimeoutError):
+                            await approval_service.wait_for_approval(
+                                sample_approval_request.id, poll_interval=0.1
+                            )
+
+                        # Escalation should NOT have been called again
+                        assert not mock_escalation.called
+
+    async def test_wait_for_approval_expires_without_escalation(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that request expires normally when no escalation configured."""
+        sample_approval_request.status = "pending"
+        sample_approval_request.expires_at = datetime.utcnow() - timedelta(seconds=10)
+        sample_approval_request.escalation_triggered_at = None
+        sample_approval_policy.escalation_user_ids = None
+        sample_approval_policy.escalation_team_ids = None
+        sample_approval_request.approval_policy = sample_approval_policy
+
+        with patch.object(
+            approval_service,
+            "get_approval_request",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ):
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    with pytest.raises(TimeoutError) as exc_info:
+                        await approval_service.wait_for_approval(
+                            sample_approval_request.id, poll_interval=0.1
+                        )
+
+                    assert "expired without response" in str(exc_info.value)
