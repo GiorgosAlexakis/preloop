@@ -9,7 +9,20 @@ spec:
   instances: {{ .Values.database.cnpg.instances }}
   imageName: {{ .Values.database.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
-  parameters: {{ .Values.database.cnpg.parameters }}
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.database.cnpg.parameters }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+      {{- if .Values.database.cnpg.resilience.enabled }}
+      # Resilience settings - prevent stuck queries and connections
+      statement_timeout: {{ .Values.database.cnpg.resilience.statement_timeout | quote }}
+      idle_in_transaction_session_timeout: {{ .Values.database.cnpg.resilience.idle_in_transaction_session_timeout | quote }}
+      lock_timeout: {{ .Values.database.cnpg.resilience.lock_timeout | quote }}
+      max_wal_size: {{ .Values.database.cnpg.resilience.max_wal_size | quote }}
+      min_wal_size: {{ .Values.database.cnpg.resilience.min_wal_size | quote }}
+      checkpoint_completion_target: {{ .Values.database.cnpg.resilience.checkpoint_completion_target | quote }}
+      {{- end }}
   # Enable pgvector extension if requested
   {{- if .Values.database.cnpg.pgvector.enabled }}
   bootstrap:
