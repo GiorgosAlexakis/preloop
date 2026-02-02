@@ -97,9 +97,13 @@ class FlowTriggerService:
         if not account_id:
             return None
 
-        # Get tracker_id from event source (it's a tracker UUID)
-        tracker_id = event_data.get("source")
+        # Get tracker_id from dedicated field (UUID for project lookup)
+        tracker_id = event_data.get("tracker_id")
         if not tracker_id:
+            logger.debug(
+                f"No tracker_id in event_data, skipping project extraction "
+                f"(source={source})"
+            )
             return None
 
         repo_identifier = None
@@ -460,7 +464,8 @@ class FlowTriggerService:
 
         Args:
             event_data: Dictionary containing:
-                - source: Event source (e.g., 'github', 'gitlab', 'jira')
+                - source: Tracker type (e.g., 'github', 'gitlab', 'jira', 'webhook')
+                - tracker_id: Tracker UUID for project lookup (optional, used for filtering)
                 - type: Event type (e.g., 'push', 'issue_created')
                 - payload: Event payload from the tracker
                 - account_id: Account ID for scoping
