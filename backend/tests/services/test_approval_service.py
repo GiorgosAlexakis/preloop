@@ -248,10 +248,10 @@ class TestApproveRequest:
         sample_approval_request.responses = []
         sample_approval_policy.approvals_required = 1
 
-        # Mock get_approval_request_for_update (used for row-level locking) and update_approval_request
+        # Mock get_approval_request and update_approval_request
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -285,7 +285,7 @@ class TestApproveRequest:
 
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -317,7 +317,7 @@ class TestDeclineRequest:
 
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -349,7 +349,7 @@ class TestDeclineRequest:
 
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -763,7 +763,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -809,7 +809,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -854,7 +854,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -885,7 +885,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request_for_update",
+            "get_approval_request",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):

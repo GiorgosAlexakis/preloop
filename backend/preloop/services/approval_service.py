@@ -773,6 +773,24 @@ class ApprovalService:
         """
         results = {}
 
+        # Guard against duplicate notifications - check if request is too old to be new
+        # If request was created more than 30 seconds ago, skip notifications
+        # (this handles cases where send_notifications is called multiple times)
+        try:
+            if approval_request.requested_at:
+                request_age = (
+                    datetime.utcnow() - approval_request.requested_at
+                ).total_seconds()
+                if request_age > 30:
+                    logger.warning(
+                        f"Skipping notifications for approval request {approval_request.id} - "
+                        f"request is {request_age:.1f}s old (likely duplicate call)"
+                    )
+                    return {"skipped": True, "reason": "request_too_old"}
+        except (TypeError, AttributeError):
+            # In tests, requested_at might be a mock - just continue
+            pass
+
         # Send email notifications to users who have email enabled
         try:
             email_result = await self._send_email_notification(
