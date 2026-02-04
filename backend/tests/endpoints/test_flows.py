@@ -427,7 +427,11 @@ async def test_read_flow_executions(mock_account: Account, mocker: MockerFixture
     # Assert
     assert isinstance(result, list)
     mock_crud_flow_execution.get_multi.assert_called_once_with(
-        mocker.ANY, account_id=mock_account.account_id, skip=0, limit=100
+        mocker.ANY,
+        account_id=mock_account.account_id,
+        skip=0,
+        limit=100,
+        eager_load=True,
     )
 
 

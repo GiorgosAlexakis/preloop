@@ -27,12 +27,25 @@ spec:
       log_statement: {{ .Values.database.cnpg.logging.log_statement | quote }}
       log_line_prefix: {{ .Values.database.cnpg.logging.log_line_prefix | quote }}
       {{- end }}
-  # Enable pgvector extension if requested
-  {{- if .Values.database.cnpg.pgvector.enabled }}
+      {{- if .Values.database.cnpg.queryAnalysis.enabled }}
+      shared_preload_libraries: "pg_stat_statements,auto_explain"
+      pg_stat_statements.track: "all"
+      pg_stat_statements.max: "10000"
+      auto_explain.log_min_duration: {{ .Values.database.cnpg.queryAnalysis.autoExplainMinDuration | quote }}
+      auto_explain.log_analyze: "true"
+      auto_explain.log_buffers: "true"
+      {{- end }}
+  # Enable extensions
+  {{- if or .Values.database.cnpg.pgvector.enabled .Values.database.cnpg.queryAnalysis.enabled }}
   bootstrap:
     initdb:
       postInitSQL:
+        {{- if .Values.database.cnpg.pgvector.enabled }}
         - CREATE EXTENSION IF NOT EXISTS vector;
+        {{- end }}
+        {{- if .Values.database.cnpg.queryAnalysis.enabled }}
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+        {{- end }}
         - ALTER USER {{ .Values.database.cnpg.auth.username }} WITH PASSWORD '{{ .Values.database.cnpg.auth.password }}';
   {{- end }}
 

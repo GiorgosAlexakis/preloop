@@ -275,15 +275,15 @@ class ApprovalService:
                 return updated_request
             else:
                 # For quorum > 1 without user_id, only allow ONE anonymous vote per request
-                # to prevent a single actor from satisfying quorum by voting multiple times
+                # to prevent a single actor from satisfying quorum by voting multiple times.
+                # Check for ANY anonymous vote (approve OR decline) to prevent double-voting.
                 anonymous_already_voted = any(
-                    r.get("user_id") == "anonymous" and r.get("decision") == "approved"
-                    for r in responses
+                    r.get("user_id") == "anonymous" for r in responses
                 )
                 if anonymous_already_voted:
                     logger.warning(
-                        f"Duplicate anonymous approval attempt for request {request_id}. "
-                        "Use authenticated endpoints for additional votes."
+                        f"Duplicate anonymous vote attempt for request {request_id}. "
+                        "Anonymous user already voted. Use authenticated endpoints for additional votes."
                     )
                     return approval_request
 
@@ -411,15 +411,15 @@ class ApprovalService:
                 return updated_request
             else:
                 # For quorum > 1 without user_id, only allow ONE anonymous vote per request
-                # to prevent a single actor from forcing a decline by voting multiple times
+                # to prevent a single actor from forcing a decline by voting multiple times.
+                # Check for ANY anonymous vote (approve OR decline) to prevent double-voting.
                 anonymous_already_voted = any(
-                    r.get("user_id") == "anonymous" and r.get("decision") == "declined"
-                    for r in responses
+                    r.get("user_id") == "anonymous" for r in responses
                 )
                 if anonymous_already_voted:
                     logger.warning(
-                        f"Duplicate anonymous decline attempt for request {request_id}. "
-                        "Use authenticated endpoints for additional votes."
+                        f"Duplicate anonymous vote attempt for request {request_id}. "
+                        "Anonymous user already voted. Use authenticated endpoints for additional votes."
                     )
                     return approval_request
 

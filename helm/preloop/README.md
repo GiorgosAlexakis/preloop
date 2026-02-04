@@ -81,6 +81,14 @@ helm uninstall preloop
 | `database.postgresql.persistence.enabled` | Enable PostgreSQL persistence                | `true`      |
 | `database.postgresql.persistence.size`   | PostgreSQL persistence size                    | `1Gi`       |
 | `database.postgresql.pgvector.enabled`   | Enable PGVector extension                      | `true`      |
+| `database.cnpg.resilience.enabled`       | Enable database resilience settings (timeouts) | `false`     |
+| `database.cnpg.resilience.statement_timeout` | Kill queries running longer than this (ms) | `300000`    |
+| `database.cnpg.resilience.idle_in_transaction_session_timeout` | Kill idle transactions (ms) | `300000` |
+| `database.cnpg.resilience.lock_timeout`  | Maximum time to wait for a lock (ms)           | `60000`     |
+| `database.cnpg.logging.enabled`          | Enable slow query logging                      | `false`     |
+| `database.cnpg.logging.log_min_duration_statement` | Log queries slower than this (ms) | `1000`      |
+| `database.cnpg.queryAnalysis.enabled`    | Enable pg_stat_statements and auto_explain     | `false`     |
+| `database.cnpg.queryAnalysis.autoExplainMinDuration` | Log EXPLAIN for queries slower than (ms) | `1000` |
 
 ### Environment parameters
 
@@ -94,6 +102,7 @@ helm uninstall preloop
 | `environment.jwtExpireMinutes` | JWT expiration time in minutes                        | `60`        |
 | `environment.logLevel`         | Log level                                             | `INFO`      |
 | `environment.logFormat`        | Log format                                            | `json`      |
+| `environment.skipExecutionRecovery` | Skip recovering orphaned executions on startup  | `false`     |
 
 ### Resource management parameters
 
@@ -242,6 +251,55 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 80
+```
+
+## Health Endpoints
+
+The API server exposes the following health endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `/api/v1/health` | Full health check including database connectivity |
+| `/api/v1/ping` | Lightweight liveness probe (no database check) |
+
+For Kubernetes probes, `/api/v1/ping` is recommended for liveness checks (fast, no dependencies) while `/api/v1/health` is suitable for readiness checks.
+
+## Database Production Settings
+
+For production deployments, enable resilience, logging, and query analysis:
+
+```yaml
+database:
+  cnpg:
+    instances: 3  # Primary + 2 standbys for HA
+    storage:
+      size: 20Gi  # Adequate storage for production data
+    resilience:
+      enabled: true
+      statement_timeout: "300000"  # 5 minutes
+      idle_in_transaction_session_timeout: "300000"
+      lock_timeout: "60000"
+    logging:
+      enabled: true
+      log_min_duration_statement: "1000"  # Log queries > 1 second
+    queryAnalysis:
+      enabled: true  # Enables pg_stat_statements and auto_explain
+      autoExplainMinDuration: "1000"
+```
+
+### Query Performance Analysis
+
+When `queryAnalysis.enabled` is true, you can find slow queries with:
+
+```sql
+-- Top 10 slowest queries by total time
+SELECT query, calls, total_exec_time, mean_exec_time, rows
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 10;
+
+-- Reset statistics after optimization
+SELECT pg_stat_statements_reset();
 ```
 
 ## Upgrading the Chart

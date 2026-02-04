@@ -248,10 +248,10 @@ class TestApproveRequest:
         sample_approval_request.responses = []
         sample_approval_policy.approvals_required = 1
 
-        # Mock get_approval_request and update_approval_request
+        # Mock get_approval_request_for_update and update_approval_request
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -285,7 +285,7 @@ class TestApproveRequest:
 
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -317,7 +317,7 @@ class TestDeclineRequest:
 
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -349,7 +349,7 @@ class TestDeclineRequest:
 
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -763,7 +763,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -809,7 +809,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -854,7 +854,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -885,7 +885,7 @@ class TestQuorumVoteTracking:
 
         with patch.object(
             approval_service,
-            "get_approval_request",
+            "get_approval_request_for_update",
             new_callable=AsyncMock,
             return_value=sample_approval_request,
         ):
@@ -896,6 +896,72 @@ class TestQuorumVoteTracking:
 
             # Should return unchanged - duplicate anonymous vote rejected
             assert len(result.responses) == 1
+
+    async def test_anonymous_cannot_vote_approve_and_decline(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that anonymous user cannot vote both approve AND decline (double-vote attack)."""
+        request_id = sample_approval_request.id
+
+        # Set up with existing anonymous APPROVAL
+        sample_approval_policy.approvals_required = 2
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = [
+            {
+                "user_id": "anonymous",
+                "decision": "approved",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+        sample_approval_request.status = "pending"
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            # Try to add an anonymous DECLINE (should be rejected as double-vote)
+            result = await approval_service.decline_request(
+                request_id, "Anonymous decline after approval", user_id=None
+            )
+
+            # Should return unchanged - anonymous already voted
+            assert len(result.responses) == 1
+            assert result.responses[0]["decision"] == "approved"
+
+    async def test_anonymous_cannot_vote_decline_and_approve(
+        self, approval_service, sample_approval_request, sample_approval_policy
+    ):
+        """Test that anonymous user cannot vote decline then approve (reverse double-vote attack)."""
+        request_id = sample_approval_request.id
+
+        # Set up with existing anonymous DECLINE
+        sample_approval_policy.approvals_required = 2
+        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.responses = [
+            {
+                "user_id": "anonymous",
+                "decision": "declined",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+        sample_approval_request.status = "pending"
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            # Try to add an anonymous APPROVAL (should be rejected as double-vote)
+            result = await approval_service.approve_request(
+                request_id, "Anonymous approval after decline", user_id=None
+            )
+
+            # Should return unchanged - anonymous already voted
+            assert len(result.responses) == 1
+            assert result.responses[0]["decision"] == "declined"
 
 
 class TestEscalationBehavior:
