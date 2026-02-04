@@ -22,6 +22,11 @@ spec:
       min_wal_size: {{ .Values.database.cnpg.resilience.min_wal_size | quote }}
       checkpoint_completion_target: {{ .Values.database.cnpg.resilience.checkpoint_completion_target | quote }}
       {{- end }}
+      {{- if .Values.database.cnpg.logging.enabled }}
+      log_min_duration_statement: {{ .Values.database.cnpg.logging.log_min_duration_statement | quote }}
+      log_statement: {{ .Values.database.cnpg.logging.log_statement | quote }}
+      log_line_prefix: {{ .Values.database.cnpg.logging.log_line_prefix | quote }}
+      {{- end }}
   # Enable pgvector extension if requested
   {{- if .Values.database.cnpg.pgvector.enabled }}
   bootstrap:

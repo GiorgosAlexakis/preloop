@@ -366,12 +366,77 @@ async def require_approval(
                     if elapsed >= timeout_seconds and not escalation_triggered:
                         # Check if we should escalate
                         if has_escalation:
-                            logger.info(
-                                f"[Polling] Initial timeout reached, triggering escalation for request {approval_request.id}"
-                            )
-                            escalation_triggered = True
+                            # Use row-level locking to prevent duplicate escalation
+                            # when multiple workers are polling the same request
+                            async with get_async_db_session() as escalation_db:
+                                from datetime import datetime, timedelta
+                                from preloop.models.crud.approval_request import (
+                                    get_approval_request_for_update_async,
+                                )
 
-                            # Send escalation notification via Context
+                                # Lock the row and check if already escalated
+                                fresh_request = (
+                                    await get_approval_request_for_update_async(
+                                        escalation_db, request_id=approval_request.id
+                                    )
+                                )
+
+                                if not fresh_request:
+                                    logger.warning(
+                                        f"[Polling] Request {approval_request.id} not found during escalation"
+                                    )
+                                    escalation_triggered = True
+                                    continue
+
+                                # Check if another worker already escalated
+                                if fresh_request.escalation_triggered_at is not None:
+                                    logger.info(
+                                        f"[Polling] Escalation already triggered by another worker at "
+                                        f"{fresh_request.escalation_triggered_at}"
+                                    )
+                                    escalation_triggered = True
+                                    # Reset elapsed based on when escalation was triggered
+                                    elapsed = 0
+                                    continue
+
+                                logger.info(
+                                    f"[Polling] Initial timeout reached, triggering escalation for request {approval_request.id}"
+                                )
+                                escalation_triggered = True
+
+                                # Mark escalation as triggered and extend timeout
+                                fresh_request.escalation_triggered_at = (
+                                    datetime.utcnow()
+                                )
+                                fresh_request.expires_at = (
+                                    datetime.utcnow()
+                                    + timedelta(seconds=timeout_seconds)
+                                )
+                                await escalation_db.commit()
+
+                                escalation_service = ApprovalService(
+                                    escalation_db, base_url
+                                )
+
+                                # Send escalation notifications
+                                await escalation_service._send_escalation_notifications(
+                                    fresh_request, policy
+                                )
+
+                                # Broadcast escalation event
+                                await escalation_service._broadcast_approval_update(
+                                    fresh_request,
+                                    "escalated",
+                                    extra_data={
+                                        "new_expires_at": fresh_request.expires_at.isoformat()
+                                    },
+                                )
+
+                                logger.info(
+                                    f"[Polling] Escalation triggered, new timeout: {fresh_request.expires_at}"
+                                )
+
+                            # Send escalation notification via Context (outside DB transaction)
                             if ctx:
                                 try:
                                     escalation_message = "Escalating approval request - notifying escalation contacts"
@@ -387,46 +452,6 @@ async def require_approval(
                                     logger.error(
                                         f"Failed to send escalation notification: {e}",
                                         exc_info=True,
-                                    )
-
-                            # Trigger escalation via approval service
-                            async with get_async_db_session() as escalation_db:
-                                from datetime import datetime, timedelta
-
-                                escalation_service = ApprovalService(
-                                    escalation_db, base_url
-                                )
-
-                                # Mark escalation as triggered and extend timeout
-                                fresh_request = await get_approval_request_async(
-                                    escalation_db, request_id=approval_request.id
-                                )
-                                if fresh_request:
-                                    fresh_request.escalation_triggered_at = (
-                                        datetime.utcnow()
-                                    )
-                                    fresh_request.expires_at = (
-                                        datetime.utcnow()
-                                        + timedelta(seconds=timeout_seconds)
-                                    )
-                                    await escalation_db.commit()
-
-                                    # Send escalation notifications
-                                    await escalation_service._send_escalation_notifications(
-                                        fresh_request, policy
-                                    )
-
-                                    # Broadcast escalation event
-                                    await escalation_service._broadcast_approval_update(
-                                        fresh_request,
-                                        "escalated",
-                                        extra_data={
-                                            "new_expires_at": fresh_request.expires_at.isoformat()
-                                        },
-                                    )
-
-                                    logger.info(
-                                        f"[Polling] Escalation triggered, new timeout: {fresh_request.expires_at}"
                                     )
 
                             # Reset elapsed for escalation period

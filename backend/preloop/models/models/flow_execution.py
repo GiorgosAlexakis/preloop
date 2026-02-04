@@ -24,7 +24,7 @@ class FlowExecution(Base):
     status = Column(
         String, nullable=False, default="PENDING", index=True
     )  # PENDING, INITIALIZING, RUNNING, etc.
-    start_time = Column(DateTime, default=datetime.now(UTC), nullable=False)
+    start_time = Column(DateTime, default=datetime.now(UTC), nullable=False, index=True)
     end_time = Column(DateTime, nullable=True)
     resolved_input_prompt = Column(Text, nullable=True)
     model_output_summary = Column(Text, nullable=True)

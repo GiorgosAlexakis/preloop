@@ -621,8 +621,20 @@ export async function getFlowPresets(): Promise<any[]> {
   return response.json();
 }
 
-export async function getFlowExecutions(): Promise<any[]> {
-  const response = await fetchWithAuth('/api/v1/flows/executions');
+export async function getFlowExecutions(options?: {
+  limit?: number;
+  skip?: number;
+}): Promise<any[]> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) {
+    params.set('limit', options.limit.toString());
+  }
+  if (options?.skip !== undefined) {
+    params.set('skip', options.skip.toString());
+  }
+  const queryString = params.toString();
+  const url = `/api/v1/flows/executions${queryString ? `?${queryString}` : ''}`;
+  const response = await fetchWithAuth(url);
   if (!response.ok) {
     throw new Error('Failed to fetch flow executions');
   }

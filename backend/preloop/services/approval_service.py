@@ -228,8 +228,8 @@ class ApprovalService:
         Returns:
             Updated approval request or None if not found
         """
-        # Get approval request
-        approval_request = await self.get_approval_request(request_id)
+        # Get approval request with row-level lock to prevent concurrent vote updates
+        approval_request = await self.get_approval_request_for_update(request_id)
         if not approval_request:
             return None
 
@@ -364,8 +364,8 @@ class ApprovalService:
         Returns:
             Updated approval request or None if not found
         """
-        # Get approval request
-        approval_request = await self.get_approval_request(request_id)
+        # Get approval request with row-level lock to prevent concurrent vote updates
+        approval_request = await self.get_approval_request_for_update(request_id)
         if not approval_request:
             return None
 

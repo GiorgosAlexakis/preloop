@@ -163,10 +163,23 @@ async def get_async_db_session() -> AsyncGenerator[AsyncSession, None]:
     Usage:
         async with get_async_db_session() as db:
             result = await db.execute(query)
+
+    Note: Always rollback any uncommitted transaction before closing to prevent
+    "idle in transaction" connections that can exhaust the connection pool.
     """
     session_factory = get_async_session_factory()
     async with session_factory() as session:
         try:
             yield session
+        except Exception:
+            # Rollback on any exception to clean up the transaction
+            await session.rollback()
+            raise
         finally:
+            # Always rollback uncommitted transactions before closing
+            # This prevents "idle in transaction" connections
+            try:
+                await session.rollback()
+            except Exception:
+                pass  # Ignore rollback errors on close
             await session.close()

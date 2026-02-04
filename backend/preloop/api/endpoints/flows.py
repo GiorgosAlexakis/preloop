@@ -216,16 +216,14 @@ def read_flow_executions(
     current_user: User = Depends(get_current_active_user),
 ):
     """Retrieve flow executions for the account."""
+    # Use eager_load=True to load flow relationship in single query (avoids N+1)
     executions = crud_flow_execution.get_multi(
-        db, account_id=current_user.account_id, skip=skip, limit=limit
+        db, account_id=current_user.account_id, skip=skip, limit=limit, eager_load=True
     )
 
-    # Enrich with flow names
+    # Flow is already loaded via joinedload - no additional queries needed
     for execution in executions:
-        flow = crud_flow.get(
-            db, id=execution.flow_id, account_id=current_user.account_id
-        )
-        execution.flow_name = flow.name if flow else None
+        execution.flow_name = execution.flow.name if execution.flow else None
 
     return executions
 

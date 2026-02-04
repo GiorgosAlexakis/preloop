@@ -12,6 +12,19 @@ from preloop.models.db.session import get_db_session as get_db
 router = APIRouter()
 
 
+@router.get("/ping")
+def ping() -> Dict[str, str]:
+    """Simple liveness check - no database, no external dependencies.
+
+    Use this for Kubernetes liveness probes to avoid killing pods
+    due to temporary database issues.
+
+    Returns:
+        Simple pong response
+    """
+    return {"status": "pong", "timestamp": datetime.now(UTC).isoformat()}
+
+
 @router.get("/health")
 def health_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """Health check endpoint with database and MCP server status.
