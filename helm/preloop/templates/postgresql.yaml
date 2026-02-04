@@ -28,12 +28,12 @@ spec:
       log_line_prefix: {{ .Values.database.cnpg.logging.log_line_prefix | quote }}
       {{- end }}
       {{- if .Values.database.cnpg.queryAnalysis.enabled }}
-      shared_preload_libraries: "pg_stat_statements,auto_explain"
+      # Note: shared_preload_libraries is managed by CNPG operator automatically
+      # when extensions are created. pg_stat_statements is auto-loaded.
+      # auto_explain requires shared_preload_libraries which CNPG controls,
+      # so we only configure pg_stat_statements parameters here.
       pg_stat_statements.track: "all"
       pg_stat_statements.max: "10000"
-      auto_explain.log_min_duration: {{ .Values.database.cnpg.queryAnalysis.autoExplainMinDuration | quote }}
-      auto_explain.log_analyze: "true"
-      auto_explain.log_buffers: "true"
       {{- end }}
   # Enable extensions
   {{- if or .Values.database.cnpg.pgvector.enabled .Values.database.cnpg.queryAnalysis.enabled }}

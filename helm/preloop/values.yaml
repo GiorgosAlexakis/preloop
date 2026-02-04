@@ -216,11 +216,11 @@ database:
       maintenance_work_mem: "256MB"  # For VACUUM, CREATE INDEX
       random_page_cost: "1.1"        # SSD storage (default 4.0 is for HDD)
       effective_io_concurrency: "200" # SSD
-    # Query analysis - enable pg_stat_statements and auto_explain for slow query detection
+    # Query analysis - enable pg_stat_statements for slow query detection
+    # Note: auto_explain requires shared_preload_libraries which CNPG manages,
+    # so only pg_stat_statements is supported here.
     queryAnalysis:
       enabled: false  # Set to true in production for query performance insights
-      # Log EXPLAIN plans for queries slower than this (ms)
-      autoExplainMinDuration: "1000"
     # Slow query logging - enable to monitor query performance
     logging:
       enabled: false  # Set to true to enable slow query logging

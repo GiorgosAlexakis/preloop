@@ -89,14 +89,14 @@ class ExecutionRecoveryService:
             f"(status: {execution.status}, agent_session: {execution.agent_session_reference})"
         )
 
+        from datetime import datetime, timezone
+        from preloop.models.schemas.flow_execution import FlowExecutionUpdate
+
         # If execution doesn't have an agent session yet, it failed during startup
         if not execution.agent_session_reference:
             logger.warning(
                 f"Execution {execution.id} has no agent session - marking as FAILED"
             )
-            from datetime import datetime, timezone
-            from preloop.models.schemas.flow_execution import FlowExecutionUpdate
-
             update_data = FlowExecutionUpdate(
                 status="FAILED",
                 error_message="Execution interrupted during startup (pod restart)",
@@ -106,7 +106,63 @@ class ExecutionRecoveryService:
             db.commit()
             return
 
-        # Create orchestrator and resume monitoring
+        # Check if the container/job still exists before trying to monitor
+        # This avoids blocking on containers that were cleaned up during deploy
+        try:
+            from preloop.agents import create_agent_executor
+
+            flow = execution.flow
+            if flow:
+                agent_executor = create_agent_executor(
+                    flow.agent_type, {"agent_config": flow.agent_config or {}}
+                )
+                status = await agent_executor.get_status(
+                    execution.agent_session_reference
+                )
+
+                # If container is already in terminal state, update DB and skip monitoring
+                from preloop.agents.base import AgentStatus
+
+                if status in (AgentStatus.FAILED, AgentStatus.STOPPED):
+                    logger.warning(
+                        f"Execution {execution.id} container is {status.value} - marking as FAILED"
+                    )
+                    update_data = FlowExecutionUpdate(
+                        status="FAILED",
+                        error_message=f"Container was {status.value} on recovery (likely cleaned up during deploy)",
+                        end_time=datetime.now(timezone.utc),
+                    )
+                    crud_flow_execution.update(db, db_obj=execution, obj_in=update_data)
+                    db.commit()
+                    return
+                elif status == AgentStatus.SUCCEEDED:
+                    logger.info(
+                        f"Execution {execution.id} container succeeded - marking as SUCCEEDED"
+                    )
+                    update_data = FlowExecutionUpdate(
+                        status="SUCCEEDED",
+                        end_time=datetime.now(timezone.utc),
+                    )
+                    crud_flow_execution.update(db, db_obj=execution, obj_in=update_data)
+                    db.commit()
+                    return
+                # Container is RUNNING/STARTING - proceed with monitoring below
+
+        except Exception as check_error:
+            logger.warning(
+                f"Error checking container status for {execution.id}: {check_error}. "
+                "Marking as FAILED to avoid hanging."
+            )
+            update_data = FlowExecutionUpdate(
+                status="FAILED",
+                error_message=f"Container check failed during recovery: {str(check_error)}",
+                end_time=datetime.now(timezone.utc),
+            )
+            crud_flow_execution.update(db, db_obj=execution, obj_in=update_data)
+            db.commit()
+            return
+
+        # Container is still running - create orchestrator and resume monitoring
         orchestrator = FlowExecutionOrchestrator(
             db,
             flow_id=execution.flow_id,
