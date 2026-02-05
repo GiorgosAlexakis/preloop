@@ -139,6 +139,8 @@ environment:
   preloopUrl: "https://preloop.ai"
   preloopUrl: "https://preloop.ai"
   debug: false
+  # Skip execution recovery on startup (useful for debugging startup issues)
+  skipExecutionRecovery: false
   # Database settings
   databaseUrl: ""
   # JWT settings
@@ -201,9 +203,46 @@ database:
     # PGVector extension for vector search
     pgvector:
       enabled: true
+    # PostgreSQL parameters
+    # Note: For optimal performance, scale these with memory:
+    # - shared_buffers: ~25% of RAM
+    # - effective_cache_size: ~75% of RAM
+    # - maintenance_work_mem: ~5-10% of RAM
     parameters:
       max_connections: "200"
-      shared_buffers: 512MB
+      shared_buffers: "512MB"       # 25% of 2Gi default; use 1GB for 4Gi
+      effective_cache_size: "1536MB" # 75% of 2Gi default; use 3GB for 4Gi
+      work_mem: "16MB"               # Per-operation; increase for complex queries
+      maintenance_work_mem: "256MB"  # For VACUUM, CREATE INDEX
+      random_page_cost: "1.1"        # SSD storage (default 4.0 is for HDD)
+      effective_io_concurrency: "200" # SSD
+    # Query analysis - enable pg_stat_statements for slow query detection
+    # Note: auto_explain requires shared_preload_libraries which CNPG manages,
+    # so only pg_stat_statements is supported here.
+    queryAnalysis:
+      enabled: false  # Set to true in production for query performance insights
+    # Slow query logging - enable to monitor query performance
+    logging:
+      enabled: false  # Set to true to enable slow query logging
+      # Log queries that run longer than this (milliseconds)
+      log_min_duration_statement: "1000"  # 1 second
+      # Logging settings
+      log_statement: "none"  # none, ddl, mod, all
+      log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d "
+    # Resilience settings - enable for production to prevent stuck queries/connections
+    # These settings add timeouts to prevent cascading failures
+    resilience:
+      enabled: false  # Set to true in production
+      # Kill queries that run longer than this (milliseconds) - 5 min to allow migrations
+      statement_timeout: "300000"  # 5 minutes
+      # Kill connections that are idle in a transaction longer than this (milliseconds)
+      idle_in_transaction_session_timeout: "300000"  # 5 minutes
+      # Maximum time to wait for a lock (milliseconds)
+      lock_timeout: "60000"  # 60 seconds
+      # WAL settings to reduce checkpoint frequency issues
+      max_wal_size: "2GB"
+      min_wal_size: "1GB"
+      checkpoint_completion_target: "0.9"
 
 # Sentry configuration for error tracking
 sentry:

@@ -238,7 +238,7 @@ class TestApproveRequest:
 
                 assert result == updated_request
                 mock_service.approve_request.assert_called_once_with(
-                    mock_approval_request.id, decision.comment
+                    mock_approval_request.id, decision.comment, user_id=mock_user.id
                 )
 
     @pytest.mark.asyncio
@@ -391,7 +391,7 @@ class TestDeclineRequest:
 
                 assert result == updated_request
                 mock_service.decline_request.assert_called_once_with(
-                    mock_approval_request.id, decision.comment
+                    mock_approval_request.id, decision.comment, user_id=mock_user.id
                 )
 
     @pytest.mark.asyncio

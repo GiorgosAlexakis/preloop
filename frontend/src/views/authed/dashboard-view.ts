@@ -388,7 +388,7 @@ export class DashboardView extends AuthedElement {
         catchWith403Handling(this.fetchData('/api/v1/mcp-servers'), []),
         catchWith403Handling(api.getTools(), []),
         catchWith403Handling(api.getFlows(), []),
-        catchWith403Handling(api.getFlowExecutions(), []),
+        catchWith403Handling(api.getFlowExecutions({ limit: 5 }), []),
         catchWith403Handling(this.fetchComplianceMetrics(), undefined),
         catchWith403Handling(
           this.fetchData('/api/v1/approval-requests?status=pending'),

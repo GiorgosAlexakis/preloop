@@ -49,6 +49,10 @@ def approval_policy():
     policy.channel = "approvals"
     policy.user = None
     policy.timeout_seconds = 300
+    policy.notification_channels = ["email"]
+    # Escalation fields - default to None (no escalation)
+    policy.escalation_user_ids = None
+    policy.escalation_team_ids = None
     return policy
 
 

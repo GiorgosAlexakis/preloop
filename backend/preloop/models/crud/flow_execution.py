@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional, Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.future import select
 
 from preloop.models.models.flow_execution import FlowExecution
@@ -211,13 +211,21 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         skip: int = 0,
         limit: int = 100,
         account_id: Optional[str] = None,
+        eager_load: bool = False,
         **filters,
     ) -> List[FlowExecution]:
         """Get multiple flow executions with optional filtering.
 
         Overrides base get_multi to properly filter by account_id through Flow relationship.
+
+        Args:
+            eager_load: If True, eagerly load the flow relationship to avoid N+1 queries.
         """
         query = db.query(FlowExecution)
+
+        # Eagerly load flow relationship to avoid N+1 queries
+        if eager_load:
+            query = query.options(joinedload(FlowExecution.flow))
 
         # Filter by account_id through the Flow relationship
         if account_id:

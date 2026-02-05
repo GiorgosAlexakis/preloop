@@ -420,6 +420,15 @@ class DynamicMCPServer:
                 if not policy:
                     raise Exception("Approval policy not found")
 
+                # Debug: Log policy escalation configuration
+                logger.info(
+                    f"Approval policy loaded: id={policy.id}, "
+                    f"timeout_seconds={policy.timeout_seconds}, "
+                    f"escalation_user_ids={policy.escalation_user_ids}, "
+                    f"escalation_team_ids={policy.escalation_team_ids}, "
+                    f"approvals_required={policy.approvals_required}"
+                )
+
                 # Create approval service
                 approval_service = ApprovalService(db, base_url)
 

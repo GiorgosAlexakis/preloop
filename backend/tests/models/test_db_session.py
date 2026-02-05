@@ -57,6 +57,11 @@ def test_get_engine_custom_url(mock_engine_dependencies):
         max_overflow=20,
         pool_pre_ping=True,
         pool_recycle=3600,
+        pool_timeout=30,
+        connect_args={
+            "connect_timeout": 10,
+            "options": "-c statement_timeout=30000",
+        },
         echo=False,
     )
 
@@ -90,6 +95,11 @@ def test_get_engine_from_env(mock_engine_dependencies):
             max_overflow=20,
             pool_pre_ping=True,
             pool_recycle=3600,
+            pool_timeout=30,
+            connect_args={
+                "connect_timeout": 10,
+                "options": "-c statement_timeout=30000",
+            },
             echo=False,
         )
 
@@ -123,6 +133,11 @@ def test_get_engine_default(mock_engine_dependencies):
             max_overflow=20,
             pool_pre_ping=True,
             pool_recycle=3600,
+            pool_timeout=30,
+            connect_args={
+                "connect_timeout": 10,
+                "options": "-c statement_timeout=30000",
+            },
             echo=False,
         )
 

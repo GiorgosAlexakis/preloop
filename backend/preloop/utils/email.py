@@ -536,3 +536,102 @@ async def send_approval_request_email(
             f"An unexpected error occurred while sending approval request email: {str(e)}"
         )
         # Log unexpected errors but don't raise
+
+
+def send_escalation_email(
+    user_email: str,
+    tool_name: str,
+    request_id: str,
+    approval_token: str,
+    base_url: str,
+) -> None:
+    """Send an escalation email when original approvers don't respond.
+
+    Args:
+        user_email: The escalation recipient's email address.
+        tool_name: The name of the tool requiring approval.
+        request_id: The approval request ID.
+        approval_token: The secure token for the approval link.
+        base_url: The base URL for generating approval links.
+
+    Raises:
+        EmailError: If email sending fails.
+    """
+    subject = f"🚨 ESCALATED: Approval Required for {tool_name}"
+
+    approval_url = f"{base_url}/approval/{request_id}?token={approval_token}"
+
+    # Plain text version
+    body_text = f"""Hi,
+
+🚨 ESCALATION NOTICE
+
+An approval request has been escalated to you because the original approvers did not respond in time.
+
+Tool: {tool_name}
+Request ID: {request_id}
+
+To approve or decline this request, please visit:
+{approval_url}
+
+Please respond promptly as this request is time-sensitive.
+
+Best regards,
+{APP_NAME} Team
+"""
+
+    # HTML version
+    body_html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+    .header {{ background-color: #ff6b6b; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }}
+    .content {{ background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 5px 5px; }}
+    .escalation-notice {{ background-color: #fff3cd; padding: 15px; border-left: 4px solid #ff6b6b; margin: 15px 0; font-weight: bold; }}
+    .tool-name {{ font-weight: bold; color: #2196F3; font-size: 1.1em; }}
+    .button {{ display: inline-block; background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 10px 5px; }}
+    .footer {{ text-align: center; margin-top: 20px; font-size: 0.9em; color: #777; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚨 Escalation Notice</h1>
+    </div>
+    <div class="content">
+      <div class="escalation-notice">
+        This approval request has been escalated to you because the original approvers did not respond in time.
+      </div>
+
+      <p>An AI agent is requesting approval to execute:</p>
+      <p class="tool-name">{tool_name}</p>
+
+      <p><strong>Request ID:</strong> {request_id}</p>
+
+      <div style="text-align: center; margin: 25px 0;">
+        <a href="{approval_url}" class="button">Review & Respond</a>
+      </div>
+
+      <p style="color: #ff6b6b;"><strong>Please respond promptly as this request is time-sensitive.</strong></p>
+    </div>
+    <div class="footer">
+      <p>This is an automated escalation from {APP_NAME}</p>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+    try:
+        send_email(user_email, subject, body_text, body_html)
+        logger.info(f"Escalation email sent to {user_email} for tool '{tool_name}'")
+    except EmailError as e:
+        logger.warning(f"Failed to send escalation email: {str(e)}")
+    except Exception as e:
+        logger.error(
+            f"An unexpected error occurred while sending escalation email: {str(e)}"
+        )

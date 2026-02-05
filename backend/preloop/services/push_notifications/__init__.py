@@ -28,7 +28,7 @@ def get_apns_service() -> Optional[APNsService]:
         APNS_AUTH_KEY: The .p8 key content directly (preferred for K8s)
         APNS_AUTH_KEY_PATH: Path to .p8 key file (fallback)
         APNS_BUNDLE_ID: App bundle identifier (default: spacecode.ai.Preloop)
-        APNS_USE_SANDBOX: Use sandbox environment (default: true)
+        APNS_USE_SANDBOX: Use sandbox environment (default: false for production)
 
     Returns:
         APNsService instance if configured, None otherwise.
@@ -44,7 +44,8 @@ def get_apns_service() -> Optional[APNsService]:
     auth_key = os.getenv("APNS_AUTH_KEY")  # Direct key content (preferred)
     auth_key_path = os.getenv("APNS_AUTH_KEY_PATH")  # File path (fallback)
     bundle_id = os.getenv("APNS_BUNDLE_ID", "spacecode.ai.Preloop")
-    use_sandbox = os.getenv("APNS_USE_SANDBOX", "true").lower() == "true"
+    # Default to production (false) - sandbox should be explicitly enabled for development
+    use_sandbox = os.getenv("APNS_USE_SANDBOX", "false").lower() == "true"
 
     if not team_id or not key_id:
         logger.warning("APNs not configured (missing APNS_TEAM_ID or APNS_KEY_ID)")

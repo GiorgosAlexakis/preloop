@@ -38,13 +38,18 @@ def get_engine(database_url: Optional[str] = None):
         raise Exception("DATABASE_URL not in env")
 
     try:
-        # Configure connection pool with proper limits and recycling
+        # Configure connection pool with proper limits, recycling, and timeouts
         _engine = create_engine(
             url,
             pool_size=10,  # Maximum number of connections to keep in the pool
             max_overflow=20,  # Maximum number of connections that can be created beyond pool_size
             pool_pre_ping=True,  # Test connections before using them to detect stale connections
             pool_recycle=3600,  # Recycle connections after 1 hour to prevent stale connections
+            pool_timeout=30,  # Timeout in seconds to wait for a connection from the pool
+            connect_args={
+                "connect_timeout": 10,  # Timeout for establishing new connections
+                "options": "-c statement_timeout=30000",  # 30s query timeout (prevents stuck queries)
+            },
             echo=False,  # Set to True for SQL query debugging
         )
 
@@ -108,13 +113,18 @@ def get_async_engine(database_url: Optional[str] = None) -> AsyncEngine:
         url = url.replace("postgresql://", "postgresql+asyncpg://")
 
     try:
-        # Configure connection pool with proper limits and recycling
+        # Configure connection pool with proper limits, recycling, and timeouts
         _async_engine = create_async_engine(
             url,
             pool_size=10,  # Maximum number of connections to keep in the pool
             max_overflow=20,  # Maximum number of connections that can be created beyond pool_size
             pool_pre_ping=True,  # Test connections before using them to detect stale connections
             pool_recycle=3600,  # Recycle connections after 1 hour to prevent stale connections
+            pool_timeout=30,  # Timeout in seconds to wait for a connection from the pool
+            connect_args={
+                "timeout": 10,  # Connection timeout for asyncpg
+                "command_timeout": 30,  # Query timeout for asyncpg
+            },
             echo=False,  # Set to True for SQL query debugging
         )
 
@@ -153,10 +163,23 @@ async def get_async_db_session() -> AsyncGenerator[AsyncSession, None]:
     Usage:
         async with get_async_db_session() as db:
             result = await db.execute(query)
+
+    Note: Always rollback any uncommitted transaction before closing to prevent
+    "idle in transaction" connections that can exhaust the connection pool.
     """
     session_factory = get_async_session_factory()
     async with session_factory() as session:
         try:
             yield session
+        except Exception:
+            # Rollback on any exception to clean up the transaction
+            await session.rollback()
+            raise
         finally:
+            # Always rollback uncommitted transactions before closing
+            # This prevents "idle in transaction" connections
+            try:
+                await session.rollback()
+            except Exception:
+                pass  # Ignore rollback errors on close
             await session.close()

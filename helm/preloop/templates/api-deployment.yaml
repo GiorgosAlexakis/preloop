@@ -52,6 +52,10 @@ spec:
               value: {{ .Values.agentExecution.namespace.create | ternary .Values.agentExecution.namespace.name .Release.Namespace | quote }}
             - name: USE_KUBERNETES
               value: "true"
+            {{- if .Values.environment.skipExecutionRecovery }}
+            - name: SKIP_EXECUTION_RECOVERY
+              value: "true"
+            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -185,10 +189,10 @@ spec:
             {{- toYaml .Values.api.resources | nindent 12 }}
           livenessProbe:
             httpGet:
-              path: /api/v1/health
+              path: /api/v1/ping
               port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 15
             timeoutSeconds: 5
             successThreshold: 1
             failureThreshold: 3
@@ -196,11 +200,11 @@ spec:
             httpGet:
               path: /api/v1/health
               port: 8000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
-            timeoutSeconds: 5
+            timeoutSeconds: 10
             successThreshold: 1
-            failureThreshold: 3
+            failureThreshold: 6
       volumes:
       {{- if .Values.profiling.enabled }}
         - name: profiling-storage

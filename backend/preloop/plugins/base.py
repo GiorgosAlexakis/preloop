@@ -404,6 +404,10 @@ class PluginManager:
             for _finder, name, ispkg in pkgutil.iter_modules(package.__path__):
                 full_module_name = f"{plugin_module}.{name}"
 
+                # Skip pytest configuration files and test directories
+                if name == "conftest" or name == "tests" or name.startswith("test_"):
+                    continue
+
                 # Skip if already discovered
                 if full_module_name in self._discovered_modules:
                     continue

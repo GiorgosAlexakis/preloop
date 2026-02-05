@@ -711,3 +711,13 @@ class FlowTriggerService:
                     logger.error(f"Failed to update execution log: {update_error}")
         finally:
             orchestrator._cleanup_temporary_api_token()
+            # Close the database session to prevent connection leaks
+            # The session was created in trigger_flow() and passed to the orchestrator
+            if orchestrator.db:
+                try:
+                    orchestrator.db.close()
+                    logger.debug("Closed orchestrator database session")
+                except Exception as close_error:
+                    logger.warning(
+                        f"Error closing orchestrator database session: {close_error}"
+                    )

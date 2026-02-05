@@ -129,7 +129,6 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
         """
         # Skip tracking for non-api routes
         path = request.url.path
-        logger.info(f"[ApiUsageMiddleware] Processing request: {request.method} {path}")
 
         if (
             not path.startswith("/api/v1")
@@ -139,18 +138,18 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
             or path.startswith("/api/v1/billing/webhooks")
             or path.startswith("/api/v1/ai-models/providers/")
         ):
-            logger.info(f"[ApiUsageMiddleware] Skipping tracking for {path}")
             return await call_next(request)
 
-        logger.info(
-            f"[ApiUsageMiddleware] Tracking enabled for {path}, calling next middleware"
-        )
         start_time = datetime.now(timezone.utc)
         response = await call_next(request)
-        logger.info(
-            f"[ApiUsageMiddleware] Response received for {path}, status: {response.status_code}"
-        )
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+        # Log slow requests (> 500ms) for performance monitoring
+        if duration > 0.5:
+            logger.warning(
+                f"[SlowRequest] {request.method} {path} took {duration:.2f}s "
+                f"(status: {response.status_code})"
+            )
 
         # Extract tracking information
         method = request.method
@@ -293,22 +292,33 @@ async def lifespan(app: FastAPI):
     if os.getenv("TESTING") != "true":
         from preloop.services.execution_recovery import get_recovery_service
 
-        recovery_service = get_recovery_service()
-        logger.info("Checking for orphaned flow executions to recover...")
-        try:
-            # Get a database session for recovery
-            db = next(get_db_session())
+        # Skip recovery if disabled (useful for debugging startup issues)
+        skip_recovery = os.getenv("SKIP_EXECUTION_RECOVERY", "false").lower() == "true"
+        if skip_recovery:
+            logger.warning("Skipping execution recovery (SKIP_EXECUTION_RECOVERY=true)")
+        else:
+            recovery_service = get_recovery_service()
+            logger.info("Checking for orphaned flow executions to recover...")
             try:
-                recovered_count = await recovery_service.recover_orphaned_executions(db)
-                if recovered_count > 0:
-                    logger.info(f"Recovered {recovered_count} orphaned execution(s)")
-                else:
-                    logger.info("No orphaned executions found")
-            finally:
-                db.close()
-        except Exception as e:
-            logger.error(f"Error recovering orphaned executions: {e}", exc_info=True)
-            # Don't fail startup - continue anyway
+                # Get a database session for recovery
+                db = next(get_db_session())
+                try:
+                    recovered_count = (
+                        await recovery_service.recover_orphaned_executions(db)
+                    )
+                    if recovered_count > 0:
+                        logger.info(
+                            f"Recovered {recovered_count} orphaned execution(s)"
+                        )
+                    else:
+                        logger.info("No orphaned executions found")
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error(
+                    f"Error recovering orphaned executions: {e}", exc_info=True
+                )
+                # Don't fail startup - continue anyway
     else:
         logger.info("Skipping execution recovery (TESTING mode)")
 

@@ -9,13 +9,43 @@ spec:
   instances: {{ .Values.database.cnpg.instances }}
   imageName: {{ .Values.database.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
-  parameters: {{ .Values.database.cnpg.parameters }}
-  # Enable pgvector extension if requested
-  {{- if .Values.database.cnpg.pgvector.enabled }}
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.database.cnpg.parameters }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+      {{- if .Values.database.cnpg.resilience.enabled }}
+      statement_timeout: {{ .Values.database.cnpg.resilience.statement_timeout | quote }}
+      idle_in_transaction_session_timeout: {{ .Values.database.cnpg.resilience.idle_in_transaction_session_timeout | quote }}
+      lock_timeout: {{ .Values.database.cnpg.resilience.lock_timeout | quote }}
+      max_wal_size: {{ .Values.database.cnpg.resilience.max_wal_size | quote }}
+      min_wal_size: {{ .Values.database.cnpg.resilience.min_wal_size | quote }}
+      checkpoint_completion_target: {{ .Values.database.cnpg.resilience.checkpoint_completion_target | quote }}
+      {{- end }}
+      {{- if .Values.database.cnpg.logging.enabled }}
+      log_min_duration_statement: {{ .Values.database.cnpg.logging.log_min_duration_statement | quote }}
+      log_statement: {{ .Values.database.cnpg.logging.log_statement | quote }}
+      log_line_prefix: {{ .Values.database.cnpg.logging.log_line_prefix | quote }}
+      {{- end }}
+      {{- if .Values.database.cnpg.queryAnalysis.enabled }}
+      # Note: shared_preload_libraries is managed by CNPG operator automatically
+      # when extensions are created. pg_stat_statements is auto-loaded.
+      # auto_explain requires shared_preload_libraries which CNPG controls,
+      # so we only configure pg_stat_statements parameters here.
+      pg_stat_statements.track: "all"
+      pg_stat_statements.max: "10000"
+      {{- end }}
+  # Enable extensions
+  {{- if or .Values.database.cnpg.pgvector.enabled .Values.database.cnpg.queryAnalysis.enabled }}
   bootstrap:
     initdb:
       postInitSQL:
+        {{- if .Values.database.cnpg.pgvector.enabled }}
         - CREATE EXTENSION IF NOT EXISTS vector;
+        {{- end }}
+        {{- if .Values.database.cnpg.queryAnalysis.enabled }}
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+        {{- end }}
         - ALTER USER {{ .Values.database.cnpg.auth.username }} WITH PASSWORD '{{ .Values.database.cnpg.auth.password }}';
   {{- end }}
 
