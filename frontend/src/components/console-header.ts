@@ -598,7 +598,7 @@ export class ConsoleHeader extends LitElement {
 
       notification.onclick = () => {
         window.focus();
-        Router.go(`/console/flow-executions/${execution.id}`);
+        Router.go(`/console/flows/executions/${execution.id}`);
         notification.close();
       };
 
@@ -686,7 +686,7 @@ export class ConsoleHeader extends LitElement {
   }
 
   private navigateToExecution(executionId: string) {
-    Router.go(`/console/flow-executions/${executionId}`);
+    Router.go(`/console/flows/executions/${executionId}`);
   }
 
   private renderExecutionsSection() {

@@ -1,7 +1,7 @@
 """add_multi_trigger_support
 
 Revision ID: 9a5b2c3d4e9m
-Revises: 9a5b2c3d4e9k
+Revises: 9a5b2c3d4e9n
 Create Date: 2026-02-01
 
 This migration:
@@ -25,7 +25,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "9a5b2c3d4e9m"
-down_revision: Union[str, None] = "9a5b2c3d4e9k"
+down_revision: Union[str, None] = "9a5b2c3d4e9n"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

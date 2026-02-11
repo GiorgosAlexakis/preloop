@@ -29,10 +29,10 @@ Most teams face an impossible choice: give AI full access and move fast (but dan
 
 Define fine-grained access controls for any AI tool or operation:
 
-- **Allow** safe operations to execute immediately
-- **Deny** dangerous operations with clear error messages
-- **Require approval** for operations that need human oversight
-- **Conditional rules** based on parameters, context, and environment
+- Tools support multiple ordered **access rules** (not just simple approval/deny)
+- Rules are evaluated in priority order; first matching rule wins
+- Each rule has an action (allow/deny/require_approval), optional CEL condition, and optional denial message
+- Rules can be reordered via drag-and-drop in the UI
 
 ### Approval Workflows
 
@@ -113,11 +113,14 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 ### Safety & Control
 
 - **Policy Engine.** Define allow, deny, and approval policies for any tool or action.
+- **Access Rules.** Multiple ordered rules per tool with allow/deny/require approval actions.
+- **Drag-and-Drop Priority.** Reorder rule evaluation priority visually.
 - **Fine-Grained Rules.** Policies can check tool names, parameter values, and context.
 - **Instant Notifications.** Get alerts on mobile, Slack, email, or Mattermost.
 - **One-Tap Approvals.** Approve or reject from your phone, watch, or desktop.
 - **Full Audit Trail.** Complete log of every AI action and policy decision.
 - **Flexible Conditions.** Use CEL expressions for context-aware rules (Enterprise).
+- **AI Approval (Enterprise).** AI-driven approval with configurable model, prompt, confidence threshold, and fallback behavior.
 - **Team Approvals.** Require quorum from multiple team members for critical ops (Enterprise).
 
 ### Integration & Compatibility
@@ -401,6 +404,11 @@ Preloop provides a RESTful API with the following key endpoints:
 - `PUT /api/v1/tool-configurations/{id}` - Update tool configuration
 - `DELETE /api/v1/tool-configurations/{id}` - Delete tool configuration
 
+### Access Rules
+- `POST /api/v1/tool-configurations/{config_id}/access-rules` - Create access rule
+- `PUT /api/v1/access-rules/{rule_id}` - Update access rule
+- `DELETE /api/v1/access-rules/{rule_id}` - Delete access rule
+
 ### Approval Management
 - `GET /api/v1/approval-policies` - List approval policies
 - `POST /api/v1/approval-policies` - Create approval policy
@@ -668,6 +676,8 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | **Role-Based Access Control (RBAC)** | ❌ | ✅ |
 | **Team management** | ❌ | ✅ |
 | **CEL conditional approval policies** | ❌ | ✅ |
+| **Access rules with CEL conditions** | Basic (single condition) | Advanced (multiple conditions, AND/OR, CEL editor) |
+| **AI-driven approval policies** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
 | **Slack notifications** | ❌ | ✅ |

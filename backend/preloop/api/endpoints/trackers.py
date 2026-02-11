@@ -36,6 +36,7 @@ from preloop.models.crud import (
     crud_tracker_scope_rule,
 )
 
+from preloop.utils.audit import log_config_change
 from preloop.utils.permissions import require_permission
 
 
@@ -354,6 +355,18 @@ async def register_tracker(
         db.commit()
         db.refresh(new_tracker)
 
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="tracker",
+            action="created",
+            new_value={
+                "id": str(new_tracker.id),
+                "name": new_tracker.name,
+                "type": new_tracker.tracker_type,
+            },
+        )
+
         # Send email notification
         if current_user.email and current_user.email_verified:
             background_tasks.add_task(
@@ -534,6 +547,18 @@ async def update_tracker(
         db.commit()
         db.refresh(tracker)
 
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="tracker",
+            action="updated",
+            new_value={
+                "id": str(tracker.id),
+                "name": tracker.name,
+                "type": tracker.tracker_type,
+            },
+        )
+
         # Send NATS event (convert UUID to string for JSON serialization)
         await event_bus_service.publish_task("poll_tracker", str(tracker.id))
 
@@ -602,7 +627,16 @@ async def delete_tracker(
             message = "Tracker soft deleted successfully"
 
     try:
+        tracker_name = tracker.name  # capture before potential flush
         db.commit()
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="tracker",
+            action="deleted",
+            old_value={"id": str(tracker_id), "name": tracker_name},
+        )
 
         # Trigger webhook cleanup task
         logger.info(f"Scheduling webhook cleanup for deleted tracker {tracker_id}")

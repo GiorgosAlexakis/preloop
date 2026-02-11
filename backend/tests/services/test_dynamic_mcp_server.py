@@ -418,7 +418,7 @@ class TestRequestAndWaitForApproval:
 
                 # Should not raise
                 await server._request_and_wait_for_approval(
-                    user_context, "test_tool", {}, mock_config.approval_policy_id
+                    user_context, "test_tool", {}
                 )
 
     async def test_approval_declined_raises_permission_error(self):
@@ -468,7 +468,7 @@ class TestRequestAndWaitForApproval:
 
                 with pytest.raises(PermissionError) as exc_info:
                     await server._request_and_wait_for_approval(
-                        user_context, "test_tool", {}, mock_config.approval_policy_id
+                        user_context, "test_tool", {}
                     )
 
                 assert "declined" in str(exc_info.value).lower()

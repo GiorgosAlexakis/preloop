@@ -225,12 +225,7 @@ export class ConsoleShell extends LitElement {
                     </sl-menu-item>
                   </a>
                 `}
-            <a href="/console/governance">
-              <sl-menu-item>
-                <sl-icon name="shield-lock" slot="prefix"></sl-icon>
-                Governance
-              </sl-menu-item>
-            </a>
+            <!-- Governance is now integrated into the Tools page -->
             <a href="/console/flows">
               <sl-menu-item>
                 <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>

@@ -1531,6 +1531,136 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tool-configurations/{config_id}/access-rules:
+    get:
+      tags:
+      - Tools
+      summary: List Access Rules
+      description: List all access rules for a tool configuration.
+      operationId: list_access_rules_api_v1_tool_configurations__config_id__access_rules_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccessRuleResponse'
+                title: Response List Access Rules Api V1 Tool Configurations  Config
+                  Id  Access Rules Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Tools
+      summary: Create Access Rule
+      description: Create a new access rule for a tool configuration.
+      operationId: create_access_rule_api_v1_tool_configurations__config_id__access_rules_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: config_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Config Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRuleCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRuleResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/access-rules/{rule_id}:
+    put:
+      tags:
+      - Tools
+      summary: Update Access Rule
+      description: Update an access rule.
+      operationId: update_access_rule_api_v1_access_rules__rule_id__put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Rule Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRuleUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessRuleResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Tools
+      summary: Delete Access Rule
+      description: Delete an access rule.
+      operationId: delete_access_rule_api_v1_access_rules__rule_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Rule Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/approval-requests/{request_id}:
     get:
       tags:
@@ -4678,6 +4808,141 @@ components:
       type: object
       title: AIModelUpdate
       description: Schema for updating an existing AIModel entry. All fields are optional.
+    AccessRuleCreate:
+      properties:
+        action:
+          type: string
+          title: Action
+          description: 'Action: ''allow'', ''deny'', ''require_approval'''
+        condition_expression:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Condition Expression
+          description: CEL or simple expression
+        condition_type:
+          type: string
+          title: Condition Type
+          description: 'Type: ''simple'' or ''cel'''
+          default: cel
+        priority:
+          type: integer
+          title: Priority
+          description: Evaluation order (lower = first)
+          default: 0
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Description or denial message
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+          description: Whether the rule is active
+          default: true
+        approval_policy_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approval Policy Id
+          description: Approval policy ID (for 'require_approval' action)
+      type: object
+      required:
+      - action
+      title: AccessRuleCreate
+      description: Schema for creating an access rule.
+    AccessRuleResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        account_id:
+          type: string
+          title: Account Id
+        tool_configuration_id:
+          type: string
+          title: Tool Configuration Id
+        action:
+          type: string
+          title: Action
+        condition_expression:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Condition Expression
+        condition_type:
+          type: string
+          title: Condition Type
+        priority:
+          type: integer
+          title: Priority
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        is_enabled:
+          type: boolean
+          title: Is Enabled
+        approval_policy_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approval Policy Id
+      type: object
+      required:
+      - id
+      - account_id
+      - tool_configuration_id
+      - action
+      - condition_expression
+      - condition_type
+      - priority
+      - description
+      - is_enabled
+      title: AccessRuleResponse
+      description: Schema for access rule response.
+    AccessRuleUpdate:
+      properties:
+        action:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Action
+        condition_expression:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Condition Expression
+        condition_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Condition Type
+        priority:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Priority
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Enabled
+        approval_policy_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approval Policy Id
+      type: object
+      title: AccessRuleUpdate
+      description: Schema for updating an access rule.
     AccountDeletionRequest:
       properties:
         email:

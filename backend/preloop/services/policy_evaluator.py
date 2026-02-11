@@ -48,6 +48,7 @@ def _log_policy_decision_async(
     tool_args: Optional[Dict[str, Any]] = None,
     user_id: Optional[uuid.UUID] = None,
     execution_id: Optional[uuid.UUID] = None,
+    correlation_id: Optional[str] = None,
 ) -> None:
     """Log a policy decision asynchronously (fire-and-forget).
 
@@ -63,6 +64,7 @@ def _log_policy_decision_async(
         tool_args: Tool arguments that were evaluated
         user_id: User ID (if available)
         execution_id: Flow execution ID (if applicable)
+        correlation_id: Correlation ID for grouping related audit events
     """
     try:
         audit_service = _get_audit_service()
@@ -83,6 +85,7 @@ def _log_policy_decision_async(
             tool_args=tool_args,
             user_id=user_id,
             execution_id=execution_id,
+            correlation_id=correlation_id,
         )
     except Exception as e:
         logger.debug(f"Failed to log policy decision to audit: {e}")
@@ -568,6 +571,7 @@ async def evaluate_policy_async(
     user_id: Optional[uuid.UUID] = None,
     execution_id: Optional[uuid.UUID] = None,
     trigger_event: Optional[Dict[str, Any]] = None,
+    correlation_id: Optional[str] = None,
 ) -> Tuple[str, Optional[uuid.UUID], Optional[str]]:
     """Async version of evaluate_policy.
 
@@ -601,6 +605,7 @@ async def evaluate_policy_async(
             tool_args=tool_args,
             user_id=user_id,
             execution_id=execution_id,
+            correlation_id=correlation_id,
         )
         return "allow", None, "No tool configuration found"
 
@@ -627,6 +632,7 @@ async def evaluate_policy_async(
                 tool_args=tool_args,
                 user_id=user_id,
                 execution_id=execution_id,
+                correlation_id=correlation_id,
             )
             return (
                 "require_approval",
@@ -641,6 +647,7 @@ async def evaluate_policy_async(
             tool_args=tool_args,
             user_id=user_id,
             execution_id=execution_id,
+            correlation_id=correlation_id,
         )
         return "allow", None, "No access rules defined"
 
@@ -672,7 +679,11 @@ async def evaluate_policy_async(
 
                 approval_policy_id = None
                 if rule.action == "require_approval":
-                    approval_policy_id = tool_config.approval_policy_id
+                    # Prefer the rule's own approval_policy_id; fall back to
+                    # the tool config's legacy approval_policy_id.
+                    approval_policy_id = (
+                        rule.approval_policy_id or tool_config.approval_policy_id
+                    )
 
                 rule_desc = (
                     rule.description or f"Rule matched: {rule.condition_expression}"
@@ -688,6 +699,7 @@ async def evaluate_policy_async(
                     tool_args=tool_args,
                     user_id=user_id,
                     execution_id=execution_id,
+                    correlation_id=correlation_id,
                 )
 
                 return (
@@ -698,11 +710,6 @@ async def evaluate_policy_async(
 
         except Exception as e:
             # SECURITY: Fail closed on evaluation errors
-            # Rather than skipping to the next rule (which could lead to default-allow),
-            # we require approval when rule evaluation fails. This ensures that:
-            # 1. Malformed rules don't silently get bypassed
-            # 2. Unexpected errors don't result in unauthorized access
-            # 3. The action is conservative (require human review) rather than permissive
             logger.error(
                 f"Error evaluating rule {rule.id}: {e}. "
                 f"Failing closed with require_approval for security."
@@ -717,6 +724,7 @@ async def evaluate_policy_async(
                 tool_args=tool_args,
                 user_id=user_id,
                 execution_id=execution_id,
+                correlation_id=correlation_id,
             )
             return (
                 "require_approval",
@@ -733,5 +741,6 @@ async def evaluate_policy_async(
         tool_args=tool_args,
         user_id=user_id,
         execution_id=execution_id,
+        correlation_id=correlation_id,
     )
     return "allow", None, "No rules matched (default allow)"

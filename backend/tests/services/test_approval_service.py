@@ -1099,3 +1099,572 @@ class TestEscalationBehavior:
                         )
 
                     assert "expired without response" in str(exc_info.value)
+
+
+class TestAutoApproveRequest:
+    """Test _auto_approve_request method."""
+
+    async def test_auto_approve_sets_status_and_ai_fields(
+        self, approval_service, sample_approval_request
+    ):
+        """Test that _auto_approve_request sets correct fields."""
+        request_id = sample_approval_request.id
+
+        with patch.object(
+            approval_service,
+            "update_approval_request",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ) as mock_update:
+            with patch.object(
+                approval_service,
+                "_broadcast_approval_update",
+                new_callable=AsyncMock,
+            ) as mock_broadcast:
+                result = await approval_service._auto_approve_request(
+                    request_id=request_id,
+                    reason="Safe tool call",
+                    decided_by_ai=True,
+                    ai_model="gpt-4o-mini",
+                    ai_confidence=0.95,
+                )
+
+                assert result == sample_approval_request
+                mock_update.assert_called_once()
+                update_arg = mock_update.call_args[0][1]
+                assert update_arg.status == "approved"
+                assert update_arg.decided_by_ai is True
+                assert update_arg.ai_model == "gpt-4o-mini"
+                assert update_arg.ai_confidence == 0.95
+                assert update_arg.ai_reasoning == "Safe tool call"
+                mock_broadcast.assert_called_once_with(
+                    sample_approval_request, "approved"
+                )
+
+    async def test_auto_approve_returns_none_when_not_found(self, approval_service):
+        """Test that _auto_approve_request returns None if request not found."""
+        with patch.object(
+            approval_service,
+            "update_approval_request",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            result = await approval_service._auto_approve_request(
+                request_id=uuid.uuid4(),
+                reason="Reason",
+            )
+            assert result is None
+
+
+class TestAutoDenyRequest:
+    """Test _auto_deny_request method."""
+
+    async def test_auto_deny_sets_status_and_ai_fields(
+        self, approval_service, sample_approval_request
+    ):
+        """Test that _auto_deny_request sets correct fields."""
+        request_id = sample_approval_request.id
+
+        with patch.object(
+            approval_service,
+            "update_approval_request",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ) as mock_update:
+            with patch.object(
+                approval_service,
+                "_broadcast_approval_update",
+                new_callable=AsyncMock,
+            ) as mock_broadcast:
+                result = await approval_service._auto_deny_request(
+                    request_id=request_id,
+                    reason="Dangerous operation",
+                    decided_by_ai=True,
+                    ai_model="gpt-4o-mini",
+                    ai_confidence=0.92,
+                )
+
+                assert result == sample_approval_request
+                mock_update.assert_called_once()
+                update_arg = mock_update.call_args[0][1]
+                assert update_arg.status == "declined"
+                assert update_arg.decided_by_ai is True
+                assert update_arg.ai_model == "gpt-4o-mini"
+                assert update_arg.ai_confidence == 0.92
+                assert update_arg.ai_reasoning == "Dangerous operation"
+                mock_broadcast.assert_called_once_with(
+                    sample_approval_request, "declined"
+                )
+
+    async def test_auto_deny_returns_none_when_not_found(self, approval_service):
+        """Test that _auto_deny_request returns None if request not found."""
+        with patch.object(
+            approval_service,
+            "update_approval_request",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            result = await approval_service._auto_deny_request(
+                request_id=uuid.uuid4(),
+                reason="Reason",
+            )
+            assert result is None
+
+
+class TestAIDrivenApprovalFlow:
+    """Test AI-driven approval flow in create_and_notify."""
+
+    @pytest.fixture
+    def ai_driven_policy(self):
+        """Create an AI-driven approval policy."""
+        policy = MagicMock(spec=ApprovalPolicy)
+        policy.id = uuid.uuid4()
+        policy.name = "AI Review Policy"
+        policy.approval_mode = "ai_driven"
+        policy.approval_type = "slack"
+        policy.timeout_seconds = 300
+        policy.ai_confidence_threshold = 0.8
+        policy.ai_fallback_behavior = "escalate"
+        policy.escalation_policy_id = None
+        policy.notification_channels = ["slack"]
+        policy.approval_config = {"webhook_url": "https://hooks.slack.com/test"}
+        return policy
+
+    def _mock_ai_result(
+        self, decision="approve", confidence=0.95, reasoning="Looks safe"
+    ):
+        """Helper to create a mock AIApprovalResult."""
+        result = MagicMock()
+        result.decision = decision
+        result.confidence = confidence
+        result.reasoning = reasoning
+        result.model_used = "gpt-4o-mini"
+        return result
+
+    async def test_high_confidence_approve(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test AI auto-approves when confidence >= threshold and decision is approve."""
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        approved_request = MagicMock(spec=ApprovalRequest)
+        approved_request.status = "approved"
+
+        ai_result = self._mock_ai_result(decision="approve", confidence=0.95)
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "_auto_approve_request",
+                new_callable=AsyncMock,
+                return_value=approved_request,
+            ) as mock_auto_approve,
+        ):
+            mock_ai_svc = AsyncMock()
+            mock_ai_svc.evaluate.return_value = ai_result
+            mock_get_ai.return_value = mock_ai_svc
+
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="get_issue",
+                tool_args={"issue_id": "123"},
+            )
+
+            assert result == approved_request
+            mock_auto_approve.assert_called_once_with(
+                request_id=mock_request.id,
+                reason=ai_result.reasoning,
+                decided_by_ai=True,
+                ai_model=ai_result.model_used,
+                ai_confidence=ai_result.confidence,
+            )
+
+    async def test_high_confidence_deny(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test AI auto-denies when confidence >= threshold and decision is deny."""
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        denied_request = MagicMock(spec=ApprovalRequest)
+        denied_request.status = "declined"
+
+        ai_result = self._mock_ai_result(decision="deny", confidence=0.90)
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "_auto_deny_request",
+                new_callable=AsyncMock,
+                return_value=denied_request,
+            ) as mock_auto_deny,
+        ):
+            mock_ai_svc = AsyncMock()
+            mock_ai_svc.evaluate.return_value = ai_result
+            mock_get_ai.return_value = mock_ai_svc
+
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="shell_exec",
+                tool_args={"command": "rm -rf /"},
+            )
+
+            assert result == denied_request
+            mock_auto_deny.assert_called_once_with(
+                request_id=mock_request.id,
+                reason=ai_result.reasoning,
+                decided_by_ai=True,
+                ai_model=ai_result.model_used,
+                ai_confidence=ai_result.confidence,
+            )
+
+    async def test_low_confidence_fallback_approve(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test fallback behavior 'approve' when AI confidence is below threshold."""
+        ai_driven_policy.ai_fallback_behavior = "approve"
+
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        approved_request = MagicMock(spec=ApprovalRequest)
+
+        ai_result = self._mock_ai_result(
+            decision="approve", confidence=0.5, reasoning="Not sure"
+        )
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "_auto_approve_request",
+                new_callable=AsyncMock,
+                return_value=approved_request,
+            ) as mock_auto_approve,
+        ):
+            mock_ai_svc = AsyncMock()
+            mock_ai_svc.evaluate.return_value = ai_result
+            mock_get_ai.return_value = mock_ai_svc
+
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="test_tool",
+                tool_args={},
+            )
+
+            assert result == approved_request
+            call_kwargs = mock_auto_approve.call_args[1]
+            assert "Fallback approval" in call_kwargs["reason"]
+
+    async def test_low_confidence_fallback_deny(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test fallback behavior 'deny' when AI confidence is below threshold."""
+        ai_driven_policy.ai_fallback_behavior = "deny"
+
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        denied_request = MagicMock(spec=ApprovalRequest)
+
+        ai_result = self._mock_ai_result(
+            decision="uncertain", confidence=0.3, reasoning="Too ambiguous"
+        )
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "_auto_deny_request",
+                new_callable=AsyncMock,
+                return_value=denied_request,
+            ) as mock_auto_deny,
+        ):
+            mock_ai_svc = AsyncMock()
+            mock_ai_svc.evaluate.return_value = ai_result
+            mock_get_ai.return_value = mock_ai_svc
+
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="test_tool",
+                tool_args={},
+            )
+
+            assert result == denied_request
+            call_kwargs = mock_auto_deny.call_args[1]
+            assert "Fallback denial" in call_kwargs["reason"]
+
+    async def test_low_confidence_fallback_escalate(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test fallback behavior 'escalate' (default) sends to human review."""
+        ai_driven_policy.ai_fallback_behavior = "escalate"
+        ai_driven_policy.escalation_policy_id = None
+
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        refreshed_request = MagicMock(spec=ApprovalRequest)
+
+        ai_result = self._mock_ai_result(
+            decision="uncertain", confidence=0.4, reasoning="Edge case"
+        )
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+            ) as mock_update,
+            patch.object(
+                approval_service,
+                "get_approval_request",
+                new_callable=AsyncMock,
+                return_value=refreshed_request,
+            ),
+            patch.object(
+                approval_service,
+                "send_notifications",
+                new_callable=AsyncMock,
+                return_value={"email": {"success": True}},
+            ) as mock_notify,
+        ):
+            mock_ai_svc = AsyncMock()
+            mock_ai_svc.evaluate.return_value = ai_result
+            mock_get_ai.return_value = mock_ai_svc
+
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="test_tool",
+                tool_args={},
+            )
+
+            assert result == refreshed_request
+            # Should update request with AI info
+            mock_update.assert_called()
+            update_arg = mock_update.call_args[0][1]
+            assert update_arg.ai_model == "gpt-4o-mini"
+            assert update_arg.ai_confidence == 0.4
+            assert "Escalated to human review" in update_arg.ai_reasoning
+            # Should send human notifications using original policy
+            mock_notify.assert_called_once_with(refreshed_request, ai_driven_policy)
+
+    async def test_escalation_with_escalation_policy(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test that escalation uses the escalation_policy for notifications when set."""
+        escalation_policy_id = uuid.uuid4()
+        ai_driven_policy.ai_fallback_behavior = "escalate"
+        ai_driven_policy.escalation_policy_id = escalation_policy_id
+
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        refreshed_request = MagicMock(spec=ApprovalRequest)
+
+        escalation_policy = MagicMock(spec=ApprovalPolicy)
+        escalation_policy.id = escalation_policy_id
+        escalation_policy.name = "Human Escalation Policy"
+
+        ai_result = self._mock_ai_result(
+            decision="uncertain", confidence=0.3, reasoning="Needs human"
+        )
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                approval_service,
+                "get_approval_request",
+                new_callable=AsyncMock,
+                return_value=refreshed_request,
+            ),
+            patch.object(
+                approval_service,
+                "send_notifications",
+                new_callable=AsyncMock,
+                return_value={"email": {"success": True}},
+            ) as mock_notify,
+            patch(
+                "preloop.models.crud.approval_policy.get_approval_policy_async",
+                new_callable=AsyncMock,
+                return_value=escalation_policy,
+            ),
+        ):
+            mock_ai_svc = AsyncMock()
+            mock_ai_svc.evaluate.return_value = ai_result
+            mock_get_ai.return_value = mock_ai_svc
+
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="test_tool",
+                tool_args={},
+            )
+
+            assert result == refreshed_request
+            # Should send notifications using the escalation policy, not original
+            mock_notify.assert_called_once_with(refreshed_request, escalation_policy)
+
+    async def test_escalation_policy_not_found_falls_back(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test that missing escalation policy falls back to original policy."""
+        ai_driven_policy.ai_fallback_behavior = "escalate"
+        ai_driven_policy.escalation_policy_id = uuid.uuid4()
+
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        refreshed_request = MagicMock(spec=ApprovalRequest)
+
+        ai_result = self._mock_ai_result(
+            decision="uncertain", confidence=0.3, reasoning="Needs human"
+        )
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                approval_service,
+                "get_approval_request",
+                new_callable=AsyncMock,
+                return_value=refreshed_request,
+            ),
+            patch.object(
+                approval_service,
+                "send_notifications",
+                new_callable=AsyncMock,
+                return_value={},
+            ) as mock_notify,
+            patch(
+                "preloop.models.crud.approval_policy.get_approval_policy_async",
+                new_callable=AsyncMock,
+                return_value=None,  # Escalation policy not found
+            ),
+        ):
+            mock_ai_svc = AsyncMock()
+            mock_ai_svc.evaluate.return_value = ai_result
+            mock_get_ai.return_value = mock_ai_svc
+
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="test_tool",
+                tool_args={},
+            )
+
+            assert result == refreshed_request
+            # Should fall back to original policy for notifications
+            mock_notify.assert_called_once_with(refreshed_request, ai_driven_policy)
+
+    async def test_standard_mode_skips_ai_evaluation(
+        self, approval_service, mock_db, ai_driven_policy
+    ):
+        """Test that standard (non-AI) policies skip AI evaluation entirely."""
+        ai_driven_policy.approval_mode = "standard"
+
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch(
+                "preloop.services.approval_service.get_ai_approval_service"
+            ) as mock_get_ai,
+            patch.object(
+                approval_service,
+                "send_notifications",
+                new_callable=AsyncMock,
+                return_value={},
+            ) as mock_notify,
+        ):
+            result = await approval_service.create_and_notify(
+                account_id="acct-1",
+                tool_configuration_id=uuid.uuid4(),
+                approval_policy=ai_driven_policy,
+                tool_name="test_tool",
+                tool_args={},
+            )
+
+            assert result == mock_request
+            mock_get_ai.assert_not_called()
+            mock_notify.assert_called_once_with(mock_request, ai_driven_policy)

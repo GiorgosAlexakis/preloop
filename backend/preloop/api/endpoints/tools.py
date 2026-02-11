@@ -5,23 +5,27 @@ preloop/services/initialize_mcp.py to ensure consistency between REST API and MC
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from preloop.api.auth import get_current_active_user
 from preloop.api.common import get_account_for_user
+from preloop.models.models.user import User
 from preloop.models.crud import (
     crud_approval_policy,
     crud_mcp_server,
     crud_mcp_tool,
     crud_tool_configuration,
+    crud_tool_access_rule,
+    crud_tracker,
 )
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
-from preloop.models.models.tool_configuration import ToolConfiguration
 from preloop.models.schemas.tool_configuration import (
     ApprovalPolicyCreate,
     ApprovalPolicyResponse,
@@ -37,6 +41,7 @@ from preloop.schemas.tool_approval_condition import (
     ConditionTestResponse,
 )
 from preloop.services.policy_evaluator import evaluate_cel_expression
+from preloop.utils.audit import log_config_change
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -455,27 +460,31 @@ async def list_all_tools(
         for tc in tool_configs
     }
 
-    # Get all access rules to check which tools have them
-    # (ToolAccessRule replaced the old ToolApprovalCondition table)
-    from sqlalchemy import select
-    from preloop.models import models
-
-    result = db.execute(
-        select(models.ToolAccessRule).where(
-            models.ToolAccessRule.account_id == str(account.id),
-            models.ToolAccessRule.is_enabled == True,  # noqa: E712
-        )
+    # Get all access rules for this account
+    access_rules = crud_tool_access_rule.get_multi_by_account(
+        db, account_id=str(account.id)
     )
-    access_rules = result.scalars().all()
 
-    # Create map of config_id -> has access rules
-    condition_map = {
-        str(rule.tool_configuration_id): True
-        for rule in access_rules
-        if rule.condition_expression
-    }
-
-    from preloop.models.crud import crud_tracker
+    # Create map of config_id -> list of rule dicts
+    rules_by_config: Dict[str, list] = {}
+    condition_map: Dict[str, bool] = {}
+    for rule in access_rules:
+        config_id_str = str(rule.tool_configuration_id)
+        if config_id_str not in rules_by_config:
+            rules_by_config[config_id_str] = []
+        rules_by_config[config_id_str].append(
+            {
+                "id": str(rule.id),
+                "action": rule.action,
+                "condition_expression": rule.condition_expression,
+                "condition_type": rule.condition_type,
+                "priority": rule.priority,
+                "description": rule.description,
+                "is_enabled": rule.is_enabled,
+            }
+        )
+        if rule.condition_expression and rule.is_enabled:
+            condition_map[config_id_str] = True
 
     trackers = crud_tracker.get_for_account(db, account_id=str(account.id))
     tracker_types = list(set(tracker.tracker_type for tracker in trackers))
@@ -523,6 +532,7 @@ async def list_all_tools(
                 "has_approval_condition": condition_map.get(config_id, False)
                 if config_id
                 else False,
+                "access_rules": rules_by_config.get(config_id, []) if config_id else [],
             }
         )
 
@@ -555,6 +565,9 @@ async def list_all_tools(
                     "has_approval_condition": condition_map.get(config_id, False)
                     if config_id
                     else False,
+                    "access_rules": rules_by_config.get(config_id, [])
+                    if config_id
+                    else [],
                 }
             )
 
@@ -608,26 +621,17 @@ async def create_tool_configuration(
         )
 
     try:
-        new_config = ToolConfiguration(
-            account_id=str(account.id),
-            tool_name=config_data.tool_name,
-            tool_source=config_data.tool_source,
-            mcp_server_id=config_data.mcp_server_id,
-            http_endpoint_id=config_data.http_endpoint_id,
-            is_enabled=config_data.is_enabled
-            if config_data.is_enabled is not None
-            else True,
-            approval_policy_id=config_data.approval_policy_id
-            if hasattr(config_data, "approval_policy_id")
-            else None,
-            tool_description=config_data.tool_description,
-            tool_schema=config_data.tool_schema,
-            custom_config=config_data.custom_config,
+        # Override account_id from authenticated user for security
+        safe_config = config_data.model_copy(
+            update={
+                "account_id": str(account.id),
+                "is_enabled": config_data.is_enabled
+                if config_data.is_enabled is not None
+                else True,
+            }
         )
 
-        db.add(new_config)
-        db.commit()
-        db.refresh(new_config)
+        new_config = crud_tool_configuration.create(db, config_in=safe_config)
 
         logger.info(
             f"Created tool configuration for {config_data.tool_name} "
@@ -715,6 +719,7 @@ async def update_tool_configuration(
     config_id: UUID,
     config_update: ToolConfigurationUpdate,
     account: Account = Depends(get_account_for_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> ToolConfigurationResponse:
     """Update an existing tool configuration.
@@ -741,19 +746,34 @@ async def update_tool_configuration(
             detail="Tool configuration not found or access denied",
         )
 
-    # Update fields
-    update_data = config_update.model_dump(exclude_unset=True)
-
     try:
-        for field, value in update_data.items():
-            setattr(config, field, value)
+        old_enabled = config.is_enabled
+        updated_config = crud_tool_configuration.update(
+            db, db_obj=config, config_in=config_update
+        )
 
-        db.commit()
-        db.refresh(config)
+        # Determine if this was an enable/disable toggle or a general update
+        update_fields = config_update.model_dump(exclude_unset=True)
+        if "is_enabled" in update_fields and update_fields["is_enabled"] != old_enabled:
+            action = "enabled" if updated_config.is_enabled else "disabled"
+        else:
+            action = "updated"
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="tool_configuration",
+            action=action,
+            new_value={
+                "id": str(config_id),
+                "tool_name": config.tool_name,
+                **update_fields,
+            },
+        )
 
         logger.info(f"Updated tool configuration {config_id} for user {account.id}")
 
-        return ToolConfigurationResponse.model_validate(config)
+        return ToolConfigurationResponse.model_validate(updated_config)
 
     except Exception as e:
         db.rollback()
@@ -793,9 +813,6 @@ async def update_tool_approval_condition(
     Raises:
         HTTPException: If configuration not found or update fails
     """
-    from sqlalchemy import select
-    from preloop.models.models import ToolAccessRule
-
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
     )
@@ -810,44 +827,49 @@ async def update_tool_approval_condition(
 
     try:
         # Get existing access rule (first one with require_approval action)
-        result = db.execute(
-            select(ToolAccessRule)
-            .where(
-                ToolAccessRule.tool_configuration_id == config_id,
-                ToolAccessRule.account_id == str(account.id),
-                ToolAccessRule.action == "require_approval",
-            )
-            .order_by(ToolAccessRule.priority.asc())
+        existing_rule = crud_tool_access_rule.get_first_by_config(
+            db,
+            config_id=str(config_id),
+            account_id=str(account.id),
+            action="require_approval",
         )
-        existing_rule = result.scalar_one_or_none()
 
         if approval_condition_expr:
             # Create or update access rule
             if existing_rule:
                 # Update existing rule
-                existing_rule.condition_expression = approval_condition_expr
-                existing_rule.is_enabled = True
-                db.commit()
+                crud_tool_access_rule.update(
+                    db,
+                    db_obj=existing_rule,
+                    obj_in={
+                        "condition_expression": approval_condition_expr,
+                        "is_enabled": True,
+                    },
+                )
                 logger.info(f"Updated access rule for tool config {config_id}")
             else:
                 # Create new access rule
-                new_rule = ToolAccessRule(
-                    tool_configuration_id=config_id,
-                    account_id=str(account.id),
-                    condition_type="cel",  # Default to CEL expression
-                    condition_expression=approval_condition_expr,
-                    action="require_approval",
-                    priority=0,  # Highest priority
-                    is_enabled=True,
+                crud_tool_access_rule.create(
+                    db,
+                    obj_in={
+                        "tool_configuration_id": str(config_id),
+                        "account_id": str(account.id),
+                        "condition_type": "cel",
+                        "condition_expression": approval_condition_expr,
+                        "action": "require_approval",
+                        "priority": 0,
+                        "is_enabled": True,
+                    },
                 )
-                db.add(new_rule)
-                db.commit()
                 logger.info(f"Created access rule for tool config {config_id}")
         else:
             # Delete rule if expression is empty
             if existing_rule:
-                db.delete(existing_rule)
-                db.commit()
+                crud_tool_access_rule.remove(
+                    db,
+                    id=str(existing_rule.id),
+                    account_id=str(account.id),
+                )
                 logger.info(f"Deleted access rule for tool config {config_id}")
 
         db.refresh(config)
@@ -894,8 +916,9 @@ async def delete_tool_configuration(
         )
 
     try:
-        db.delete(config)
-        db.commit()
+        crud_tool_configuration.remove(
+            db, id=str(config_id), account_id=str(account.id)
+        )
 
         logger.info(f"Deleted tool configuration {config_id} for user {account.id}")
 
@@ -940,6 +963,7 @@ async def list_approval_policies(
 async def create_approval_policy(
     policy_data: ApprovalPolicyCreate,
     account: Account = Depends(get_account_for_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> ApprovalPolicyResponse:
     """Create a reusable approval policy.
@@ -970,6 +994,14 @@ async def create_approval_policy(
         # Use CRUD layer for proper default policy handling
         new_policy = crud_approval_policy.create(
             db, obj_in=policy_data, account_id=str(account.id)
+        )
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="approval_policy",
+            action="created",
+            new_value={"id": str(new_policy.id), "name": new_policy.name},
         )
 
         logger.info(
@@ -1022,6 +1054,7 @@ async def update_approval_policy(
     policy_id: UUID,
     policy_update: ApprovalPolicyUpdate,
     account: Account = Depends(get_account_for_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> ApprovalPolicyResponse:
     """Update an approval policy.
@@ -1066,6 +1099,15 @@ async def update_approval_policy(
             db, db_obj=policy, obj_in=policy_update
         )
 
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="approval_policy",
+            action="updated",
+            old_value={"id": str(policy_id), "name": policy.name},
+            new_value={"id": str(policy_id), "name": updated_policy.name},
+        )
+
         logger.info(
             f"Updated approval policy {policy_id} for user {account.id} (is_default: {updated_policy.is_default})"
         )
@@ -1088,6 +1130,7 @@ async def update_approval_policy(
 async def delete_approval_policy(
     policy_id: UUID,
     account: Account = Depends(get_account_for_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Delete an approval policy.
@@ -1130,6 +1173,14 @@ async def delete_approval_policy(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Approval policy not found or already deleted",
             )
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="approval_policy",
+            action="deleted",
+            old_value={"id": str(policy_id), "name": policy.name},
+        )
 
         logger.info(
             f"Deleted approval policy {policy_id} (was used by {tool_count} tools) "
@@ -1180,9 +1231,6 @@ async def get_tool_approval_condition(
     Raises:
         HTTPException: If tool configuration not found or no rules found
     """
-    from sqlalchemy import select
-    from preloop.models.models import ToolAccessRule
-
     # Verify tool configuration exists and belongs to account
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
@@ -1195,15 +1243,9 @@ async def get_tool_approval_condition(
         )
 
     # Get first access rule (for backward compatibility)
-    result = db.execute(
-        select(ToolAccessRule)
-        .where(
-            ToolAccessRule.tool_configuration_id == config_id,
-            ToolAccessRule.account_id == str(account.id),
-        )
-        .order_by(ToolAccessRule.priority.asc())
+    rule = crud_tool_access_rule.get_first_by_config(
+        db, config_id=str(config_id), account_id=str(account.id)
     )
-    rule = result.scalar_one_or_none()
 
     if not rule:
         raise HTTPException(
@@ -1254,9 +1296,6 @@ async def create_or_update_tool_approval_condition(
     Raises:
         HTTPException: If tool configuration not found or creation fails
     """
-    from sqlalchemy import select
-    from preloop.models.models import ToolAccessRule
-
     # Verify tool configuration exists and belongs to account
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
@@ -1281,38 +1320,37 @@ async def create_or_update_tool_approval_condition(
 
     try:
         # Get existing rule or create new one
-        result = db.execute(
-            select(ToolAccessRule)
-            .where(
-                ToolAccessRule.tool_configuration_id == config_id,
-                ToolAccessRule.account_id == str(account.id),
-            )
-            .order_by(ToolAccessRule.priority.asc())
+        existing_rule = crud_tool_access_rule.get_first_by_config(
+            db, config_id=str(config_id), account_id=str(account.id)
         )
-        rule = result.scalar_one_or_none()
 
-        if rule:
+        if existing_rule:
             # Update existing rule
-            rule.description = condition_in.description or condition_in.name
-            rule.is_enabled = condition_in.is_enabled
-            rule.condition_type = condition_in.condition_type or "cel"
-            rule.condition_expression = condition_in.condition_expression
+            rule = crud_tool_access_rule.update(
+                db,
+                db_obj=existing_rule,
+                obj_in={
+                    "description": condition_in.description or condition_in.name,
+                    "is_enabled": condition_in.is_enabled,
+                    "condition_type": condition_in.condition_type or "cel",
+                    "condition_expression": condition_in.condition_expression,
+                },
+            )
         else:
             # Create new rule
-            rule = ToolAccessRule(
-                tool_configuration_id=config_id,
-                account_id=str(account.id),
-                description=condition_in.description or condition_in.name,
-                is_enabled=condition_in.is_enabled,
-                condition_type=condition_in.condition_type or "cel",
-                condition_expression=condition_in.condition_expression,
-                action="require_approval",  # Default action for approval conditions
-                priority=0,
+            rule = crud_tool_access_rule.create(
+                db,
+                obj_in={
+                    "tool_configuration_id": str(config_id),
+                    "account_id": str(account.id),
+                    "description": condition_in.description or condition_in.name,
+                    "is_enabled": condition_in.is_enabled,
+                    "condition_type": condition_in.condition_type or "cel",
+                    "condition_expression": condition_in.condition_expression,
+                    "action": "require_approval",
+                    "priority": 0,
+                },
             )
-            db.add(rule)
-
-        db.commit()
-        db.refresh(rule)
 
         logger.info(
             f"Created/updated access rule for tool config {config_id} "
@@ -1371,9 +1409,6 @@ async def delete_tool_approval_condition(
     Raises:
         HTTPException: If tool configuration not found or no rules found
     """
-    from sqlalchemy import select, delete
-    from preloop.models.models import ToolAccessRule
-
     # Verify tool configuration exists and belongs to account
     config = crud_tool_configuration.get(
         db, id=str(config_id), account_id=str(account.id)
@@ -1386,13 +1421,9 @@ async def delete_tool_approval_condition(
         )
 
     # Check if any rules exist
-    result = db.execute(
-        select(ToolAccessRule).where(
-            ToolAccessRule.tool_configuration_id == config_id,
-            ToolAccessRule.account_id == str(account.id),
-        )
+    rules = crud_tool_access_rule.get_multi_by_config(
+        db, config_id=str(config_id), account_id=str(account.id)
     )
-    rules = result.scalars().all()
 
     if not rules:
         raise HTTPException(
@@ -1402,16 +1433,12 @@ async def delete_tool_approval_condition(
 
     try:
         # Delete all access rules for this tool configuration
-        db.execute(
-            delete(ToolAccessRule).where(
-                ToolAccessRule.tool_configuration_id == config_id,
-                ToolAccessRule.account_id == str(account.id),
-            )
+        deleted_count = crud_tool_access_rule.remove_by_config(
+            db, config_id=str(config_id), account_id=str(account.id)
         )
-        db.commit()
 
         logger.info(
-            f"Deleted {len(rules)} access rules for tool config {config_id} "
+            f"Deleted {deleted_count} access rules for tool config {config_id} "
             f"(account: {account.id})"
         )
 
@@ -1495,4 +1522,307 @@ async def test_approval_condition(
                 "expression": test_request.expression,
                 "sample_args": test_request.sample_args,
             },
+        )
+
+
+# ============================================================================
+# Access Rule CRUD Endpoints
+# ============================================================================
+
+
+class AccessRuleCreate(BaseModel):
+    """Schema for creating an access rule."""
+
+    action: str = Field(..., description="Action: 'allow', 'deny', 'require_approval'")
+    condition_expression: Optional[str] = Field(
+        None, description="CEL or simple expression"
+    )
+    condition_type: str = Field("cel", description="Type: 'simple' or 'cel'")
+    priority: int = Field(0, description="Evaluation order (lower = first)")
+    description: Optional[str] = Field(
+        None, description="Description or denial message"
+    )
+    is_enabled: bool = Field(True, description="Whether the rule is active")
+    approval_policy_id: Optional[str] = Field(
+        None, description="Approval policy ID (for 'require_approval' action)"
+    )
+
+
+class AccessRuleUpdate(BaseModel):
+    """Schema for updating an access rule."""
+
+    action: Optional[str] = None
+    condition_expression: Optional[str] = None
+    condition_type: Optional[str] = None
+    priority: Optional[int] = None
+    description: Optional[str] = None
+    is_enabled: Optional[bool] = None
+    approval_policy_id: Optional[str] = None
+
+
+class AccessRuleResponse(BaseModel):
+    """Schema for access rule response."""
+
+    id: str
+    account_id: str
+    tool_configuration_id: str
+    action: str
+    condition_expression: Optional[str]
+    condition_type: str
+    priority: int
+    description: Optional[str]
+    is_enabled: bool
+    approval_policy_id: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.get(
+    "/tool-configurations/{config_id}/access-rules",
+    response_model=List[AccessRuleResponse],
+)
+async def list_access_rules(
+    config_id: UUID,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> List[AccessRuleResponse]:
+    """List all access rules for a tool configuration."""
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
+    )
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tool configuration not found",
+        )
+
+    rules = crud_tool_access_rule.get_multi_by_config(
+        db, config_id=str(config_id), account_id=str(account.id)
+    )
+
+    return [
+        AccessRuleResponse(
+            id=str(r.id),
+            account_id=str(r.account_id),
+            tool_configuration_id=str(r.tool_configuration_id),
+            action=r.action,
+            condition_expression=r.condition_expression,
+            condition_type=r.condition_type,
+            priority=r.priority,
+            description=r.description,
+            is_enabled=r.is_enabled,
+            approval_policy_id=str(r.approval_policy_id)
+            if r.approval_policy_id
+            else None,
+        )
+        for r in rules
+    ]
+
+
+@router.post(
+    "/tool-configurations/{config_id}/access-rules",
+    response_model=AccessRuleResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_access_rule(
+    config_id: UUID,
+    rule_in: AccessRuleCreate,
+    account: Account = Depends(get_account_for_user),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> AccessRuleResponse:
+    """Create a new access rule for a tool configuration."""
+    config = crud_tool_configuration.get(
+        db, id=str(config_id), account_id=str(account.id)
+    )
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tool configuration not found",
+        )
+
+    if rule_in.action not in ("allow", "deny", "require_approval"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Action must be 'allow', 'deny', or 'require_approval'",
+        )
+
+    try:
+        rule = crud_tool_access_rule.create(
+            db,
+            obj_in={
+                "tool_configuration_id": str(config_id),
+                "account_id": str(account.id),
+                "action": rule_in.action,
+                "condition_expression": rule_in.condition_expression,
+                "condition_type": rule_in.condition_type,
+                "priority": rule_in.priority,
+                "description": rule_in.description,
+                "is_enabled": rule_in.is_enabled,
+                "approval_policy_id": rule_in.approval_policy_id,
+            },
+        )
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="tool_rule",
+            action="created",
+            new_value={
+                "id": str(rule.id),
+                "tool_name": config.tool_name,
+                "action": rule.action,
+                "condition": rule.condition_expression,
+            },
+        )
+
+        logger.info(
+            f"Created access rule {rule.id} for tool config {config_id} "
+            f"(account: {account.id})"
+        )
+
+        return AccessRuleResponse(
+            id=str(rule.id),
+            account_id=str(rule.account_id),
+            tool_configuration_id=str(rule.tool_configuration_id),
+            action=rule.action,
+            condition_expression=rule.condition_expression,
+            condition_type=rule.condition_type,
+            priority=rule.priority,
+            description=rule.description,
+            is_enabled=rule.is_enabled,
+            approval_policy_id=str(rule.approval_policy_id)
+            if rule.approval_policy_id
+            else None,
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create access rule: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create access rule: {str(e)}",
+        )
+
+
+@router.put(
+    "/access-rules/{rule_id}",
+    response_model=AccessRuleResponse,
+)
+async def update_access_rule(
+    rule_id: UUID,
+    rule_in: AccessRuleUpdate,
+    account: Account = Depends(get_account_for_user),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> AccessRuleResponse:
+    """Update an access rule."""
+    rule = crud_tool_access_rule.get(db, id=rule_id, account_id=str(account.id))
+
+    if not rule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Access rule not found",
+        )
+
+    update_data = rule_in.model_dump(exclude_unset=True)
+    if "action" in update_data and update_data["action"] not in (
+        "allow",
+        "deny",
+        "require_approval",
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Action must be 'allow', 'deny', or 'require_approval'",
+        )
+
+    try:
+        old_snapshot = {
+            "id": str(rule.id),
+            "action": rule.action,
+            "condition": rule.condition_expression,
+        }
+
+        rule = crud_tool_access_rule.update(db, db_obj=rule, obj_in=update_data)
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="tool_rule",
+            action="updated",
+            old_value=old_snapshot,
+            new_value={
+                "id": str(rule.id),
+                "action": rule.action,
+                "condition": rule.condition_expression,
+            },
+        )
+
+        logger.info(f"Updated access rule {rule_id} (account: {account.id})")
+
+        return AccessRuleResponse(
+            id=str(rule.id),
+            account_id=str(rule.account_id),
+            tool_configuration_id=str(rule.tool_configuration_id),
+            action=rule.action,
+            condition_expression=rule.condition_expression,
+            condition_type=rule.condition_type,
+            priority=rule.priority,
+            description=rule.description,
+            is_enabled=rule.is_enabled,
+            approval_policy_id=str(rule.approval_policy_id)
+            if rule.approval_policy_id
+            else None,
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update access rule: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update access rule: {str(e)}",
+        )
+
+
+@router.delete(
+    "/access-rules/{rule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_access_rule(
+    rule_id: UUID,
+    account: Account = Depends(get_account_for_user),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> None:
+    """Delete an access rule."""
+    rule = crud_tool_access_rule.get(db, id=rule_id, account_id=str(account.id))
+
+    if not rule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Access rule not found",
+        )
+
+    try:
+        rule_snapshot = {
+            "id": str(rule.id),
+            "action": rule.action,
+            "condition": rule.condition_expression,
+        }
+
+        crud_tool_access_rule.remove(db, id=str(rule_id), account_id=str(account.id))
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="tool_rule",
+            action="deleted",
+            old_value=rule_snapshot,
+        )
+
+        logger.info(f"Deleted access rule {rule_id} (account: {account.id})")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete access rule: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete access rule: {str(e)}",
         )

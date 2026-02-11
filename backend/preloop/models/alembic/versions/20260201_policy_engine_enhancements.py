@@ -1,7 +1,7 @@
 """policy_engine_enhancements
 
-Revision ID: 9a5b2c3d4e9k
-Revises: 9a5b2c3d4e9j
+Revision ID: 9a5b2c3d4e9n
+Revises: 9a5b2c3d4e9l
 Create Date: 2026-02-01
 
 This migration combines multiple enhancements to the policy engine:
@@ -29,8 +29,8 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision: str = "9a5b2c3d4e9k"
-down_revision: Union[str, None] = "9a5b2c3d4e9j"
+revision: str = "9a5b2c3d4e9n"
+down_revision: Union[str, None] = "9a5b2c3d4e9l"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -67,6 +67,12 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("is_enabled", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column(
+            "approval_policy_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=True,
+            comment="Approval policy to use when action is 'require_approval'",
+        ),
+        sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
@@ -90,6 +96,12 @@ def upgrade() -> None:
             ["tool_configuration.id"],
             name="fk_tool_access_rules_tool_configuration_id",
             ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["approval_policy_id"],
+            ["approval_policy.id"],
+            name="fk_tool_access_rules_approval_policy_id",
+            ondelete="SET NULL",
         ),
     )
 
@@ -116,6 +128,12 @@ def upgrade() -> None:
         op.f("ix_tool_access_rules_is_enabled"),
         "tool_access_rules",
         ["is_enabled"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_tool_access_rules_approval_policy_id"),
+        "tool_access_rules",
+        ["approval_policy_id"],
         unique=False,
     )
 
@@ -396,11 +414,58 @@ def upgrade() -> None:
         unique=False,
     )
 
+    # ── AI decision tracking on approval_request ──
+    op.add_column(
+        "approval_request",
+        sa.Column(
+            "decided_by_ai",
+            sa.Boolean(),
+            nullable=False,
+            server_default="false",
+            comment="Whether this request was decided by AI",
+        ),
+    )
+    op.add_column(
+        "approval_request",
+        sa.Column(
+            "ai_model",
+            sa.String(length=100),
+            nullable=True,
+            comment="AI model that made the decision (if decided_by_ai=True)",
+        ),
+    )
+    op.add_column(
+        "approval_request",
+        sa.Column(
+            "ai_confidence",
+            sa.Float(),
+            nullable=True,
+            comment="AI confidence score for the decision (0.0-1.0)",
+        ),
+    )
+    op.add_column(
+        "approval_request",
+        sa.Column(
+            "ai_reasoning",
+            sa.Text(),
+            nullable=True,
+            comment="AI's reasoning for the approval/denial decision",
+        ),
+    )
+
 
 def downgrade() -> None:
     """Revert all policy engine enhancements."""
     # ==========================================================================
-    # Part 3: Remove AI Approval Fields
+    # Part 3a: Remove AI decision tracking from approval_request
+    # ==========================================================================
+    op.drop_column("approval_request", "ai_reasoning")
+    op.drop_column("approval_request", "ai_confidence")
+    op.drop_column("approval_request", "ai_model")
+    op.drop_column("approval_request", "decided_by_ai")
+
+    # ==========================================================================
+    # Part 3b: Remove AI Approval Fields from approval_policy
     # ==========================================================================
 
     # Drop indexes
@@ -570,6 +635,10 @@ def downgrade() -> None:
     )
 
     # Drop the tool_access_rules table
+    op.drop_index(
+        op.f("ix_tool_access_rules_approval_policy_id"),
+        table_name="tool_access_rules",
+    )
     op.drop_index(
         op.f("ix_tool_access_rules_is_enabled"),
         table_name="tool_access_rules",

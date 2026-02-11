@@ -382,6 +382,9 @@ class TestToolConfigurationEndpoints:
             "preloop.api.endpoints.tools.crud_tool_configuration.get",
             return_value=config,
         )
+        mock_remove = mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.remove",
+        )
 
         result = await tools.delete_tool_configuration(
             config_id=config_id,
@@ -390,8 +393,9 @@ class TestToolConfigurationEndpoints:
         )
 
         assert "message" in result
-        mock_db.delete.assert_called_once_with(config)
-        mock_db.commit.assert_called_once()
+        mock_remove.assert_called_once_with(
+            mock_db, id=str(config_id), account_id=str(mock_account.id)
+        )
 
 
 class TestApprovalPolicyEndpoints:
@@ -950,7 +954,10 @@ class TestToolConfigurationEndpointsErrorHandling:
             return_value=config,
         )
 
-        mock_db.commit.side_effect = Exception("Database error")
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.remove",
+            side_effect=Exception("Database error"),
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.delete_tool_configuration(
@@ -1000,10 +1007,11 @@ class TestApprovalConditionEndpoints:
             return_value=config,
         )
 
-        # Mock db.execute to return no results (empty scalars)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
+        # Mock crud_tool_access_rule.get_first_by_config to return None
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_access_rule.get_first_by_config",
+            return_value=None,
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.get_tool_approval_condition(
@@ -1048,10 +1056,11 @@ class TestApprovalConditionEndpoints:
             return_value=config,
         )
 
-        # Mock db.execute to return no results (empty scalars)
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_db.execute.return_value = mock_result
+        # Mock crud_tool_access_rule.get_multi_by_config to return empty list
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_access_rule.get_multi_by_config",
+            return_value=[],
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.delete_tool_approval_condition(

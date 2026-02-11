@@ -44,6 +44,7 @@ from .mcp_server import CRUDMCPServer
 from .mcp_tool import CRUDMCPTool
 from .approval_policy import CRUDApprovalPolicy
 from .approval_request import CRUDApprovalRequest, crud_approval_request
+from .tool_access_rule import CRUDToolAccessRule
 from .plan import (
     CRUDPlan,
     CRUDSubscription,
@@ -99,6 +100,7 @@ crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfigu
 crud_mcp_server = CRUDMCPServer()  # Instantiate CRUDMCPServer
 crud_mcp_tool = CRUDMCPTool()  # Instantiate CRUDMCPTool
 crud_approval_policy = CRUDApprovalPolicy()  # Instantiate CRUDApprovalPolicy
+crud_tool_access_rule = CRUDToolAccessRule()  # Instantiate CRUDToolAccessRule
 
 __all__ = [
     "CRUDBase",
@@ -125,6 +127,7 @@ __all__ = [
     "CRUDMCPTool",
     "CRUDApprovalPolicy",
     "CRUDApprovalRequest",
+    "CRUDToolAccessRule",
     "CRUDPlan",
     "CRUDSubscription",
     "CRUDMonthlyUsage",
@@ -161,6 +164,7 @@ __all__ = [
     "crud_mcp_tool",
     "crud_approval_policy",
     "crud_approval_request",
+    "crud_tool_access_rule",
     "plan",
     "subscription",
     "monthly_usage",

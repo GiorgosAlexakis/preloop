@@ -447,7 +447,7 @@ export class FlowView extends LitElement {
           ></add-tracker-modal>`
         : ''}
       <add-ai-model-modal
-        .open=${this.isAddingAIModel}
+        ?open=${this.isAddingAIModel}
         @model-created=${this.handleAIModelCreated}
         @close-modal=${this.closeAIModelDialog}
       ></add-ai-model-modal>

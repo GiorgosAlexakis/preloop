@@ -22,6 +22,7 @@ async def require_approval(
     arguments: dict,
     ctx: Optional[Context] = None,
     policy_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Check if tool requires approval and wait for decision with streaming.
 
@@ -38,6 +39,7 @@ async def require_approval(
         policy_id: Optional approval policy ID. If provided, uses this policy directly
                   instead of looking up from tool configuration. Useful for standalone
                   approval requests where no tool configuration exists.
+        correlation_id: Optional correlation ID for grouping related audit events.
 
     Returns:
         Tuple of (approved: bool, error_message: str)
@@ -234,8 +236,10 @@ async def require_approval(
 
                 approval_url = f"{base_url}/approval/{approval_request.id}?token={approval_request.approval_token}"
 
-                # Get notification channels from policy
-                notification_channels = policy.notification_channels or ["email"]
+                # Derive notification channel from approval_type
+                notification_channels = (
+                    [policy.approval_type] if policy.approval_type else ["manual"]
+                )
                 channels_display = ", ".join(notification_channels)
 
                 logger.warning(

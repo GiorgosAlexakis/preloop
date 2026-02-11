@@ -12,6 +12,7 @@ from preloop.models.db.session import get_db_session as get_db
 from preloop.api.auth import get_current_active_user
 from preloop.models.models.user import User
 from preloop.utils.hashing import compute_content_hash
+from preloop.utils.audit import log_config_change
 from preloop.utils.permissions import require_permission
 
 router = APIRouter()
@@ -96,6 +97,15 @@ def create_flow(
         flow_in.preset_update_available = False
 
     flow = crud_flow.create(db=db, flow_in=flow_in, account_id=current_user.account_id)
+
+    log_config_change(
+        db,
+        user=current_user,
+        config_type="flow",
+        action="created",
+        new_value={"id": str(flow.id), "name": flow.name},
+    )
+
     return flow
 
 
@@ -735,9 +745,26 @@ def update_flow(
                 # Clear update notification since they're making their own changes
                 flow_in.preset_update_available = False
 
+    old_enabled = flow.is_enabled
     flow = crud_flow.update(
         db=db, db_obj=flow, flow_in=flow_in, account_id=current_user.account_id
     )
+
+    # Determine if this was an enable/disable toggle
+    update_fields = flow_in.model_dump(exclude_unset=True)
+    if "is_enabled" in update_fields and update_fields["is_enabled"] != old_enabled:
+        action = "enabled" if flow.is_enabled else "disabled"
+    else:
+        action = "updated"
+
+    log_config_change(
+        db,
+        user=current_user,
+        config_type="flow",
+        action=action,
+        new_value={"id": str(flow.id), "name": flow.name},
+    )
+
     return flow
 
 
@@ -781,7 +808,17 @@ def delete_flow(
             status_code=403, detail="Cannot delete built-in flow presets"
         )
 
+    flow_name = flow.name  # capture before delete
     crud_flow.remove(db=db, id=flow_id, account_id=current_user.account_id)
+
+    log_config_change(
+        db,
+        user=current_user,
+        config_type="flow",
+        action="deleted",
+        old_value={"id": str(flow_id), "name": flow_name},
+    )
+
     logger.info(f"Successfully deleted flow {flow_id}")
     return flow
 

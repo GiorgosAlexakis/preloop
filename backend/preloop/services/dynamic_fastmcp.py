@@ -7,6 +7,8 @@ Phase 1B: Added support for proxied tools from external MCP servers.
 """
 
 import logging
+import uuid
+from contextvars import ContextVar
 from typing import Callable, Dict, Optional
 
 from fastmcp import FastMCP
@@ -24,6 +26,22 @@ from preloop.models.db.session import get_db_session as get_db
 from preloop.api.endpoints.tools import BUILTIN_TOOLS
 
 logger = logging.getLogger(__name__)
+
+# Context variable to pass policy evaluation results from _call_tool() to
+# individual tool wrappers (which call require_approval()).
+# When set, require_approval() should use this policy_id instead of looking
+# it up from the tool configuration.
+_rule_policy_id_var: ContextVar[Optional[str]] = ContextVar(
+    "_rule_policy_id_var", default=None
+)
+
+# Context variable to pass a unique correlation_id from _call_tool() through
+# to all audit-logging helpers (policy_evaluator, approval_helper, tool execution).
+# Every audit log entry from the same tool invocation shares this ID so the
+# frontend can group them into a single timeline entry.
+_correlation_id_var: ContextVar[Optional[str]] = ContextVar(
+    "_correlation_id_var", default=None
+)
 
 
 class DynamicFastMCP(FastMCP):
@@ -358,7 +376,10 @@ async def {internal_name}({params_str}) -> str:
             arguments[param_name] = value
 
     # Check approval with streaming (we have Context!)
+    # The policy_id may have been set by _call_tool() after evaluating access rules.
     from preloop.services.approval_helper import require_approval
+    rule_policy_id = _rule_policy_id_var.get(None)
+    corr_id = _correlation_id_var.get(None)
 
     approved, error = await require_approval(
         tool_name=tool_name,
@@ -366,6 +387,8 @@ async def {internal_name}({params_str}) -> str:
         account_id=account_id,
         arguments=arguments,
         ctx=ctx,
+        policy_id=rule_policy_id,
+        correlation_id=corr_id,
     )
 
     if not approved:
@@ -428,6 +451,8 @@ async def {internal_name}({params_str}) -> str:
             "get_mcp_client_pool": get_mcp_client_pool,
             "Optional": Optional,
             "Context": Context,
+            "_rule_policy_id_var": _rule_policy_id_var,
+            "_correlation_id_var": _correlation_id_var,
         }
 
         # Execute the code to create the function
@@ -498,6 +523,59 @@ async def {internal_name}({params_str}) -> str:
                 ]
             )
 
+        # ── Generate correlation_id for audit grouping ──────────────────
+        correlation_id = str(uuid.uuid4())
+        _correlation_id_var.set(correlation_id)
+
+        # ── Evaluate access rules (ToolAccessRule) ──────────────────────
+        # This is the central enforcement point for all tool calls.
+        # evaluate_policy_async() checks rules in priority order and returns:
+        #   "deny"             -> block the call, return denial reason
+        #   "require_approval" -> let the per-tool require_approval() handle it
+        #   "allow"            -> proceed to execution
+        try:
+            from preloop.models.db.session import get_async_db_session
+            from preloop.services.policy_evaluator import evaluate_policy_async
+
+            async with get_async_db_session() as db:
+                action, approval_policy_id, reason = await evaluate_policy_async(
+                    db=db,
+                    tool_name=name,
+                    tool_args=arguments,
+                    account_id=uuid.UUID(user_context.account_id),
+                    user_id=uuid.UUID(user_context.user_id),
+                    correlation_id=correlation_id,
+                )
+
+            logger.info(
+                f"Policy evaluation for '{name}': action={action}, "
+                f"policy_id={approval_policy_id}, reason={reason}"
+            )
+
+            if action == "deny":
+                denial_msg = reason or "Tool call denied by access rule"
+                return ToolResult(
+                    content=[
+                        TextContent(type="text", text=f"Access denied: {denial_msg}")
+                    ]
+                )
+
+            if action == "require_approval" and approval_policy_id:
+                # Store the policy_id so require_approval() in the tool wrapper
+                # picks it up instead of relying on the legacy config-level policy.
+                _rule_policy_id_var.set(str(approval_policy_id))
+            else:
+                _rule_policy_id_var.set(None)
+
+        except Exception as e:
+            logger.error(
+                f"Error evaluating access rules for '{name}': {e}", exc_info=True
+            )
+            # Fail open for evaluation errors to avoid blocking all tools
+            # (the policy_evaluator already fails closed per-rule)
+            _rule_policy_id_var.set(None)
+
+        # ── Translate and execute ───────────────────────────────────────
         # Translate tool name for proxied tools
         # Client calls "calculate_fibonacci", we translate to "account_123_calculate_fibonacci"
         if name in self._proxied_tool_servers:
@@ -512,7 +590,43 @@ async def {internal_name}({params_str}) -> str:
             logger.info(f"Calling builtin tool: {name}")
 
         # Call parent with (possibly modified) context
-        return await super()._call_tool(context)
+        import time
+
+        start_time = time.monotonic()
+        exec_status = "executed"
+        try:
+            result = await super()._call_tool(context)
+        except Exception as e:
+            exec_status = "failed"
+            raise
+        finally:
+            elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
+            # Clean up context vars after execution
+            _rule_policy_id_var.set(None)
+            _correlation_id_var.set(None)
+
+            # ── Audit: log tool execution ───────────────────────────────
+            try:
+                from preloop.plugins.base import get_plugin_manager
+
+                plugin_manager = get_plugin_manager()
+                audit_service = plugin_manager.get_service("audit_service")
+                if audit_service:
+                    audit_service.log_tool_execution_async(
+                        db_factory=lambda: next(get_db()),
+                        account_id=uuid.UUID(user_context.account_id),
+                        user_id=uuid.UUID(user_context.user_id),
+                        tool_name=name,
+                        tool_args=arguments,
+                        status=exec_status,
+                        execution_time_ms=elapsed_ms,
+                        correlation_id=correlation_id,
+                    )
+            except Exception as audit_err:
+                logger.debug(f"Failed to audit tool execution: {audit_err}")
+
+        return result
 
 
 def create_dynamic_mcp_server() -> DynamicFastMCP:

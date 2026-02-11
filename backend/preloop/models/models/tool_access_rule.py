@@ -12,7 +12,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .account import Account
-    from .tool_configuration import ToolConfiguration
+    from .tool_configuration import ApprovalPolicy, ToolConfiguration
 
 
 class ToolAccessRule(Base):
@@ -112,6 +112,15 @@ class ToolAccessRule(Base):
         comment="Whether the rule is currently active",
     )
 
+    # Approval policy reference (only used when action='require_approval')
+    approval_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("approval_policy.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Approval policy to use when action is 'require_approval'",
+    )
+
     # Note: created_at and updated_at are inherited from Base class
 
     # Relationships
@@ -121,6 +130,10 @@ class ToolAccessRule(Base):
     tool_configuration: Mapped["ToolConfiguration"] = relationship(
         "ToolConfiguration",
         back_populates="access_rules",
+    )
+    approval_policy: Mapped[Optional["ApprovalPolicy"]] = relationship(
+        "ApprovalPolicy",
+        foreign_keys=[approval_policy_id],
     )
 
     def __repr__(self) -> str:

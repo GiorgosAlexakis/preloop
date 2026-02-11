@@ -50,8 +50,11 @@ class NotificationService:
         # Get list of approvers (expand teams to users)
         approver_user_ids = await self._get_approver_user_ids(approval_policy)
 
-        # Send notifications through configured channels
-        for channel in approval_policy.notification_channels:
+        # Derive notification channels from approval_type
+        channels = (
+            [approval_policy.approval_type] if approval_policy.approval_type else []
+        )
+        for channel in channels:
             try:
                 if channel == "email":
                     result = await self._send_email_notifications(
@@ -115,8 +118,11 @@ class NotificationService:
             logger.warning("No escalation approvers configured")
             return {"error": "No escalation approvers configured"}
 
-        # Send through same channels as original request
-        for channel in approval_policy.notification_channels:
+        # Send through same channel as original request
+        channels = (
+            [approval_policy.approval_type] if approval_policy.approval_type else []
+        )
+        for channel in channels:
             try:
                 if channel == "email":
                     result = await self._send_email_notifications(

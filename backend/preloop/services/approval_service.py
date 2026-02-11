@@ -40,9 +40,14 @@ def _get_audit_service():
 def _get_db_factory():
     """Get a database session factory for async audit logging."""
     try:
-        from preloop.models.db.session import get_db_session
+        from preloop.models.db.session import get_session_factory
 
-        return lambda: next(get_db_session())
+        def _create_session():
+            """Create a session that the caller is responsible for closing."""
+            factory = get_session_factory()
+            return factory()
+
+        return _create_session
     except ImportError:
         return None
 
@@ -55,6 +60,8 @@ def _log_approval_lifecycle_async(
     approver_id: Optional[uuid.UUID] = None,
     reason: Optional[str] = None,
     execution_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    extra_details: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Log an approval lifecycle event asynchronously (fire-and-forget).
 
@@ -69,6 +76,8 @@ def _log_approval_lifecycle_async(
         approver_id: ID of the user who approved/denied
         reason: Reason or comment for the decision
         execution_id: Flow execution ID (if applicable)
+        correlation_id: Correlation ID for grouping related audit events
+        extra_details: Additional metadata to include in the audit log details
     """
     try:
         audit_service = _get_audit_service()
@@ -96,6 +105,8 @@ def _log_approval_lifecycle_async(
             approver_id=approver_id,
             reason=reason,
             execution_id=exec_id,
+            correlation_id=correlation_id,
+            extra_details=extra_details,
         )
     except Exception as e:
         logger.debug(f"Failed to log approval lifecycle to audit: {e}")
@@ -222,12 +233,26 @@ class ApprovalService:
         await self._broadcast_approval_update(approval_request, "created")
 
         # Log to audit trail (fire-and-forget)
+        # Read correlation_id from context var if available (set by _call_tool)
+        corr_id = None
+        try:
+            from preloop.services.dynamic_fastmcp import _correlation_id_var
+
+            corr_id = _correlation_id_var.get(None)
+        except Exception:
+            pass
         _log_approval_lifecycle_async(
             account_id=account_id,
             approval_id=approval_request.id,
             event="created",
             tool_name=tool_name,
             execution_id=execution_id,
+            correlation_id=corr_id,
+            extra_details={
+                "approval_policy_id": str(approval_policy_id),
+                "tool_args": tool_args,
+                "timeout_seconds": timeout,
+            },
         )
 
         # Note: Notifications are sent via send_notifications() which is called
@@ -1125,7 +1150,10 @@ class ApprovalService:
             results["mobile_push"] = {"success": False, "error": str(e)}
 
         # Handle webhook-based notifications (these are policy-level, not per-user)
-        policy_channels = approval_policy.notification_channels or []
+        # Derive notification channels from approval_type (the model field)
+        policy_channels = (
+            [approval_policy.approval_type] if approval_policy.approval_type else []
+        )
         for channel in policy_channels:
             if channel in ["slack", "mattermost", "webhook"]:
                 try:

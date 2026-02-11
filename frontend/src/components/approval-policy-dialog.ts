@@ -20,6 +20,7 @@ import '@shoelace-style/shoelace/dist/components/range/range.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
+import './add-ai-model-modal';
 
 export interface ApprovalPolicy {
   id: string;
@@ -84,6 +85,7 @@ export class ApprovalPolicyDialog extends LitElement {
   @state() private _teams: Team[] = [];
   @state() private _aiModels: AIModel[] = [];
   @state() private _loadingModels = false;
+  @state() private _showAddModelModal = false;
 
   // Form state
   @state() private _name = '';
@@ -404,10 +406,17 @@ export class ApprovalPolicyDialog extends LitElement {
   }
 
   private _handleAddModel() {
-    // Navigate to model configuration or open a model dialog
-    this.dispatchEvent(
-      new CustomEvent('add-model', { bubbles: true, composed: true })
-    );
+    this._showAddModelModal = true;
+  }
+
+  private _handleAddModelModalClose() {
+    this._showAddModelModal = false;
+  }
+
+  private async _handleModelCreated() {
+    this._showAddModelModal = false;
+    // Refresh the AI models list so the newly created model appears
+    await this._loadAIModels();
   }
 
   private _renderTypeSpecificFields() {
@@ -761,6 +770,12 @@ DENY if:
           </sl-button>
         </div>
       </sl-dialog>
+
+      <add-ai-model-modal
+        ?open=${this._showAddModelModal}
+        @close-modal=${this._handleAddModelModalClose}
+        @model-created=${this._handleModelCreated}
+      ></add-ai-model-modal>
     `;
   }
 }

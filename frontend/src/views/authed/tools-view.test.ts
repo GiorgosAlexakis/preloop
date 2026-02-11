@@ -70,7 +70,7 @@ describe('ToolsView (approvals + conditions)', () => {
           });
         }
 
-        // ToolCard.loadCurrentUser() request
+        // ToolListItem / loadCurrentUser() request
         if (url.endsWith('/api/v1/auth/users/me') && method === 'GET') {
           return new Response(JSON.stringify({ id: 'user-1' }), {
             status: 200,
@@ -86,15 +86,18 @@ describe('ToolsView (approvals + conditions)', () => {
           });
         }
 
-        // Saving the condition uses the dedicated endpoint
+        // Saving an access rule uses the dedicated endpoint
         if (
-          url.endsWith('/api/v1/tool-configurations/cfg-1/condition') &&
-          method === 'PUT'
+          url.endsWith('/api/v1/tool-configurations/cfg-1/access-rules') &&
+          method === 'POST'
         ) {
-          return new Response(JSON.stringify({ ok: true }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return new Response(
+            JSON.stringify({ id: 'rule-1', action: 'require_approval' }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         }
 
         return new Response(
@@ -113,7 +116,7 @@ describe('ToolsView (approvals + conditions)', () => {
     localStorage.clear();
   });
 
-  it('does not create tool configuration twice when adding a condition immediately after enabling approvals', async () => {
+  it('does not create tool configuration twice when adding a rule immediately after toggling enabled', async () => {
     const element = (await fixture(
       html`<tools-view></tools-view>`
     )) as ToolsView;
@@ -124,16 +127,16 @@ describe('ToolsView (approvals + conditions)', () => {
     );
     await element.updateComplete;
 
-    const toolCard = element.shadowRoot?.querySelector(
-      'tool-card'
+    const toolItem = element.shadowRoot?.querySelector(
+      'tool-list-item'
     ) as HTMLElement;
-    expect(toolCard).to.exist;
+    expect(toolItem).to.exist;
 
     expect((element as any).tools[0].config_id).to.equal(null);
 
-    // Step 1: enable approvals via default policy (auto-creates config)
-    toolCard.dispatchEvent(
-      new CustomEvent('use-default-policy', {
+    // Step 1: toggle enabled (auto-creates config since config_id is null)
+    toolItem.dispatchEvent(
+      new CustomEvent('toggle-enabled', {
         detail: { tool: (element as any).tools[0] },
         bubbles: true,
         composed: true,
@@ -142,17 +145,28 @@ describe('ToolsView (approvals + conditions)', () => {
 
     await waitUntil(
       () => (element as any).tools?.[0]?.config_id === 'cfg-1',
-      'Tool config_id was not set after applying default policy'
+      'Tool config_id was not set after toggling enabled'
     );
     await element.updateComplete;
 
     const updatedTool = (element as any).tools[0];
     expect(updatedTool.config_id).to.equal('cfg-1');
 
-    // Step 2: immediately save a condition - must NOT try to create config again
-    toolCard.dispatchEvent(
-      new CustomEvent('save-condition', {
-        detail: { tool: updatedTool, condition: 'true' },
+    // Step 2: immediately save a rule - must NOT try to create config again
+    toolItem.dispatchEvent(
+      new CustomEvent('save-rule', {
+        detail: {
+          tool: updatedTool,
+          existingRule: null,
+          formData: {
+            action: 'require_approval',
+            condition_expression: null,
+            condition_type: 'cel',
+            description: null,
+            is_enabled: true,
+            approval_policy_id: 'policy-1',
+          },
+        },
         bubbles: true,
         composed: true,
       })
