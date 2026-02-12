@@ -3273,26 +3273,36 @@ class GitHubTracker(BaseTracker):
             # Find the reaction matching the content type AND created by us
             reaction_to_delete = None
 
-            # If we couldn't determine the authenticated user, refuse to delete
-            # to avoid accidentally deleting another user's reaction
+            # If we couldn't determine the authenticated user, fall back to
+            # matching Bot-type users. GitHub App installations always react as
+            # a "[bot]" user, so this is safe for the common case.
             if authenticated_user is None:
-                logger.warning(
-                    "Could not determine authenticated user - refusing to remove reaction "
-                    "to avoid deleting another user's reaction"
+                logger.info(
+                    "Could not determine authenticated user via /user or /app. "
+                    "Falling back to matching Bot-type reactions."
                 )
-                return False
-
-            for r in reactions:
-                if r.get("content") == reaction:
-                    reaction_user = r.get("user", {}).get("login")
-                    # Only delete if it's our reaction
-                    if reaction_user == authenticated_user:
-                        reaction_to_delete = r
-                        break
-                    else:
-                        logger.debug(
-                            f"Skipping reaction by {reaction_user} (not ours: {authenticated_user})"
-                        )
+                for r in reactions:
+                    if r.get("content") == reaction:
+                        user_info = r.get("user", {})
+                        if user_info.get("type") == "Bot":
+                            reaction_to_delete = r
+                            logger.info(
+                                f"Matched Bot reaction by {user_info.get('login')} "
+                                f"for removal"
+                            )
+                            break
+            else:
+                for r in reactions:
+                    if r.get("content") == reaction:
+                        reaction_user = r.get("user", {}).get("login")
+                        # Only delete if it's our reaction
+                        if reaction_user == authenticated_user:
+                            reaction_to_delete = r
+                            break
+                        else:
+                            logger.debug(
+                                f"Skipping reaction by {reaction_user} (not ours: {authenticated_user})"
+                            )
 
             if not reaction_to_delete:
                 logger.info(

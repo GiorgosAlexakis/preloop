@@ -1286,8 +1286,15 @@ class ContainerAgentExecutor(AgentExecutor):
                 safe_flow_name = flow_name.lower().replace(" ", "-")[:30]
                 target_branch = f"preloop/{safe_flow_name}-{execution_id[:8]}"
 
-            clone_commands = []
+            # Extract commit SHA from trigger event for checkout and display
             trigger_data = execution_context.get("trigger_event_data", {})
+            commit_sha = self._extract_commit_sha_from_trigger(trigger_data)
+            if commit_sha:
+                self.logger.info(
+                    f"Extracted commit SHA from trigger event: {commit_sha[:8]}"
+                )
+
+            clone_commands = []
 
             # Track if we successfully configured any repositories
             configured_repos_count = 0
@@ -1464,7 +1471,29 @@ fi
 cd /workspace
 """.strip()
 
+                # SHA checkout command (if we have a specific commit from the trigger event)
+                sha_checkout_cmd = ""
+                if commit_sha:
+                    sha_checkout_cmd = f"""
+cd {full_path}
+echo "========================================="
+echo "Checking out specific commit: {commit_sha}"
+echo "========================================="
+if ! git checkout {commit_sha} 2>/dev/null; then
+    echo "Direct checkout failed, fetching commit..."
+    git fetch origin {commit_sha} 2>/dev/null || true
+    if ! git checkout {commit_sha} 2>/dev/null; then
+        echo "WARNING: Could not checkout commit {commit_sha[:8]}, staying on branch {source_branch}"
+    fi
+fi
+cd /workspace
+""".strip()
+
                 # Validation command
+                sha_display = ""
+                if commit_sha:
+                    sha_display = f'\necho "  Commit: {commit_sha}"'
+
                 validation_cmd = f"""
 if [ ! -d "{full_path}" ] || [ ! -d "{full_path}/.git" ]; then
     echo "========================================="
@@ -1474,18 +1503,17 @@ if [ ! -d "{full_path}" ] || [ ! -d "{full_path}/.git" ]; then
     echo "========================================="
     exit 1
 fi
+echo "========================================="
 echo "✓ Repository successfully cloned to {full_path}"
-echo "  Branch: {target_branch} (from {source_branch})"
+echo "  Branch: {target_branch} (from {source_branch})"{sha_display}
+echo "========================================="
 """.strip()
 
-                clone_commands.extend(
-                    [
-                        pre_clone_cmd,
-                        clone_cmd,
-                        branch_setup_cmd,
-                        validation_cmd,
-                    ]
-                )
+                cmds = [pre_clone_cmd, clone_cmd, branch_setup_cmd]
+                if sha_checkout_cmd:
+                    cmds.append(sha_checkout_cmd)
+                cmds.append(validation_cmd)
+                clone_commands.extend(cmds)
 
                 configured_repos_count += 1
                 self.logger.info(
@@ -2021,6 +2049,55 @@ MREOF
             return None
         except Exception as e:
             self.logger.debug(f"Error extracting source branch from trigger: {e}")
+            return None
+
+    def _extract_commit_sha_from_trigger(
+        self, trigger_data: Dict[str, Any]
+    ) -> Optional[str]:
+        """Extract the commit SHA from trigger event data.
+
+        Supports:
+        - GitHub push: payload.head_commit.id or payload.after
+        - GitHub PR: payload.pull_request.head.sha
+        - GitLab MR: payload.object_attributes.last_commit.id or .sha
+        """
+        try:
+            payload = trigger_data.get("payload", trigger_data)
+            if not isinstance(payload, dict):
+                return None
+
+            # GitHub push event
+            if "head_commit" in payload:
+                sha = payload["head_commit"].get("id")
+                if sha:
+                    return sha
+
+            # GitLab MR
+            obj_attrs = payload.get("object_attributes", {})
+            if isinstance(obj_attrs, dict):
+                if "last_commit" in obj_attrs:
+                    sha = obj_attrs["last_commit"].get("id")
+                    if sha:
+                        return sha
+                if obj_attrs.get("sha"):
+                    return obj_attrs["sha"]
+
+            # GitHub PR
+            pr = payload.get("pull_request")
+            if isinstance(pr, dict):
+                head = pr.get("head")
+                if isinstance(head, dict) and head.get("sha"):
+                    return head["sha"]
+
+            # Direct references
+            if "sha" in payload:
+                return payload["sha"]
+            if "after" in payload:
+                return payload["after"]
+
+            return None
+        except Exception as e:
+            self.logger.debug(f"Error extracting commit SHA from trigger: {e}")
             return None
 
     def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
