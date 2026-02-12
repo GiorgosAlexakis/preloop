@@ -29,20 +29,20 @@ const (
 	userInfoPath  = "/api/v1/users/me"
 )
 
-// UserInfo represents the authenticated user's information.
-type UserInfo struct {
-	ID           string `json:"id"`
-	Email        string `json:"email"`
-	Name         string `json:"name"`
-	Organization string `json:"organization"`
-}
-
 // TokenResponse represents the OAuth token response.
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
 	TokenType    string `json:"token_type"`
+}
+
+// UserInfo represents the authenticated user's information.
+type UserInfo struct {
+	ID           string `json:"id"`
+	Email        string `json:"email"`
+	Name         string `json:"name"`
+	Organization string `json:"organization"`
 }
 
 // authCmd represents the auth command group.
@@ -58,8 +58,13 @@ var authLoginCmd = &cobra.Command{
 	Short: "Authenticate with Preloop",
 	Long: `Authenticate with your Preloop account.
 
-This will open a browser window for authentication and store
-the credentials in ~/.preloop/config.yaml.`,
+With --token: saves the provided API token directly (no server required).
+Without --token: opens a browser for OAuth authentication.
+
+Examples:
+  preloop auth login --token <your-token>
+  preloop auth login --token <your-token> --url http://localhost:8000
+  preloop auth login                          # OAuth browser flow`,
 	RunE: runAuthLogin,
 }
 
@@ -90,22 +95,85 @@ making it suitable for use in shell scripts or as input to other commands.
 
 Examples:
   # Use token in a curl command
-  curl -H "Authorization: Bearer $(preloop auth token)" https://api.preloop.ai/v1/me
+  curl -H "Authorization: Bearer $(preloop auth token)" http://localhost:8000/api/v1/users/me
 
   # Export as environment variable
   export PRELOOP_TOKEN=$(preloop auth token)`,
 	RunE: runAuthToken,
 }
 
+var loginToken string
+
 func init() {
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authTokenCmd)
+
+	authLoginCmd.Flags().StringVar(&loginToken, "token", "", "API access token (skip OAuth and save directly)")
 }
 
-// runAuthLogin implements the OAuth login flow.
+// runAuthLogin handles both token-based and OAuth login.
+// If --token is provided, it saves the token directly.
+// Otherwise, it falls back to the OAuth browser flow.
 func runAuthLogin(cmd *cobra.Command, args []string) error {
+	token := loginToken
+
+	// Also accept the global --token flag as a fallback
+	if token == "" {
+		token = FlagToken
+	}
+
+	if token != "" {
+		return runTokenLogin(token)
+	}
+
+	// No token provided — fall back to OAuth browser flow
+	return runOAuthLogin()
+}
+
+// runTokenLogin saves a token directly to the config file.
+func runTokenLogin(token string) error {
+	// Determine the API URL to persist (flag > current config > default)
+	apiURL := FlagURL
+	if apiURL == "" {
+		cfg, err := config.Load()
+		if err == nil && cfg.APIURL != "" {
+			apiURL = cfg.APIURL
+		} else {
+			apiURL = config.DefaultAPIURL
+		}
+	}
+
+	// Save token and URL to config
+	if err := config.SetTokens(token, ""); err != nil {
+		return fmt.Errorf("failed to save token: %w", err)
+	}
+	if err := config.SetAPIURL(apiURL); err != nil {
+		return fmt.Errorf("failed to save API URL: %w", err)
+	}
+
+	// Verify the token by fetching user info
+	client := api.NewClientWithToken(apiURL, token)
+	var userInfo UserInfo
+	if err := client.Get(userInfoPath, &userInfo); err != nil {
+		fmt.Println("Token saved (could not verify — server may be unreachable)")
+		fmt.Printf("  API URL: %s\n", apiURL)
+		return nil
+	}
+
+	fmt.Println("Authenticated successfully!")
+	fmt.Printf("  User:    %s (%s)\n", userInfo.Name, userInfo.Email)
+	if userInfo.Organization != "" {
+		fmt.Printf("  Org:     %s\n", userInfo.Organization)
+	}
+	fmt.Printf("  API URL: %s\n", apiURL)
+
+	return nil
+}
+
+// runOAuthLogin implements the OAuth browser login flow.
+func runOAuthLogin() error {
 	// Load config to get API URL
 	cfg, err := config.Load()
 	if err != nil {
@@ -115,6 +183,9 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	baseURL := cfg.APIURL
 	if baseURL == "" {
 		baseURL = api.DefaultBaseURL
+	}
+	if FlagURL != "" {
+		baseURL = FlagURL
 	}
 
 	// Generate state for CSRF protection
@@ -196,6 +267,9 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	if err := config.SetTokens(tokenResp.AccessToken, tokenResp.RefreshToken); err != nil {
 		return fmt.Errorf("failed to save tokens: %w", err)
 	}
+	if err := config.SetAPIURL(baseURL); err != nil {
+		return fmt.Errorf("failed to save API URL: %w", err)
+	}
 
 	// Fetch and display user info
 	client := api.NewClientWithToken(baseURL, tokenResp.AccessToken)
@@ -232,45 +306,48 @@ func runAuthLogout(cmd *cobra.Command, args []string) error {
 
 // runAuthStatus shows the current authentication status.
 func runAuthStatus(cmd *cobra.Command, args []string) error {
-	if !config.IsAuthenticated() {
+	cfg, err := config.Resolve(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	if cfg.AccessToken == "" {
 		fmt.Println("Not authenticated")
-		fmt.Println("Run 'preloop auth login' to authenticate")
+		fmt.Println("Run 'preloop auth login --token <your-token>' to authenticate")
 		return nil
 	}
 
 	// Create API client and fetch user info
-	client, err := api.NewClient()
-	if err != nil {
-		return fmt.Errorf("failed to create API client: %w", err)
-	}
+	client := api.NewClientWithToken(cfg.APIURL, cfg.AccessToken)
 
 	var userInfo UserInfo
 	if err := client.Get(userInfoPath, &userInfo); err != nil {
-		// Token might be invalid or expired
-		fmt.Println("Authenticated (token may be expired)")
-		fmt.Println("Run 'preloop auth login' to re-authenticate")
+		fmt.Println("Authenticated (token may be invalid or server unreachable)")
+		fmt.Printf("  API URL: %s\n", cfg.APIURL)
+		fmt.Println("Run 'preloop auth login --token <your-token>' to re-authenticate")
 		return nil
 	}
 
 	fmt.Println("Authenticated")
-	fmt.Printf("  User:         %s\n", userInfo.Name)
-	fmt.Printf("  Email:        %s\n", userInfo.Email)
+	fmt.Printf("  User:    %s\n", userInfo.Name)
+	fmt.Printf("  Email:   %s\n", userInfo.Email)
 	if userInfo.Organization != "" {
-		fmt.Printf("  Organization: %s\n", userInfo.Organization)
+		fmt.Printf("  Org:     %s\n", userInfo.Organization)
 	}
+	fmt.Printf("  API URL: %s\n", cfg.APIURL)
 
 	return nil
 }
 
 // runAuthToken prints the current access token.
 func runAuthToken(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
+	cfg, err := config.Resolve(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	if cfg.AccessToken == "" {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop auth login --token <your-token>' first")
 	}
 
 	// Print just the token with no newline for scripting
@@ -374,16 +451,16 @@ func generateState() (string, error) {
 }
 
 // openBrowser opens the default browser to the specified URL.
-func openBrowser(url string) error {
+func openBrowser(rawURL string) error {
 	var cmd *exec.Cmd
 
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("open", rawURL)
 	case "linux":
-		cmd = exec.Command("xdg-open", url)
+		cmd = exec.Command("xdg-open", rawURL)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

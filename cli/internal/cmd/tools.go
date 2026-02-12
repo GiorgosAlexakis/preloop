@@ -93,7 +93,7 @@ func runToolsList(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString("format")
 	category, _ := cmd.Flags().GetString("category")
 
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -164,7 +164,7 @@ func runToolsList(cmd *cobra.Command, args []string) error {
 func runToolsEnable(cmd *cobra.Command, args []string) error {
 	toolName := args[0]
 
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -198,7 +198,7 @@ func runToolsEnable(cmd *cobra.Command, args []string) error {
 func runToolsDisable(cmd *cobra.Command, args []string) error {
 	toolName := args[0]
 
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}

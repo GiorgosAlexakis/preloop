@@ -16,6 +16,12 @@ var (
 
 	// verbose enables verbose output.
 	verbose bool
+
+	// FlagToken is the access token passed via --token flag.
+	FlagToken string
+
+	// FlagURL is the API URL passed via --url flag.
+	FlagURL string
 )
 
 // rootCmd represents the base command when called without any subcommands.
@@ -31,7 +37,11 @@ Use this CLI to:
   - Configure available tools
   - Review and respond to approval requests
 
-Get started by running 'preloop auth login' to authenticate.`,
+Get started by running 'preloop auth login --token <your-token>' to authenticate.
+
+Authentication priority: --token flag > PRELOOP_TOKEN env var > ~/.preloop/config.yaml
+API URL priority:        --url flag   > PRELOOP_URL env var   > ~/.preloop/config.yaml`,
+
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Check for updates on each invocation (cached daily)
 		if err := version.CheckForUpdate(); err != nil {
@@ -53,6 +63,8 @@ func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.preloop/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
+	rootCmd.PersistentFlags().StringVar(&FlagToken, "token", "", "access token (overrides PRELOOP_TOKEN env var and config file)")
+	rootCmd.PersistentFlags().StringVar(&FlagURL, "url", "", "API base URL (overrides PRELOOP_URL env var and config file)")
 
 	// Add subcommands
 	rootCmd.AddCommand(authCmd)

@@ -14,7 +14,7 @@ import (
 
 const (
 	// DefaultBaseURL is the default Preloop API endpoint.
-	DefaultBaseURL = "https://api.preloop.ai"
+	DefaultBaseURL = "http://localhost:8000"
 
 	// DefaultTimeout is the default HTTP client timeout.
 	DefaultTimeout = 30 * time.Second
@@ -28,19 +28,16 @@ type Client struct {
 }
 
 // NewClient creates a new Preloop API client.
-func NewClient() (*Client, error) {
-	cfg, err := config.Load()
+// tokenOverride and urlOverride allow CLI flags to take precedence over
+// environment variables and the config file.
+func NewClient(tokenOverride, urlOverride string) (*Client, error) {
+	cfg, err := config.Resolve(tokenOverride, urlOverride)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	baseURL := cfg.APIURL
-	if baseURL == "" {
-		baseURL = DefaultBaseURL
-	}
-
 	return &Client{
-		baseURL: baseURL,
+		baseURL: cfg.APIURL,
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},

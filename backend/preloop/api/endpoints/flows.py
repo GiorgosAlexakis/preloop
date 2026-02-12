@@ -264,7 +264,7 @@ async def get_flow_execution_logs(
     db: Session = Depends(get_db),
     execution_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
-    tail: int = 1000,
+    tail: int | None = None,
 ) -> Dict[str, Any]:
     """Get execution logs from the container (if running) or database (if finished).
 
@@ -273,7 +273,7 @@ async def get_flow_execution_logs(
 
     Args:
         execution_id: ID of the execution
-        tail: Number of recent log lines to retrieve (default: 1000)
+        tail: Number of recent log lines to retrieve, or None for all logs
 
     Returns:
         Dictionary with:

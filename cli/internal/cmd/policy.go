@@ -180,7 +180,7 @@ func runPolicyValidate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✓ Valid YAML syntax: %s\n", filePath)
 
 	// API validation
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -244,7 +244,7 @@ func runPolicyApply(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid YAML syntax: %w", err)
 	}
 
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -317,7 +317,7 @@ func runPolicyDiff(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -379,7 +379,7 @@ func runPolicyDiff(cmd *cobra.Command, args []string) error {
 func runPolicyExport(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -412,7 +412,7 @@ func runPolicyExport(cmd *cobra.Command, args []string) error {
 func runPolicyList(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString("format")
 
-	client, err := api.NewClient()
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}

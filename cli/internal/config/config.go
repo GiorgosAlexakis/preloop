@@ -9,6 +9,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Environment variable names.
+const (
+	EnvToken = "PRELOOP_TOKEN"
+	EnvURL   = "PRELOOP_URL"
+)
+
 const (
 	// ConfigDir is the directory name for preloop config.
 	ConfigDir = ".preloop"
@@ -17,7 +23,7 @@ const (
 	ConfigFile = "config.yaml"
 
 	// DefaultAPIURL is the default API endpoint.
-	DefaultAPIURL = "https://api.preloop.ai"
+	DefaultAPIURL = "http://localhost:8000"
 )
 
 // Config represents the CLI configuration.
@@ -159,11 +165,44 @@ func SetAPIURL(apiURL string) error {
 	return Save(cfg)
 }
 
-// IsAuthenticated returns true if an access token is configured.
+// IsAuthenticated returns true if an access token is configured
+// (from config file, env var, or CLI flag).
 func IsAuthenticated() bool {
 	cfg, err := Load()
 	if err != nil {
 		return false
 	}
 	return cfg.AccessToken != ""
+}
+
+// Resolve returns a Config with values resolved in priority order:
+// CLI flags (overrides) > environment variables > config file > defaults.
+func Resolve(tokenOverride, urlOverride string) (*Config, error) {
+	cfg, err := Load()
+	if err != nil {
+		return nil, err
+	}
+
+	// Environment variables override config file
+	if v := os.Getenv(EnvToken); v != "" {
+		cfg.AccessToken = v
+	}
+	if v := os.Getenv(EnvURL); v != "" {
+		cfg.APIURL = v
+	}
+
+	// CLI flags override everything
+	if tokenOverride != "" {
+		cfg.AccessToken = tokenOverride
+	}
+	if urlOverride != "" {
+		cfg.APIURL = urlOverride
+	}
+
+	// Ensure default
+	if cfg.APIURL == "" {
+		cfg.APIURL = DefaultAPIURL
+	}
+
+	return cfg, nil
 }

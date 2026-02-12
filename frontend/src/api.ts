@@ -673,13 +673,14 @@ export async function getFlowExecutionMetrics(executionId: string): Promise<{
 
 export async function getFlowExecutionLogs(
   executionId: string,
-  tail: number = 1000
+  tail?: number
 ): Promise<{
   logs: any[];
   source: 'container' | 'database';
 }> {
+  const params = tail !== undefined ? `?tail=${tail}` : '';
   const response = await fetchWithAuth(
-    `/api/v1/flows/executions/${executionId}/logs?tail=${tail}`
+    `/api/v1/flows/executions/${executionId}/logs${params}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch execution logs');

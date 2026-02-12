@@ -920,13 +920,15 @@ class ContainerAgentExecutor(AgentExecutor):
                 self.logger.error(f"Failed to delete Job {job_name}: {e}")
                 raise
 
-    async def get_logs(self, session_reference: str, tail: int = 100) -> list[str]:
+    async def get_logs(
+        self, session_reference: str, tail: int | None = None
+    ) -> list[str]:
         """
         Get logs from a container (batch mode).
 
         Args:
             session_reference: Container ID or Job name
-            tail: Number of recent log lines
+            tail: Number of recent log lines, or None for all logs
 
         Returns:
             List of log lines
@@ -938,7 +940,10 @@ class ContainerAgentExecutor(AgentExecutor):
             docker = await self._get_docker_client()
             container = await docker.containers.get(session_reference)
 
-            logs = await container.log(stdout=True, stderr=True, tail=tail)
+            log_kwargs: dict = {"stdout": True, "stderr": True}
+            if tail is not None:
+                log_kwargs["tail"] = tail
+            logs = await container.log(**log_kwargs)
             # Handle both bytes and str (aiodocker API can return either)
             decoded_logs = []
             for line in logs:
@@ -1028,13 +1033,15 @@ class ContainerAgentExecutor(AgentExecutor):
             )
             yield f"[ERROR] Unexpected error: {e}"
 
-    async def _get_kubernetes_logs(self, job_name: str, tail: int = 100) -> list[str]:
+    async def _get_kubernetes_logs(
+        self, job_name: str, tail: int | None = None
+    ) -> list[str]:
         """
         Get logs from the Pod associated with a Kubernetes Job.
 
         Args:
             job_name: Name of the Job
-            tail: Number of recent log lines
+            tail: Number of recent log lines, or None for all logs
 
         Returns:
             List of log lines
@@ -1055,12 +1062,15 @@ class ContainerAgentExecutor(AgentExecutor):
             # Get logs from the first pod (Jobs typically have one pod)
             pod_name = pods.items[0].metadata.name
 
-            logs = await self._k8s_core_api.read_namespaced_pod_log(
-                name=pod_name,
-                namespace=self.agent_namespace,
-                tail_lines=tail,
-                _preload_content=False,  # Get raw response
-            )
+            log_kwargs: dict = {
+                "name": pod_name,
+                "namespace": self.agent_namespace,
+                "_preload_content": False,  # Get raw response
+            }
+            if tail is not None:
+                log_kwargs["tail_lines"] = tail
+
+            logs = await self._k8s_core_api.read_namespaced_pod_log(**log_kwargs)
 
             # Read and decode the logs
             log_data = await logs.read()

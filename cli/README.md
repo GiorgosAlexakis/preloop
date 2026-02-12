@@ -26,8 +26,11 @@ Download the latest release from [GitHub Releases](https://github.com/preloop/pr
 ## Quick Start
 
 ```bash
-# Authenticate with Preloop
-preloop auth login
+# Authenticate with a token
+preloop auth login --token <your-token>
+
+# Authenticate with a token and custom API URL
+preloop auth login --token <your-token> --url http://localhost:8000
 
 # Check authentication status
 preloop auth status
@@ -53,9 +56,11 @@ preloop approvals approve <request-id>
 ### Authentication
 
 ```bash
-preloop auth login    # Authenticate with Preloop
-preloop auth logout   # Log out and clear credentials
-preloop auth status   # Show authentication status
+preloop auth login --token <token>   # Save an API token
+preloop auth login                   # OAuth browser flow (coming soon)
+preloop auth logout                  # Log out and clear credentials
+preloop auth status                  # Show authentication status
+preloop auth token                   # Print token for scripting
 ```
 
 ### Policy Management
@@ -101,13 +106,30 @@ The CLI stores configuration in `~/.preloop/config.yaml`:
 ```yaml
 access_token: <your-access-token>
 refresh_token: <your-refresh-token>
-api_url: https://api.preloop.ai
+api_url: http://localhost:8000
 ```
+
+### Global Flags
+
+All commands accept these flags:
+
+- `--token <token>` - Override the access token for this invocation
+- `--url <url>` - Override the API URL for this invocation
+- `--verbose` / `-v` - Enable verbose output
 
 ### Environment Variables
 
-- `PRELOOP_API_URL` - Override the API URL
 - `PRELOOP_TOKEN` - Override the access token
+- `PRELOOP_URL` - Override the API URL
+
+### Resolution Priority
+
+Both token and URL are resolved in this order (highest priority first):
+
+1. CLI flags (`--token`, `--url`)
+2. Environment variables (`PRELOOP_TOKEN`, `PRELOOP_URL`)
+3. Config file (`~/.preloop/config.yaml`)
+4. Defaults (`http://localhost:8000`)
 
 ## Development
 
