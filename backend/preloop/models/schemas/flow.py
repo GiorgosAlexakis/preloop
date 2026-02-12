@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class GitCloneRepository(BaseModel):
@@ -89,7 +89,7 @@ class FlowBase(BaseModel):
     # Event types that trigger this flow (e.g., ['pull_request_created', 'pull_request_updated'])
     trigger_event_types: Optional[List[str]] = None
     trigger_organization_id: Optional[UUID] = None
-    # Project IDs that can trigger this flow (empty = all projects in org)
+    # Project IDs that can trigger this flow (empty/None = all projects in org)
     trigger_project_ids: Optional[List[UUID]] = None
     trigger_config: Optional[Dict[str, Any]] = None
     webhook_config: Optional[WebhookConfig] = None
@@ -111,6 +111,14 @@ class FlowBase(BaseModel):
     prompt_customized: Optional[bool] = False
     tools_customized: Optional[bool] = False
     preset_update_available: Optional[bool] = False
+
+    @field_validator("trigger_project_ids", mode="before")
+    @classmethod
+    def normalize_empty_project_ids(cls, v):
+        """Normalize empty list to None so the DB stores NULL (wildcard)."""
+        if isinstance(v, list) and len(v) == 0:
+            return None
+        return v
 
 
 class FlowCreate(FlowBase):

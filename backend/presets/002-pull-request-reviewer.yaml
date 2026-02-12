@@ -4,7 +4,8 @@ description: >-
   issues, and best practices.
 icon: code-square
 trigger_event_source: null
-trigger_event_type: pull_request.opened
+trigger_event_types:
+  - pull_request.opened
 prompt_template: |
   You are an expert code reviewer.
 

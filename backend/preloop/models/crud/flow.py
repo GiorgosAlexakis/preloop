@@ -168,22 +168,26 @@ class CRUDFlow(CRUDBase[models.Flow]):
           - trigger_project_ids is null/empty (any project in org), OR
           - trigger_project_ids array contains project_id
         """
-        from sqlalchemy import or_
+        from sqlalchemy import func, or_
 
         # Event type matching: event_type must be in trigger_event_types array
         event_type_match = self.model.trigger_event_types.any(event_type)
 
-        # Project matching
+        # Project matching: NULL or empty array both mean "any project"
+        wildcard_project = or_(
+            self.model.trigger_project_ids.is_(None),
+            func.coalesce(func.array_length(self.model.trigger_project_ids, 1), 0) == 0,
+        )
         if project_id:
             project_match = or_(
-                # Flow accepts any project (no project filter)
-                self.model.trigger_project_ids.is_(None),
+                # Flow accepts any project (no project filter or empty array)
+                wildcard_project,
                 # project_id is in trigger_project_ids array
                 self.model.trigger_project_ids.any(project_id),
             )
         else:
             # No project_id provided - match flows with no project filter
-            project_match = self.model.trigger_project_ids.is_(None)
+            project_match = wildcard_project
 
         query = db.query(self.model).filter(
             # Source matches exactly OR flow accepts any source (null)

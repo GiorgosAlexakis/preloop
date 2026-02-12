@@ -4,7 +4,8 @@ description: >-
   assignees based on content and context.
 icon: funnel
 trigger_event_source: null
-trigger_event_type: issue.opened
+trigger_event_types:
+  - issue.opened
 prompt_template: |
   A new issue has been created in the {{project.name}} repository.
 
