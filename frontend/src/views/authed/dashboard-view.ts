@@ -17,8 +17,6 @@ import { isSaaS } from '../../brand-config';
 import { AuthedElement } from '../../api';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import { parseUTCDate } from '../../utils/date';
-import '../../components/similar-issues-widget.ts';
-import '../../components/duplicate-stats-chart.ts';
 import '../../components/tracker-pill.ts';
 import '../../components/theme-switcher.ts';
 import '../../components/mcp-setup-dialog.ts';
@@ -370,7 +368,6 @@ export class DashboardView extends AuthedElement {
         tools,
         flows,
         flowExecutions,
-        complianceMetrics,
         approvalRequests,
         users,
         aiModels,
@@ -389,7 +386,6 @@ export class DashboardView extends AuthedElement {
         catchWith403Handling(api.getTools(), []),
         catchWith403Handling(api.getFlows(), []),
         catchWith403Handling(api.getFlowExecutions({ limit: 5 }), []),
-        catchWith403Handling(this.fetchComplianceMetrics(), undefined),
         catchWith403Handling(
           this.fetchData('/api/v1/approval-requests?status=pending'),
           []
@@ -440,7 +436,6 @@ export class DashboardView extends AuthedElement {
         (exec) => exec.status === 'FAILED'
       );
 
-      this.complianceMetrics = complianceMetrics;
       this.pendingApprovals = approvalRequests || [];
 
       // Check if AI models exist
@@ -457,39 +452,6 @@ export class DashboardView extends AuthedElement {
       console.error('Failed to fetch dashboard data', error);
     } finally {
       this.isLoading = false;
-    }
-  }
-
-  async fetchComplianceMetrics(): Promise<ComplianceMetrics | undefined> {
-    try {
-      // Fetch a sample of issues using the search endpoint (same as issues-compliance-view.ts)
-      const response = await this.fetchData(
-        '/api/v1/search?search_type=similarity&embedding_type=issue&query=&sort=newest&limit=100&status=opened'
-      );
-      if (!response || !Array.isArray(response)) return undefined;
-
-      const issues = response;
-      let compliantCount = 0;
-
-      // Check each issue for basic compliance (has description, labels, etc.)
-      for (const issue of issues) {
-        const hasDescription =
-          issue.description && issue.description.length > 20;
-        const hasLabels = issue.labels && issue.labels.length > 0;
-        if (hasDescription && hasLabels) {
-          compliantCount++;
-        }
-      }
-
-      return {
-        total_issues: issues.length,
-        compliant_issues: compliantCount,
-        non_compliant_issues: issues.length - compliantCount,
-        compliance_rate: issues.length > 0 ? compliantCount / issues.length : 0,
-      };
-    } catch (error) {
-      console.error('Failed to fetch compliance metrics', error);
-      return undefined;
     }
   }
 
@@ -1178,34 +1140,6 @@ export class DashboardView extends AuthedElement {
                 </sl-card>
               `
             : ''}
-
-          <!-- Similar Issues (existing widget) -->
-          ${this.trackers.length > 0
-            ? html`
-                <similar-issues-widget></similar-issues-widget>
-                <sl-card>
-                  <div slot="header" class="chart-header">
-                    Similar Issues per Project
-                    <sl-tooltip
-                      content="Showing issues with a similarity score of ${DEFAULT_SIMILARITY_THRESHOLD_CHARTS *
-                      100}% or higher."
-                    >
-                      <sl-icon name="question-circle"></sl-icon>
-                    </sl-tooltip>
-                  </div>
-                  <duplicate-stats-chart
-                    .similarityThreshold=${DEFAULT_SIMILARITY_THRESHOLD_CHARTS}
-                  ></duplicate-stats-chart>
-                </sl-card>
-              `
-            : html`
-                <sl-alert variant="primary" open>
-                  <sl-icon slot="icon" name="info-circle"></sl-icon>
-                  ${unsafeHTML(
-                    'No projects found. <a href="/console/trackers">Add a tracker</a> to see project-specific widgets.'
-                  )}
-                </sl-alert>
-              `}
         </div>
 
         <!-- Side Column -->
@@ -1501,27 +1435,6 @@ export class DashboardView extends AuthedElement {
                 : ''}
             </ul>
           </sl-card>
-
-          <!-- Dependencies Overview - Only show if issues exist -->
-          ${this.hasIssues
-            ? html`
-                <sl-card>
-                  <div slot="header" class="chart-header">
-                    <sl-icon name="diagram-2"></sl-icon>
-                    Dependencies
-                  </div>
-                  <div
-                    class="empty-state"
-                    style="padding: var(--sl-spacing-medium);"
-                  >
-                    <p style="margin: 0;">
-                      Track issue dependencies and blockers.
-                      <a href="/console/issues/dependencies">View details</a>
-                    </p>
-                  </div>
-                </sl-card>
-              `
-            : ''}
         </div>
       </div>
     `;

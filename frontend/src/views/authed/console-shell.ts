@@ -26,6 +26,9 @@ export class ConsoleShell extends LitElement {
   private features: FeaturesResponse['features'] = {};
 
   @state()
+  private _featuresLoaded = false;
+
+  @state()
   private hasTrackers = false;
 
   static styles = [
@@ -131,6 +134,8 @@ export class ConsoleShell extends LitElement {
       console.error('Failed to fetch features:', error);
       // Default to empty features if fetch fails
       this.features = {};
+    } finally {
+      this._featuresLoaded = true;
     }
 
     // Check for trackers
@@ -208,23 +213,25 @@ export class ConsoleShell extends LitElement {
                 Tools
               </sl-menu-item>
             </a>
-            ${this.features['audit_logs']
-              ? html`
-                  <a href="/console/audit">
-                    <sl-menu-item>
-                      <sl-icon name="journal-text" slot="prefix"></sl-icon>
-                      Audit
-                    </sl-menu-item>
-                  </a>
-                `
-              : html`
-                  <a href="/console/approvals">
-                    <sl-menu-item>
-                      <sl-icon name="shield-check" slot="prefix"></sl-icon>
-                      Approvals
-                    </sl-menu-item>
-                  </a>
-                `}
+            ${this._featuresLoaded
+              ? this.features['audit_logs']
+                ? html`
+                    <a href="/console/audit">
+                      <sl-menu-item>
+                        <sl-icon name="journal-text" slot="prefix"></sl-icon>
+                        Audit
+                      </sl-menu-item>
+                    </a>
+                  `
+                : html`
+                    <a href="/console/approvals">
+                      <sl-menu-item>
+                        <sl-icon name="shield-check" slot="prefix"></sl-icon>
+                        Approvals
+                      </sl-menu-item>
+                    </a>
+                  `
+              : ''}
             <!-- Governance is now integrated into the Tools page -->
             <a href="/console/flows">
               <sl-menu-item>

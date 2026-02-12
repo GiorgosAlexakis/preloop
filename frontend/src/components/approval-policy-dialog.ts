@@ -388,14 +388,19 @@ export class ApprovalPolicyDialog extends LitElement {
           break;
       }
 
+      let savedPolicy;
       if (this.policy) {
-        await updateApprovalPolicy(this.policy.id, policyData);
+        savedPolicy = await updateApprovalPolicy(this.policy.id, policyData);
       } else {
-        await createApprovalPolicy(policyData);
+        savedPolicy = await createApprovalPolicy(policyData);
       }
 
       this.dispatchEvent(
-        new CustomEvent('saved', { bubbles: true, composed: true })
+        new CustomEvent('saved', {
+          detail: { policy: savedPolicy },
+          bubbles: true,
+          composed: true,
+        })
       );
       this._handleClose();
     } catch (error: any) {

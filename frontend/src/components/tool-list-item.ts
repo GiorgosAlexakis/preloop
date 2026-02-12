@@ -396,11 +396,10 @@ export class ToolListItem extends LitElement {
     this._closeRuleEditor();
   }
 
-  private _handleCreatePolicy(e: CustomEvent) {
-    // Bubble up to tools-view to create the policy via API
+  private _handlePolicyCreated() {
+    // Bubble up to tools-view to refresh the policies list
     this.dispatchEvent(
-      new CustomEvent('create-policy', {
-        detail: e.detail,
+      new CustomEvent('policy-created', {
         bubbles: true,
         composed: true,
       })
@@ -681,7 +680,7 @@ export class ToolListItem extends LitElement {
         .features=${this.features}
         .toolSchema=${this.tool.schema}
         @save-rule=${this._handleSaveRule}
-        @create-policy=${this._handleCreatePolicy}
+        @policy-created=${this._handlePolicyCreated}
         @close=${this._closeRuleEditor}
       ></tool-rule-editor>
     `;

@@ -10,7 +10,6 @@ import {
   createToolConfiguration,
   updateToolConfiguration,
   getApprovalPolicies,
-  createApprovalPolicy,
   deleteApprovalPolicy,
   getFeatures,
   getAccountDetails,
@@ -213,10 +212,6 @@ export class ToolsView extends LitElement {
         padding: 0;
         vertical-align: middle;
         white-space: nowrap;
-      }
-
-      .summary-table tr + tr td {
-        border-top: 1px solid var(--sl-color-neutral-100);
       }
 
       .summary-stat {
@@ -860,19 +855,12 @@ export class ToolsView extends LitElement {
     }
   }
 
-  private async _handleCreatePolicyFromRule(e: CustomEvent) {
-    const { policyData } = e.detail;
+  private async _handlePolicyCreated() {
     try {
-      const newPolicy = await createApprovalPolicy(policyData);
-      // Reload policies to include the new one
+      // Reload policies so the new policy appears in all dropdowns
       this.approvalPolicies = await getApprovalPolicies();
-      // Notify the tool-rule-editor about the new policy by re-rendering
-      // The newly created policy ID will be available for selection
-      alert(
-        `Policy "${newPolicy.name}" created. You can now select it in the policy dropdown.`
-      );
     } catch (err: any) {
-      this.error = err.message || 'Failed to create approval policy';
+      this.error = err.message || 'Failed to refresh approval policies';
     }
   }
 
@@ -1360,7 +1348,7 @@ export class ToolsView extends LitElement {
                           @toggle-enabled=${this._handleToggleEnabled}
                           @save-rule=${this._handleSaveRule}
                           @delete-rule=${this._handleDeleteRule}
-                          @create-policy=${this._handleCreatePolicyFromRule}
+                          @policy-created=${this._handlePolicyCreated}
                           @reorder-rules=${this._handleReorderRules}
                         ></tool-list-item>
                       `

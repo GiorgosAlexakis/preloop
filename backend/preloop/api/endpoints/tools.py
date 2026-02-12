@@ -481,6 +481,9 @@ async def list_all_tools(
                 "priority": rule.priority,
                 "description": rule.description,
                 "is_enabled": rule.is_enabled,
+                "approval_policy_id": str(rule.approval_policy_id)
+                if rule.approval_policy_id
+                else None,
             }
         )
         if rule.condition_expression and rule.is_enabled:

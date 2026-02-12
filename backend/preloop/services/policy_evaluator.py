@@ -235,8 +235,10 @@ def evaluate_policy(
                 # Determine approval policy ID for require_approval action
                 approval_policy_id = None
                 if rule.action == "require_approval":
-                    # Use the tool config's approval_policy_id
-                    approval_policy_id = tool_config.approval_policy_id
+                    # Prefer the rule-level policy; fall back to tool config default
+                    approval_policy_id = (
+                        rule.approval_policy_id or tool_config.approval_policy_id
+                    )
 
                 rule_desc = (
                     rule.description or f"Rule matched: {rule.condition_expression}"

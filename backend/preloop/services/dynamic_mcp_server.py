@@ -36,9 +36,14 @@ def _get_audit_service():
 def _get_db_factory():
     """Get a database session factory for async audit logging."""
     try:
-        from preloop.models.db.session import get_db_session
+        from preloop.models.db.session import get_session_factory
 
-        return lambda: next(get_db_session())
+        def _create_session():
+            """Create a session that the caller is responsible for closing."""
+            factory = get_session_factory()
+            return factory()
+
+        return _create_session
     except ImportError:
         return None
 

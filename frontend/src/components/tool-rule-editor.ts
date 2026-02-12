@@ -12,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/switch/switch.js';
+import './approval-policy-dialog';
 import type { ApprovalPolicy } from './tool-card';
 import type { AccessRule } from '../api';
 
@@ -62,14 +63,8 @@ export class ToolRuleEditor extends LitElement {
   // Approval policy state
   @state() private _approvalPolicyId: string | null = null;
   @state() private _approvalMode: 'human' | 'ai' = 'human';
-  @state() private _showNewPolicy = false;
-  // Inline AI policy fields
-  @state() private _aiModel = '';
-  @state() private _aiGuidelines = '';
-  @state() private _aiConfidenceThreshold = 0.8;
-  @state() private _aiFallbackBehavior: 'approve' | 'deny' | 'escalate' =
-    'escalate';
-  @state() private _aiEscalationPolicyId: string | null = null;
+  @state() private _showPolicyDialog = false;
+  private _initializing = false;
 
   private get _isEditing(): boolean {
     return this.rule !== null;
@@ -325,31 +320,6 @@ export class ToolRuleEditor extends LitElement {
       font-size: var(--sl-font-size-small);
     }
 
-    .ai-config {
-      margin-top: var(--sl-spacing-medium);
-      padding: var(--sl-spacing-medium);
-      background: var(--sl-color-neutral-0);
-      border: 1px solid var(--sl-color-neutral-200);
-      border-radius: var(--sl-border-radius-medium);
-    }
-
-    .ai-config-title {
-      font-size: var(--sl-font-size-small);
-      font-weight: var(--sl-font-weight-semibold);
-      color: var(--sl-color-neutral-700);
-      margin-bottom: var(--sl-spacing-small);
-    }
-
-    .ai-config-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--sl-spacing-small);
-    }
-
-    .ai-config-full {
-      grid-column: 1 / -1;
-    }
-
     .policy-select-row {
       display: flex;
       align-items: end;
@@ -368,6 +338,7 @@ export class ToolRuleEditor extends LitElement {
   }
 
   private _initForm() {
+    this._initializing = true;
     if (this.rule) {
       this._action = this.rule.action as 'allow' | 'deny' | 'require_approval';
       this._conditionExpression = this.rule.condition_expression || '';
@@ -429,14 +400,13 @@ export class ToolRuleEditor extends LitElement {
       this._approvalPolicyId = null;
       this._approvalMode = 'human';
     }
-    this._showNewPolicy = false;
-    this._aiModel = '';
-    this._aiGuidelines = '';
-    this._aiConfidenceThreshold = 0.8;
-    this._aiFallbackBehavior = 'escalate';
-    this._aiEscalationPolicyId = null;
+    this._showPolicyDialog = false;
     this._error = null;
     this._saving = false;
+    // Clear the guard after Shoelace has processed slotted options
+    this.updateComplete.then(() => {
+      this._initializing = false;
+    });
   }
 
   /**
@@ -636,14 +606,27 @@ export class ToolRuleEditor extends LitElement {
       conditionExpr = this._buildSimpleExpression() || null;
     }
 
+    // Read the policy select value directly from the DOM as a safety net
+    // in case sl-change events were suppressed during initialization.
+    let approvalPolicyId: string | null = this._approvalPolicyId;
+    if (this._action === 'require_approval') {
+      const policySelect = this.shadowRoot?.querySelector(
+        '.policy-select-row sl-select'
+      ) as any;
+      if (policySelect) {
+        approvalPolicyId = policySelect.value || null;
+      }
+    } else {
+      approvalPolicyId = null;
+    }
+
     const formData: RuleFormData = {
       action: this._action,
       condition_expression: conditionExpr,
       condition_type: conditionExpr ? 'cel' : 'simple',
       description: this._description.trim() || null,
       is_enabled: this._isEnabled,
-      approval_policy_id:
-        this._action === 'require_approval' ? this._approvalPolicyId : null,
+      approval_policy_id: approvalPolicyId,
     };
 
     this.dispatchEvent(
@@ -970,9 +953,10 @@ export class ToolRuleEditor extends LitElement {
             <sl-select
               size="small"
               placeholder="Select an approval policy..."
-              value=${this._approvalPolicyId || ''}
+              .value=${this._approvalPolicyId || ''}
               clearable
               @sl-change=${(e: Event) => {
+                if (this._initializing) return;
                 const val = (e.target as any).value;
                 this._approvalPolicyId = val || null;
               }}
@@ -1006,22 +990,17 @@ export class ToolRuleEditor extends LitElement {
               size="small"
               variant="text"
               @click=${() => {
-                this._showNewPolicy = !this._showNewPolicy;
+                this._showPolicyDialog = true;
               }}
             >
-              <sl-icon
-                slot="prefix"
-                name=${this._showNewPolicy ? 'dash-lg' : 'plus-lg'}
-              ></sl-icon>
-              ${this._showNewPolicy ? 'Cancel' : 'New'}
+              <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+              New
             </sl-button>
           </div>
 
-          ${this._showNewPolicy ? this._renderInlineNewPolicy() : ''}
           ${this._approvalMode === 'ai' &&
           hasAdvanced &&
-          !this._approvalPolicyId &&
-          !this._showNewPolicy
+          !this._approvalPolicyId
             ? html`<div
                 class="hint"
                 style="margin-top: var(--sl-spacing-small);"
@@ -1035,166 +1014,36 @@ export class ToolRuleEditor extends LitElement {
     `;
   }
 
-  private _renderInlineNewPolicy() {
-    const isAiMode = this._approvalMode === 'ai' && this._hasAdvancedConditions;
+  private _handlePolicyDialogSaved(e: CustomEvent) {
+    e.stopPropagation();
+    const savedPolicy = e.detail?.policy;
+    this._showPolicyDialog = false;
 
-    return html`
-      <div class="ai-config" style="margin-top: var(--sl-spacing-small);">
-        <div class="ai-config-title">
-          New ${isAiMode ? 'AI' : ''} Approval Policy
-        </div>
-        <div class="ai-config-grid">
-          <div class="ai-config-full">
-            <sl-input
-              size="small"
-              label="Policy Name"
-              placeholder="e.g., ${isAiMode
-                ? 'AI Review for high-risk operations'
-                : 'Manual review policy'}"
-              value=${this._description || ''}
-              @sl-input=${(e: Event) =>
-                (this._description = (e.target as any).value)}
-            ></sl-input>
-          </div>
-          ${isAiMode
-            ? html`
-                <div>
-                  <sl-select
-                    size="small"
-                    label="AI Model"
-                    value=${this._aiModel}
-                    @sl-change=${(e: Event) =>
-                      (this._aiModel = (e.target as any).value)}
-                    placeholder="Select model..."
-                  >
-                    <sl-option value="gpt-4o">GPT-4o</sl-option>
-                    <sl-option value="gpt-4o-mini">GPT-4o Mini</sl-option>
-                    <sl-option value="claude-sonnet-4-20250514"
-                      >Claude Sonnet</sl-option
-                    >
-                    <sl-option value="claude-opus-4-20250514"
-                      >Claude Opus</sl-option
-                    >
-                  </sl-select>
-                </div>
-                <div>
-                  <sl-input
-                    size="small"
-                    label="Confidence Threshold"
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value=${this._aiConfidenceThreshold.toString()}
-                    @sl-input=${(e: Event) =>
-                      (this._aiConfidenceThreshold = parseFloat(
-                        (e.target as any).value
-                      ))}
-                    help-text="0.0 – 1.0"
-                  ></sl-input>
-                </div>
-                <div class="ai-config-full">
-                  <sl-textarea
-                    size="small"
-                    label="Approval Guidelines / Prompt"
-                    rows="3"
-                    value=${this._aiGuidelines}
-                    @sl-input=${(e: Event) =>
-                      (this._aiGuidelines = (e.target as any).value)}
-                    placeholder="Describe when the AI should approve or deny this tool call..."
-                  ></sl-textarea>
-                </div>
-                <div>
-                  <sl-select
-                    size="small"
-                    label="When Uncertain"
-                    value=${this._aiFallbackBehavior}
-                    @sl-change=${(e: Event) =>
-                      (this._aiFallbackBehavior = (e.target as any).value)}
-                  >
-                    <sl-option value="approve">Approve</sl-option>
-                    <sl-option value="deny">Deny</sl-option>
-                    <sl-option value="escalate">Escalate to Human</sl-option>
-                  </sl-select>
-                </div>
-                ${this._aiFallbackBehavior === 'escalate'
-                  ? html`
-                      <div>
-                        <sl-select
-                          size="small"
-                          label="Escalation Policy"
-                          value=${this._aiEscalationPolicyId || ''}
-                          @sl-change=${(e: Event) =>
-                            (this._aiEscalationPolicyId =
-                              (e.target as any).value || null)}
-                          placeholder="Select policy..."
-                        >
-                          ${this.policies
-                            .filter((p) => p.approval_type !== 'ai_driven')
-                            .map(
-                              (p) =>
-                                html`<sl-option value=${p.id}
-                                  >${p.name}</sl-option
-                                >`
-                            )}
-                          ${this.policies.filter(
-                            (p) => p.approval_type !== 'ai_driven'
-                          ).length === 0
-                            ? html`<sl-option disabled value=""
-                                >No human policies available</sl-option
-                              >`
-                            : ''}
-                        </sl-select>
-                      </div>
-                    `
-                  : ''}
-              `
-            : ''}
-        </div>
-        <div style="margin-top: var(--sl-spacing-small); text-align: right;">
-          <sl-button
-            size="small"
-            variant="primary"
-            @click=${() => this._handleCreateInlinePolicy()}
-          >
-            Create & Select Policy
-          </sl-button>
-        </div>
-      </div>
-    `;
-  }
-
-  private async _handleCreateInlinePolicy() {
-    const isAiMode = this._approvalMode === 'ai' && this._hasAdvancedConditions;
-    const name = this._description?.trim() || `Policy for ${this.toolName}`;
-
-    const policyData: any = {
-      name,
-      description: name,
-      approval_type: isAiMode ? 'ai_driven' : 'standard',
-    };
-
-    if (isAiMode) {
-      policyData.approval_mode = 'ai_driven';
-      policyData.ai_model = this._aiModel;
-      policyData.ai_guidelines = this._aiGuidelines || null;
-      policyData.ai_confidence_threshold = this._aiConfidenceThreshold;
-      policyData.ai_fallback_behavior = this._aiFallbackBehavior;
-      if (
-        this._aiFallbackBehavior === 'escalate' &&
-        this._aiEscalationPolicyId
-      ) {
-        policyData.escalation_policy_id = this._aiEscalationPolicyId;
+    if (savedPolicy?.id) {
+      // Add the new policy to the local list immediately so the sl-select
+      // has a matching option before the parent's async refresh completes.
+      if (!this.policies.find((p) => p.id === savedPolicy.id)) {
+        this.policies = [...this.policies, savedPolicy];
       }
+      // Auto-select the newly created policy
+      this._approvalPolicyId = savedPolicy.id;
+      // Detect approval mode from the saved policy type
+      this._approvalMode =
+        savedPolicy.approval_type === 'ai_driven' ? 'ai' : 'human';
     }
 
+    // Notify parent to refresh the policies list
     this.dispatchEvent(
-      new CustomEvent('create-policy', {
-        detail: { policyData },
+      new CustomEvent('policy-created', {
         bubbles: true,
         composed: true,
       })
     );
+  }
+
+  private _handlePolicyDialogClose(e: Event) {
+    e.stopPropagation();
+    this._showPolicyDialog = false;
   }
 
   render() {
@@ -1341,6 +1190,14 @@ export class ToolRuleEditor extends LitElement {
           </sl-button>
         </div>
       </sl-dialog>
+
+      <approval-policy-dialog
+        ?open=${this._showPolicyDialog}
+        .existingPolicies=${this.policies}
+        .features=${this.features}
+        @saved=${this._handlePolicyDialogSaved}
+        @close=${this._handlePolicyDialogClose}
+      ></approval-policy-dialog>
     `;
   }
 }
