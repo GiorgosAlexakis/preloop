@@ -1268,8 +1268,15 @@ class ContainerAgentExecutor(AgentExecutor):
             # Get git user configuration (defaults)
             git_user_name = git_config.get("git_user_name", "Preloop")
             git_user_email = git_config.get("git_user_email", "git@preloop.ai")
-            source_branch = git_config.get("source_branch", "main")
-            target_branch = git_config.get("target_branch")
+            source_branch = git_config.get("source_branch") or None
+            target_branch = git_config.get("target_branch") or None
+
+            # Resolve source branch from trigger event for PR/MR flows
+            trigger_data = execution_context.get("trigger_event_data", {})
+            if not source_branch:
+                source_branch = self._extract_source_branch_from_trigger(trigger_data)
+            if not source_branch:
+                source_branch = "main"
 
             # Auto-generate target branch if not specified
             if not target_branch:
@@ -1978,6 +1985,43 @@ MREOF
         except Exception as e:
             self.logger.warning(f"Error getting token from project {project_id}: {e}")
             return None, None
+
+    def _extract_source_branch_from_trigger(
+        self, trigger_data: Dict[str, Any]
+    ) -> Optional[str]:
+        """Extract the PR/MR source branch name from trigger event data.
+
+        Supports:
+        - GitHub: payload.pull_request.head.ref
+        - GitLab: payload.object_attributes.source_branch
+        """
+        try:
+            payload = trigger_data.get("payload", trigger_data)
+            if not isinstance(payload, dict):
+                return None
+
+            # GitHub PR - head.ref is the source branch
+            pr = payload.get("pull_request")
+            if isinstance(pr, dict):
+                head = pr.get("head")
+                if isinstance(head, dict) and head.get("ref"):
+                    branch = head["ref"]
+                    self.logger.info(
+                        f"Extracted source branch from GitHub PR: {branch}"
+                    )
+                    return branch
+
+            # GitLab MR - object_attributes.source_branch
+            obj_attrs = payload.get("object_attributes")
+            if isinstance(obj_attrs, dict) and obj_attrs.get("source_branch"):
+                branch = obj_attrs["source_branch"]
+                self.logger.info(f"Extracted source branch from GitLab MR: {branch}")
+                return branch
+
+            return None
+        except Exception as e:
+            self.logger.debug(f"Error extracting source branch from trigger: {e}")
+            return None
 
     def _extract_repo_url_from_trigger(self, trigger_data: Dict[str, Any]) -> str:
         """Extract repository URL from trigger event data.
