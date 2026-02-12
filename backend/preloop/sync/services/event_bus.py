@@ -9,6 +9,7 @@ from typing import Optional
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 import json
+import uuid
 
 try:
     from preloop.config import settings
@@ -17,6 +18,15 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+class _TaskPayloadEncoder(json.JSONEncoder):
+    """JSON encoder that handles UUID and other non-serializable types in task payloads."""
+
+    def default(self, o):
+        if isinstance(o, uuid.UUID):
+            return str(o)
+        return super().default(o)
 
 
 class EventBus:
@@ -118,7 +128,9 @@ class EventBus:
 
         subject = f"preloop.sync.tasks.{function_name}"
         task_payload = {"function": function_name, "args": args, "kwargs": kwargs}
-        payload_bytes = json.dumps(task_payload).encode("utf-8")
+        payload_bytes = json.dumps(task_payload, cls=_TaskPayloadEncoder).encode(
+            "utf-8"
+        )
 
         try:
             ack = await self.js.publish(subject, payload_bytes)

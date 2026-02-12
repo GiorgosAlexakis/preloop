@@ -8,7 +8,8 @@ to interact with the Preloop platform using FastMCP.
 import asyncio
 import logging
 import re
-from typing import Optional, Dict, List, Literal
+from typing import Any, Optional, Dict, List, Literal
+from urllib.parse import urlparse, urlunparse
 from sqlalchemy.exc import SQLAlchemyError
 
 from fastapi import HTTPException
@@ -141,6 +142,220 @@ async def _get_authenticated_user(request_headers):
     return db, current_user
 
 
+def _parse_issue_key_from_url(url: str) -> Optional[str]:
+    """Extract an issue key from a tracker URL.
+
+    Supports:
+      - GitLab:  https://gitlab.example.com/group/project/-/issues/28  → group/project#28
+      - GitHub:  https://github.com/org/repo/issues/123               → org/repo#123
+      - Jira:    https://jira.example.com/browse/PROJ-123              → PROJ-123
+
+    Returns None if the URL doesn't match a known pattern.
+    """
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+
+    # GitLab: /group/project/-/issues/28  (group may have subgroups)
+    m = re.match(r"^/(.+?)/-/issues/(\d+)$", path)
+    if m:
+        return f"{m.group(1)}#{m.group(2)}"
+
+    # GitHub: /org/repo/issues/123
+    m = re.match(r"^/([^/]+/[^/]+)/issues/(\d+)$", path)
+    if m:
+        return f"{m.group(1)}#{m.group(2)}"
+
+    # Jira: /browse/PROJ-123
+    m = re.match(r"^/browse/([A-Z][A-Z0-9]+-\d+)$", path)
+    if m:
+        return m.group(1)
+
+    return None
+
+
+def _parse_pr_key_from_url(url: str) -> Optional[Dict[str, Any]]:
+    """Extract PR/MR components from a tracker URL.
+
+    Supports:
+      - GitHub:  https://github.com/org/repo/pull/123
+      - GitLab:  https://gitlab.example.com/group/project/-/merge_requests/28
+
+    Returns dict with platform, project_path, owner, repo, pr_number, or None.
+    """
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+
+    # GitLab: /group/subgroup/project/-/merge_requests/28
+    m = re.match(r"^/(.+?)/-/merge_requests/(\d+)$", path)
+    if m:
+        project_path = m.group(1)
+        parts = project_path.rsplit("/", 1)
+        return {
+            "platform": "gitlab",
+            "project_path": project_path,
+            "owner": parts[0] if len(parts) == 2 else None,
+            "repo": parts[-1],
+            "pr_number": m.group(2),
+        }
+
+    # GitHub: /org/repo/pull/123
+    m = re.match(r"^/([^/]+)/([^/]+)/pull/(\d+)$", path)
+    if m:
+        return {
+            "platform": "github",
+            "project_path": f"{m.group(1)}/{m.group(2)}",
+            "owner": m.group(1),
+            "repo": m.group(2),
+            "pr_number": m.group(3),
+        }
+
+    return None
+
+
+def _parse_pr_identifier(pr_identifier: str) -> Dict[str, Any]:
+    """Parse a PR/MR identifier (URL, slug, or number) into structured components.
+
+    Handles:
+      - Full URLs (GitHub pull requests, GitLab merge requests)
+      - Slug format: owner/repo#123
+      - Plain number: 123
+
+    Returns dict with: platform, project_path, owner, repo, pr_number.
+    """
+    pr_identifier = pr_identifier.strip()
+    result: Dict[str, Any] = {
+        "platform": None,
+        "project_path": None,
+        "owner": None,
+        "repo": None,
+        "pr_number": pr_identifier,
+    }
+
+    if pr_identifier.startswith("http"):
+        # Normalize URL first (strip query/fragment/trailing slash)
+        normalized = _normalize_url(pr_identifier)
+
+        # Try structured URL parsing
+        parsed = _parse_pr_key_from_url(normalized)
+        if parsed:
+            return parsed
+
+        # Fallback: try platform detection + basic extraction
+        try:
+            result["platform"] = _detect_platform_from_url(pr_identifier)
+        except ValueError:
+            pass
+
+        # Last-resort: try to extract just the number from the URL path
+        m = re.search(r"/(\d+)/?$", urlparse(normalized).path)
+        if m:
+            result["pr_number"] = m.group(1)
+
+    elif "/" in pr_identifier and "#" in pr_identifier:
+        # Slug format: owner/repo#123 or group/subgroup/project#123
+        slug_parts = pr_identifier.split("#", 1)
+        result["pr_number"] = slug_parts[1]
+        result["project_path"] = slug_parts[0]
+        repo_parts = slug_parts[0].rsplit("/", 1)
+        if len(repo_parts) == 2:
+            result["owner"] = repo_parts[0]
+            result["repo"] = repo_parts[1]
+        else:
+            result["repo"] = repo_parts[0]
+
+    return result
+
+
+def _find_pr_project(
+    db,
+    project_path: Optional[str],
+    owner: Optional[str],
+    repo: Optional[str],
+    platform: Optional[str],
+    account_id: str,
+) -> Project:
+    """Find the project for a PR/MR using parsed identifier components."""
+    project_obj = None
+
+    # Try full project path first (handles GitLab nested groups)
+    if project_path:
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=project_path,
+            account_id=account_id,
+        )
+    if not project_obj and owner and repo:
+        project_obj = crud_project.get_by_slug_or_identifier(
+            db,
+            slug_or_identifier=f"{owner}/{repo}",
+            account_id=account_id,
+        )
+
+    if not project_obj:
+        from preloop.models.crud import crud_tracker
+
+        tracker_type = (
+            TrackerType.GITHUB if platform != "gitlab" else TrackerType.GITLAB
+        )
+        trackers = crud_tracker.get_by_type(
+            db,
+            tracker_type=tracker_type,
+            account_id=account_id,
+        )
+
+        if not trackers and platform is None:
+            tracker_type = TrackerType.GITLAB
+            trackers = crud_tracker.get_by_type(
+                db,
+                tracker_type=tracker_type,
+                account_id=account_id,
+            )
+
+        if not trackers:
+            raise HTTPException(
+                status_code=404,
+                detail="No tracker found. Please provide full PR/MR identifier.",
+            )
+
+        tracker = trackers[0]
+        from preloop.models.crud import crud_organization
+
+        organizations = crud_organization.get_for_tracker(
+            db,
+            tracker_id=tracker.id,
+            account_id=account_id,
+        )
+        if not organizations:
+            raise HTTPException(
+                status_code=404,
+                detail="No organizations found for tracker.",
+            )
+
+        projects = crud_project.get_for_organization(
+            db,
+            organization_id=organizations[0].id,
+            account_id=account_id,
+        )
+        if not projects:
+            raise HTTPException(
+                status_code=404,
+                detail="No projects found. Please provide full PR/MR identifier.",
+            )
+
+        project_obj = projects[0]
+
+    return project_obj
+
+
+def _normalize_url(url: str) -> str:
+    """Normalize a URL by stripping query params, fragments, and trailing slashes."""
+    parsed = urlparse(url)
+    normalized = urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")
+    )
+    return normalized
+
+
 def _find_issue_by_identifier(db, identifier: str, account_id: str) -> Issue:
     """Find an issue by identifier (URL, key, or ID) with comprehensive lookup logic."""
     if not identifier or not identifier.strip():
@@ -150,12 +365,28 @@ def _find_issue_by_identifier(db, identifier: str, account_id: str) -> Issue:
 
     # Check if issue is a URL
     if identifier.startswith("http"):
+        # 1. Exact URL match
         issue_obj = crud_issue.get_by_external_url(
             db, external_url=identifier, account_id=account_id
         )
-        if not issue_obj:
+        if issue_obj:
+            return issue_obj
+
+        # 2. Normalized URL match (strip query params, fragments, trailing slash)
+        normalized = _normalize_url(identifier)
+        if normalized != identifier:
+            issue_obj = crud_issue.get_by_external_url(
+                db, external_url=normalized, account_id=account_id
+            )
+            if issue_obj:
+                return issue_obj
+
+        # 3. Parse issue key from URL and fall through to key-based lookups
+        parsed_key = _parse_issue_key_from_url(normalized)
+        if parsed_key:
+            identifier = parsed_key
+        else:
             raise IssueNotFoundError(f"Issue not found by URL: {identifier}")
-        return issue_obj
 
     # Try exact key match first
     issue_obj = crud_issue.get_by_key(db, key=identifier, account_id=account_id)
@@ -1373,116 +1604,22 @@ async def get_pull_request(
 
     db, current_user = await _get_authenticated_user(get_http_request().headers)
 
-    pr_identifier = pull_request.strip()
-    owner = None
-    repo = None
-    project_path = None
-    pr_number = pr_identifier
-    platform: Optional[Literal["github", "gitlab"]] = None
-
-    # Parse URL format and detect platform
-    if pr_identifier.startswith("http"):
-        try:
-            platform = _detect_platform_from_url(pr_identifier)
-        except ValueError:
-            # Will try to detect from project tracker type later
-            pass
-
-        if platform == "github" or "github.com" in pr_identifier:
-            platform = "github"
-            parts = pr_identifier.split("/")
-            if len(parts) >= 5:
-                owner = parts[3]
-                repo = parts[4]
-                if "pull" in parts:
-                    pull_idx = parts.index("pull")
-                    if pull_idx + 1 < len(parts):
-                        pr_number = parts[pull_idx + 1].split("?")[0].split("#")[0]
-        elif platform == "gitlab" or "gitlab" in pr_identifier.lower():
-            platform = "gitlab"
-            if "merge_requests" in pr_identifier:
-                mr_parts = pr_identifier.split("merge_requests/")
-                pr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
-                # Extract project path from URL
-                url_path = mr_parts[0].split("://")[1].split("/")
-                if len(url_path) >= 3:
-                    project_path = "/".join(url_path[1:]).rstrip("/-")
-    # Parse slug format: owner/repo#123
-    elif "/" in pr_identifier and "#" in pr_identifier:
-        slug_parts = pr_identifier.split("#")
-        pr_number = slug_parts[1]
-        repo_parts = slug_parts[0].split("/")
-        if len(repo_parts) >= 2:
-            owner = repo_parts[-2]
-            repo = repo_parts[-1]
-        project_path = slug_parts[0]
+    pr_info = _parse_pr_identifier(pull_request)
+    pr_number = pr_info["pr_number"]
+    project_path = pr_info["project_path"]
+    owner = pr_info["owner"]
+    repo = pr_info["repo"]
+    platform: Optional[Literal["github", "gitlab"]] = pr_info["platform"]
 
     # Find the project
-    # For GitLab nested groups (e.g., "group/subgroup/project#123"), try full path first
-    project_obj = None
-    if project_path:
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db,
-            slug_or_identifier=project_path,
-            account_id=str(current_user.account_id),
-        )
-    if not project_obj and owner and repo:
-        # Fall back to owner/repo for GitHub and simple paths
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db,
-            slug_or_identifier=f"{owner}/{repo}",
-            account_id=str(current_user.account_id),
-        )
-
-    if not project_obj:
-        # Try to find first matching tracker project
-        from preloop.models.crud import crud_tracker
-
-        # Try GitHub first if platform not determined
-        tracker_type = (
-            TrackerType.GITHUB if platform != "gitlab" else TrackerType.GITLAB
-        )
-        trackers = crud_tracker.get_by_type(
-            db, tracker_type=tracker_type, account_id=str(current_user.account_id)
-        )
-
-        if not trackers and platform is None:
-            # Try the other platform
-            tracker_type = TrackerType.GITLAB
-            trackers = crud_tracker.get_by_type(
-                db, tracker_type=tracker_type, account_id=str(current_user.account_id)
-            )
-            if trackers:
-                platform = "gitlab"
-
-        if not trackers:
-            raise HTTPException(
-                status_code=404,
-                detail="No tracker found. Please provide full PR/MR identifier.",
-            )
-
-        tracker = trackers[0]
-        from preloop.models.crud import crud_organization
-
-        organizations = crud_organization.get_for_tracker(
-            db, tracker_id=tracker.id, account_id=current_user.account_id
-        )
-        if not organizations:
-            raise HTTPException(
-                status_code=404,
-                detail="No organizations found for tracker.",
-            )
-
-        projects = crud_project.get_for_organization(
-            db, organization_id=organizations[0].id, account_id=current_user.account_id
-        )
-        if not projects:
-            raise HTTPException(
-                status_code=404,
-                detail="No projects found. Please provide full PR/MR identifier.",
-            )
-
-        project_obj = projects[0]
+    project_obj = _find_pr_project(
+        db,
+        project_path=project_path,
+        owner=owner,
+        repo=repo,
+        platform=platform,
+        account_id=str(current_user.account_id),
+    )
 
     # Get tracker client
     tracker_client = await get_tracker_client(
@@ -1621,111 +1758,22 @@ async def update_pull_request(
 
     db, current_user = await _get_authenticated_user(get_http_request().headers)
 
-    pr_identifier = pull_request.strip()
-    owner = None
-    repo = None
-    project_path = None
-    pr_number = pr_identifier
-    platform: Optional[Literal["github", "gitlab"]] = None
-
-    # Parse URL format and detect platform
-    if pr_identifier.startswith("http"):
-        try:
-            platform = _detect_platform_from_url(pr_identifier)
-        except ValueError:
-            pass
-
-        if platform == "github" or "github.com" in pr_identifier:
-            platform = "github"
-            parts = pr_identifier.split("/")
-            if len(parts) >= 5:
-                owner = parts[3]
-                repo = parts[4]
-                if "pull" in parts:
-                    pull_idx = parts.index("pull")
-                    if pull_idx + 1 < len(parts):
-                        pr_number = parts[pull_idx + 1].split("?")[0].split("#")[0]
-        elif platform == "gitlab" or "gitlab" in pr_identifier.lower():
-            platform = "gitlab"
-            if "merge_requests" in pr_identifier:
-                mr_parts = pr_identifier.split("merge_requests/")
-                pr_number = mr_parts[-1].rstrip("/").split("?")[0].split("#")[0]
-                url_path = mr_parts[0].split("://")[1].split("/")
-                if len(url_path) >= 3:
-                    project_path = "/".join(url_path[1:]).rstrip("/-")
-    # Parse slug format: owner/repo#123
-    elif "/" in pr_identifier and "#" in pr_identifier:
-        slug_parts = pr_identifier.split("#")
-        pr_number = slug_parts[1]
-        repo_parts = slug_parts[0].split("/")
-        if len(repo_parts) >= 2:
-            owner = repo_parts[-2]
-            repo = repo_parts[-1]
-        project_path = slug_parts[0]
+    pr_info = _parse_pr_identifier(pull_request)
+    pr_number = pr_info["pr_number"]
+    project_path = pr_info["project_path"]
+    owner = pr_info["owner"]
+    repo = pr_info["repo"]
+    platform: Optional[Literal["github", "gitlab"]] = pr_info["platform"]
 
     # Find the project
-    # For GitLab nested groups (e.g., "group/subgroup/project#123"), try full path first
-    project_obj = None
-    if project_path:
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db,
-            slug_or_identifier=project_path,
-            account_id=str(current_user.account_id),
-        )
-    if not project_obj and owner and repo:
-        # Fall back to owner/repo for GitHub and simple paths
-        project_obj = crud_project.get_by_slug_or_identifier(
-            db,
-            slug_or_identifier=f"{owner}/{repo}",
-            account_id=str(current_user.account_id),
-        )
-
-    if not project_obj:
-        from preloop.models.crud import crud_tracker
-
-        tracker_type = (
-            TrackerType.GITHUB if platform != "gitlab" else TrackerType.GITLAB
-        )
-        trackers = crud_tracker.get_by_type(
-            db, tracker_type=tracker_type, account_id=str(current_user.account_id)
-        )
-
-        if not trackers and platform is None:
-            tracker_type = TrackerType.GITLAB
-            trackers = crud_tracker.get_by_type(
-                db, tracker_type=tracker_type, account_id=str(current_user.account_id)
-            )
-            if trackers:
-                platform = "gitlab"
-
-        if not trackers:
-            raise HTTPException(
-                status_code=404,
-                detail="No tracker found. Please provide full PR/MR identifier.",
-            )
-
-        tracker = trackers[0]
-        from preloop.models.crud import crud_organization
-
-        organizations = crud_organization.get_for_tracker(
-            db, tracker_id=tracker.id, account_id=current_user.account_id
-        )
-        if not organizations:
-            raise HTTPException(
-                status_code=404,
-                detail="No organizations found for tracker.",
-            )
-
-        projects = crud_project.get_for_organization(
-            db, organization_id=organizations[0].id, account_id=current_user.account_id
-        )
-        if not projects:
-            raise HTTPException(
-                status_code=404,
-                detail="No projects found. Please provide full PR/MR identifier.",
-            )
-
-        project_obj = projects[0]
+    project_obj = _find_pr_project(
+        db,
+        project_path=project_path,
+        owner=owner,
+        repo=repo,
+        platform=platform,
+        account_id=str(current_user.account_id),
+    )
 
     # Get tracker client
     tracker_client = await get_tracker_client(
