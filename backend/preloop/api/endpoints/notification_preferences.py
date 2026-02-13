@@ -323,9 +323,12 @@ async def register_device_landing_page(
         - Android: Configure Digital Asset Links at /.well-known/assetlinks.json
     """
     # Get environment variables for app store URLs
-    app_store_url = os.getenv("IOS_APP_STORE_URL", "https://apps.apple.com/placeholder")
+    app_store_url = os.getenv(
+        "IOS_APP_STORE_URL", "https://apps.apple.com/app/preloop/id6757803021"
+    )
     play_store_url = os.getenv(
-        "ANDROID_PLAY_STORE_URL", "https://play.google.com/store/placeholder"
+        "ANDROID_PLAY_STORE_URL",
+        "https://play.google.com/store/apps/details?id=ai.spacecode.preloop&pli=1",
     )
 
     # Get user agent to determine device type

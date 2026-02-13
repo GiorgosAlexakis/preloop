@@ -1,46 +1,10 @@
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import { brandPlugin } from './vite-plugin-brand';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-
-/**
- * Plugin to handle optional EE plugin imports.
- * In OSS builds where the plugins directory doesn't exist,
- * this resolves EE plugin imports to an empty module.
- */
-function optionalEePlugins(): Plugin {
-  const eePluginsPath = resolve(__dirname, '../../plugins/frontend/ee-plugins.ts');
-  const eePluginsExist = existsSync(eePluginsPath);
-
-  return {
-    name: 'optional-ee-plugins',
-    enforce: 'pre', // Run before other plugins and default resolution
-    resolveId(source) {
-      // Check if this is the EE plugins import (handles both relative and absolute paths)
-      if (source.includes('ee-plugins') && source.includes('plugins')) {
-        if (eePluginsExist) {
-          // EE build - resolve to actual file
-          return eePluginsPath;
-        } else {
-          // OSS build - resolve to virtual empty module
-          return '\0virtual:ee-plugins-stub';
-        }
-      }
-      return null;
-    },
-    load(id) {
-      if (id === '\0virtual:ee-plugins-stub') {
-        // Return empty module for OSS builds
-        return '// EE plugins not available in open source build\nexport {};';
-      }
-      return null;
-    },
-  };
-}
 
 // Get brand from environment variable, default to 'preloop'
 const brand = process.env.VITE_BRAND || 'preloop';
@@ -67,7 +31,6 @@ export default defineConfig({
     },
   },
   plugins: [
-    optionalEePlugins(),
     cssInjectedByJsPlugin({
       jsAssetsFilterFunction: (chunk) => {
         return /main/.test(chunk.fileName);

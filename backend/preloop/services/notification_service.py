@@ -50,45 +50,47 @@ class NotificationService:
         # Get list of approvers (expand teams to users)
         approver_user_ids = await self._get_approver_user_ids(approval_policy)
 
-        # Derive notification channels from approval_type
-        channels = (
-            [approval_policy.approval_type] if approval_policy.approval_type else []
-        )
-        for channel in channels:
+        # Always send user-targeted notifications based on each approver's preferences
+        try:
+            result = await self._send_email_notifications(
+                approval_request, approver_user_ids
+            )
+            results["email"] = result
+        except Exception as e:
+            logger.error(f"Failed to send email notifications: {str(e)}")
+            results["email"] = {"success": False, "error": str(e)}
+
+        try:
+            result = await self._send_push_notifications(
+                approval_request, approver_user_ids
+            )
+            results["mobile_push"] = result
+        except Exception as e:
+            logger.error(f"Failed to send push notifications: {str(e)}")
+            results["mobile_push"] = {"success": False, "error": str(e)}
+
+        # Send to policy-configured channels (slack, mattermost, webhook)
+        # based on what's present in channel_configs
+        channel_configs = approval_policy.channel_configs or {}
+        for channel in ["slack", "mattermost", "webhook"]:
+            if channel not in channel_configs:
+                continue
             try:
-                if channel == "email":
-                    result = await self._send_email_notifications(
-                        approval_request, approver_user_ids
-                    )
-                    results["email"] = result
-
-                elif channel == "mobile_push":
-                    result = await self._send_push_notifications(
-                        approval_request, approver_user_ids
-                    )
-                    results["mobile_push"] = result
-
-                elif channel == "slack":
+                if channel == "slack":
                     result = await self._send_slack_notification(
                         approval_request, approval_policy
                     )
                     results["slack"] = result
-
                 elif channel == "mattermost":
                     result = await self._send_mattermost_notification(
                         approval_request, approval_policy
                     )
                     results["mattermost"] = result
-
                 elif channel == "webhook":
                     result = await self._send_webhook_notification(
                         approval_request, approval_policy
                     )
                     results["webhook"] = result
-
-                else:
-                    logger.warning(f"Unknown notification channel: {channel}")
-
             except Exception as e:
                 logger.error(f"Failed to send {channel} notification: {str(e)}")
                 results[channel] = {"success": False, "error": str(e)}
@@ -118,29 +120,46 @@ class NotificationService:
             logger.warning("No escalation approvers configured")
             return {"error": "No escalation approvers configured"}
 
-        # Send through same channel as original request
-        channels = (
-            [approval_policy.approval_type] if approval_policy.approval_type else []
-        )
-        for channel in channels:
+        # Send escalation notifications based on each user's preferences
+        try:
+            result = await self._send_email_notifications(
+                approval_request, escalation_user_ids, is_escalation=True
+            )
+            results["email"] = result
+        except Exception as e:
+            logger.error(f"Failed to send escalation email notifications: {str(e)}")
+            results["email"] = {"success": False, "error": str(e)}
+
+        try:
+            result = await self._send_push_notifications(
+                approval_request, escalation_user_ids, is_escalation=True
+            )
+            results["mobile_push"] = result
+        except Exception as e:
+            logger.error(f"Failed to send escalation push notifications: {str(e)}")
+            results["mobile_push"] = {"success": False, "error": str(e)}
+
+        # Also send to policy-configured channels with escalation context
+        channel_configs = approval_policy.channel_configs or {}
+        for channel in ["slack", "mattermost", "webhook"]:
+            if channel not in channel_configs:
+                continue
             try:
-                if channel == "email":
-                    result = await self._send_email_notifications(
-                        approval_request, escalation_user_ids, is_escalation=True
+                if channel == "slack":
+                    result = await self._send_slack_notification(
+                        approval_request, approval_policy
                     )
-                    results["email"] = result
-
-                elif channel == "mobile_push":
-                    result = await self._send_push_notifications(
-                        approval_request, escalation_user_ids, is_escalation=True
+                    results["slack"] = result
+                elif channel == "mattermost":
+                    result = await self._send_mattermost_notification(
+                        approval_request, approval_policy
                     )
-                    results["mobile_push"] = result
-
-                elif channel in ["slack", "mattermost", "webhook"]:
-                    # Use same notification method but with escalation context
-                    # (Implementation would add "ESCALATION" prefix to message)
-                    pass
-
+                    results["mattermost"] = result
+                elif channel == "webhook":
+                    result = await self._send_webhook_notification(
+                        approval_request, approval_policy
+                    )
+                    results["webhook"] = result
             except Exception as e:
                 logger.error(
                     f"Failed to send escalation {channel} notification: {str(e)}"

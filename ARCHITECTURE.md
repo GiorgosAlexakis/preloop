@@ -532,7 +532,6 @@ Preloop implements authentication and multi-tenancy:
 - Built-in plugins: Argument-based condition evaluator for approval workflows
 - Plugin discovery via module paths or file system paths
 - Lifecycle hooks: `on_startup()` and `on_shutdown()`
-- **EE Plugin Loading:** EE plugins are loaded dynamically via `import('../../../../plugins/frontend/ee-plugins.ts')`. The promise is stored and awaited in route guards to ensure EE components (e.g., `audit-view`) are registered before navigation checks.
 
 > **Enterprise Features**: Preloop Enterprise Edition adds RBAC with 7 system roles, 32 fine-grained permissions, team management, and comprehensive audit logging. Contact sales@spacecode.ai for more information.
 
