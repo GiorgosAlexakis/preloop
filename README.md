@@ -1,16 +1,14 @@
-# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop: The Policy Engine for AI Agents
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: .66em;" /> Preloop: The Policy Engine for AI Agents
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-## The Open-Source Policy Engine for AI Agents
-
-Preloop is a comprehensive policy engine that gives you complete control over what AI agents can do. Define access policies, approval workflows, and audit trails using policy-as-code. Allow, deny, or require approval based on conditions.
+Preloop is a comprehensive MCP firewall that gives you complete control over what AI agents can do. Define access policies, approval workflows, and audit trails. Allow, deny, or require approval based on conditions.
 
 
 
   <a href="https://youtu.be/yTtXn8WibTY" target="_blank">
-    <img alt="Preloop Logo" src="https://img.youtube.com/vi/yTtXn8WibTY/0.jpg" alt="Watch the video" width="480"/>
+    <img alt="Preloop Logo" src="assets/tools-screenshot.png" alt="Watch the video" style="width: 100%; max-width: 1135px;" />
   </a>
 
 **Works with OpenClaw, Claude Code, Cursor, Codex, and any MCP-compatible agent.**
@@ -54,16 +52,25 @@ Define policies in YAML, manage via CLI or API:
 
 ```yaml
 # Example: Require approval for production deployments
-policies:
-  - name: production-deployment
-    action: require_approval
-    match:
-      tool: deploy
-      parameters:
-        environment: production
-    approvers:
-      - team: platform-engineering
-    timeout: 30m
+version: "1.0"
+metadata:
+  name: "Production Safeguards"
+  description: "Require approval before deploying to production"
+  tags: [security, production]
+
+approval_policies:
+  - name: "deploy-approval"
+    timeout_seconds: 600
+    required_approvals: 1
+
+tools:
+  - name: "bash"
+    source: mcp
+    approval_policy: "deploy-approval"
+    conditions:
+      - expression: "args.command.contains('deploy') && args.command.contains('production')"
+        action: require_approval
+        description: "Production deployments require approval"
 ```
 
 - **Version control** your policies alongside your code
@@ -110,8 +117,6 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 3. AI agents call tools through Preloop's MCP proxy
 4. Actions are allowed, denied, or paused for approval based on your policies
 5. Full audit trail of every action and decision
-
-**Works with:** Claude Code, Cursor, Cline, Windsurf, and any MCP-compatible AI agent.
 
 ## Key Features
 
@@ -176,7 +181,7 @@ This structure allows:
 
 The Preloop Console is in the `frontend` directory. It is built using modern web technologies to provide a fast, responsive, and feature-rich user experience.
 
-- **Technology Stack**: Lit, Vite, TypeScript, and Material Web Components.
+- **Technology Stack**: Lit, Vite, TypeScript, and Shoelace Web Components.
 
 ## Installation
 

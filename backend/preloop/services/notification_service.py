@@ -8,10 +8,12 @@ This module handles sending notifications through various channels:
 - Webhook (Proprietary)
 """
 
+import json
 import uuid
 import logging
 from typing import List, Dict, Any
 
+import httpx
 from sqlalchemy.orm import Session
 
 from preloop.models import models
@@ -242,16 +244,86 @@ class NotificationService:
         Returns:
             Dict with send results.
         """
-        # TODO: Integrate with email service
-        # For now, log and return placeholder
-        logger.info(
-            f"Would send {'escalation ' if is_escalation else ''}email to {len(user_ids)} users "
-            f"for approval request {approval_request.id}"
+        from preloop.utils.email import (
+            send_approval_request_email,
+            send_escalation_email,
+            PRELOOP_URL,
         )
 
+        # Filter to users who have email notifications enabled
+        eligible_user_ids = []
+        for user_id in user_ids:
+            prefs = notification_preferences.get_by_user(self.db, user_id)
+            if not prefs or not prefs.enable_email:
+                continue
+            eligible_user_ids.append(user_id)
+
+        if not eligible_user_ids:
+            logger.info(
+                f"No users with email enabled for approval request {approval_request.id}"
+            )
+            return {
+                "success": True,
+                "sent": 0,
+                "failed": 0,
+                "skipped": len(user_ids),
+                "is_escalation": is_escalation,
+            }
+
+        sent_count = 0
+        failed_count = 0
+
+        for user_id in eligible_user_ids:
+            try:
+                # Look up user email
+                user = (
+                    self.db.query(models.User).filter(models.User.id == user_id).first()
+                )
+                if not user or not user.email:
+                    logger.warning(f"User {user_id} not found or has no email")
+                    failed_count += 1
+                    continue
+
+                if is_escalation:
+                    send_escalation_email(
+                        user_email=user.email,
+                        tool_name=approval_request.tool_name,
+                        request_id=str(approval_request.id),
+                        approval_token=approval_request.approval_token,
+                        base_url=PRELOOP_URL,
+                    )
+                else:
+                    approval_url = (
+                        f"{PRELOOP_URL}/approval/{approval_request.id}"
+                        f"?token={approval_request.approval_token}"
+                    )
+                    await send_approval_request_email(
+                        user_email=user.email,
+                        tool_name=approval_request.tool_name,
+                        tool_args=approval_request.tool_args,
+                        approval_url=approval_url,
+                        agent_reasoning=approval_request.agent_reasoning,
+                    )
+
+                sent_count += 1
+                logger.info(
+                    f"Sent {'escalation ' if is_escalation else ''}approval email "
+                    f"to {user.email}"
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to send email to user {user_id}: {str(e)}",
+                    exc_info=True,
+                )
+                failed_count += 1
+
+        skipped_count = len(user_ids) - len(eligible_user_ids)
         return {
-            "success": True,
-            "recipients": len(user_ids),
+            "success": failed_count == 0,
+            "sent": sent_count,
+            "failed": failed_count,
+            "skipped": skipped_count,
             "is_escalation": is_escalation,
         }
 
@@ -382,18 +454,31 @@ class NotificationService:
         Returns:
             Dict with send result.
         """
-        # TODO: Implement Slack webhook integration
         channel_config = approval_policy.channel_configs.get("slack", {})
         webhook_url = channel_config.get("webhook_url")
 
         if not webhook_url:
             return {"success": False, "error": "No Slack webhook URL configured"}
 
-        logger.info(
-            f"Would send Slack notification for approval request {approval_request.id}"
-        )
+        message = self._build_chat_webhook_payload(approval_request)
 
-        return {"success": True, "channel": approval_policy.channel}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    webhook_url,
+                    json=message,
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+
+            logger.info(
+                f"Sent Slack notification for approval request {approval_request.id}"
+            )
+            return {"success": True, "channel": "slack"}
+
+        except Exception as e:
+            logger.error(f"Failed to send Slack notification: {str(e)}")
+            return {"success": False, "error": str(e)}
 
     async def _send_mattermost_notification(
         self,
@@ -409,18 +494,31 @@ class NotificationService:
         Returns:
             Dict with send result.
         """
-        # TODO: Implement Mattermost webhook integration
         channel_config = approval_policy.channel_configs.get("mattermost", {})
         webhook_url = channel_config.get("webhook_url")
 
         if not webhook_url:
             return {"success": False, "error": "No Mattermost webhook URL configured"}
 
-        logger.info(
-            f"Would send Mattermost notification for approval request {approval_request.id}"
-        )
+        message = self._build_chat_webhook_payload(approval_request)
 
-        return {"success": True, "channel": approval_policy.channel}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    webhook_url,
+                    json=message,
+                    headers={"Content-Type": "application/json"},
+                )
+                response.raise_for_status()
+
+            logger.info(
+                f"Sent Mattermost notification for approval request {approval_request.id}"
+            )
+            return {"success": True, "channel": "mattermost"}
+
+        except Exception as e:
+            logger.error(f"Failed to send Mattermost notification: {str(e)}")
+            return {"success": False, "error": str(e)}
 
     async def _send_webhook_notification(
         self,
@@ -436,15 +534,145 @@ class NotificationService:
         Returns:
             Dict with send result.
         """
-        # TODO: Implement generic webhook POST
         channel_config = approval_policy.channel_configs.get("webhook", {})
         webhook_url = channel_config.get("url")
 
         if not webhook_url:
             return {"success": False, "error": "No webhook URL configured"}
 
-        logger.info(
-            f"Would send webhook notification for approval request {approval_request.id}"
-        )
+        from preloop.utils.email import PRELOOP_URL
 
-        return {"success": True, "url": webhook_url}
+        token = approval_request.approval_token
+        approval_url = f"{PRELOOP_URL}/approval/{approval_request.id}?token={token}"
+
+        message = {
+            "type": "approval_request",
+            "request_id": str(approval_request.id),
+            "tool_name": approval_request.tool_name,
+            "tool_args": approval_request.tool_args,
+            "agent_reasoning": approval_request.agent_reasoning,
+            "status": approval_request.status,
+            "requested_at": approval_request.requested_at.isoformat(),
+            "expires_at": (
+                approval_request.expires_at.isoformat()
+                if approval_request.expires_at
+                else None
+            ),
+            "actions": {
+                "approve": approval_url,
+                "decline": approval_url,
+                "view": approval_url,
+            },
+        }
+
+        # Include extra headers from config if provided
+        headers = {"Content-Type": "application/json"}
+        extra_headers = channel_config.get("headers", {})
+        if isinstance(extra_headers, dict):
+            headers.update(extra_headers)
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    webhook_url,
+                    json=message,
+                    headers=headers,
+                )
+                response.raise_for_status()
+
+            logger.info(
+                f"Sent webhook notification for approval request {approval_request.id}"
+            )
+            return {"success": True, "url": webhook_url}
+
+        except Exception as e:
+            logger.error(f"Failed to send webhook notification: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def _build_chat_webhook_payload(
+        self, approval_request: models.ApprovalRequest
+    ) -> Dict[str, Any]:
+        """Build a Slack/Mattermost-compatible webhook payload.
+
+        Args:
+            approval_request: Approval request.
+
+        Returns:
+            Dict payload suitable for Slack or Mattermost incoming webhooks.
+        """
+        from preloop.utils.email import PRELOOP_URL
+
+        token = approval_request.approval_token
+        approval_url = f"{PRELOOP_URL}/approval/{approval_request.id}?token={token}"
+        tool_args_formatted = json.dumps(approval_request.tool_args, indent=2)
+
+        message_text = f"⚠️ **Approval Required: {approval_request.tool_name}**\n\n"
+        message_text += f"**Tool:** `{approval_request.tool_name}`\n"
+        message_text += f"**Status:** {approval_request.status.upper()}\n\n"
+
+        if approval_request.agent_reasoning:
+            message_text += (
+                f"**Agent Reasoning:**\n{approval_request.agent_reasoning}\n\n"
+            )
+
+        message_text += f"**Arguments:**\n```json\n{tool_args_formatted}\n```\n\n"
+        message_text += "**Actions:**\n"
+        message_text += f"• [✅ Approve]({approval_url})\n"
+        message_text += f"• [❌ Decline]({approval_url})\n"
+        message_text += f"• [👁️ View Details]({approval_url})\n"
+
+        fields = [
+            {
+                "title": "Tool",
+                "value": approval_request.tool_name,
+                "short": True,
+            },
+            {
+                "title": "Status",
+                "value": approval_request.status.upper(),
+                "short": True,
+            },
+        ]
+
+        if approval_request.agent_reasoning:
+            fields.insert(
+                0,
+                {
+                    "title": "Agent Reasoning",
+                    "value": approval_request.agent_reasoning,
+                    "short": False,
+                },
+            )
+
+        return {
+            "text": message_text,
+            "attachments": [
+                {
+                    "color": "#f2c744",
+                    "fallback": f"Approval Required: {approval_request.tool_name}",
+                    "title": f"⚠️ Approval Required: {approval_request.tool_name}",
+                    "title_link": approval_url,
+                    "fields": fields,
+                    "text": f"**Arguments:**\n```json\n{tool_args_formatted}\n```",
+                    "actions": [
+                        {
+                            "type": "button",
+                            "text": "✅ Approve",
+                            "url": approval_url,
+                            "style": "primary",
+                        },
+                        {
+                            "type": "button",
+                            "text": "❌ Decline",
+                            "url": approval_url,
+                            "style": "danger",
+                        },
+                        {
+                            "type": "button",
+                            "text": "👁️ View Details",
+                            "url": approval_url,
+                        },
+                    ],
+                }
+            ],
+        }
