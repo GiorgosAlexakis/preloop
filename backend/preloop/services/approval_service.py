@@ -153,13 +153,22 @@ class ApprovalService:
                 "type": f"approval_{event_type}",
                 "approval_request_id": str(approval_request.id),
                 "account_id": str(approval_request.account_id),
+                "tool_configuration_id": str(approval_request.tool_configuration_id),
+                "approval_policy_id": str(approval_request.approval_policy_id),
                 "execution_id": approval_request.execution_id,
                 "tool_name": approval_request.tool_name,
+                "tool_args": approval_request.tool_args,
+                "agent_reasoning": approval_request.agent_reasoning,
                 "status": approval_request.status,
                 "requested_at": approval_request.requested_at.isoformat(),
                 "resolved_at": (
                     approval_request.resolved_at.isoformat()
                     if approval_request.resolved_at
+                    else None
+                ),
+                "expires_at": (
+                    approval_request.expires_at.isoformat()
+                    if approval_request.expires_at
                     else None
                 ),
                 "timestamp": datetime.utcnow().isoformat(),

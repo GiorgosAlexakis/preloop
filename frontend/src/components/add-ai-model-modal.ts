@@ -140,45 +140,7 @@ export class AddAIModelModal extends LitElement {
     provider: string,
     apiKey?: string
   ): Promise<string[]> {
-    try {
-      return await getAvailableModelsForProvider(provider, apiKey);
-    } catch (error) {
-      console.error(`Failed to fetch models for ${provider}:`, error);
-      // Return fallback list on error
-      switch (provider) {
-        case 'openai':
-          return [
-            'gpt-4o',
-            'gpt-4o-mini',
-            'gpt-4-turbo',
-            'gpt-4',
-            'gpt-3.5-turbo',
-          ];
-        case 'anthropic':
-          return [
-            'claude-3-7-sonnet-20250219',
-            'claude-3-5-sonnet-20241022',
-            'claude-3-5-haiku-20241022',
-            'claude-3-opus-20240229',
-            'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307',
-          ];
-        case 'google':
-          return [
-            'gemini-2.0-flash-exp',
-            'gemini-1.5-pro-latest',
-            'gemini-1.5-flash-latest',
-            'gemini-1.5-flash-8b-latest',
-            'gemini-1.0-pro',
-          ];
-        case 'qwen':
-          return ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwq-32b-preview'];
-        case 'deepseek':
-          return ['deepseek-chat', 'deepseek-reasoner'];
-        default:
-          return [];
-      }
-    }
+    return await getAvailableModelsForProvider(provider, apiKey);
   }
 
   private async _fetchModelsForCurrentProvider() {
@@ -197,6 +159,7 @@ export class AddAIModelModal extends LitElement {
       }
     } catch (error) {
       console.error('Failed to fetch models:', error);
+      this._modelSuggestions = [];
       this._modelsFetchError =
         error instanceof Error ? error.message : 'Failed to fetch models';
     } finally {
@@ -399,7 +362,19 @@ export class AddAIModelModal extends LitElement {
                   `
                 )}
               `
-            : ''}
+            : this._modelsFetchError
+              ? html`
+                  <sl-input
+                    class="full-width"
+                    label="Model Name / ID"
+                    placeholder="Enter model name manually"
+                    .value=${this._currentModel.model_identifier || ''}
+                    @sl-input=${this._handleCustomModelInput}
+                    ?disabled=${this._isSubmitting}
+                    help-text="Could not fetch models. You can enter the model name manually."
+                  ></sl-input>
+                `
+              : ''}
         </div>
         <sl-button
           slot="footer"

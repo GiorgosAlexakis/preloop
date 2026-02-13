@@ -1,10 +1,9 @@
-# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: .66em;" /> Preloop: The Policy Engine for AI Agents
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 21px;" /> Preloop: The Policy Engine for AI Agents
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 Preloop is a comprehensive MCP firewall that gives you complete control over what AI agents can do. Define access policies, approval workflows, and audit trails. Allow, deny, or require approval based on conditions.
-
 
 
   <a href="https://youtu.be/yTtXn8WibTY" target="_blank">
