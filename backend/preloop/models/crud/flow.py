@@ -153,6 +153,7 @@ class CRUDFlow(CRUDBase[models.Flow]):
         *,
         event_source: str,
         event_type: str,
+        project_id: Optional[str] = None,
         account_id: Optional[Union[str, UUID]] = None,
         skip: int = 0,
         limit: int = 100,
@@ -162,9 +163,31 @@ class CRUDFlow(CRUDBase[models.Flow]):
 
         Matching rules:
         - trigger_event_source: Must match exactly, OR be null (meaning "any source")
-        - trigger_event_type: Must match exactly
+        - trigger_event_types: Event type must be in the array
+        - trigger_project_ids: Project must match (if specified):
+          - trigger_project_ids is null/empty (any project in org), OR
+          - trigger_project_ids array contains project_id
         """
-        from sqlalchemy import or_
+        from sqlalchemy import func, or_
+
+        # Event type matching: event_type must be in trigger_event_types array
+        event_type_match = self.model.trigger_event_types.any(event_type)
+
+        # Project matching: NULL or empty array both mean "any project"
+        wildcard_project = or_(
+            self.model.trigger_project_ids.is_(None),
+            func.coalesce(func.array_length(self.model.trigger_project_ids, 1), 0) == 0,
+        )
+        if project_id:
+            project_match = or_(
+                # Flow accepts any project (no project filter or empty array)
+                wildcard_project,
+                # project_id is in trigger_project_ids array
+                self.model.trigger_project_ids.any(project_id),
+            )
+        else:
+            # No project_id provided - match flows with no project filter
+            project_match = wildcard_project
 
         query = db.query(self.model).filter(
             # Source matches exactly OR flow accepts any source (null)
@@ -172,7 +195,8 @@ class CRUDFlow(CRUDBase[models.Flow]):
                 self.model.trigger_event_source == event_source,
                 self.model.trigger_event_source.is_(None),
             ),
-            self.model.trigger_event_type == event_type,
+            event_type_match,
+            project_match,
         )
         if account_id:
             account_id_str = (

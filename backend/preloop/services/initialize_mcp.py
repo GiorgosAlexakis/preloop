@@ -12,6 +12,8 @@ from fastmcp import Context
 from preloop.services.approval_helper import require_approval
 from preloop.services.dynamic_fastmcp import (
     DynamicFastMCP,
+    _rule_policy_id_var,
+    _correlation_id_var,
     create_dynamic_mcp_server,
 )
 
@@ -101,6 +103,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"issue": issue},
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -145,6 +149,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "status": status,
             },
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -197,6 +203,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "labels": labels,
             },
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -237,6 +245,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"query": query, "project": project, "limit": limit},
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -280,6 +290,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"issues": issues, "compliance_metric": compliance_metric},
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -314,6 +326,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"issues": issues, "compliance_metric": compliance_metric},
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -501,6 +515,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "in_reply_to": in_reply_to,
             },
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -550,6 +566,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "comment_type": comment_type,
             },
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -593,6 +611,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "include_diff": include_diff,
             },
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -653,6 +673,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "remove_reaction": remove_reaction,
             },
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:
@@ -719,6 +741,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "extra_options": extra_options,
             },
             ctx=ctx,
+            policy_id=_rule_policy_id_var.get(None),
+            correlation_id=_correlation_id_var.get(None),
         )
 
         if not approved:

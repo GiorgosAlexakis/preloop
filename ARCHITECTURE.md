@@ -109,6 +109,20 @@ The `Preloop Console` application is structured around a component-based archite
 *   **`vite.config.ts`**: Configuration for the Vite build tool.
 *   **`package.json`**: Defines project metadata, dependencies, and scripts for development, building, and testing.
 
+#### Tools Page (`src/views/authed/tools-view.ts`)
+
+The Tools page has been redesigned from a card-based layout to a tree-style list view:
+
+*   **Summary stats table:** Interactive statistics panel showing tool counts (total, available/unavailable, enabled/disabled, built-in/proxied, with rules/no rules, require approval/no approval, approval policies). Each stat is a clickable filter link.
+*   **Unified filter system:** Single active filter at a time, text search, and approval policy filter dropdown.
+*   **Tool groups:** Tools grouped by source — external MCP servers listed first, then HTTP tools, then built-in tools.
+*   **Import/Export:** Full configuration export/import as YAML.
+*   **Key components:**
+    *   `tool-list-item.ts` — Individual tool row with expand/collapse, enable/disable toggle, rule summary badges, and drag-and-drop rule reordering.
+    *   `tool-rule-editor.ts` — Dialog for creating/editing access rules with action selection (deny/require approval/allow), condition builder (simple or CEL), and approval policy configuration (human or AI-driven).
+    *   `approval-policy-dialog.ts` — Dialog for creating/editing approval policies.
+*   **Access rule UI semantics:** Actions use semantic icons and colors — Deny (red, `x-octagon-fill`), Require Approval (blue/primary, `shield-lock-fill`), Allow (green, `check-circle-fill`).
+
 ## Core Components
 
 ### Preloop API Server (Main Repository)
@@ -436,6 +450,29 @@ graph TD
 - `GET /api/v1/approval-requests` - List approval requests
 - `GET /approval/{id}/data` - Public endpoint for getting approval request details (token-based)
 - `POST /approval/{id}/decide` - Public endpoint for approval responses (token-based)
+
+#### Access Rules System
+
+The tool configuration system has been expanded with a **ToolAccessRule** model that replaces the simpler ToolApprovalCondition approach.
+
+**ToolAccessRule Model** (`backend/preloop/models/models/tool_access_rule.py`):
+
+| Field | Description |
+|-------|-------------|
+| `action` | "allow", "deny", or "require_approval" |
+| `condition_expression` | CEL expression for conditional evaluation (e.g., `args.environment == "production"`) |
+| `condition_type` | "simple" or "cel" |
+| `priority` | Integer for rule ordering (evaluated in priority order, first match wins) |
+| `description` | Human-readable description (for deny rules, returned as denial message to the agent) |
+| `is_enabled` | Toggle individual rules on/off |
+| `approval_policy_id` | Links to an ApprovalPolicy for "require_approval" rules |
+
+**Evaluation:** Rules are evaluated at runtime in `DynamicFastMCP._evaluate_policy()` — the first matching enabled rule determines the action. If no rules match, the tool call is allowed by default (but audited in EE).
+
+**Access Rule API Endpoints:**
+- `POST /api/v1/tool-configurations/{config_id}/access-rules` - Create access rule
+- `PUT /api/v1/access-rules/{rule_id}` - Update access rule
+- `DELETE /api/v1/access-rules/{rule_id}` - Delete access rule
 
 ### MCP Server Management
 

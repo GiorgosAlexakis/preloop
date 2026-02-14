@@ -1,6 +1,6 @@
 from sqlalchemy import Boolean, Column, ForeignKey, String, Text, JSON  # Added JSON
 
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -15,11 +15,12 @@ class Flow(Base):
     # For tracker triggers: source = tracker_id, type = event_type
     # For webhook triggers: source = 'webhook', type = 'webhook'
     trigger_event_source = Column(String, nullable=True)
-    trigger_event_type = Column(String, nullable=True)
-    trigger_organization_id = Column(
-        String, nullable=True
-    )  # Organization to scope trigger
-    trigger_project_id = Column(String, nullable=True)  # Project to scope trigger
+    # Event types that trigger this flow (e.g., ['pull_request_created', 'pull_request_updated'])
+    trigger_event_types = Column(ARRAY(String), nullable=True, default=None)
+    # Organization to scope trigger
+    trigger_organization_id = Column(String, nullable=True)
+    # Project IDs that can trigger this flow (empty = all projects in org)
+    trigger_project_ids = Column(ARRAY(String), nullable=True, default=None)
     trigger_config = Column(JSON, nullable=True)  # Changed from JSONB
     # Webhook-specific configuration
     # Structure: {

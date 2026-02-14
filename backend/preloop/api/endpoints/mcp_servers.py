@@ -22,6 +22,7 @@ from preloop.models.schemas.mcp_server import (
     MCPServerUpdate,
 )
 from preloop.models.schemas.mcp_tool import MCPToolResponse
+from preloop.utils.audit import log_config_change
 from preloop.utils.permissions import require_permission
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,19 @@ async def create_mcp_server(
         db.add(new_server)
         db.commit()
         db.refresh(new_server)
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="mcp_server",
+            action="created",
+            new_value={
+                "id": str(new_server.id),
+                "name": new_server.name,
+                "url": new_server.url,
+                "transport": new_server.transport,
+            },
+        )
 
         if validation_error:
             logger.warning(
@@ -231,11 +245,32 @@ async def update_mcp_server(
     update_data = server_update.model_dump(exclude_unset=True)
 
     try:
+        old_snapshot = {
+            "id": str(server.id),
+            "name": server.name,
+            "url": server.url,
+            "transport": server.transport,
+        }
+
         for field, value in update_data.items():
             setattr(server, field, value)
 
         db.commit()
         db.refresh(server)
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="mcp_server",
+            action="updated",
+            old_value=old_snapshot,
+            new_value={
+                "id": str(server.id),
+                "name": server.name,
+                "url": server.url,
+                "transport": server.transport,
+            },
+        )
 
         logger.info(
             f"Updated MCP server {server_id} for account {current_user.account_id}"
@@ -297,9 +332,19 @@ async def delete_mcp_server(
             for config in tool_configs:
                 db.delete(config)
 
+        server_name = server.name  # capture before delete
+
         # Delete the MCP server
         db.delete(server)
         db.commit()
+
+        log_config_change(
+            db,
+            user=current_user,
+            config_type="mcp_server",
+            action="deleted",
+            old_value={"id": str(server_id), "name": server_name},
+        )
 
         logger.info(
             f"Deleted MCP server {server_id} and {len(tool_configs) if tool_configs else 0} "

@@ -673,13 +673,14 @@ export async function getFlowExecutionMetrics(executionId: string): Promise<{
 
 export async function getFlowExecutionLogs(
   executionId: string,
-  tail: number = 1000
+  tail?: number
 ): Promise<{
   logs: any[];
   source: 'container' | 'database';
 }> {
+  const params = tail !== undefined ? `?tail=${tail}` : '';
   const response = await fetchWithAuth(
-    `/api/v1/flows/executions/${executionId}/logs?tail=${tail}`
+    `/api/v1/flows/executions/${executionId}/logs${params}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch execution logs');
@@ -1120,6 +1121,98 @@ export async function updateToolApprovalCondition(
     );
   }
   return response.json();
+}
+
+// Access Rules API
+export interface AccessRule {
+  id: string;
+  account_id: string;
+  tool_configuration_id: string;
+  action: 'allow' | 'deny' | 'require_approval';
+  condition_expression: string | null;
+  condition_type: 'simple' | 'cel';
+  priority: number;
+  description: string | null;
+  is_enabled: boolean;
+  approval_policy_id: string | null;
+}
+
+export interface AccessRuleCreate {
+  action: 'allow' | 'deny' | 'require_approval';
+  condition_expression?: string | null;
+  condition_type?: 'simple' | 'cel';
+  priority?: number;
+  description?: string | null;
+  is_enabled?: boolean;
+  approval_policy_id?: string | null;
+}
+
+export interface AccessRuleUpdate {
+  action?: 'allow' | 'deny' | 'require_approval';
+  condition_expression?: string | null;
+  condition_type?: 'simple' | 'cel';
+  priority?: number;
+  description?: string | null;
+  is_enabled?: boolean;
+  approval_policy_id?: string | null;
+}
+
+export async function listAccessRules(configId: string): Promise<AccessRule[]> {
+  const response = await fetchWithAuth(
+    `/api/v1/tool-configurations/${configId}/access-rules`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch access rules');
+  }
+  return response.json();
+}
+
+export async function createAccessRule(
+  configId: string,
+  rule: AccessRuleCreate
+): Promise<AccessRule> {
+  const response = await fetchWithAuth(
+    `/api/v1/tool-configurations/${configId}/access-rules`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(errorData, 'Failed to create access rule')
+    );
+  }
+  return response.json();
+}
+
+export async function updateAccessRule(
+  ruleId: string,
+  rule: AccessRuleUpdate
+): Promise<AccessRule> {
+  const response = await fetchWithAuth(`/api/v1/access-rules/${ruleId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rule),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(errorData, 'Failed to update access rule')
+    );
+  }
+  return response.json();
+}
+
+export async function deleteAccessRule(ruleId: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/access-rules/${ruleId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete access rule');
+  }
 }
 
 // Approval Policies API

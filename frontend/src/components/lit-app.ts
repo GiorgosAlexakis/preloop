@@ -45,6 +45,8 @@ import '../views/authed/flow-executions-view.ts';
 import '../views/authed/flow-execution-view.ts';
 import '../views/authed/approval-view.ts';
 import '../views/authed/approvals-view.ts';
+import '../views/authed/policies-view.ts';
+import '../views/authed/audit-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
@@ -310,6 +312,14 @@ export class LitApp extends LitElement {
           { path: 'pricing', component: 'pricing-view' },
           { path: 'approvals', component: 'approvals-view' },
           { path: 'approval/:requestId', component: 'approval-view' },
+          {
+            path: 'governance',
+            action: (_context, commands) => {
+              // Governance is now integrated into the Tools page
+              return commands.redirect('/console/tools');
+            },
+          },
+          { path: 'audit', component: 'audit-view' },
         ],
       },
     ]);

@@ -1,20 +1,18 @@
-# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 1.2em; margin-bottom: -.3em" /> Preloop: The Safety Layer for AI Agents
-
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 21px;" /> Preloop: The Policy Engine for AI Agents
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-## Don't Let AI Agents Run Unsupervised
+Preloop is a comprehensive MCP firewall that gives you complete control over what AI agents can do. Define access policies, approval workflows, and audit trails. Allow, deny, or require approval based on conditions.
 
-AI agents are powerful. They can write code, deploy to production, delete databases, push secrets to public repos, and run up your cloud bills. All in seconds.
 
-**But who's watching them?**
+  <a href="https://youtu.be/yTtXn8WibTY" target="_blank">
+    <img alt="Preloop Logo" src="assets/tools-screenshot.png" alt="Watch the video" style="width: 100%; max-width: 1135px;" />
+  </a>
 
-Preloop is the safety layer that sits between AI agents and your critical infrastructure. Define what AI can do, what it cannot do, and what requires human approval. When an agent tries to perform a protected operation, Preloop enforces your policies.
+**Works with OpenClaw, Claude Code, Cursor, Codex, and any MCP-compatible agent.**
 
-**You stay in control. AI handles the routine work.**
-
-## The Problem
+## Why Preloop?
 
 AI coding agents like Claude Code, Cursor, and Cline are transforming how we build software. But with great power comes great risk:
 
@@ -25,9 +23,88 @@ AI coding agents like Claude Code, Cursor, and Cline are transforming how we bui
 
 Most teams face an impossible choice: give AI full access and move fast (but dangerously), or lock everything down and lose the productivity gains.
 
-## The Solution
+**Preloop solves this.** Define policies that allow safe operations, deny dangerous ones, and require human approval for everything in between. You stay in control. AI handles the routine work.
 
-Preloop is a policy engine for AI agents. Define policies that allow, deny, or require approval for any operation. Works with any MCP-compatible tool and requires zero infrastructure changes.
+## Core Capabilities
+
+### Access Policies
+
+Define fine-grained access controls for any AI tool or operation:
+
+- Tools support multiple ordered **access rules** (not just simple approval/deny)
+- Rules are evaluated in priority order; first matching rule wins
+- Each rule has an action (allow/deny/require_approval), optional CEL condition, and optional denial message
+- Rules can be reordered via drag-and-drop in the UI
+
+### Approval Workflows
+
+When AI attempts a protected operation, Preloop pauses and notifies you:
+
+- **Instant notifications** via mobile app, Slack, email, or Mattermost
+- **One-tap approvals** from your phone, watch, or desktop
+- **Team-based approvals** with quorum requirements (Enterprise)
+- **Escalation policies** for time-sensitive operations (Enterprise)
+
+### Policy-as-Code
+
+Define policies in YAML, manage via CLI or API:
+
+```yaml
+# Example: Require approval for production deployments
+version: "1.0"
+metadata:
+  name: "Production Safeguards"
+  description: "Require approval before deploying to production"
+  tags: [security, production]
+
+approval_policies:
+  - name: "deploy-approval"
+    timeout_seconds: 600
+    required_approvals: 1
+
+tools:
+  - name: "bash"
+    source: mcp
+    approval_policy: "deploy-approval"
+    conditions:
+      - expression: "args.command.contains('deploy') && args.command.contains('production')"
+        action: require_approval
+        description: "Production deployments require approval"
+```
+
+- **Version control** your policies alongside your code
+- **GitOps workflows** for policy changes
+- **CLI management** for automation and scripting
+- **API access** for programmatic policy management
+
+### Complete Audit Trail
+
+Every AI action is logged with full context:
+
+- What was attempted (tool, parameters, context)
+- Which policy matched and why
+- Who approved or rejected (and when)
+- Execution result and duration
+
+Essential for security reviews, compliance, and debugging.
+
+## Comparison with AWS Agent Core
+
+| Feature | Preloop | AWS Agent Core |
+|---------|:-------:|:--------------:|
+| Open source | ✅ | ❌ |
+| Self-hosted option | ✅ | ❌ |
+| Policy-as-code (YAML) | ✅ | Limited |
+| MCP native | ✅ | ❌ |
+| Works with any agent | ✅ | AWS-focused |
+| Human approval workflows | ✅ | ✅ |
+| Audit trail | ✅ | ✅ |
+| CLI management | ✅ | AWS CLI |
+| GitOps-friendly | ✅ | Limited |
+| Mobile app approvals | ✅ | ❌ |
+| Team-based approvals | ✅ (Enterprise) | ✅ |
+
+**Preloop is the open-source alternative to AWS Agent Core** for teams who want vendor-neutral, self-hosted AI governance.
 
 ```
 AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Execute
@@ -40,18 +117,19 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 4. Actions are allowed, denied, or paused for approval based on your policies
 5. Full audit trail of every action and decision
 
-**Works with:** Claude Code, Cursor, Cline, Windsurf, and any MCP-compatible AI agent.
-
 ## Key Features
 
 ### Safety & Control
 
 - **Policy Engine.** Define allow, deny, and approval policies for any tool or action.
+- **Access Rules.** Multiple ordered rules per tool with allow/deny/require approval actions.
+- **Drag-and-Drop Priority.** Reorder rule evaluation priority visually.
 - **Fine-Grained Rules.** Policies can check tool names, parameter values, and context.
 - **Instant Notifications.** Get alerts on mobile, Slack, email, or Mattermost.
 - **One-Tap Approvals.** Approve or reject from your phone, watch, or desktop.
 - **Full Audit Trail.** Complete log of every AI action and policy decision.
 - **Flexible Conditions.** Use CEL expressions for context-aware rules (Enterprise).
+- **AI Approval (Enterprise).** AI-driven approval with configurable model, prompt, confidence threshold, and fallback behavior.
 - **Team Approvals.** Require quorum from multiple team members for critical ops (Enterprise).
 
 ### Integration & Compatibility
@@ -102,7 +180,7 @@ This structure allows:
 
 The Preloop Console is in the `frontend` directory. It is built using modern web technologies to provide a fast, responsive, and feature-rich user experience.
 
-- **Technology Stack**: Lit, Vite, TypeScript, and Material Web Components.
+- **Technology Stack**: Lit, Vite, TypeScript, and Shoelace Web Components.
 
 ## Installation
 
@@ -334,6 +412,11 @@ Preloop provides a RESTful API with the following key endpoints:
 - `POST /api/v1/tool-configurations` - Create tool configuration
 - `PUT /api/v1/tool-configurations/{id}` - Update tool configuration
 - `DELETE /api/v1/tool-configurations/{id}` - Delete tool configuration
+
+### Access Rules
+- `POST /api/v1/tool-configurations/{config_id}/access-rules` - Create access rule
+- `PUT /api/v1/access-rules/{rule_id}` - Update access rule
+- `DELETE /api/v1/access-rules/{rule_id}` - Delete access rule
 
 ### Approval Management
 - `GET /api/v1/approval-policies` - List approval policies
@@ -602,6 +685,8 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | **Role-Based Access Control (RBAC)** | ❌ | ✅ |
 | **Team management** | ❌ | ✅ |
 | **CEL conditional approval policies** | ❌ | ✅ |
+| **Access rules with CEL conditions** | Basic (single condition) | Advanced (multiple conditions, AND/OR, CEL editor) |
+| **AI-driven approval policies** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
 | **Slack notifications** | ❌ | ✅ |

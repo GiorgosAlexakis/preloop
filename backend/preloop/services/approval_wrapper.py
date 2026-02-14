@@ -72,20 +72,62 @@ def with_approval(tool_func: Callable) -> Callable:
                     tool_source="builtin",
                 )
 
-                # If tool doesn't require approval, execute directly
-                # A tool requires approval if it has an approval_policy_id set
-                if not config or not config.approval_policy_id:
-                    logger.info(f"Tool {tool_name} does not require approval")
+                # Evaluate policy rules (ToolAccessRule) to determine action
+                # This checks allow/deny/require_approval rules with conditions
+                from preloop.services.policy_evaluator import evaluate_policy_async
+
+                (
+                    action,
+                    approval_policy_id,
+                    rule_description,
+                ) = await evaluate_policy_async(
+                    db=db,
+                    tool_name=tool_name,
+                    tool_args=kwargs,
+                    account_id=user_context.account_id,
+                    tool_configuration_id=config.id if config else None,
+                    user_id=getattr(user_context, "user_id", None),
+                    execution_id=getattr(user_context, "execution_id", None),
+                )
+
+                logger.info(
+                    f"Policy evaluation for tool '{tool_name}': "
+                    f"action={action}, rule='{rule_description}'"
+                )
+
+                # Handle deny action - block execution
+                if action == "deny":
+                    logger.warning(
+                        f"Tool {tool_name} execution DENIED by policy rule: {rule_description}"
+                    )
+                    return f"Tool execution denied: {rule_description}"
+
+                # Handle allow action - execute directly
+                if action == "allow":
+                    logger.info(
+                        f"Tool {tool_name} allowed by policy rule: {rule_description}"
+                    )
                     return await tool_func(*args, **kwargs)
 
-                # Get approval policy using CRUD
-                policy = await get_approval_policy_async(
-                    db, policy_id=config.approval_policy_id
+                # Handle require_approval action
+                # Get approval policy (from rule evaluation or tool config fallback)
+                policy_id = approval_policy_id or (
+                    config.approval_policy_id if config else None
                 )
+
+                if not policy_id:
+                    # No approval policy configured - fail closed (require approval by default)
+                    logger.warning(
+                        f"Tool {tool_name} requires approval but no policy configured - failing closed"
+                    )
+                    return "Tool requires approval but no approval policy is configured"
+
+                # Get approval policy using CRUD
+                policy = await get_approval_policy_async(db, policy_id=policy_id)
 
                 if not policy:
                     logger.error(
-                        f"Approval policy {config.approval_policy_id} not found for tool {tool_name}"
+                        f"Approval policy {policy_id} not found for tool {tool_name}"
                     )
                     return f"Error: Approval policy not found for tool '{tool_name}'"
 
@@ -266,10 +308,16 @@ def with_approval(tool_func: Callable) -> Callable:
                     return f"Approval error: {str(e)}"
 
         except Exception as e:
-            logger.error(f"Error checking approval requirement: {e}", exc_info=True)
-            # Continue with execution if approval check fails (fail-open)
+            # SECURITY: Fail closed on errors - do not execute tool
+            # If we can't determine whether approval is required, we must assume it is
+            logger.error(
+                f"Error checking approval requirement for {tool_name}: {e}",
+                exc_info=True,
+            )
+            return f"Tool execution blocked: Error evaluating access policy - {str(e)}"
 
-        # Execute the actual tool function
-        return await tool_func(*args, **kwargs)
+        # This should not be reached - all paths above either return or raise
+        logger.error(f"Unexpected code path reached for tool {tool_name}")
+        return "Tool execution blocked: Unexpected error in approval flow"
 
     return wrapper

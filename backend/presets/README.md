@@ -21,7 +21,8 @@ name: "Issue Triage Assistant"
 description: "Automatically analyze new issues..."
 icon: "funnel"
 trigger_event_source: null  # Set to tracker_id when instantiated
-trigger_event_type: "issue.opened"
+trigger_event_types:         # Array of event types that trigger this flow
+  - "issue.opened"
 prompt_template: |
   You are an intelligent issue triage assistant.
   ...
@@ -36,6 +37,10 @@ allowed_mcp_tools:
 git_clone_config: null
 is_preset: true
 ```
+
+> **Note:** Use `trigger_event_types` (plural, array) not the legacy
+> `trigger_event_type` (singular). The singular form is ignored by the
+> schema and flows created with it will never match events.
 
 ## Notes
 

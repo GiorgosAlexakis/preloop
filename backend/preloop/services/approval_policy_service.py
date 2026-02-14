@@ -63,10 +63,10 @@ def create_default_approval_policy_for_account(
                 "Default policy for tool approval requests. "
                 "Approval requests will be shown in the Preloop UI."
             ),
-            "approval_type": "standard",
+            "approval_type": "manual",  # Use manual for default human approval
+            "approval_mode": "standard",  # standard = human approval
             "is_default": True,
             "approvals_required": 1,
-            "notification_channels": ["email", "mobile_push"],
         }
 
         # In single-user/open-source mode, set the account owner as the approver

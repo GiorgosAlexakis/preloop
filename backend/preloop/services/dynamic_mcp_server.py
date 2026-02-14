@@ -9,7 +9,9 @@ For Phase 1B: Add support for proxied tools from external MCP servers.
 """
 
 import logging
+import time
 from typing import Dict, List, Optional, Any
+from uuid import UUID
 
 from mcp.server import Server
 from mcp import types
@@ -18,6 +20,81 @@ from sqlalchemy.orm import Session
 from preloop.models.models.account import Account
 
 logger = logging.getLogger(__name__)
+
+
+def _get_audit_service():
+    """Get the audit service instance (lazy import to avoid circular deps)."""
+    try:
+        from plugins.audit.service import get_audit_service
+
+        return get_audit_service()
+    except ImportError:
+        logger.debug("Audit service not available")
+        return None
+
+
+def _get_db_factory():
+    """Get a database session factory for async audit logging."""
+    try:
+        from preloop.models.db.session import get_session_factory
+
+        def _create_session():
+            """Create a session that the caller is responsible for closing."""
+            factory = get_session_factory()
+            return factory()
+
+        return _create_session
+    except ImportError:
+        return None
+
+
+def _log_tool_execution_async(
+    account_id: str,
+    user_id: Optional[str],
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    status: str = "executed",
+    result: Optional[str] = None,
+    execution_time_ms: Optional[int] = None,
+    execution_id: Optional[str] = None,
+) -> None:
+    """Log a tool execution asynchronously (fire-and-forget)."""
+    try:
+        audit_service = _get_audit_service()
+        if not audit_service:
+            return
+
+        db_factory = _get_db_factory()
+        if not db_factory:
+            return
+
+        # Convert string IDs to UUIDs where needed
+        user_uuid = None
+        execution_uuid = None
+        if user_id:
+            try:
+                user_uuid = UUID(user_id)
+            except (ValueError, TypeError):
+                pass
+        if execution_id:
+            try:
+                execution_uuid = UUID(execution_id)
+            except (ValueError, TypeError):
+                pass
+
+        audit_service.log_tool_execution_async(
+            db_factory=db_factory,
+            account_id=account_id,
+            user_id=user_uuid,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            status=status,
+            result=result,
+            execution_time_ms=execution_time_ms,
+            execution_id=execution_uuid,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to log tool execution to audit: {e}")
 
 
 class UserContext:
@@ -164,19 +241,39 @@ class DynamicMCPServer:
                         )
                     ]
 
-                # Check if tool requires approval
-                approval_required = await self._check_approval_required(
-                    user_context, name
+                # Evaluate policy rules to determine action (allow/deny/require_approval)
+                (
+                    action,
+                    approval_policy_id,
+                    rule_description,
+                ) = await self._evaluate_policy(user_context, name, arguments or {})
+
+                logger.info(
+                    f"Policy evaluation for tool '{name}': "
+                    f"action={action}, rule='{rule_description}'"
                 )
 
-                if approval_required:
+                # Handle deny action - block execution
+                if action == "deny":
+                    logger.warning(
+                        f"Tool {name} execution DENIED by policy rule: {rule_description}"
+                    )
+                    return [
+                        types.TextContent(
+                            type="text",
+                            text=f"Tool execution denied: {rule_description}",
+                        )
+                    ]
+
+                # Handle require_approval action
+                if action == "require_approval":
                     logger.info(
                         f"Tool {name} requires approval - initiating approval flow"
                     )
                     try:
                         # Wait for approval
                         await self._request_and_wait_for_approval(
-                            user_context, name, arguments or {}
+                            user_context, name, arguments or {}, approval_policy_id
                         )
                         logger.info(f"Tool {name} approved - proceeding with execution")
                     except TimeoutError as e:
@@ -222,8 +319,14 @@ class DynamicMCPServer:
                     f"with args: {arguments}"
                 )
 
+                # Track execution time
+                start_time = time.time()
+
                 # Call the handler (existing MCP router functions)
                 result = await handler(**(arguments or {}))
+
+                # Calculate execution time
+                execution_time_ms = int((time.time() - start_time) * 1000)
 
                 # Convert result to MCP TextContent
                 # The handlers return Pydantic models, we need to serialize them
@@ -233,10 +336,31 @@ class DynamicMCPServer:
                     else str(result)
                 )
 
+                # Log successful tool execution to audit (fire-and-forget)
+                _log_tool_execution_async(
+                    account_id=user_context.account_id,
+                    user_id=user_context.user_id,
+                    tool_name=name,
+                    tool_args=arguments or {},
+                    status="executed",
+                    result=result_text[:500] if result_text else None,
+                    execution_time_ms=execution_time_ms,
+                    execution_id=user_context.flow_execution_id,
+                )
+
                 return [types.TextContent(type="text", text=result_text)]
 
             except Exception as e:
                 logger.error(f"Error executing tool {name}: {e}", exc_info=True)
+                # Log failed tool execution to audit
+                _log_tool_execution_async(
+                    account_id=user_context.account_id if user_context else "unknown",
+                    user_id=user_context.user_id if user_context else None,
+                    tool_name=name,
+                    tool_args=arguments or {},
+                    status="failed",
+                    result=str(e)[:500],
+                )
                 return [
                     types.TextContent(
                         type="text", text=f"Error executing tool: {str(e)}"
@@ -286,26 +410,34 @@ class DynamicMCPServer:
             logger.error(f"Error extracting user context: {e}", exc_info=True)
             return None
 
-    async def _check_approval_required(
-        self, user_context: UserContext, tool_name: str
-    ) -> bool:
-        """Check if a tool requires approval for this user.
+    async def _evaluate_policy(
+        self, user_context: UserContext, tool_name: str, tool_args: dict
+    ) -> tuple:
+        """Evaluate policy rules to determine tool access action.
+
+        Uses the policy evaluator to check ToolAccessRule entries and determine
+        whether to allow, deny, or require approval for the tool call.
 
         Args:
             user_context: User context
             tool_name: Name of the tool
+            tool_args: Tool arguments for condition evaluation
 
         Returns:
-            True if approval is required, False otherwise
+            Tuple of (action, approval_policy_id, rule_description)
+            - action: 'allow', 'deny', or 'require_approval'
+            - approval_policy_id: UUID of approval policy (if require_approval)
+            - rule_description: Description of the matched rule
         """
         try:
             from preloop.models.db.session import get_async_db_session
             from preloop.models.crud.tool_configuration import (
                 get_tool_config_by_name_and_source_async,
             )
+            from preloop.services.policy_evaluator import evaluate_policy_async
 
             logger.info(
-                f"Checking approval requirement for tool '{tool_name}' "
+                f"Evaluating policy for tool '{tool_name}' "
                 f"(account_id={user_context.account_id})"
             )
 
@@ -320,18 +452,7 @@ class DynamicMCPServer:
                     tool_source="builtin",
                 )
 
-                if config:
-                    logger.info(
-                        f"Found builtin tool config for '{tool_name}': "
-                        f"requires_approval={bool(config.approval_policy_id)}, "
-                        f"approval_policy_id={config.approval_policy_id}"
-                    )
-                else:
-                    logger.info(
-                        f"No builtin tool config found for '{tool_name}', checking MCP tools"
-                    )
-
-                # If not found in default tools, check proxied tools using CRUD
+                # If not found in default tools, check proxied tools
                 if not config:
                     config = await get_tool_config_by_name_and_source_async(
                         db,
@@ -340,30 +461,33 @@ class DynamicMCPServer:
                         tool_source="mcp",
                     )
 
-                    if config:
-                        logger.info(
-                            f"Found MCP tool config for '{tool_name}': "
-                            f"requires_approval={bool(config.approval_policy_id)}, "
-                            f"approval_policy_id={config.approval_policy_id}, "
-                            f"mcp_server_id={config.mcp_server_id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"No tool configuration found for '{tool_name}' "
-                            f"(account_id={user_context.account_id})"
-                        )
-
-                # Return whether approval is required
-                # A tool requires approval if it has an approval_policy_id set
-                requires_approval = bool(config.approval_policy_id) if config else False
-                logger.info(
-                    f"Approval requirement check result for '{tool_name}': {requires_approval}"
+                # Evaluate policy rules
+                (
+                    action,
+                    approval_policy_id,
+                    rule_description,
+                ) = await evaluate_policy_async(
+                    db=db,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    account_id=user_context.account_id,
+                    tool_configuration_id=config.id if config else None,
+                    user_id=getattr(user_context, "user_id", None),
+                    execution_id=getattr(user_context, "execution_id", None),
                 )
-                return requires_approval
+
+                logger.info(
+                    f"Policy evaluation result for '{tool_name}': "
+                    f"action={action}, approval_policy_id={approval_policy_id}, "
+                    f"rule='{rule_description}'"
+                )
+
+                return action, approval_policy_id, rule_description
 
         except Exception as e:
-            logger.error(f"Error checking approval requirement: {e}", exc_info=True)
-            return False
+            # SECURITY: Fail closed on errors
+            logger.error(f"Error evaluating policy for {tool_name}: {e}", exc_info=True)
+            return "require_approval", None, f"Policy evaluation error: {e}"
 
     async def _request_and_wait_for_approval(
         self, user_context: UserContext, tool_name: str, tool_args: dict

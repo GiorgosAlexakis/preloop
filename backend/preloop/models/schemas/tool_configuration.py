@@ -130,13 +130,35 @@ class ApprovalPolicyBase(BaseModel):
     escalation_team_ids: Optional[List[UUID]] = Field(
         None, description="List of team IDs to escalate to on timeout (proprietary)"
     )
-    notification_channels: Optional[List[str]] = Field(
-        ["email"],
-        description="Notification channels: email, mobile_push, slack, mattermost, webhook",
-    )
     channel_configs: Optional[Dict[str, Any]] = Field(
         None,
         description="Configuration for notification channels (Slack/Mattermost/webhook settings)",
+    )
+    # AI-driven approval fields
+    approval_mode: Optional[str] = Field(
+        "standard",
+        description="Approval mode: 'standard' (human) or 'ai_driven' (AI makes decision)",
+    )
+    ai_model: Optional[str] = Field(
+        None,
+        description="AI model for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
+    )
+    ai_guidelines: Optional[str] = Field(
+        None, description="User-defined guidelines for AI approval decisions"
+    )
+    ai_context: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional context for AI decisions (e.g., examples, constraints)",
+    )
+    ai_confidence_threshold: Optional[float] = Field(
+        0.8, description="Minimum confidence score required for AI to make a decision"
+    )
+    ai_fallback_behavior: Optional[str] = Field(
+        "escalate",
+        description="Behavior when AI confidence is below threshold: 'escalate', 'approve', 'deny'",
+    )
+    escalation_policy_id: Optional[UUID] = Field(
+        None, description="Policy to escalate to when fallback_behavior='escalate'"
     )
 
 
@@ -161,12 +183,21 @@ class ApprovalPolicyResponse(ApprovalPolicyBase):
     name: str
     approval_type: str
     is_default: bool
+    # AI-driven approval fields
+    approval_mode: str
+    ai_model: Optional[str] = None
+    ai_guidelines: Optional[str] = None
+    ai_context: Optional[Dict[str, Any]] = None
+    ai_confidence_threshold: float
+    ai_fallback_behavior: str
+    escalation_policy_id: Optional[UUID] = None
+    # Timestamps
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("id", "account_id")
+    @field_serializer("id", "account_id", "escalation_policy_id")
     def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID to string."""
         return str(value) if value else None

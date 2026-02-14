@@ -1,10 +1,10 @@
 """CRUD operations for AuditLog model."""
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..models.audit_log import AuditLog
@@ -277,6 +277,237 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
             }
             for row in result
         ]
+
+    def get_grouped_by_correlation(
+        self,
+        db: Session,
+        *,
+        account_id: Union[UUID, str],
+        skip: int = 0,
+        limit: int = 50,
+        event_type_filter: Optional[List[str]] = None,
+        outcome_filter: Optional[List[str]] = None,
+        tool_name_filter: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Get audit logs grouped by correlation_id for the unified timeline.
+
+        Returns primary events (tool_call + standalone) with their correlated
+        sub-events (policy_*, approval_*). Events without a correlation_id are
+        treated as standalone groups.
+
+        Args:
+            db: Database session
+            account_id: Account to filter by
+            skip: Pagination offset (over groups, not raw rows)
+            limit: Max groups to return
+            event_type_filter: Filter by event type(s). Plain values like
+                ``"tool_call"`` match ``AuditLog.action``. Prefixed values like
+                ``"config:mcp_server"`` match ``configuration_change`` events
+                whose ``details->config_type`` equals the suffix.
+            outcome_filter: Filter by outcome(s) ('allow', 'deny', 'require_approval', etc.)
+            tool_name_filter: Filter by tool name (substring match)
+            start_date: Filter by start date
+            end_date: Filter by end date
+
+        Returns:
+            Tuple of (list of group dicts, total primary event count)
+        """
+        account_id_str = str(account_id) if isinstance(account_id, UUID) else account_id
+
+        # Step 1: Fetch primary events (tool_call + non-tool standalone events)
+        # Tool calls are the primary grouping anchors.
+        # Non-tool events (auth, config_change, permission_check) are standalone.
+        primary_actions = [
+            "tool_call",
+            "authentication",
+            "configuration_change",
+            "permission_check",
+            "role_assigned",
+            "role_removed",
+        ]
+
+        primary_query = db.query(AuditLog).filter(
+            AuditLog.account_id == account_id_str,
+        )
+
+        # Apply event type filter
+        if event_type_filter:
+            # Separate plain action filters from config:* sub-type filters
+            plain_actions: List[str] = []
+            config_subtypes: List[str] = []
+            for et in event_type_filter:
+                if et.startswith("config:"):
+                    config_subtypes.append(et.split(":", 1)[1])
+                else:
+                    plain_actions.append(et)
+
+            # Build OR conditions: action IN plain_actions
+            #                      OR (action='configuration_change' AND details->config_type IN subtypes)
+            type_conditions = []
+            if plain_actions:
+                type_conditions.append(AuditLog.action.in_(plain_actions))
+            if config_subtypes:
+                type_conditions.append(
+                    (AuditLog.action == "configuration_change")
+                    & (AuditLog.details["config_type"].astext.in_(config_subtypes))
+                )
+
+            if type_conditions:
+                primary_query = primary_query.filter(or_(*type_conditions))
+            else:
+                # No valid filters → return nothing
+                return [], 0
+        else:
+            primary_query = primary_query.filter(
+                AuditLog.action.in_(primary_actions),
+            )
+
+        if start_date:
+            primary_query = primary_query.filter(AuditLog.timestamp >= start_date)
+        if end_date:
+            primary_query = primary_query.filter(AuditLog.timestamp <= end_date)
+        if tool_name_filter:
+            primary_query = primary_query.filter(
+                AuditLog.resource_id.ilike(f"%{tool_name_filter}%")
+            )
+
+        # Count total before pagination
+        total = primary_query.count()
+
+        # Fetch the page of primary events
+        primary_events = (
+            primary_query.order_by(AuditLog.timestamp.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+        if not primary_events:
+            return [], total
+
+        # Step 2: Collect correlation_ids from primary tool_call events
+        correlation_ids = set()
+        for event in primary_events:
+            if event.action == "tool_call" and event.details:
+                cid = event.details.get("correlation_id")
+                if cid:
+                    correlation_ids.add(cid)
+
+        # Step 3: Fetch sub-events correlated by correlation_id
+        sub_events_map: Dict[str, List[AuditLog]] = {}
+        if correlation_ids:
+            # 3a: Fetch events that directly carry a correlation_id
+            direct_subs = (
+                db.query(AuditLog)
+                .filter(
+                    AuditLog.account_id == account_id_str,
+                    AuditLog.details["correlation_id"].astext.in_(
+                        list(correlation_ids)
+                    ),
+                    AuditLog.action != "tool_call",
+                )
+                .order_by(AuditLog.timestamp.asc())
+                .all()
+            )
+
+            for sub in direct_subs:
+                cid = sub.details.get("correlation_id") if sub.details else None
+                if cid:
+                    sub_events_map.setdefault(cid, []).append(sub)
+
+            # 3b: Chain approval lifecycle events via approval_id.
+            # The "approval_created" sub-event has both correlation_id and
+            # approval_id. Subsequent events (approved, denied, expired, etc.)
+            # share the same approval_id but lack correlation_id.
+            # Collect approval_ids from the direct subs, then fetch any
+            # additional approval events that match.
+            approval_id_to_cid: Dict[str, str] = {}
+            seen_sub_ids = {sub.id for sub in direct_subs}
+            for sub in direct_subs:
+                if sub.action == "approval_created" and sub.details:
+                    aid = sub.details.get("approval_id")
+                    cid = sub.details.get("correlation_id")
+                    if aid and cid:
+                        approval_id_to_cid[aid] = cid
+
+            if approval_id_to_cid:
+                chained_subs = (
+                    db.query(AuditLog)
+                    .filter(
+                        AuditLog.account_id == account_id_str,
+                        AuditLog.details["approval_id"].astext.in_(
+                            list(approval_id_to_cid.keys())
+                        ),
+                        AuditLog.action != "approval_created",  # already fetched
+                    )
+                    .order_by(AuditLog.timestamp.asc())
+                    .all()
+                )
+
+                for sub in chained_subs:
+                    if sub.id in seen_sub_ids:
+                        continue
+                    aid = sub.details.get("approval_id") if sub.details else None
+                    if aid and aid in approval_id_to_cid:
+                        cid = approval_id_to_cid[aid]
+                        sub_events_map.setdefault(cid, []).append(sub)
+
+            # Sort each group's sub-events by timestamp
+            for cid in sub_events_map:
+                sub_events_map[cid].sort(key=lambda s: s.timestamp)
+
+        # Step 4: Build groups
+        groups = []
+        for event in primary_events:
+            cid = None
+            if event.details:
+                cid = event.details.get("correlation_id")
+
+            sub_list = sub_events_map.get(cid, []) if cid else []
+
+            # Determine outcome from sub-events chain.
+            # We track *all* intermediate outcomes so that filtering by
+            # e.g. "require_approval" still matches groups that were later
+            # approved/declined/expired.
+            outcome = event.status  # default (final outcome shown in UI)
+            all_outcomes: set[str] = {outcome} if outcome else set()
+            if event.action == "tool_call" and sub_list:
+                # Look for the policy decision
+                for sub in sub_list:
+                    if sub.action.startswith("policy_"):
+                        decision = sub.details.get("decision") if sub.details else None
+                        if decision:
+                            outcome = decision
+                            all_outcomes.add(decision)
+                # If approval was required, check for final approval status
+                for sub in sub_list:
+                    if sub.action in ("approval_approved",):
+                        outcome = "approved"
+                        all_outcomes.add("approved")
+                    elif sub.action in ("approval_denied",):
+                        outcome = "declined"
+                        all_outcomes.add("declined")
+                    elif sub.action in ("approval_expired",):
+                        outcome = "expired"
+                        all_outcomes.add("expired")
+
+            # Apply outcome filter — match only if *all* selected outcomes
+            # appear somewhere in the chain (AND semantics).
+            if outcome_filter and not set(outcome_filter).issubset(all_outcomes):
+                continue
+
+            groups.append(
+                {
+                    "correlation_id": cid,
+                    "primary_event": event,
+                    "sub_events": sub_list,
+                    "outcome": outcome,
+                }
+            )
+
+        return groups, total
 
     def count_by_account(
         self,

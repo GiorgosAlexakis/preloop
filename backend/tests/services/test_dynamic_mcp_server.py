@@ -278,11 +278,11 @@ class TestExtractUserContext:
         assert ctx is None
 
 
-class TestCheckApprovalRequired:
-    """Test _check_approval_required method."""
+class TestEvaluatePolicy:
+    """Test _evaluate_policy method."""
 
-    async def test_no_config_returns_false(self):
-        """Test that no config returns false."""
+    async def test_no_rules_returns_allow(self):
+        """Test that no rules returns allow action."""
         server = DynamicMCPServer()
         user_context = UserContext("1", "1", "test", has_tracker=True)
 
@@ -298,19 +298,27 @@ class TestCheckApprovalRequired:
 
             mock_get_db.return_value = mock_db
 
-            result = await server._check_approval_required(user_context, "test_tool")
+            # Mock evaluate_policy_async to return allow (no rules)
+            with patch(
+                "preloop.services.policy_evaluator.evaluate_policy_async"
+            ) as mock_eval:
+                mock_eval.return_value = ("allow", None, "No rules configured")
 
-        assert result is False
+                action, policy_id, description = await server._evaluate_policy(
+                    user_context, "test_tool", {}
+                )
 
-    async def test_config_with_approval_returns_true(self):
-        """Test that config with approval required returns true."""
+        assert action == "allow"
+        assert policy_id is None
+
+    async def test_require_approval_action(self):
+        """Test that require_approval action is returned correctly."""
         server = DynamicMCPServer()
         user_context = UserContext("1", "1", "test", has_tracker=True)
 
         mock_config = MagicMock()
-        mock_config.approval_policy_id = (
-            "some-policy-id"  # Tool requires approval if this is set
-        )
+        mock_config.id = "config-id"
+        mock_config.approval_policy_id = "some-policy-id"
 
         with patch("preloop.models.db.session.get_async_db_session") as mock_get_db:
             mock_db = AsyncMock()
@@ -324,12 +332,25 @@ class TestCheckApprovalRequired:
 
             mock_get_db.return_value = mock_db
 
-            result = await server._check_approval_required(user_context, "test_tool")
+            # Mock evaluate_policy_async to return require_approval
+            with patch(
+                "preloop.services.policy_evaluator.evaluate_policy_async"
+            ) as mock_eval:
+                mock_eval.return_value = (
+                    "require_approval",
+                    "some-policy-id",
+                    "Tool requires approval",
+                )
 
-        assert result is True
+                action, policy_id, description = await server._evaluate_policy(
+                    user_context, "test_tool", {}
+                )
 
-    async def test_check_error_returns_false(self):
-        """Test that errors default to false."""
+        assert action == "require_approval"
+        assert policy_id == "some-policy-id"
+
+    async def test_error_fails_closed(self):
+        """Test that errors fail closed (require_approval)."""
         server = DynamicMCPServer()
         user_context = UserContext("1", "1", "test", has_tracker=True)
 
@@ -337,9 +358,13 @@ class TestCheckApprovalRequired:
             "preloop.models.db.session.get_async_db_session",
             side_effect=Exception("DB Error"),
         ):
-            result = await server._check_approval_required(user_context, "test_tool")
+            action, policy_id, description = await server._evaluate_policy(
+                user_context, "test_tool", {}
+            )
 
-        assert result is False
+        # Should fail closed - require approval on error
+        assert action == "require_approval"
+        assert "error" in description.lower() or "Error" in description
 
 
 class TestRequestAndWaitForApproval:

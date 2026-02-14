@@ -32,7 +32,7 @@ async def test_create_flow(mock_account: Account, mocker: MockerFixture):
         name="Test Flow",
         description="A test flow",
         trigger_event_source="github",
-        trigger_event_type="commit_to_main",
+        trigger_event_types=["commit_to_main"],  # Use array field
         prompt_template="Test prompt",
         ai_model_id=uuid.uuid4(),
         agent_type="openhands",
@@ -105,7 +105,7 @@ async def test_read_flow(mock_account: Account, mocker: MockerFixture):
         name="Test Flow",
         description="A test flow",
         trigger_event_source="github",
-        trigger_event_type="commit_to_main",
+        trigger_event_types=["commit_to_main"],  # Use array field
         prompt_template="Test prompt",
         ai_model_id=uuid.uuid4(),
         created_at=datetime.now(ZoneInfo("UTC")),
@@ -148,7 +148,7 @@ async def test_update_flow(mock_account: Account, mocker: MockerFixture):
         name=flow_update.name,
         description="A test flow",
         trigger_event_source="github",
-        trigger_event_type="commit_to_main",
+        trigger_event_types=["commit_to_main"],  # Use array field
         prompt_template="Test prompt",
         ai_model_id=uuid.uuid4(),
         created_at=datetime.now(ZoneInfo("UTC")),
@@ -331,7 +331,7 @@ async def test_clone_preset(mock_account: Account, mocker: MockerFixture):
     preset.description = "A preset"
     preset.is_preset = True
     preset.trigger_event_source = "github"
-    preset.trigger_event_type = "commit"
+    preset.trigger_event_types = ["commit"]  # Use array field
     preset.prompt_template = "test"
     preset.ai_model_id = uuid.uuid4()
     preset.agent_type = "openhands"

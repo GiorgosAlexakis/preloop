@@ -162,6 +162,28 @@ class ApprovalRequest(Base):
         comment="Secure token for public approval links",
     )
 
+    # AI decision tracking fields
+    decided_by_ai: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="Whether this request was decided by AI",
+    )
+    ai_model: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="AI model that made the decision (if decided_by_ai=True)",
+    )
+    ai_confidence: Mapped[Optional[float]] = mapped_column(
+        nullable=True,
+        comment="AI confidence score for the decision (0.0-1.0)",
+    )
+    ai_reasoning: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="AI's reasoning for the approval/denial decision",
+    )
+
     # Relationships
     account: Mapped["Account"] = relationship(
         "Account", back_populates="approval_requests"

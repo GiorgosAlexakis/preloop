@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import { brandPlugin } from './vite-plugin-brand';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // Get brand from environment variable, default to 'preloop'
 const brand = process.env.VITE_BRAND || 'preloop';
@@ -35,9 +39,24 @@ export default defineConfig({
     brandPlugin(brand),
   ],
   resolve: {
-    alias: {
-      events: 'events',
-    },
+    alias: [
+      { find: 'events', replacement: 'events' },
+      // Ensure packages resolve from frontend's node_modules for plugins outside this package
+      { find: /^lit($|\/)/, replacement: resolve(__dirname, 'node_modules/lit$1') },
+      {
+        find: /^@shoelace-style\/shoelace(\/.*)?$/,
+        replacement: resolve(__dirname, 'node_modules/@shoelace-style/shoelace$1'),
+      },
+      {
+        find: /^@lit\/reactive-element(\/.*)?$/,
+        replacement: resolve(__dirname, 'node_modules/@lit/reactive-element$1'),
+      },
+    ],
+    // Dedupe ensures only one copy of these packages is used
+    dedupe: ['lit', '@lit/reactive-element', 'lit-element', 'lit-html', '@shoelace-style/shoelace'],
+  },
+  optimizeDeps: {
+    include: ['lit', 'lit/decorators.js'],
   },
   server: {
     hmr: {

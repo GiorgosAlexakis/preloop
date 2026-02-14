@@ -118,13 +118,15 @@ class AgentExecutor(ABC):
         pass
 
     @abstractmethod
-    async def get_logs(self, session_reference: str, tail: int = 100) -> list[str]:
+    async def get_logs(
+        self, session_reference: str, tail: int | None = None
+    ) -> list[str]:
         """
         Get logs from an agent execution.
 
         Args:
             session_reference: Reference to the agent session
-            tail: Number of recent log lines to retrieve
+            tail: Number of recent log lines to retrieve, or None for all logs
 
         Returns:
             List of log lines

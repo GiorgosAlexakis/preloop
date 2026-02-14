@@ -161,7 +161,8 @@ async def process_webhook_event(
         enriched_payload = {**serialized_payload, **filter_fields}
 
         event_data = {
-            "source": str(tracker.id),
+            "source": tracker.tracker_type,  # Tracker type (github, gitlab, jira)
+            "tracker_id": str(tracker.id),  # Tracker UUID for project lookup
             "type": normalized_event_type,
             "payload": enriched_payload,
             "account_id": str(tracker.account_id),

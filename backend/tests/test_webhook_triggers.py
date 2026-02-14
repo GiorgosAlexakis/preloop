@@ -38,7 +38,7 @@ def test_create_webhook_flow(db_session: Session, test_user):
         name="Test Webhook Flow",
         description="A flow triggered by webhook",
         trigger_event_source="webhook",
-        trigger_event_type="webhook",
+        trigger_event_types=["webhook"],  # Use array field
         webhook_config=webhook_config,
         prompt_template="Test prompt: {{trigger_event.payload.message}}",
         agent_type="openhands",
@@ -51,7 +51,7 @@ def test_create_webhook_flow(db_session: Session, test_user):
 
     assert flow.id is not None
     assert flow.trigger_event_source == "webhook"
-    assert flow.trigger_event_type == "webhook"
+    assert flow.trigger_event_types == ["webhook"]  # Use array field
     assert flow.webhook_config is not None
     assert "webhook_secret" in flow.webhook_config
     # Verify webhook secret is a secure token (at least 32 characters)
@@ -70,7 +70,7 @@ def test_webhook_secret_is_unique(db_session: Session, test_user):
     flow1_data = schemas.FlowCreate(
         name="Webhook Flow 1",
         trigger_event_source="webhook",
-        trigger_event_type="webhook",
+        trigger_event_types=["webhook"],  # Use array field
         webhook_config=schemas.WebhookConfig(webhook_secret=webhook_secret1),
         prompt_template="Test prompt 1",
         agent_type="openhands",
@@ -82,7 +82,7 @@ def test_webhook_secret_is_unique(db_session: Session, test_user):
     flow2_data = schemas.FlowCreate(
         name="Webhook Flow 2",
         trigger_event_source="webhook",
-        trigger_event_type="webhook",
+        trigger_event_types=["webhook"],  # Use array field
         webhook_config=schemas.WebhookConfig(webhook_secret=webhook_secret2),
         prompt_template="Test prompt 2",
         agent_type="openhands",
@@ -113,7 +113,7 @@ async def test_trigger_flow_via_webhook_success(db_session: Session, test_user):
     flow_data = schemas.FlowCreate(
         name="Webhook Test Flow",
         trigger_event_source="webhook",
-        trigger_event_type="webhook",
+        trigger_event_types=["webhook"],  # Use array field
         webhook_config=schemas.WebhookConfig(webhook_secret=webhook_secret),
         prompt_template="Process: {{trigger_event.payload.data}}",
         agent_type="openhands",
@@ -178,7 +178,7 @@ async def test_trigger_flow_via_webhook_invalid_secret(db_session: Session, test
     flow_data = schemas.FlowCreate(
         name="Webhook Test Flow",
         trigger_event_source="webhook",
-        trigger_event_type="webhook",
+        trigger_event_types=["webhook"],  # Use array field
         webhook_config=schemas.WebhookConfig(webhook_secret=webhook_secret),
         prompt_template="Test",
         agent_type="openhands",
@@ -225,7 +225,7 @@ async def test_trigger_non_webhook_flow_via_webhook(
     flow_data = schemas.FlowCreate(
         name="Tracker Flow",
         trigger_event_source=str(test_tracker.id),
-        trigger_event_type="issue_created",
+        trigger_event_types=["issue_created"],  # Use array field
         prompt_template="Test",
         agent_type="openhands",
         agent_config={},
@@ -271,7 +271,7 @@ async def test_trigger_disabled_webhook_flow(db_session: Session, test_user):
     flow_data = schemas.FlowCreate(
         name="Disabled Webhook Flow",
         trigger_event_source="webhook",
-        trigger_event_type="webhook",
+        trigger_event_types=["webhook"],  # Use array field
         webhook_config=schemas.WebhookConfig(webhook_secret=webhook_secret),
         prompt_template="Test",
         agent_type="openhands",

@@ -21,8 +21,96 @@ from preloop.models.crud.approval_request import (
     get_approval_request_for_update_async,
 )
 from preloop.sync.services.event_bus import get_task_publisher
+from preloop.services.ai_approval_service import get_ai_approval_service
 
 logger = logging.getLogger(__name__)
+
+
+def _get_audit_service():
+    """Get the audit service instance (lazy import to avoid circular deps)."""
+    try:
+        from plugins.audit.service import get_audit_service
+
+        return get_audit_service()
+    except ImportError:
+        logger.debug("Audit service not available")
+        return None
+
+
+def _get_db_factory():
+    """Get a database session factory for async audit logging."""
+    try:
+        from preloop.models.db.session import get_session_factory
+
+        def _create_session():
+            """Create a session that the caller is responsible for closing."""
+            factory = get_session_factory()
+            return factory()
+
+        return _create_session
+    except ImportError:
+        return None
+
+
+def _log_approval_lifecycle_async(
+    account_id: str,
+    approval_id: uuid.UUID,
+    event: str,
+    tool_name: Optional[str] = None,
+    approver_id: Optional[uuid.UUID] = None,
+    reason: Optional[str] = None,
+    execution_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    extra_details: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Log an approval lifecycle event asynchronously (fire-and-forget).
+
+    This helper function wraps the audit service call to log approval lifecycle
+    events without blocking the main execution flow.
+
+    Args:
+        account_id: Account ID
+        approval_id: Approval request ID
+        event: Lifecycle event ('created', 'approved', 'denied', 'expired', 'escalated')
+        tool_name: Name of the tool (if available)
+        approver_id: ID of the user who approved/denied
+        reason: Reason or comment for the decision
+        execution_id: Flow execution ID (if applicable)
+        correlation_id: Correlation ID for grouping related audit events
+        extra_details: Additional metadata to include in the audit log details
+    """
+    try:
+        audit_service = _get_audit_service()
+        if not audit_service:
+            return
+
+        db_factory = _get_db_factory()
+        if not db_factory:
+            return
+
+        # Convert execution_id to UUID if it's a string
+        exec_id = None
+        if execution_id:
+            try:
+                exec_id = uuid.UUID(execution_id)
+            except (ValueError, TypeError):
+                pass
+
+        audit_service.log_approval_lifecycle_async(
+            db_factory=db_factory,
+            account_id=account_id,
+            approval_id=approval_id,
+            event=event,
+            tool_name=tool_name,
+            approver_id=approver_id,
+            reason=reason,
+            execution_id=exec_id,
+            correlation_id=correlation_id,
+            extra_details=extra_details,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to log approval lifecycle to audit: {e}")
+
 
 # Thread pool for running sync database operations
 _sync_db_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
@@ -65,13 +153,22 @@ class ApprovalService:
                 "type": f"approval_{event_type}",
                 "approval_request_id": str(approval_request.id),
                 "account_id": str(approval_request.account_id),
+                "tool_configuration_id": str(approval_request.tool_configuration_id),
+                "approval_policy_id": str(approval_request.approval_policy_id),
                 "execution_id": approval_request.execution_id,
                 "tool_name": approval_request.tool_name,
+                "tool_args": approval_request.tool_args,
+                "agent_reasoning": approval_request.agent_reasoning,
                 "status": approval_request.status,
                 "requested_at": approval_request.requested_at.isoformat(),
                 "resolved_at": (
                     approval_request.resolved_at.isoformat()
                     if approval_request.resolved_at
+                    else None
+                ),
+                "expires_at": (
+                    approval_request.expires_at.isoformat()
+                    if approval_request.expires_at
                     else None
                 ),
                 "timestamp": datetime.utcnow().isoformat(),
@@ -143,6 +240,29 @@ class ApprovalService:
 
         # Broadcast creation event
         await self._broadcast_approval_update(approval_request, "created")
+
+        # Log to audit trail (fire-and-forget)
+        # Read correlation_id from context var if available (set by _call_tool)
+        corr_id = None
+        try:
+            from preloop.services.dynamic_fastmcp import _correlation_id_var
+
+            corr_id = _correlation_id_var.get(None)
+        except Exception:
+            pass
+        _log_approval_lifecycle_async(
+            account_id=account_id,
+            approval_id=approval_request.id,
+            event="created",
+            tool_name=tool_name,
+            execution_id=execution_id,
+            correlation_id=corr_id,
+            extra_details={
+                "approval_policy_id": str(approval_policy_id),
+                "tool_args": tool_args,
+                "timeout_seconds": timeout,
+            },
+        )
 
         # Note: Notifications are sent via send_notifications() which is called
         # by create_and_notify(). Do NOT send notifications here to avoid duplicates.
@@ -547,6 +667,100 @@ class ApprovalService:
 
         return (max(total, 1), is_exact)
 
+    async def _auto_approve_request(
+        self,
+        request_id: uuid.UUID,
+        reason: str,
+        decided_by_ai: bool = True,
+        ai_model: Optional[str] = None,
+        ai_confidence: Optional[float] = None,
+    ) -> Optional[ApprovalRequest]:
+        """Auto-approve an approval request (typically by AI).
+
+        Args:
+            request_id: Approval request ID
+            reason: Reason for the approval
+            decided_by_ai: Whether this was decided by AI
+            ai_model: The AI model that made the decision
+            ai_confidence: The confidence score of the AI decision
+
+        Returns:
+            Updated approval request or None if not found
+        """
+        update = ApprovalRequestUpdate(
+            status="approved",
+            approver_comment=reason,
+            resolved_at=datetime.utcnow(),
+            decided_by_ai=decided_by_ai,
+            ai_model=ai_model,
+            ai_confidence=ai_confidence,
+            ai_reasoning=reason,
+        )
+        updated_request = await self.update_approval_request(request_id, update)
+
+        if updated_request:
+            await self._broadcast_approval_update(updated_request, "approved")
+
+            # Log to audit trail (fire-and-forget)
+            _log_approval_lifecycle_async(
+                account_id=str(updated_request.account_id),
+                approval_id=updated_request.id,
+                event="approved",
+                tool_name=updated_request.tool_name,
+                approver_id=None,  # AI decision, no human approver
+                reason=f"[AI] {reason}" if decided_by_ai else reason,
+                execution_id=updated_request.execution_id,
+            )
+
+        return updated_request
+
+    async def _auto_deny_request(
+        self,
+        request_id: uuid.UUID,
+        reason: str,
+        decided_by_ai: bool = True,
+        ai_model: Optional[str] = None,
+        ai_confidence: Optional[float] = None,
+    ) -> Optional[ApprovalRequest]:
+        """Auto-deny an approval request (typically by AI).
+
+        Args:
+            request_id: Approval request ID
+            reason: Reason for the denial
+            decided_by_ai: Whether this was decided by AI
+            ai_model: The AI model that made the decision
+            ai_confidence: The confidence score of the AI decision
+
+        Returns:
+            Updated approval request or None if not found
+        """
+        update = ApprovalRequestUpdate(
+            status="declined",
+            approver_comment=reason,
+            resolved_at=datetime.utcnow(),
+            decided_by_ai=decided_by_ai,
+            ai_model=ai_model,
+            ai_confidence=ai_confidence,
+            ai_reasoning=reason,
+        )
+        updated_request = await self.update_approval_request(request_id, update)
+
+        if updated_request:
+            await self._broadcast_approval_update(updated_request, "declined")
+
+            # Log to audit trail (fire-and-forget)
+            _log_approval_lifecycle_async(
+                account_id=str(updated_request.account_id),
+                approval_id=updated_request.id,
+                event="denied",
+                tool_name=updated_request.tool_name,
+                approver_id=None,  # AI decision, no human approver
+                reason=f"[AI] {reason}" if decided_by_ai else reason,
+                execution_id=updated_request.execution_id,
+            )
+
+        return updated_request
+
     async def post_webhook_notification(
         self, approval_request: ApprovalRequest, approval_policy: ApprovalPolicy
     ) -> bool:
@@ -717,8 +931,12 @@ class ApprovalService:
         tool_args: Dict[str, Any],
         agent_reasoning: Optional[str] = None,
         execution_id: Optional[str] = None,
+        user_id: Optional[uuid.UUID] = None,
     ) -> ApprovalRequest:
         """Create approval request and send notifications through configured channels.
+
+        For AI-driven approval policies, immediately evaluates the request using AI
+        and auto-approves/denies based on the result and confidence threshold.
 
         Args:
             account_id: The account creating the request
@@ -728,11 +946,12 @@ class ApprovalService:
             tool_args: Arguments passed to the tool
             agent_reasoning: Agent's reasoning for the tool call
             execution_id: Flow execution ID (if applicable)
+            user_id: ID of the user who initiated the tool call
 
         Returns:
-            Created approval request
+            Created approval request (may be already resolved if AI-driven)
         """
-        # Create approval request
+        # Create approval request first
         approval_request = await self.create_approval_request(
             account_id=account_id,
             tool_configuration_id=tool_configuration_id,
@@ -744,7 +963,135 @@ class ApprovalService:
             timeout_seconds=approval_policy.timeout_seconds,
         )
 
-        # Send notifications through configured channels
+        # Check if this is an AI-driven approval policy
+        if approval_policy.approval_mode == "ai_driven":
+            # Evaluate using AI
+            logger.info(
+                f"Evaluating approval request {approval_request.id} using AI "
+                f"(policy: {approval_policy.name})"
+            )
+
+            ai_service = get_ai_approval_service()
+            ai_result = await ai_service.evaluate(
+                tool_name=tool_name,
+                tool_args=tool_args,
+                policy=approval_policy,
+                context={
+                    "execution_id": str(execution_id) if execution_id else None,
+                    "user_id": str(user_id) if user_id else None,
+                    "account_id": account_id,
+                    "agent_reasoning": agent_reasoning,
+                },
+            )
+
+            logger.info(
+                f"AI evaluation for {approval_request.id}: "
+                f"decision={ai_result.decision}, confidence={ai_result.confidence:.2f}"
+            )
+
+            # Apply the decision based on confidence threshold
+            if ai_result.confidence >= approval_policy.ai_confidence_threshold:
+                if ai_result.decision == "approve":
+                    # Auto-approve the request
+                    logger.info(
+                        f"AI auto-approving request {approval_request.id} "
+                        f"(confidence: {ai_result.confidence:.2f})"
+                    )
+                    return await self._auto_approve_request(
+                        request_id=approval_request.id,
+                        reason=ai_result.reasoning,
+                        decided_by_ai=True,
+                        ai_model=ai_result.model_used,
+                        ai_confidence=ai_result.confidence,
+                    )
+                elif ai_result.decision == "deny":
+                    # Auto-deny the request
+                    logger.info(
+                        f"AI auto-denying request {approval_request.id} "
+                        f"(confidence: {ai_result.confidence:.2f})"
+                    )
+                    return await self._auto_deny_request(
+                        request_id=approval_request.id,
+                        reason=ai_result.reasoning,
+                        decided_by_ai=True,
+                        ai_model=ai_result.model_used,
+                        ai_confidence=ai_result.confidence,
+                    )
+
+            # If uncertain or low confidence, apply fallback behavior
+            logger.info(
+                f"AI uncertain or low confidence ({ai_result.confidence:.2f} < "
+                f"{approval_policy.ai_confidence_threshold}), "
+                f"applying fallback: {approval_policy.ai_fallback_behavior}"
+            )
+
+            if approval_policy.ai_fallback_behavior == "approve":
+                return await self._auto_approve_request(
+                    request_id=approval_request.id,
+                    reason=f"Fallback approval (AI uncertain): {ai_result.reasoning}",
+                    decided_by_ai=True,
+                    ai_model=ai_result.model_used,
+                    ai_confidence=ai_result.confidence,
+                )
+            elif approval_policy.ai_fallback_behavior == "deny":
+                return await self._auto_deny_request(
+                    request_id=approval_request.id,
+                    reason=f"Fallback denial (AI uncertain): {ai_result.reasoning}",
+                    decided_by_ai=True,
+                    ai_model=ai_result.model_used,
+                    ai_confidence=ai_result.confidence,
+                )
+            else:  # escalate (default)
+                # Update the request with AI info but keep it pending for human review
+                await self.update_approval_request(
+                    approval_request.id,
+                    ApprovalRequestUpdate(
+                        ai_model=ai_result.model_used,
+                        ai_confidence=ai_result.confidence,
+                        ai_reasoning=f"Escalated to human review: {ai_result.reasoning}",
+                    ),
+                )
+
+                # If escalation_policy_id is set, load and use that policy for notifications
+                notification_policy = approval_policy
+                if approval_policy.escalation_policy_id:
+                    from preloop.models.crud.approval_policy import (
+                        get_approval_policy_async,
+                    )
+
+                    escalation_policy = await get_approval_policy_async(
+                        self.db, policy_id=approval_policy.escalation_policy_id
+                    )
+                    if escalation_policy:
+                        logger.info(
+                            f"Using escalation policy '{escalation_policy.name}' "
+                            f"(id={escalation_policy.id}) for human review notifications"
+                        )
+                        notification_policy = escalation_policy
+
+                        # Update the approval request to reference the escalation policy
+                        # so approvers from that policy are used
+                        await self.update_approval_request(
+                            approval_request.id,
+                            ApprovalRequestUpdate(
+                                approval_policy_id=escalation_policy.id,
+                            ),
+                        )
+                    else:
+                        logger.warning(
+                            f"Escalation policy {approval_policy.escalation_policy_id} "
+                            f"not found, using original policy for notifications"
+                        )
+
+                # Refresh the approval request to get updated fields
+                approval_request = await self.get_approval_request(approval_request.id)
+
+                # Send notifications for human review using the appropriate policy
+                await self.send_notifications(approval_request, notification_policy)
+
+                return approval_request
+
+        # Standard (human) approval - send notifications
         await self.send_notifications(approval_request, approval_policy)
 
         return approval_request
@@ -812,7 +1159,10 @@ class ApprovalService:
             results["mobile_push"] = {"success": False, "error": str(e)}
 
         # Handle webhook-based notifications (these are policy-level, not per-user)
-        policy_channels = approval_policy.notification_channels or []
+        # Derive notification channels from approval_type (the model field)
+        policy_channels = (
+            [approval_policy.approval_type] if approval_policy.approval_type else []
+        )
         for channel in policy_channels:
             if channel in ["slack", "mattermost", "webhook"]:
                 try:
@@ -1369,6 +1719,16 @@ class ApprovalService:
                 # Broadcast expiration event
                 if expired_request:
                     await self._broadcast_approval_update(expired_request, "expired")
+
+                    # Log to audit trail (fire-and-forget)
+                    _log_approval_lifecycle_async(
+                        account_id=str(expired_request.account_id),
+                        approval_id=expired_request.id,
+                        event="expired",
+                        tool_name=expired_request.tool_name,
+                        reason="Request timed out without response",
+                        execution_id=expired_request.execution_id,
+                    )
 
                 raise TimeoutError(
                     f"Approval request {request_id} expired without response"

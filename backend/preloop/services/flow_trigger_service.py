@@ -75,6 +75,76 @@ class FlowTriggerService:
 
         return None
 
+    def _extract_project_id(self, event_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract the internal project_id from webhook event data.
+
+        This looks up the project in our database based on the repository
+        information from the webhook payload.
+
+        Args:
+            event_data: The event data containing source and payload
+
+        Returns:
+            Our internal project UUID as string, or None if not found
+        """
+        from preloop.models.crud import crud_project
+
+        source = event_data.get("source", "").lower()
+        payload = event_data.get("payload", {})
+        account_id = event_data.get("account_id")
+
+        if not account_id:
+            return None
+
+        # Get tracker_id from dedicated field (UUID for project lookup)
+        tracker_id = event_data.get("tracker_id")
+        if not tracker_id:
+            logger.debug(
+                f"No tracker_id in event_data, skipping project extraction "
+                f"(source={source})"
+            )
+            return None
+
+        repo_identifier = None
+
+        if source == "github":
+            repo = payload.get("repository", {})
+            # GitHub uses full_name like "owner/repo"
+            repo_identifier = repo.get("full_name") or repo.get("name")
+
+        elif source == "gitlab":
+            project = payload.get("project", {})
+            # GitLab uses path_with_namespace like "group/project"
+            repo_identifier = project.get("path_with_namespace") or project.get("name")
+
+        if not repo_identifier:
+            return None
+
+        # Look up project by name/identifier within the tracker
+        # This is a simple lookup - projects are identified by name within a tracker
+        projects = crud_project.get_for_tracker(
+            self.db, tracker_id=tracker_id, limit=1000
+        )
+
+        for proj in projects:
+            # Match by name or external_id if available
+            if proj.name == repo_identifier or (
+                hasattr(proj, "external_id") and proj.external_id == repo_identifier
+            ):
+                return str(proj.id)
+
+            # Also try matching just the repo name (last part of path)
+            repo_name = (
+                repo_identifier.split("/")[-1]
+                if "/" in repo_identifier
+                else repo_identifier
+            )
+            if proj.name == repo_name:
+                return str(proj.id)
+
+        return None
+
     def _has_running_execution(
         self, flow_id: uuid.UUID, resource_key: str, account_id: str
     ) -> bool:
@@ -394,7 +464,8 @@ class FlowTriggerService:
 
         Args:
             event_data: Dictionary containing:
-                - source: Event source (e.g., 'github', 'gitlab', 'jira')
+                - source: Tracker type (e.g., 'github', 'gitlab', 'jira', 'webhook')
+                - tracker_id: Tracker UUID for project lookup (optional, used for filtering)
                 - type: Event type (e.g., 'push', 'issue_created')
                 - payload: Event payload from the tracker
                 - account_id: Account ID for scoping
@@ -423,11 +494,17 @@ class FlowTriggerService:
         )
 
         try:
+            # Extract project_id from the event payload for project-based filtering
+            project_id = self._extract_project_id(event_data)
+            if project_id:
+                logger.info(f"Extracted project_id for filtering: {project_id}")
+
             # Query for flows that match the event source and type
             matching_flows: List[Flow] = crud_flow.get_by_trigger(
                 self.db,
                 event_source=event_source,
                 event_type=event_type,
+                project_id=project_id,
                 account_id=account_id,
             )
 

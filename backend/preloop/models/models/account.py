@@ -27,12 +27,14 @@ if TYPE_CHECKING:
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
     from .tool_approval_condition import ToolApprovalCondition
+    from .tool_access_rule import ToolAccessRule
     from .team import Team
     from .user import User
     from .user_invitation import UserInvitation
     from .event import Event
     from .github_app_installation import OAuthAppInstallation
     from .github_oauth_token import OAuthToken
+    from .policy_snapshot import PolicySnapshot
 
 
 class Account(Base):
@@ -134,6 +136,9 @@ class Account(Base):
     tool_approval_conditions: Mapped[List["ToolApprovalCondition"]] = relationship(
         "ToolApprovalCondition", back_populates="account", cascade="all, delete-orphan"
     )
+    tool_access_rules: Mapped[List["ToolAccessRule"]] = relationship(
+        "ToolAccessRule", back_populates="account", cascade="all, delete-orphan"
+    )
     audit_logs: Mapped[List["AuditLog"]] = relationship(
         "AuditLog", back_populates="account", cascade="all, delete-orphan"
     )
@@ -149,6 +154,11 @@ class Account(Base):
     )
     oauth_tokens: Mapped[List["OAuthToken"]] = relationship(
         "OAuthToken", back_populates="account", cascade="all, delete-orphan"
+    )
+
+    # Policy versioning
+    policy_snapshots: Mapped[List["PolicySnapshot"]] = relationship(
+        "PolicySnapshot", back_populates="account", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship helper for organizational roles

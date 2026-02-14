@@ -7,6 +7,8 @@ import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import './theme-switcher.ts';
 import * as api from '../api.ts';
 import { Router } from '@vaadin/router';
@@ -27,6 +29,36 @@ interface FlowExecution {
   end_time: string | null;
 }
 
+interface ApprovalRequest {
+  id: string;
+  tool_name: string;
+  tool_args?: Record<string, unknown>;
+  status: 'pending' | 'approved' | 'declined' | 'expired' | 'cancelled';
+  requested_at: string;
+  expires_at?: string;
+  execution_id?: string;
+  agent_reasoning?: string;
+}
+
+// LocalStorage key for notification preferences
+const NOTIFICATION_PREF_KEY = 'preloop_desktop_notifications_enabled';
+
+interface UserNotification {
+  id: string;
+  type:
+    | 'team_added'
+    | 'team_removed'
+    | 'policy_added'
+    | 'policy_removed'
+    | 'role_changed'
+    | 'system';
+  title: string;
+  message: string;
+  created_at: string;
+  read: boolean;
+  metadata?: Record<string, unknown>;
+}
+
 @customElement('console-header')
 export class ConsoleHeader extends LitElement {
   @state()
@@ -35,7 +67,22 @@ export class ConsoleHeader extends LitElement {
   @state()
   private _runningExecutions: FlowExecution[] = [];
 
-  private unsubscribe?: () => void;
+  @state()
+  private _pendingApprovals: ApprovalRequest[] = [];
+
+  @state()
+  private _userNotifications: UserNotification[] = [];
+
+  @state()
+  private _processingApproval: string | null = null;
+
+  private unsubscribeFlow?: () => void;
+  private unsubscribeApprovals?: () => void;
+  private unsubscribeNotifications?: () => void;
+
+  // Track notification IDs to prevent duplicates
+  private shownExecutionNotifications: Set<string> = new Set();
+  private shownApprovalNotifications: Set<string> = new Set();
 
   static styles = css`
     :host {
@@ -72,31 +119,140 @@ export class ConsoleHeader extends LitElement {
     .notification-button {
       position: relative;
     }
-    .execution-list {
-      max-width: 400px;
-      max-height: 300px;
-      overflow-y: auto;
+    .notification-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      line-height: 18px;
+      text-align: center;
+      color: white;
+      background-color: var(--sl-color-danger-500);
+      border-radius: 9px;
     }
-    .execution-item {
-      padding: 0.75rem;
-      cursor: pointer;
+    .notification-dropdown {
+      min-width: 380px;
+      max-width: 420px;
+      max-height: 500px;
+      overflow-y: auto;
+      background: var(--sl-color-neutral-0);
+      border: 1px solid var(--sl-color-neutral-200);
+      border-radius: var(--sl-border-radius-medium);
+      box-shadow: var(--sl-shadow-large);
+    }
+    .notification-section {
       border-bottom: 1px solid var(--sl-color-neutral-100);
     }
-    .execution-item:hover {
+    .notification-section:last-child {
+      border-bottom: none;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
       background-color: var(--sl-color-neutral-50);
+      border-bottom: 1px solid var(--sl-color-neutral-100);
     }
-    .execution-name {
-      font-weight: 500;
-      margin-bottom: 0.25rem;
-    }
-    .execution-time {
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
       font-size: 0.875rem;
+      color: var(--sl-color-neutral-700);
+    }
+    .section-count {
+      font-size: 0.75rem;
       color: var(--sl-color-neutral-500);
     }
-    .no-executions {
+    .section-link {
+      font-size: 0.75rem;
+      color: var(--sl-color-primary-600);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .section-link:hover {
+      text-decoration: underline;
+    }
+    .execution-list,
+    .approval-list,
+    .notification-list {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .execution-item,
+    .approval-item,
+    .notification-item {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      border-bottom: 1px solid var(--sl-color-neutral-50);
+    }
+    .execution-item:last-child,
+    .approval-item:last-child,
+    .notification-item:last-child {
+      border-bottom: none;
+    }
+    .execution-item:hover,
+    .approval-item:hover,
+    .notification-item:hover {
+      background-color: var(--sl-color-neutral-50);
+    }
+    .execution-name,
+    .approval-name,
+    .notification-title {
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+      font-size: 0.875rem;
+    }
+    .execution-time,
+    .approval-time,
+    .notification-time {
+      font-size: 0.75rem;
+      color: var(--sl-color-neutral-500);
+    }
+    .approval-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .approval-actions sl-button {
+      font-size: 0.75rem;
+    }
+    .notification-item.unread {
+      background-color: var(--sl-color-primary-50);
+    }
+    .notification-item.unread::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background-color: var(--sl-color-primary-500);
+    }
+    .notification-item {
+      position: relative;
+    }
+    .no-items {
       padding: 1rem;
       text-align: center;
       color: var(--sl-color-neutral-500);
+      font-size: 0.875rem;
+    }
+    .empty-state {
+      padding: 2rem 1rem;
+      text-align: center;
+      color: var(--sl-color-neutral-500);
+    }
+    .empty-state sl-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      opacity: 0.5;
     }
   `;
 
@@ -104,12 +260,20 @@ export class ConsoleHeader extends LitElement {
     super.connectedCallback();
     this.fetchUserDetails();
     this.connectToFlowUpdates();
+    this.connectToApprovalUpdates();
+    this.connectToNotificationUpdates();
     this.loadRunningExecutions();
+    this.loadPendingApprovals();
+    this.loadUserNotifications();
+    // Request desktop notification permission
+    this.requestNotificationPermission();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.unsubscribe?.();
+    this.unsubscribeFlow?.();
+    this.unsubscribeApprovals?.();
+    this.unsubscribeNotifications?.();
   }
 
   private async loadRunningExecutions() {
@@ -125,8 +289,86 @@ export class ConsoleHeader extends LitElement {
     }
   }
 
+  private async loadPendingApprovals() {
+    try {
+      const approvals = await api.listApprovalRequests({ status: 'pending' });
+      this._pendingApprovals = approvals.map((approval: any) => ({
+        id: approval.id,
+        tool_name: approval.tool_name,
+        tool_args: approval.tool_args || {},
+        status: approval.status,
+        requested_at: approval.requested_at,
+        expires_at: approval.expires_at,
+        execution_id: approval.execution_id,
+        agent_reasoning: approval.agent_reasoning,
+      }));
+    } catch (error) {
+      console.error('Failed to load pending approvals:', error);
+    }
+  }
+
+  private async loadUserNotifications() {
+    // TODO: Implement when backend API is available
+    // For now, notifications will only come through WebSocket
+    try {
+      // const notifications = await api.getUserNotifications();
+      // this._userNotifications = notifications;
+    } catch (error) {
+      console.error('Failed to load user notifications:', error);
+    }
+  }
+
+  private async handleApprove(approvalId: string, event: Event) {
+    event.stopPropagation();
+    this._processingApproval = approvalId;
+    try {
+      await api.approveRequest(approvalId);
+      this._pendingApprovals = this._pendingApprovals.filter(
+        (a) => a.id !== approvalId
+      );
+    } catch (error) {
+      console.error('Failed to approve request:', error);
+    } finally {
+      this._processingApproval = null;
+    }
+  }
+
+  private async handleDecline(approvalId: string, event: Event) {
+    event.stopPropagation();
+    this._processingApproval = approvalId;
+    try {
+      await api.declineRequest(approvalId);
+      this._pendingApprovals = this._pendingApprovals.filter(
+        (a) => a.id !== approvalId
+      );
+    } catch (error) {
+      console.error('Failed to decline request:', error);
+    } finally {
+      this._processingApproval = null;
+    }
+  }
+
+  private markNotificationAsRead(notificationId: string) {
+    this._userNotifications = this._userNotifications.map((n) =>
+      n.id === notificationId ? { ...n, read: true } : n
+    );
+    // TODO: Call API to mark as read when backend supports it
+    // api.markNotificationRead(notificationId);
+  }
+
+  private get totalNotificationCount(): number {
+    const unreadNotifications = this._userNotifications.filter(
+      (n) => !n.read
+    ).length;
+    return (
+      this._runningExecutions.length +
+      this._pendingApprovals.length +
+      unreadNotifications
+    );
+  }
+
   private connectToFlowUpdates() {
-    this.unsubscribe = unifiedWebSocketManager.subscribe(
+    this.unsubscribeFlow = unifiedWebSocketManager.subscribe(
       'flow_executions',
       (message) => {
         console.log('Console header received flow update:', message);
@@ -151,6 +393,8 @@ export class ConsoleHeader extends LitElement {
               newExecution,
               ...this._runningExecutions,
             ];
+            // Show desktop notification for new execution
+            this.showExecutionNotification(newExecution);
           }
         }
 
@@ -197,6 +441,214 @@ export class ConsoleHeader extends LitElement {
     });
   }
 
+  private connectToApprovalUpdates() {
+    this.unsubscribeApprovals = unifiedWebSocketManager.subscribe(
+      'approvals',
+      (message) => {
+        console.log('Console header received approval update:', message);
+
+        // Handle new approval request
+        if (message.type === 'approval_created') {
+          const newApproval: ApprovalRequest = {
+            id: message.approval_request_id,
+            tool_name: message.tool_name,
+            tool_args: message.tool_args || {},
+            status: 'pending',
+            requested_at: message.requested_at || new Date().toISOString(),
+            expires_at: message.expires_at,
+            execution_id: message.execution_id,
+            agent_reasoning: message.agent_reasoning,
+          };
+
+          // Add to pending approvals if not already there
+          const exists = this._pendingApprovals.some(
+            (approval) => approval.id === newApproval.id
+          );
+          if (!exists) {
+            this._pendingApprovals = [newApproval, ...this._pendingApprovals];
+            // Show desktop notification for new approval request
+            this.showApprovalNotification(newApproval);
+          }
+        }
+
+        // Handle approval resolution (approved, declined, expired, cancelled)
+        if (
+          message.type === 'approval_approved' ||
+          message.type === 'approval_declined' ||
+          message.type === 'approval_expired' ||
+          message.type === 'approval_cancelled'
+        ) {
+          // Remove from pending approvals
+          this._pendingApprovals = this._pendingApprovals.filter(
+            (approval) => approval.id !== message.approval_request_id
+          );
+        }
+      }
+    );
+  }
+
+  private connectToNotificationUpdates() {
+    // TODO: Subscribe to 'notifications' WebSocket channel when backend supports it
+    this.unsubscribeNotifications = unifiedWebSocketManager.subscribe(
+      'system',
+      (message) => {
+        console.log('Console header received system message:', message);
+
+        // Handle notification-type messages
+        if (
+          message.type === 'team_member_added' ||
+          message.type === 'policy_assigned' ||
+          message.type === 'role_changed'
+        ) {
+          const notification: UserNotification = {
+            id: message.id || crypto.randomUUID(),
+            type: this.mapMessageTypeToNotificationType(message.type),
+            title: message.title || this.getNotificationTitle(message.type),
+            message: message.message || '',
+            created_at: message.timestamp || new Date().toISOString(),
+            read: false,
+            metadata: message.payload,
+          };
+          this._userNotifications = [notification, ...this._userNotifications];
+        }
+      }
+    );
+  }
+
+  private mapMessageTypeToNotificationType(
+    messageType: string
+  ): UserNotification['type'] {
+    const typeMap: Record<string, UserNotification['type']> = {
+      team_member_added: 'team_added',
+      team_member_removed: 'team_removed',
+      policy_assigned: 'policy_added',
+      policy_unassigned: 'policy_removed',
+      role_changed: 'role_changed',
+    };
+    return typeMap[messageType] || 'system';
+  }
+
+  private getNotificationTitle(messageType: string): string {
+    const titleMap: Record<string, string> = {
+      team_member_added: 'Added to Team',
+      team_member_removed: 'Removed from Team',
+      policy_assigned: 'Policy Assigned',
+      policy_unassigned: 'Policy Removed',
+      role_changed: 'Role Updated',
+    };
+    return titleMap[messageType] || 'System Notification';
+  }
+
+  // ============================================
+  // Desktop Notification Methods
+  // ============================================
+
+  /**
+   * Check if desktop notifications are enabled by the user preference.
+   */
+  private isDesktopNotificationsEnabled(): boolean {
+    const pref = localStorage.getItem(NOTIFICATION_PREF_KEY);
+    // Default to enabled if not set
+    return pref !== 'false';
+  }
+
+  /**
+   * Request notification permission from the browser if not already granted.
+   */
+  private async requestNotificationPermission(): Promise<void> {
+    if (!('Notification' in window)) {
+      console.log('Desktop notifications not supported in this browser');
+      return;
+    }
+
+    if (Notification.permission === 'default') {
+      try {
+        const permission = await Notification.requestPermission();
+        console.log(`Notification permission: ${permission}`);
+      } catch (error) {
+        console.error('Failed to request notification permission:', error);
+      }
+    }
+  }
+
+  /**
+   * Show desktop notification when a flow execution starts.
+   */
+  private showExecutionNotification(execution: FlowExecution): void {
+    if (!this.isDesktopNotificationsEnabled()) {
+      return;
+    }
+
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    // Prevent duplicate notifications for the same execution
+    if (this.shownExecutionNotifications.has(execution.id)) {
+      return;
+    }
+    this.shownExecutionNotifications.add(execution.id);
+
+    try {
+      const notification = new Notification('Flow Execution Started', {
+        body: `${execution.flow_name || 'Flow'} is now running`,
+        icon: '/images/logos/preloop_logo_dark.svg',
+        tag: `execution-${execution.id}`,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        Router.go(`/console/flows/executions/${execution.id}`);
+        notification.close();
+      };
+
+      // Auto-close after 10 seconds
+      setTimeout(() => notification.close(), 10000);
+    } catch (error) {
+      console.error('Failed to show execution notification:', error);
+    }
+  }
+
+  /**
+   * Show desktop notification when an approval is requested.
+   */
+  private showApprovalNotification(approval: ApprovalRequest): void {
+    if (!this.isDesktopNotificationsEnabled()) {
+      return;
+    }
+
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    // Prevent duplicate notifications for the same approval
+    if (this.shownApprovalNotifications.has(approval.id)) {
+      return;
+    }
+    this.shownApprovalNotifications.add(approval.id);
+
+    try {
+      const body = approval.agent_reasoning
+        ? `${approval.tool_name}: ${approval.agent_reasoning.substring(0, 100)}${approval.agent_reasoning.length > 100 ? '...' : ''}`
+        : `${approval.tool_name} requires your approval`;
+
+      const notification = new Notification('Approval Required', {
+        body,
+        icon: '/images/logos/preloop_logo_dark.svg',
+        tag: `approval-${approval.id}`,
+        requireInteraction: true, // Stay until dismissed
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        Router.go(`/console/approval/${approval.id}`);
+        notification.close();
+      };
+    } catch (error) {
+      console.error('Failed to show approval notification:', error);
+    }
+  }
+
   async fetchUserDetails() {
     try {
       this._user = await api.getAccountDetails();
@@ -234,54 +686,211 @@ export class ConsoleHeader extends LitElement {
   }
 
   private navigateToExecution(executionId: string) {
-    Router.go(`/console/flow-executions/${executionId}`);
+    Router.go(`/console/flows/executions/${executionId}`);
+  }
+
+  private renderExecutionsSection() {
+    if (this._runningExecutions.length === 0) return '';
+
+    return html`
+      <div class="notification-section">
+        <div class="section-header">
+          <div class="section-title">
+            <sl-icon name="activity"></sl-icon>
+            Active Executions
+            <span class="section-count"
+              >(${this._runningExecutions.length})</span
+            >
+          </div>
+          <a
+            class="section-link"
+            @click=${() => Router.go('/console/flow-executions')}
+            >View all</a
+          >
+        </div>
+        <div class="execution-list">
+          ${this._runningExecutions.slice(0, 5).map(
+            (exec) => html`
+              <div
+                class="execution-item"
+                @click=${() => this.navigateToExecution(exec.id)}
+              >
+                <div class="execution-name">
+                  ${exec.flow_name || 'Flow Execution'}
+                </div>
+                <div class="execution-time">
+                  <sl-badge variant="warning">${exec.status}</sl-badge>
+                  • ${this.formatRelativeTime(exec.start_time)}
+                </div>
+              </div>
+            `
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderApprovalsSection() {
+    if (this._pendingApprovals.length === 0) return '';
+
+    return html`
+      <div class="notification-section">
+        <div class="section-header">
+          <div class="section-title">
+            <sl-icon name="shield-check"></sl-icon>
+            Pending Approvals
+            <span class="section-count"
+              >(${this._pendingApprovals.length})</span
+            >
+          </div>
+          <a
+            class="section-link"
+            @click=${() => Router.go('/console/approvals')}
+            >View all</a
+          >
+        </div>
+        <div class="approval-list">
+          ${this._pendingApprovals.slice(0, 5).map(
+            (approval) => html`
+              <div
+                class="approval-item"
+                @click=${() => Router.go(`/console/approval/${approval.id}`)}
+              >
+                <div class="approval-name">${approval.tool_name}</div>
+                <div class="approval-time">
+                  ${this.formatRelativeTime(approval.requested_at)}
+                  ${approval.expires_at
+                    ? html` • Expires
+                      ${this.formatRelativeTime(approval.expires_at)}`
+                    : ''}
+                </div>
+                <div class="approval-actions">
+                  <sl-button
+                    size="small"
+                    variant="success"
+                    ?loading=${this._processingApproval === approval.id}
+                    ?disabled=${this._processingApproval !== null}
+                    @click=${(e: Event) => this.handleApprove(approval.id, e)}
+                  >
+                    <sl-icon slot="prefix" name="check-lg"></sl-icon>
+                    Approve
+                  </sl-button>
+                  <sl-button
+                    size="small"
+                    variant="danger"
+                    ?loading=${this._processingApproval === approval.id}
+                    ?disabled=${this._processingApproval !== null}
+                    @click=${(e: Event) => this.handleDecline(approval.id, e)}
+                  >
+                    <sl-icon slot="prefix" name="x-lg"></sl-icon>
+                    Decline
+                  </sl-button>
+                </div>
+              </div>
+            `
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderNotificationsSection() {
+    const unreadNotifications = this._userNotifications.filter((n) => !n.read);
+    if (this._userNotifications.length === 0) return '';
+
+    return html`
+      <div class="notification-section">
+        <div class="section-header">
+          <div class="section-title">
+            <sl-icon name="bell"></sl-icon>
+            Notifications
+            ${unreadNotifications.length > 0
+              ? html`<span class="section-count"
+                  >(${unreadNotifications.length} unread)</span
+                >`
+              : ''}
+          </div>
+        </div>
+        <div class="notification-list">
+          ${this._userNotifications.slice(0, 5).map(
+            (notification) => html`
+              <div
+                class="notification-item ${notification.read ? '' : 'unread'}"
+                @click=${() => this.markNotificationAsRead(notification.id)}
+              >
+                <div class="notification-title">
+                  <sl-icon
+                    name=${this.getNotificationIcon(notification.type)}
+                  ></sl-icon>
+                  ${notification.title}
+                </div>
+                <div class="notification-time">
+                  ${notification.message} ${notification.message ? ' • ' : ''}
+                  ${this.formatRelativeTime(notification.created_at)}
+                </div>
+              </div>
+            `
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  private getNotificationIcon(type: UserNotification['type']): string {
+    const iconMap: Record<UserNotification['type'], string> = {
+      team_added: 'people',
+      team_removed: 'people',
+      policy_added: 'file-earmark-text',
+      policy_removed: 'file-earmark-text',
+      role_changed: 'person-badge',
+      system: 'info-circle',
+    };
+    return iconMap[type] || 'bell';
+  }
+
+  private renderEmptyState() {
+    return html`
+      <div class="empty-state">
+        <sl-icon name="bell-slash"></sl-icon>
+        <div>No notifications</div>
+      </div>
+    `;
   }
 
   render() {
+    const hasContent =
+      this._runningExecutions.length > 0 ||
+      this._pendingApprovals.length > 0 ||
+      this._userNotifications.length > 0;
+
     return html`
       <div class="header-container">
         <div class="user-menu">
-          <!-- Flow Execution Notifications -->
-          ${this._runningExecutions.length > 0
-            ? html`
-                <sl-dropdown distance="8">
-                  <div slot="trigger" class="notification-button">
-                    <sl-icon-button
-                      name="activity"
-                      label="Running Flow Executions"
-                    >
-                      <sl-badge
-                        variant="primary"
-                        pill
-                        style="position: absolute; top: -4px; right: -4px;"
-                      >
-                        ${this._runningExecutions.length}
-                      </sl-badge>
-                    </sl-icon-button>
-                  </div>
-                  <div class="execution-list">
-                    ${this._runningExecutions.map(
-                      (exec) => html`
-                        <div
-                          class="execution-item"
-                          @click=${() => this.navigateToExecution(exec.id)}
-                        >
-                          <div class="execution-name">
-                            ${exec.flow_name || 'Flow Execution'}
-                          </div>
-                          <div class="execution-time">
-                            <sl-badge variant="warning"
-                              >${exec.status}</sl-badge
-                            >
-                            • ${this.formatRelativeTime(exec.start_time)}
-                          </div>
-                        </div>
-                      `
-                    )}
-                  </div>
-                </sl-dropdown>
-              `
-            : ''}
+          <!-- Notification Center -->
+          <sl-dropdown distance="8" placement="bottom-end">
+            <div slot="trigger" class="notification-button">
+              <sl-icon-button
+                name="bell"
+                label="Notifications"
+              ></sl-icon-button>
+              ${this.totalNotificationCount > 0
+                ? html`<span class="notification-badge"
+                    >${this.totalNotificationCount > 99
+                      ? '99+'
+                      : this.totalNotificationCount}</span
+                  >`
+                : ''}
+            </div>
+            <div class="notification-dropdown">
+              ${hasContent
+                ? html`
+                    ${this.renderExecutionsSection()}
+                    ${this.renderApprovalsSection()}
+                    ${this.renderNotificationsSection()}
+                  `
+                : this.renderEmptyState()}
+            </div>
+          </sl-dropdown>
 
           <!-- User Menu -->
           <sl-dropdown distance="8">

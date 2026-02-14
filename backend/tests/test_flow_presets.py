@@ -42,7 +42,8 @@ class TestLoadYamlFile:
             """
 name: Test Flow
 description: A test flow
-trigger_event_type: push
+trigger_event_types:
+  - push
 """
         )
         result = _load_yaml_file(yaml_file)
@@ -148,7 +149,7 @@ class TestFlowPresetSchema:
     # Optional but recommended keys
     RECOMMENDED_KEYS = {
         "description",
-        "trigger_event_type",
+        "trigger_event_types",  # Use array field
         "prompt_template",
         "agent_type",
     }
@@ -162,7 +163,7 @@ class TestFlowPresetSchema:
         valid_preset = {
             "name": "Test Flow",
             "description": "A test flow",
-            "trigger_event_type": "push",
+            "trigger_event_types": ["push"],  # Use array field
             "prompt_template": "Do something",
             "agent_type": "codex",
         }

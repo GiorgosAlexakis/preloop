@@ -21,7 +21,9 @@ import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
 import '@shoelace-style/shoelace/dist/components/radio-button/radio-button.js';
+import '@shoelace-style/shoelace/dist/components/radio/radio.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import '@shoelace-style/shoelace/dist/components/range/range.js';
 
 // Preloop badge SVG
 const preloopBadgeSvg = `<svg width="20px" height="18px" viewBox="0 0 1024 914" version="1.1" xmlns="http://www.w3.org/2000/svg">
@@ -67,6 +69,12 @@ export interface ApprovalPolicy {
   escalation_user_ids?: string[];
   escalation_team_ids?: string[];
   notification_channels?: string[];
+  // AI-driven approval fields
+  ai_model?: string;
+  ai_guidelines?: string;
+  ai_confidence_threshold?: number;
+  ai_fallback_behavior?: 'escalate' | 'approve' | 'deny';
+  escalation_policy_id?: string;
 }
 
 @customElement('tool-card')
@@ -133,6 +141,23 @@ export class ToolCard extends LitElement {
 
   @state()
   private newPolicyEscalationTeamIds: string[] = [];
+
+  // AI-driven approval state
+  @state()
+  private newPolicyAiModel = '';
+
+  @state()
+  private newPolicyAiGuidelines = '';
+
+  @state()
+  private newPolicyAiConfidenceThreshold = 0.8;
+
+  @state()
+  private newPolicyAiFallbackBehavior: 'escalate' | 'approve' | 'deny' =
+    'escalate';
+
+  @state()
+  private newPolicyEscalationPolicyId = '';
 
   @state()
   private availableUsers: Array<{
@@ -993,6 +1018,13 @@ export class ToolCard extends LitElement {
     this.newPolicyTimeoutSeconds = policy.timeout_seconds || 300;
     this.newPolicyEscalationUserIds = policy.escalation_user_ids || [];
     this.newPolicyEscalationTeamIds = policy.escalation_team_ids || [];
+    // AI-driven fields
+    this.newPolicyAiModel = policy.ai_model || '';
+    this.newPolicyAiGuidelines = policy.ai_guidelines || '';
+    this.newPolicyAiConfidenceThreshold = policy.ai_confidence_threshold ?? 0.8;
+    this.newPolicyAiFallbackBehavior =
+      policy.ai_fallback_behavior || 'escalate';
+    this.newPolicyEscalationPolicyId = policy.escalation_policy_id || '';
   }
 
   private resetPolicyForm() {
@@ -1013,6 +1045,12 @@ export class ToolCard extends LitElement {
     this.newPolicyEscalationUserIds = [];
     this.newPolicyEscalationTeamIds = [];
     this.editingPolicyId = null;
+    // AI-driven fields
+    this.newPolicyAiModel = '';
+    this.newPolicyAiGuidelines = '';
+    this.newPolicyAiConfidenceThreshold = 0.8;
+    this.newPolicyAiFallbackBehavior = 'escalate';
+    this.newPolicyEscalationPolicyId = '';
   }
 
   private handleConfirmPolicy() {
@@ -1022,9 +1060,15 @@ export class ToolCard extends LitElement {
         alert('Policy name is required');
         return;
       }
-      // Webhook URL only required for non-standard types
+      // AI model required for AI-driven type
+      if (this.newPolicyType === 'ai_driven' && !this.newPolicyAiModel) {
+        alert('AI Model is required for AI-driven policies');
+        return;
+      }
+      // Webhook URL only required for non-standard and non-ai_driven types
       if (
         this.newPolicyType !== 'standard' &&
+        this.newPolicyType !== 'ai_driven' &&
         !this.newPolicyWebhookUrl.trim()
       ) {
         alert('Webhook URL is required');
@@ -1054,6 +1098,52 @@ export class ToolCard extends LitElement {
         approvalConfig.webhook_url = this.newPolicyWebhookUrl;
       }
 
+      // Build base policy data
+      const basePolicyData: any = {
+        name: this.newPolicyName,
+        description: this.newPolicyDescription,
+        approval_type: this.newPolicyType,
+        channel: this.newPolicyChannel || null,
+        user: this.newPolicyUser || null,
+        approval_config:
+          Object.keys(approvalConfig).length > 0 ? approvalConfig : null,
+        is_default: this.newPolicyIsDefault,
+        approver_user_ids:
+          this.newPolicyApproverUserIds.length > 0
+            ? this.newPolicyApproverUserIds
+            : null,
+        approver_team_ids:
+          this.newPolicyApproverTeamIds.length > 0
+            ? this.newPolicyApproverTeamIds
+            : null,
+        approvals_required: this.newPolicyApprovalsRequired,
+        timeout_seconds: this.newPolicyTimeoutSeconds,
+        escalation_user_ids:
+          this.newPolicyEscalationUserIds.length > 0
+            ? this.newPolicyEscalationUserIds
+            : null,
+        escalation_team_ids:
+          this.newPolicyEscalationTeamIds.length > 0
+            ? this.newPolicyEscalationTeamIds
+            : null,
+      };
+
+      // Add AI fields if AI-driven type
+      if (this.newPolicyType === 'ai_driven') {
+        basePolicyData.ai_model = this.newPolicyAiModel;
+        basePolicyData.ai_guidelines = this.newPolicyAiGuidelines || null;
+        basePolicyData.ai_confidence_threshold =
+          this.newPolicyAiConfidenceThreshold;
+        basePolicyData.ai_fallback_behavior = this.newPolicyAiFallbackBehavior;
+        if (
+          this.newPolicyAiFallbackBehavior === 'escalate' &&
+          this.newPolicyEscalationPolicyId
+        ) {
+          basePolicyData.escalation_policy_id =
+            this.newPolicyEscalationPolicyId;
+        }
+      }
+
       // Check if we're editing or creating
       if (this.editingPolicyId) {
         // Dispatch event to update existing policy
@@ -1061,36 +1151,7 @@ export class ToolCard extends LitElement {
           new CustomEvent('update-policy', {
             detail: {
               policyId: this.editingPolicyId,
-              policy: {
-                name: this.newPolicyName,
-                description: this.newPolicyDescription,
-                approval_type: this.newPolicyType,
-                channel: this.newPolicyChannel || null,
-                user: this.newPolicyUser || null,
-                approval_config:
-                  Object.keys(approvalConfig).length > 0
-                    ? approvalConfig
-                    : null,
-                is_default: this.newPolicyIsDefault,
-                approver_user_ids:
-                  this.newPolicyApproverUserIds.length > 0
-                    ? this.newPolicyApproverUserIds
-                    : null,
-                approver_team_ids:
-                  this.newPolicyApproverTeamIds.length > 0
-                    ? this.newPolicyApproverTeamIds
-                    : null,
-                approvals_required: this.newPolicyApprovalsRequired,
-                timeout_seconds: this.newPolicyTimeoutSeconds,
-                escalation_user_ids:
-                  this.newPolicyEscalationUserIds.length > 0
-                    ? this.newPolicyEscalationUserIds
-                    : null,
-                escalation_team_ids:
-                  this.newPolicyEscalationTeamIds.length > 0
-                    ? this.newPolicyEscalationTeamIds
-                    : null,
-              },
+              policy: basePolicyData,
             },
             bubbles: true,
             composed: true,
@@ -1102,36 +1163,7 @@ export class ToolCard extends LitElement {
           new CustomEvent('create-policy', {
             detail: {
               tool: this.tool,
-              policy: {
-                name: this.newPolicyName,
-                description: this.newPolicyDescription,
-                approval_type: this.newPolicyType,
-                channel: this.newPolicyChannel || null,
-                user: this.newPolicyUser || null,
-                approval_config:
-                  Object.keys(approvalConfig).length > 0
-                    ? approvalConfig
-                    : null,
-                is_default: this.newPolicyIsDefault,
-                approver_user_ids:
-                  this.newPolicyApproverUserIds.length > 0
-                    ? this.newPolicyApproverUserIds
-                    : null,
-                approver_team_ids:
-                  this.newPolicyApproverTeamIds.length > 0
-                    ? this.newPolicyApproverTeamIds
-                    : null,
-                approvals_required: this.newPolicyApprovalsRequired,
-                timeout_seconds: this.newPolicyTimeoutSeconds,
-                escalation_user_ids:
-                  this.newPolicyEscalationUserIds.length > 0
-                    ? this.newPolicyEscalationUserIds
-                    : null,
-                escalation_team_ids:
-                  this.newPolicyEscalationTeamIds.length > 0
-                    ? this.newPolicyEscalationTeamIds
-                    : null,
-              },
+              policy: basePolicyData,
             },
             bubbles: true,
             composed: true,
@@ -1554,6 +1586,23 @@ export class ToolCard extends LitElement {
               >
                 ${this.tool.source_name}
               </sl-badge>
+              ${
+                this.tool.approval_policy_id || this.tool.has_approval_condition
+                  ? html`
+                      <sl-tooltip
+                        content="This tool has governance rules configured"
+                      >
+                        <sl-badge variant="warning" size="small">
+                          <sl-icon
+                            name="shield-lock"
+                            style="font-size: 0.8em; margin-right: 2px;"
+                          ></sl-icon>
+                          Governed
+                        </sl-badge>
+                      </sl-tooltip>
+                    `
+                  : ''
+              }
             </p>
           </div>
           <p class="tool-description" title=${this.tool.description}>
@@ -1746,12 +1795,9 @@ export class ToolCard extends LitElement {
                       >
                         Select Existing Policy
                       </h4>
-                      <sl-button
-                        size="small"
-                        @click=${this.handleToggleCreatePolicy}
-                      >
-                        <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                        Create New
+                      <sl-button size="small" href="/console/governance">
+                        <sl-icon slot="prefix" name="shield-lock"></sl-icon>
+                        Manage in Governance
                       </sl-button>
                     </div>
                     ${this.policies.length > 0
@@ -1878,7 +1924,7 @@ export class ToolCard extends LitElement {
                       ? html`
                           <div class="form-field">
                             <label class="form-label">Approval Type</label>
-                            <sl-select
+                            <sl-radio-group
                               value=${this.newPolicyType}
                               @sl-change=${(e: any) => {
                                 e.preventDefault();
@@ -1888,18 +1934,209 @@ export class ToolCard extends LitElement {
                                 this.requestUpdate();
                               }}
                             >
-                              <sl-option value="standard">Standard</sl-option>
-                              <sl-option value="slack">Slack</sl-option>
-                              <sl-option value="mattermost"
-                                >Mattermost</sl-option
-                              >
-                              <sl-option value="webhook">Webhook</sl-option>
-                            </sl-select>
+                              <sl-radio value="standard">
+                                Standard - Human approvers review requests
+                              </sl-radio>
+                              <sl-radio value="ai_driven">
+                                AI-Driven - AI model automatically evaluates
+                                requests
+                              </sl-radio>
+                              <sl-radio value="slack">
+                                Slack - Send approval requests to Slack
+                              </sl-radio>
+                              <sl-radio value="mattermost">
+                                Mattermost - Send approval requests to
+                                Mattermost
+                              </sl-radio>
+                              <sl-radio value="webhook">
+                                Webhook - Send approval requests to a webhook
+                              </sl-radio>
+                            </sl-radio-group>
                           </div>
                         `
                       : ''}
                     ${this.hasAdvancedApprovals() &&
-                    this.newPolicyType !== 'standard'
+                    this.newPolicyType === 'ai_driven'
+                      ? html`
+                          <div
+                            class="ai-config-section"
+                            style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium); padding: var(--sl-spacing-medium); background: var(--sl-color-primary-50); border: 1px solid var(--sl-color-primary-200); border-radius: var(--sl-border-radius-medium); margin-top: var(--sl-spacing-small);"
+                          >
+                            <div
+                              style="display: flex; align-items: center; gap: var(--sl-spacing-small); color: var(--sl-color-primary-700); font-weight: 500;"
+                            >
+                              <sl-icon name="robot"></sl-icon>
+                              AI Configuration
+                            </div>
+
+                            <div class="form-field">
+                              <label class="form-label">AI Model *</label>
+                              <sl-select
+                                value=${this.newPolicyAiModel}
+                                @sl-change=${(e: any) => {
+                                  e.stopPropagation();
+                                  this.newPolicyAiModel = e.target.value;
+                                }}
+                                placeholder="Select an AI model..."
+                              >
+                                <sl-option value="claude-sonnet-4-20250514"
+                                  >Claude Sonnet 4</sl-option
+                                >
+                                <sl-option value="gpt-4o">GPT-4o</sl-option>
+                                <sl-option value="gpt-4-turbo"
+                                  >GPT-4 Turbo</sl-option
+                                >
+                                <sl-option value="gemini-2.5-pro"
+                                  >Gemini 2.5 Pro</sl-option
+                                >
+                              </sl-select>
+                            </div>
+
+                            <div class="form-field">
+                              <label class="form-label">Guidelines</label>
+                              <sl-textarea
+                                value=${this.newPolicyAiGuidelines}
+                                @sl-input=${(e: any) => {
+                                  e.stopPropagation();
+                                  this.newPolicyAiGuidelines = e.target.value;
+                                }}
+                                placeholder="APPROVE if:
+- Read-only operations
+- Non-production environments
+
+DENY if:
+- Production data modifications
+- Credential access"
+                                rows="8"
+                                help-text="Instructions for the AI to determine when to approve or deny requests"
+                              ></sl-textarea>
+                            </div>
+
+                            <div class="form-field">
+                              <label class="form-label"
+                                >Confidence Threshold:
+                                ${Math.round(
+                                  this.newPolicyAiConfidenceThreshold * 100
+                                )}%</label
+                              >
+                              <sl-range
+                                value=${this.newPolicyAiConfidenceThreshold *
+                                100}
+                                @sl-input=${(e: any) => {
+                                  e.stopPropagation();
+                                  this.newPolicyAiConfidenceThreshold =
+                                    (parseFloat(e.target.value) || 80) / 100;
+                                }}
+                                min="0"
+                                max="100"
+                                step="5"
+                                style="--thumb-size: 18px;"
+                              ></sl-range>
+                              <div
+                                style="display: flex; justify-content: space-between; font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-500); margin-top: var(--sl-spacing-2x-small);"
+                              >
+                                <span>0% (always escalate)</span>
+                                <span>100% (very confident)</span>
+                              </div>
+                            </div>
+
+                            <div class="form-field">
+                              <label class="form-label">When Uncertain</label>
+                              <sl-radio-group
+                                value=${this.newPolicyAiFallbackBehavior}
+                                @sl-change=${(e: any) => {
+                                  e.stopPropagation();
+                                  this.newPolicyAiFallbackBehavior =
+                                    e.target.value;
+                                  this.requestUpdate();
+                                }}
+                              >
+                                <sl-radio value="escalate"
+                                  >Escalate to human approvers</sl-radio
+                                >
+                                <sl-radio value="approve"
+                                  >Approve automatically</sl-radio
+                                >
+                                <sl-radio value="deny"
+                                  >Deny automatically</sl-radio
+                                >
+                              </sl-radio-group>
+                            </div>
+
+                            ${this.newPolicyAiFallbackBehavior === 'escalate'
+                              ? html`
+                                  <div class="form-field">
+                                    <label class="form-label"
+                                      >Escalation Policy</label
+                                    >
+                                    <sl-select
+                                      value=${this.newPolicyEscalationPolicyId}
+                                      @sl-change=${(e: any) => {
+                                        e.stopPropagation();
+                                        this.newPolicyEscalationPolicyId =
+                                          e.target.value;
+                                      }}
+                                      placeholder="Select a policy for escalation..."
+                                      help-text="The approval policy to use when AI confidence is below threshold"
+                                    >
+                                      ${this.policies
+                                        .filter(
+                                          (p) => p.approval_type === 'standard'
+                                        )
+                                        .map(
+                                          (p) => html`
+                                            <sl-option value=${p.id}
+                                              >${p.name}</sl-option
+                                            >
+                                          `
+                                        )}
+                                    </sl-select>
+                                    ${!this.newPolicyEscalationPolicyId &&
+                                    this.policies.filter(
+                                      (p) => p.approval_type === 'standard'
+                                    ).length > 0
+                                      ? html`
+                                          <div
+                                            style="display: flex; align-items: center; gap: var(--sl-spacing-x-small); margin-top: var(--sl-spacing-x-small); color: var(--sl-color-warning-700); font-size: var(--sl-font-size-small);"
+                                          >
+                                            <sl-icon
+                                              name="exclamation-triangle"
+                                            ></sl-icon>
+                                            <span
+                                              >No escalation policy selected. AI
+                                              decisions below threshold will
+                                              have no fallback.</span
+                                            >
+                                          </div>
+                                        `
+                                      : ''}
+                                    ${this.policies.filter(
+                                      (p) => p.approval_type === 'standard'
+                                    ).length === 0
+                                      ? html`
+                                          <div
+                                            style="display: flex; align-items: center; gap: var(--sl-spacing-x-small); margin-top: var(--sl-spacing-x-small); color: var(--sl-color-warning-700); font-size: var(--sl-font-size-small);"
+                                          >
+                                            <sl-icon
+                                              name="exclamation-triangle"
+                                            ></sl-icon>
+                                            <span
+                                              >No standard policies available
+                                              for escalation. Create one
+                                              first.</span
+                                            >
+                                          </div>
+                                        `
+                                      : ''}
+                                  </div>
+                                `
+                              : ''}
+                          </div>
+                        `
+                      : ''}
+                    ${this.hasAdvancedApprovals() &&
+                    this.newPolicyType !== 'standard' &&
+                    this.newPolicyType !== 'ai_driven'
                       ? html`
                           <div class="form-field">
                             <label class="form-label">Webhook URL *</label>
@@ -2165,7 +2402,9 @@ export class ToolCard extends LitElement {
             this.isCreatingPolicy
               ? !this.newPolicyName.trim() ||
                 (this.newPolicyType !== 'standard' &&
-                  !this.newPolicyWebhookUrl.trim())
+                  this.newPolicyType !== 'ai_driven' &&
+                  !this.newPolicyWebhookUrl.trim()) ||
+                (this.newPolicyType === 'ai_driven' && !this.newPolicyAiModel)
               : !this.selectedPolicyId
           }
         >

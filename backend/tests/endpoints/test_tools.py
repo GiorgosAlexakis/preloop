@@ -382,6 +382,9 @@ class TestToolConfigurationEndpoints:
             "preloop.api.endpoints.tools.crud_tool_configuration.get",
             return_value=config,
         )
+        mock_remove = mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.remove",
+        )
 
         result = await tools.delete_tool_configuration(
             config_id=config_id,
@@ -390,8 +393,9 @@ class TestToolConfigurationEndpoints:
         )
 
         assert "message" in result
-        mock_db.delete.assert_called_once_with(config)
-        mock_db.commit.assert_called_once()
+        mock_remove.assert_called_once_with(
+            mock_db, id=str(config_id), account_id=str(mock_account.id)
+        )
 
 
 class TestApprovalPolicyEndpoints:
@@ -422,6 +426,14 @@ class TestApprovalPolicyEndpoints:
         policy.escalation_team_ids = None
         policy.notification_channels = ["email"]
         policy.channel_configs = None
+        # AI approval fields
+        policy.approval_mode = "standard"
+        policy.ai_model = None
+        policy.ai_guidelines = None
+        policy.ai_context = None
+        policy.ai_confidence_threshold = 0.8
+        policy.ai_fallback_behavior = "escalate"
+        policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -478,6 +490,14 @@ class TestApprovalPolicyEndpoints:
         created_policy.escalation_team_ids = None
         created_policy.notification_channels = ["email"]
         created_policy.channel_configs = None
+        # AI approval fields
+        created_policy.approval_mode = "standard"
+        created_policy.ai_model = None
+        created_policy.ai_guidelines = None
+        created_policy.ai_context = None
+        created_policy.ai_confidence_threshold = 0.8
+        created_policy.ai_fallback_behavior = "escalate"
+        created_policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         created_policy.created_at = datetime.now(UTC)
@@ -553,6 +573,14 @@ class TestApprovalPolicyEndpoints:
         policy.escalation_team_ids = None
         policy.notification_channels = ["email"]
         policy.channel_configs = None
+        # AI approval fields
+        policy.approval_mode = "standard"
+        policy.ai_model = None
+        policy.ai_guidelines = None
+        policy.ai_context = None
+        policy.ai_confidence_threshold = 0.8
+        policy.ai_fallback_behavior = "escalate"
+        policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -597,6 +625,14 @@ class TestApprovalPolicyEndpoints:
         policy.escalation_team_ids = None
         policy.notification_channels = ["email"]
         policy.channel_configs = None
+        # AI approval fields
+        policy.approval_mode = "standard"
+        policy.ai_model = None
+        policy.ai_guidelines = None
+        policy.ai_context = None
+        policy.ai_confidence_threshold = 0.8
+        policy.ai_fallback_behavior = "escalate"
+        policy.escalation_policy_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -918,7 +954,10 @@ class TestToolConfigurationEndpointsErrorHandling:
             return_value=config,
         )
 
-        mock_db.commit.side_effect = Exception("Database error")
+        mocker.patch(
+            "preloop.api.endpoints.tools.crud_tool_configuration.remove",
+            side_effect=Exception("Database error"),
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await tools.delete_tool_configuration(
@@ -958,7 +997,7 @@ class TestApprovalConditionEndpoints:
     async def test_get_approval_condition_not_found(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test getting approval condition when no condition exists."""
+        """Test getting approval condition when no access rules exist."""
         config_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
         config.id = config_id
@@ -967,8 +1006,10 @@ class TestApprovalConditionEndpoints:
             "preloop.api.endpoints.tools.crud_tool_configuration.get",
             return_value=config,
         )
+
+        # Mock crud_tool_access_rule.get_first_by_config to return None
         mocker.patch(
-            "preloop.api.endpoints.tools.tool_approval_condition.get_by_tool_configuration",
+            "preloop.api.endpoints.tools.crud_tool_access_rule.get_first_by_config",
             return_value=None,
         )
 
@@ -980,7 +1021,7 @@ class TestApprovalConditionEndpoints:
             )
 
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
-        assert "No approval condition found" in exc_info.value.detail
+        assert "No access rule found" in exc_info.value.detail
 
     async def test_delete_approval_condition_tool_not_found(
         self, mock_db, mock_user, mock_account, mocker
@@ -1005,7 +1046,7 @@ class TestApprovalConditionEndpoints:
     async def test_delete_approval_condition_not_found(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test deleting approval condition when no condition exists."""
+        """Test deleting approval condition when no access rules exist."""
         config_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
         config.id = config_id
@@ -1014,9 +1055,11 @@ class TestApprovalConditionEndpoints:
             "preloop.api.endpoints.tools.crud_tool_configuration.get",
             return_value=config,
         )
+
+        # Mock crud_tool_access_rule.get_multi_by_config to return empty list
         mocker.patch(
-            "preloop.api.endpoints.tools.tool_approval_condition.get_by_tool_configuration",
-            return_value=None,
+            "preloop.api.endpoints.tools.crud_tool_access_rule.get_multi_by_config",
+            return_value=[],
         )
 
         with pytest.raises(HTTPException) as exc_info:

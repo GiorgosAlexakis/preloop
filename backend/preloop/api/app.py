@@ -34,6 +34,7 @@ from preloop.api.endpoints import (
     mcp_servers,
     notification_preferences,
     organizations,
+    policies,
     projects,
     public_approval,
     roles,
@@ -53,7 +54,7 @@ from preloop.api.endpoints import (
 
 from preloop.services.mcp_http import setup_mcp_routes
 from preloop.models.sentry import init_sentry
-from preloop.models.db.session import get_db_session
+from preloop.models.db.session import get_db_session, get_session_factory
 from preloop.models.db.setup import setup_database
 from preloop.models.models.api_usage import ApiUsage
 from preloop.sync.services.event_bus import connect_nats, close_nats  # NATS integration
@@ -187,11 +188,9 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
         # Log usage in database
         if user_id and status_code < 500:  # Only log successful API calls
             try:
-                session_generator = get_db_session()
-                session = next(session_generator)
-
+                session_factory = get_session_factory()
+                session = session_factory()
                 try:
-                    # Create usage entry
                     usage_entry = ApiUsage(
                         user_id=user_id,
                         endpoint=path,
@@ -201,16 +200,13 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
                         action_type=action_type,
                         timestamp=start_time,
                     )
-
                     session.add(usage_entry)
                     session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
                 finally:
                     session.close()
-                    try:
-                        # Clean up the generator
-                        next(session_generator, None)
-                    except StopIteration:
-                        pass
             except Exception as e:
                 # Don't let tracking issues affect the response
                 logger.error(f"Error logging API usage: {str(e)}")
@@ -762,6 +758,14 @@ def create_app() -> FastAPI:
         prefix="/api/v1",
         tags=["Flows"],
         # dependencies=[Depends(get_current_active_user)],
+    )
+
+    # Policies router for policy-as-code YAML import/export
+    app.include_router(
+        policies.router,
+        prefix="/api/v1",
+        tags=["Policies"],
+        dependencies=[Depends(get_current_active_user)],
     )
 
     # WebSocket router

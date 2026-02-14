@@ -53,7 +53,7 @@ def test_flow(db_session: Session, test_account: Account) -> Flow:
         name="Test Orchestrator Flow",
         description="A test flow for orchestrator",
         trigger_event_source="github",
-        trigger_event_type="issue_created",
+        trigger_event_types=["issue_created"],  # Use array field
         prompt_template="Fix issue: {{payload.issue.title}} - {{payload.issue.description}}",
         agent_type="openhands",
         agent_config={"max_iterations": 10},
@@ -1169,7 +1169,7 @@ class TestFlowExecutionOrchestrator:
             name="Test Flow with AI Model",
             description="Test",
             trigger_event_source="github",
-            trigger_event_type="test",
+            trigger_event_types=["test"],  # Use array field
             prompt_template="Test",
             agent_type="openhands",
             agent_config={},
