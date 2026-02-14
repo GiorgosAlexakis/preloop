@@ -1,7 +1,7 @@
 """add_oauth_mcp_tables
 
-Revision ID: 9a5b2c3d4e9m
-Revises: 9a5b2c3d4e9k
+Revision ID: 9a5b2c3d4e9o
+Revises: 9a5b2c3d4e9m
 Create Date: 2026-02-13
 
 Adds tables for MCP OAuth 2.1 Authorization Server:
@@ -19,8 +19,8 @@ from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
-revision: str = "9a5b2c3d4e9m"
-down_revision: Union[str, None] = "9a5b2c3d4e9k"
+revision: str = "9a5b2c3d4e9o"
+down_revision: Union[str, None] = "9a5b2c3d4e9m"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
