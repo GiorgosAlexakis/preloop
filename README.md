@@ -14,7 +14,7 @@ Preloop is a comprehensive MCP firewall that gives you complete control over wha
 
 ## Why Preloop?
 
-AI coding agents like Claude Code, Cursor, and Cline are transforming how we build software. But with great power comes great risk:
+AI agents like Claude Code, Cursor, and OpenClaw are transforming how we work. But with great power comes great risk:
 
 - **Accidental deletions.** One wrong command and your production database is gone.
 - **Leaked secrets.** API keys pushed to public repos before anyone notices.

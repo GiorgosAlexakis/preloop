@@ -1,12 +1,19 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
-import { post } from '../../api';
+import { post, getFeatures } from '../../api';
 import { formStyles } from '../../styles/form-styles';
 import { getBrandConfig } from '../../brand-config';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '../../components/logo-component';
+
+const OAUTH_PROVIDER_CONFIG: Record<string, { label: string; icon: string }> = {
+  github: { label: 'GitHub', icon: 'github' },
+  google: { label: 'Google', icon: 'google' },
+  gitlab: { label: 'GitLab', icon: 'gitlab' },
+};
 
 @customElement('login-view')
 export class LoginView extends LitElement {
@@ -15,6 +22,9 @@ export class LoginView extends LitElement {
 
   @state()
   private successMessage = '';
+
+  @state()
+  private oauthProviders: string[] = [];
 
   static styles = [
     formStyles,
@@ -28,6 +38,47 @@ export class LoginView extends LitElement {
         border-radius: 0.25rem;
         text-align: center;
       }
+
+      .oauth-section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .oauth-button {
+        width: 100%;
+      }
+
+      .oauth-button::part(base) {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+      }
+
+      .divider {
+        display: flex;
+        align-items: center;
+        margin: 1.5rem 0;
+        color: var(--sl-color-neutral-500);
+        font-size: var(--sl-font-size-small);
+      }
+
+      .divider::before,
+      .divider::after {
+        content: '';
+        flex: 1;
+        border-bottom: 1px solid var(--sl-color-neutral-300);
+      }
+
+      .divider::before {
+        margin-right: 0.75rem;
+      }
+
+      .divider::after {
+        margin-left: 0.75rem;
+      }
     `,
   ];
 
@@ -40,6 +91,17 @@ export class LoginView extends LitElement {
       const url = new URL(window.location.href);
       url.searchParams.delete('registered');
       window.history.replaceState({}, document.title, url.pathname);
+    }
+    this._checkFeatures();
+  }
+
+  private async _checkFeatures() {
+    try {
+      const features = await getFeatures();
+      const providers = features.features['oauth_providers'];
+      this.oauthProviders = Array.isArray(providers) ? providers : [];
+    } catch (error) {
+      this.oauthProviders = [];
     }
   }
 
@@ -70,7 +132,6 @@ export class LoginView extends LitElement {
         Router.go('/console');
       }
     } catch (error) {
-      // Extract the error message from the Error object
       if (error instanceof Error) {
         this.error = error.message;
       } else {
@@ -78,6 +139,33 @@ export class LoginView extends LitElement {
       }
       console.error('Sign in failed', error);
     }
+  }
+
+  private _renderOAuthButtons() {
+    if (this.oauthProviders.length === 0) return nothing;
+
+    return html`
+      <div class="oauth-section">
+        ${this.oauthProviders.map((provider) => {
+          const config = OAUTH_PROVIDER_CONFIG[provider];
+          if (!config) return nothing;
+          return html`
+            <sl-button
+              class="oauth-button"
+              variant="default"
+              size="large"
+              @click=${() => {
+                window.location.href = `/api/v1/auth/oauth/${provider}/authorize`;
+              }}
+            >
+              <sl-icon name="${config.icon}" slot="prefix"></sl-icon>
+              Sign in with ${config.label}
+            </sl-button>
+          `;
+        })}
+      </div>
+      <div class="divider">or sign in with email</div>
+    `;
   }
 
   render() {
@@ -96,6 +184,7 @@ export class LoginView extends LitElement {
           ${this.error
             ? html`<div class="error-message">${this.error}</div>`
             : ''}
+          ${this._renderOAuthButtons()}
           <form @submit=${this.handleLogin}>
             <div class="form-group">
               <sl-input

@@ -27,7 +27,8 @@ export class ToolListItem extends LitElement {
   @property({ type: Object }) tool!: Tool;
   @property({ type: Array }) accessRules: AccessRuleSummary[] = [];
   @property({ type: Array }) policies: ApprovalPolicy[] = [];
-  @property({ type: Object }) features: { [key: string]: boolean } = {};
+  @property({ type: Object }) features: { [key: string]: boolean | string[] } =
+    {};
   @property({ type: Boolean }) expanded = false;
 
   @state() private _showRuleEditor = false;

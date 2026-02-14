@@ -312,9 +312,13 @@ class PluginManager:
 
             # Let each plugin declare its own features
             plugin_features = plugin.get_features()
-            for feature_name, enabled in plugin_features.items():
-                if enabled:
-                    features["features"][feature_name] = True
+            for feature_name, value in plugin_features.items():
+                if value is True or value is False:
+                    if value:
+                        features["features"][feature_name] = True
+                elif value:
+                    # Preserve non-boolean values (e.g. lists) as-is
+                    features["features"][feature_name] = value
 
         return features
 

@@ -262,7 +262,80 @@ export class LitApp extends LitElement {
         path: '/console',
         component: 'console-shell',
         action: () => {
-          // This is where you would add authentication checks
+          // Handle OAuth callback tokens from URL params
+          const params = new URLSearchParams(window.location.search);
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+
+          if (accessToken) {
+            localStorage.setItem('accessToken', accessToken);
+            if (refreshToken) {
+              localStorage.setItem('refreshToken', refreshToken);
+            }
+
+            // Store onboarding hints for the dashboard
+            if (params.get('new_user')) {
+              sessionStorage.setItem('oauth_new_user', '1');
+            }
+            if (params.get('setup_tracker')) {
+              sessionStorage.setItem(
+                'oauth_setup_tracker',
+                params.get('setup_tracker')!
+              );
+            }
+
+            // Clean tokens from URL
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.search = '';
+            window.history.replaceState({}, '', cleanUrl.pathname);
+
+            // Notify components of auth change
+            window.dispatchEvent(
+              new CustomEvent('auth-change', {
+                bubbles: true,
+                composed: true,
+              })
+            );
+
+            // Redirect to Stripe checkout if billing is pending for new OAuth users
+            if (params.get('checkout_pending')) {
+              fetch('/api/v1/billing/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                  plan_id: 'teams',
+                  interval: 'month',
+                }),
+              })
+                .then((res) => res.json())
+                .then((data) => {
+                  if (data.url && data.action === 'redirect') {
+                    window.location.href = data.url;
+                  }
+                })
+                .catch((err) => {
+                  console.error('Failed to create checkout session:', err);
+                });
+            } else if (params.get('setup_tracker') === 'github') {
+              // No billing — go straight to GitHub App installation
+              this._autoStartGitHubAppInstall(accessToken);
+            }
+          }
+
+          // After returning from Stripe, check if GitHub tracker setup is still pending
+          if (
+            !accessToken &&
+            !window.location.pathname.includes('/trackers') &&
+            sessionStorage.getItem('oauth_setup_tracker') === 'github'
+          ) {
+            const token = localStorage.getItem('accessToken');
+            if (token) {
+              this._autoStartGitHubAppInstall(token);
+            }
+          }
         },
         children: [
           { path: '', component: 'dashboard-view' },
@@ -323,6 +396,34 @@ export class LitApp extends LitElement {
         ],
       },
     ]);
+  }
+
+  /**
+   * Auto-redirect to GitHub App installation page for new OAuth users.
+   * Called after OAuth sign-in (or after Stripe checkout returns).
+   */
+  private _autoStartGitHubAppInstall(token: string) {
+    // Clear the flag to prevent redirect loops
+    sessionStorage.removeItem('oauth_setup_tracker');
+    sessionStorage.removeItem('oauth_new_user');
+
+    fetch('/api/v1/auth/github/authorize', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('GitHub App not configured');
+        return res.json();
+      })
+      .then((data) => {
+        if (data.authorization_url) {
+          sessionStorage.setItem('github_oauth_state', data.state);
+          window.location.href = data.authorization_url;
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to start GitHub App install:', err);
+        // Fall back — user can add tracker manually from the trackers page
+      });
   }
 
   render() {

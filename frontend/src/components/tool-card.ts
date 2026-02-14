@@ -86,7 +86,7 @@ export class ToolCard extends LitElement {
   policies: ApprovalPolicy[] = [];
 
   @property({ type: Object })
-  features: { [key: string]: boolean } = {};
+  features: { [key: string]: boolean | string[] } = {};
 
   @state()
   private showPreloopDialog = false;

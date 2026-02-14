@@ -68,7 +68,7 @@ export class ToolsView extends LitElement {
   @state() private editingMCPServer: MCPServer | null = null;
   @state() private currentUser: { id: string } | null = null;
   @state() private showSetupDialog = false;
-  @state() private features: { [key: string]: boolean } = {};
+  @state() private features: { [key: string]: boolean | string[] } = {};
   @state() private expandedTools: Set<string> = new Set();
   @state() private collapsedGroups: Set<string> = new Set();
   @state() private filterText = '';
@@ -105,7 +105,6 @@ export class ToolsView extends LitElement {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        margin-bottom: var(--sl-spacing-large);
         gap: var(--sl-spacing-large);
       }
 
@@ -266,6 +265,7 @@ export class ToolsView extends LitElement {
       .policy-row {
         display: flex;
         justify-content: flex-end;
+        margin-bottom: 0.6em;
       }
 
       .filter-bar {
@@ -1253,7 +1253,7 @@ export class ToolsView extends LitElement {
           @click=${() => this._openPolicyDialog(null)}
         >
           <sl-icon name="plus-lg" style="font-size: 0.7rem;"></sl-icon>
-          New Policy
+          New
         </span>
       </div>
     `;
@@ -1433,18 +1433,19 @@ export class ToolsView extends LitElement {
             ? html`<div class="loading-indicator">
                 <sl-spinner></sl-spinner>
               </div>`
-            : html`
-                ${this._renderTopSection()} ${this._renderFilterBar()}
-                ${groups.length === 0
-                  ? html`<div class="empty-state">
-                      <sl-icon
-                        name="tools"
-                        style="font-size: 2rem; color: var(--sl-color-neutral-400);"
-                      ></sl-icon>
-                      <p>No tools found. Add an MCP server to get started.</p>
-                    </div>`
-                  : groups.map((group) => this._renderToolGroup(group))}
-              `}
+            : html` ${this._renderTopSection()}
+                <div class="tool-groups">
+                  ${this._renderFilterBar()}
+                  ${groups.length === 0
+                    ? html`<div class="empty-state">
+                        <sl-icon
+                          name="tools"
+                          style="font-size: 2rem; color: var(--sl-color-neutral-400);"
+                        ></sl-icon>
+                        <p>No tools found. Add an MCP server to get started.</p>
+                      </div>`
+                    : groups.map((group) => this._renderToolGroup(group))}
+                </div>`}
         </div>
         <div class="side-column"></div>
       </div>

@@ -125,7 +125,7 @@ export class PoliciesView extends LitElement {
   @state() private _approvalPolicies: ApprovalPolicy[] = [];
   @state() private _loading = false;
   @state() private _error: string | null = null;
-  @state() private _features: { [key: string]: boolean } = {};
+  @state() private _features: { [key: string]: boolean | string[] } = {};
 
   // Access policies state
   @state() private _toolAccessRules: ToolAccessRule[] = [];

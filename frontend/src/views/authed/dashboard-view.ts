@@ -141,6 +141,12 @@ export class DashboardView extends AuthedElement {
   private welcomeCardDismissed = false;
 
   @state()
+  private oauthSetupTracker: string | null = null;
+
+  @state()
+  private trackerSetupLoading = false;
+
+  @state()
   private dismissedExecutions: Set<string> = new Set();
 
   @state()
@@ -159,6 +165,12 @@ export class DashboardView extends AuthedElement {
     this.loadDismissedState();
     this.fetchDashboardData();
     this.connectToFlowUpdates();
+
+    // Check if a new OAuth user needs to connect a tracker
+    const setupTracker = sessionStorage.getItem('oauth_setup_tracker');
+    if (setupTracker) {
+      this.oauthSetupTracker = setupTracker;
+    }
   }
 
   private loadDismissedState() {
@@ -789,6 +801,98 @@ export class DashboardView extends AuthedElement {
     `,
   ];
 
+  private dismissTrackerSetup() {
+    this.oauthSetupTracker = null;
+    sessionStorage.removeItem('oauth_setup_tracker');
+    sessionStorage.removeItem('oauth_new_user');
+  }
+
+  private async startTrackerSetup() {
+    if (!this.oauthSetupTracker) return;
+
+    if (this.oauthSetupTracker === 'github') {
+      // Start the GitHub App OAuth flow for tracker connection
+      this.trackerSetupLoading = true;
+      try {
+        const { authorization_url, state } = await api.getGitHubAuthUrl();
+        sessionStorage.setItem('github_oauth_state', state);
+        // Clear the setup tracker hint — the trackers-view will handle the callback
+        sessionStorage.removeItem('oauth_setup_tracker');
+        sessionStorage.removeItem('oauth_new_user');
+        window.location.href = authorization_url;
+      } catch (error: any) {
+        console.error('Failed to start GitHub tracker setup:', error);
+        // Fall back to manual tracker setup
+        sessionStorage.removeItem('oauth_setup_tracker');
+        sessionStorage.removeItem('oauth_new_user');
+        window.location.href = '/console/trackers';
+      } finally {
+        this.trackerSetupLoading = false;
+      }
+    } else {
+      // For non-GitHub providers, navigate to trackers page
+      sessionStorage.removeItem('oauth_setup_tracker');
+      sessionStorage.removeItem('oauth_new_user');
+      window.location.href = '/console/trackers';
+    }
+  }
+
+  private renderTrackerSetupBanner() {
+    if (!this.oauthSetupTracker) return '';
+
+    const providerName =
+      this.oauthSetupTracker.charAt(0).toUpperCase() +
+      this.oauthSetupTracker.slice(1);
+    const isGitHub = this.oauthSetupTracker === 'github';
+
+    return html`
+      <sl-alert variant="primary" open class="tracker-setup-banner">
+        <sl-icon
+          slot="icon"
+          name="${isGitHub ? 'github' : 'link-45deg'}"
+        ></sl-icon>
+        <div
+          style="display: flex; align-items: center; justify-content: space-between; width: 100%;"
+        >
+          <div>
+            <strong>Connect your ${providerName} projects</strong>
+            <br />
+            <span
+              style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-600);"
+            >
+              ${isGitHub
+                ? 'Install the Preloop GitHub App to enable issue tracking, compliance checks, and automated flows for your repositories.'
+                : `Connect your ${providerName} account to enable issue tracking and automated flows.`}
+            </span>
+          </div>
+          <div
+            style="display: flex; gap: var(--sl-spacing-small); flex-shrink: 0; margin-left: var(--sl-spacing-medium);"
+          >
+            <sl-button
+              variant="primary"
+              size="small"
+              @click=${this.startTrackerSetup}
+              .loading=${this.trackerSetupLoading}
+            >
+              <sl-icon
+                slot="prefix"
+                name="${isGitHub ? 'github' : 'link-45deg'}"
+              ></sl-icon>
+              Connect ${providerName}
+            </sl-button>
+            <sl-button
+              variant="text"
+              size="small"
+              @click=${this.dismissTrackerSetup}
+            >
+              Later
+            </sl-button>
+          </div>
+        </div>
+      </sl-alert>
+    `;
+  }
+
   private renderWelcomeCard() {
     if (this.welcomeCardDismissed) {
       return '';
@@ -971,6 +1075,9 @@ export class DashboardView extends AuthedElement {
       <div class="column-layout dashboard extra-wide">
         <!-- Main Column -->
         <div class="main-column">
+          <!-- OAuth Tracker Setup Banner -->
+          ${this.renderTrackerSetupBanner()}
+
           <!-- Welcome Card -->
           ${this.renderWelcomeCard()}
 

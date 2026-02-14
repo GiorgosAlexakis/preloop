@@ -168,16 +168,14 @@ class TestRequireApprovalPolicyErrors:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=None)
 
         mock_db.execute = AsyncMock(
-            side_effect=[mock_config_result, mock_condition_result, mock_policy_result]
+            side_effect=[mock_config_result, mock_rules_result, mock_policy_result]
         )
 
         with patch(
@@ -213,10 +211,8 @@ class TestRequireApprovalSuccess:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -233,7 +229,7 @@ class TestRequireApprovalSuccess:
         # Set up execute to return different results
         execute_calls = [
             mock_config_result,  # First: get tool config
-            mock_condition_result,  # Second: get approval condition
+            mock_rules_result,  # Second: get approval condition
             mock_policy_result,  # Third: get approval policy
             mock_approval_result,  # Fourth: check approval status
         ]
@@ -284,10 +280,8 @@ class TestRequireApprovalSuccess:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -299,7 +293,7 @@ class TestRequireApprovalSuccess:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -347,10 +341,8 @@ class TestRequireApprovalSuccess:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -362,7 +354,7 @@ class TestRequireApprovalSuccess:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -413,10 +405,8 @@ class TestRequireApprovalDeclined:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -428,7 +418,7 @@ class TestRequireApprovalDeclined:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -476,10 +466,8 @@ class TestRequireApprovalDeclined:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -491,7 +479,7 @@ class TestRequireApprovalDeclined:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -541,10 +529,8 @@ class TestRequireApprovalCancelled:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -556,7 +542,7 @@ class TestRequireApprovalCancelled:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -610,10 +596,8 @@ class TestRequireApprovalTimeout:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -627,7 +611,7 @@ class TestRequireApprovalTimeout:
         # Need multiple approval results for polling loop
         execute_calls = [
             mock_config_result,  # First: get tool config
-            mock_condition_result,  # Second: get approval condition
+            mock_rules_result,  # Second: get approval condition
             mock_policy_result,  # Third: get approval policy
             mock_approval_result,  # Fourth: first poll
             mock_approval_result,  # Fifth: second poll
@@ -684,10 +668,8 @@ class TestRequireApprovalEdgeCases:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -698,7 +680,7 @@ class TestRequireApprovalEdgeCases:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -753,10 +735,8 @@ class TestRequireApprovalEdgeCases:
         mock_config_result = MagicMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = MagicMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = MagicMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -777,7 +757,7 @@ class TestRequireApprovalEdgeCases:
         # Provide enough execute calls for config, condition, policy, and multiple polls
         execute_calls = [
             mock_config_result,  # get tool config
-            mock_condition_result,  # get approval condition
+            mock_rules_result,  # get approval condition
             mock_policy_result,  # get approval policy
             mock_approval_result1,  # first poll - unknown_status
         ]
@@ -824,16 +804,14 @@ class TestRequireApprovalEdgeCases:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
 
         mock_db.execute = AsyncMock(
-            side_effect=[mock_config_result, mock_condition_result, mock_policy_result]
+            side_effect=[mock_config_result, mock_rules_result, mock_policy_result]
         )
 
         # Approval service raises error
@@ -908,10 +886,8 @@ class TestRequireApprovalProgressReporting:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -923,7 +899,7 @@ class TestRequireApprovalProgressReporting:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -980,10 +956,8 @@ class TestRequireApprovalProgressReporting:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -995,7 +969,7 @@ class TestRequireApprovalProgressReporting:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -1043,10 +1017,8 @@ class TestRequireApprovalProgressReporting:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -1058,7 +1030,7 @@ class TestRequireApprovalProgressReporting:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
@@ -1116,10 +1088,8 @@ class TestRequireApprovalProgressReporting:
         mock_config_result = AsyncMock()
         mock_config_result.scalar_one_or_none = MagicMock(return_value=tool_config)
 
-        mock_condition_result = AsyncMock()
-        mock_condition_result.scalar_one_or_none = MagicMock(
-            return_value=approval_condition
-        )
+        mock_rules_result = MagicMock()
+        mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
         mock_policy_result = AsyncMock()
         mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
@@ -1131,7 +1101,7 @@ class TestRequireApprovalProgressReporting:
 
         execute_calls = [
             mock_config_result,
-            mock_condition_result,
+            mock_rules_result,
             mock_policy_result,
             mock_approval_result,
         ]
