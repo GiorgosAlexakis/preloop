@@ -1058,9 +1058,16 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     // Define agent type to provider mapping
     const agentProviderMap: Record<string, string[]> = {
       gemini: ['google'],
-      codex: ['openai', 'google', 'deepseek', 'qwen'],
-      aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // Aider supports multiple providers
-      openhands: ['openai', 'anthropic', 'google', 'deepseek', 'qwen'], // OpenHands supports multiple
+      codex: ['openai', 'google', 'deepseek', 'qwen', 'custom'],
+      aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'], // Aider supports multiple providers
+      openhands: [
+        'openai',
+        'anthropic',
+        'google',
+        'deepseek',
+        'qwen',
+        'custom',
+      ], // OpenHands supports multiple
     };
 
     const compatibleProviders = agentProviderMap[agentType] || [];
