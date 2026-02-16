@@ -485,6 +485,8 @@ class FlowTriggerService:
         event_source = event_data.get("source")
         event_type = event_data.get("type")
         account_id = event_data.get("account_id")
+        # tracker_id is the UUID stored in flow.trigger_event_source
+        tracker_id = event_data.get("tracker_id")
 
         if not event_source or not event_type:
             logger.warning(
@@ -512,9 +514,11 @@ class FlowTriggerService:
                 logger.info(f"Extracted project_id for filtering: {project_id}")
 
             # Query for flows that match the event source and type
+            # trigger_event_source stores the tracker UUID, not the tracker type
+            query_source = tracker_id or event_source
             matching_flows: List[Flow] = crud_flow.get_by_trigger(
                 self.db,
-                event_source=event_source,
+                event_source=query_source,
                 event_type=event_type,
                 project_id=project_id,
                 account_id=account_id,
@@ -522,7 +526,8 @@ class FlowTriggerService:
 
             if not matching_flows:
                 logger.warning(
-                    f"No flows found matching source='{event_source}', type='{event_type}', account_id={account_id}. "
+                    f"No flows found matching source='{query_source}', type='{event_type}', "
+                    f"account_id={account_id}, project_id={project_id}. "
                     f"Check that flows are configured with the correct tracker ID as trigger_event_source."
                 )
                 return
