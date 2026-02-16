@@ -348,6 +348,16 @@ test:unit:preloop-scripts:
   variables:
     TEST_PATHS: "backend/tests/scripts"
 
+test:unit:preloop-endpoints-policies:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_policies.py"
+
+test:unit:preloop-services-approval:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/services/test_approval_service.py"
+
 test:coverage:
   stage: test
   needs:
@@ -387,6 +397,8 @@ test:coverage:
     - test:unit:preloop-agents
     - test:unit:preloop-api
     - test:unit:preloop-scripts
+    - test:unit:preloop-endpoints-policies
+    - test:unit:preloop-services-approval
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - pip install coverage junitparser

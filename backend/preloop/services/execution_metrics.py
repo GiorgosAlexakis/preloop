@@ -75,8 +75,13 @@ class ExecutionMetricsService:
         if execution.mcp_usage_logs and isinstance(execution.mcp_usage_logs, list):
             count += len(execution.mcp_usage_logs)
 
-        # Count from execution_logs for real-time executions
-        if execution.execution_logs and isinstance(execution.execution_logs, list):
+        # Count from normalized log_entries (new table) if available
+        if execution.log_entries:
+            for entry in execution.log_entries:
+                if entry.log_type in ["tool_call", "mcp_call"]:
+                    count += 1
+        elif execution.execution_logs and isinstance(execution.execution_logs, list):
+            # Legacy fallback: count from JSONB execution_logs
             for log in execution.execution_logs:
                 if isinstance(log, dict) and log.get("type") in [
                     "tool_call",
@@ -99,40 +104,32 @@ class ExecutionMetricsService:
         """
         token_usage = {"total_tokens": 0, "input_tokens": 0, "output_tokens": 0}
 
-        if not execution.execution_logs:
-            return token_usage
-
         # Regex pattern for token usage (supports comma-separated thousands)
         # Pattern: "tokens used" followed by newline and number with optional commas
         pattern = r"tokens used[:\s]*\n\s*(\d{1,3}(?:,\d{3})*)"
 
         logs_text = ""
 
-        # Build a text corpus from all logs
-        if isinstance(execution.execution_logs, list):
+        # Prefer normalized log_entries table; fall back to legacy JSONB
+        if execution.log_entries:
+            for entry in execution.log_entries:
+                if entry.message:
+                    logs_text += entry.message + "\n"
+                if entry.metadata_ and isinstance(entry.metadata_, dict):
+                    for key in ["content", "message", "line", "stdout", "stderr"]:
+                        if key in entry.metadata_:
+                            logs_text += str(entry.metadata_[key]) + "\n"
+        elif execution.execution_logs and isinstance(execution.execution_logs, list):
             for log in execution.execution_logs:
                 if isinstance(log, dict):
-                    # Check payload for log messages
                     if "payload" in log and isinstance(log["payload"], dict):
                         payload = log["payload"]
+                        for key in ["content", "message", "line", "stdout", "stderr"]:
+                            if key in payload:
+                                logs_text += str(payload[key]) + "\n"
 
-                        # Check for content (used by agent_log_line type)
-                        if "content" in payload:
-                            logs_text += str(payload["content"]) + "\n"
-
-                        # Check for message (used by other log types)
-                        if "message" in payload:
-                            logs_text += str(payload["message"]) + "\n"
-
-                        # Also check line (alternative format)
-                        if "line" in payload:
-                            logs_text += str(payload["line"]) + "\n"
-
-                        # Also check stdout/stderr
-                        if "stdout" in payload:
-                            logs_text += str(payload["stdout"]) + "\n"
-                        if "stderr" in payload:
-                            logs_text += str(payload["stderr"]) + "\n"
+        if not logs_text:
+            return token_usage
 
         # Find all token usage mentions
         matches = re.findall(pattern, logs_text, re.IGNORECASE | re.MULTILINE)

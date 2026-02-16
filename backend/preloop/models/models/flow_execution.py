@@ -71,6 +71,9 @@ class FlowExecution(Base):
     flow = relationship(
         "Flow", back_populates="executions"
     )  # Assuming Flow model has 'executions'
+    log_entries = relationship(
+        "FlowExecutionLog", back_populates="execution", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<FlowExecution(id={self.id}, flow_id={self.flow_id}, status='{self.status}')>"

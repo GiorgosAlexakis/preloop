@@ -1,0 +1,103 @@
+# Preloop Docker Compose - Release Configuration
+# Use this file for production-like deployments with tagged images.
+#
+# Usage:
+#   PRELOOP_VERSION=0.8.0 docker compose -f docker-compose.release.yaml up -d
+#
+# Required environment variables (set in .env or export before running):
+#   PRELOOP_VERSION   - Image tag (e.g., 0.8.0, latest)
+#   JWT_SECRET        - Secret key for JWT token signing (generate with: openssl rand -hex 32)
+#
+# Optional environment variables:
+#   POSTGRES_PASSWORD - Database password (default: postgres)
+#   LOG_LEVEL         - Logging level (default: INFO)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: preloop
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:alpine
+    restart: unless-stopped
+    command: [ "-js" ]
+    healthcheck:
+      test: [ "CMD", "nats-server", "--signal", "ldm" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres/preloop
+      NATS_URL: nats://nats:4222
+      HOST: 0.0.0.0
+      PORT: 8000
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    command: ./start.sh
+
+  scheduler:
+    image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres/preloop
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ALGORITHM: HS256
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: preloop-sync scheduler
+
+  worker:
+    image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres/preloop
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ALGORITHM: HS256
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: preloop-sync worker
+
+  console:
+    image: ghcr.io/preloop/console:${PRELOOP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres-data:

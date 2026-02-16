@@ -251,26 +251,23 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         return query.all()
 
     def append_log(self, db: Session, execution_id: str, log_data: dict) -> None:
-        """Append a log entry to the execution_logs array.
+        """Append a log entry to the flow_execution_log table.
 
-        Uses PostgreSQL's JSONB append operator to add log to array.
-        If execution_logs is NULL, initializes it as an empty array first.
+        Uses a simple INSERT instead of rewriting the JSONB execution_logs
+        column, avoiding O(n) write amplification per append.
 
         Args:
             db: Database session
             execution_id: ID of the flow execution
             log_data: Log message data to append
         """
-        import json
-        from sqlalchemy import text
+        from preloop.models.models.flow_execution_log import FlowExecutionLog
 
-        log_json = json.dumps(log_data)
-        db.execute(
-            text("""
-                UPDATE flow_execution
-                SET execution_logs = COALESCE(execution_logs, '[]'::jsonb) || CAST(:log_entry AS jsonb)
-                WHERE id = :execution_id
-            """),
-            {"execution_id": execution_id, "log_entry": log_json},
+        log_entry = FlowExecutionLog(
+            execution_id=execution_id,
+            log_type=log_data.get("type", "log"),
+            message=log_data.get("message"),
+            metadata_=log_data.get("metadata") or log_data.get("data"),
         )
+        db.add(log_entry)
         db.commit()

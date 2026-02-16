@@ -780,7 +780,7 @@ export class LandingView extends LitElement {
                 </sl-tooltip>
                 <sl-tooltip content="Mattermost">
                   <img
-                    src="images/logos/mattermost-logo.svg"
+                    src="/images/logos/mattermost-logo.svg"
                     alt="Mattermost Logo"
                     class="mattermost-logo tool-logo"
                   />

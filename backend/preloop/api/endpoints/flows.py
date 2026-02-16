@@ -363,8 +363,31 @@ async def get_flow_execution_logs(
             if agent is not None:
                 await agent.cleanup()
 
-    # For finished executions or if container logs failed, return database logs
-    if execution.execution_logs and isinstance(execution.execution_logs, list):
+    # For finished executions or if container logs failed, return database logs.
+    # Prefer the normalized flow_execution_log table; fall back to legacy JSONB column.
+    from preloop.models.models.flow_execution_log import FlowExecutionLog
+    from sqlalchemy import select
+
+    log_query = (
+        select(FlowExecutionLog)
+        .filter(FlowExecutionLog.execution_id == execution_id)
+        .order_by(FlowExecutionLog.timestamp.asc())
+    )
+    log_rows = db.execute(log_query).scalars().all()
+
+    if log_rows:
+        logs = [
+            {
+                "execution_id": str(row.execution_id),
+                "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                "type": row.log_type or "log",
+                "payload": {"message": row.message, **(row.metadata_ or {})},
+            }
+            for row in log_rows
+        ]
+        return {"logs": logs, "source": "database"}
+    elif execution.execution_logs and isinstance(execution.execution_logs, list):
+        # Legacy fallback for executions logged before the migration
         return {"logs": execution.execution_logs, "source": "database"}
     else:
         return {"logs": [], "source": "database"}
