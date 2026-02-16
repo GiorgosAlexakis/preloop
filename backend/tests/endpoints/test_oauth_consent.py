@@ -55,6 +55,44 @@ class TestRenderTemplate:
 
         assert result == "<p>hello - world</p>"
 
+    def test_json_keys_are_json_encoded(self, tmp_path):
+        """Values under keys ending in _json should be JSON-encoded, not HTML-escaped."""
+        template = tmp_path / "test.html"
+        template.write_text("<script>const v = {{ val_json }};</script>")
+
+        with patch("preloop.api.endpoints.oauth_consent._TEMPLATE_DIR", tmp_path):
+            result = _render_template("test.html", {"val_json": 'he said "hi"'})
+
+        # json.dumps produces '"he said \\"hi\\""' — a valid JS string literal
+        assert '"he said \\"hi\\""' in result
+
+    def test_json_keys_escape_script_tags(self, tmp_path):
+        """JSON-encoded values must escape < and > to prevent </script> breakout."""
+        template = tmp_path / "test.html"
+        template.write_text("<script>const v = {{ xss_json }};</script>")
+
+        with patch("preloop.api.endpoints.oauth_consent._TEMPLATE_DIR", tmp_path):
+            result = _render_template(
+                "test.html", {"xss_json": "</script><img src=x onerror=alert(1)>"}
+            )
+
+        assert "</script>" not in result.split("<script>")[1].split("</script>")[0]
+        assert "\\u003c" in result
+        assert "\\u003e" in result
+
+    def test_html_escapes_regular_values(self, tmp_path):
+        """Non-_json values must be HTML-escaped."""
+        template = tmp_path / "test.html"
+        template.write_text("<p>{{ name }}</p>")
+
+        with patch("preloop.api.endpoints.oauth_consent._TEMPLATE_DIR", tmp_path):
+            result = _render_template(
+                "test.html", {"name": "<script>alert(1)</script>"}
+            )
+
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+
     def test_handles_none_values(self, tmp_path):
         template = tmp_path / "test.html"
         template.write_text("<p>{{ maybe }}</p>")
@@ -95,6 +133,40 @@ class TestConsentPageGet:
 
         assert response.status_code == 200
         assert "OK" in response.text
+
+    def test_context_includes_json_variants(self, client):
+        """Context passed to _render_template should include _json keys for script safety."""
+        rendered_contexts = []
+
+        def capture_render(template_name, context):
+            rendered_contexts.append(context)
+            return "<html>test</html>"
+
+        with (
+            patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
+            patch(
+                "preloop.api.endpoints.oauth_consent._render_template",
+                side_effect=capture_render,
+            ),
+        ):
+            client.get(
+                "/mcp/authorize/consent",
+                params={
+                    "client_id": "c1",
+                    "redirect_uri": "http://localhost/cb",
+                    "state": "s1",
+                },
+            )
+
+        ctx = rendered_contexts[0]
+        assert "redirect_uri_json" in ctx
+        assert "state_json" in ctx
+        assert "error_json" in ctx
+        assert ctx["redirect_uri_json"] == "http://localhost/cb"
+        assert ctx["state_json"] == "s1"
 
     def test_passes_params_to_template(self, client):
         rendered_contexts = []

@@ -194,16 +194,20 @@ async def _handle_authorization_code(
                 detail="Authorization code expired",
             )
 
-        # Validate redirect_uri matches what was stored in the auth code
-        if (
-            db_code.redirect_uri
-            and redirect_uri
-            and db_code.redirect_uri != redirect_uri
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="redirect_uri does not match the authorization request",
-            )
+        # Validate redirect_uri matches what was stored in the auth code.
+        # Per RFC 6749 §4.1.3: if redirect_uri was included in the
+        # authorization request, it MUST be required here and match exactly.
+        if db_code.redirect_uri:
+            if not redirect_uri:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="redirect_uri is required (it was included in the authorization request)",
+                )
+            if db_code.redirect_uri != redirect_uri:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="redirect_uri does not match the authorization request",
+                )
 
         # Mark code as used
         crud_oauth_mcp_auth_code.mark_used(db, obj=db_code)
@@ -503,11 +507,27 @@ async def revoke_token(token: str = Form(...)):
     if not provider:
         raise HTTPException(status_code=501, detail="OAuth not configured")
 
-    # Try to load as access token first, then refresh token
+    # Try to revoke as access token first
     access_token = await provider.load_access_token(token)
     if access_token:
         await provider.revoke_token(access_token)
         return JSONResponse({"status": "revoked"})
+
+    # Try to revoke as refresh token
+    try:
+        from preloop.models.crud.oauth_mcp_token import crud_oauth_mcp_refresh_token
+        from preloop.models.db.session import get_db_session
+
+        db = next(get_db_session())
+        try:
+            db_refresh = crud_oauth_mcp_refresh_token.get_by_token(db, token=token)
+            if db_refresh and not db_refresh.is_revoked:
+                crud_oauth_mcp_refresh_token.revoke(db, obj=db_refresh)
+                return JSONResponse({"status": "revoked"})
+        finally:
+            db.close()
+    except Exception:
+        pass
 
     # Not found — still return success per RFC 7009
     return JSONResponse({"status": "revoked"})

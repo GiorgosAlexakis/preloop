@@ -11,6 +11,7 @@ Routes:
 """
 
 import html
+import json
 import logging
 import os
 from pathlib import Path
@@ -47,7 +48,15 @@ def _render_template(template_name: str, context: dict) -> str:
     template = template_path.read_text()
 
     for key, value in context.items():
-        safe_value = html.escape(str(value or ""))
+        str_value = str(value or "")
+        if key.endswith("_json"):
+            # JSON-encode for safe embedding inside <script> blocks.
+            # Replace < and > to prevent </script> breakout.
+            safe_value = (
+                json.dumps(str_value).replace("<", "\\u003c").replace(">", "\\u003e")
+            )
+        else:
+            safe_value = html.escape(str_value)
         template = template.replace("{{ " + key + " }}", safe_value)
 
     return template
@@ -137,6 +146,10 @@ async def consent_page(
         "redirect_uri_provided_explicitly": redirect_uri_provided_explicitly,
         "resource": resource,
         "error": "",
+        # JSON-encoded variants for safe use inside <script> blocks
+        "redirect_uri_json": redirect_uri,
+        "state_json": state,
+        "error_json": "",
     }
 
     html_content = _render_template("oauth_authorize.html", context)
@@ -279,6 +292,10 @@ def _render_error_response(
         "redirect_uri_provided_explicitly": redirect_uri_provided_explicitly,
         "resource": resource,
         "error": error,
+        # JSON-encoded variants for safe use inside <script> blocks
+        "redirect_uri_json": redirect_uri,
+        "state_json": state,
+        "error_json": error,
     }
     html_content = _render_template("oauth_authorize.html", context)
     return HTMLResponse(content=html_content)

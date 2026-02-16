@@ -149,7 +149,7 @@
 
         <div class="client-info">
             <div class="label">Application requesting access</div>
-            <div class="name" id="clientName">{{ client_name or 'MCP Client' }}</div>
+            <div class="name" id="clientName">{{ client_name }}</div>
             <div class="scope-note">This application will be able to access your Preloop account tools and data.</div>
         </div>
 
@@ -182,8 +182,8 @@
 
     <script>
         function handleDeny() {
-            const redirectUri = '{{ redirect_uri }}';
-            const state = '{{ state }}';
+            const redirectUri = {{ redirect_uri_json }};
+            const state = {{ state_json }};
             let denyUrl = redirectUri + '?error=access_denied&error_description=User+denied+the+request';
             if (state) {
                 denyUrl += '&state=' + encodeURIComponent(state);
@@ -192,7 +192,7 @@
         }
 
         // Show server-side error if present
-        const serverError = '{{ error }}';
+        const serverError = {{ error_json }};
         if (serverError) {
             const errEl = document.getElementById('errorMsg');
             errEl.textContent = serverError;
