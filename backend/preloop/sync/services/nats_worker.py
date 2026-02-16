@@ -161,7 +161,19 @@ class PreloopSyncNatsWorker:
                     await msg.ack()
                     return
 
-                func = getattr(tasks, task_name)
+                try:
+                    func = getattr(tasks, task_name)
+                except AttributeError:
+                    logger.error(f"Task function not found: '{task_name}'")
+                    if os.getenv("SENTRY_DSN"):
+                        import sentry_sdk
+
+                        sentry_sdk.capture_exception(
+                            AttributeError(f"Task function not found: '{task_name}'")
+                        )
+                    await msg.ack()
+                    return
+
                 if inspect.iscoroutinefunction(func):
                     stats = await func(
                         *payload.get("args", []), **payload.get("kwargs", {})
@@ -177,13 +189,6 @@ class PreloopSyncNatsWorker:
 
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to decode JSON payload: {data}. Error: {e}")
-                if os.getenv("SENTRY_DSN"):
-                    import sentry_sdk
-
-                    sentry_sdk.capture_exception(e)
-                await msg.ack()
-            except AttributeError as e:
-                logger.error(f"Task function not found: {e}")
                 if os.getenv("SENTRY_DSN"):
                     import sentry_sdk
 

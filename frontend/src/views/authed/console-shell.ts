@@ -97,6 +97,7 @@ export class ConsoleShell extends LitElement {
         border-width: 0;
         background-color: var(--sl-color-neutral-100);
         padding: 0;
+        margin-left: 5px;
       }
 
       sl-details::part(base) {

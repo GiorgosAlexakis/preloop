@@ -419,14 +419,26 @@ class FlowTriggerService:
         source = event_data.get("source", "").lower()
 
         # Get the sender/actor who triggered the event
+        # Note: payload may be enriched with filter_fields which can overwrite
+        # dict values (e.g. sender) with strings, so handle both types.
         sender = None
         if source == "github":
             sender_obj = payload.get("sender", {})
-            sender = sender_obj.get("login", "").lower() if sender_obj else ""
+            if isinstance(sender_obj, str):
+                sender = sender_obj.lower()
+            elif isinstance(sender_obj, dict):
+                sender = sender_obj.get("login", "").lower()
+            else:
+                sender = ""
         elif source == "gitlab":
             # GitLab uses "user" for the actor in most events
             user_obj = payload.get("user", {})
-            sender = user_obj.get("username", "").lower() if user_obj else ""
+            if isinstance(user_obj, str):
+                sender = user_obj.lower()
+            elif isinstance(user_obj, dict):
+                sender = user_obj.get("username", "").lower()
+            else:
+                sender = ""
             # Some events have object_attributes.author
             if not sender:
                 obj_attrs = payload.get("object_attributes", {})
