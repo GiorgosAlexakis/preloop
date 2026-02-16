@@ -1024,7 +1024,7 @@ export class ToolsView extends LitElement {
 
   private _renderTopSection() {
     const apiUrl = window.location.origin;
-    const mcpUrl = `${apiUrl}/mcp/v1`;
+    const mcpUrl = `${apiUrl}/mcp`;
     const stats = this._getStats();
 
     // Helper: renders a single table cell with label left, number right, full-cell hover
@@ -1118,6 +1118,22 @@ export class ToolsView extends LitElement {
             <div class="info-row">
               <span class="info-label">URL:</span>
               <code class="info-value" title=${mcpUrl}>${mcpUrl}</code>
+              <sl-tooltip content="Copy URL">
+                <sl-icon-button
+                  name="clipboard"
+                  style="font-size: 1rem;"
+                  @click=${() => {
+                    navigator.clipboard.writeText(mcpUrl);
+                    this.dispatchEvent(
+                      new CustomEvent('show-toast', {
+                        bubbles: true,
+                        composed: true,
+                        detail: { message: 'MCP URL copied!' },
+                      })
+                    );
+                  }}
+                ></sl-icon-button>
+              </sl-tooltip>
             </div>
             <div class="info-row">
               <span class="info-label">Auth:</span>

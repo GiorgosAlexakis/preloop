@@ -46,7 +46,7 @@ def _render_template(template_name: str, context: dict) -> str:
 async def consent_page(
     client_id: str,
     redirect_uri: str,
-    code_challenge: str,
+    code_challenge: str = "",
     state: str = "",
     scopes: str = "",
     redirect_uri_provided_explicitly: str = "true",
@@ -93,7 +93,7 @@ async def consent_page(
 async def consent_submit(
     client_id: str = Form(...),
     redirect_uri: str = Form(...),
-    code_challenge: str = Form(...),
+    code_challenge: str = Form(""),
     state: str = Form(""),
     scopes: str = Form(""),
     redirect_uri_provided_explicitly: str = Form("true"),

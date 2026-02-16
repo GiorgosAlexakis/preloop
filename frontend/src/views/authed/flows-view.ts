@@ -232,7 +232,7 @@ export class FlowsView extends LitElement {
         getFlowExecutions(),
       ]);
       this.flows = flows;
-      this.presets = presets;
+      this.presets = this.sortPresets(presets);
       this.executions = executions;
 
       if (this.flows.length === 0) {
@@ -597,5 +597,17 @@ export class FlowsView extends LitElement {
 
   private togglePresets() {
     this.showPresets = !this.showPresets;
+  }
+
+  private sortPresets(presets: Flow[]): Flow[] {
+    return [...presets].sort((a, b) => {
+      const aIsPR = a.name?.toLowerCase().includes('pull request reviewer')
+        ? 0
+        : 1;
+      const bIsPR = b.name?.toLowerCase().includes('pull request reviewer')
+        ? 0
+        : 1;
+      return aIsPR - bIsPR;
+    });
   }
 }

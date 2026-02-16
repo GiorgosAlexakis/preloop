@@ -994,10 +994,19 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   renderPresets() {
+    const sortedPresets = [...this.presets].sort((a, b) => {
+      const aIsPR = a.name?.toLowerCase().includes('pull request reviewer')
+        ? 0
+        : 1;
+      const bIsPR = b.name?.toLowerCase().includes('pull request reviewer')
+        ? 0
+        : 1;
+      return aIsPR - bIsPR;
+    });
     return html`
       <h2>Select a Preset</h2>
       <div class="form-grid">
-        ${this.presets.map(
+        ${sortedPresets.map(
           (preset) => html`
             <sl-card
               class="preset-card"
@@ -1046,7 +1055,70 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     // New flows should be enabled by default (presets are stored as disabled)
     this.flow.is_enabled = true;
 
+    // Auto-populate fields to reduce friction for new users
+    this._autoPopulatePresetFields();
+
     this.creationMode = 'scratch';
+  }
+
+  private async _autoPopulatePresetFields() {
+    // Auto-select the most recently added tracker (last in the list)
+    if (this.trackers.length > 0 && !this.flow.trigger_event_source) {
+      const tracker = this.trackers[this.trackers.length - 1];
+      this.flow.trigger_event_source = tracker.id;
+      this.triggerType = 'tracker';
+
+      // Auto-select PR/MR events based on tracker type
+      if (tracker.tracker_type === 'github') {
+        this.flow.trigger_event_types = [
+          'pull_request_opened',
+          'pull_request_updated',
+        ];
+      } else if (tracker.tracker_type === 'gitlab') {
+        this.flow.trigger_event_types = [
+          'merge_request_opened',
+          'merge_request_updated',
+        ];
+      }
+
+      // Load organizations for this tracker
+      const allOrganizations = await listOrganizations();
+      this.organizations = allOrganizations.filter(
+        (org: any) => org.tracker_id === tracker.id
+      );
+
+      if (this.organizations.length > 0) {
+        // Auto-select the first organization
+        const org = this.organizations[0];
+        this.flow.trigger_organization_id = org.id;
+
+        // Load and auto-select all projects for this organization
+        const allProjects = await listProjects();
+        this.projects = allProjects;
+        const orgProjects = allProjects.filter(
+          (proj: any) => proj.organization_id === org.id
+        );
+        if (orgProjects.length > 0) {
+          this.flow.trigger_project_ids = orgProjects.map(
+            (proj: any) => proj.id
+          );
+        }
+      } else {
+        // Start polling for organizations (they may still be syncing)
+        this.startPollingOrganizations(tracker.id);
+      }
+    }
+
+    // Auto-select the most recently added compatible AI model
+    if (!this.flow.ai_model_id) {
+      const compatibleModels = this.getCompatibleModels();
+      if (compatibleModels.length > 0) {
+        this.flow.ai_model_id =
+          compatibleModels[compatibleModels.length - 1].id;
+      }
+    }
+
+    this.requestUpdate();
   }
 
   /**

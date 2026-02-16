@@ -1,7 +1,7 @@
 import type { IdeConfig } from '../components/ide-setup-tabs';
 
 export function getIdeConfigs(): IdeConfig[] {
-  const mcpUrl = `${window.location.origin}/mcp/v1`;
+  const mcpUrl = `${window.location.origin}/mcp`;
   const envVarName = 'PRELOOP_API_KEY';
 
   return [

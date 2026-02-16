@@ -629,6 +629,18 @@ def create_app() -> FastAPI:
 
     app.openapi = custom_openapi
 
+    # OAuth consent page (login form for CLI and MCP OAuth flows)
+    from preloop.api.endpoints.oauth_consent import router as oauth_consent_router
+
+    app.include_router(oauth_consent_router)
+    logger.info("OAuth consent routes registered")
+
+    # OAuth server endpoints (authorize, token, register, well-known metadata)
+    from preloop.api.endpoints.oauth_server import router as oauth_server_router
+
+    app.include_router(oauth_server_router)
+    logger.info("OAuth server routes registered")
+
     # Setup MCP routes with DynamicMCPServer (MUST be before SPA mount)
     setup_mcp_routes(app)
     logger.info("MCP routes configured with DynamicMCPServer")

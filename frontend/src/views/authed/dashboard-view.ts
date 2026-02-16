@@ -1383,9 +1383,27 @@ export class DashboardView extends AuthedElement {
                     <div class="status-indicator"></div>
                     <div class="server-details">
                       <span class="server-endpoint"
-                        >${window.location.origin}/mcp/v1</span
+                        >${window.location.origin}/mcp</span
                       >
                     </div>
+                    <sl-tooltip content="Copy URL">
+                      <sl-icon-button
+                        name="clipboard"
+                        style="font-size: 1rem;"
+                        @click=${() => {
+                          navigator.clipboard.writeText(
+                            `${window.location.origin}/mcp`
+                          );
+                          this.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                              bubbles: true,
+                              composed: true,
+                              detail: { message: 'MCP URL copied!' },
+                            })
+                          );
+                        }}
+                      ></sl-icon-button>
+                    </sl-tooltip>
                     <a href="/console/settings/api-keys" class="capsule-link">
                       Manage Keys
                     </a>
