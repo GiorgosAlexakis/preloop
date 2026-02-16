@@ -261,6 +261,11 @@ test:unit:preloop-endpoints-mcp-servers:
   variables:
     TEST_PATHS: "backend/tests/endpoints/test_mcp_servers.py"
 
+test:unit:preloop-endpoints-oauth-consent:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_oauth_consent.py"
+
 test:unit:preloop-endpoints-tools:
   extends: .test:unit:template
   variables:
@@ -363,6 +368,7 @@ test:coverage:
     - test:unit:preloop-endpoints-webhooks
     - test:unit:preloop-endpoints-mcp
     - test:unit:preloop-endpoints-mcp-servers
+    - test:unit:preloop-endpoints-oauth-consent
     - test:unit:preloop-endpoints-tools
     - test:unit:preloop-endpoints-api-keys
     - test:unit:preloop-endpoints-approval-requests

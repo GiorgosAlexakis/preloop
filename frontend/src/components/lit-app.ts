@@ -262,8 +262,19 @@ export class LitApp extends LitElement {
         path: '/console',
         component: 'console-shell',
         action: () => {
-          // Handle OAuth callback tokens from URL params
-          const params = new URLSearchParams(window.location.search);
+          // Handle OAuth callback tokens from URL fragment (preferred, avoids
+          // browser history / server logs / Referrer leakage) or query params
+          // (legacy fallback).
+          const fragmentParams = new URLSearchParams(
+            window.location.hash.startsWith('#')
+              ? window.location.hash.substring(1)
+              : ''
+          );
+          const queryParams = new URLSearchParams(window.location.search);
+          // Prefer fragment, fall back to query
+          const params = fragmentParams.get('access_token')
+            ? fragmentParams
+            : queryParams;
           const accessToken = params.get('access_token');
           const refreshToken = params.get('refresh_token');
 
@@ -284,9 +295,10 @@ export class LitApp extends LitElement {
               );
             }
 
-            // Clean tokens from URL
+            // Clean tokens from URL (both search and hash)
             const cleanUrl = new URL(window.location.href);
             cleanUrl.search = '';
+            cleanUrl.hash = '';
             window.history.replaceState({}, '', cleanUrl.pathname);
 
             // Notify components of auth change

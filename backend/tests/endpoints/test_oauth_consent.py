@@ -75,30 +75,23 @@ class TestConsentPageGet:
 
     def test_renders_html(self, client):
         with (
-            patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
+            patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
             patch(
                 "preloop.api.endpoints.oauth_consent._render_template",
                 return_value="<html>OK</html>",
             ),
         ):
-            mock_db = MagicMock()
-            mock_gen.return_value = iter([mock_db])
-
-            # Patch the inner crud import
-            with patch(
-                "preloop.api.endpoints.oauth_consent.crud_oauth_mcp_client",
-                create=True,
-            ) as mock_crud:
-                mock_crud.get_by_client_id.return_value = None
-
-                response = client.get(
-                    "/mcp/authorize/consent",
-                    params={
-                        "client_id": "c1",
-                        "redirect_uri": "http://localhost/cb",
-                        "code_challenge": "ch123",
-                    },
-                )
+            response = client.get(
+                "/mcp/authorize/consent",
+                params={
+                    "client_id": "c1",
+                    "redirect_uri": "http://localhost/cb",
+                    "code_challenge": "ch123",
+                },
+            )
 
         assert response.status_code == 200
         assert "OK" in response.text
@@ -112,30 +105,24 @@ class TestConsentPageGet:
 
         with (
             patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
+            patch(
                 "preloop.api.endpoints.oauth_consent._render_template",
                 side_effect=capture_render,
             ),
-            patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
         ):
-            mock_db = MagicMock()
-            mock_gen.return_value = iter([mock_db])
-
-            with patch(
-                "preloop.api.endpoints.oauth_consent.crud_oauth_mcp_client",
-                create=True,
-            ) as mock_crud:
-                mock_crud.get_by_client_id.return_value = None
-
-                client.get(
-                    "/mcp/authorize/consent",
-                    params={
-                        "client_id": "test_client",
-                        "redirect_uri": "http://example.com/cb",
-                        "code_challenge": "ch",
-                        "state": "state_abc",
-                        "scopes": "read write",
-                    },
-                )
+            client.get(
+                "/mcp/authorize/consent",
+                params={
+                    "client_id": "test_client",
+                    "redirect_uri": "http://example.com/cb",
+                    "code_challenge": "ch",
+                    "state": "state_abc",
+                    "scopes": "read write",
+                },
+            )
 
         assert len(rendered_contexts) == 1
         ctx = rendered_contexts[0]
@@ -170,6 +157,10 @@ class TestConsentPagePost:
         mock_provider.create_authorization_code_for_user.return_value = "auth_code_xyz"
 
         with (
+            patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
             patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
             patch("preloop.models.crud.crud_user") as mock_crud_user,
             patch("preloop.api.auth.jwt.verify_password", return_value=True),
@@ -203,6 +194,10 @@ class TestConsentPagePost:
 
     def test_invalid_credentials_renders_error(self, client):
         with (
+            patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
             patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
             patch("preloop.models.crud.crud_user") as mock_crud_user,
             patch(
@@ -234,6 +229,10 @@ class TestConsentPagePost:
         user.hashed_password = "hashed"
 
         with (
+            patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
             patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
             patch("preloop.models.crud.crud_user") as mock_crud_user,
             patch("preloop.api.auth.jwt.verify_password", return_value=False),
@@ -265,6 +264,10 @@ class TestConsentPagePost:
         user.is_active = False
 
         with (
+            patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
             patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
             patch("preloop.models.crud.crud_user") as mock_crud_user,
             patch("preloop.api.auth.jwt.verify_password", return_value=True),
@@ -296,6 +299,10 @@ class TestConsentPagePost:
         user.is_active = True
 
         with (
+            patch(
+                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+                return_value={"error": None, "client_name": "Test Client"},
+            ),
             patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
             patch("preloop.models.crud.crud_user") as mock_crud_user,
             patch("preloop.api.auth.jwt.verify_password", return_value=True),

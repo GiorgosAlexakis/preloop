@@ -10,6 +10,7 @@ Routes:
     POST /mcp/authorize/consent  - Authenticates user and issues auth code
 """
 
+import html
 import logging
 import os
 from pathlib import Path
@@ -28,18 +29,77 @@ router = APIRouter(tags=["OAuth Consent"], include_in_schema=False)
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 
 
+# Known CLI client_id — allowed to use http://localhost redirect URIs
+_CLI_CLIENT_ID = "cli"
+
+
 def _render_template(template_name: str, context: dict) -> str:
-    """Simple template rendering using string replacement.
+    """Template rendering with auto HTML-escaping for XSS prevention.
 
     Uses Jinja2-style {{ variable }} placeholders.
+    All values are HTML-escaped to prevent XSS attacks from user-controlled
+    inputs (client_name, redirect_uri, state, error, etc.).
+
+    Values under keys ending with '_json' are JSON-encoded (for <script> blocks)
+    instead of HTML-escaped.
     """
     template_path = _TEMPLATE_DIR / template_name
     template = template_path.read_text()
 
     for key, value in context.items():
-        template = template.replace("{{ " + key + " }}", str(value or ""))
+        safe_value = html.escape(str(value or ""))
+        template = template.replace("{{ " + key + " }}", safe_value)
 
     return template
+
+
+def _validate_client_and_redirect(client_id: str, redirect_uri: str) -> dict:
+    """Validate that client_id exists and redirect_uri is registered.
+
+    Returns dict with 'error' (str or None) and 'client_name'.
+    """
+    from preloop.models.crud.oauth_mcp_client import crud_oauth_mcp_client
+
+    # CLI client gets special treatment — allow localhost redirects
+    if client_id == _CLI_CLIENT_ID:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(redirect_uri)
+        if parsed.hostname not in ("localhost", "127.0.0.1", "[::1]"):
+            return {
+                "error": "Invalid redirect_uri for CLI client (must be localhost)",
+                "client_name": "CLI",
+            }
+        return {"error": None, "client_name": "Preloop CLI"}
+
+    # Look up registered client
+    db = next(get_db_session())
+    try:
+        db_client = crud_oauth_mcp_client.get_by_client_id(db, client_id=client_id)
+        if not db_client:
+            logger.warning(f"OAuth consent: unknown client_id={client_id}")
+            return {"error": "Unknown client_id", "client_name": ""}
+
+        client_name = db_client.client_name or "MCP Client"
+
+        # Verify redirect_uri is registered for this client
+        registered_uris = db_client.redirect_uris or []
+        if redirect_uri not in registered_uris:
+            logger.warning(
+                f"OAuth consent: unregistered redirect_uri={redirect_uri} "
+                f"for client_id={client_id}"
+            )
+            return {
+                "error": "redirect_uri is not registered for this client",
+                "client_name": client_name,
+            }
+
+        return {"error": None, "client_name": client_name}
+    except Exception as e:
+        logger.error(f"OAuth consent validation error: {e}", exc_info=True)
+        return {"error": "Internal error validating client", "client_name": ""}
+    finally:
+        db.close()
 
 
 @router.get("/mcp/authorize/consent")
@@ -58,20 +118,14 @@ async def consent_page(
     authorization flow. The user must enter their Preloop credentials to
     approve the authorization.
     """
-    # Look up client name for display
-    client_name = "MCP Client"
-    try:
-        from preloop.models.crud.oauth_mcp_client import crud_oauth_mcp_client
-
-        db = next(get_db_session())
-        try:
-            db_client = crud_oauth_mcp_client.get_by_client_id(db, client_id=client_id)
-            if db_client and db_client.client_name:
-                client_name = db_client.client_name
-        finally:
-            db.close()
-    except Exception:
-        pass
+    # Validate client_id and redirect_uri
+    validation = _validate_client_and_redirect(client_id, redirect_uri)
+    if validation["error"]:
+        return HTMLResponse(
+            content=f"<h1>OAuth Error</h1><p>{html.escape(validation['error'])}</p>",
+            status_code=400,
+        )
+    client_name = validation["client_name"]
 
     context = {
         "client_id": client_id,
@@ -85,8 +139,8 @@ async def consent_page(
         "error": "",
     }
 
-    html = _render_template("oauth_authorize.html", context)
-    return HTMLResponse(content=html)
+    html_content = _render_template("oauth_authorize.html", context)
+    return HTMLResponse(content=html_content)
 
 
 @router.post("/mcp/authorize/consent")
@@ -108,6 +162,14 @@ async def consent_submit(
     """
     from preloop.api.auth.jwt import verify_password
     from preloop.models.crud import crud_user
+
+    # Re-validate client_id + redirect_uri on POST (defense in depth)
+    validation = _validate_client_and_redirect(client_id, redirect_uri)
+    if validation["error"]:
+        return HTMLResponse(
+            content=f"<h1>OAuth Error</h1><p>{html.escape(validation['error'])}</p>",
+            status_code=400,
+        )
 
     db = next(get_db_session())
     try:
@@ -218,8 +280,8 @@ def _render_error_response(
         "resource": resource,
         "error": error,
     }
-    html = _render_template("oauth_authorize.html", context)
-    return HTMLResponse(content=html)
+    html_content = _render_template("oauth_authorize.html", context)
+    return HTMLResponse(content=html_content)
 
 
 # Singleton provider instance

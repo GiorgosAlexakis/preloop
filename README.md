@@ -266,6 +266,56 @@ For enhanced GitHub integration including PR status checks and bot reactions:
 
 These are optional and only needed if you're using a GitHub App for authentication or advanced features like reaction management on PRs.
 
+#### OAuth Sign-In (Enterprise)
+
+Enable OAuth sign-in/sign-up via GitHub, Google, and/or GitLab. Users can authenticate with their existing provider accounts instead of creating a Preloop-specific password.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GOOGLE_OAUTH_CLIENT_ID` | | Google OAuth 2.0 client ID |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | | Google OAuth 2.0 client secret |
+| `GITLAB_OAUTH_CLIENT_ID` | | GitLab OAuth client ID |
+| `GITLAB_OAUTH_CLIENT_SECRET` | | GitLab OAuth client secret |
+| `GITLAB_OAUTH_BASE_URL` | `https://gitlab.com` | GitLab instance URL (for self-hosted) |
+
+GitHub OAuth sign-in reuses the GitHub App credentials above. Enable via Helm values:
+
+```yaml
+mcpOauth:
+  enabled: true
+googleOauth:
+  enabled: true
+  clientId: "your-google-client-id"
+  clientSecret: "your-google-client-secret"
+gitlabOauth:
+  enabled: true
+  clientId: "your-gitlab-client-id"
+  clientSecret: "your-gitlab-client-secret"
+```
+
+**Supported flows:**
+- **GitHub**: Sign-in + automatic tracker setup prompt
+- **Google**: Sign-in only (no tracker created)
+- **GitLab**: Sign-in + automatic tracker setup prompt
+
+#### MCP OAuth 2.1 Server
+
+Preloop includes a built-in OAuth 2.1 Authorization Server for MCP client authentication (e.g., Claude Desktop). This is enabled automatically when `mcpOauth.enabled=true`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRELOOP_URL` | `http://localhost:8000` | Public URL of your Preloop instance (used for OAuth discovery endpoints) |
+
+**Discovery endpoints:**
+- `GET /.well-known/oauth-authorization-server` — RFC 8414 metadata
+- `GET /.well-known/oauth-protected-resource` — RFC 9728 metadata
+
+**OAuth endpoints:**
+- `POST /oauth/register` — Dynamic Client Registration (RFC 7591)
+- `GET /oauth/authorize` — Authorization endpoint (redirects to consent page)
+- `POST /oauth/token` — Token exchange (Authorization Code + PKCE for MCP, JWT for CLI)
+- `POST /oauth/revoke` — Token revocation
+
 ### Docker Setup
 
 ```bash

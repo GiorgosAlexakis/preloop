@@ -194,14 +194,31 @@ async def _handle_authorization_code(
                 detail="Authorization code expired",
             )
 
+        # Validate redirect_uri matches what was stored in the auth code
+        if (
+            db_code.redirect_uri
+            and redirect_uri
+            and db_code.redirect_uri != redirect_uri
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="redirect_uri does not match the authorization request",
+            )
+
         # Mark code as used
         crud_oauth_mcp_auth_code.mark_used(db, obj=db_code)
 
         # Decide token type based on whether PKCE was used
         has_pkce = bool(db_code.code_challenge)
 
-        if has_pkce and code_verifier:
-            # MCP flow: verify PKCE and issue opaque OAuth tokens
+        if has_pkce:
+            # PKCE was used — code_verifier is REQUIRED
+            if not code_verifier:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="code_verifier is required when PKCE was used",
+                )
+
             import hashlib
             import base64
 
@@ -219,9 +236,10 @@ async def _handle_authorization_code(
                     detail="Invalid code_verifier (PKCE validation failed)",
                 )
 
+            # MCP flow: issue opaque OAuth tokens
             return await _issue_opaque_tokens(db, db_code)
         else:
-            # CLI flow: issue JWT tokens
+            # No PKCE (CLI flow): issue JWT tokens
             return await _issue_jwt_tokens(db, db_code)
 
     finally:
@@ -308,17 +326,84 @@ async def _issue_opaque_tokens(db, db_code):
 
 
 async def _handle_refresh_token(refresh_token_str: str, client_id: str):
-    """Exchange a refresh token for new tokens."""
-    from datetime import timedelta
+    """Exchange a refresh token for new tokens.
 
-    from preloop.api.auth.jwt import (
-        create_access_token,
-        decode_token,
-        ACCESS_TOKEN_EXPIRE_MINUTES,
-    )
-
-    # Try JWT refresh token (the standard path for CLI)
+    Supports both:
+    - Opaque OAuth refresh tokens (MCP clients) — looked up in DB
+    - JWT refresh tokens (CLI) — decoded and reissued
+    """
+    # 1. Try opaque OAuth refresh token (MCP clients)
     try:
+        from preloop.models.crud.oauth_mcp_token import (
+            crud_oauth_mcp_refresh_token,
+            crud_oauth_mcp_access_token,
+            generate_token,
+        )
+        from preloop.models.db.session import get_db_session
+
+        db = next(get_db_session())
+        try:
+            db_refresh = crud_oauth_mcp_refresh_token.get_by_token(
+                db, token=refresh_token_str
+            )
+            if db_refresh and not db_refresh.is_revoked:
+                if db_refresh.expires_at and db_refresh.expires_at < int(time.time()):
+                    raise HTTPException(status_code=400, detail="Refresh token expired")
+
+                # Revoke the old refresh token (rotation)
+                crud_oauth_mcp_refresh_token.revoke(db, obj=db_refresh)
+
+                # Issue new opaque tokens
+                now = int(time.time())
+                new_access = generate_token(32)
+                new_refresh = generate_token(32)
+
+                crud_oauth_mcp_access_token.create(
+                    db,
+                    token=new_access,
+                    client_id=db_refresh.client_id,
+                    user_id=db_refresh.user_id,
+                    account_id=db_refresh.account_id,
+                    scopes=db_refresh.scopes or [],
+                    expires_at=now + 3600,
+                    resource=None,
+                )
+
+                crud_oauth_mcp_refresh_token.create(
+                    db,
+                    token=new_refresh,
+                    client_id=db_refresh.client_id,
+                    user_id=db_refresh.user_id,
+                    account_id=db_refresh.account_id,
+                    scopes=db_refresh.scopes or [],
+                    expires_at=now + 2592000,  # 30 days
+                )
+
+                return JSONResponse(
+                    {
+                        "access_token": new_access,
+                        "refresh_token": new_refresh,
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                    }
+                )
+        finally:
+            db.close()
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # 2. Try JWT refresh token (CLI path)
+    try:
+        from datetime import timedelta
+
+        from preloop.api.auth.jwt import (
+            create_access_token,
+            decode_token,
+            ACCESS_TOKEN_EXPIRE_MINUTES,
+        )
+
         token_data = decode_token(refresh_token_str)
         if token_data.refresh and token_data.sub:
             access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
