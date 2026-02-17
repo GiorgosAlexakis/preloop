@@ -7,6 +7,7 @@ from .openhands import OpenHandsAgent
 from .aider import AiderAgent
 from .codex import CodexAgent
 from .gemini import GeminiAgent
+from .opencode import OpenCodeAgent
 
 __all__ = [
     "AgentExecutor",
@@ -17,5 +18,6 @@ __all__ = [
     "AiderAgent",
     "CodexAgent",
     "GeminiAgent",
+    "OpenCodeAgent",
     "create_agent_executor",
 ]

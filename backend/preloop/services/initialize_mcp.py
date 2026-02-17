@@ -805,12 +805,16 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 from sqlalchemy import select
                 from preloop.models.models.approval_request import ApprovalRequest
 
-                # Fetch the approval request, verifying account ownership
+                # Fetch the approval request, verifying account ownership.
+                # Use FOR UPDATE to prevent concurrent poll requests from
+                # both executing the tool when status becomes "approved".
                 result = await db.execute(
-                    select(ApprovalRequest).where(
+                    select(ApprovalRequest)
+                    .where(
                         ApprovalRequest.id == request_id,
                         ApprovalRequest.account_id == user_context.account_id,
                     )
+                    .with_for_update()
                 )
                 approval_request = result.scalar_one_or_none()
 
@@ -835,7 +839,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 event_log = []
                 for event in events:
                     entry = {
-                        "timestamp": event.timestamp.isoformat() + "Z",
+                        "timestamp": event.timestamp.replace(tzinfo=None).isoformat()
+                        + "Z",
                         "type": event.event_type,
                         "detail": event.detail,
                     }
@@ -853,10 +858,10 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
 
                 # Add remaining time for pending requests
                 if approval_request.status == "pending" and approval_request.expires_at:
-                    from datetime import datetime, timezone
+                    from datetime import datetime
 
                     remaining = (
-                        approval_request.expires_at - datetime.now(timezone.utc)
+                        approval_request.expires_at - datetime.utcnow()
                     ).total_seconds()
                     response["remaining_seconds"] = max(0, int(remaining))
 

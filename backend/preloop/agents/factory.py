@@ -8,6 +8,7 @@ from .openhands import OpenHandsAgent
 from .aider import AiderAgent
 from .codex import CodexAgent
 from .gemini import GeminiAgent
+from .opencode import OpenCodeAgent
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,10 @@ def create_agent_executor(agent_type: str, config: Dict[str, Any]) -> AgentExecu
         return CodexAgent(config)
     elif agent_type_lower == "gemini":
         return GeminiAgent(config)
+    elif agent_type_lower == "opencode":
+        return OpenCodeAgent(config)
     else:
         raise ValueError(
             f"Unsupported agent type: {agent_type}. "
-            f"Supported types: codex, gemini, aider, openhands"
+            f"Supported types: codex, gemini, opencode, aider, openhands"
         )

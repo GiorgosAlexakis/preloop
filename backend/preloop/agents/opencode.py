@@ -1,4 +1,4 @@
-"""Google Gemini CLI agent implementation."""
+"""OpenCode CLI agent implementation."""
 
 import json
 import logging
@@ -14,34 +14,31 @@ from .container import ContainerAgentExecutor
 logger = logging.getLogger(__name__)
 
 
-class GeminiAgent(ContainerAgentExecutor):
+class OpenCodeAgent(ContainerAgentExecutor):
     """
-    Google Gemini CLI agent executor.
+    OpenCode CLI agent executor.
 
-    Runs Google's Gemini CLI tool (https://github.com/google-gemini/gemini-cli) in a Docker
-    container for autonomous coding tasks.
+    Runs the OpenCode CLI tool (https://github.com/anomalyco/opencode) in a Docker
+    container for autonomous coding tasks.  OpenCode is provider-agnostic and
+    supports any LLM configured by the user.
     """
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize Gemini agent.
+        Initialize OpenCode agent.
 
         Args:
             config: Agent configuration including:
-                - model: Gemini model to use (default: gemini-3-pro-preview)
-                - custom settings for Gemini CLI
+                - model: Model identifier to use (required, no default)
+                - custom settings for OpenCode CLI
         """
-        # Use the official Gemini CLI sandbox image
-        image = os.getenv(
-            "GEMINI_IMAGE",
-            "registry.spacecode.ai/spacecode/preloop/gemini-cli/sandbox:0.16.0",
-        )
+        image = os.getenv("OPENCODE_IMAGE", "docker/sandbox-templates:opencode")
 
         # Auto-detect Kubernetes environment or use explicit env var
         use_k8s = self._detect_kubernetes_environment()
 
         super().__init__(
-            agent_type="gemini",
+            agent_type="opencode",
             config=config,
             image=image,
             use_kubernetes=use_k8s,
@@ -89,7 +86,7 @@ class GeminiAgent(ContainerAgentExecutor):
 
     async def start(self, execution_context: Dict[str, Any]) -> str:
         """
-        Start Gemini agent with specialized configuration.
+        Start OpenCode agent with specialized configuration.
 
         Args:
             execution_context: Execution context
@@ -97,32 +94,37 @@ class GeminiAgent(ContainerAgentExecutor):
         Returns:
             Container ID or pod name
         """
-        # Enhance execution context with Gemini-specific settings
-        gemini_context = execution_context.copy()
+        # Enhance execution context with OpenCode-specific settings
+        opencode_context = execution_context.copy()
 
-        # Extract Gemini config
+        # Extract OpenCode config
         agent_config = execution_context.get("agent_config", {})
 
-        # Set Gemini model - prefer model_identifier from AIModel, fall back to agent_config
+        # Set model - prefer model_identifier from AIModel, fall back to agent_config
         model_identifier = execution_context.get("model_identifier")
         agent_model = agent_config.get("model")
 
         self.logger.info(
-            f"Gemini model resolution: model_identifier={model_identifier}, "
+            f"OpenCode model resolution: model_identifier={model_identifier}, "
             f"agent_config.model={agent_model}"
         )
 
-        model = model_identifier or agent_model or "gemini-3-pro-preview"
-        gemini_context["gemini_model"] = model
+        model = model_identifier or agent_model
+        if not model:
+            raise ValueError(
+                "No model specified for OpenCode agent. "
+                "Set model_identifier or agent_config.model."
+            )
+        opencode_context["opencode_model"] = model
 
-        self.logger.info(f"Starting Gemini CLI with model={model}")
+        self.logger.info(f"Starting OpenCode CLI with model={model}")
 
         # Start the container with enhanced context
-        return await super().start(gemini_context)
+        return await super().start(opencode_context)
 
     async def _start_docker_container(self, execution_context: Dict[str, Any]) -> str:
         """
-        Start Gemini CLI in a Docker container.
+        Start OpenCode CLI in a Docker container.
 
         Args:
             execution_context: Execution context
@@ -135,15 +137,15 @@ class GeminiAgent(ContainerAgentExecutor):
 
         # Log execution context for debugging
         self.logger.info(
-            f"_start_docker_container called with gemini_model={execution_context.get('gemini_model')}, "
+            f"_start_docker_container called with opencode_model={execution_context.get('opencode_model')}, "
             f"model_identifier={execution_context.get('model_identifier')}, "
             f"has_model_api_key={('model_api_key' in execution_context)}"
         )
 
-        # Prepare Gemini-specific environment variables
+        # Prepare OpenCode-specific environment variables
         env = await self._prepare_environment(execution_context)
 
-        # Add account API token for Preloop MCP authentication (always for Gemini)
+        # Add account API token for Preloop MCP authentication
         account_api_token = execution_context.get("account_api_token")
         if account_api_token:
             env["PRELOOP_API_TOKEN"] = account_api_token
@@ -158,7 +160,7 @@ class GeminiAgent(ContainerAgentExecutor):
         # Add MCP_TOOL_TIMEOUT_SEC for config substitution
         mcp_timeout = execution_context.get("_mcp_tool_timeout", 600)
         env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
-        self.logger.info(f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for Gemini config")
+        self.logger.info(f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for OpenCode config")
 
         # Add MCP configuration using MCP config service
         allowed_mcp_servers = execution_context.get("allowed_mcp_servers", [])
@@ -179,8 +181,8 @@ class GeminiAgent(ContainerAgentExecutor):
             )
             env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        # Build the Gemini script using shared method
-        script = self._build_gemini_script(execution_context)
+        # Build the OpenCode script using shared method
+        script = self._build_opencode_script(execution_context)
 
         # Determine working directory based on git clone configuration
         working_dir = "/workspace"
@@ -191,26 +193,22 @@ class GeminiAgent(ContainerAgentExecutor):
                 # Use the first repository's clone path as working directory
                 clone_path = repositories[0].get("clone_path", "/workspace")
                 if clone_path.startswith("/"):
-                    # Absolute path
                     working_dir = clone_path
                 else:
-                    # Relative path - prepend /workspace/
                     working_dir = f"/workspace/{clone_path}"
                 self.logger.info(
-                    f"Setting Gemini working directory to git repository: {working_dir}"
+                    f"Setting OpenCode working directory to git repository: {working_dir}"
                 )
 
         # Extract model for logging
         model = (
-            execution_context.get("gemini_model")
+            execution_context.get("opencode_model")
             or execution_context.get("model_identifier")
-            or "gemini-3-pro-preview"
+            or "unknown"
         )
 
         self.logger.info(
-            f"Container config: model={model}, "
-            f"has_api_key={'GEMINI_API_KEY' in env}, "
-            f"env_vars={list(env.keys())}"
+            f"Container config: model={model}, env_vars={list(env.keys())}"
         )
 
         # Container configuration
@@ -226,9 +224,7 @@ class GeminiAgent(ContainerAgentExecutor):
             },
             "HostConfig": {
                 "AutoRemove": False,  # Keep container for log retrieval
-                "NetworkMode": os.getenv(
-                    "AGENT_NETWORK_MODE", "bridge"
-                ),  # Use bridge by default
+                "NetworkMode": os.getenv("AGENT_NETWORK_MODE", "bridge"),
                 # Resource limits
                 "Memory": int(os.getenv("AGENT_MEMORY_LIMIT", "2g").replace("g", ""))
                 * 1024
@@ -255,19 +251,19 @@ class GeminiAgent(ContainerAgentExecutor):
             self._containers[container_id] = container
 
             self.logger.info(
-                f"Started Gemini CLI container {container_id[:12]} for execution {execution_id}"
+                f"Started OpenCode CLI container {container_id[:12]} for execution {execution_id}"
             )
             return container_id
 
         except DockerError as e:
             self.logger.error(
-                f"Failed to start Gemini CLI container for execution {execution_id}: {e}"
+                f"Failed to start OpenCode CLI container for execution {execution_id}: {e}"
             )
-            raise RuntimeError(f"Failed to start Gemini CLI container: {e}")
+            raise RuntimeError(f"Failed to start OpenCode CLI container: {e}")
 
-    def _build_gemini_script(self, execution_context: Dict[str, Any]) -> str:
+    def _build_opencode_script(self, execution_context: Dict[str, Any]) -> str:
         """
-        Build the Gemini initialization and execution script.
+        Build the OpenCode initialization and execution script.
 
         This script is used by both Docker and Kubernetes modes.
 
@@ -278,15 +274,16 @@ class GeminiAgent(ContainerAgentExecutor):
             Shell script to execute
         """
         prompt = execution_context["prompt"]
-        model = (
-            execution_context.get("gemini_model")
-            or execution_context.get("model_identifier")
-            or "gemini-3-pro-preview"
+        model = execution_context.get("opencode_model") or execution_context.get(
+            "model_identifier"
         )
+        if not model:
+            raise ValueError("No model specified for OpenCode agent.")
 
-        # Escape prompt for shell - need to handle both single and double quotes carefully
-        # We'll use a heredoc to pass the prompt safely
-        prompt_safe = prompt.replace("'", "'\\''")  # Escape single quotes for heredoc
+        model_provider = execution_context.get("model_provider", "anthropic").lower()
+
+        # Escape prompt for shell using heredoc (safer than inline escaping)
+        prompt_safe = prompt.replace("'", "'\\''")
 
         # Prepare initialization commands (git clone, custom commands)
         init_commands = self._prepare_init_commands(execution_context)
@@ -300,8 +297,8 @@ class GeminiAgent(ContainerAgentExecutor):
         post_exec_block = ""
         if post_exec_commands:
             post_exec_block = f"""
-# Run post-execution commands (push, PR/MR) if gemini succeeded
-if [ "$GEMINI_EXIT_CODE" -eq "0" ]; then
+# Run post-execution commands (push, PR/MR) if opencode succeeded
+if [ "$OPENCODE_EXIT_CODE" -eq "0" ]; then
     echo "========================================="
     echo "Running post-execution git operations..."
     echo "========================================="
@@ -313,8 +310,14 @@ fi
         execution_id = execution_context.get("execution_id", "unknown")
         flow_name = execution_context.get("flow_name", "unknown")
 
-        # Convert timeout from seconds to milliseconds for Gemini CLI
+        # Convert timeout from seconds to milliseconds for OpenCode config
         mcp_timeout_ms = execution_context.get("_mcp_tool_timeout", 600) * 1000
+
+        # Build the OpenCode config JSON for MCP server
+        opencode_config = self._build_opencode_config(
+            model, model_provider, execution_context, mcp_timeout_ms
+        )
+        opencode_config_json = json.dumps(opencode_config, indent=2)
 
         # Create the full script
         script = f"""
@@ -344,8 +347,9 @@ echo "Flow Execution Started"
 echo "=================================================="
 echo "Execution ID: {execution_id}"
 echo "Flow Name: {flow_name}"
-echo "Agent Type: Gemini"
+echo "Agent Type: OpenCode"
 echo "Model: {model}"
+echo "Provider: {model_provider}"
 echo "Start Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo "=================================================="
 echo ""
@@ -356,106 +360,138 @@ echo ""
 # Configure git to trust all directories (needed for cloned repos)
 git config --global --add safe.directory '*'
 
-# Verify API key is set
-if [ -z "$GEMINI_API_KEY" ]; then
-    echo "ERROR: GEMINI_API_KEY is not set"
-    exit 1
-fi
+# Install OpenCode CLI
+npm install -g opencode-ai@latest
 
-# Configure Gemini CLI MCP servers
-mkdir -p ~/.gemini
+# Write OpenCode configuration
+mkdir -p /workspace
+cat > /workspace/opencode.json << 'OPENCODE_CONFIG_EOF'
+{opencode_config_json}
+OPENCODE_CONFIG_EOF
 
-# Create settings.json with MCP server configuration
-# Using envsubst for variable substitution
-cat > ~/.gemini/settings.json << 'SETTINGS_EOF'
-{{
-  "mcpServers": {{
-    "preloop": {{
-      "httpUrl": "$PRELOOP_MCP_URL",
-      "headers": {{
-        "Authorization": "Bearer $PRELOOP_API_TOKEN"
-      }},
-      "timeout": {mcp_timeout_ms},
-      "trust": true
-    }}
-  }}
-}}
-SETTINGS_EOF
+# Substitute environment variables in config
+envsubst < /workspace/opencode.json > /workspace/opencode.json.tmp
+mv /workspace/opencode.json.tmp /workspace/opencode.json
 
-# Substitute environment variables in settings.json
-export PRELOOP_MCP_URL
-export PRELOOP_API_TOKEN
-envsubst < ~/.gemini/settings.json > ~/.gemini/settings.json.tmp
-mv ~/.gemini/settings.json.tmp ~/.gemini/settings.json
-
-# Debug: Show config (with token masked)
-echo "=== Gemini Configuration ==="
+# Debug: Show config (with keys masked)
+echo "=== OpenCode Configuration ==="
 echo "Model: {model}"
+echo "Provider: {model_provider}"
 echo "MCP Server: $PRELOOP_MCP_URL"
-echo "MCP Timeout: {mcp_timeout_ms}ms ({execution_context.get("_mcp_tool_timeout", 600)}s)"
+echo "MCP Timeout: {mcp_timeout_ms}ms"
 echo "Working Directory: $(pwd)"
-echo "=========================="
+echo "=============================="
 
 # Create prompt file to avoid shell escaping issues
 cat > /tmp/prompt.txt << 'PROMPT_EOF'
 {prompt_safe}
 PROMPT_EOF
 
-# Run Gemini CLI with the prompt
-# --output-format stream-json: Stream JSON output for real-time monitoring
-# --yolo: Skip confirmation prompts for tool usage
-# -m: Specify the model
-# --prompt: Pass the prompt (read from file)
-gemini --output-format stream-json --yolo -m "{model}" --prompt "$(cat /tmp/prompt.txt)"
-GEMINI_EXIT_CODE=$?
+# Run OpenCode in non-interactive mode with the prompt
+opencode run --non-interactive "$(cat /tmp/prompt.txt)"
+OPENCODE_EXIT_CODE=$?
 
 echo ""
 echo "=================================================="
-echo "Gemini CLI exited with code: $GEMINI_EXIT_CODE"
+echo "OpenCode CLI exited with code: $OPENCODE_EXIT_CODE"
 echo "=================================================="
 {post_exec_block}
-# Exit with gemini's exit code
-exit $GEMINI_EXIT_CODE
+# Exit with opencode's exit code
+exit $OPENCODE_EXIT_CODE
 """
         return script
 
+    def _build_opencode_config(
+        self,
+        model: str,
+        model_provider: str,
+        execution_context: Dict[str, Any],
+        mcp_timeout_ms: int,
+    ) -> Dict[str, Any]:
+        """
+        Build the opencode.json configuration object.
+
+        Configures the model provider and the Preloop MCP server connection.
+
+        Args:
+            model: Model identifier (e.g., "claude-sonnet-4-20250514")
+            model_provider: Provider name (e.g., "anthropic", "openai")
+            execution_context: Execution context
+            mcp_timeout_ms: MCP tool timeout in milliseconds
+
+        Returns:
+            Configuration dict to be serialized as opencode.json
+        """
+        model_endpoint = execution_context.get("model_endpoint") or ""
+
+        # Fallback: resolve endpoint from environment if not set in the AI model.
+        if not model_endpoint and model_provider and model_provider != "openai":
+            env_key = f"{model_provider.upper().replace('-', '_')}_API_BASE"
+            model_endpoint = os.getenv(env_key) or os.getenv("CUSTOM_API_BASE", "")
+
+        config: Dict[str, Any] = {
+            "$schema": "https://opencode.ai/config.json",
+            "autoupdate": False,
+            "mcp": {
+                "preloop": {
+                    "type": "remote",
+                    "url": "$PRELOOP_MCP_URL",
+                    "headers": {
+                        "Authorization": "Bearer $PRELOOP_API_TOKEN",
+                    },
+                    "timeout": mcp_timeout_ms,
+                    "enabled": True,
+                }
+            },
+        }
+
+        # Add provider configuration if needed
+        provider_config: Dict[str, Any] = {}
+        if model_endpoint:
+            provider_config["options"] = {"baseURL": model_endpoint}
+
+        if provider_config:
+            config["provider"] = {model_provider: provider_config}
+
+        return config
+
     async def _start_kubernetes_pod(self, execution_context: Dict[str, Any]) -> str:
         """
-        Override to add Gemini-specific command to Kubernetes pod.
+        Override to add OpenCode-specific command to Kubernetes pod.
 
         Similar to Codex, we only set args (not command) to preserve the
         image's entrypoint that sets up the environment.
         """
         # Get the script to execute
-        script = self._build_gemini_script(execution_context)
+        script = self._build_opencode_script(execution_context)
 
         # Store script in execution context
-        execution_context["_gemini_script"] = script
+        execution_context["_opencode_script"] = script
 
         # Set args for Kubernetes
         execution_context["_container_args"] = ["-c", script]
 
-        # Prepare Gemini-specific environment variables
-        gemini_env = await self._prepare_environment(execution_context)
+        # Prepare OpenCode-specific environment variables
+        opencode_env = await self._prepare_environment(execution_context)
 
         # Add account API token for Preloop MCP authentication
         account_api_token = execution_context.get("account_api_token")
         if account_api_token:
-            gemini_env["PRELOOP_API_TOKEN"] = account_api_token
+            opencode_env["PRELOOP_API_TOKEN"] = account_api_token
         else:
             self.logger.warning("No account API token provided for Preloop MCP access")
 
         # Set Preloop MCP URL (for Kubernetes)
-        gemini_env["PRELOOP_MCP_URL"] = os.getenv(
+        opencode_env["PRELOOP_MCP_URL"] = os.getenv(
             "PRELOOP_MCP_URL_K8S",
             os.getenv("PRELOOP_MCP_URL", "http://preloop-api:8000/mcp/v1"),
         )
 
         # Add MCP_TOOL_TIMEOUT_SEC
         mcp_timeout = execution_context.get("_mcp_tool_timeout", 600)
-        gemini_env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
+        opencode_env["MCP_TOOL_TIMEOUT_SEC"] = str(mcp_timeout)
         self.logger.info(
-            f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for Gemini (Kubernetes)"
+            f"Set MCP_TOOL_TIMEOUT_SEC={mcp_timeout} for OpenCode (Kubernetes)"
         )
 
         # Add MCP configuration
@@ -466,16 +502,16 @@ exit $GEMINI_EXIT_CODE
             mcp_env = MCPConfigService.generate_mcp_environment_vars(
                 allowed_mcp_servers, allowed_mcp_tools
             )
-            gemini_env.update(mcp_env)
+            opencode_env.update(mcp_env)
 
             mcp_config = MCPConfigService.generate_mcp_config(
                 allowed_mcp_servers,
                 allowed_mcp_tools,
                 account_api_token=account_api_token,
             )
-            gemini_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
+            opencode_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        execution_context["_gemini_env"] = gemini_env
+        execution_context["_opencode_env"] = opencode_env
 
         # Call parent implementation
         return await super()._start_kubernetes_pod(execution_context)
@@ -484,7 +520,10 @@ exit $GEMINI_EXIT_CODE
         self, execution_context: Dict[str, Any]
     ) -> Dict[str, str]:
         """
-        Prepare Gemini-specific environment variables.
+        Prepare OpenCode-specific environment variables.
+
+        OpenCode is provider-agnostic — set the API key env var that matches
+        the configured provider (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY).
 
         Args:
             execution_context: Execution context
@@ -494,9 +533,16 @@ exit $GEMINI_EXIT_CODE
         """
         env = {}
 
-        # Add Gemini API key
+        # Add API key for the configured provider
+        model_provider = execution_context.get("model_provider", "anthropic").lower()
         if "model_api_key" in execution_context:
-            env["GEMINI_API_KEY"] = execution_context["model_api_key"]
+            # Set the provider-specific env var
+            provider_env_key = f"{model_provider.upper().replace('-', '_')}_API_KEY"
+            env[provider_env_key] = execution_context["model_api_key"]
+
+            # Also set OPENAI_API_KEY as fallback for OpenAI-compatible providers
+            if model_provider != "openai":
+                env["OPENAI_API_KEY"] = execution_context["model_api_key"]
 
         # HOME is set by the container setup (container.py) based on the
         # configured UID. Don't hardcode it here.

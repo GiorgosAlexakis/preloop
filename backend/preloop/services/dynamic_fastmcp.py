@@ -598,6 +598,53 @@ async def {internal_name}({params_str}) -> str:
         # Get current user context
         user_context = self._get_current_user_context()
 
+        # ── Server-side justification enforcement ─────────────────────────
+        # Schema injection alone isn't sufficient — clients can skip
+        # validation. Verify server-side that required justifications are
+        # actually provided.
+        if user_context:
+            try:
+
+                def _check_justification_mode():
+                    db = next(get_db())
+                    try:
+                        configs = crud_tool_configuration.get_multi_by_account(
+                            db,
+                            account_id=str(user_context.account_id),
+                            limit=1000,
+                        )
+                        for tc in configs:
+                            if (
+                                tc.tool_name == name
+                                and tc.justification_mode == "required"
+                            ):
+                                return True
+                        return False
+                    finally:
+                        db.close()
+
+                requires_justification = await asyncio.get_event_loop().run_in_executor(
+                    None, _check_justification_mode
+                )
+                if requires_justification and not justification:
+                    from fastmcp.tools.tool import ToolResult
+                    from mcp.types import TextContent
+
+                    return ToolResult(
+                        content=[
+                            TextContent(
+                                type="text",
+                                text=(
+                                    f"Justification required: Tool '{name}' requires a "
+                                    f"'justification' parameter explaining why this tool "
+                                    f"is being called."
+                                ),
+                            )
+                        ]
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to check justification mode for '{name}': {e}")
+
         if not user_context:
             logger.warning("No user context available for tool call")
             return ToolResult(

@@ -42,6 +42,8 @@ When AI attempts a protected operation, Preloop pauses and notifies you:
 
 - **Instant notifications** via mobile app, Slack, email, or Mattermost
 - **One-tap approvals** from your phone, watch, or desktop
+- **Async approval mode** — tool returns immediately with a polling handle; the agent polls `get_approval_status` until approved, then receives the tool result (Enterprise)
+- **Per-tool justification** — require or optionally request agents to explain *why* a tool is being called before approval (Enterprise)
 - **Team-based approvals** with quorum requirements (Enterprise)
 - **Escalation policies** for time-sensitive operations (Enterprise)
 
@@ -61,11 +63,13 @@ approval_policies:
   - name: "deploy-approval"
     timeout_seconds: 600
     required_approvals: 1
+    async_approval: true          # Agent polls instead of blocking
 
 tools:
   - name: "bash"
     source: mcp
     approval_policy: "deploy-approval"
+    justification: required        # Agent must explain the call
     conditions:
       - expression: "args.command.contains('deploy') && args.command.contains('production')"
         action: require_approval
@@ -128,6 +132,8 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 - **Instant Notifications.** Get alerts on mobile, Slack, email, or Mattermost.
 - **One-Tap Approvals.** Approve or reject from your phone, watch, or desktop.
 - **Full Audit Trail.** Complete log of every AI action and policy decision.
+- **Async Approval Mode (Enterprise).** Non-blocking approval: tool returns immediately, agent polls `get_approval_status` until the human decides.
+- **Per-Tool Justification (Enterprise).** Require agents to provide a reason for each tool call. Mode: `required` (blocks without it) or `optional` (agent may provide one).
 - **Flexible Conditions.** Use CEL expressions for context-aware rules (Enterprise).
 - **AI Approval (Enterprise).** AI-driven approval with configurable model, prompt, confidence threshold, and fallback behavior.
 - **Team Approvals.** Require quorum from multiple team members for critical ops (Enterprise).
@@ -703,7 +709,7 @@ When using approval workflows, tool calls may take several minutes while waiting
 
 The timeout value is in milliseconds. 600000ms = 10 minutes, which should be sufficient for most approval workflows. Adjust based on your approval policy's `timeout_seconds` setting.
 
-> **Tip**: If your approval policy has async mode enabled, the tool returns immediately with a pending status and the agent polls for approval status using `get_approval_status`. In this case, no timeout increase is needed.
+> **Tip**: If your approval policy has **async mode** enabled (`async_approval: true`), the tool returns immediately with a `pending_approval` status and a `request_id`. The agent automatically polls `get_approval_status(request_id)` until the human approves, at which point the tool executes and the result is returned in the poll response. No client timeout increase is needed in this mode.
 
 ### Mobile Push Notifications (iOS/Android)
 
@@ -798,6 +804,8 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | **Access rules with CEL conditions** | Basic (single condition) | Advanced (multiple conditions, AND/OR, CEL editor) |
 | **AI-driven approval policies** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
+| **Async approval mode** | ❌ | ✅ |
+| **Per-tool justification settings** | ❌ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
 | **Slack notifications** | ❌ | ✅ |
 | **Mattermost notifications** | ❌ | ✅ |

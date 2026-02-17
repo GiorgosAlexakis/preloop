@@ -6,6 +6,8 @@ from preloop.agents.factory import create_agent_executor
 from preloop.agents.openhands import OpenHandsAgent
 from preloop.agents.aider import AiderAgent
 from preloop.agents.codex import CodexAgent
+from preloop.agents.gemini import GeminiAgent
+from preloop.agents.opencode import OpenCodeAgent
 
 
 class TestAgentFactory:
@@ -58,6 +60,30 @@ class TestAgentFactory:
         assert agent.agent_type == "codex"
         assert agent.config == config
 
+    def test_create_gemini_agent(self):
+        """Test creating a Gemini agent."""
+        config = {
+            "model": "gemini-3-pro-preview",
+        }
+
+        agent = create_agent_executor("gemini", config)
+
+        assert isinstance(agent, GeminiAgent)
+        assert agent.agent_type == "gemini"
+        assert agent.config == config
+
+    def test_create_opencode_agent(self):
+        """Test creating an OpenCode agent."""
+        config = {
+            "model": "claude-sonnet-4-20250514",
+        }
+
+        agent = create_agent_executor("opencode", config)
+
+        assert isinstance(agent, OpenCodeAgent)
+        assert agent.agent_type == "opencode"
+        assert agent.config == config
+
     def test_unsupported_agent_type(self):
         """Test that unsupported agent type raises ValueError."""
         config = {}
@@ -77,6 +103,8 @@ class TestAgentFactory:
             assert "openhands" in error_msg
             assert "aider" in error_msg
             assert "codex" in error_msg
+            assert "gemini" in error_msg
+            assert "opencode" in error_msg
 
     def test_config_passed_to_agent(self):
         """Test that configuration is passed to the agent."""
@@ -122,6 +150,11 @@ class TestAgentFactory:
             "AIDER": AiderAgent,
             "codex": CodexAgent,
             "CODEX": CodexAgent,
+            "gemini": GeminiAgent,
+            "GEMINI": GeminiAgent,
+            "opencode": OpenCodeAgent,
+            "OPENCODE": OpenCodeAgent,
+            "OpenCode": OpenCodeAgent,
         }
         invalid_types = ["open hands", "open-hands-v2", "", "  ", "123", "unknown"]
 
