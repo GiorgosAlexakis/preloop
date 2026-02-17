@@ -284,7 +284,13 @@ class CodexAgent(ContainerAgentExecutor):
             or "gpt-4"
         )
         model_provider = execution_context.get("model_provider", "openai").lower()
-        model_endpoint = execution_context.get("model_endpoint", "")
+        model_endpoint = execution_context.get("model_endpoint") or ""
+
+        # Fallback: resolve endpoint from environment if not set in the AI model.
+        # Checks {PROVIDER}_API_BASE (e.g. ZAI_API_BASE) then CUSTOM_API_BASE.
+        if not model_endpoint and model_provider and model_provider != "openai":
+            env_key = f"{model_provider.upper().replace('-', '_')}_API_BASE"
+            model_endpoint = os.getenv(env_key) or os.getenv("CUSTOM_API_BASE", "")
 
         # Escape prompt for shell - must escape:
         # - Double quotes (for string delimiter)
@@ -496,6 +502,15 @@ exit $CODEX_EXIT_CODE
             # Use 'chat' wire_api for most providers (OpenAI-compatible chat/completions)
             wire_api = "responses"
 
+            if not model_endpoint:
+                logger.warning(
+                    f"Custom model provider '{model_provider}' has no api_endpoint configured. "
+                    f"base_url will be omitted from config.toml."
+                )
+
+            # Only include base_url if we have an actual endpoint URL
+            base_url_line = f'base_url = "{model_endpoint}"' if model_endpoint else ""
+
             auth_block = f"""# Create auth.json with provider API key
 cat > ~/.codex/auth.json << EOF
 {{
@@ -511,7 +526,7 @@ model = "{model}"
 
 [model_providers.{provider_key}]
 name = "{model_provider.title()}"
-base_url = "{model_endpoint}"
+{base_url_line}
 env_key = "{env_key}"
 wire_api = "{wire_api}"
 
@@ -571,9 +586,8 @@ EOF"""
                 env[custom_env_key] = execution_context["model_api_key"]
                 env["OPENAI_API_KEY"] = execution_context["model_api_key"]
 
-        # Set home directory for config storage
-        # Note: This is overridden to /home/agent in Kubernetes mode
-        env["HOME"] = "/root"
+        # HOME is set by the container setup (container.py) based on the
+        # configured UID. Don't hardcode it here.
 
         # Configure language runtimes for codex-universal image
         # These env vars tell the image which versions to set up

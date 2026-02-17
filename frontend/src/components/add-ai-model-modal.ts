@@ -97,6 +97,21 @@ export class AddAIModelModal extends LitElement {
     this._modelsFetchError = null;
   }
 
+  /** Read current input values directly from shadow DOM elements. */
+  private _syncFormFromDom() {
+    const inputs = this.shadowRoot?.querySelectorAll('sl-input') ?? [];
+    for (const input of inputs) {
+      const label = input.getAttribute('label');
+      const val = (input as any).value as string;
+      if (label === 'Friendly Name') this._currentModel.name = val || undefined;
+      else if (label === 'API URL')
+        this._currentModel.api_endpoint = val || undefined;
+      else if (label === 'API Key' && val) this._currentModel.api_key = val;
+      else if (label === 'Custom Model Name / ID')
+        this._currentModel.model_identifier = val || undefined;
+    }
+  }
+
   private _handleClose() {
     this.dispatchEvent(new CustomEvent('close-modal'));
   }
@@ -126,7 +141,7 @@ export class AddAIModelModal extends LitElement {
     this._currentModel = {
       ...this._currentModel,
       provider_name: provider,
-      api_url: defaultUrls[provider] || '',
+      api_endpoint: defaultUrls[provider] || '',
       model_identifier: '',
     };
 
@@ -189,11 +204,14 @@ export class AddAIModelModal extends LitElement {
     e.preventDefault();
     this._formError = null;
 
+    // Sync values from DOM in case event handlers missed a mutation
+    this._syncFormFromDom();
+
     if (
       !this._currentModel.name ||
       !this._currentModel.provider_name ||
       !this._currentModel.model_identifier ||
-      !this._currentModel.api_url
+      !this._currentModel.api_endpoint
     ) {
       this._formError = 'Please fill in all required fields';
       return;
@@ -261,8 +279,10 @@ export class AddAIModelModal extends LitElement {
             class="full-width"
             label="Friendly Name"
             .value=${this._currentModel.name || ''}
-            @sl-input=${(e: Event) =>
-              (this._currentModel.name = (e.target as HTMLInputElement).value)}
+            @sl-input=${(e: Event) => {
+              this._currentModel.name = (e.target as HTMLInputElement).value;
+              this.requestUpdate();
+            }}
             ?disabled=${this._isSubmitting}
           ></sl-input>
           <sl-select
@@ -282,11 +302,13 @@ export class AddAIModelModal extends LitElement {
           <sl-input
             class="full-width"
             label="API URL"
-            .value=${this._currentModel.api_url || ''}
-            @sl-input=${(e: Event) =>
-              (this._currentModel.api_url = (
+            .value=${this._currentModel.api_endpoint || ''}
+            @sl-input=${(e: Event) => {
+              this._currentModel.api_endpoint = (
                 e.target as HTMLInputElement
-              ).value)}
+              ).value;
+              this.requestUpdate();
+            }}
             ?disabled=${this._isSubmitting}
           ></sl-input>
           <sl-input

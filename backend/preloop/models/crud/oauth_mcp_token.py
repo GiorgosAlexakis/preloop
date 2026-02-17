@@ -83,6 +83,21 @@ class CRUDOAuthMCPAuthorizationCode:
             .first()
         )
 
+    def get_by_code_hash(
+        self, db: Session, *, code: str
+    ) -> Optional[OAuthMCPAuthorizationCode]:
+        """Look up an authorization code by its hash only (no client_id filter).
+
+        Used when the token request omits client_id (e.g. Codex CLI).
+        """
+        return (
+            db.query(OAuthMCPAuthorizationCode)
+            .filter(
+                OAuthMCPAuthorizationCode.code_hash == _hash_token(code),
+            )
+            .first()
+        )
+
     def mark_used(self, db: Session, *, obj: OAuthMCPAuthorizationCode) -> None:
         """Mark an authorization code as consumed."""
         obj.is_used = True

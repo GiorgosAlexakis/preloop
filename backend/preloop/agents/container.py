@@ -344,9 +344,48 @@ class ContainerAgentExecutor(AgentExecutor):
         command = execution_context.get("_container_command")
         args = execution_context.get("_container_args")
 
-        # Container specification with security context and volume mounts
-        # NOTE: Currently running as root for compatibility with agent images (codex-universal).
-        # TODO: Harden security by running as non-root user in the future.
+        # Run as root by default — codex-universal installs runtimes (nvm, pyenv,
+        # cargo, phpenv) under /root and hardcodes /root/.nvm/nvm.sh in /etc/profile.
+        # Set AGENT_RUN_AS_NON_ROOT=true to use UID 1000 (for images that support it).
+        run_as_non_root = os.getenv("AGENT_RUN_AS_NON_ROOT", "false").lower() == "true"
+        agent_uid = 1000 if run_as_non_root else 0
+        agent_gid = 1000 if run_as_non_root else 0
+        home_dir = "/home/agent" if run_as_non_root else "/root"
+
+        # Volume mounts: /workspace for git repos.
+        # No init container needed — the container overlay FS makes the image's
+        # filesystem writable per-pod, so pre-installed tools (nvm, node, etc.)
+        # in /root are available instantly without copying.
+        volumes = [
+            client.V1Volume(
+                name="workspace",
+                empty_dir=client.V1EmptyDirVolumeSource(),
+            ),
+        ]
+        volume_mounts = [
+            client.V1VolumeMount(
+                name="workspace", mount_path="/workspace", sub_path=None
+            ),
+        ]
+
+        if run_as_non_root:
+            # Non-root needs a writable HOME via emptyDir (can't write to /root).
+            volumes.append(
+                client.V1Volume(
+                    name="agent-home",
+                    empty_dir=client.V1EmptyDirVolumeSource(),
+                )
+            )
+            volume_mounts.append(
+                client.V1VolumeMount(
+                    name="agent-home", mount_path=home_dir, sub_path=None
+                )
+            )
+            env_vars.append(client.V1EnvVar(name="HOME", value=home_dir))
+        # When running as root, /root comes from the image overlay (writable,
+        # with all pre-installed tools) — no emptyDir mount needed.
+
+        # Container specification with hardened security context
         container = client.V1Container(
             name="agent",
             image=self.image,
@@ -359,47 +398,25 @@ class ContainerAgentExecutor(AgentExecutor):
                 requests={"memory": memory_request, "cpu": cpu_request},
             ),
             security_context=client.V1SecurityContext(
-                run_as_user=0,  # Run as root (UID 0) for compatibility with codex-universal
+                run_as_user=agent_uid,
+                run_as_non_root=run_as_non_root,
                 read_only_root_filesystem=False,
                 allow_privilege_escalation=False,
-                capabilities=client.V1Capabilities(drop=["ALL"]),
+                capabilities=client.V1Capabilities(
+                    drop=["ALL"],
+                    # Root needs DAC_OVERRIDE to write to image files that lack
+                    # the owner-write bit (e.g. /root/.nvm/ in codex-universal).
+                    add=["DAC_OVERRIDE", "CHOWN", "FOWNER"]
+                    if not run_as_non_root
+                    else None,
+                ),
             ),
-            volume_mounts=[
-                client.V1VolumeMount(
-                    name="workspace", mount_path="/workspace", sub_path=None
-                ),
-                client.V1VolumeMount(
-                    name="root-home", mount_path="/root", sub_path=None
-                ),
-            ],
+            volume_mounts=volume_mounts,
         )
 
-        # Init container to copy /root contents to writable volume
-        # This preserves pre-installed files (nvm, node, npm, etc.) while making /root writable
-        # Uses --reflink=auto for copy-on-write optimization when supported by filesystem
-        init_container = client.V1Container(
-            name="copy-root",
-            image=self.image,
-            command=["/bin/sh", "-c"],
-            args=[
-                # Use --reflink=auto for CoW copies (much faster on supporting filesystems)
-                # Then ensure proper permissions for npm and other tools
-                "cp -a --reflink=auto /root/. /root-volume/ && "
-                "chown -R 0:0 /root-volume && "
-                "chmod -R u+w /root-volume && "
-                "echo 'Copied /root to writable volume with proper permissions'"
-            ],
-            volume_mounts=[
-                client.V1VolumeMount(
-                    name="root-home", mount_path="/root-volume", sub_path=None
-                ),
-            ],
-            security_context=client.V1SecurityContext(
-                run_as_user=0,  # Run as root
-            ),
-        )
-
-        # Pod template specification with volumes
+        # Pod template specification — no init containers for instant startup.
+        # Each pod gets a fresh overlay filesystem from the image, so there is
+        # no data leakage between executions.
         pod_template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(
                 labels={
@@ -411,21 +428,13 @@ class ContainerAgentExecutor(AgentExecutor):
             ),
             spec=client.V1PodSpec(
                 restart_policy="Never",
-                init_containers=[
-                    init_container
-                ],  # Copy /root before main container starts
                 containers=[container],
-                # No pod-level security context - allows running as root
-                volumes=[
-                    client.V1Volume(
-                        name="workspace",
-                        empty_dir=client.V1EmptyDirVolumeSource(),
-                    ),
-                    client.V1Volume(
-                        name="root-home",
-                        empty_dir=client.V1EmptyDirVolumeSource(),
-                    ),
-                ],
+                security_context=client.V1PodSecurityContext(
+                    run_as_user=agent_uid,
+                    run_as_group=agent_gid,
+                    fs_group=agent_gid,
+                ),
+                volumes=volumes,
             ),
         )
 

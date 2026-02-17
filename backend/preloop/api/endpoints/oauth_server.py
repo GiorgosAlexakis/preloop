@@ -195,15 +195,30 @@ async def _handle_authorization_code(
 
     db = next(get_db_session())
     try:
-        # Look up the auth code
-        effective_client_id = client_id or "cli"
-        logger.info(
-            f"Auth code exchange: effective_client_id={effective_client_id!r}, "
-            f"redirect_uri={redirect_uri!r}"
-        )
-        db_code = crud_oauth_mcp_auth_code.get_by_code(
-            db, code=code, client_id=effective_client_id
-        )
+        # Look up the auth code.
+        # Some MCP clients (e.g. Codex CLI) omit client_id in the token request.
+        # When client_id is provided, look up by both hash + client_id.
+        # When absent, look up by hash only and use the stored client_id.
+        if client_id:
+            effective_client_id = client_id
+            logger.info(
+                f"Auth code exchange: client_id={effective_client_id!r}, "
+                f"redirect_uri={redirect_uri!r}"
+            )
+            db_code = crud_oauth_mcp_auth_code.get_by_code(
+                db, code=code, client_id=effective_client_id
+            )
+        else:
+            logger.info(
+                f"Auth code exchange: client_id not provided, "
+                f"looking up by code hash only. redirect_uri={redirect_uri!r}"
+            )
+            db_code = crud_oauth_mcp_auth_code.get_by_code_hash(db, code=code)
+            if db_code:
+                effective_client_id = db_code.client_id
+                logger.info(f"Found auth code for client_id={effective_client_id!r}")
+            else:
+                effective_client_id = "(unknown)"
 
         if not db_code:
             logger.warning(f"Auth code not found for client_id={effective_client_id!r}")
