@@ -1938,3 +1938,49 @@ export async function completeGitHubInstallation(
   }
   return response.json();
 }
+
+// Policy Generation API
+export async function generatePolicy(options: {
+  prompt: string;
+  includeCurrentConfig?: boolean;
+}): Promise<{ yaml: string; warnings: string[] }> {
+  const response = await fetchWithAuth('/api/v1/policies/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: options.prompt,
+      include_current_config: options.includeCurrentConfig ?? true,
+    }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(errorData, 'Failed to generate policy')
+    );
+  }
+  return response.json();
+}
+
+export async function generatePolicyFromAudit(options?: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ yaml: string; warnings: string[] }> {
+  const response = await fetchWithAuth('/api/v1/policies/generate-from-audit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      start_date: options?.startDate || null,
+      end_date: options?.endDate || null,
+    }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(
+        errorData,
+        'Failed to generate policy from audit logs'
+      )
+    );
+  }
+  return response.json();
+}

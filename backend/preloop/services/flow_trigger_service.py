@@ -107,42 +107,58 @@ class FlowTriggerService:
             return None
 
         repo_identifier = None
+        repo_external_id = None  # Numeric ID from the tracker platform
 
         if source == "github":
             repo = payload.get("repository", {})
             # GitHub uses full_name like "owner/repo"
             repo_identifier = repo.get("full_name") or repo.get("name")
+            repo_external_id = str(repo.get("id", "")) if repo.get("id") else None
 
         elif source == "gitlab":
             project = payload.get("project", {})
             # GitLab uses path_with_namespace like "group/project"
             repo_identifier = project.get("path_with_namespace") or project.get("name")
+            repo_external_id = str(project.get("id", "")) if project.get("id") else None
 
         if not repo_identifier:
             return None
 
-        # Look up project by name/identifier within the tracker
-        # This is a simple lookup - projects are identified by name within a tracker
+        # Derive the short repo name (last segment of path)
+        repo_name = (
+            repo_identifier.split("/")[-1]
+            if "/" in repo_identifier
+            else repo_identifier
+        )
+
+        # Look up project by name/identifier/slug within the tracker.
+        # GitLab projects store: identifier=numeric_id, slug=path_with_namespace, name=display_name
+        # GitHub projects store: identifier=numeric_id, slug=full_name, name=repo_name
         projects = crud_project.get_for_tracker(
             self.db, tracker_id=tracker_id, limit=1000
         )
 
         for proj in projects:
-            # Match by name or external_id if available
-            if proj.name == repo_identifier or (
-                hasattr(proj, "external_id") and proj.external_id == repo_identifier
-            ):
+            # Match by slug (path_with_namespace / full_name) - case-insensitive
+            if proj.slug and proj.slug.lower() == repo_identifier.lower():
                 return str(proj.id)
 
-            # Also try matching just the repo name (last part of path)
-            repo_name = (
-                repo_identifier.split("/")[-1]
-                if "/" in repo_identifier
-                else repo_identifier
-            )
-            if proj.name == repo_name:
+            # Match by identifier (numeric platform ID stored as string)
+            if repo_external_id and proj.identifier == repo_external_id:
                 return str(proj.id)
 
+            # Match by name - case-insensitive
+            if proj.name and proj.name.lower() == repo_identifier.lower():
+                return str(proj.id)
+
+            # Match short repo name against project name - case-insensitive
+            if proj.name and proj.name.lower() == repo_name.lower():
+                return str(proj.id)
+
+        logger.debug(
+            f"Could not match repo '{repo_identifier}' (external_id={repo_external_id}) "
+            f"to any of {len(projects)} projects for tracker {tracker_id}"
+        )
         return None
 
     def _has_running_execution(

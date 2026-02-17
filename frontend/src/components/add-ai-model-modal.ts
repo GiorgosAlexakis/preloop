@@ -104,8 +104,8 @@ export class AddAIModelModal extends LitElement {
       const label = input.getAttribute('label');
       const val = (input as any).value as string;
       if (label === 'Friendly Name') this._currentModel.name = val || undefined;
-      else if (label === 'API URL')
-        this._currentModel.api_endpoint = val || undefined;
+      else if (label === 'API URL' && val)
+        this._currentModel.api_endpoint = val;
       else if (label === 'API Key' && val) this._currentModel.api_key = val;
       else if (label === 'Custom Model Name / ID')
         this._currentModel.model_identifier = val || undefined;
