@@ -15,6 +15,7 @@ from .client_version_log import ClientVersionLog
 from .ai_model import AIModel
 from .flow import Flow
 from .flow_execution import FlowExecution
+from .flow_execution_log import FlowExecutionLog
 from .webhook import Webhook
 from .tracker_scope_rule import TrackerScopeRule
 from .issue_compliance_result import IssueComplianceResult
@@ -25,7 +26,6 @@ from .tool_configuration import ToolConfiguration, ApprovalPolicy
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
 from .approval_request import ApprovalRequest, ApprovalRequestStatus
-from .tool_approval_condition import ToolApprovalCondition
 from .tool_access_rule import ToolAccessRule
 from .notification_preferences import NotificationPreferences
 from .registration_token import RegistrationToken
@@ -58,6 +58,7 @@ __all__ = [
     "AIModel",
     "Flow",
     "FlowExecution",
+    "FlowExecutionLog",
     "Webhook",
     "TrackerScopeRule",
     "IssueComplianceResult",
@@ -72,7 +73,6 @@ __all__ = [
     "MCPTool",
     "ApprovalRequest",
     "ApprovalRequestStatus",
-    "ToolApprovalCondition",
     "ToolAccessRule",
     "NotificationPreferences",
     "RegistrationToken",

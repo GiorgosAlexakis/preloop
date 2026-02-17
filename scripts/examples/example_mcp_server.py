@@ -49,6 +49,24 @@ def rollback_deployment(env: str = "production") -> str:
     return f"Deployment of {env} environment rolled back successfully"
 
 
+@mcp.tool()
+def send_email(recipient: str, subject: str, body: str) -> str:
+    """Send an email to the specified recipient."""
+    return f"Email sent to {recipient} with subject {subject}"
+
+
+@mcp.tool()
+def refund_order(order_id: str) -> str:
+    """Refund the specified order."""
+    return f"Order {order_id} refunded successfully"
+
+
+@mcp.tool()
+def verify_refund_eligibility(order_id: str) -> str:
+    """Verify if the specified order is eligible for refund."""
+    return f"Order {order_id} is eligible for refund"
+
+
 if __name__ == "__main__":
     logger.info("=" * 70)
     logger.info("Starting Example MCP Server on http://localhost:8001")

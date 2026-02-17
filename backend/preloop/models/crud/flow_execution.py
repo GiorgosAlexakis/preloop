@@ -250,27 +250,39 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
             query = query.join(Flow).filter(Flow.account_id == account_id)
         return query.all()
 
-    def append_log(self, db: Session, execution_id: str, log_data: dict) -> None:
-        """Append a log entry to the execution_logs array.
+    def append_log(
+        self, db: Session, execution_id: str, log_data: dict, *, commit: bool = True
+    ) -> None:
+        """Append a log entry to the flow_execution_log table.
 
-        Uses PostgreSQL's JSONB append operator to add log to array.
-        If execution_logs is NULL, initializes it as an empty array first.
+        Uses a simple INSERT instead of rewriting the JSONB execution_logs
+        column, avoiding O(n) write amplification per append.
 
         Args:
             db: Database session
             execution_id: ID of the flow execution
             log_data: Log message data to append
+            commit: If True (default), commit after the insert. Set to
+                False when batching many entries and commit manually
+                after the loop.
         """
-        import json
-        from sqlalchemy import text
+        from preloop.models.models.flow_execution_log import FlowExecutionLog
 
-        log_json = json.dumps(log_data)
-        db.execute(
-            text("""
-                UPDATE flow_execution
-                SET execution_logs = COALESCE(execution_logs, '[]'::jsonb) || CAST(:log_entry AS jsonb)
-                WHERE id = :execution_id
-            """),
-            {"execution_id": execution_id, "log_entry": log_json},
+        # NATS messages nest actual content under "payload" (e.g. payload.line
+        # for agent_log_line).  Derive message from the best available field
+        # and persist the full payload as metadata so nothing is lost.
+        payload = log_data.get("payload") or {}
+        message = (
+            log_data.get("message") or payload.get("line") or payload.get("message")
         )
-        db.commit()
+        metadata = payload or log_data.get("metadata") or log_data.get("data")
+
+        log_entry = FlowExecutionLog(
+            execution_id=execution_id,
+            log_type=log_data.get("type", "log"),
+            message=message,
+            metadata_=metadata if metadata else None,
+        )
+        db.add(log_entry)
+        if commit:
+            db.commit()

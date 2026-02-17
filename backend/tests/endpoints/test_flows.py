@@ -600,8 +600,9 @@ async def test_send_execution_command_stop_success(
     mock_get_nats_client.assert_called_once()
     mock_agent.stop.assert_called_once_with("test-session-123")
 
-    # Update is called twice: once for logs, once for status
-    assert mock_crud_flow_execution.update.call_count == 2
+    # Update is called once (status). Logs are persisted via append_log.
+    assert mock_crud_flow_execution.update.call_count == 1
+    assert mock_crud_flow_execution.append_log.call_count == 2  # 2 log lines
 
     # Verify the final update call has status='STOPPED'
     final_call = mock_crud_flow_execution.update.call_args

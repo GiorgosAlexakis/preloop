@@ -363,8 +363,31 @@ async def get_flow_execution_logs(
             if agent is not None:
                 await agent.cleanup()
 
-    # For finished executions or if container logs failed, return database logs
-    if execution.execution_logs and isinstance(execution.execution_logs, list):
+    # For finished executions or if container logs failed, return database logs.
+    # Prefer the normalized flow_execution_log table; fall back to legacy JSONB column.
+    from preloop.models.models.flow_execution_log import FlowExecutionLog
+    from sqlalchemy import select
+
+    log_query = (
+        select(FlowExecutionLog)
+        .filter(FlowExecutionLog.execution_id == execution_id)
+        .order_by(FlowExecutionLog.timestamp.asc())
+    )
+    log_rows = db.execute(log_query).scalars().all()
+
+    if log_rows:
+        logs = [
+            {
+                "execution_id": str(row.execution_id),
+                "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                "type": row.log_type or "log",
+                "payload": {**(row.metadata_ or {}), "message": row.message},
+            }
+            for row in log_rows
+        ]
+        return {"logs": logs, "source": "database"}
+    elif execution.execution_logs and isinstance(execution.execution_logs, list):
+        # Legacy fallback for executions logged before the migration
         return {"logs": execution.execution_logs, "source": "database"}
     else:
         return {"logs": [], "source": "database"}
@@ -488,31 +511,21 @@ async def send_execution_command(
                             execution.agent_session_reference, tail=5000
                         )
 
-                        # Format and persist logs to database
+                        # Persist final logs to normalized flow_execution_log table
                         if container_logs:
-                            formatted_logs = []
                             for log_line in container_logs:
-                                formatted_logs.append(
-                                    {
-                                        "execution_id": str(execution_id),
-                                        "timestamp": datetime.now(
-                                            timezone.utc
-                                        ).isoformat(),
+                                crud_flow_execution.append_log(
+                                    db,
+                                    execution_id=str(execution_id),
+                                    log_data={
                                         "type": "agent_log_line",
                                         "payload": {"line": log_line},
-                                    }
+                                    },
+                                    commit=False,
                                 )
-
-                            # Store logs in execution record
-                            update_data = schemas.FlowExecutionUpdate(
-                                execution_logs=formatted_logs
-                            )
-                            crud_flow_execution.update(
-                                db=db, db_obj=execution, obj_in=update_data
-                            )
                             db.commit()
                             logger.info(
-                                f"Persisted {len(formatted_logs)} log lines to database for execution {execution_id}"
+                                f"Persisted {len(container_logs)} log lines to database for execution {execution_id}"
                             )
                     except Exception as log_error:
                         logger.error(

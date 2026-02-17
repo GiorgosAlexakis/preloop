@@ -119,82 +119,78 @@ async def require_approval(
                     )
                     return (True, "")
 
-                # Check if there's an approval condition that might exempt this execution
+                # Check if there are access rules that might override approval requirement
                 from sqlalchemy import select
 
-                result = await db.execute(
-                    select(models.ToolApprovalCondition).where(
-                        models.ToolApprovalCondition.tool_configuration_id == config.id,
-                        models.ToolApprovalCondition.account_id == account_id,
+                access_rules_result = await db.execute(
+                    select(models.ToolAccessRule)
+                    .where(
+                        models.ToolAccessRule.tool_configuration_id == config.id,
+                        models.ToolAccessRule.account_id == account_id,
+                        models.ToolAccessRule.is_enabled.is_(True),
                     )
+                    .order_by(models.ToolAccessRule.priority)
                 )
-                condition = result.scalar_one_or_none()
+                access_rules = list(access_rules_result.scalars())
 
-                logger.info(f"Approval condition found: {condition is not None}")
-                if condition:
-                    logger.info(f"  - is_enabled: {condition.is_enabled}")
+                logger.info(f"Access rules found: {len(access_rules)}")
+
+                for rule in access_rules:
                     logger.info(
-                        f"  - condition_expression: {condition.condition_expression}"
+                        f"  - rule={rule.id}, action={rule.action}, "
+                        f"type={rule.condition_type}, expr={rule.condition_expression}"
                     )
-                    logger.info(f"  - condition_type: {condition.condition_type}")
 
-                if (
-                    condition
-                    and condition.is_enabled
-                    and condition.condition_expression
-                ):
-                    # Evaluate the condition
-                    logger.info(f"Evaluating approval condition for {tool_name}...")
-                    try:
-                        from preloop.plugins.builtin.argument_evaluator import (
-                            ArgumentEvaluator,
-                        )
-
-                        evaluator = ArgumentEvaluator()
-
-                        # Build context for evaluation
-                        eval_context = {
-                            "tool_name": tool_name,
-                            "args": arguments,
-                            "user_id": str(ctx.request_context.user_context.user_id)
-                            if hasattr(ctx, "request_context")
-                            and hasattr(ctx.request_context, "user_context")
-                            else None,
-                            "account_id": str(account_id),
-                            "execution_id": None,  # Not available in MCP context
-                            "trigger_event": {},
-                        }
-
-                        logger.info(f"  - Expression: {condition.condition_expression}")
-                        logger.info(f"  - Context args: {arguments}")
-
+                    if rule.condition_expression:
                         # Evaluate the condition expression
-                        # Note: evaluate() expects condition_config dict with 'expression' key
-                        matches = await evaluator.evaluate(
-                            condition_config={
-                                "expression": condition.condition_expression
-                            },
-                            tool_args=arguments,
-                            context=eval_context,
-                        )
+                        try:
+                            from preloop.plugins.builtin.argument_evaluator import (
+                                ArgumentEvaluator,
+                            )
 
+                            evaluator = ArgumentEvaluator()
+
+                            eval_context = {
+                                "tool_name": tool_name,
+                                "args": arguments,
+                                "user_id": str(ctx.request_context.user_context.user_id)
+                                if hasattr(ctx, "request_context")
+                                and hasattr(ctx.request_context, "user_context")
+                                else None,
+                                "account_id": str(account_id),
+                                "execution_id": None,
+                                "trigger_event": {},
+                            }
+
+                            matches = await evaluator.evaluate(
+                                condition_config={
+                                    "expression": rule.condition_expression
+                                },
+                                tool_args=arguments,
+                                context=eval_context,
+                            )
+
+                            logger.info(f"  - Evaluation result: {matches}")
+
+                            if not matches:
+                                continue  # Rule condition didn't match, try next rule
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to evaluate access rule for {tool_name}: {e}. Skipping rule."
+                            )
+                            continue
+                    # Rule matched (or has no condition expression — unconditional)
+                    if rule.action == "allow":
                         logger.info(
-                            f"  - Evaluation result: {matches} (type: {type(matches)})"
+                            f"Tool {tool_name} ({tool_source}) allowed by access rule (no approval needed)"
                         )
-
-                        if not matches:
-                            logger.info(
-                                f"Tool {tool_name} ({tool_source}) does not require approval - condition not matched: {condition.condition_expression}"
-                            )
-                            return (True, "")
-                        else:
-                            logger.info(
-                                f"Tool {tool_name} ({tool_source}) requires approval - condition matched: {condition.condition_expression}"
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to evaluate approval condition for {tool_name}: {e}. Defaulting to requiring approval."
+                        return (True, "")
+                    elif rule.action == "deny":
+                        logger.info(
+                            f"Tool {tool_name} ({tool_source}) denied by access rule"
                         )
+                        return (False, f"Tool '{tool_name}' is denied by access rule")
+                    # 'require_approval' falls through to the approval flow below
 
                 # Get approval policy from tool configuration
                 policy = await get_approval_policy_async(

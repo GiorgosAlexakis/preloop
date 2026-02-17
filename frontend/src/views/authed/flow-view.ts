@@ -138,6 +138,12 @@ export class FlowView extends LitElement {
       sl-select:last-child {
         margin-bottom: 0;
       }
+
+      sl-textarea.prompt {
+        max-height: 50rem;
+        overflow: auto;
+      }
+
       .creation-mode-toggle {
         margin-bottom: var(--sl-spacing-large);
         padding: var(--sl-spacing-medium);
@@ -1285,6 +1291,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                 `;
               })()}
           <sl-textarea
+            class="prompt"
             label="Prompt"
             resize="auto"
             .value=${this.flow.prompt_template || ''}

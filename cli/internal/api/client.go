@@ -14,7 +14,7 @@ import (
 
 const (
 	// DefaultBaseURL is the default Preloop API endpoint.
-	DefaultBaseURL = "http://localhost:8000"
+	DefaultBaseURL = "https://preloop.ai"
 
 	// DefaultTimeout is the default HTTP client timeout.
 	DefaultTimeout = 30 * time.Second

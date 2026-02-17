@@ -3,7 +3,7 @@ export interface AIModel {
   name: string;
   provider_name: string;
   api_key: string;
-  api_url: string;
+  api_endpoint: string;
   model_identifier: string;
   is_default?: boolean;
   created_at: string;

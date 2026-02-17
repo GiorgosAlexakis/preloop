@@ -348,6 +348,32 @@ test:unit:preloop-scripts:
   variables:
     TEST_PATHS: "backend/tests/scripts"
 
+test:unit:preloop-endpoints-policies:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_policies.py"
+
+test:unit:preloop-services-approval:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/services/test_approval_service.py"
+
+test:unit:cli:
+  stage: test
+  needs: []
+  image: golang:1.22-alpine
+  before_script:
+    - apk add --no-cache gcc musl-dev
+  script:
+    - cd cli
+    - go test -v -race -count=1 ./...
+  rules:
+    - changes:
+        - cli/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  variables:
+    CGO_ENABLED: "1"
+
 test:coverage:
   stage: test
   needs:
@@ -387,6 +413,8 @@ test:coverage:
     - test:unit:preloop-agents
     - test:unit:preloop-api
     - test:unit:preloop-scripts
+    - test:unit:preloop-endpoints-policies
+    - test:unit:preloop-services-approval
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
   before_script:
     - pip install coverage junitparser
@@ -623,6 +651,14 @@ test:integration:api:jira:
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_tracker_sync_jira.py -v -s
 
+test:integration:api:mcp:
+  extends: .test:integration:api:template
+  before_script:
+    - pip install pytest pytest-asyncio httpx dotenv mcp
+    - cd backend
+  script:
+    - pytest --confcutdir=tests/integration tests/integration/test_mcp.py -v -s
+
 # =============================================================================
 # CLEANUP STAGE
 # =============================================================================
@@ -634,6 +670,7 @@ test:integration:api:jira:
     - test:integration:api:github
     - test:integration:api:gitlab
     - test:integration:api:jira
+    - test:integration:api:mcp
   image: dtzar/helm-kubectl:3.13.2
   when: on_success
   allow_failure: true

@@ -323,9 +323,25 @@ Preloop includes a built-in OAuth 2.1 Authorization Server for MCP client authen
 git clone https://github.com/spacecode/preloop.git
 cd preloop
 
-# Run with Docker Compose
+# Run with Docker Compose (development)
 docker-compose up
+
+# Run with tagged release images (production)
+PRELOOP_VERSION=0.8.0 JWT_SECRET=$(openssl rand -hex 32) \
+  docker compose -f docker-compose.release.yaml up -d
 ```
+
+See [`docker-compose.release.yaml`](docker-compose.release.yaml) for full configuration and required environment variables.
+
+#### Release Management
+
+Use the release script to prepare a new version (updates Helm chart, packages artifacts):
+
+```bash
+./scripts/release.sh 0.8.0
+```
+
+See [`scripts/release.sh`](scripts/release.sh) for details.
 
 ### Kubernetes Setup
 
