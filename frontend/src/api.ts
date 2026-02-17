@@ -1795,7 +1795,7 @@ export interface FeaturesResponse {
     description: string;
   }>;
   features: {
-    [key: string]: boolean;
+    [key: string]: boolean | string[];
   };
 }
 

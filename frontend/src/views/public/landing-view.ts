@@ -45,6 +45,7 @@ export class LandingView extends LitElement {
   @state() private _extendedDescription = '';
   @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
   @state() private _billingEnabled = false;
+  @state() private _oauthSigninEnabled = false;
   @state() private _productHunt: {
     enabled: boolean;
     post_id: string;
@@ -72,17 +73,25 @@ export class LandingView extends LitElement {
     try {
       const features = await getFeatures();
       this._billingEnabled = features.features['billing'] === true;
+      this._oauthSigninEnabled = features.features['oauth_signin'] === true;
     } catch (error) {
       console.error('Failed to check billing feature:', error);
       this._billingEnabled = false;
+      this._oauthSigninEnabled = false;
     }
   }
 
   private async _handleSignup(e: Event) {
     e.preventDefault();
 
+    // If OAuth is available, go to register page where users choose OAuth or email
+    if (this._oauthSigninEnabled) {
+      window.location.href = '/register';
+      return;
+    }
+
     if (!this._billingEnabled) {
-      // No billing, use regular registration
+      // No billing and no OAuth — regular registration (OSS)
       window.location.href = '/register';
       return;
     }
@@ -107,12 +116,10 @@ export class LandingView extends LitElement {
       if (result.action === 'redirect' && result.url) {
         window.location.href = result.url;
       } else {
-        // Fallback to register if no URL
         window.location.href = '/register';
       }
     } catch (error) {
       console.error('Checkout error:', error);
-      // Fallback to register on error
       window.location.href = '/register';
     }
   }
@@ -766,7 +773,7 @@ export class LandingView extends LitElement {
                 </sl-tooltip>
                 <sl-tooltip content="Discord">
                   <img
-                    src="images/logos/discord-logo.svg"
+                    src="/images/logos/discord-logo.svg"
                     alt="Discord Logo"
                     class="discord-logo tool-logo"
                   />

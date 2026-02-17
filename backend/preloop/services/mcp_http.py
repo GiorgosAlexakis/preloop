@@ -521,10 +521,13 @@ def setup_mcp_routes(app: FastAPI):
     else:
         logger.warning("Could not find MCP app with lifespan")
 
-    # Mount the MCP app at /mcp
+    # Mount the MCP app at /mcp/v1 (backward compat) AND /mcp (primary)
+    # /mcp/v1 must be mounted first since FastAPI matches mounts by prefix
+    # length (longer prefix wins)
+    app.mount("/mcp/v1", mcp_app)
     app.mount("/mcp", mcp_app)
 
-    logger.info("MCP StreamableHTTP transport mounted at /mcp")
+    logger.info("MCP StreamableHTTP transport mounted at /mcp and /mcp/v1")
 
 
 def get_mcp_lifespan_manager():

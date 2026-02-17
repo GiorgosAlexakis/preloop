@@ -178,7 +178,7 @@ database:
   # CloudNativePG configuration (if enabled is true and external is false)
   cnpg:
     name: ""
-    instances: 1
+    instances: 1  # Set to 2+ for HA (primary + replicas). Requires adequate storage and nodes.
     imageName: registry.spacecode.ai/spacecode/pgvector:16
     auth:
       username: postgres
@@ -216,11 +216,22 @@ database:
       maintenance_work_mem: "256MB"  # For VACUUM, CREATE INDEX
       random_page_cost: "1.1"        # SSD storage (default 4.0 is for HDD)
       effective_io_concurrency: "200" # SSD
-    # Query analysis - enable pg_stat_statements for slow query detection
-    # Note: auto_explain requires shared_preload_libraries which CNPG manages,
-    # so only pg_stat_statements is supported here.
+    # Query analysis - enables pg_stat_statements via shared_preload_libraries
     queryAnalysis:
       enabled: false  # Set to true in production for query performance insights
+    # Monitoring - expose PostgreSQL metrics to Prometheus via PodMonitor
+    monitoring:
+      enablePodMonitor: false  # Set to true if Prometheus is deployed
+    # Continuous backup to object storage (WAL archiving + base backups)
+    backup:
+      enabled: false  # Set to true in production
+      destinationPath: ""  # e.g. s3://bucket/cnpg/preloop-prod
+      retentionPolicy: "30d"
+      walCompression: "gzip"
+      s3Credentials:
+        secretName: ""  # K8s secret containing ACCESS_KEY_ID and SECRET_ACCESS_KEY
+        accessKeyIdKey: "ACCESS_KEY_ID"
+        secretAccessKeyKey: "SECRET_ACCESS_KEY"
     # Slow query logging - enable to monitor query performance
     logging:
       enabled: false  # Set to true to enable slow query logging
@@ -302,6 +313,27 @@ githubApp:
   webhookSecret: ""
   # GitHub App slug (e.g., "preloop" or "preloop-staging")
   slug: ""
+
+# Google OAuth configuration (Enterprise Edition only)
+# Enables "Sign in with Google" on login/register pages
+googleOauth:
+  enabled: false
+  # Google OAuth Client ID (from Google Cloud Console)
+  clientId: ""
+  # Google OAuth Client Secret
+  clientSecret: ""
+
+# GitLab OAuth configuration (Enterprise Edition only)
+# Enables "Sign in with GitLab" on login/register pages
+# Supports GitLab.com (default) and self-hosted GitLab instances
+gitlabOauth:
+  enabled: false
+  # GitLab OAuth Application ID
+  clientId: ""
+  # GitLab OAuth Application Secret
+  clientSecret: ""
+  # GitLab instance URL (for self-hosted; defaults to https://gitlab.com)
+  baseUrl: "https://gitlab.com"
 
 # Apple Push Notification Service (APNS) configuration
 apns:

@@ -81,6 +81,28 @@ class GitHubAppSettings(BaseModel):
         )
 
 
+class GoogleOAuthSettings(BaseModel):
+    """Google OAuth configuration for sign-in/sign-up."""
+
+    client_id: str = Field("", description="Google OAuth Client ID")
+    client_secret: str = Field("", description="Google OAuth Client Secret")
+
+
+class GitLabOAuthSettings(BaseModel):
+    """GitLab OAuth configuration for sign-in/sign-up.
+
+    Works with GitLab.com by default. For self-hosted GitLab, set
+    GITLAB_OAUTH_BASE_URL to your instance URL (e.g. https://gitlab.example.com).
+    """
+
+    client_id: str = Field("", description="GitLab OAuth Application ID")
+    client_secret: str = Field("", description="GitLab OAuth Application Secret")
+    base_url: str = Field(
+        "https://gitlab.com",
+        description="GitLab instance URL (for self-hosted)",
+    )
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -110,6 +132,14 @@ class Settings(BaseSettings):
     github_app: GitHubAppSettings = Field(
         default_factory=GitHubAppSettings,
         description="GitHub App OAuth settings (SaaS only)",
+    )
+    google_oauth: GoogleOAuthSettings = Field(
+        default_factory=GoogleOAuthSettings,
+        description="Google OAuth settings for sign-in/sign-up",
+    )
+    gitlab_oauth: GitLabOAuthSettings = Field(
+        default_factory=GitLabOAuthSettings,
+        description="GitLab OAuth settings for sign-in/sign-up",
     )
 
     model_config = SettingsConfigDict(
@@ -205,6 +235,19 @@ class Settings(BaseSettings):
             slug=os.getenv("GITHUB_APP_SLUG", ""),
         )
 
+        # Google OAuth settings
+        google_oauth = GoogleOAuthSettings(
+            client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID", ""),
+            client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+        )
+
+        # GitLab OAuth settings
+        gitlab_oauth = GitLabOAuthSettings(
+            client_id=os.getenv("GITLAB_OAUTH_CLIENT_ID", ""),
+            client_secret=os.getenv("GITLAB_OAUTH_CLIENT_SECRET", ""),
+            base_url=os.getenv("GITLAB_OAUTH_BASE_URL", "https://gitlab.com"),
+        )
+
         return cls(
             app_name=os.getenv("APP_NAME", "Preloop"),
             environment=os.getenv("ENVIRONMENT", "development"),
@@ -217,6 +260,8 @@ class Settings(BaseSettings):
             security=security,
             server=server,
             github_app=github_app,
+            google_oauth=google_oauth,
+            gitlab_oauth=gitlab_oauth,
             stripe_secret_key=stripe_secret_key,
             stripe_webhook_secret=stripe_webhook_secret,
         )

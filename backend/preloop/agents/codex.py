@@ -283,6 +283,8 @@ class CodexAgent(ContainerAgentExecutor):
             or execution_context.get("model_identifier")
             or "gpt-4"
         )
+        model_provider = execution_context.get("model_provider", "openai").lower()
+        model_endpoint = execution_context.get("model_endpoint", "")
 
         # Escape prompt for shell - must escape:
         # - Double quotes (for string delimiter)
@@ -359,31 +361,12 @@ fi
 # Configure Codex CLI authentication
 mkdir -p ~/.codex
 
-# Create auth.json with OpenAI API key
-# Use unquoted heredoc to allow variable substitution (safer than sed with special chars)
-cat > ~/.codex/auth.json << EOF
-{{
-  "OPENAI_API_KEY": "$OPENAI_API_KEY"
-}}
-EOF
-
-# Create config.toml with model and MCP server configuration
-# Use unquoted heredoc to allow variable substitution
-# Note: MCP_TOOL_TIMEOUT_SEC will be substituted at runtime
-cat > ~/.codex/config.toml << EOF
-model = "{model}"
-
-rmcp_client = true
-
-[mcp_servers.preloop]
-url = "$PRELOOP_MCP_URL"
-bearer_token_env_var = "PRELOOP_API_TOKEN"
-tool_timeout_sec = $MCP_TOOL_TIMEOUT_SEC
-EOF
+{self._build_codex_auth_config(model, model_provider, model_endpoint)}
 
 # Debug: Show config files (with API key masked)
 echo "=== Codex Configuration ==="
 echo "Model: {model}"
+echo "Provider: {model_provider}"
 echo "MCP Server: $PRELOOP_MCP_URL"
 echo "=========================="
 
@@ -470,6 +453,82 @@ exit $CODEX_EXIT_CODE
         # Call parent implementation which will use the args and env
         return await super()._start_kubernetes_pod(execution_context)
 
+    def _build_codex_auth_config(
+        self, model: str, model_provider: str, model_endpoint: str
+    ) -> str:
+        """
+        Build the auth.json and config.toml shell script block for Codex CLI.
+
+        For OpenAI models, generates a standard config.
+        For custom models, generates a custom_provider section with base_url,
+        env_key, and wire_api so Codex knows how to reach the provider.
+
+        Args:
+            model: Model identifier (e.g., "gpt-4", "claude-sonnet-4-20250514")
+            model_provider: Provider name (e.g., "openai", "anthropic")
+            model_endpoint: API base URL for custom providers
+
+        Returns:
+            Shell script block to write auth.json and config.toml
+        """
+        is_custom = model_provider and model_provider != "openai"
+
+        if is_custom:
+            # Custom provider: generate provider-specific config
+            provider_key = model_provider.replace("-", "_").replace(" ", "_")
+            env_key = f"{model_provider.upper().replace('-', '_')}_API_KEY"
+            # Use 'chat' wire_api for most providers (OpenAI-compatible chat/completions)
+            wire_api = "responses" if model_provider == "openai" else "chat"
+
+            auth_block = f"""# Create auth.json with provider API key
+cat > ~/.codex/auth.json << EOF
+{{
+  "{env_key}": "${env_key}",
+  "OPENAI_API_KEY": "$OPENAI_API_KEY"
+}}
+EOF
+
+# Create config.toml with custom model provider and MCP server configuration
+cat > ~/.codex/config.toml << EOF
+model_provider = "{provider_key}"
+model = "{model}"
+
+[model_providers.{provider_key}]
+name = "{model_provider.title()}"
+base_url = "{model_endpoint}"
+env_key = "{env_key}"
+wire_api = "{wire_api}"
+
+rmcp_client = true
+
+[mcp_servers.preloop]
+url = "$PRELOOP_MCP_URL"
+bearer_token_env_var = "PRELOOP_API_TOKEN"
+tool_timeout_sec = $MCP_TOOL_TIMEOUT_SEC
+EOF"""
+        else:
+            # Standard OpenAI config
+            auth_block = f"""# Create auth.json with OpenAI API key
+cat > ~/.codex/auth.json << EOF
+{{
+  "OPENAI_API_KEY": "$OPENAI_API_KEY"
+}}
+EOF
+
+# Create config.toml with model and MCP server configuration
+cat > ~/.codex/config.toml << EOF
+model = "{model}"
+
+rmcp_client = true
+
+[mcp_servers.preloop]
+url = "$PRELOOP_MCP_URL"
+bearer_token_env_var = "PRELOOP_API_TOKEN"
+tool_timeout_sec = $MCP_TOOL_TIMEOUT_SEC
+EOF"""
+
+        return auth_block
+
     async def _prepare_environment(
         self, execution_context: Dict[str, Any]
     ) -> Dict[str, str]:
@@ -484,9 +543,17 @@ exit $CODEX_EXIT_CODE
         """
         env = {}
 
-        # Add OpenAI API key
+        # Add API key - use provider-specific env var for custom models
+        model_provider = execution_context.get("model_provider", "openai").lower()
         if "model_api_key" in execution_context:
-            env["OPENAI_API_KEY"] = execution_context["model_api_key"]
+            if model_provider == "openai" or not model_provider:
+                env["OPENAI_API_KEY"] = execution_context["model_api_key"]
+            else:
+                # Custom provider: set both the custom env var and OPENAI_API_KEY
+                # (OPENAI_API_KEY is still needed as a fallback for codex internals)
+                custom_env_key = f"{model_provider.upper()}_API_KEY"
+                env[custom_env_key] = execution_context["model_api_key"]
+                env["OPENAI_API_KEY"] = execution_context["model_api_key"]
 
         # Set home directory for config storage
         # Note: This is overridden to /home/agent in Kubernetes mode

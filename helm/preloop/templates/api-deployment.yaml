@@ -176,6 +176,26 @@ spec:
             - name: GITHUB_APP_SLUG
               value: {{ .Values.githubApp.slug | quote }}
             {{- end }}
+            {{- if .Values.googleOauth.enabled }}
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              value: {{ .Values.googleOauth.clientId | quote }}
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: google-oauth-client-secret
+            {{- end }}
+            {{- if .Values.gitlabOauth.enabled }}
+            - name: GITLAB_OAUTH_CLIENT_ID
+              value: {{ .Values.gitlabOauth.clientId | quote }}
+            - name: GITLAB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: gitlab-oauth-client-secret
+            - name: GITLAB_OAUTH_BASE_URL
+              value: {{ .Values.gitlabOauth.baseUrl | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8000

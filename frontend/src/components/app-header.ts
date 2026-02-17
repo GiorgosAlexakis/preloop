@@ -32,6 +32,9 @@ export class AppHeader extends LitElement {
   private billingEnabled = false;
 
   @state()
+  private oauthSigninEnabled = false;
+
+  @state()
   private registrationEnabled = true;
 
   static styles = css`
@@ -119,11 +122,13 @@ export class AppHeader extends LitElement {
     try {
       const features = await getFeatures();
       this.billingEnabled = features.features['billing'] === true;
+      this.oauthSigninEnabled = features.features['oauth_signin'] === true;
       // Registration is enabled by default, unless explicitly disabled
       this.registrationEnabled = features.features['registration'] !== false;
     } catch (error) {
       console.error('Failed to check billing feature:', error);
       this.billingEnabled = false;
+      this.oauthSigninEnabled = false;
       this.registrationEnabled = true;
     }
   }
@@ -132,13 +137,19 @@ export class AppHeader extends LitElement {
     e.preventDefault();
     this.isMenuOpen = false; // Close mobile menu
 
-    if (!this.billingEnabled) {
-      // No billing, use regular registration
+    // If OAuth is available, go to register page where users choose OAuth or email
+    if (this.oauthSigninEnabled) {
       Router.go('/register');
       return;
     }
 
-    // Billing enabled - redirect to Stripe checkout
+    if (!this.billingEnabled) {
+      // No billing and no OAuth — regular registration (OSS)
+      Router.go('/register');
+      return;
+    }
+
+    // Billing enabled (no OAuth) — redirect to Stripe checkout
     try {
       const response = await fetch('/api/v1/billing/create-checkout-session', {
         method: 'POST',
@@ -158,12 +169,10 @@ export class AppHeader extends LitElement {
       if (result.action === 'redirect' && result.url) {
         window.location.href = result.url;
       } else {
-        // Fallback to register if no URL
         Router.go('/register');
       }
     } catch (error) {
       console.error('Checkout error:', error);
-      // Fallback to register on error
       Router.go('/register');
     }
   }

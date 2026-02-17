@@ -9,6 +9,30 @@ spec:
   instances: {{ .Values.database.cnpg.instances }}
   imageName: {{ .Values.database.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: restart
+
+  # HA: replication slots for reliable WAL streaming to replicas
+  {{- if gt (int .Values.database.cnpg.instances) 1 }}
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      slotPrefix: _cnpg_
+    synchronizeReplicas:
+      enabled: true
+    updateInterval: 30
+  {{- end }}
+
+  # Pod scheduling — prefer spreading replicas across nodes
+  affinity:
+    podAntiAffinityType: preferred
+
+  # Graceful shutdown/failover timeouts
+  failoverDelay: 0
+  switchoverDelay: 3600
+  smartShutdownTimeout: 180
+  startDelay: 3600
+  stopDelay: 1800
+  enablePDB: true
   postgresql:
     parameters:
       {{- range $key, $value := .Values.database.cnpg.parameters }}
@@ -28,17 +52,23 @@ spec:
       log_line_prefix: {{ .Values.database.cnpg.logging.log_line_prefix | quote }}
       {{- end }}
       {{- if .Values.database.cnpg.queryAnalysis.enabled }}
-      # Note: shared_preload_libraries is managed by CNPG operator automatically
-      # when extensions are created. pg_stat_statements is auto-loaded.
-      # auto_explain requires shared_preload_libraries which CNPG controls,
-      # so we only configure pg_stat_statements parameters here.
       pg_stat_statements.track: "all"
       pg_stat_statements.max: "10000"
       {{- end }}
-  # Enable extensions
-  {{- if or .Values.database.cnpg.pgvector.enabled .Values.database.cnpg.queryAnalysis.enabled }}
+    {{- if .Values.database.cnpg.queryAnalysis.enabled }}
+    shared_preload_libraries:
+      - pg_stat_statements
+    {{- end }}
+  # User management
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: {{ include "preloop.fullname" . }}-db-superuser
   bootstrap:
     initdb:
+      database: {{ .Values.database.cnpg.bootstrap.initdb.database }}
+      owner: {{ .Values.database.cnpg.bootstrap.initdb.owner }}
+      secret:
+        name: {{ .Release.Name }}-db-user
       postInitSQL:
         {{- if .Values.database.cnpg.pgvector.enabled }}
         - CREATE EXTENSION IF NOT EXISTS vector;
@@ -46,25 +76,30 @@ spec:
         {{- if .Values.database.cnpg.queryAnalysis.enabled }}
         - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
         {{- end }}
-        - ALTER USER {{ .Values.database.cnpg.auth.username }} WITH PASSWORD '{{ .Values.database.cnpg.auth.password }}';
-  {{- end }}
 
-  # User management
-  enableSuperuserAccess: true
-  superuserSecret:
-    name: {{ include "preloop.fullname" . }}-db-superuser
-  bootstrap:
-    initdb:
-      postInitTemplateSQL: {{ .Values.database.cnpg.bootstrap.initdb.postInitTemplateSQL }}
-      database: {{ .Values.database.cnpg.bootstrap.initdb.database }}
-      owner: {{ .Values.database.cnpg.bootstrap.initdb.owner }}
-      secret:
-        name: {{ .Release.Name }}-db-user
-    # recovery:
-    #   database: {{ .Values.database.cnpg.auth.database }}
-    #   owner: {{ .Values.database.cnpg.auth.username }}
-    #   secret:
-    #     name: {{ include "preloop.fullname" . }}-db-user
+  # Monitoring
+  monitoring:
+    enablePodMonitor: {{ .Values.database.cnpg.monitoring.enablePodMonitor | default false }}
+    disableDefaultQueries: false
+
+  {{- if .Values.database.cnpg.backup.enabled }}
+  # Continuous backup to object storage
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.database.cnpg.backup.destinationPath }}
+      {{- if .Values.database.cnpg.backup.s3Credentials }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ .Values.database.cnpg.backup.s3Credentials.secretName }}
+          key: {{ .Values.database.cnpg.backup.s3Credentials.accessKeyIdKey | default "ACCESS_KEY_ID" }}
+        secretAccessKey:
+          name: {{ .Values.database.cnpg.backup.s3Credentials.secretName }}
+          key: {{ .Values.database.cnpg.backup.s3Credentials.secretAccessKeyKey | default "SECRET_ACCESS_KEY" }}
+      {{- end }}
+      wal:
+        compression: {{ .Values.database.cnpg.backup.walCompression | default "gzip" }}
+    retentionPolicy: {{ .Values.database.cnpg.backup.retentionPolicy | default "30d" | quote }}
+  {{- end }}
 
   # Storage configuration
   storage:

@@ -1,15 +1,15 @@
 apiVersion: v2
 name: preloop
-description: A Helm chart for Preloop - An event-driven automation platform with built-in human-in-the-loop safety
+description: A Helm chart for Preloop - The policy engine for AI agents with approval workflows and audit trails
 
 # A chart can be either an 'application' or a 'library' chart.
 type: application
 
 # Chart version
-version: 0.1.0
+version: 0.8.0
 
 # Application version
-appVersion: "0.1.0"
+appVersion: "0.8.0"
 
 # Keywords for the chart
 keywords:

@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from .account import Account
     from .mcp_server import MCPServer
     from .approval_request import ApprovalRequest
-    from .tool_approval_condition import ToolApprovalCondition
     from .tool_access_rule import ToolAccessRule
 
 
@@ -115,12 +114,6 @@ class ToolConfiguration(Base):
     approval_requests: Mapped[list["ApprovalRequest"]] = relationship(
         "ApprovalRequest",
         back_populates="tool_configuration",
-        cascade="all, delete-orphan",
-    )
-    approval_condition: Mapped[Optional["ToolApprovalCondition"]] = relationship(
-        "ToolApprovalCondition",
-        back_populates="tool_configuration",
-        uselist=False,  # 1:1 relationship
         cascade="all, delete-orphan",
     )
     access_rules: Mapped[list["ToolAccessRule"]] = relationship(

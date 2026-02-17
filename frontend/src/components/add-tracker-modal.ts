@@ -179,10 +179,17 @@ export class AddTrackerModal extends LitElement {
     this.warningMessages = [];
     this.errorMessage = '';
     this.shadowRoot?.querySelector('sl-dialog')?.show();
-    setTimeout(() => {
-      const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
-      input?.focus();
-    }, 100);
+
+    // Auto-trigger tracker creation when coming from GitHub App OAuth callback
+    if (this.githubInstallationId && !this.tracker) {
+      // Small delay to let the dialog render, then auto-save
+      setTimeout(() => this.testConnection(), 200);
+    } else {
+      setTimeout(() => {
+        const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
+        input?.focus();
+      }, 100);
+    }
   }
   render() {
     return html`

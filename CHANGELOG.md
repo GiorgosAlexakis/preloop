@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OAuth Sign-in/Sign-up**: Authenticate users via external OAuth providers (GitHub, Google, GitLab)
+  - Plugin-based architecture: `plugins/oauth_signin/` with per-provider implementations
+  - Auto-links OAuth identity to existing accounts by verified email
+  - GitHub/GitLab sign-ups prompt for tracker installation after sign-in
+  - Stripe checkout integration for new users when billing is enabled
+  - Gated by `mcpOauth.enabled=true` Helm value; configure via `GOOGLE_OAUTH_CLIENT_ID/SECRET`, `GITLAB_OAUTH_CLIENT_ID/SECRET`, `GITHUB_APP_*` env vars
+- **MCP OAuth 2.1 Authorization Server**: Full OAuth 2.1 server for MCP client authentication
+  - Dynamic Client Registration (RFC 7591) at `POST /oauth/register`
+  - Authorization Code + PKCE flow for MCP clients (Claude Desktop, etc.)
+  - JWT token flow for CLI authentication (no PKCE)
+  - Token revocation at `POST /oauth/revoke`
+  - Discovery via `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`
+
+### Security
+
+- **OAuth consent validation**: Validate `client_id` exists and `redirect_uri` is registered before issuing authorization codes
+- **XSS prevention**: HTML-escape all user-controlled values in OAuth consent page template
+- **PKCE enforcement**: Require `code_verifier` when authorization code was created with `code_challenge`
+- **Token delivery**: Use URL fragments instead of query parameters for OAuth callback tokens to prevent leakage via browser history, server logs, and Referrer headers
+- **Redirect URI validation**: Verify `redirect_uri` at token exchange matches the original authorization request
+
+### Fixed
+
+- **OAuth refresh tokens**: MCP clients can now refresh opaque OAuth tokens (previously only JWT refresh worked)
+- **Codex custom models**: Properly generate `~/.codex/config.toml` with `model_provider`, `base_url`, `env_key`, and `wire_api` for non-OpenAI models
+
 - **Policy-as-Code**: Define and manage policies declaratively via YAML files
   - `POST /api/v1/policies/import`: Import policy from YAML with validation and diff preview
   - `GET /api/v1/policies/export`: Export current configuration as YAML

@@ -4,11 +4,14 @@ This module sets up FastMCP's StreamableHTTP transport with middleware that inje
 authenticated user context for per-request tool filtering.
 """
 
+import json
 import logging
+import os
 from contextvars import ContextVar
 from typing import Optional
 
 from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from preloop.services.dynamic_fastmcp import (
@@ -32,6 +35,9 @@ class UserContextMiddleware:
     This middleware runs for each request and extracts the authenticated user's
     context, storing it in a context variable that the DynamicFastMCP server
     can access during tool listing and execution.
+
+    Returns 401 Unauthorized when no valid auth token is provided, which
+    triggers OAuth discovery in MCP clients (e.g. Claude Desktop).
     """
 
     def __init__(self, app: ASGIApp):
@@ -53,7 +59,32 @@ class UserContextMiddleware:
                 f"has_tracker={user_context.has_tracker}"
             )
         else:
-            logger.warning("No user context extracted from scope")
+            logger.warning("No user context available, returning 401")
+            # Return 401 to trigger OAuth discovery in MCP clients
+            base_url = os.getenv("PRELOOP_URL", "http://localhost:8000").rstrip("/")
+            resource_metadata_url = (
+                f"{base_url}/.well-known/oauth-protected-resource/mcp"
+            )
+            response = Response(
+                content=json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "error": {
+                            "code": -32001,
+                            "message": "Authentication required. Provide Authorization: Bearer <token> header.",
+                        },
+                    }
+                ),
+                status_code=401,
+                media_type="application/json",
+                headers={
+                    "WWW-Authenticate": (
+                        f'Bearer resource_metadata="{resource_metadata_url}"'
+                    ),
+                },
+            )
+            await response(scope, receive, send)
+            return
 
         # Store in context variable for this request's async context
         token = _current_user_context.set(user_context)
@@ -96,17 +127,17 @@ def setup_dynamic_mcp_http(mcp: DynamicFastMCP):
     logger.info("Registered user context provider with DynamicFastMCP")
 
     # Get FastMCP's built-in HTTP app with StreamableHTTP transport
-    # path="/v1" means it will serve on /v1 within the mounted app
-    # So mounting at /mcp makes it available at /mcp/v1
+    # path="/" means it will serve at the mount root
+    # So mounting at /mcp makes it available at /mcp
     # NOTE: json_response must be None (not True) to allow SSE streaming for progress
     # NOTE: stateless_http=True prevents session state issues on server restart
     base_app = mcp.http_app(
-        path="/v1",
+        path="/",
         transport="streamable-http",
         json_response=None,  # Allow SSE streaming for progress notifications
         stateless_http=True,  # Don't maintain session state (allows clean reconnections)
     )
-    logger.info("Got FastMCP's http_app with streamable-http transport for path /v1")
+    logger.info("Got FastMCP's http_app with streamable-http transport for path /")
 
     # Wrap with our middleware layers
     # Layer 1: User context middleware (extracts and stores user context)

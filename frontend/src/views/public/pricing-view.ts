@@ -19,6 +19,7 @@ interface Plan {
 export class PublicPricingView extends LitElement {
   @state() private _interval: 'month' | 'year' = 'year';
   @state() private _billingEnabled = false;
+  @state() private _oauthSigninEnabled = false;
 
   // Hardcoded plans - Open Source, Teams, and Enterprise
   private _plans: Plan[] = [
@@ -81,9 +82,11 @@ export class PublicPricingView extends LitElement {
     try {
       const features = await getFeatures();
       this._billingEnabled = features.features['billing'] === true;
+      this._oauthSigninEnabled = features.features['oauth_signin'] === true;
     } catch (error) {
       console.error('Failed to check billing feature:', error);
       this._billingEnabled = false;
+      this._oauthSigninEnabled = false;
     }
   }
 
@@ -103,8 +106,14 @@ export class PublicPricingView extends LitElement {
     }
 
     if (planId === 'teams') {
+      // If OAuth is available, go to register page where users choose OAuth or email
+      if (this._oauthSigninEnabled) {
+        window.location.href = '/register';
+        return;
+      }
+
       if (!this._billingEnabled) {
-        // No billing, use regular registration
+        // No billing and no OAuth — regular registration (OSS)
         window.location.href = '/register';
         return;
       }
@@ -132,12 +141,10 @@ export class PublicPricingView extends LitElement {
         if (result.action === 'redirect' && result.url) {
           window.location.href = result.url;
         } else {
-          // Fallback to register if no URL
           window.location.href = '/register';
         }
       } catch (error) {
         console.error('Checkout error:', error);
-        // Fallback to register on error
         window.location.href = '/register';
       }
     }

@@ -5,14 +5,13 @@ from typing import TYPE_CHECKING, Dict, Optional
 
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Boolean, JSON
 
 from .base import Base
 
 if TYPE_CHECKING:
-    from .account import Account
-    from .tool_configuration import ToolConfiguration
+    pass
 
 
 class ToolApprovalCondition(Base):
@@ -109,14 +108,9 @@ class ToolApprovalCondition(Base):
     # Note: created_at and updated_at are inherited from Base class
 
     # Relationships
-    account: Mapped["Account"] = relationship(
-        "Account", back_populates="tool_approval_conditions"
-    )
-    tool_configuration: Mapped["ToolConfiguration"] = relationship(
-        "ToolConfiguration",
-        back_populates="approval_condition",
-        uselist=False,  # 1:1 relationship
-    )
+    # NOTE: Relationships removed — the tool_approval_conditions table was dropped
+    # by migration 20260201_policy_engine_enhancements and replaced by tool_access_rules.
+    # This model is kept only for backward compatibility with existing CRUD/endpoint code.
 
     def __repr__(self) -> str:
         """String representation."""

@@ -69,7 +69,8 @@ export class ApprovalPolicyDialog extends LitElement {
   @property({ type: Boolean }) open = false;
   @property({ type: Object }) policy: ApprovalPolicy | null = null;
   @property({ type: Array }) existingPolicies: ApprovalPolicy[] = [];
-  @property({ type: Object }) features: { [key: string]: boolean } = {};
+  @property({ type: Object }) features: { [key: string]: boolean | string[] } =
+    {};
 
   /**
    * Check if advanced approvals feature is enabled (EE only).

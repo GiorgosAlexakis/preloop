@@ -37,7 +37,8 @@ export class ToolRuleEditor extends LitElement {
   @property({ type: Object }) rule: AccessRule | null = null;
   @property({ type: String }) toolName = '';
   @property({ type: Array }) policies: ApprovalPolicy[] = [];
-  @property({ type: Object }) features: { [key: string]: boolean } = {};
+  @property({ type: Object }) features: { [key: string]: boolean | string[] } =
+    {};
   @property({ type: Object }) toolSchema: any = null;
 
   @state() private _action: 'allow' | 'deny' | 'require_approval' = 'deny';
