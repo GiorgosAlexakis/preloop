@@ -511,31 +511,19 @@ async def send_execution_command(
                             execution.agent_session_reference, tail=5000
                         )
 
-                        # Format and persist logs to database
+                        # Persist final logs to normalized flow_execution_log table
                         if container_logs:
-                            formatted_logs = []
                             for log_line in container_logs:
-                                formatted_logs.append(
-                                    {
-                                        "execution_id": str(execution_id),
-                                        "timestamp": datetime.now(
-                                            timezone.utc
-                                        ).isoformat(),
+                                crud_flow_execution.append_log(
+                                    db,
+                                    execution_id=str(execution_id),
+                                    log_data={
                                         "type": "agent_log_line",
                                         "payload": {"line": log_line},
-                                    }
+                                    },
                                 )
-
-                            # Store logs in execution record
-                            update_data = schemas.FlowExecutionUpdate(
-                                execution_logs=formatted_logs
-                            )
-                            crud_flow_execution.update(
-                                db=db, db_obj=execution, obj_in=update_data
-                            )
-                            db.commit()
                             logger.info(
-                                f"Persisted {len(formatted_logs)} log lines to database for execution {execution_id}"
+                                f"Persisted {len(container_logs)} log lines to database for execution {execution_id}"
                             )
                     except Exception as log_error:
                         logger.error(

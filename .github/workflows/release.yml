@@ -274,6 +274,10 @@ jobs:
           args: --latest --strip header
         continue-on-error: true
 
+      - name: Compute pip version
+        id: version
+        run: echo "pip_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -294,7 +298,7 @@ jobs:
             Download the binary for your platform from the assets below, or install via pip:
 
             ```bash
-            pip install preloop==${{ github.ref_name }}
+            pip install preloop==${{ steps.version.outputs.pip_version }}
             ```
 
             ## Changelog

@@ -23,7 +23,7 @@ const (
 	ConfigFile = "config.yaml"
 
 	// DefaultAPIURL is the default API endpoint.
-	DefaultAPIURL = "http://localhost:8000"
+	DefaultAPIURL = "https://preloop.ai"
 )
 
 // Config represents the CLI configuration.

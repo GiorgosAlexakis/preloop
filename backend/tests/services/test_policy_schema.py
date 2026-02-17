@@ -77,7 +77,7 @@ class TestPolicyDocumentValid:
         assert len(doc.mcp_servers) == 1
         assert len(doc.approval_policies) == 1
         assert len(doc.tools) == 1
-        assert doc.defaults.unknown_tools.value == "deny"
+        assert doc.defaults.unknown_tools == "deny"
 
     def test_tool_with_mcp_server_source(self):
         data = _minimal_doc(
@@ -199,14 +199,14 @@ class TestApprovalPolicyAIDriven:
                 ai_guidelines="some guidelines",
             )
 
-    def test_ai_driven_requires_guidelines(self):
-        with pytest.raises(ValueError, match="ai_guidelines.*required"):
-            ApprovalPolicyDefinition(
-                name="bad",
-                approval_type="ai_driven",
-                ai_model="claude-sonnet-4-20250514",
-                # ai_guidelines missing
-            )
+    def test_ai_driven_without_guidelines_is_valid(self):
+        # ai_guidelines is optional — only ai_model is required for ai_driven
+        policy = ApprovalPolicyDefinition(
+            name="no-guidelines",
+            approval_type="ai_driven",
+            ai_model="claude-sonnet-4-20250514",
+        )
+        assert policy.ai_guidelines is None
 
     def test_ai_driven_valid(self):
         policy = ApprovalPolicyDefinition(
@@ -330,7 +330,7 @@ class TestDefaultsDefinition:
 
     def test_defaults_deny_unknown(self):
         d = DefaultsDefinition(unknown_tools="deny")
-        assert d.unknown_tools.value == "deny"
+        assert d.unknown_tools == "deny"
 
     def test_defaults_require_approval_for_new(self):
         d = DefaultsDefinition(require_approval_for_new_tools=True)

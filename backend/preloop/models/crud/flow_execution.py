@@ -263,11 +263,20 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         """
         from preloop.models.models.flow_execution_log import FlowExecutionLog
 
+        # NATS messages nest actual content under "payload" (e.g. payload.line
+        # for agent_log_line).  Derive message from the best available field
+        # and persist the full payload as metadata so nothing is lost.
+        payload = log_data.get("payload") or {}
+        message = (
+            log_data.get("message") or payload.get("line") or payload.get("message")
+        )
+        metadata = payload or log_data.get("metadata") or log_data.get("data")
+
         log_entry = FlowExecutionLog(
             execution_id=execution_id,
             log_type=log_data.get("type", "log"),
-            message=log_data.get("message"),
-            metadata_=log_data.get("metadata") or log_data.get("data"),
+            message=message,
+            metadata_=metadata if metadata else None,
         )
         db.add(log_entry)
         db.commit()
