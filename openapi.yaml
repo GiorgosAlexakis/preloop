@@ -5211,6 +5211,14 @@ components:
           title: Require Reason
           description: Whether approver must provide a reason
           default: false
+        async_approval_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Async Approval Enabled
+          description: When enabled, tool calls return immediately and agents poll
+            for status
+          default: false
         is_default:
           anyOf:
           - type: boolean
@@ -5383,6 +5391,10 @@ components:
           - type: 'null'
           title: Require Reason
           description: Whether approver must provide a reason
+          default: false
+        async_approval_enabled:
+          type: boolean
+          title: Async Approval Enabled
           default: false
         is_default:
           type: boolean
@@ -5564,6 +5576,14 @@ components:
           - type: 'null'
           title: Require Reason
           description: Whether approver must provide a reason
+          default: false
+        async_approval_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Async Approval Enabled
+          description: When enabled, tool calls return immediately and agents poll
+            for status
           default: false
         is_default:
           anyOf:
@@ -8646,6 +8666,16 @@ components:
           - type: 'null'
           title: Custom Config
           description: Additional configuration options
+        justification_mode:
+          anyOf:
+          - type: string
+            enum:
+            - optional
+            - required
+          - type: 'null'
+          title: Justification Mode
+          description: 'Justification parameter mode: null (disabled), ''optional'',
+            or ''required'''
         account_id:
           type: string
           title: Account Id
@@ -8701,6 +8731,11 @@ components:
           - type: 'null'
           title: Custom Config
           description: Additional configuration options
+        justification_mode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Justification Mode
         id:
           anyOf:
           - type: string
@@ -8792,6 +8827,16 @@ components:
           - type: 'null'
           title: Custom Config
           description: Additional configuration options
+        justification_mode:
+          anyOf:
+          - type: string
+            enum:
+            - optional
+            - required
+          - type: 'null'
+          title: Justification Mode
+          description: 'Justification parameter mode: null (disabled), ''optional'',
+            or ''required'''
       type: object
       title: ToolConfigurationUpdate
       description: Schema for updating tool configuration.

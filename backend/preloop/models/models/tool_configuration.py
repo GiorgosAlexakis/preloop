@@ -91,6 +91,12 @@ class ToolConfiguration(Base):
     custom_config: Mapped[Optional[Dict]] = mapped_column(
         JSON, nullable=True, comment="Additional configuration options"
     )
+    justification_mode: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        default=None,
+        comment="Justification parameter mode: null/disabled, 'optional', or 'required'",
+    )
 
     # Foreign keys
     account_id: Mapped[uuid.UUID] = mapped_column(
@@ -215,6 +221,13 @@ class ApprovalPolicy(Base):
         nullable=False,
         default=False,
         comment="Whether approver must provide a reason",
+    )
+    async_approval_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="When enabled, tool calls return immediately and agents poll for status",
     )
     is_default: Mapped[bool] = mapped_column(
         Boolean,

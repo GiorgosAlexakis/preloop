@@ -129,20 +129,12 @@ async def get_cached_tools_for_server(
     return tools
 
 
-async def get_all_enabled_proxied_tools(
+def _get_proxied_tools_sync(
     account_id: str, db: Session
 ) -> List[tuple[MCPServer, MCPTool]]:
-    """Get all enabled proxied tools for an account.
+    """Synchronous implementation of proxied tool discovery.
 
-    This checks tool_configuration to see if tools have been explicitly disabled.
-    By default, tools are enabled unless explicitly configured otherwise.
-
-    Args:
-        account_id: Account ID
-        db: Database session
-
-    Returns:
-        List of (MCPServer, MCPTool) tuples for enabled tools
+    Used by run_in_executor() to avoid blocking the event loop.
     """
 
     # Get all active MCP servers for this account using CRUD layer
@@ -175,6 +167,24 @@ async def get_all_enabled_proxied_tools(
                 )
 
     return proxied_tools
+
+
+async def get_all_enabled_proxied_tools(
+    account_id: str, db: Session
+) -> List[tuple[MCPServer, MCPTool]]:
+    """Get all enabled proxied tools for an account.
+
+    This checks tool_configuration to see if tools have been explicitly disabled.
+    By default, tools are enabled unless explicitly configured otherwise.
+
+    Args:
+        account_id: Account ID
+        db: Database session
+
+    Returns:
+        List of (MCPServer, MCPTool) tuples for enabled tools
+    """
+    return _get_proxied_tools_sync(account_id, db)
 
 
 async def get_enabled_builtin_tools(

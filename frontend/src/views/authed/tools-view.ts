@@ -86,7 +86,7 @@ export class ToolsView extends LitElement {
     | 'has_rules'
     | 'no_rules'
     | 'require_approval'
-    | 'no_approval' = 'all';
+    | 'no_approval' = 'available';
   @state() private filterPolicyId: string | null = null;
 
   // Approval policy dialog
@@ -495,9 +495,20 @@ export class ToolsView extends LitElement {
     `,
   ];
 
+  private static readonly _FILTER_STORAGE_KEY = 'preloop:tools-filter';
+
   connectedCallback() {
     super.connectedCallback();
+    const saved = localStorage.getItem(ToolsView._FILTER_STORAGE_KEY);
+    if (saved) {
+      this.activeFilter = saved as typeof this.activeFilter;
+    }
     this.loadData();
+  }
+
+  private _setFilter(filter: typeof this.activeFilter) {
+    this.activeFilter = filter;
+    localStorage.setItem(ToolsView._FILTER_STORAGE_KEY, filter);
   }
 
   private async loadData() {
@@ -1018,7 +1029,7 @@ export class ToolsView extends LitElement {
   // ─── Render helpers ──────────────────────────────────
 
   private _clearFilters() {
-    this.activeFilter = 'all';
+    this._setFilter('available');
     this.filterPolicyId = null;
   }
 
@@ -1041,8 +1052,9 @@ export class ToolsView extends LitElement {
         filterKey === '__none__' || isMuted
           ? undefined
           : () => {
-              this.activeFilter =
-                this.activeFilter === filterKey ? 'all' : filterKey;
+              this._setFilter(
+                this.activeFilter === filterKey ? 'available' : filterKey
+              );
               this.filterPolicyId = null;
             };
 
@@ -1206,7 +1218,7 @@ export class ToolsView extends LitElement {
                   ${filterLabels[this.activeFilter] || this.activeFilter}
                   <sl-icon-button
                     name="x-lg"
-                    @click=${() => (this.activeFilter = 'all')}
+                    @click=${() => this._setFilter('available')}
                   ></sl-icon-button>
                 </span>`
               : ''}
@@ -1366,6 +1378,7 @@ export class ToolsView extends LitElement {
                           @delete-rule=${this._handleDeleteRule}
                           @policy-created=${this._handlePolicyCreated}
                           @reorder-rules=${this._handleReorderRules}
+                          @tool-updated=${() => this.loadData()}
                         ></tool-list-item>
                       `
                     )}

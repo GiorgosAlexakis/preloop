@@ -989,6 +989,7 @@ class PolicyApplier:
                         policy_def.ai_confidence_threshold
                     )
                     existing.ai_fallback_behavior = policy_def.ai_fallback_behavior
+                    existing.async_approval_enabled = policy_def.async_approval
                     # Store escalation_policy name for second-pass resolution
                     existing._pending_escalation_policy = policy_def.escalation_policy
                 self._policy_map[policy_def.name] = existing.id
@@ -1015,6 +1016,7 @@ class PolicyApplier:
                         ai_context=policy_def.ai_context,
                         ai_confidence_threshold=policy_def.ai_confidence_threshold,
                         ai_fallback_behavior=policy_def.ai_fallback_behavior,
+                        async_approval_enabled=policy_def.async_approval,
                         # escalation_policy_id resolved in second pass
                     )
                     # Store escalation_policy name for second-pass resolution
@@ -1179,6 +1181,7 @@ class PolicyApplier:
                         existing.tool_description = tool_def.description
                     if tool_def.custom_config:
                         existing.custom_config = tool_def.custom_config
+                    existing.justification_mode = tool_def.justification
 
                     # Handle conditions - always apply to clear stale rules
                     # when conditions is empty/None
@@ -1200,6 +1203,7 @@ class PolicyApplier:
                         approval_policy_id=approval_policy_id,
                         tool_description=tool_def.description,
                         custom_config=tool_def.custom_config,
+                        justification_mode=tool_def.justification,
                     )
                     self.db.add(new_config)
                     self.db.flush()
@@ -1471,6 +1475,7 @@ def export_current_policy(
             ai_confidence_threshold=getattr(policy, "ai_confidence_threshold", 0.8),
             ai_fallback_behavior=getattr(policy, "ai_fallback_behavior", "escalate"),
             escalation_policy=escalation_policy_name,
+            async_approval=getattr(policy, "async_approval_enabled", False),
         )
         policy_defs.append(policy_def)
 
@@ -1522,6 +1527,7 @@ def export_current_policy(
             ),
             conditions=conditions if conditions else None,
             description=config.tool_description,
+            justification=getattr(config, "justification_mode", None),
             custom_config=config.custom_config,
         )
         tool_defs.append(tool_def)

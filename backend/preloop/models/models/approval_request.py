@@ -3,7 +3,7 @@
 import secrets
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy import String, DateTime, Text, ForeignKey, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -13,6 +13,9 @@ from .account import Account
 from .tool_configuration import ApprovalPolicy, ToolConfiguration
 
 from .base import Base
+
+if TYPE_CHECKING:
+    from .approval_event import ApprovalEvent
 
 
 class ApprovalRequestStatus(str):
@@ -82,6 +85,13 @@ class ApprovalRequest(Base):
         Text,
         nullable=True,
         comment="Agent's reasoning for the tool call",
+    )
+
+    tool_result: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="Cached result of tool execution after approval (for async mode)",
     )
 
     status: Mapped[str] = mapped_column(
@@ -193,6 +203,12 @@ class ApprovalRequest(Base):
     )
     approval_policy: Mapped["ApprovalPolicy"] = relationship(
         "ApprovalPolicy", back_populates="approval_requests"
+    )
+    events: Mapped[list["ApprovalEvent"]] = relationship(
+        "ApprovalEvent",
+        back_populates="approval_request",
+        cascade="all, delete-orphan",
+        order_by="ApprovalEvent.timestamp",
     )
 
     def __repr__(self) -> str:

@@ -26,6 +26,7 @@ from .tool_configuration import ToolConfiguration, ApprovalPolicy
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
 from .approval_request import ApprovalRequest, ApprovalRequestStatus
+from .approval_event import ApprovalEvent
 from .tool_access_rule import ToolAccessRule
 from .notification_preferences import NotificationPreferences
 from .registration_token import RegistrationToken
@@ -73,6 +74,7 @@ __all__ = [
     "MCPTool",
     "ApprovalRequest",
     "ApprovalRequestStatus",
+    "ApprovalEvent",
     "ToolAccessRule",
     "NotificationPreferences",
     "RegistrationToken",

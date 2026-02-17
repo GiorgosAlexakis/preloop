@@ -661,6 +661,50 @@ curl -X POST "https://YOUR_PRELOOP_URL/api/v1/tool-configurations" \
 
 > **Enterprise Features**: Preloop Enterprise Edition adds CEL-based conditional approvals, team-based approvals with quorum, escalation policies, and multi-channel notifications (Slack, Mattermost, mobile push). Contact sales@spacecode.ai for more information.
 
+### Configuring Timeouts for Approval Workflows
+
+When using approval workflows, tool calls may take several minutes while waiting for human approval. Most MCP clients have default timeouts that are too short for approval workflows. Configure your client's timeout accordingly:
+
+**Claude Code** (`~/.claude.json` or project `.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "preloop": {
+      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
+      "timeout": 600000
+    }
+  }
+}
+```
+
+**Cursor / VS Code** (`.cursor/mcp.json` or VS Code settings):
+```json
+{
+  "mcpServers": {
+    "preloop": {
+      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
+      "timeout": 600000
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "preloop": {
+      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
+      "timeout": 600000
+    }
+  }
+}
+```
+
+The timeout value is in milliseconds. 600000ms = 10 minutes, which should be sufficient for most approval workflows. Adjust based on your approval policy's `timeout_seconds` setting.
+
+> **Tip**: If your approval policy has async mode enabled, the tool returns immediately with a pending status and the agent polls for approval status using `get_approval_status`. In this case, no timeout increase is needed.
+
 ### Mobile Push Notifications (iOS/Android)
 
 Open-source users can enable mobile push notifications by proxying requests through the production Preloop server at https://preloop.ai.

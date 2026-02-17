@@ -1,7 +1,7 @@
 """Pydantic schemas for tool configuration and approval policies."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
@@ -37,6 +37,10 @@ class ToolConfigurationBase(BaseModel):
     custom_config: Optional[Dict[str, Any]] = Field(
         None, description="Additional configuration options"
     )
+    justification_mode: Optional[Literal["optional", "required"]] = Field(
+        None,
+        description="Justification parameter mode: null (disabled), 'optional', or 'required'",
+    )
 
 
 class ToolConfigurationCreate(ToolConfigurationBase):
@@ -64,6 +68,7 @@ class ToolConfigurationResponse(ToolConfigurationBase):
     http_endpoint_id: Optional[UUID] = None
     approval_policy_id: Optional[UUID] = None
     is_enabled: bool
+    justification_mode: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -103,6 +108,10 @@ class ApprovalPolicyBase(BaseModel):
     )
     require_reason: Optional[bool] = Field(
         False, description="Whether approver must provide a reason"
+    )
+    async_approval_enabled: Optional[bool] = Field(
+        False,
+        description="When enabled, tool calls return immediately and agents poll for status",
     )
     is_default: Optional[bool] = Field(
         False, description="Whether this is the default policy for the account"
@@ -183,6 +192,7 @@ class ApprovalPolicyResponse(ApprovalPolicyBase):
     name: str
     approval_type: str
     is_default: bool
+    async_approval_enabled: bool = False
     # AI-driven approval fields
     approval_mode: str
     ai_model: Optional[str] = None

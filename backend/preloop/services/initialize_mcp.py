@@ -14,6 +14,7 @@ from preloop.services.dynamic_fastmcp import (
     DynamicFastMCP,
     _rule_policy_id_var,
     _correlation_id_var,
+    _justification_var,
     create_dynamic_mcp_server,
 )
 
@@ -105,6 +106,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -151,6 +153,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -205,6 +208,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -247,6 +251,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -292,6 +297,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -328,6 +334,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -517,6 +524,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -568,6 +576,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -613,6 +622,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -675,6 +685,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -743,6 +754,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             ctx=ctx,
             policy_id=_rule_policy_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
+            justification=_justification_var.get(None),
         )
 
         if not approved:
@@ -763,6 +775,152 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         )
         return result.model_dump_json()
 
-    logger.info("All 12 default tools registered with DynamicFastMCP")
+    # Register Tool 13: get_approval_status (async approval polling)
+    @mcp.tool()
+    async def get_approval_status(
+        request_id: str,
+        ctx: Optional[Context] = None,
+    ) -> str:
+        """Check the status of a pending approval request.
+
+        Returns a detailed event log of the approval workflow including
+        notifications sent, individual votes with comments, escalations,
+        and the final tool result when approved.
+
+        Call this after a tool returns a response with status 'pending_approval'
+        to track the progress of the approval workflow. Poll periodically
+        (e.g., every 15 seconds) until status is 'approved', 'declined', or 'expired'.
+        """
+        import json
+        from preloop.services.dynamic_fastmcp_http import get_current_user_context
+        from preloop.models.db.session import get_async_db_session
+
+        user_context = get_current_user_context()
+
+        if not user_context:
+            return json.dumps({"error": "No user context available"})
+
+        try:
+            async with get_async_db_session() as db:
+                from sqlalchemy import select
+                from preloop.models.models.approval_request import ApprovalRequest
+
+                # Fetch the approval request, verifying account ownership
+                result = await db.execute(
+                    select(ApprovalRequest).where(
+                        ApprovalRequest.id == request_id,
+                        ApprovalRequest.account_id == user_context.account_id,
+                    )
+                )
+                approval_request = result.scalar_one_or_none()
+
+                if not approval_request:
+                    return json.dumps(
+                        {
+                            "error": f"Approval request '{request_id}' not found or access denied"
+                        }
+                    )
+
+                # Fetch events for this request
+                from preloop.models.models.approval_event import ApprovalEvent
+
+                events_result = await db.execute(
+                    select(ApprovalEvent)
+                    .where(ApprovalEvent.approval_request_id == approval_request.id)
+                    .order_by(ApprovalEvent.timestamp)
+                )
+                events = list(events_result.scalars())
+
+                # Build event log
+                event_log = []
+                for event in events:
+                    entry = {
+                        "timestamp": event.timestamp.isoformat() + "Z",
+                        "type": event.event_type,
+                        "detail": event.detail,
+                    }
+                    if event.comment:
+                        entry["comment"] = event.comment
+                    event_log.append(entry)
+
+                # Build response
+                response = {
+                    "request_id": str(approval_request.id),
+                    "status": approval_request.status,
+                    "tool_name": approval_request.tool_name,
+                    "events": event_log,
+                }
+
+                # Add remaining time for pending requests
+                if approval_request.status == "pending" and approval_request.expires_at:
+                    from datetime import datetime, timezone
+
+                    remaining = (
+                        approval_request.expires_at - datetime.now(timezone.utc)
+                    ).total_seconds()
+                    response["remaining_seconds"] = max(0, int(remaining))
+
+                # Add vote counts if responses exist
+                if approval_request.responses:
+                    approved_count = sum(
+                        1
+                        for r in approval_request.responses
+                        if r.get("decision") == "approved"
+                    )
+                    response["approvals_received"] = approved_count
+
+                # If approved, execute the tool and return the result
+                if approval_request.status == "approved":
+                    # Check for cached result first (idempotent)
+                    if approval_request.tool_result is not None:
+                        response["tool_result"] = approval_request.tool_result
+                    else:
+                        # Execute the tool with bypass flag so approval is skipped
+                        try:
+                            from preloop.services.dynamic_fastmcp import (
+                                _bypass_approval_var,
+                            )
+
+                            _bypass_approval_var.set(True)
+                            try:
+                                tool_result = await mcp.call_tool(
+                                    approval_request.tool_name,
+                                    approval_request.tool_args or {},
+                                )
+                            finally:
+                                _bypass_approval_var.set(False)
+
+                            # Normalise the result to a JSON-safe dict
+                            if hasattr(tool_result, "model_dump"):
+                                result_data = tool_result.model_dump()
+                            elif isinstance(tool_result, str):
+                                result_data = {"text": tool_result}
+                            else:
+                                result_data = {"text": str(tool_result)}
+
+                            # Cache on the approval request
+                            approval_request.tool_result = result_data
+                            await db.commit()
+
+                            response["tool_result"] = result_data
+                        except Exception as exec_err:
+                            logger.error(
+                                f"Error executing tool after approval: {exec_err}",
+                                exc_info=True,
+                            )
+                            response["tool_execution_error"] = str(exec_err)
+
+                # If declined/cancelled, include the reason
+                if approval_request.status in ("declined", "cancelled"):
+                    if approval_request.approver_comment:
+                        response["reason"] = approval_request.approver_comment
+
+                return json.dumps(response)
+
+        except Exception as e:
+            logger.error(f"Error checking approval status: {e}", exc_info=True)
+            return json.dumps({"error": f"Failed to check approval status: {str(e)}"})
+
+    logger.info("All 13 default tools registered with DynamicFastMCP")
 
     return mcp

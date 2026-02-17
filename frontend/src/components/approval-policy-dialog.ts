@@ -44,6 +44,7 @@ export interface ApprovalPolicy {
   ai_confidence_threshold?: number;
   ai_fallback_behavior?: 'escalate' | 'approve' | 'deny';
   escalation_policy_id?: string;
+  async_approval_enabled?: boolean;
 }
 
 interface AIModel {
@@ -94,6 +95,7 @@ export class ApprovalPolicyDialog extends LitElement {
   @state() private _approvalType = 'standard';
   @state() private _timeoutSeconds = 300;
   @state() private _isDefault = false;
+  @state() private _asyncApprovalEnabled = false;
 
   // Standard type fields
   @state() private _approverUserIds: string[] = [];
@@ -222,7 +224,8 @@ export class ApprovalPolicyDialog extends LitElement {
 
   private async _loadData() {
     try {
-      // Load users and teams for approver selection
+      // Always load users and teams (needed for approver selection if EE is
+      // enabled later or for display purposes). Only gate AI models on EE.
       const [usersResponse, teamsResponse] = await Promise.all([
         getUsers(),
         getTeams(),
@@ -230,7 +233,6 @@ export class ApprovalPolicyDialog extends LitElement {
       this._users = usersResponse.users || [];
       this._teams = teamsResponse.teams || [];
 
-      // Load AI models only if advanced approvals is enabled (EE)
       if (this._hasAdvancedApprovals()) {
         await this._loadAIModels();
       }
@@ -266,6 +268,7 @@ export class ApprovalPolicyDialog extends LitElement {
       }
       this._timeoutSeconds = this.policy.timeout_seconds || 300;
       this._isDefault = this.policy.is_default || false;
+      this._asyncApprovalEnabled = this.policy?.async_approval_enabled ?? false;
 
       // Standard fields
       this._approverUserIds = this.policy.approver_user_ids || [];
@@ -295,6 +298,7 @@ export class ApprovalPolicyDialog extends LitElement {
     this._approvalType = 'standard';
     this._timeoutSeconds = 300;
     this._isDefault = false;
+    this._asyncApprovalEnabled = false;
     this._approverUserIds = [];
     this._approverTeamIds = [];
     this._approvalsRequired = 1;
@@ -319,10 +323,13 @@ export class ApprovalPolicyDialog extends LitElement {
 
     switch (this._approvalType) {
       case 'standard':
-        // Approvers are required for standard type
-        return (
-          this._approverUserIds.length > 0 || this._approverTeamIds.length > 0
-        );
+        // In EE mode, approvers are required; in OSS (single-user) they are not
+        if (this._hasAdvancedApprovals()) {
+          return (
+            this._approverUserIds.length > 0 || this._approverTeamIds.length > 0
+          );
+        }
+        return true;
       case 'ai_driven':
         // AI model is required
         return !!this._aiModel;
@@ -354,14 +361,18 @@ export class ApprovalPolicyDialog extends LitElement {
         approval_type: this._approvalType,
         timeout_seconds: this._timeoutSeconds,
         is_default: this._isDefault,
+        async_approval_enabled: this._asyncApprovalEnabled,
       };
 
       // Type-specific fields
       switch (this._approvalType) {
         case 'standard':
-          policyData.approver_user_ids = this._approverUserIds;
-          policyData.approver_team_ids = this._approverTeamIds;
-          policyData.approvals_required = this._approvalsRequired;
+          // Only send multi-user approval fields in EE mode
+          if (this._hasAdvancedApprovals()) {
+            policyData.approver_user_ids = this._approverUserIds;
+            policyData.approver_team_ids = this._approverTeamIds;
+            policyData.approvals_required = this._approvalsRequired;
+          }
           break;
 
         case 'ai_driven':
@@ -442,6 +453,12 @@ export class ApprovalPolicyDialog extends LitElement {
   }
 
   private _renderStandardFields() {
+    // In open-source (single-user) mode, there's no need to select
+    // approvers or require multiple approvals — the sole user approves.
+    if (!this._hasAdvancedApprovals()) {
+      return null;
+    }
+
     return html`
       <div class="type-section">
         <div class="type-section-header">
@@ -747,7 +764,28 @@ DENY if:
           </div>
         </div>
 
+        <sl-divider></sl-divider>
+
         ${this._renderTypeSpecificFields()}
+
+        <div class="form-field">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center;"
+          >
+            <label class="form-label">Enable Async Approvals</label>
+            <sl-switch
+              ?checked=${this._asyncApprovalEnabled}
+              @sl-change=${(e: Event) => {
+                this._asyncApprovalEnabled = (e.target as any).checked;
+              }}
+            ></sl-switch>
+          </div>
+          <small style="color: var(--sl-color-neutral-500);">
+            When enabled, tool calls return immediately and agents poll for
+            approval status. Recommended for CLI clients (Claude Code, Codex
+            CLI) to avoid timeouts.
+          </small>
+        </div>
 
         <div class="form-field">
           <div

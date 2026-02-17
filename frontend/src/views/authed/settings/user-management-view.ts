@@ -10,6 +10,7 @@ import {
   getUserRoles,
   assignUserRole,
   removeUserRole,
+  getFeatures,
 } from '../../../api';
 import type { User, UserCreate, UserUpdate, Role } from '../../../types';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
@@ -185,8 +186,21 @@ export class UserManagementView extends LitElement {
     }
   `;
 
+  @state()
+  private featureEnabled = true;
+
   async connectedCallback() {
     super.connectedCallback();
+    try {
+      const featuresResponse = await getFeatures();
+      if (!featuresResponse.features?.['user_management']) {
+        this.featureEnabled = false;
+        this.isLoading = false;
+        return;
+      }
+    } catch {
+      // If features endpoint fails, proceed optimistically
+    }
     await Promise.all([this.fetchUsers(), this.fetchRoles()]);
   }
 
