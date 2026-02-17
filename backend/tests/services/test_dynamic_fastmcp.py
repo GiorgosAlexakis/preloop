@@ -140,7 +140,7 @@ class TestListTools:
             mock_get_db.return_value = iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 result = await dynamic_mcp._list_tools()
@@ -167,7 +167,7 @@ class TestListTools:
             mock_get_db.return_value = iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
@@ -210,7 +210,7 @@ class TestListTools:
             mock_get_db.return_value = iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
@@ -244,7 +244,7 @@ class TestListTools:
             mock_get_db.return_value = iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
@@ -292,7 +292,7 @@ class TestListTools:
             mock_get_db.return_value = iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
@@ -331,7 +331,7 @@ class TestListTools:
             mock_get_db.return_value = iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[(mock_mcp_server, mock_mcp_tool)],
             ):
                 # Mock super()._list_tools to return the "registered" internal tool
@@ -360,7 +360,7 @@ class TestListTools:
             mock_get_db.return_value = iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 side_effect=Exception("DB Error"),
             ):
                 with patch.object(

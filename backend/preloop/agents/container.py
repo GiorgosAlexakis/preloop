@@ -734,9 +734,14 @@ class ContainerAgentExecutor(AgentExecutor):
             True if error patterns detected (failure), False if success or unclear
         """
         # Priority 1: Check for success sentinel
-        # If the agent printed FLOW_EXECUTION_SUCCESS, trust that it succeeded.
-        # This avoids false positives from error-like patterns in code output.
-        if self.FLOW_SUCCESS_SENTINEL in logs_text:
+        # If the agent printed FLOW_EXECUTION_SUCCESS on its own line, trust
+        # that it succeeded.  Use exact-line match to avoid false positives
+        # when the agent greps/cats source files containing the sentinel
+        # string (e.g. flow_orchestrator.py, container.py).
+        if any(
+            line.strip() == self.FLOW_SUCCESS_SENTINEL
+            for line in logs_text.splitlines()
+        ):
             self.logger.info(
                 f"Success sentinel '{self.FLOW_SUCCESS_SENTINEL}' found in logs - "
                 "treating as successful execution"

@@ -1145,15 +1145,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     const agentProviderMap: Record<string, string[]> = {
       gemini: ['google'],
       codex: ['openai', 'google', 'deepseek', 'qwen', 'custom'],
-      aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'], // Aider supports multiple providers
-      openhands: [
-        'openai',
-        'anthropic',
-        'google',
-        'deepseek',
-        'qwen',
-        'custom',
-      ], // OpenHands supports multiple
+      // aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'], // Aider supports multiple providers
+      opencode: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'],
     };
 
     const compatibleProviders = agentProviderMap[agentType] || [];
@@ -1241,8 +1234,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
           >
             <sl-option value="codex">Codex (Recommended)</sl-option>
             <sl-option value="gemini">Gemini CLI</sl-option>
-            <sl-option value="aider">Aider</sl-option>
-            <sl-option value="openhands">OpenHands</sl-option>
+            <sl-option value="opencode">OpenCode</sl-option>
           </sl-select>
 
           ${this._loadingReferenceData

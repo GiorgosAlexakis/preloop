@@ -254,6 +254,7 @@ class TestToolConfigurationEndpoints:
         mock_existing_config.tool_description = None
         mock_existing_config.tool_schema = None
         mock_existing_config.custom_config = None
+        mock_existing_config.justification_mode = None
 
         # Mock IntegrityError on commit (race condition)
         mock_db.commit.side_effect = IntegrityError(
@@ -294,6 +295,7 @@ class TestToolConfigurationEndpoints:
         config.tool_description = None
         config.tool_schema = None
         config.custom_config = None
+        config.justification_mode = None
         from datetime import datetime, UTC
 
         config.created_at = datetime.now(UTC)
@@ -349,6 +351,7 @@ class TestToolConfigurationEndpoints:
         config.tool_description = None
         config.tool_schema = None
         config.custom_config = None
+        config.justification_mode = None
         from datetime import datetime, UTC
 
         config.created_at = datetime.now(UTC)

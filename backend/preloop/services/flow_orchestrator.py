@@ -1186,9 +1186,12 @@ class FlowExecutionOrchestrator:
                 # Store the log line for later summary
                 self.execution_logger.log_agent_output(log_line)
 
-                # Detect success sentinel — signal the monitoring loop
+                # Detect success sentinel — signal the monitoring loop.
+                # Use exact-line match to avoid false positives when the
+                # agent greps/cats source files that contain the sentinel
+                # string (e.g. flow_orchestrator.py, container.py).
                 if (
-                    FLOW_SUCCESS_SENTINEL in log_line
+                    log_line.strip() == FLOW_SUCCESS_SENTINEL
                     and not self._success_sentinel_seen.is_set()
                 ):
                     logger.info(

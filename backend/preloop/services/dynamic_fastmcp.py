@@ -602,7 +602,10 @@ async def {internal_name}({params_str}) -> str:
         # Schema injection alone isn't sufficient — clients can skip
         # validation. Verify server-side that required justifications are
         # actually provided.
-        if user_context:
+        # Skip during async re-execution (_bypass_approval_var=True) because
+        # justification was already validated on the original call and is not
+        # persisted in tool_args.
+        if user_context and not _bypass_approval_var.get(False):
             try:
 
                 def _check_justification_mode():

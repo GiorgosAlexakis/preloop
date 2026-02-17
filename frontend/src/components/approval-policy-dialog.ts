@@ -224,16 +224,17 @@ export class ApprovalPolicyDialog extends LitElement {
 
   private async _loadData() {
     try {
-      // Always load users and teams (needed for approver selection if EE is
-      // enabled later or for display purposes). Only gate AI models on EE.
-      const [usersResponse, teamsResponse] = await Promise.all([
-        getUsers(),
-        getTeams(),
-      ]);
-      this._users = usersResponse.users || [];
-      this._teams = teamsResponse.teams || [];
-
+      // Users, teams, and AI models are only needed for multi-user approver
+      // selection and AI-driven approvals (EE features).  In OSS the
+      // endpoints don't exist, so skip them to avoid 404s.
       if (this._hasAdvancedApprovals()) {
+        const [usersResponse, teamsResponse] = await Promise.all([
+          getUsers(),
+          getTeams(),
+        ]);
+        this._users = usersResponse.users || [];
+        this._teams = teamsResponse.teams || [];
+
         await this._loadAIModels();
       }
     } catch (error) {
