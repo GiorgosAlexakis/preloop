@@ -329,6 +329,22 @@ fi
         script = f"""
 set -e
 
+# Keep the container alive after execution for debugging.
+# Controlled by AGENT_POST_EXEC_SLEEP (seconds, default 600).
+# Set to 0 to disable.
+_post_exec_sleep() {{
+    _sleep=${{AGENT_POST_EXEC_SLEEP:-600}}
+    if [ "$_sleep" -gt 0 ] 2>/dev/null; then
+        echo ""
+        echo "========================================="
+        echo "Post-execution debug sleep: ${{_sleep}}s"
+        echo "Container stays alive for inspection."
+        echo "========================================="
+        sleep "$_sleep"
+    fi
+}}
+trap _post_exec_sleep EXIT
+
 # ============================================================
 # Flow Execution Information
 # ============================================================
@@ -478,7 +494,7 @@ exit $CODEX_EXIT_CODE
             provider_key = model_provider.replace("-", "_").replace(" ", "_")
             env_key = f"{model_provider.upper().replace('-', '_')}_API_KEY"
             # Use 'chat' wire_api for most providers (OpenAI-compatible chat/completions)
-            wire_api = "responses" if model_provider == "openai" else "chat"
+            wire_api = "responses"
 
             auth_block = f"""# Create auth.json with provider API key
 cat > ~/.codex/auth.json << EOF

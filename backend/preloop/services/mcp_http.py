@@ -30,6 +30,48 @@ logger = logging.getLogger(__name__)
 _mcp_server_instance: Optional[DynamicMCPServer] = None
 
 
+class MCPPathRewriteMiddleware:
+    """ASGI middleware: rewrite /mcp → /mcp/v1.
+
+    Starlette's Mount("/mcp", ...) returns a 301 redirect for the exact
+    path /mcp (to /mcp/).  MCP clients using StreamableHTTP POST cannot
+    follow redirects, so we transparently rewrite the path before the
+    router ever sees it.
+
+    Must be added in app.py alongside other middleware to ensure correct
+    timing (before the middleware stack is built).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") == "/mcp":
+            scope = dict(scope)
+            scope["path"] = "/mcp/v1"
+            scope["raw_path"] = b"/mcp/v1"
+        await self.app(scope, receive, send)
+
+
+class _MCPRootPathHandler:
+    """Wraps the MCP ASGI app to handle / by rewriting to /v1.
+
+    After Starlette's Mount strips the /mcp prefix, requests to /mcp/
+    arrive as path=/. The MCP app only serves /v1, so this wrapper
+    transparently rewrites / (and empty path) to /v1.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") in ("", "/"):
+            scope = dict(scope)
+            scope["path"] = "/v1"
+            scope["raw_path"] = b"/v1"
+        await self.app(scope, receive, send)
+
+
 class PreloopBearerAuthBackend(AuthenticationBackend):
     """
     Authentication backend that validates Bearer tokens using Preloop's existing auth.
@@ -57,44 +99,82 @@ class PreloopBearerAuthBackend(AuthenticationBackend):
         # Get database session
         db = next(get_db())
         try:
-            # Validate the token using our existing auth system
+            # Validate the token using our existing auth system (API keys / JWTs)
             current_user = await get_user_from_token_if_valid(token, db)
 
-            if not current_user:
-                return None
+            if current_user:
+                # Try to load the API key if this is an API key token (for flow context)
+                api_key_obj = None
+                if token and "." not in token:  # API keys don't have dots (JWTs do)
+                    from preloop.models.crud import crud_api_key
 
-            # Try to load the API key if this is an API key token (for flow context)
-            api_key_obj = None
-            if token and "." not in token:  # API keys don't have dots (JWTs do)
-                from preloop.models.crud import crud_api_key
+                    api_key_obj = crud_api_key.get_by_key(db, key=token)
 
-                api_key_obj = crud_api_key.get_by_key(db, key=token)
+                return self._build_auth_result(token, current_user, api_key_obj)
 
-            # Create MCP AccessToken with user info stored for later retrieval
-            # Store account ID in the AccessToken so we can retrieve the user later
-            access_token = AccessToken(
-                token=token,
-                client_id=str(current_user.id),  # Use account ID as client_id
-                scopes=[],  # We don't use scopes in Phase 1A
-                expires_at=None,  # API keys don't expire by default
-            )
+            # Fallback: check OAuth MCP opaque access tokens
+            result = self._check_oauth_token(db, token)
+            if result:
+                return result
 
-            # Store user info and API key in AccessToken for later use (avoiding re-validation)
-            # Use object.__setattr__() to bypass Pydantic's validation
-            object.__setattr__(access_token, "user", current_user)
-            if api_key_obj:
-                object.__setattr__(access_token, "api_key", api_key_obj)
-
-            # Return authentication credentials and user
-            # This will be stored in scope["auth"] and scope["user"]
-            return (
-                AuthCredentials(scopes=[]),
-                AuthenticatedUser(
-                    access_token
-                ),  # Pass access_token as positional arg (auth_info)
-            )
+            return None
         finally:
             db.close()
+
+    def _check_oauth_token(self, db, token: str):
+        """Check the OAuth MCP access token table for an opaque token."""
+        import time
+
+        from preloop.models.crud import crud_user
+        from preloop.models.crud.oauth_mcp_token import crud_oauth_mcp_access_token
+
+        db_token = crud_oauth_mcp_access_token.get_by_token(db, token=token)
+        if not db_token:
+            return None
+
+        if db_token.is_revoked:
+            logger.warning("OAuth MCP access token is revoked")
+            return None
+
+        if db_token.expires_at and db_token.expires_at < int(time.time()):
+            logger.warning("OAuth MCP access token is expired")
+            return None
+
+        # Load the user from the token's user_id
+        user = crud_user.get(db, id=str(db_token.user_id))
+        if not user:
+            logger.warning(f"OAuth MCP token user_id={db_token.user_id} not found")
+            return None
+
+        logger.info(f"Authenticated via OAuth MCP token for user {user.username}")
+        return self._build_auth_result(token, user, api_key_obj=None)
+
+    @staticmethod
+    def _build_auth_result(token: str, current_user, api_key_obj=None):
+        """Build the Starlette auth result tuple from a validated user."""
+        # Create MCP AccessToken with user info stored for later retrieval
+        # Store account ID in the AccessToken so we can retrieve the user later
+        access_token = AccessToken(
+            token=token,
+            client_id=str(current_user.id),  # Use account ID as client_id
+            scopes=[],  # We don't use scopes in Phase 1A
+            expires_at=None,  # API keys don't expire by default
+        )
+
+        # Store user info and API key in AccessToken for later use (avoiding re-validation)
+        # Use object.__setattr__() to bypass Pydantic's validation
+        object.__setattr__(access_token, "user", current_user)
+        if api_key_obj:
+            object.__setattr__(access_token, "api_key", api_key_obj)
+
+        # Return authentication credentials and user
+        # This will be stored in scope["auth"] and scope["user"]
+        return (
+            AuthCredentials(scopes=[]),
+            AuthenticatedUser(
+                access_token
+            ),  # Pass access_token as positional arg (auth_info)
+        )
 
 
 def get_mcp_server() -> DynamicMCPServer:
@@ -521,13 +601,18 @@ def setup_mcp_routes(app: FastAPI):
     else:
         logger.warning("Could not find MCP app with lifespan")
 
-    # Mount the MCP app at /mcp/v1 (backward compat) AND /mcp (primary)
-    # /mcp/v1 must be mounted first since FastAPI matches mounts by prefix
-    # length (longer prefix wins)
-    app.mount("/mcp/v1", mcp_app)
-    app.mount("/mcp", mcp_app)
+    # Wrap the MCP app so it also handles / → /v1.
+    # After Mount strips /mcp, requests to /mcp/ arrive as path=/.
+    # Without this wrapper the MCP app (which only serves /v1) returns 404.
+    wrapped_mcp_app = _MCPRootPathHandler(mcp_app)
 
-    logger.info("MCP StreamableHTTP transport mounted at /mcp and /mcp/v1")
+    # Mount at /mcp — the MCP endpoint is at /mcp/v1,
+    # and /mcp/ also works thanks to the wrapper above.
+    # For exact /mcp (no slash), MCPPathRewriteMiddleware in app.py
+    # rewrites to /mcp/v1 before the router sees it.
+    app.mount("/mcp", wrapped_mcp_app)
+
+    logger.info("MCP StreamableHTTP transport mounted at /mcp")
 
 
 def get_mcp_lifespan_manager():

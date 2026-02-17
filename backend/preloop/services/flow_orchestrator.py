@@ -82,6 +82,7 @@ class FlowExecutionOrchestrator:
         self._log_streaming_task: Optional[asyncio.Task] = None
         self._command_subscription: Optional[Any] = None
         self._stop_requested = asyncio.Event()
+        self._success_sentinel_seen = asyncio.Event()
         self._user_messages: asyncio.Queue = asyncio.Queue()
 
         # Execution metrics tracked during execution
@@ -1185,6 +1186,16 @@ class FlowExecutionOrchestrator:
                 # Store the log line for later summary
                 self.execution_logger.log_agent_output(log_line)
 
+                # Detect success sentinel — signal the monitoring loop
+                if (
+                    FLOW_SUCCESS_SENTINEL in log_line
+                    and not self._success_sentinel_seen.is_set()
+                ):
+                    logger.info(
+                        f"Success sentinel detected in logs for {session_reference}"
+                    )
+                    self._success_sentinel_seen.set()
+
                 # Parse log line for structured data (includes tool call detection)
                 self.execution_logger.parse_agent_logs([log_line])
 
@@ -1417,6 +1428,13 @@ class FlowExecutionOrchestrator:
             max_consecutive_failures = (
                 3  # Fail after 3 consecutive status check failures
             )
+            # Grace period after success sentinel is seen in logs.
+            # The agent may have finished but post-exec commands (git push,
+            # PR creation) keep the container alive.  Once the sentinel
+            # appears we give at most this many extra seconds before
+            # treating the execution as succeeded.
+            post_sentinel_grace = 120  # seconds
+            sentinel_seen_at: Optional[float] = None
 
             while elapsed < max_wait_time:
                 # Check if user requested stop
@@ -1504,6 +1522,32 @@ class FlowExecutionOrchestrator:
                         "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
                         "exit_code": result.exit_code,
                     }
+
+                # Check if the success sentinel was seen in logs while
+                # the container is still running (post-exec commands).
+                if self._success_sentinel_seen.is_set():
+                    if sentinel_seen_at is None:
+                        sentinel_seen_at = elapsed
+                        logger.info(
+                            f"Success sentinel seen at {elapsed}s, "
+                            f"allowing {post_sentinel_grace}s grace period"
+                        )
+                    elif elapsed - sentinel_seen_at >= post_sentinel_grace:
+                        logger.info(
+                            f"Grace period expired ({post_sentinel_grace}s) "
+                            f"after success sentinel — treating as SUCCEEDED"
+                        )
+                        self.execution_logger.log_milestone(
+                            "sentinel_grace_period_expired",
+                            {"sentinel_seen_at": sentinel_seen_at, "elapsed": elapsed},
+                        )
+                        return {
+                            "status": "SUCCEEDED",
+                            "output_summary": self.execution_logger.get_agent_output_summary(),
+                            "error_message": None,
+                            "actions_taken": self.execution_logger.get_actions_taken(),
+                            "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
+                        }
 
                 # Wait before next poll
                 await asyncio.sleep(poll_interval)

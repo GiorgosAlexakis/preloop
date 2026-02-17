@@ -250,7 +250,9 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
             query = query.join(Flow).filter(Flow.account_id == account_id)
         return query.all()
 
-    def append_log(self, db: Session, execution_id: str, log_data: dict) -> None:
+    def append_log(
+        self, db: Session, execution_id: str, log_data: dict, *, commit: bool = True
+    ) -> None:
         """Append a log entry to the flow_execution_log table.
 
         Uses a simple INSERT instead of rewriting the JSONB execution_logs
@@ -260,6 +262,9 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
             db: Database session
             execution_id: ID of the flow execution
             log_data: Log message data to append
+            commit: If True (default), commit after the insert. Set to
+                False when batching many entries and commit manually
+                after the loop.
         """
         from preloop.models.models.flow_execution_log import FlowExecutionLog
 
@@ -279,4 +284,5 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
             metadata_=metadata if metadata else None,
         )
         db.add(log_entry)
-        db.commit()
+        if commit:
+            db.commit()

@@ -381,7 +381,7 @@ async def get_flow_execution_logs(
                 "execution_id": str(row.execution_id),
                 "timestamp": row.timestamp.isoformat() if row.timestamp else None,
                 "type": row.log_type or "log",
-                "payload": {"message": row.message, **(row.metadata_ or {})},
+                "payload": {**(row.metadata_ or {}), "message": row.message},
             }
             for row in log_rows
         ]
@@ -521,7 +521,9 @@ async def send_execution_command(
                                         "type": "agent_log_line",
                                         "payload": {"line": log_line},
                                     },
+                                    commit=False,
                                 )
+                            db.commit()
                             logger.info(
                                 f"Persisted {len(container_logs)} log lines to database for execution {execution_id}"
                             )

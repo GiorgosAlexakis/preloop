@@ -74,7 +74,8 @@ class TestTokenExchangeRedirectUri:
             )
 
         assert response.status_code == 400
-        assert "redirect_uri is required" in response.json()["detail"]
+        assert response.json()["error"] == "invalid_grant"
+        assert "redirect_uri is required" in response.json()["error_description"]
 
     def test_rejects_mismatched_redirect_uri(self, client):
         """redirect_uri must exactly match the one stored in the auth code."""
@@ -101,7 +102,8 @@ class TestTokenExchangeRedirectUri:
             )
 
         assert response.status_code == 400
-        assert "does not match" in response.json()["detail"]
+        assert response.json()["error"] == "invalid_grant"
+        assert "does not match" in response.json()["error_description"]
 
     def test_allows_matching_redirect_uri(self, client):
         """Matching redirect_uri should pass validation and proceed to token issuance."""

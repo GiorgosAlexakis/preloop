@@ -16,13 +16,27 @@ import time
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, HTTPException, Query, status
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["OAuth Server"], include_in_schema=False)
+
+
+def _oauth_error(
+    error: str, error_description: str, status_code: int = 400
+) -> JSONResponse:
+    """Return an RFC 6749 §5.2 OAuth error response.
+
+    MCP/OAuth clients expect {"error": "...", "error_description": "..."},
+    NOT FastAPI's {"detail": "..."}.
+    """
+    return JSONResponse(
+        {"error": error, "error_description": error_description},
+        status_code=status_code,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +104,7 @@ async def oauth_protected_resource_metadata():
 
 @router.get("/oauth/authorize")
 async def authorize(
+    request: "Request",
     response_type: str = Query("code"),
     client_id: str = Query(""),
     redirect_uri: str = Query(...),
@@ -117,6 +132,11 @@ async def authorize(
     if code_challenge:
         params["code_challenge"] = code_challenge
 
+    # Forward resource parameter (RFC 8707) — required by MCP OAuth spec
+    resource = request.query_params.get("resource", "")
+    if resource:
+        params["resource"] = resource
+
     consent_url = f"/mcp/authorize/consent?{urlencode(params)}"
     return RedirectResponse(url=consent_url, status_code=302)
 
@@ -142,6 +162,11 @@ async def token_exchange(
     - CLI flow (no PKCE): returns JWT tokens usable with the REST API
     - MCP flow (with PKCE): returns opaque OAuth tokens
     """
+    logger.info(
+        f"OAuth token request: grant_type={grant_type}, client_id={client_id!r}, "
+        f"code={'***' if code else '(empty)'}, code_verifier={'***' if code_verifier else '(empty)'}"
+    )
+
     if grant_type == "authorization_code":
         return await _handle_authorization_code(
             code=code,
@@ -155,9 +180,9 @@ async def token_exchange(
             client_id=client_id,
         )
     else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported grant_type: {grant_type}",
+        return _oauth_error(
+            "unsupported_grant_type",
+            f"Unsupported grant_type: {grant_type}",
         )
 
 
@@ -172,41 +197,46 @@ async def _handle_authorization_code(
     try:
         # Look up the auth code
         effective_client_id = client_id or "cli"
+        logger.info(
+            f"Auth code exchange: effective_client_id={effective_client_id!r}, "
+            f"redirect_uri={redirect_uri!r}"
+        )
         db_code = crud_oauth_mcp_auth_code.get_by_code(
             db, code=code, client_id=effective_client_id
         )
 
         if not db_code:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid authorization code",
+            logger.warning(f"Auth code not found for client_id={effective_client_id!r}")
+            return _oauth_error(
+                "invalid_grant",
+                f"Invalid authorization code (client_id={effective_client_id})",
             )
 
         if db_code.is_used:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Authorization code already used",
-            )
+            logger.warning("Auth code already used")
+            return _oauth_error("invalid_grant", "Authorization code already used")
 
         if db_code.expires_at < time.time():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Authorization code expired",
-            )
+            logger.warning("Auth code expired")
+            return _oauth_error("invalid_grant", "Authorization code expired")
 
         # Validate redirect_uri matches what was stored in the auth code.
         # Per RFC 6749 §4.1.3: if redirect_uri was included in the
         # authorization request, it MUST be required here and match exactly.
         if db_code.redirect_uri:
             if not redirect_uri:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="redirect_uri is required (it was included in the authorization request)",
+                return _oauth_error(
+                    "invalid_grant",
+                    "redirect_uri is required (it was included in the authorization request)",
                 )
             if db_code.redirect_uri != redirect_uri:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="redirect_uri does not match the authorization request",
+                logger.warning(
+                    f"redirect_uri mismatch: expected={db_code.redirect_uri!r}, "
+                    f"got={redirect_uri!r}"
+                )
+                return _oauth_error(
+                    "invalid_grant",
+                    "redirect_uri does not match the authorization request",
                 )
 
         # Mark code as used
@@ -214,13 +244,14 @@ async def _handle_authorization_code(
 
         # Decide token type based on whether PKCE was used
         has_pkce = bool(db_code.code_challenge)
+        logger.info(f"Auth code valid: has_pkce={has_pkce}, user_id={db_code.user_id}")
 
         if has_pkce:
             # PKCE was used — code_verifier is REQUIRED
             if not code_verifier:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="code_verifier is required when PKCE was used",
+                return _oauth_error(
+                    "invalid_grant",
+                    "code_verifier is required when PKCE was used",
                 )
 
             import hashlib
@@ -235,9 +266,9 @@ async def _handle_authorization_code(
             )
 
             if expected != db_code.code_challenge:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid code_verifier (PKCE validation failed)",
+                return _oauth_error(
+                    "invalid_grant",
+                    "Invalid code_verifier (PKCE validation failed)",
                 )
 
             # MCP flow: issue opaque OAuth tokens
@@ -259,10 +290,7 @@ async def _issue_jwt_tokens(db, db_code):
 
     user = crud_user.get(db, id=str(db_code.user_id))
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User not found",
-        )
+        return _oauth_error("invalid_grant", "User not found")
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -352,7 +380,7 @@ async def _handle_refresh_token(refresh_token_str: str, client_id: str):
             )
             if db_refresh and not db_refresh.is_revoked:
                 if db_refresh.expires_at and db_refresh.expires_at < int(time.time()):
-                    raise HTTPException(status_code=400, detail="Refresh token expired")
+                    return _oauth_error("invalid_grant", "Refresh token expired")
 
                 # Revoke the old refresh token (rotation)
                 crud_oauth_mcp_refresh_token.revoke(db, obj=db_refresh)
@@ -393,8 +421,6 @@ async def _handle_refresh_token(refresh_token_str: str, client_id: str):
                 )
         finally:
             db.close()
-    except HTTPException:
-        raise
     except Exception:
         pass
 
@@ -435,7 +461,7 @@ async def _handle_refresh_token(refresh_token_str: str, client_id: str):
     except Exception:
         pass
 
-    raise HTTPException(status_code=400, detail="Invalid refresh token")
+    return _oauth_error("invalid_grant", "Invalid refresh token")
 
 
 # ---------------------------------------------------------------------------

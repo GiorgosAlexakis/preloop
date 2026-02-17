@@ -550,6 +550,13 @@ def create_app() -> FastAPI:
 
     app.add_middleware(WebSocketAuthMiddleware)
 
+    # Rewrite /mcp → /mcp/v1 before Starlette's Mount can redirect.
+    # Must be registered here (not in setup_mcp_routes) to guarantee it's
+    # in the middleware stack before the first request.
+    from preloop.services.mcp_http import MCPPathRewriteMiddleware
+
+    app.add_middleware(MCPPathRewriteMiddleware)
+
     # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
     @app.get("/docs/api", include_in_schema=False)  # Changed path
     async def custom_swagger_ui_html():
