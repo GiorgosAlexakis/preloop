@@ -1105,6 +1105,10 @@ class FlowExecutionOrchestrator:
             "trigger_project_ids": [str(pid) for pid in self.flow.trigger_project_ids]
             if self.flow.trigger_project_ids
             else None,  # For git clone fallback
+            # Singular form used by container.py for git clone and credential lookup
+            "trigger_project_id": str(self.flow.trigger_project_ids[0])
+            if self.flow.trigger_project_ids
+            else None,
         }
 
         # Prepare git credentials if repositories are configured

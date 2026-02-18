@@ -71,6 +71,20 @@ class GitLabTracker(BaseTracker):
         except gitlab.exceptions.GitlabHttpError as e:
             raise TrackerConnectionError(f"GitLab connection error: {str(e)}")
 
+    def _get_project_id(self) -> str:
+        """Get the project ID from connection details.
+
+        Returns:
+            The project ID string.
+
+        Raises:
+            TrackerResponseError: If project ID is not found.
+        """
+        project_id = self.connection_details.get("project_id")
+        if not project_id:
+            raise TrackerResponseError("Project ID not found in connection details")
+        return project_id
+
     @async_retry()
     async def _make_request(self, method, *args, **kwargs):
         """
@@ -1451,12 +1465,30 @@ class GitLabTracker(BaseTracker):
                 )
 
             # Get MR changes/diffs
-            mr_changes = await self._make_request(mr.changes)
+            # Older python-gitlab: mr.changes is a callable method returning a dict.
+            # python-gitlab v4+: mr.changes is a manager with a .get() method.
+            # Detect which form we have and call the right one.
+            changes_attr = mr.changes
+            if callable(changes_attr):
+                mr_changes = await self._make_request(changes_attr)
+            elif hasattr(changes_attr, "get"):
+                mr_changes = await self._make_request(changes_attr.get)
+            else:
+                mr_changes = {}
+
+            # The result may be a RESTObject or a dict depending on the
+            # python-gitlab version.  Normalise to a list of file diffs.
+            if hasattr(mr_changes, "attributes"):
+                file_changes = mr_changes.attributes.get("changes", [])
+            elif isinstance(mr_changes, dict):
+                file_changes = mr_changes.get("changes", [])
+            else:
+                file_changes = (
+                    mr_changes.changes if hasattr(mr_changes, "changes") else []
+                )
 
             changes = {
-                "files_changed": len(mr_changes.changes)
-                if hasattr(mr_changes, "changes")
-                else 0,
+                "files_changed": len(file_changes),
                 "additions": getattr(mr, "diff_stats", {}).get("additions", 0),
                 "deletions": getattr(mr, "diff_stats", {}).get("deletions", 0),
                 "changed_files": [
@@ -1468,9 +1500,7 @@ class GitLabTracker(BaseTracker):
                         "deleted_file": change.get("deleted_file", False),
                         "diff": change.get("diff", ""),
                     }
-                    for change in (
-                        mr_changes.changes if hasattr(mr_changes, "changes") else []
-                    )
+                    for change in file_changes
                 ],
             }
 
@@ -1985,7 +2015,18 @@ class GitLabTracker(BaseTracker):
             )
 
             # Build response
-            notes = getattr(discussion, "notes", [])
+            # discussion.notes may be a plain list (older python-gitlab)
+            # or a manager object (v4+).  Try the plain attribute first,
+            # then fall back to .attributes dict from the raw API response.
+            raw_notes = getattr(discussion, "notes", None)
+            if isinstance(raw_notes, list):
+                notes = raw_notes
+            elif hasattr(discussion, "attributes") and isinstance(
+                discussion.attributes.get("notes"), list
+            ):
+                notes = discussion.attributes["notes"]
+            else:
+                notes = []
             first_note = notes[0] if notes else {}
 
             return {
