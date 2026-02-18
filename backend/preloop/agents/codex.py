@@ -336,10 +336,10 @@ fi
 set -e
 
 # Keep the container alive after execution for debugging.
-# Controlled by AGENT_POST_EXEC_SLEEP (seconds, default 600).
-# Set to 0 to disable.
+# Controlled by AGENT_POST_EXEC_SLEEP (seconds, default 0 = disabled).
+# Set to e.g. 600 to keep containers alive for 10 minutes.
 _post_exec_sleep() {{
-    _sleep=${{AGENT_POST_EXEC_SLEEP:-600}}
+    _sleep=${{AGENT_POST_EXEC_SLEEP:-0}}
     if [ "$_sleep" -gt 0 ] 2>/dev/null; then
         echo ""
         echo "========================================="
@@ -391,6 +391,10 @@ echo "Model: {model}"
 echo "Provider: {model_provider}"
 echo "MCP Server: $PRELOOP_MCP_URL"
 echo "=========================="
+
+# Signal to the orchestrator that the agent is about to start.
+# Sentinel detection is suppressed until this marker is seen in logs.
+echo "PRELOOP_AGENT_EXEC_START"
 
 # Run codex in non-interactive mode with the prompt
 echo "{escaped_prompt}" | codex exec --skip-git-repo-check --model "{model}" --sandbox workspace-write --yolo

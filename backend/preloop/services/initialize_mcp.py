@@ -874,13 +874,35 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                     )
                     response["approvals_received"] = approved_count
 
-                # If approved, execute the tool and return the result
+                # If approved, execute the tool and return the result.
+                # Uses a "claim + execute" pattern to avoid holding the DB
+                # lock during potentially long tool execution.
                 if approval_request.status == "approved":
-                    # Check for cached result first (idempotent)
-                    if approval_request.tool_result is not None:
-                        response["tool_result"] = approval_request.tool_result
+                    cached = approval_request.tool_result
+
+                    # Another request is already executing this tool
+                    if isinstance(cached, dict) and cached.get("_executing"):
+                        response["status"] = "executing"
+
+                    # Execution failed previously — return the error without
+                    # re-executing (prevents retry loops with side effects).
+                    elif isinstance(cached, dict) and cached.get("_error"):
+                        response["tool_execution_error"] = cached["_error"]
+
+                    # Cached real result (idempotent)
+                    elif cached is not None:
+                        response["tool_result"] = cached
+
                     else:
-                        # Execute the tool with bypass flag so approval is skipped
+                        # Claim execution: set a sentinel value and commit to
+                        # release the FOR UPDATE lock immediately.
+                        tool_name = approval_request.tool_name
+                        tool_args = approval_request.tool_args or {}
+                        req_id = approval_request.id
+                        approval_request.tool_result = {"_executing": True}
+                        await db.commit()
+
+                        # Execute the tool OUTSIDE the locked transaction
                         try:
                             from preloop.services.dynamic_fastmcp import (
                                 _bypass_approval_var,
@@ -889,8 +911,8 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                             _bypass_approval_var.set(True)
                             try:
                                 tool_result = await mcp.call_tool(
-                                    approval_request.tool_name,
-                                    approval_request.tool_args or {},
+                                    tool_name,
+                                    tool_args,
                                 )
                             finally:
                                 _bypass_approval_var.set(False)
@@ -903,17 +925,30 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                             else:
                                 result_data = {"text": str(tool_result)}
 
-                            # Cache on the approval request
-                            approval_request.tool_result = result_data
-                            await db.commit()
-
-                            response["tool_result"] = result_data
                         except Exception as exec_err:
                             logger.error(
                                 f"Error executing tool after approval: {exec_err}",
                                 exc_info=True,
                             )
+                            # Store a failure sentinel so subsequent polls
+                            # do not re-execute the tool.
+                            result_data = {"_error": str(exec_err)}
                             response["tool_execution_error"] = str(exec_err)
+
+                        # Store the real result in a fresh transaction
+                        async with get_async_db_session() as db2:
+                            update_result = await db2.execute(
+                                select(ApprovalRequest).where(
+                                    ApprovalRequest.id == req_id
+                                )
+                            )
+                            ar = update_result.scalar_one_or_none()
+                            if ar:
+                                ar.tool_result = result_data
+                                await db2.commit()
+
+                        if "_error" not in (result_data or {}):
+                            response["tool_result"] = result_data
 
                 # If declined/cancelled, include the reason
                 if approval_request.status in ("declined", "cancelled"):

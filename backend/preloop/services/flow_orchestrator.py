@@ -32,18 +32,23 @@ from preloop.services.flow_execution_logger import FlowExecutionLogger
 
 logger = logging.getLogger(__name__)
 
-# Sentinel string that agents should print when completing successfully.
-# This is used to reliably detect successful execution without false positives
-# from error-like patterns in code output.
+# Sentinel string that agents print when completing successfully.
 FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
 
-# Instruction appended to prompts to have agents signal success
+# Marker printed by the agent script immediately before the agent command runs.
+# Sentinel detection is suppressed until this marker is seen in the logs,
+# preventing false positives from the prompt echo that contains the sentinel
+# instruction text.
+AGENT_EXEC_START_MARKER = "PRELOOP_AGENT_EXEC_START"
+
+# Instruction appended to prompts to have agents signal success.
+# IMPORTANT: The sentinel is kept INLINE (not on its own line) so that when
+# the prompt text is echoed in logs, it cannot trigger the exact-line detector.
 FLOW_SUCCESS_INSTRUCTION = f"""
 
 ---
-IMPORTANT: When you have successfully completed your task, print exactly this text on its own line:
-{FLOW_SUCCESS_SENTINEL}
-This signals that the flow execution completed successfully.
+IMPORTANT: When you have successfully completed your task, you MUST print the following marker on a line by itself: {FLOW_SUCCESS_SENTINEL}
+Do not include any other text on the same line as the marker. This signals successful completion.
 ---"""
 
 
@@ -83,6 +88,9 @@ class FlowExecutionOrchestrator:
         self._command_subscription: Optional[Any] = None
         self._stop_requested = asyncio.Event()
         self._success_sentinel_seen = asyncio.Event()
+        self._agent_exec_started = (
+            False  # Set when AGENT_EXEC_START_MARKER seen in logs
+        )
         self._user_messages: asyncio.Queue = asyncio.Queue()
 
         # Execution metrics tracked during execution
@@ -597,7 +605,7 @@ class FlowExecutionOrchestrator:
                         f"No resolver found for prefix '{prefix}' and simple resolution failed for {{{{{placeholder}}}}}"
                     )
 
-        # Append the success sentinel instruction to help with reliable completion detection
+        # Append the success sentinel instruction so the agent can signal completion
         resolved_prompt = resolved_prompt + FLOW_SUCCESS_INSTRUCTION
 
         logger.info("Prompt resolution complete")
@@ -1190,18 +1198,41 @@ class FlowExecutionOrchestrator:
                 # Store the log line for later summary
                 self.execution_logger.log_agent_output(log_line)
 
-                # Detect success sentinel — signal the monitoring loop.
-                # Use exact-line match to avoid false positives when the
-                # agent greps/cats source files that contain the sentinel
-                # string (e.g. flow_orchestrator.py, container.py).
+                # Track the agent exec start marker — sentinel detection is
+                # suppressed until this marker is seen, preventing false
+                # positives from the prompt echo that contains the sentinel
+                # instruction text.
                 if (
-                    log_line.strip() == FLOW_SUCCESS_SENTINEL
-                    and not self._success_sentinel_seen.is_set()
+                    not self._agent_exec_started
+                    and log_line.strip() == AGENT_EXEC_START_MARKER
                 ):
+                    self._agent_exec_started = True
                     logger.info(
-                        f"Success sentinel detected in logs for {session_reference}"
+                        f"Agent exec start marker seen at log line #{log_count}"
                     )
-                    self._success_sentinel_seen.set()
+
+                # Detect success sentinel — but ONLY after the agent exec
+                # start marker has been seen (to ignore prompt echo).
+                stripped_line = log_line.strip()
+                if stripped_line == FLOW_SUCCESS_SENTINEL:
+                    if not self._agent_exec_started:
+                        logger.warning(
+                            f"[Sentinel] Ignoring sentinel match at line #{log_count} "
+                            f"— agent exec start marker not yet seen (prompt echo?). "
+                            f"Previous line: {previous_line[:120]!r}"
+                        )
+                    elif self._success_sentinel_seen.is_set():
+                        logger.warning(
+                            f"[Sentinel] Duplicate sentinel match at line #{log_count} "
+                            f"— already triggered. Previous line: {previous_line[:120]!r}"
+                        )
+                    else:
+                        logger.info(
+                            f"[Sentinel] Success sentinel detected for {session_reference} "
+                            f"at line #{log_count}. "
+                            f"Previous line: {previous_line[:120]!r}"
+                        )
+                        self._success_sentinel_seen.set()
 
                 # Parse log line for structured data (includes tool call detection)
                 self.execution_logger.parse_agent_logs([log_line])
@@ -1532,6 +1563,8 @@ class FlowExecutionOrchestrator:
 
                 # Check if the success sentinel was seen in logs while
                 # the container is still running (post-exec commands).
+                # The sentinel is only armed after AGENT_EXEC_START_MARKER is
+                # seen, so prompt echoes cannot trigger it.
                 if self._success_sentinel_seen.is_set():
                     if sentinel_seen_at is None:
                         sentinel_seen_at = elapsed

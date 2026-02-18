@@ -321,10 +321,10 @@ fi
 set -e
 
 # Keep the container alive after execution for debugging.
-# Controlled by AGENT_POST_EXEC_SLEEP (seconds, default 600).
-# Set to 0 to disable.
+# Controlled by AGENT_POST_EXEC_SLEEP (seconds, default 0 = disabled).
+# Set to e.g. 600 to keep containers alive for 10 minutes.
 _post_exec_sleep() {{
-    _sleep=${{AGENT_POST_EXEC_SLEEP:-600}}
+    _sleep=${{AGENT_POST_EXEC_SLEEP:-0}}
     if [ "$_sleep" -gt 0 ] 2>/dev/null; then
         echo ""
         echo "========================================="

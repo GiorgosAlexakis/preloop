@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from mcp import types
+from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
 from preloop.services.dynamic_fastmcp import (
@@ -143,7 +144,12 @@ class TestListTools:
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
-                result = await dynamic_mcp._list_tools()
+                with patch.object(
+                    FastMCP,
+                    "_list_tools",
+                    new=AsyncMock(return_value=[]),
+                ):
+                    result = await dynamic_mcp._list_tools()
 
         # User without tracker still may get builtin tools that don't require a tracker
         assert isinstance(result, list)
@@ -171,10 +177,9 @@ class TestListTools:
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -214,10 +219,9 @@ class TestListTools:
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -248,10 +252,9 @@ class TestListTools:
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -296,10 +299,9 @@ class TestListTools:
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -336,10 +338,9 @@ class TestListTools:
             ):
                 # Mock super()._list_tools to return the "registered" internal tool
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=[registered_tool]),
-                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     # Mock tool registration
                     with patch.object(dynamic_mcp, "tool", return_value=lambda x: x):
@@ -364,10 +365,9 @@ class TestListTools:
                 side_effect=Exception("DB Error"),
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=[]),
-                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     # Should not raise, just continue with default tools
                     result = await dynamic_mcp._list_tools()

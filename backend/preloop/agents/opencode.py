@@ -282,9 +282,6 @@ class OpenCodeAgent(ContainerAgentExecutor):
 
         model_provider = execution_context.get("model_provider", "anthropic").lower()
 
-        # Escape prompt for shell using heredoc (safer than inline escaping)
-        prompt_safe = prompt.replace("'", "'\\''")
-
         # Prepare initialization commands (git clone, custom commands)
         init_commands = self._prepare_init_commands(execution_context)
 
@@ -324,10 +321,10 @@ fi
 set -e
 
 # Keep the container alive after execution for debugging.
-# Controlled by AGENT_POST_EXEC_SLEEP (seconds, default 600).
-# Set to 0 to disable.
+# Controlled by AGENT_POST_EXEC_SLEEP (seconds, default 0 = disabled).
+# Set to e.g. 600 to keep containers alive for 10 minutes.
 _post_exec_sleep() {{
-    _sleep=${{AGENT_POST_EXEC_SLEEP:-600}}
+    _sleep=${{AGENT_POST_EXEC_SLEEP:-0}}
     if [ "$_sleep" -gt 0 ] 2>/dev/null; then
         echo ""
         echo "========================================="
@@ -369,8 +366,10 @@ cat > /workspace/opencode.json << 'OPENCODE_CONFIG_EOF'
 {opencode_config_json}
 OPENCODE_CONFIG_EOF
 
-# Substitute environment variables in config
-envsubst < /workspace/opencode.json > /workspace/opencode.json.tmp
+# Substitute only the expected environment variables in config.
+# Using explicit variable list prevents envsubst from replacing
+# $schema and other unintended $-prefixed strings.
+envsubst '$PRELOOP_MCP_URL $PRELOOP_API_TOKEN' < /workspace/opencode.json > /workspace/opencode.json.tmp
 mv /workspace/opencode.json.tmp /workspace/opencode.json
 
 # Debug: Show config (with keys masked)
@@ -382,9 +381,10 @@ echo "MCP Timeout: {mcp_timeout_ms}ms"
 echo "Working Directory: $(pwd)"
 echo "=============================="
 
-# Create prompt file to avoid shell escaping issues
+# Create prompt file to avoid shell escaping issues.
+# The single-quoted heredoc delimiter preserves content literally.
 cat > /tmp/prompt.txt << 'PROMPT_EOF'
-{prompt_safe}
+{prompt}
 PROMPT_EOF
 
 # Run OpenCode in non-interactive mode with the prompt

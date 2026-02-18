@@ -714,43 +714,76 @@ class ContainerAgentExecutor(AgentExecutor):
                 error_message=str(e),
             )
 
-    # Success sentinel that agents print when completing successfully
-    # Must match FLOW_SUCCESS_SENTINEL in flow_orchestrator.py
+    # Success sentinel that agents print when completing successfully.
+    # Must match FLOW_SUCCESS_SENTINEL in flow_orchestrator.py.
     FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
+
+    # Marker printed by the agent script before the agent command runs.
+    # Must match AGENT_EXEC_START_MARKER in flow_orchestrator.py.
+    AGENT_EXEC_START_MARKER = "PRELOOP_AGENT_EXEC_START"
 
     def _detect_error_in_logs(self, logs_text: str) -> bool:
         """
-        Detect if logs contain error patterns that indicate failure.
+        Detect if logs contain critical error patterns that indicate failure.
 
-        The detection follows this priority:
-        1. If the success sentinel is present, assume success (no error)
-        2. Check for critical error patterns that always indicate failure
-        3. Apply heuristics for other error patterns
+        This is a safety net for cases where the container exits with code 0
+        but logs contain system-level errors (e.g. API auth failures, unhandled
+        exceptions).  It does NOT determine success — that is solely based on
+        the container exit code.
+
+        The success sentinel is checked only in the portion of logs AFTER
+        the AGENT_EXEC_START_MARKER to avoid false positives from prompt echo.
 
         Args:
             logs_text: Full log text
 
         Returns:
-            True if error patterns detected (failure), False if success or unclear
+            True if critical error patterns detected, False otherwise
         """
-        # Priority 1: Check for success sentinel
-        # If the agent printed FLOW_EXECUTION_SUCCESS on its own line, trust
-        # that it succeeded.  Use exact-line match to avoid false positives
-        # when the agent greps/cats source files containing the sentinel
-        # string (e.g. flow_orchestrator.py, container.py).
-        if any(
-            line.strip() == self.FLOW_SUCCESS_SENTINEL
-            for line in logs_text.splitlines()
-        ):
+        # Extract only the agent output (after the exec start marker)
+        # to avoid false positives from prompt echo in init commands.
+        agent_output = logs_text
+        marker_idx = logs_text.find(self.AGENT_EXEC_START_MARKER)
+        if marker_idx >= 0:
+            agent_output = logs_text[marker_idx + len(self.AGENT_EXEC_START_MARKER) :]
             self.logger.info(
-                f"Success sentinel '{self.FLOW_SUCCESS_SENTINEL}' found in logs - "
+                f"[Sentinel] Exec start marker found at char {marker_idx}, "
+                f"checking sentinel in {len(agent_output)} chars of agent output"
+            )
+        else:
+            self.logger.warning(
+                "[Sentinel] Exec start marker NOT found in logs — "
+                "sentinel check will scan full log output"
+            )
+
+        # If the agent printed the success sentinel on its own line
+        # (post-exec-marker), trust that it succeeded.
+        sentinel_in_agent_output = any(
+            line.strip() == self.FLOW_SUCCESS_SENTINEL
+            for line in agent_output.splitlines()
+        )
+        # Also check if sentinel appears in the pre-marker section (prompt echo)
+        sentinel_in_prompt = False
+        if marker_idx >= 0:
+            sentinel_in_prompt = any(
+                line.strip() == self.FLOW_SUCCESS_SENTINEL
+                for line in logs_text[:marker_idx].splitlines()
+            )
+            if sentinel_in_prompt:
+                self.logger.info(
+                    "[Sentinel] Sentinel also found in pre-marker output (prompt echo) — ignored"
+                )
+
+        if sentinel_in_agent_output:
+            self.logger.info(
+                "[Sentinel] Success sentinel found in agent output — "
                 "treating as successful execution"
             )
             return False
 
         logs_lower = logs_text.lower()
 
-        # Priority 2: Critical error patterns that always indicate failure
+        # Critical error patterns that always indicate failure
         # These are system-level errors, not user code output
         critical_error_patterns = [
             "litellm.badrequesterror",
@@ -773,8 +806,7 @@ class ContainerAgentExecutor(AgentExecutor):
                 )
                 return True
 
-        # Priority 3: Heuristic-based detection (legacy, for flows without sentinel)
-        # Only apply if no success sentinel was found
+        # Heuristic: multiple "ERROR:" lines without benign context
 
         # Benign patterns - these are informational messages that might contain
         # "error" but don't indicate actual failure

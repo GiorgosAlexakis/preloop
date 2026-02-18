@@ -2163,6 +2163,16 @@ class GitLabTracker(BaseTracker):
                 }
 
         except Exception as e:
+            # GitLab returns 404 with "has already been taken" when the emoji
+            # already exists.  Treat this as idempotent success.
+            if "already been taken" in str(e).lower():
+                logger.info(f"Award emoji '{emoji_name}' already exists on MR {mr_iid}")
+                return {
+                    "id": None,
+                    "name": emoji_name,
+                    "user": None,
+                    "already_existed": True,
+                }
             logger.error(f"Error adding award emoji to MR {mr_iid}: {e}")
             raise TrackerResponseError(f"Failed to add award emoji: {e}")
 
