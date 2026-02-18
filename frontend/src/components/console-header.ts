@@ -40,9 +40,6 @@ interface ApprovalRequest {
   agent_reasoning?: string;
 }
 
-// LocalStorage key for notification preferences
-const NOTIFICATION_PREF_KEY = 'preloop_desktop_notifications_enabled';
-
 interface UserNotification {
   id: string;
   type:
@@ -413,10 +410,13 @@ export class ConsoleHeader extends LitElement {
               status !== 'STARTING' &&
               status !== 'INITIALIZING'
             ) {
+              const finishedExecution = this._runningExecutions[executionIndex];
               this._runningExecutions = [
                 ...this._runningExecutions.slice(0, executionIndex),
                 ...this._runningExecutions.slice(executionIndex + 1),
               ];
+              // Show desktop notification for finished execution
+              this.showExecutionFinishedNotification(finishedExecution, status);
             } else {
               // Update the execution
               const updatedExecution = {
@@ -544,15 +544,6 @@ export class ConsoleHeader extends LitElement {
   // ============================================
 
   /**
-   * Check if desktop notifications are enabled by the user preference.
-   */
-  private isDesktopNotificationsEnabled(): boolean {
-    const pref = localStorage.getItem(NOTIFICATION_PREF_KEY);
-    // Default to enabled if not set
-    return pref !== 'false';
-  }
-
-  /**
    * Request notification permission from the browser if not already granted.
    */
   private async requestNotificationPermission(): Promise<void> {
@@ -575,19 +566,31 @@ export class ConsoleHeader extends LitElement {
    * Show desktop notification when a flow execution starts.
    */
   private showExecutionNotification(execution: FlowExecution): void {
-    if (!this.isDesktopNotificationsEnabled()) {
+    if (!('Notification' in window)) {
+      console.log('[Notification] Browser does not support Notification API');
       return;
     }
 
-    if (!('Notification' in window) || Notification.permission !== 'granted') {
+    if (Notification.permission !== 'granted') {
+      console.log(
+        `[Notification] Permission not granted (current: ${Notification.permission}), requesting...`
+      );
+      // Proactively request if still default
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
       return;
     }
 
     // Prevent duplicate notifications for the same execution
     if (this.shownExecutionNotifications.has(execution.id)) {
+      console.log(`[Notification] Already shown for execution ${execution.id}`);
       return;
     }
     this.shownExecutionNotifications.add(execution.id);
+    console.log(
+      `[Notification] Showing start notification for ${execution.flow_name || 'Flow'} (${execution.id})`
+    );
 
     try {
       const notification = new Notification('Flow Execution Started', {
@@ -610,13 +613,54 @@ export class ConsoleHeader extends LitElement {
   }
 
   /**
-   * Show desktop notification when an approval is requested.
+   * Show desktop notification when a flow execution finishes.
    */
-  private showApprovalNotification(approval: ApprovalRequest): void {
-    if (!this.isDesktopNotificationsEnabled()) {
+  private showExecutionFinishedNotification(
+    execution: FlowExecution,
+    status: string
+  ): void {
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      console.log(
+        `[Notification] Cannot show finished notification (permission: ${'Notification' in window ? Notification.permission : 'unsupported'})`
+      );
       return;
     }
 
+    console.log(
+      `[Notification] Showing finished notification for ${execution.flow_name || 'Flow'} (${execution.id}) — status: ${status}`
+    );
+
+    // Build notification based on final status
+    const succeeded = status === 'SUCCEEDED';
+    const title = succeeded
+      ? 'Flow Execution Succeeded'
+      : 'Flow Execution Failed';
+    const body = `${execution.flow_name || 'Flow'} ${succeeded ? 'completed successfully' : `finished with status: ${status}`}`;
+
+    try {
+      const notification = new Notification(title, {
+        body,
+        icon: '/images/logos/preloop_logo_dark.svg',
+        tag: `execution-done-${execution.id}`,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        Router.go(`/console/flows/executions/${execution.id}`);
+        notification.close();
+      };
+
+      // Auto-close after 10 seconds
+      setTimeout(() => notification.close(), 10000);
+    } catch (error) {
+      console.error('Failed to show execution finished notification:', error);
+    }
+  }
+
+  /**
+   * Show desktop notification when an approval is requested.
+   */
+  private showApprovalNotification(approval: ApprovalRequest): void {
     if (!('Notification' in window) || Notification.permission !== 'granted') {
       return;
     }

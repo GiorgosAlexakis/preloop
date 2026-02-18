@@ -1057,9 +1057,12 @@ async def generate_policy(
         PolicyGenerationService,
     )
 
+    import asyncio
+
     try:
         service = PolicyGenerationService(db, str(account.id))
-        result = service.generate_from_prompt(
+        result = await asyncio.to_thread(
+            service.generate_from_prompt,
             request.prompt,
             include_current_config=request.include_current_config,
         )
@@ -1129,9 +1132,12 @@ async def generate_policy_from_audit(
                 detail=f"Invalid end_date format: {request.end_date}",
             )
 
+    import asyncio
+
     try:
         service = PolicyGenerationService(db, str(account.id))
-        result = service.generate_from_audit_logs(
+        result = await asyncio.to_thread(
+            service.generate_from_audit_logs,
             start_date=start,
             end_date=end,
             audit_logs_json=request.audit_logs_json,

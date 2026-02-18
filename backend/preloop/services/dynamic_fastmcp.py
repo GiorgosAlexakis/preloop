@@ -463,8 +463,10 @@ async def {internal_name}({params_str}) -> str:
         if value is not None:
             arguments[param_name] = value
 
-    # Extract justification (injected parameter, not part of actual tool schema)
-    justification = arguments.pop("justification", None)
+    # Read justification from context var — _call_tool() already stripped it
+    # from arguments and stored it in _justification_var.
+    from preloop.services.dynamic_fastmcp import _justification_var
+    justification = _justification_var.get(None)
 
     # Check approval with streaming (we have Context!)
     # The policy_id may have been set by _call_tool() after evaluating access rules.

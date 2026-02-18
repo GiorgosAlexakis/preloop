@@ -310,8 +310,15 @@ export class FlowView extends LitElement {
 
       // Load all necessary data for editing (in parallel)
       this._loadingReferenceData = true;
-      const [trackers, models, tools, servers, allOrganizations, allProjects] =
-        await Promise.all([
+      try {
+        const [
+          trackers,
+          models,
+          tools,
+          servers,
+          allOrganizations,
+          allProjects,
+        ] = await Promise.all([
           getTrackers(),
           getAIModels(),
           getAllTools(),
@@ -319,18 +326,22 @@ export class FlowView extends LitElement {
           listOrganizations(),
           listProjects(),
         ]);
-      this.trackers = trackers;
-      this.models = models;
-      this.availableTools = tools;
-      this.mcpServers = servers;
-      this.organizations = allOrganizations;
-      this.projects = allProjects;
-      this._loadingReferenceData = false;
+        this.trackers = trackers;
+        this.models = models;
+        this.availableTools = tools;
+        this.mcpServers = servers;
+        this.organizations = allOrganizations;
+        this.projects = allProjects;
+      } catch (error) {
+        console.error('Failed to load reference data:', error);
+      } finally {
+        this._loadingReferenceData = false;
+      }
 
       // Additional trigger-specific setup if this is a tracker-based flow
       if (this.triggerType === 'tracker' && this.flow.trigger_event_source) {
         // Start polling if no organizations for this tracker yet
-        const trackerOrgs = allOrganizations.filter(
+        const trackerOrgs = (this.organizations || []).filter(
           (org: any) => org.tracker_id === this.flow.trigger_event_source
         );
         if (trackerOrgs.length === 0 && this.flow.trigger_organization_id) {
@@ -339,7 +350,7 @@ export class FlowView extends LitElement {
 
         // Start polling projects if we have a trigger organization but no projects
         if (this.flow.trigger_organization_id) {
-          const orgProjects = allProjects.filter(
+          const orgProjects = (this.projects || []).filter(
             (proj: any) =>
               proj.organization_id === this.flow.trigger_organization_id
           );

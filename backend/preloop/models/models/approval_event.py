@@ -1,7 +1,7 @@
 """Approval event model for tracking detailed approval workflow events."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import String, DateTime, Text, ForeignKey
@@ -64,7 +64,7 @@ class ApprovalEvent(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=datetime.utcnow,
         index=True,
         comment="When the event occurred",
     )
