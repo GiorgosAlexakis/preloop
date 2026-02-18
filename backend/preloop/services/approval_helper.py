@@ -147,6 +147,7 @@ async def require_approval(
 
                 logger.info(f"Access rules found: {len(access_rules)}")
 
+                matched_require_approval = False
                 for rule in access_rules:
                     logger.info(
                         f"  - rule={rule.id}, action={rule.action}, "
@@ -162,6 +163,13 @@ async def require_approval(
 
                             evaluator = ArgumentEvaluator()
 
+                            # Normalise expression: prepend 'args.' if missing.
+                            # Users configure rules with plain field names,
+                            # e.g. "amount > 300" instead of "args.amount > 300".
+                            expression = rule.condition_expression.strip()
+                            if not expression.startswith("args."):
+                                expression = f"args.{expression}"
+
                             eval_context = {
                                 "tool_name": tool_name,
                                 "args": arguments,
@@ -175,9 +183,7 @@ async def require_approval(
                             }
 
                             matches = await evaluator.evaluate(
-                                condition_config={
-                                    "expression": rule.condition_expression
-                                },
+                                condition_config={"expression": expression},
                                 tool_args=arguments,
                                 context=eval_context,
                             )
@@ -202,7 +208,18 @@ async def require_approval(
                             f"Tool {tool_name} ({tool_source}) denied by access rule"
                         )
                         return (False, f"Tool '{tool_name}' is denied by access rule")
-                    # 'require_approval' falls through to the approval flow below
+                    elif rule.action == "require_approval":
+                        matched_require_approval = True
+                        break  # Proceed to approval flow below
+
+                # If access rules exist but none matched, default to allow.
+                # This is consistent with policy_evaluator.py's behavior.
+                if access_rules and not matched_require_approval:
+                    logger.info(
+                        f"Tool {tool_name} ({tool_source}): {len(access_rules)} "
+                        f"access rules exist but none matched — default allow"
+                    )
+                    return (True, "")
 
                 # Get approval policy from tool configuration
                 policy = await get_approval_policy_async(

@@ -902,6 +902,15 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                         approval_request.tool_result = {"_executing": True}
                         await db.commit()
 
+                        # Translate user-facing tool name to internal name.
+                        # Tools from external MCP servers are registered under
+                        # namespaced names: account_{safe_account_id}_{tool_name}
+                        # (see DynamicFastMCP._create_tool_wrapper).
+                        safe_account_id = str(approval_request.account_id).replace(
+                            "-", "_"
+                        )
+                        internal_name = f"account_{safe_account_id}_{tool_name}"
+
                         # Execute the tool OUTSIDE the locked transaction
                         try:
                             from preloop.services.dynamic_fastmcp import (
@@ -910,10 +919,25 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
 
                             _bypass_approval_var.set(True)
                             try:
-                                tool_result = await mcp._tool_manager.call_tool(
-                                    tool_name,
-                                    tool_args,
-                                )
+                                # Try internal (namespaced) name first, fall
+                                # back to original name for built-in tools.
+                                try:
+                                    tool_result = await mcp._tool_manager.call_tool(
+                                        internal_name,
+                                        tool_args,
+                                    )
+                                except Exception as name_err:
+                                    if "not found" in str(name_err).lower():
+                                        logger.info(
+                                            f"Tool '{internal_name}' not found, "
+                                            f"trying original name '{tool_name}'"
+                                        )
+                                        tool_result = await mcp._tool_manager.call_tool(
+                                            tool_name,
+                                            tool_args,
+                                        )
+                                    else:
+                                        raise
                             finally:
                                 _bypass_approval_var.set(False)
 

@@ -177,10 +177,21 @@ def evaluate_policy(
         .all()
     )
 
+    logger.info(
+        f"Policy evaluation for '{tool_name}': found {len(rules)} access rules, "
+        f"tool_config.approval_policy_id={tool_config.approval_policy_id}"
+    )
+
     if not rules:
         # No rules defined, check for legacy approval_policy_id on tool config
         if tool_config.approval_policy_id:
             # Legacy behavior: tool has approval policy but no rules
+            logger.warning(
+                f"LEGACY PATH: tool '{tool_name}' has approval_policy_id="
+                f"{tool_config.approval_policy_id} but no access rules. "
+                f"ALL calls will require approval regardless of arguments. "
+                f"Add access rules with conditions to enable conditional approval."
+            )
             _log_policy_decision_async(
                 account_id=account_id,
                 tool_name=tool_name,
@@ -219,12 +230,18 @@ def evaluate_policy(
     # Evaluate rules in priority order
     for rule in rules:
         try:
+            logger.info(
+                f"Evaluating rule {rule.id} (priority={rule.priority}, "
+                f"action={rule.action}): condition_type={rule.condition_type}, "
+                f"expression={rule.condition_expression!r}, args={tool_args}"
+            )
             matches = _evaluate_rule_condition(
                 expression=rule.condition_expression,
                 condition_type=rule.condition_type,
                 tool_args=tool_args,
                 context=context,
             )
+            logger.info(f"Rule {rule.id} evaluated: matches={matches}")
 
             if matches:
                 logger.info(
