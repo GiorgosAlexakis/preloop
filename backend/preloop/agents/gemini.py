@@ -367,8 +367,9 @@ fi
 mkdir -p ~/.gemini
 
 # Create settings.json with MCP server configuration
-# Using envsubst for variable substitution
-cat > ~/.gemini/settings.json << 'SETTINGS_EOF'
+# Write Gemini settings with shell variable expansion (unquoted heredoc).
+# $PRELOOP_MCP_URL and $PRELOOP_API_TOKEN are expanded by the shell directly.
+cat > ~/.gemini/settings.json << SETTINGS_EOF
 {{
   "mcpServers": {{
     "preloop": {{
@@ -382,12 +383,6 @@ cat > ~/.gemini/settings.json << 'SETTINGS_EOF'
   }}
 }}
 SETTINGS_EOF
-
-# Substitute environment variables in settings.json using sed.
-# envsubst is not available in all sandbox images, so we use sed instead.
-# Using '|' as delimiter since URLs contain '/'.
-sed -i "s|\\$PRELOOP_MCP_URL|$PRELOOP_MCP_URL|g" ~/.gemini/settings.json
-sed -i "s|\\$PRELOOP_API_TOKEN|$PRELOOP_API_TOKEN|g" ~/.gemini/settings.json
 
 # Debug: Show config (with token masked)
 echo "=== Gemini Configuration ==="

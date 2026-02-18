@@ -138,7 +138,7 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
@@ -170,7 +170,7 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
@@ -212,7 +212,7 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
@@ -245,7 +245,7 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
@@ -292,7 +292,7 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
@@ -330,7 +330,7 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
@@ -358,7 +358,7 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
@@ -599,7 +599,7 @@ class TestHelperFunctions:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.dynamic_fastmcp.has_tracker",
@@ -643,7 +643,7 @@ class TestHelperFunctions:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.dynamic_fastmcp.has_tracker",

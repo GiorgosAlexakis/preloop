@@ -1552,10 +1552,41 @@ class FlowExecutionOrchestrator:
                         {"status": status.value, "exit_code": result.exit_code},
                     )
 
+                    # Sentinel-based status override:
+                    # If the container reports SUCCEEDED (exit code 0) but the
+                    # FLOW_EXECUTION_SUCCESS sentinel was NOT found in logs,
+                    # treat it as FAILED.  This catches agents (e.g. OpenCode)
+                    # that error out but still exit with code 0.
+                    final_status = result.status.value
+                    error_message = result.error_message
+
+                    if (
+                        result.status == AgentStatus.SUCCEEDED
+                        and not self._success_sentinel_seen.is_set()
+                    ):
+                        logger.warning(
+                            f"Agent exited with SUCCEEDED status (exit_code={result.exit_code}) "
+                            f"but success sentinel was NOT found in logs. "
+                            f"Overriding status to FAILED."
+                        )
+                        self.execution_logger.log_milestone(
+                            "sentinel_missing_override",
+                            {
+                                "original_status": result.status.value,
+                                "exit_code": result.exit_code,
+                            },
+                        )
+                        final_status = "FAILED"
+                        error_message = (
+                            result.error_message
+                            or "Agent exited with code 0 but did not produce "
+                            "the success sentinel — likely encountered an error."
+                        )
+
                     return {
-                        "status": result.status.value,
+                        "status": final_status,
                         "output_summary": result.output_summary,
-                        "error_message": result.error_message,
+                        "error_message": error_message,
                         "actions_taken": self.execution_logger.get_actions_taken(),
                         "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
                         "exit_code": result.exit_code,

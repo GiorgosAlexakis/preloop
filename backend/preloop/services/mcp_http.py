@@ -92,6 +92,12 @@ class PreloopBearerAuthBackend(AuthenticationBackend):
         )
 
         if not auth_header or not auth_header.lower().startswith("bearer "):
+            # Log at INFO to help diagnose MCP clients that don't send headers
+            logger.info(
+                f"MCP auth: no Bearer token in Authorization header "
+                f"(path={conn.scope.get('path', '?')}, "
+                f"headers_present={[k for k in conn.headers.keys()]})"
+            )
             return None
 
         token = auth_header[7:]  # Remove "Bearer " prefix

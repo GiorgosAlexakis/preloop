@@ -316,6 +316,11 @@ fi
             model, model_provider, execution_context, mcp_timeout_ms
         )
         opencode_config_json = json.dumps(opencode_config, indent=2)
+        # For the unquoted heredoc, escape "$schema" so the shell doesn't
+        # try to expand it as a variable.  All other $-prefixed strings
+        # ($PRELOOP_MCP_URL, $PRELOOP_API_TOKEN) are intentionally left
+        # unescaped so the shell expands them to their env-var values.
+        opencode_config_shell = opencode_config_json.replace('"$schema"', '"\\$schema"')
 
         # Base64-encode the prompt so it can be safely embedded in
         # the shell script without heredoc delimiter injection risk.
@@ -365,17 +370,13 @@ git config --global --add safe.directory '*'
 # Install OpenCode CLI
 npm install -g opencode-ai@latest
 
-# Write OpenCode configuration
+# Write OpenCode configuration (unquoted heredoc for shell variable expansion).
+# The dollar-sign in schema key is escaped so it stays literal; env vars
+# PRELOOP_MCP_URL and PRELOOP_API_TOKEN are expanded by the shell directly.
 mkdir -p /workspace
-cat > /workspace/opencode.json << 'OPENCODE_CONFIG_EOF'
-{opencode_config_json}
+cat > /workspace/opencode.json << OPENCODE_CONFIG_EOF
+{opencode_config_shell}
 OPENCODE_CONFIG_EOF
-
-# Substitute environment variables in config using sed.
-# envsubst is not available in all sandbox images, so we use sed instead.
-# Using '|' as delimiter since URLs contain '/'.
-sed -i "s|\\$PRELOOP_MCP_URL|$PRELOOP_MCP_URL|g" /workspace/opencode.json
-sed -i "s|\\$PRELOOP_API_TOKEN|$PRELOOP_API_TOKEN|g" /workspace/opencode.json
 
 # Debug: Show config (with keys masked)
 echo "=== OpenCode Configuration ==="
@@ -422,9 +423,14 @@ exit $OPENCODE_EXIT_CODE
 
         Configures the model provider and the Preloop MCP server connection.
 
+        OpenCode expects:
+        - model in "provider/model" format (e.g., "custom/glm-5")
+        - provider section with api.name (adapter like "openai"), api.baseURL,
+          and a models registry for custom endpoints
+
         Args:
-            model: Model identifier (e.g., "claude-sonnet-4-20250514")
-            model_provider: Provider name (e.g., "anthropic", "openai")
+            model: Model identifier (e.g., "glm-5", "claude-sonnet-4-20250514")
+            model_provider: Provider name (e.g., "anthropic", "openai", "custom")
             execution_context: Execution context
             mcp_timeout_ms: MCP tool timeout in milliseconds
 
@@ -438,12 +444,13 @@ exit $OPENCODE_EXIT_CODE
             env_key = f"{model_provider.upper().replace('-', '_')}_API_BASE"
             model_endpoint = os.getenv(env_key) or os.getenv("CUSTOM_API_BASE", "")
 
-        # OpenCode expects model in "provider/model" format
-        model_key = f"{model_provider}/{model}" if model_provider else model
+        # OpenCode splits the model field on "/" to get providerID/modelID.
+        # Without the slash, it treats the entire string as the provider.
+        model_qualified = f"{model_provider}/{model}"
 
         config: Dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
-            "model": model_key,
+            "model": model_qualified,
             "autoupdate": False,
             "mcp": {
                 "preloop": {
@@ -458,13 +465,21 @@ exit $OPENCODE_EXIT_CODE
             },
         }
 
-        # Add provider configuration if needed
-        provider_config: Dict[str, Any] = {}
+        # Add provider configuration for custom/non-builtin endpoints.
+        # OpenCode needs api.name (adapter), api.baseURL, and a models map
+        # so it knows how to talk to the endpoint.
         if model_endpoint:
-            provider_config["options"] = {"baseURL": model_endpoint}
-
-        if provider_config:
-            config["provider"] = {model_provider: provider_config}
+            config["provider"] = {
+                model_provider: {
+                    "api": {
+                        "name": "openai",  # OpenAI-compatible adapter
+                        "baseURL": model_endpoint,
+                    },
+                    "models": {
+                        model: {"name": model},
+                    },
+                }
+            }
 
         return config
 

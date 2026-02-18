@@ -499,10 +499,10 @@ class TestProcessEvent:
     @patch("preloop.services.flow_trigger_service.asyncio.create_task")
     @patch("preloop.services.flow_trigger_service.get_nats_client")
     @patch("preloop.services.flow_trigger_service.crud_flow")
-    @patch.object(FlowTriggerService, "_has_running_execution")
+    @patch.object(FlowTriggerService, "_has_execution_for_commit")
     async def test_process_event_skips_duplicate_execution(
         self,
-        mock_has_running,
+        mock_has_commit,
         mock_crud,
         mock_nats,
         mock_create_task,
@@ -510,10 +510,15 @@ class TestProcessEvent:
         sample_github_pr_event,
         sample_flow,
     ):
-        """Test that duplicate executions are skipped."""
-        mock_has_running.return_value = True
+        """Test that duplicate executions are skipped when same repo+commit."""
+        mock_has_commit.return_value = True
         mock_nats.return_value = AsyncMock()
         mock_crud.get_by_trigger.return_value = [sample_flow]
+
+        # Add a commit SHA so the dedup path is triggered
+        sample_github_pr_event["payload"]["pull_request"]["head"] = {
+            "sha": "abc123def456"
+        }
 
         await flow_trigger_service.process_event(sample_github_pr_event)
 

@@ -178,9 +178,12 @@ class DynamicFastMCP(FastMCP):
                 finally:
                     db.close()
 
-            proxied_tools_data = await asyncio.get_event_loop().run_in_executor(
-                None, _fetch_proxied_tools
+            logger.info("Fetching proxied tools via executor...")
+            proxied_tools_data = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, _fetch_proxied_tools),
+                timeout=30,
             )
+            logger.info(f"Fetched {len(proxied_tools_data)} proxied tools")
 
             # Dynamically register wrapper functions for proxied tools
             proxied_tool_map = {}  # Track original_name -> internal_name mapping
@@ -293,8 +296,9 @@ class DynamicFastMCP(FastMCP):
                 finally:
                     db.close()
 
-            justification_modes = await asyncio.get_event_loop().run_in_executor(
-                None, _fetch_tool_configs
+            justification_modes = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, _fetch_tool_configs),
+                timeout=30,
             )
 
             modified_tools = []
@@ -628,8 +632,11 @@ async def {internal_name}({params_str}) -> str:
                     finally:
                         db.close()
 
-                requires_justification = await asyncio.get_event_loop().run_in_executor(
-                    None, _check_justification_mode
+                requires_justification = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, _check_justification_mode
+                    ),
+                    timeout=30,
                 )
                 if requires_justification and not justification:
                     from fastmcp.tools.tool import ToolResult
