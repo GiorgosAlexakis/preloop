@@ -655,7 +655,27 @@ async def {internal_name}({params_str}) -> str:
                         ]
                     )
             except Exception as e:
-                logger.warning(f"Failed to check justification mode for '{name}': {e}")
+                # SECURITY: Fail closed — if we cannot verify whether
+                # justification is required, block the call rather than
+                # allowing potentially unjustified tool executions.
+                logger.error(
+                    f"Justification enforcement check failed for '{name}': {e}. "
+                    f"Blocking tool call (fail closed)."
+                )
+                from fastmcp.tools.tool import ToolResult
+                from mcp.types import TextContent
+
+                return ToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Error: Unable to verify justification requirements "
+                                f"for tool '{name}'. Please try again."
+                            ),
+                        )
+                    ]
+                )
 
         if not user_context:
             logger.warning("No user context available for tool call")

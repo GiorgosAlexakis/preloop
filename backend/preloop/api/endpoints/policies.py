@@ -1061,11 +1061,27 @@ async def generate_policy(
 
     try:
         service = PolicyGenerationService(db, str(account.id))
-        result = await asyncio.to_thread(
-            service.generate_from_prompt,
-            request.prompt,
-            include_current_config=request.include_current_config,
+
+        # Do all DB reads on the main (async) thread — Sessions
+        # are not thread-safe and must not be shared across threads.
+        model = service._resolve_model()
+        context_block = (
+            service._build_context_block() if request.include_current_config else ""
         )
+
+        # Only the LLM call (network I/O, CPU-bound tokenization)
+        # runs in a worker thread.
+        import json
+        from preloop.services.policy.schema import PolicyDocument
+
+        schema_json = json.dumps(PolicyDocument.model_json_schema(), indent=2)
+        system_prompt = service._build_system_prompt(schema_json, context_block)
+
+        yaml_output = await asyncio.to_thread(
+            service._call_llm, model, system_prompt, request.prompt
+        )
+        warnings = service._validate_output(yaml_output)
+        result = {"yaml": yaml_output, "warnings": warnings}
     except PolicyGenerationError as exc:
         logger.warning("Policy generation failed for account %s: %s", account.id, exc)
         raise HTTPException(
@@ -1136,12 +1152,34 @@ async def generate_policy_from_audit(
 
     try:
         service = PolicyGenerationService(db, str(account.id))
-        result = await asyncio.to_thread(
-            service.generate_from_audit_logs,
-            start_date=start,
-            end_date=end,
-            audit_logs_json=request.audit_logs_json,
+
+        # Do all DB reads on the main thread (Session is not thread-safe).
+        model = service._resolve_model()
+
+        if request.audit_logs_json:
+            summary = service._summarise_external_logs(request.audit_logs_json)
+        else:
+            summary = service._summarise_account_logs(start, end)
+
+        if not summary:
+            raise PolicyGenerationError(
+                "No tool-call audit logs found for the specified criteria. "
+                "Run some MCP tool calls first, then retry."
+            )
+
+        import json
+        from preloop.services.policy.schema import PolicyDocument
+
+        schema_json = json.dumps(PolicyDocument.model_json_schema(), indent=2)
+        context_block = service._build_context_block()
+        system_prompt = service._build_audit_system_prompt(schema_json, context_block)
+
+        # Only the LLM call runs in a worker thread.
+        yaml_output = await asyncio.to_thread(
+            service._call_llm, model, system_prompt, summary
         )
+        warnings = service._validate_output(yaml_output)
+        result = {"yaml": yaml_output, "warnings": warnings}
     except PolicyGenerationError as exc:
         logger.warning(
             "Audit-based policy generation failed for account %s: %s",

@@ -385,10 +385,11 @@ class TestGeneratePolicyEndpoint:
 
         with patch(PATCH_SERVICE) as mock_svc:
             instance = mock_svc.return_value
-            instance.generate_from_prompt.return_value = {
-                "yaml": VALID_POLICY_YAML,
-                "warnings": [],
-            }
+            instance._resolve_model.return_value = MagicMock()
+            instance._build_context_block.return_value = ""
+            instance._build_system_prompt.return_value = "system"
+            instance._call_llm.return_value = VALID_POLICY_YAML
+            instance._validate_output.return_value = []
             result = await generate_policy(request, mock_account, mock_db)
 
         assert result.yaml == VALID_POLICY_YAML
@@ -406,7 +407,7 @@ class TestGeneratePolicyEndpoint:
 
         with patch(PATCH_SERVICE) as mock_svc:
             instance = mock_svc.return_value
-            instance.generate_from_prompt.side_effect = PolicyGenerationError(
+            instance._resolve_model.side_effect = PolicyGenerationError(
                 "No AI models configured"
             )
             with pytest.raises(HTTPException) as exc_info:
@@ -432,10 +433,12 @@ class TestGeneratePolicyFromAuditEndpoint:
 
         with patch(PATCH_SERVICE) as mock_svc:
             instance = mock_svc.return_value
-            instance.generate_from_audit_logs.return_value = {
-                "yaml": VALID_POLICY_YAML,
-                "warnings": ["minor warning"],
-            }
+            instance._resolve_model.return_value = MagicMock()
+            instance._summarise_account_logs.return_value = "summary"
+            instance._build_context_block.return_value = ""
+            instance._build_audit_system_prompt.return_value = "system"
+            instance._call_llm.return_value = VALID_POLICY_YAML
+            instance._validate_output.return_value = ["minor warning"]
             result = await generate_policy_from_audit(request, mock_account, mock_db)
 
         assert result.yaml == VALID_POLICY_YAML
@@ -453,10 +456,12 @@ class TestGeneratePolicyFromAuditEndpoint:
 
         with patch(PATCH_SERVICE) as mock_svc:
             instance = mock_svc.return_value
-            instance.generate_from_audit_logs.return_value = {
-                "yaml": VALID_POLICY_YAML,
-                "warnings": [],
-            }
+            instance._resolve_model.return_value = MagicMock()
+            instance._summarise_account_logs.return_value = "summary"
+            instance._build_context_block.return_value = ""
+            instance._build_audit_system_prompt.return_value = "system"
+            instance._call_llm.return_value = VALID_POLICY_YAML
+            instance._validate_output.return_value = []
             result = await generate_policy_from_audit(request, mock_account, mock_db)
 
         assert result.yaml == VALID_POLICY_YAML
@@ -505,9 +510,8 @@ class TestGeneratePolicyFromAuditEndpoint:
 
         with patch(PATCH_SERVICE) as mock_svc:
             instance = mock_svc.return_value
-            instance.generate_from_audit_logs.side_effect = PolicyGenerationError(
-                "No tool-call audit logs found"
-            )
+            instance._resolve_model.return_value = MagicMock()
+            instance._summarise_account_logs.return_value = ""
             with pytest.raises(HTTPException) as exc_info:
                 await generate_policy_from_audit(request, mock_account, mock_db)
 
@@ -525,13 +529,13 @@ class TestGeneratePolicyFromAuditEndpoint:
 
         with patch(PATCH_SERVICE) as mock_svc:
             instance = mock_svc.return_value
-            instance.generate_from_audit_logs.return_value = {
-                "yaml": VALID_POLICY_YAML,
-                "warnings": [],
-            }
+            instance._resolve_model.return_value = MagicMock()
+            instance._summarise_external_logs.return_value = "summary"
+            instance._build_context_block.return_value = ""
+            instance._build_audit_system_prompt.return_value = "system"
+            instance._call_llm.return_value = VALID_POLICY_YAML
+            instance._validate_output.return_value = []
             result = await generate_policy_from_audit(request, mock_account, mock_db)
 
         assert result.yaml == VALID_POLICY_YAML
-        # Verify audit_logs_json was passed through
-        call_kwargs = instance.generate_from_audit_logs.call_args
-        assert call_kwargs.kwargs.get("audit_logs_json") == logs
+        instance._summarise_external_logs.assert_called_once_with(logs)
