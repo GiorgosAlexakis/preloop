@@ -1,5 +1,6 @@
 """Google Gemini CLI agent implementation."""
 
+import base64
 import json
 import logging
 import os
@@ -284,9 +285,9 @@ class GeminiAgent(ContainerAgentExecutor):
             or "gemini-3-pro-preview"
         )
 
-        # Escape prompt for shell - need to handle both single and double quotes carefully
-        # We'll use a heredoc to pass the prompt safely
-        prompt_safe = prompt.replace("'", "'\\''")  # Escape single quotes for heredoc
+        # Base64-encode the prompt so it can be safely embedded in
+        # the shell script without heredoc delimiter injection risk.
+        prompt_b64 = base64.b64encode(prompt.encode()).decode()
 
         # Prepare initialization commands (git clone, custom commands)
         init_commands = self._prepare_init_commands(execution_context)
@@ -396,10 +397,10 @@ echo "MCP Timeout: {mcp_timeout_ms}ms ({execution_context.get("_mcp_tool_timeout
 echo "Working Directory: $(pwd)"
 echo "=========================="
 
-# Create prompt file to avoid shell escaping issues
-cat > /tmp/prompt.txt << 'PROMPT_EOF'
-{prompt_safe}
-PROMPT_EOF
+# Write prompt via base64 to prevent heredoc delimiter injection.
+# The prompt may originate from external events (webhooks, triggers)
+# and could contain arbitrary text including shell metacharacters.
+echo '{prompt_b64}' | base64 -d > /tmp/prompt.txt
 
 # Signal to the orchestrator that the agent is about to start.
 # Sentinel detection is suppressed until this marker is seen in logs.

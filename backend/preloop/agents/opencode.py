@@ -1,5 +1,6 @@
 """OpenCode CLI agent implementation."""
 
+import base64
 import json
 import logging
 import os
@@ -316,6 +317,10 @@ fi
         )
         opencode_config_json = json.dumps(opencode_config, indent=2)
 
+        # Base64-encode the prompt so it can be safely embedded in
+        # the shell script without heredoc delimiter injection risk.
+        prompt_b64 = base64.b64encode(prompt.encode()).decode()
+
         # Create the full script
         script = f"""
 set -e
@@ -381,11 +386,10 @@ echo "MCP Timeout: {mcp_timeout_ms}ms"
 echo "Working Directory: $(pwd)"
 echo "=============================="
 
-# Create prompt file to avoid shell escaping issues.
-# The single-quoted heredoc delimiter preserves content literally.
-cat > /tmp/prompt.txt << 'PROMPT_EOF'
-{prompt}
-PROMPT_EOF
+# Write prompt via base64 to prevent heredoc delimiter injection.
+# The prompt may originate from external events (webhooks, triggers)
+# and could contain arbitrary text including shell metacharacters.
+echo '{prompt_b64}' | base64 -d > /tmp/prompt.txt
 
 # Signal to the orchestrator that the agent is about to start.
 # Sentinel detection is suppressed until this marker is seen in logs.

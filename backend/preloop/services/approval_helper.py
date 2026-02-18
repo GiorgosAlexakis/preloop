@@ -340,7 +340,11 @@ async def require_approval(
                         "poll_interval_seconds": poll_interval,
                         "timeout_seconds": policy.timeout_seconds or 300,
                         "channels": notification_channels,
-                        "approval_url": approval_url,
+                        # NOTE: approval_url intentionally excluded from
+                        # agent-visible response. The URL contains a bearer
+                        # token; exposing it would let the agent self-approve.
+                        # The link is delivered only via trusted notification
+                        # channels (email, Slack, mobile push, web UI).
                     }
                     if approver_display:
                         async_response["approvers"] = approver_display

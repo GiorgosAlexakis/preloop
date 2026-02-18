@@ -187,3 +187,108 @@ describe('ToolsView (approvals + conditions)', () => {
     expect((element as any).error).to.equal(null);
   });
 });
+
+describe('ToolsView – filter persistence', () => {
+  let fetchStub: sinon.SinonStub;
+
+  const STORAGE_KEY = 'preloop:tools-filter';
+
+  function stubLoadData() {
+    fetchStub.callsFake(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const method = (init?.method || 'GET').toUpperCase();
+
+        if (url.endsWith('/api/v1/tools') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/mcp-servers') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/approval-policies') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/features') && method === 'GET') {
+          return new Response(JSON.stringify({ features: {} }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/auth/users/me') && method === 'GET') {
+          return new Response(JSON.stringify({ id: 'user-1' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.setItem('accessToken', 'test-access-token');
+    localStorage.setItem('refreshToken', 'test-refresh-token');
+    fetchStub = sinon.stub(window, 'fetch');
+    stubLoadData();
+  });
+
+  afterEach(() => {
+    fetchStub.restore();
+    localStorage.clear();
+  });
+
+  it('defaults to "available" filter when no saved preference', async () => {
+    const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el as any).loading, 'Still loading');
+    await el.updateComplete;
+
+    expect((el as any).activeFilter).to.equal('available');
+  });
+
+  it('restores saved filter from localStorage on mount', async () => {
+    localStorage.setItem(STORAGE_KEY, 'prelooped');
+
+    const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el as any).loading, 'Still loading');
+    await el.updateComplete;
+
+    expect((el as any).activeFilter).to.equal('prelooped');
+  });
+
+  it('persists filter to localStorage when changed', async () => {
+    const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el as any).loading, 'Still loading');
+    await el.updateComplete;
+
+    (el as any)._setFilter('prelooped');
+    expect(localStorage.getItem(STORAGE_KEY)).to.equal('prelooped');
+    expect((el as any).activeFilter).to.equal('prelooped');
+  });
+
+  it('survives round-trip: set filter → remount → filter restored', async () => {
+    // Mount first instance, set filter
+    const el1 = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el1 as any).loading, 'Still loading');
+    (el1 as any)._setFilter('mcp');
+    el1.remove();
+
+    // Mount second instance — should pick up the saved filter
+    const el2 = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el2 as any).loading, 'Still loading');
+    await el2.updateComplete;
+
+    expect((el2 as any).activeFilter).to.equal('mcp');
+  });
+});
