@@ -1557,11 +1557,16 @@ class FlowExecutionOrchestrator:
                     # FLOW_EXECUTION_SUCCESS sentinel was NOT found in logs,
                     # treat it as FAILED.  This catches agents (e.g. OpenCode)
                     # that error out but still exit with code 0.
+                    # Guard: only apply the override when the agent-exec-start
+                    # marker was actually seen in logs.  If we never streamed
+                    # real logs (e.g. mocks, or the log stream failed before
+                    # any output), the sentinel's absence is not meaningful.
                     final_status = result.status.value
                     error_message = result.error_message
 
                     if (
                         result.status == AgentStatus.SUCCEEDED
+                        and self._agent_exec_started
                         and not self._success_sentinel_seen.is_set()
                     ):
                         logger.warning(

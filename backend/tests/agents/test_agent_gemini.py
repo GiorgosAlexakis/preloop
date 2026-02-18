@@ -15,9 +15,7 @@ class TestGeminiAgentInit:
         """Default image is the official Gemini CLI sandbox."""
         agent = GeminiAgent({})
         assert agent.agent_type == "gemini"
-        assert (
-            agent.image == "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.1.4"
-        )
+        assert agent.image == "docker/sandbox-templates:gemini"
 
     def test_custom_image_from_env(self):
         """GEMINI_IMAGE env var overrides default image."""
@@ -154,7 +152,7 @@ class TestGeminiBuildScript:
         assert "--yolo" in script
 
     def test_script_mcp_config(self):
-        """Script creates settings.json with MCP server config."""
+        """Script registers MCP server via gemini mcp add CLI command."""
         agent = GeminiAgent({})
         context = {
             "prompt": "test",
@@ -163,11 +161,12 @@ class TestGeminiBuildScript:
             "_mcp_tool_timeout": 900,
         }
         script = agent._build_gemini_script(context)
-        assert "settings.json" in script
-        assert "mcpServers" in script
-        assert "preloop" in script
-        # Timeout should be in milliseconds
-        assert "900000" in script
+        assert "gemini mcp add preloop" in script
+        assert "-t http" in script
+        assert "-s user" in script
+        assert "--trust" in script
+        assert "-H" in script
+        assert "$PRELOOP_API_TOKEN" in script
 
     def test_prompt_with_single_quotes(self):
         """Prompt with single quotes is handled safely via base64 encoding."""

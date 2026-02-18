@@ -910,7 +910,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
 
                             _bypass_approval_var.set(True)
                             try:
-                                tool_result = await mcp.call_tool(
+                                tool_result = await mcp._tool_manager.call_tool(
                                     tool_name,
                                     tool_args,
                                 )

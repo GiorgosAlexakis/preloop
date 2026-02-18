@@ -256,15 +256,16 @@ class TestOpenCodeBuildConfig:
         assert preloop["enabled"] is True
 
     def test_custom_endpoint(self):
-        """Custom endpoint adds provider config with baseURL."""
+        """Custom endpoint adds provider config with npm, options.baseURL, models."""
         agent = OpenCodeAgent({})
         context = {"model_endpoint": "https://custom.api.com/v1"}
         config = agent._build_opencode_config("model-1", "customllm", context, 600000)
         assert "provider" in config
-        assert (
-            config["provider"]["customllm"]["options"]["baseURL"]
-            == "https://custom.api.com/v1"
-        )
+        provider = config["provider"]["customllm"]
+        assert provider["npm"] == "@ai-sdk/openai-compatible"
+        assert provider["options"]["baseURL"] == "https://custom.api.com/v1"
+        assert provider["options"]["apiKey"] == "$OPENAI_API_KEY"
+        assert "model-1" in provider["models"]
 
     def test_no_endpoint_no_provider_config(self):
         """No provider config when no custom endpoint."""

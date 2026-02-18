@@ -32,10 +32,10 @@ class GeminiAgent(ContainerAgentExecutor):
                 - model: Gemini model to use (default: gemini-3-pro-preview)
                 - custom settings for Gemini CLI
         """
-        # Use the official Gemini CLI sandbox image
+        # Use the Gemini CLI sandbox image that supports `gemini mcp add`
         image = os.getenv(
             "GEMINI_IMAGE",
-            "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.1.4",
+            "docker/sandbox-templates:gemini",
         )
 
         # Auto-detect Kubernetes environment or use explicit env var
@@ -366,31 +366,22 @@ fi
 # Configure Gemini CLI MCP servers
 mkdir -p ~/.gemini
 
-# Create settings.json with MCP server configuration
-# Write Gemini settings with shell variable expansion (unquoted heredoc).
-# $PRELOOP_MCP_URL and $PRELOOP_API_TOKEN are expanded by the shell directly.
-cat > ~/.gemini/settings.json << SETTINGS_EOF
-{{
-  "mcpServers": {{
-    "preloop": {{
-      "httpUrl": "$PRELOOP_MCP_URL",
-      "headers": {{
-        "Authorization": "Bearer $PRELOOP_API_TOKEN"
-      }},
-      "timeout": {mcp_timeout_ms},
-      "trust": true
-    }}
-  }}
-}}
-SETTINGS_EOF
+# Register the Preloop MCP server via `gemini mcp add`.
+# Flags: -t http (HTTP transport), -s user (user scope),
+#         --trust (auto-approve), -H (custom header).
+gemini mcp add preloop "$PRELOOP_MCP_URL" \
+  -t http \
+  -s user \
+  --trust \
+  -H "Authorization: Bearer $PRELOOP_API_TOKEN"
 
 # Debug: Show config (with token masked)
 echo "=== Gemini Configuration ==="
 echo "Model: {model}"
 echo "MCP Server: $PRELOOP_MCP_URL"
-echo "MCP Timeout: {mcp_timeout_ms}ms ({execution_context.get("_mcp_tool_timeout", 600)}s)"
+echo "MCP Timeout: {mcp_timeout_ms}ms"
 echo "Working Directory: $(pwd)"
-echo "=========================="
+echo "==========================="
 
 # Write prompt via base64 to prevent heredoc delimiter injection.
 # The prompt may originate from external events (webhooks, triggers)

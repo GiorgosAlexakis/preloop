@@ -356,6 +356,12 @@ def _evaluate_simple_condition(expression: str, tool_args: Dict[str, Any]) -> bo
     """
     expression = expression.strip()
 
+    # Normalise: if the expression doesn't start with 'args.', prepend it.
+    # Users often configure rules via the UI with just the field name, e.g.
+    # "amount > 300" instead of "args.amount > 300".
+    if not expression.startswith("args."):
+        expression = f"args.{expression}"
+
     # Handle .contains() method
     contains_pattern = r"^args\.(\w+(?:\.\w+)*)\.contains\s*\(\s*['\"](.+?)['\"]\s*\)$"
     contains_match = re.match(contains_pattern, expression)

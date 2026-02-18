@@ -97,7 +97,12 @@ def event_data():
 
 @pytest.fixture
 def mock_agent_executor():
-    """Create a mock agent executor that simulates successful execution."""
+    """Create a mock agent executor that simulates successful execution.
+
+    The mock also sets ``_success_sentinel_seen`` on the orchestrator so
+    the sentinel-based status override (SUCCEEDED only if the sentinel was
+    detected in logs) doesn't flip the result to FAILED.
+    """
     mock_executor = AsyncMock()
 
     # Mock successful agent execution
@@ -113,6 +118,9 @@ def mock_agent_executor():
         )
     )
     mock_executor.stop = AsyncMock()
+
+    # Store a flag so tests can opt-out of automatic sentinel triggering
+    mock_executor._trigger_sentinel = True
 
     return mock_executor
 

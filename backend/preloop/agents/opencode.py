@@ -466,14 +466,17 @@ exit $OPENCODE_EXIT_CODE
         }
 
         # Add provider configuration for custom/non-builtin endpoints.
-        # OpenCode needs api.name (adapter), api.baseURL, and a models map
-        # so it knows how to talk to the endpoint.
+        # OpenCode schema requires:
+        #   npm   – AI SDK adapter package (e.g. "@ai-sdk/openai-compatible")
+        #   options.baseURL – API endpoint
+        #   models – map of model-id → {name}
         if model_endpoint:
             config["provider"] = {
                 model_provider: {
-                    "api": {
-                        "name": "openai",  # OpenAI-compatible adapter
+                    "npm": "@ai-sdk/openai-compatible",
+                    "options": {
                         "baseURL": model_endpoint,
+                        "apiKey": "$OPENAI_API_KEY",
                     },
                     "models": {
                         model: {"name": model},
