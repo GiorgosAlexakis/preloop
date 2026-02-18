@@ -401,6 +401,10 @@ cat > /tmp/prompt.txt << 'PROMPT_EOF'
 {prompt_safe}
 PROMPT_EOF
 
+# Signal to the orchestrator that the agent is about to start.
+# Sentinel detection is suppressed until this marker is seen in logs.
+echo "PRELOOP_AGENT_EXEC_START"
+
 # Run Gemini CLI with the prompt
 # --output-format stream-json: Stream JSON output for real-time monitoring
 # --yolo: Skip confirmation prompts for tool usage

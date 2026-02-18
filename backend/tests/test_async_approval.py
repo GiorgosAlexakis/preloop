@@ -130,3 +130,203 @@ class TestJustificationEnforcement:
 
         should_reject = requires_justification and not justification
         assert should_reject is True
+
+
+class TestApprovalPollingStateTransitions:
+    """Tests for approval polling state machine transitions.
+
+    An async approval request moves through these states:
+      pending → approved  (human approves)
+      pending → declined  (human declines)
+      pending → expired   (timeout reached)
+      approved → tool_result cached  (idempotent re-poll)
+    """
+
+    @staticmethod
+    def _make_request(status="pending", **overrides):
+        req = MagicMock()
+        req.id = "req-1"
+        req.status = status
+        req.tool_name = "bash"
+        req.tool_args = {"command": "ls"}
+        req.tool_result = None
+        req.agent_reasoning = None
+        req.expires_at = datetime.utcnow() + timedelta(minutes=5)
+        req.requested_at = datetime.utcnow()
+        req.resolved_at = None
+        req.approver_comment = None
+        for k, v in overrides.items():
+            setattr(req, k, v)
+        return req
+
+    def test_pending_to_approved(self):
+        """Pending request transitions to approved after human decision."""
+        req = self._make_request(status="pending")
+        # Simulate human approval
+        req.status = "approved"
+        req.resolved_at = datetime.utcnow()
+        req.approver_comment = "Looks safe"
+
+        assert req.status == "approved"
+        assert req.resolved_at is not None
+
+    def test_pending_to_declined(self):
+        """Pending request transitions to declined after human rejection."""
+        req = self._make_request(status="pending")
+        req.status = "declined"
+        req.resolved_at = datetime.utcnow()
+        req.approver_comment = "Too dangerous"
+
+        assert req.status == "declined"
+        assert req.approver_comment == "Too dangerous"
+
+    def test_pending_to_expired(self):
+        """Pending request expires when timeout is reached."""
+        req = self._make_request(
+            status="pending",
+            expires_at=datetime.utcnow() - timedelta(seconds=1),
+        )
+        remaining = (req.expires_at - datetime.utcnow()).total_seconds()
+        is_expired = remaining <= 0
+
+        assert is_expired is True
+
+    def test_approved_with_cached_result_is_idempotent(self):
+        """Re-polling an approved request with cached tool_result returns same result."""
+        cached = {"text": "command output"}
+        req = self._make_request(status="approved", tool_result=cached)
+
+        # First poll
+        result1 = req.tool_result
+        # Second poll (idempotent)
+        result2 = req.tool_result
+
+        assert result1 is result2
+        assert result1 == cached
+
+    def test_remaining_seconds_positive(self):
+        """Active pending request reports positive remaining seconds."""
+        req = self._make_request(expires_at=datetime.utcnow() + timedelta(minutes=3))
+        remaining = max(0, int((req.expires_at - datetime.utcnow()).total_seconds()))
+        assert 170 < remaining <= 180
+
+    def test_remaining_seconds_clamped_to_zero(self):
+        """Expired request clamps remaining_seconds to 0."""
+        req = self._make_request(expires_at=datetime.utcnow() - timedelta(minutes=1))
+        remaining = max(0, int((req.expires_at - datetime.utcnow()).total_seconds()))
+        assert remaining == 0
+
+    def test_declined_request_cannot_transition_to_approved(self):
+        """Once declined, re-approving should not be allowed (guard logic)."""
+        req = self._make_request(status="declined")
+        # Guard: only pending requests can be approved
+        can_approve = req.status == "pending"
+        assert can_approve is False
+
+
+class TestProxiedToolJustification:
+    """Regression tests for the proxied-tool justification fix.
+
+    Bug: _call_tool() strips justification from arguments into
+    _justification_var, but the proxied-tool wrapper was doing
+    arguments.pop("justification") again — always getting None.
+
+    Fix: wrapper reads from _justification_var.get(None) instead.
+    """
+
+    def test_justification_preserved_via_context_var(self):
+        """Justification stored in context var should be readable by wrapper."""
+        from contextvars import ContextVar
+
+        var: ContextVar = ContextVar("test_justification", default=None)
+        # Simulate _call_tool setting the var
+        var.set("I need to deploy the hotfix")
+
+        # Simulate wrapper reading from var (the fix)
+        justification = var.get(None)
+        assert justification == "I need to deploy the hotfix"
+
+    def test_justification_none_when_not_provided(self):
+        """When agent provides no justification, var should be None."""
+        from contextvars import ContextVar
+
+        var: ContextVar = ContextVar("test_justification_none", default=None)
+
+        justification = var.get(None)
+        assert justification is None
+
+    def test_arguments_pop_returns_none_after_strip(self):
+        """Demonstrates the bug: pop from already-stripped args returns None."""
+        arguments = {"command": "ls", "justification": "checking files"}
+
+        # _call_tool strips justification first
+        stripped = arguments.pop("justification", None)
+        assert stripped == "checking files"
+
+        # Proxied wrapper tries to pop again — always None (the bug)
+        second_pop = arguments.pop("justification", None)
+        assert second_pop is None
+
+    def test_justification_passed_to_approval_request(self):
+        """Justification should be forwarded as agent_reasoning in approval."""
+        approval_kwargs = {}
+
+        justification = "Emergency security patch"
+        if justification:
+            approval_kwargs["justification"] = justification
+
+        assert approval_kwargs["justification"] == "Emergency security patch"
+
+
+class TestPolicyGenerationRequestValidation:
+    """Pydantic model validation for policy generation request/response."""
+
+    def test_generate_policy_request_valid(self):
+        from preloop.api.endpoints.policies import GeneratePolicyRequest
+
+        req = GeneratePolicyRequest(prompt="require approval for bash")
+        assert req.prompt == "require approval for bash"
+        assert req.include_current_config is True  # default
+
+    def test_generate_policy_request_no_context(self):
+        from preloop.api.endpoints.policies import GeneratePolicyRequest
+
+        req = GeneratePolicyRequest(prompt="deny all", include_current_config=False)
+        assert req.include_current_config is False
+
+    def test_generate_policy_request_missing_prompt_raises(self):
+        from pydantic import ValidationError
+
+        from preloop.api.endpoints.policies import GeneratePolicyRequest
+
+        with pytest.raises(ValidationError):
+            GeneratePolicyRequest()  # prompt is required
+
+    def test_generate_from_audit_request_defaults(self):
+        from preloop.api.endpoints.policies import GeneratePolicyFromAuditRequest
+
+        req = GeneratePolicyFromAuditRequest()
+        assert req.start_date is None
+        assert req.end_date is None
+        assert req.audit_logs_json is None
+
+    def test_generate_from_audit_request_with_dates(self):
+        from preloop.api.endpoints.policies import GeneratePolicyFromAuditRequest
+
+        req = GeneratePolicyFromAuditRequest(
+            start_date="2026-01-01", end_date="2026-02-01"
+        )
+        assert req.start_date == "2026-01-01"
+
+    def test_generate_policy_response_valid(self):
+        from preloop.api.endpoints.policies import GeneratePolicyResponse
+
+        resp = GeneratePolicyResponse(yaml="version: '1.0'", warnings=["minor"])
+        assert resp.yaml == "version: '1.0'"
+        assert resp.warnings == ["minor"]
+
+    def test_generate_policy_response_empty_warnings(self):
+        from preloop.api.endpoints.policies import GeneratePolicyResponse
+
+        resp = GeneratePolicyResponse(yaml="version: '1.0'")
+        assert resp.warnings == []

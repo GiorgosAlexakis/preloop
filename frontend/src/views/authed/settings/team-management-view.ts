@@ -436,6 +436,14 @@ export class TeamManagementView extends LitElement {
       `;
     }
 
+    if (!this.featureEnabled) {
+      return html`
+        <div class="loading">
+          <p>Team management is not available in this edition.</p>
+        </div>
+      `;
+    }
+
     return html`
       <div class="header">
         <h1>Team Management</h1>

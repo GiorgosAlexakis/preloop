@@ -158,6 +158,7 @@ export class InvitationManagementView extends LitElement {
       const featuresResponse = await getFeatures();
       if (!featuresResponse.features?.['user_management']) {
         this.featureEnabled = false;
+        this.isLoading = false;
         return;
       }
     } catch {
@@ -269,6 +270,14 @@ export class InvitationManagementView extends LitElement {
       return html`
         <div class="loading">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
+        </div>
+      `;
+    }
+
+    if (!this.featureEnabled) {
+      return html`
+        <div class="loading">
+          <p>Invitation management is not available in this edition.</p>
         </div>
       `;
     }

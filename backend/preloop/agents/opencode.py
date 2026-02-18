@@ -387,6 +387,10 @@ cat > /tmp/prompt.txt << 'PROMPT_EOF'
 {prompt}
 PROMPT_EOF
 
+# Signal to the orchestrator that the agent is about to start.
+# Sentinel detection is suppressed until this marker is seen in logs.
+echo "PRELOOP_AGENT_EXEC_START"
+
 # Run OpenCode in non-interactive mode with the prompt
 opencode run --non-interactive "$(cat /tmp/prompt.txt)"
 OPENCODE_EXIT_CODE=$?

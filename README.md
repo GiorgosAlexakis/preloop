@@ -517,6 +517,56 @@ Preloop provides a RESTful API with the following key endpoints:
 - `POST /api/v1/flows/executions/{id}/command` - Send command to execution (e.g., stop)
 - `POST /api/v1/flows/executions/{id}/retry` - Retry a failed/stopped/cancelled execution
 
+### Policy Generation
+- `POST /api/v1/policies/generate` - Generate policy YAML from a natural-language prompt
+- `POST /api/v1/policies/generate-from-audit` - Generate policy YAML from audit-log tool-call patterns
+
+**Prerequisites:** At least one AI model must be configured in Settings → AI Models.
+
+**Generate from Prompt:**
+
+```bash
+curl -X POST "https://YOUR_PRELOOP_URL/api/v1/policies/generate" \
+-H "Authorization: Bearer YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+  "prompt": "require approval for any bash command that modifies production",
+  "include_current_config": true
+}'
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `prompt` | string | Yes | Natural-language description of the desired policy |
+| `include_current_config` | boolean | No | Include current account config as LLM context (default: `true`) |
+
+**Generate from Audit Logs:**
+
+```bash
+curl -X POST "https://YOUR_PRELOOP_URL/api/v1/policies/generate-from-audit" \
+-H "Authorization: Bearer YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+  "start_date": "2026-01-01",
+  "end_date": "2026-02-01"
+}'
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `start_date` | string | No | ISO date to filter audit logs from (e.g. `2026-01-01`) |
+| `end_date` | string | No | ISO date to filter audit logs until |
+| `audit_logs_json` | string | No | Raw JSON array of external audit logs (bypasses DB lookup) |
+
+**Response (both endpoints):**
+
+```json
+{
+  "yaml": "version: \"1.0\"\nmetadata:\n  name: ...",
+  "warnings": ["Optional validation warnings"]
+}
+```
+
 ## Trackers
 - `GET /api/v1/trackers` - List trackers
 - `GET /api/v1/trackers/{tracker_id}` - Get tracker details

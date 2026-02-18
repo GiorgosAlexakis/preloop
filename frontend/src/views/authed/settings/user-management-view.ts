@@ -327,6 +327,14 @@ export class UserManagementView extends LitElement {
       `;
     }
 
+    if (!this.featureEnabled) {
+      return html`
+        <div class="loading">
+          <p>User management is not available in this edition.</p>
+        </div>
+      `;
+    }
+
     return html`
       <div class="header">
         <h1>User Management</h1>
