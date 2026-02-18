@@ -271,8 +271,14 @@ class ContainerAgentExecutor(AgentExecutor):
         job_name = f"agent-{execution_id}".replace("_", "-").lower()
 
         # Prepare environment variables
-        # Start with agent-specific env if provided (e.g., from CodexAgent)
-        env = execution_context.get("_codex_env", {}).copy()
+        # Start with agent-specific env if provided by any subclass.
+        # Subclasses store their env under a generic key "_agent_env".
+        # Falls back to "_codex_env" for backward compatibility.
+        env = (
+            execution_context.get("_agent_env")
+            or execution_context.get("_codex_env")
+            or {}
+        ).copy()
 
         # Add base environment variables
         env.update(

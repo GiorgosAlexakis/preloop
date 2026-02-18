@@ -371,11 +371,11 @@ cat > /workspace/opencode.json << 'OPENCODE_CONFIG_EOF'
 {opencode_config_json}
 OPENCODE_CONFIG_EOF
 
-# Substitute only the expected environment variables in config.
-# Using explicit variable list prevents envsubst from replacing
-# $schema and other unintended $-prefixed strings.
-envsubst '$PRELOOP_MCP_URL $PRELOOP_API_TOKEN' < /workspace/opencode.json > /workspace/opencode.json.tmp
-mv /workspace/opencode.json.tmp /workspace/opencode.json
+# Substitute environment variables in config using sed.
+# envsubst is not available in all sandbox images, so we use sed instead.
+# Using '|' as delimiter since URLs contain '/'.
+sed -i "s|\\$PRELOOP_MCP_URL|$PRELOOP_MCP_URL|g" /workspace/opencode.json
+sed -i "s|\\$PRELOOP_API_TOKEN|$PRELOOP_API_TOKEN|g" /workspace/opencode.json
 
 # Debug: Show config (with keys masked)
 echo "=== OpenCode Configuration ==="
@@ -395,8 +395,9 @@ echo '{prompt_b64}' | base64 -d > /tmp/prompt.txt
 # Sentinel detection is suppressed until this marker is seen in logs.
 echo "PRELOOP_AGENT_EXEC_START"
 
-# Run OpenCode in non-interactive mode with the prompt
-opencode run --non-interactive "$(cat /tmp/prompt.txt)"
+# Run OpenCode with the prompt.
+# opencode run accepts messages as positional args and runs non-interactively.
+opencode run "$(cat /tmp/prompt.txt)"
 OPENCODE_EXIT_CODE=$?
 
 echo ""
@@ -437,8 +438,12 @@ exit $OPENCODE_EXIT_CODE
             env_key = f"{model_provider.upper().replace('-', '_')}_API_BASE"
             model_endpoint = os.getenv(env_key) or os.getenv("CUSTOM_API_BASE", "")
 
+        # OpenCode expects model in "provider/model" format
+        model_key = f"{model_provider}/{model}" if model_provider else model
+
         config: Dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
+            "model": model_key,
             "autoupdate": False,
             "mcp": {
                 "preloop": {
@@ -476,7 +481,11 @@ exit $OPENCODE_EXIT_CODE
         # Store script in execution context
         execution_context["_opencode_script"] = script
 
-        # Set args for Kubernetes
+        # Set command and args for Kubernetes.
+        # Unlike codex-universal (whose ENTRYPOINT runs `exec bash "$@"`),
+        # the OpenCode image has no shell-forwarding entrypoint, so we must
+        # explicitly set the command to /bin/bash.
+        execution_context["_container_command"] = ["/bin/bash"]
         execution_context["_container_args"] = ["-c", script]
 
         # Prepare OpenCode-specific environment variables
@@ -519,7 +528,7 @@ exit $OPENCODE_EXIT_CODE
             )
             opencode_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        execution_context["_opencode_env"] = opencode_env
+        execution_context["_agent_env"] = opencode_env
 
         # Call parent implementation
         return await super()._start_kubernetes_pod(execution_context)

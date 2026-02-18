@@ -12,10 +12,12 @@ class TestGeminiAgentInit:
     """Test GeminiAgent initialization."""
 
     def test_default_image(self):
-        """Default image is set."""
+        """Default image is the official Gemini CLI sandbox."""
         agent = GeminiAgent({})
         assert agent.agent_type == "gemini"
-        assert agent.image is not None
+        assert (
+            agent.image == "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.1.4"
+        )
 
     def test_custom_image_from_env(self):
         """GEMINI_IMAGE env var overrides default image."""
@@ -100,15 +102,20 @@ class TestGeminiBuildScript:
     """Test _build_gemini_script method."""
 
     def test_script_contains_prompt(self):
-        """Generated script contains the prompt."""
+        """Generated script contains the base64-encoded prompt."""
+        import base64
+
         agent = GeminiAgent({})
+        prompt = "Refactor the database module"
         context = {
-            "prompt": "Refactor the database module",
+            "prompt": prompt,
             "execution_id": "exec-1",
             "flow_name": "test-flow",
         }
         script = agent._build_gemini_script(context)
-        assert "Refactor the database module" in script
+        # Prompt is base64-encoded for shell safety
+        expected_b64 = base64.b64encode(prompt.encode()).decode()
+        assert expected_b64 in script
 
     def test_script_contains_model(self):
         """Generated script uses the configured model."""
@@ -163,16 +170,20 @@ class TestGeminiBuildScript:
         assert "900000" in script
 
     def test_prompt_with_single_quotes(self):
-        """Prompt with single quotes is handled safely via heredoc."""
+        """Prompt with single quotes is handled safely via base64 encoding."""
+        import base64
+
         agent = GeminiAgent({})
+        prompt = "Don't break the build"
         context = {
-            "prompt": "Don't break the build",
+            "prompt": prompt,
             "execution_id": "exec-1",
             "flow_name": "test-flow",
         }
         script = agent._build_gemini_script(context)
-        # Should contain the prompt (escaped for heredoc)
-        assert "break the build" in script
+        # Prompt is base64-encoded, so single quotes are safe
+        expected_b64 = base64.b64encode(prompt.encode()).decode()
+        assert expected_b64 in script
 
 
 class TestGeminiPrepareEnvironment:
@@ -210,3 +221,31 @@ class TestGeminiPrepareEnvironment:
         context = {}
         env = await agent._prepare_environment(context)
         assert "GEMINI_API_KEY" not in env
+
+
+class TestGeminiKubernetesStartup:
+    """Test _start_kubernetes_pod sets correct command and args."""
+
+    @pytest.mark.asyncio
+    async def test_k8s_sets_container_command_and_args(self):
+        """K8s path sets _container_command=['/bin/bash'] and _container_args=['-c', script]."""
+        agent = GeminiAgent({})
+        context = {
+            "prompt": "test prompt",
+            "gemini_model": "gemini-3-flash",
+            "model_identifier": "gemini-3-flash",
+            "model_api_key": "key-123",
+            "execution_id": "exec-k8s-1",
+            "flow_id": "flow-1",
+            "flow_name": "test-flow",
+        }
+        with patch(
+            "preloop.agents.container.ContainerAgentExecutor._start_kubernetes_pod",
+            new_callable=AsyncMock,
+            return_value="job-name",
+        ) as mock_parent:
+            await agent._start_kubernetes_pod(context)
+            call_ctx = mock_parent.call_args[0][0]
+            assert call_ctx["_container_command"] == ["/bin/bash"]
+            assert call_ctx["_container_args"][0] == "-c"
+            assert len(call_ctx["_container_args"]) == 2

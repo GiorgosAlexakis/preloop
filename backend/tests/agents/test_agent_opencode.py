@@ -139,16 +139,21 @@ class TestOpenCodeBuildScript:
     """Test _build_opencode_script method."""
 
     def test_script_contains_prompt(self):
-        """Generated script contains the prompt."""
+        """Generated script contains the base64-encoded prompt."""
+        import base64
+
         agent = OpenCodeAgent({})
+        prompt = "Add unit tests for the API"
         context = {
-            "prompt": "Add unit tests for the API",
+            "prompt": prompt,
             "opencode_model": "claude-sonnet-4-20250514",
             "execution_id": "exec-1",
             "flow_name": "test-flow",
         }
         script = agent._build_opencode_script(context)
-        assert "Add unit tests for the API" in script
+        # Prompt is base64-encoded for shell safety
+        expected_b64 = base64.b64encode(prompt.encode()).decode()
+        assert expected_b64 in script
 
     def test_script_contains_model(self):
         """Script logs the configured model."""
@@ -176,7 +181,7 @@ class TestOpenCodeBuildScript:
         assert "trap _post_exec_sleep EXIT" in script
 
     def test_script_runs_opencode(self):
-        """Script runs opencode run --non-interactive."""
+        """Script runs opencode run with positional message."""
         agent = OpenCodeAgent({})
         context = {
             "prompt": "test",
@@ -185,7 +190,9 @@ class TestOpenCodeBuildScript:
             "flow_name": "test-flow",
         }
         script = agent._build_opencode_script(context)
-        assert "opencode run --non-interactive" in script
+        assert "opencode run" in script
+        # Should NOT use non-existent --non-interactive flag
+        assert "--non-interactive" not in script
 
     def test_script_installs_opencode(self):
         """Script installs opencode-ai via npm."""
@@ -335,3 +342,33 @@ class TestOpenCodePrepareEnvironment:
         env = await agent._prepare_environment(context)
         assert env["GOOGLE_API_KEY"] == "google-key-123"
         assert env["OPENAI_API_KEY"] == "google-key-123"
+
+
+class TestOpenCodeKubernetesStartup:
+    """Test _start_kubernetes_pod sets correct command and args."""
+
+    @pytest.mark.asyncio
+    async def test_k8s_sets_container_command_and_args(self):
+        """K8s path sets _container_command=['/bin/bash'] and _container_args=['-c', script]."""
+        agent = OpenCodeAgent({})
+        context = {
+            "prompt": "test prompt",
+            "opencode_model": "claude-sonnet-4-20250514",
+            "model_identifier": "claude-sonnet-4-20250514",
+            "model_provider": "anthropic",
+            "model_api_key": "key-123",
+            "execution_id": "exec-k8s-1",
+            "flow_id": "flow-1",
+            "flow_name": "test-flow",
+        }
+        # Mock the parent _start_kubernetes_pod to capture the context
+        with patch(
+            "preloop.agents.container.ContainerAgentExecutor._start_kubernetes_pod",
+            new_callable=AsyncMock,
+            return_value="job-name",
+        ) as mock_parent:
+            await agent._start_kubernetes_pod(context)
+            call_ctx = mock_parent.call_args[0][0]
+            assert call_ctx["_container_command"] == ["/bin/bash"]
+            assert call_ctx["_container_args"][0] == "-c"
+            assert len(call_ctx["_container_args"]) == 2

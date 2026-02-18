@@ -35,7 +35,7 @@ class GeminiAgent(ContainerAgentExecutor):
         # Use the official Gemini CLI sandbox image
         image = os.getenv(
             "GEMINI_IMAGE",
-            "registry.spacecode.ai/spacecode/preloop/gemini-cli/sandbox:0.16.0",
+            "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.1.4",
         )
 
         # Auto-detect Kubernetes environment or use explicit env var
@@ -383,11 +383,11 @@ cat > ~/.gemini/settings.json << 'SETTINGS_EOF'
 }}
 SETTINGS_EOF
 
-# Substitute environment variables in settings.json
-export PRELOOP_MCP_URL
-export PRELOOP_API_TOKEN
-envsubst < ~/.gemini/settings.json > ~/.gemini/settings.json.tmp
-mv ~/.gemini/settings.json.tmp ~/.gemini/settings.json
+# Substitute environment variables in settings.json using sed.
+# envsubst is not available in all sandbox images, so we use sed instead.
+# Using '|' as delimiter since URLs contain '/'.
+sed -i "s|\\$PRELOOP_MCP_URL|$PRELOOP_MCP_URL|g" ~/.gemini/settings.json
+sed -i "s|\\$PRELOOP_API_TOKEN|$PRELOOP_API_TOKEN|g" ~/.gemini/settings.json
 
 # Debug: Show config (with token masked)
 echo "=== Gemini Configuration ==="
@@ -407,11 +407,10 @@ echo '{prompt_b64}' | base64 -d > /tmp/prompt.txt
 echo "PRELOOP_AGENT_EXEC_START"
 
 # Run Gemini CLI with the prompt
-# --output-format stream-json: Stream JSON output for real-time monitoring
 # --yolo: Skip confirmation prompts for tool usage
 # -m: Specify the model
 # --prompt: Pass the prompt (read from file)
-gemini --output-format stream-json --yolo -m "{model}" --prompt "$(cat /tmp/prompt.txt)"
+gemini --yolo -m "{model}" --prompt "$(cat /tmp/prompt.txt)"
 GEMINI_EXIT_CODE=$?
 
 echo ""
@@ -437,7 +436,10 @@ exit $GEMINI_EXIT_CODE
         # Store script in execution context
         execution_context["_gemini_script"] = script
 
-        # Set args for Kubernetes
+        # Set command and args for Kubernetes.
+        # The Gemini sandbox image has no shell-forwarding entrypoint,
+        # so we must explicitly set the command to /bin/bash.
+        execution_context["_container_command"] = ["/bin/bash"]
         execution_context["_container_args"] = ["-c", script]
 
         # Prepare Gemini-specific environment variables
@@ -480,7 +482,7 @@ exit $GEMINI_EXIT_CODE
             )
             gemini_env["MCP_CONFIG_JSON"] = json.dumps(mcp_config)
 
-        execution_context["_gemini_env"] = gemini_env
+        execution_context["_agent_env"] = gemini_env
 
         # Call parent implementation
         return await super()._start_kubernetes_pod(execution_context)
