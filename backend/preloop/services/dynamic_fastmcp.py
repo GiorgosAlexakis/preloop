@@ -771,15 +771,16 @@ async def {internal_name}({params_str}) -> str:
                 plugin_manager = get_plugin_manager()
                 audit_service = plugin_manager.get_service("audit_service")
                 if audit_service:
-                    audit_service.log_tool_execution_async(
+                    audit_service.log_tool_call_async(
                         db_factory=lambda: next(get_db()),
                         account_id=uuid.UUID(user_context.account_id),
                         user_id=uuid.UUID(user_context.user_id),
                         tool_name=name,
                         tool_args=arguments,
-                        status=exec_status,
-                        execution_time_ms=elapsed_ms,
-                        correlation_id=correlation_id,
+                        result=exec_status,
+                        duration_ms=elapsed_ms,
+                        policy_decision=None,
+                        rule_matched=None,
                     )
             except Exception as audit_err:
                 logger.debug(f"Failed to audit tool execution: {audit_err}")

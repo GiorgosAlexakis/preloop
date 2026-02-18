@@ -646,6 +646,7 @@ export class DashboardView extends AuthedElement {
         font-weight: 500;
         white-space: nowrap;
         flex-shrink: 0;
+        float: right;
       }
       .capsule-link:hover {
         text-decoration: underline;
@@ -1404,10 +1405,10 @@ export class DashboardView extends AuthedElement {
                         }}
                       ></sl-icon-button>
                     </sl-tooltip>
-                    <a href="/console/settings/api-keys" class="capsule-link">
-                      Manage Keys
-                    </a>
                   </div>
+                  <a href="/console/settings/api-keys" class="capsule-link">
+                    Manage Keys
+                  </a>
                 `}
           </sl-card>
 
