@@ -204,7 +204,10 @@ class TestApproveRequest:
     @pytest.mark.asyncio
     async def test_approve_request_success(self, mock_user, mock_approval_request):
         """Test successful approval of a request."""
-        from preloop.models.schemas.approval_request import ApprovalDecision
+        from preloop.models.schemas.approval_request import (
+            ApprovalDecision,
+            ApprovalRequestResponse,
+        )
 
         mock_http_request = MagicMock()
         mock_http_request.base_url = "http://localhost"
@@ -214,6 +217,9 @@ class TestApproveRequest:
         updated_request = MagicMock()
         updated_request.id = mock_approval_request.id
         updated_request.status = "approved"
+
+        # Build expected Pydantic response
+        expected_response = MagicMock(spec=ApprovalRequestResponse)
 
         with patch(
             "preloop.api.endpoints.approval_requests.get_async_db_session"
@@ -229,17 +235,27 @@ class TestApproveRequest:
                 mock_service.approve_request.return_value = updated_request
                 mock_approval_service.return_value = mock_service
 
-                result = await approval_requests.approve_request(
-                    request_id=mock_approval_request.id,
-                    decision=decision,
-                    request=mock_http_request,
-                    current_user=mock_user,
-                )
+                with patch(
+                    "preloop.api.endpoints.approval_requests.ApprovalRequestResponse"
+                ) as mock_response_cls:
+                    mock_response_cls.model_validate.return_value = expected_response
 
-                assert result == updated_request
-                mock_service.approve_request.assert_called_once_with(
-                    mock_approval_request.id, decision.comment, user_id=mock_user.id
-                )
+                    result = await approval_requests.approve_request(
+                        request_id=mock_approval_request.id,
+                        decision=decision,
+                        request=mock_http_request,
+                        current_user=mock_user,
+                    )
+
+                    assert result == expected_response
+                    mock_response_cls.model_validate.assert_called_once_with(
+                        updated_request
+                    )
+                    mock_service.approve_request.assert_called_once_with(
+                        mock_approval_request.id,
+                        decision.comment,
+                        user_id=mock_user.id,
+                    )
 
     @pytest.mark.asyncio
     async def test_approve_request_not_found(self, mock_user):
@@ -357,7 +373,10 @@ class TestDeclineRequest:
     @pytest.mark.asyncio
     async def test_decline_request_success(self, mock_user, mock_approval_request):
         """Test successful decline of a request."""
-        from preloop.models.schemas.approval_request import ApprovalDecision
+        from preloop.models.schemas.approval_request import (
+            ApprovalDecision,
+            ApprovalRequestResponse,
+        )
 
         mock_http_request = MagicMock()
         mock_http_request.base_url = "http://localhost"
@@ -367,6 +386,8 @@ class TestDeclineRequest:
         updated_request = MagicMock()
         updated_request.id = mock_approval_request.id
         updated_request.status = "declined"
+
+        expected_response = MagicMock(spec=ApprovalRequestResponse)
 
         with patch(
             "preloop.api.endpoints.approval_requests.get_async_db_session"
@@ -382,17 +403,27 @@ class TestDeclineRequest:
                 mock_service.decline_request.return_value = updated_request
                 mock_approval_service.return_value = mock_service
 
-                result = await approval_requests.decline_request(
-                    request_id=mock_approval_request.id,
-                    decision=decision,
-                    request=mock_http_request,
-                    current_user=mock_user,
-                )
+                with patch(
+                    "preloop.api.endpoints.approval_requests.ApprovalRequestResponse"
+                ) as mock_response_cls:
+                    mock_response_cls.model_validate.return_value = expected_response
 
-                assert result == updated_request
-                mock_service.decline_request.assert_called_once_with(
-                    mock_approval_request.id, decision.comment, user_id=mock_user.id
-                )
+                    result = await approval_requests.decline_request(
+                        request_id=mock_approval_request.id,
+                        decision=decision,
+                        request=mock_http_request,
+                        current_user=mock_user,
+                    )
+
+                    assert result == expected_response
+                    mock_response_cls.model_validate.assert_called_once_with(
+                        updated_request
+                    )
+                    mock_service.decline_request.assert_called_once_with(
+                        mock_approval_request.id,
+                        decision.comment,
+                        user_id=mock_user.id,
+                    )
 
     @pytest.mark.asyncio
     async def test_decline_request_not_found(self, mock_user):
@@ -434,7 +465,10 @@ class TestDecideRequest:
     @pytest.mark.asyncio
     async def test_decide_request_approve(self, mock_user, mock_approval_request):
         """Test decide endpoint with approved=True."""
-        from preloop.models.schemas.approval_request import ApprovalDecision
+        from preloop.models.schemas.approval_request import (
+            ApprovalDecision,
+            ApprovalRequestResponse,
+        )
 
         mock_http_request = MagicMock()
         mock_http_request.base_url = "http://localhost"
@@ -444,6 +478,8 @@ class TestDecideRequest:
         updated_request = MagicMock()
         updated_request.id = mock_approval_request.id
         updated_request.status = "approved"
+
+        expected_response = MagicMock(spec=ApprovalRequestResponse)
 
         with patch(
             "preloop.api.endpoints.approval_requests.get_async_db_session"
@@ -459,21 +495,29 @@ class TestDecideRequest:
                 mock_service.approve_request.return_value = updated_request
                 mock_approval_service.return_value = mock_service
 
-                result = await approval_requests.decide_request(
-                    request_id=mock_approval_request.id,
-                    decision=decision,
-                    request=mock_http_request,
-                    current_user=mock_user,
-                )
+                with patch(
+                    "preloop.api.endpoints.approval_requests.ApprovalRequestResponse"
+                ) as mock_response_cls:
+                    mock_response_cls.model_validate.return_value = expected_response
 
-                assert result == updated_request
-                mock_service.approve_request.assert_called_once()
-                mock_service.decline_request.assert_not_called()
+                    result = await approval_requests.decide_request(
+                        request_id=mock_approval_request.id,
+                        decision=decision,
+                        request=mock_http_request,
+                        current_user=mock_user,
+                    )
+
+                    assert result == expected_response
+                    mock_service.approve_request.assert_called_once()
+                    mock_service.decline_request.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_decide_request_decline(self, mock_user, mock_approval_request):
         """Test decide endpoint with approved=False."""
-        from preloop.models.schemas.approval_request import ApprovalDecision
+        from preloop.models.schemas.approval_request import (
+            ApprovalDecision,
+            ApprovalRequestResponse,
+        )
 
         mock_http_request = MagicMock()
         mock_http_request.base_url = "http://localhost"
@@ -483,6 +527,8 @@ class TestDecideRequest:
         updated_request = MagicMock()
         updated_request.id = mock_approval_request.id
         updated_request.status = "declined"
+
+        expected_response = MagicMock(spec=ApprovalRequestResponse)
 
         with patch(
             "preloop.api.endpoints.approval_requests.get_async_db_session"
@@ -498,16 +544,21 @@ class TestDecideRequest:
                 mock_service.decline_request.return_value = updated_request
                 mock_approval_service.return_value = mock_service
 
-                result = await approval_requests.decide_request(
-                    request_id=mock_approval_request.id,
-                    decision=decision,
-                    request=mock_http_request,
-                    current_user=mock_user,
-                )
+                with patch(
+                    "preloop.api.endpoints.approval_requests.ApprovalRequestResponse"
+                ) as mock_response_cls:
+                    mock_response_cls.model_validate.return_value = expected_response
 
-                assert result == updated_request
-                mock_service.decline_request.assert_called_once()
-                mock_service.approve_request.assert_not_called()
+                    result = await approval_requests.decide_request(
+                        request_id=mock_approval_request.id,
+                        decision=decision,
+                        request=mock_http_request,
+                        current_user=mock_user,
+                    )
+
+                    assert result == expected_response
+                    mock_service.decline_request.assert_called_once()
+                    mock_service.approve_request.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_decide_request_failure(self, mock_user, mock_approval_request):

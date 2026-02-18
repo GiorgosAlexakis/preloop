@@ -8,10 +8,11 @@ This module handles sending notifications through various channels:
 - Webhook (Proprietary)
 """
 
+import asyncio
 import json
 import uuid
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 import httpx
 from sqlalchemy.orm import Session
@@ -40,6 +41,12 @@ class NotificationService:
     ) -> Dict[str, Any]:
         """Send notifications for an approval request.
 
+        Mobile-first strategy: push notifications are sent immediately, while
+        email is delayed 15 seconds for users who also have push enabled.
+        If the approval is resolved within those 15 seconds (e.g. via mobile),
+        the email is skipped entirely. Users with only email enabled receive
+        their email immediately.
+
         Args:
             approval_request: The approval request to notify about.
             approval_policy: The approval policy containing notification config.
@@ -52,24 +59,49 @@ class NotificationService:
         # Get list of approvers (expand teams to users)
         approver_user_ids = await self._get_approver_user_ids(approval_policy)
 
-        # Always send user-targeted notifications based on each approver's preferences
-        try:
-            result = await self._send_email_notifications(
-                approval_request, approver_user_ids
-            )
-            results["email"] = result
-        except Exception as e:
-            logger.error(f"Failed to send email notifications: {str(e)}")
-            results["email"] = {"success": False, "error": str(e)}
+        # Partition users by which notification channels they have enabled
+        push_only, email_only, both = self._partition_users_by_channel(
+            approver_user_ids
+        )
 
-        try:
-            result = await self._send_push_notifications(
-                approval_request, approver_user_ids
+        # 1. Send push notifications immediately to all push-enabled users
+        push_targets = push_only + both
+        if push_targets:
+            try:
+                result = await self._send_push_notifications(
+                    approval_request, push_targets
+                )
+                results["mobile_push"] = result
+            except Exception as e:
+                logger.error(f"Failed to send push notifications: {str(e)}")
+                results["mobile_push"] = {"success": False, "error": str(e)}
+
+        # 2. Send email immediately to users who ONLY have email (no push)
+        if email_only:
+            try:
+                result = await self._send_email_notifications(
+                    approval_request, email_only
+                )
+                results["email_immediate"] = result
+            except Exception as e:
+                logger.error(f"Failed to send immediate email notifications: {str(e)}")
+                results["email_immediate"] = {"success": False, "error": str(e)}
+
+        # 3. Schedule delayed email for users with both push + email
+        #    Email is sent after 15s only if the request is still pending
+        if both:
+            asyncio.create_task(
+                self._send_delayed_email(
+                    request_id=approval_request.id,
+                    approval_request=approval_request,
+                    user_ids=both,
+                    delay_seconds=15,
+                )
             )
-            results["mobile_push"] = result
-        except Exception as e:
-            logger.error(f"Failed to send push notifications: {str(e)}")
-            results["mobile_push"] = {"success": False, "error": str(e)}
+            results["email_delayed"] = {
+                "scheduled": len(both),
+                "delay_seconds": 15,
+            }
 
         # Send to policy-configured channels (slack, mattermost, webhook)
         # based on what's present in channel_configs
@@ -169,6 +201,96 @@ class NotificationService:
                 results[channel] = {"success": False, "error": str(e)}
 
         return results
+
+    def _partition_users_by_channel(
+        self, user_ids: List[uuid.UUID]
+    ) -> Tuple[List[uuid.UUID], List[uuid.UUID], List[uuid.UUID]]:
+        """Partition users into push-only, email-only, and both channels.
+
+        Args:
+            user_ids: List of user IDs to partition.
+
+        Returns:
+            Tuple of (push_only, email_only, both) user ID lists.
+        """
+        push_only: List[uuid.UUID] = []
+        email_only: List[uuid.UUID] = []
+        both: List[uuid.UUID] = []
+
+        for user_id in user_ids:
+            prefs = notification_preferences.get_by_user(self.db, user_id)
+            if not prefs:
+                continue
+
+            has_email = bool(prefs.enable_email)
+            has_push = bool(
+                prefs.enable_mobile_push and prefs.get_device_tokens(platform="ios")
+            )
+
+            if has_push and has_email:
+                both.append(user_id)
+            elif has_push:
+                push_only.append(user_id)
+            elif has_email:
+                email_only.append(user_id)
+            # else: no channels enabled, skip
+
+        logger.info(
+            f"Partitioned {len(user_ids)} users: "
+            f"{len(push_only)} push-only, {len(email_only)} email-only, "
+            f"{len(both)} both"
+        )
+        return push_only, email_only, both
+
+    async def _send_delayed_email(
+        self,
+        request_id: uuid.UUID,
+        approval_request: models.ApprovalRequest,
+        user_ids: List[uuid.UUID],
+        delay_seconds: int = 15,
+    ) -> None:
+        """Send email notifications after a delay, but only if still pending.
+
+        This implements the mobile-first strategy: give the user time to act
+        via push notification before sending email.
+
+        Args:
+            request_id: The approval request ID to re-check.
+            approval_request: The original approval request (used for email content).
+            user_ids: Users to potentially email.
+            delay_seconds: How long to wait before sending.
+        """
+        try:
+            await asyncio.sleep(delay_seconds)
+
+            # Re-check if the approval request is still pending
+            current_request = (
+                self.db.query(models.ApprovalRequest)
+                .filter(models.ApprovalRequest.id == request_id)
+                .first()
+            )
+
+            if not current_request or current_request.status != "pending":
+                logger.info(
+                    f"Skipping delayed email for approval {request_id}: "
+                    f"status is '{current_request.status if current_request else 'not found'}'"
+                )
+                return
+
+            logger.info(
+                f"Approval {request_id} still pending after {delay_seconds}s, "
+                f"sending delayed email to {len(user_ids)} users"
+            )
+            result = await self._send_email_notifications(approval_request, user_ids)
+            logger.info(f"Delayed email result: {result}")
+
+        except asyncio.CancelledError:
+            logger.info(f"Delayed email task cancelled for approval {request_id}")
+        except Exception as e:
+            logger.error(
+                f"Failed to send delayed email for approval {request_id}: {str(e)}",
+                exc_info=True,
+            )
 
     async def _get_approver_user_ids(
         self, approval_policy: models.ApprovalPolicy

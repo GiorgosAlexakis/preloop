@@ -91,7 +91,7 @@ async def approve_request(
     decision: ApprovalDecision,
     request: Request,
     current_user: User = Depends(get_current_active_user),
-) -> ApprovalRequest:
+) -> ApprovalRequestResponse:
     """Approve an approval request.
 
     Args:
@@ -137,7 +137,9 @@ async def approve_request(
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to approve request")
 
-        return updated
+        # Convert to Pydantic model while session is still open to avoid
+        # DetachedInstanceError during response serialization.
+        return ApprovalRequestResponse.model_validate(updated)
 
 
 @router.post("/{request_id}/decline", response_model=ApprovalRequestResponse)
@@ -146,7 +148,7 @@ async def decline_request(
     decision: ApprovalDecision,
     request: Request,
     current_user: User = Depends(get_current_active_user),
-) -> ApprovalRequest:
+) -> ApprovalRequestResponse:
     """Decline an approval request.
 
     Args:
@@ -192,7 +194,9 @@ async def decline_request(
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to decline request")
 
-        return updated
+        # Convert to Pydantic model while session is still open to avoid
+        # DetachedInstanceError during response serialization.
+        return ApprovalRequestResponse.model_validate(updated)
 
 
 @router.post("/{request_id}/decide", response_model=ApprovalRequestResponse)
@@ -201,7 +205,7 @@ async def decide_request(
     decision: ApprovalDecision,
     request: Request,
     current_user: User = Depends(get_current_active_user),
-) -> ApprovalRequest:
+) -> ApprovalRequestResponse:
     """Approve or decline an approval request based on decision.approved.
 
     This is a convenience endpoint that calls approve or decline based on
@@ -256,4 +260,6 @@ async def decide_request(
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to process decision")
 
-        return updated
+        # Convert to Pydantic model while session is still open to avoid
+        # DetachedInstanceError during response serialization.
+        return ApprovalRequestResponse.model_validate(updated)

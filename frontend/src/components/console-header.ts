@@ -375,10 +375,10 @@ export class ConsoleHeader extends LitElement {
           const newExecution: FlowExecution = {
             id: message.execution_id,
             flow_id: message.flow_id,
-            status: message.payload.status || 'PENDING',
+            status: message.payload?.status || 'PENDING',
             start_time: message.timestamp,
             end_time: null,
-            flow_name: message.payload.flow_name,
+            flow_name: message.payload?.flow_name,
           };
 
           // Add to running executions if not already there
@@ -397,7 +397,7 @@ export class ConsoleHeader extends LitElement {
 
         // Handle status updates
         if (message.type === 'status_update' && message.execution_id) {
-          const status = message.payload.status;
+          const status = message.payload?.status;
           const executionIndex = this._runningExecutions.findIndex(
             (exec) => exec.id === message.execution_id
           );
@@ -422,7 +422,7 @@ export class ConsoleHeader extends LitElement {
               const updatedExecution = {
                 ...this._runningExecutions[executionIndex],
                 status: status,
-                end_time: message.payload.end_time || null,
+                end_time: message.payload?.end_time || null,
               };
               this._runningExecutions = [
                 ...this._runningExecutions.slice(0, executionIndex),
@@ -478,6 +478,12 @@ export class ConsoleHeader extends LitElement {
           message.type === 'approval_expired' ||
           message.type === 'approval_cancelled'
         ) {
+          // Show desktop notification for resolution
+          this.showApprovalResolvedNotification(
+            message.approval_request_id,
+            message.tool_name || 'Tool',
+            message.type
+          );
           // Remove from pending approvals
           this._pendingApprovals = this._pendingApprovals.filter(
             (approval) => approval.id !== message.approval_request_id
@@ -690,6 +696,49 @@ export class ConsoleHeader extends LitElement {
       };
     } catch (error) {
       console.error('Failed to show approval notification:', error);
+    }
+  }
+
+  /**
+   * Show desktop notification when an approval is resolved.
+   */
+  private showApprovalResolvedNotification(
+    approvalId: string,
+    toolName: string,
+    eventType: string
+  ): void {
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    const statusMap: Record<string, { title: string; emoji: string }> = {
+      approval_approved: { title: 'Approved', emoji: '✅' },
+      approval_declined: { title: 'Declined', emoji: '❌' },
+      approval_expired: { title: 'Expired', emoji: '⏰' },
+      approval_cancelled: { title: 'Cancelled', emoji: '🚫' },
+    };
+
+    const status = statusMap[eventType] || { title: 'Resolved', emoji: '📋' };
+
+    try {
+      const notification = new Notification(
+        `${status.emoji} Approval ${status.title}`,
+        {
+          body: `${toolName} was ${status.title.toLowerCase()}`,
+          icon: '/images/logos/preloop_logo_dark.svg',
+          tag: `approval-resolved-${approvalId}`,
+        }
+      );
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+
+      // Auto-close after 8 seconds
+      setTimeout(() => notification.close(), 8000);
+    } catch (error) {
+      console.error('Failed to show approval resolved notification:', error);
     }
   }
 
@@ -912,7 +961,11 @@ export class ConsoleHeader extends LitElement {
         <div class="user-menu">
           <!-- Notification Center -->
           <sl-dropdown distance="8" placement="bottom-end">
-            <div slot="trigger" class="notification-button">
+            <div
+              slot="trigger"
+              class="notification-button"
+              @click=${() => this.requestNotificationPermission()}
+            >
               <sl-icon-button
                 name="bell"
                 label="Notifications"
