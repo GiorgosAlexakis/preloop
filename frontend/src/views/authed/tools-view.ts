@@ -9,8 +9,8 @@ import {
   updateMCPServer,
   createToolConfiguration,
   updateToolConfiguration,
-  getApprovalPolicies,
-  deleteApprovalPolicy,
+  getApprovalWorkflows,
+  deleteApprovalWorkflow,
   getFeatures,
   getAccountDetails,
   createAccessRule,
@@ -22,8 +22,8 @@ import '../../components/mcp-server-form';
 import '../../components/mcp-server-card';
 import '../../components/tool-list-item';
 import '../../components/mcp-setup-dialog';
-import '../../components/approval-policy-dialog';
-import type { Tool, ApprovalPolicy } from '../../components/tool-card';
+import '../../components/approval-workflow-dialog';
+import type { Tool, ApprovalWorkflow } from '../../components/tool-card';
 import type { MCPServer } from '../../components/mcp-server-card';
 import type { AccessRuleSummary } from '../../components/tool-list-item';
 import type { RuleFormData } from '../../components/tool-rule-editor';
@@ -61,7 +61,7 @@ interface ToolGroup {
 export class ToolsView extends LitElement {
   @state() private tools: ToolWithRules[] = [];
   @state() private mcpServers: MCPServer[] = [];
-  @state() private approvalPolicies: ApprovalPolicy[] = [];
+  @state() private approvalPolicies: ApprovalWorkflow[] = [];
   @state() private loading = false;
   @state() private error: string | null = null;
   @state() private isAddingMCPServer = false;
@@ -89,9 +89,9 @@ export class ToolsView extends LitElement {
     | 'no_approval' = 'available';
   @state() private filterPolicyId: string | null = null;
 
-  // Approval policy dialog
+  // Approval workflow dialog
   @state() private showPolicyDialog = false;
-  @state() private editingPolicy: ApprovalPolicy | null = null;
+  @state() private editingPolicy: ApprovalWorkflow | null = null;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -520,7 +520,7 @@ export class ToolsView extends LitElement {
         await Promise.all([
           getTools(),
           getMCPServers(),
-          getApprovalPolicies(),
+          getApprovalWorkflows(),
           getFeatures(),
           getAccountDetails(),
         ]);
@@ -551,7 +551,7 @@ export class ToolsView extends LitElement {
     const withRules = all.filter(
       (t) =>
         (t.access_rules && t.access_rules.length > 0) ||
-        t.approval_policy_id ||
+        t.approval_workflow_id ||
         t.has_approval_condition
     );
     const withoutRules = all.length - withRules.length;
@@ -559,7 +559,7 @@ export class ToolsView extends LitElement {
       (t) =>
         t.access_rules?.some(
           (r) => r.action === 'require_approval' && r.is_enabled
-        ) || t.approval_policy_id
+        ) || t.approval_workflow_id
     );
     const noApproval = all.length - requireApproval.length;
 
@@ -663,7 +663,7 @@ export class ToolsView extends LitElement {
         tools = tools.filter(
           (t) =>
             (t.access_rules && t.access_rules.length > 0) ||
-            t.approval_policy_id ||
+            t.approval_workflow_id ||
             t.has_approval_condition
         );
         break;
@@ -671,7 +671,7 @@ export class ToolsView extends LitElement {
         tools = tools.filter(
           (t) =>
             (!t.access_rules || t.access_rules.length === 0) &&
-            !t.approval_policy_id &&
+            !t.approval_workflow_id &&
             !t.has_approval_condition
         );
         break;
@@ -680,7 +680,7 @@ export class ToolsView extends LitElement {
           (t) =>
             t.access_rules?.some(
               (r) => r.action === 'require_approval' && r.is_enabled
-            ) || t.approval_policy_id
+            ) || t.approval_workflow_id
         );
         break;
       case 'no_approval':
@@ -688,7 +688,7 @@ export class ToolsView extends LitElement {
           (t) =>
             !t.access_rules?.some(
               (r) => r.action === 'require_approval' && r.is_enabled
-            ) && !t.approval_policy_id
+            ) && !t.approval_workflow_id
         );
         break;
     }
@@ -706,7 +706,9 @@ export class ToolsView extends LitElement {
 
     // Policy filter
     if (this.filterPolicyId) {
-      tools = tools.filter((t) => t.approval_policy_id === this.filterPolicyId);
+      tools = tools.filter(
+        (t) => t.approval_workflow_id === this.filterPolicyId
+      );
     }
 
     return tools;
@@ -807,7 +809,7 @@ export class ToolsView extends LitElement {
           condition_type: formData.condition_type,
           description: formData.description,
           is_enabled: formData.is_enabled,
-          approval_policy_id: formData.approval_policy_id,
+          approval_workflow_id: formData.approval_workflow_id,
         });
       } else {
         const existingRules = tool.access_rules || [];
@@ -823,7 +825,7 @@ export class ToolsView extends LitElement {
           priority: maxPriority + 1,
           description: formData.description,
           is_enabled: formData.is_enabled,
-          approval_policy_id: formData.approval_policy_id,
+          approval_workflow_id: formData.approval_workflow_id,
         });
       }
 
@@ -869,9 +871,9 @@ export class ToolsView extends LitElement {
   private async _handlePolicyCreated() {
     try {
       // Reload policies so the new policy appears in all dropdowns
-      this.approvalPolicies = await getApprovalPolicies();
+      this.approvalPolicies = await getApprovalWorkflows();
     } catch (err: any) {
-      this.error = err.message || 'Failed to refresh approval policies';
+      this.error = err.message || 'Failed to refresh approval workflows';
     }
   }
 
@@ -990,9 +992,9 @@ export class ToolsView extends LitElement {
     }
   }
 
-  // ─── Approval Policy handlers ────────────────────────
+  // ─── Approval Workflow handlers ────────────────────────
 
-  private _openPolicyDialog(policy: ApprovalPolicy | null = null) {
+  private _openPolicyDialog(policy: ApprovalWorkflow | null = null) {
     this.editingPolicy = policy;
     this.showPolicyDialog = true;
   }
@@ -1007,16 +1009,16 @@ export class ToolsView extends LitElement {
     await this.loadData();
   }
 
-  private async _handleDeletePolicy(policy: ApprovalPolicy) {
+  private async _handleDeletePolicy(policy: ApprovalWorkflow) {
     if (
       !confirm(
-        `Delete approval policy "${policy.name}"? This cannot be undone.`
+        `Delete approval workflow "${policy.name}"? This cannot be undone.`
       )
     ) {
       return;
     }
     try {
-      await deleteApprovalPolicy(policy.id);
+      await deleteApprovalWorkflow(policy.id);
       if (this.filterPolicyId === policy.id) {
         this.filterPolicyId = null;
       }
@@ -1242,7 +1244,7 @@ export class ToolsView extends LitElement {
 
     return html`
       <div class="policy-chip-bar">
-        <span class="policy-chip-bar-label">Approval Policies</span>
+        <span class="policy-chip-bar-label">Approval Workflows</span>
         ${policies.length === 0
           ? html`<span class="policy-chip-empty">None defined</span>`
           : policies.map((policy) => {
@@ -1479,14 +1481,14 @@ export class ToolsView extends LitElement {
         <div class="side-column"></div>
       </div>
 
-      <approval-policy-dialog
+      <approval-workflow-dialog
         ?open=${this.showPolicyDialog}
         .policy=${this.editingPolicy}
         .existingPolicies=${this.approvalPolicies}
         .features=${this.features}
         @close=${this._closePolicyDialog}
         @saved=${this._handlePolicySaved}
-      ></approval-policy-dialog>
+      ></approval-workflow-dialog>
     `;
   }
 }

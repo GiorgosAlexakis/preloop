@@ -304,12 +304,12 @@ class TestEvaluatePolicy:
             ) as mock_eval:
                 mock_eval.return_value = ("allow", None, "No rules configured")
 
-                action, policy_id, description = await server._evaluate_policy(
+                action, workflow_id, description = await server._evaluate_policy(
                     user_context, "test_tool", {}
                 )
 
         assert action == "allow"
-        assert policy_id is None
+        assert workflow_id is None
 
     async def test_require_approval_action(self):
         """Test that require_approval action is returned correctly."""
@@ -318,7 +318,7 @@ class TestEvaluatePolicy:
 
         mock_config = MagicMock()
         mock_config.id = "config-id"
-        mock_config.approval_policy_id = "some-policy-id"
+        mock_config.approval_workflow_id = "some-policy-id"
 
         with patch("preloop.models.db.session.get_async_db_session") as mock_get_db:
             mock_db = AsyncMock()
@@ -342,12 +342,12 @@ class TestEvaluatePolicy:
                     "Tool requires approval",
                 )
 
-                action, policy_id, description = await server._evaluate_policy(
+                action, workflow_id, description = await server._evaluate_policy(
                     user_context, "test_tool", {}
                 )
 
         assert action == "require_approval"
-        assert policy_id == "some-policy-id"
+        assert workflow_id == "some-policy-id"
 
     async def test_error_fails_closed(self):
         """Test that errors fail closed (require_approval)."""
@@ -358,7 +358,7 @@ class TestEvaluatePolicy:
             "preloop.models.db.session.get_async_db_session",
             side_effect=Exception("DB Error"),
         ):
-            action, policy_id, description = await server._evaluate_policy(
+            action, workflow_id, description = await server._evaluate_policy(
                 user_context, "test_tool", {}
             )
 
@@ -377,9 +377,9 @@ class TestRequestAndWaitForApproval:
 
         mock_config = MagicMock()
         mock_config.id = str(uuid4())
-        mock_config.approval_policy_id = str(uuid4())
+        mock_config.approval_workflow_id = str(uuid4())
 
-        mock_policy = MagicMock()
+        mock_workflow = MagicMock()
 
         mock_approval_request = MagicMock()
         mock_approval_request.id = str(uuid4())
@@ -394,11 +394,13 @@ class TestRequestAndWaitForApproval:
             mock_config_result = MagicMock()
             mock_config_result.scalar_one_or_none = MagicMock(return_value=mock_config)
 
-            mock_policy_result = MagicMock()
-            mock_policy_result.scalar_one_or_none = MagicMock(return_value=mock_policy)
+            mock_workflow_result = MagicMock()
+            mock_workflow_result.scalar_one_or_none = MagicMock(
+                return_value=mock_workflow
+            )
 
             mock_db.execute = AsyncMock(
-                side_effect=[mock_config_result, mock_policy_result]
+                side_effect=[mock_config_result, mock_workflow_result]
             )
 
             mock_get_db.return_value = mock_db
@@ -428,9 +430,9 @@ class TestRequestAndWaitForApproval:
 
         mock_config = MagicMock()
         mock_config.id = str(uuid4())
-        mock_config.approval_policy_id = str(uuid4())
+        mock_config.approval_workflow_id = str(uuid4())
 
-        mock_policy = MagicMock()
+        mock_workflow = MagicMock()
 
         mock_approval_request = MagicMock()
         mock_approval_request.id = str(uuid4())
@@ -445,11 +447,13 @@ class TestRequestAndWaitForApproval:
             mock_config_result = MagicMock()
             mock_config_result.scalar_one_or_none = MagicMock(return_value=mock_config)
 
-            mock_policy_result = MagicMock()
-            mock_policy_result.scalar_one_or_none = MagicMock(return_value=mock_policy)
+            mock_workflow_result = MagicMock()
+            mock_workflow_result.scalar_one_or_none = MagicMock(
+                return_value=mock_workflow
+            )
 
             mock_db.execute = AsyncMock(
-                side_effect=[mock_config_result, mock_policy_result]
+                side_effect=[mock_config_result, mock_workflow_result]
             )
 
             mock_get_db.return_value = mock_db

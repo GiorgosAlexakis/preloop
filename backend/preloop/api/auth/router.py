@@ -206,7 +206,7 @@ async def register(
             logger.info("[REGISTER] Objects refreshed")
 
             # Schedule all post-account-creation tasks (verification email,
-            # default approval policy, admin notifications)
+            # default approval workflow, admin notifications)
             logger.info("[REGISTER] Scheduling account setup tasks")
             background_tasks.add_task(
                 complete_new_account_setup_background,

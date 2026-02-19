@@ -12,7 +12,7 @@ from fastmcp import Context
 from preloop.services.approval_helper import require_approval
 from preloop.services.dynamic_fastmcp import (
     DynamicFastMCP,
-    _rule_policy_id_var,
+    _rule_workflow_id_var,
     _correlation_id_var,
     _justification_var,
     create_dynamic_mcp_server,
@@ -104,7 +104,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"issue": issue},
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -151,7 +151,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "status": status,
             },
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -206,7 +206,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "labels": labels,
             },
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -249,7 +249,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"query": query, "project": project, "limit": limit},
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -295,7 +295,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"issues": issues, "compliance_metric": compliance_metric},
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -332,7 +332,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             account_id=user_context.account_id,
             arguments={"issues": issues, "compliance_metric": compliance_metric},
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -388,14 +388,14 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         context: str,
         reasoning: str,
         caller: str | None = None,
-        approval_policy: str | None = None,
+        approval_workflow: str | None = None,
         ctx: Optional[Context] = None,
     ) -> str:
         """Request approval for an operation before executing it."""
         # Get user context
         from preloop.services.dynamic_fastmcp_http import get_current_user_context
         from preloop.models.db.session import get_db_session
-        from preloop.models.crud import crud_approval_policy
+        from preloop.models.crud import crud_approval_workflow
 
         user_context = get_current_user_context()
 
@@ -438,26 +438,26 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
 
             logger.info(f"Auto-populated caller: {caller}")
 
-        # Get the approval policy
-        policy_id = None
+        # Get the approval workflow
+        workflow_id = None
         db = next(get_db_session())
         try:
-            if approval_policy:
-                # Look up policy by name
-                policy = crud_approval_policy.get_by_name(
-                    db, account_id=account_id, name=approval_policy
+            if approval_workflow:
+                # Look up workflow by name
+                workflow = crud_approval_workflow.get_by_name(
+                    db, account_id=account_id, name=approval_workflow
                 )
-                if not policy:
-                    return f"Error: Approval policy '{approval_policy}' not found for your account"
-                policy_id = str(policy.id)
+                if not workflow:
+                    return f"Error: Approval workflow '{approval_workflow}' not found for your account"
+                workflow_id = str(workflow.id)
             else:
-                # No policy specified, use the default policy
-                default_policy = crud_approval_policy.get_default(
+                # No workflow specified, use the default workflow
+                default_workflow = crud_approval_workflow.get_default(
                     db, account_id=account_id
                 )
-                if not default_policy:
-                    return "Error: No default approval policy found for your account. Please create an approval policy first."
-                policy_id = str(default_policy.id)
+                if not default_workflow:
+                    return "Error: No default approval workflow found for your account. Please create an approval workflow first."
+                workflow_id = str(default_workflow.id)
         finally:
             db.close()
 
@@ -475,7 +475,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
             tool_source="builtin",
             account_id=account_id,
             arguments=arguments,
-            policy_id=policy_id if policy_id else None,
+            workflow_id=workflow_id if workflow_id else None,
             ctx=ctx,
         )
 
@@ -485,7 +485,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
         return (
             f"Approval granted for operation: {operation}\n"
             f"Caller: {caller}\n"
-            f"Policy used: {approval_policy or 'default'}"
+            f"Workflow used: {approval_workflow or 'default'}"
         )
 
     # Register Tool 8: add_comment
@@ -522,7 +522,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "in_reply_to": in_reply_to,
             },
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -574,7 +574,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "comment_type": comment_type,
             },
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -620,7 +620,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "include_diff": include_diff,
             },
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -683,7 +683,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "remove_reaction": remove_reaction,
             },
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )
@@ -752,7 +752,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                 "extra_options": extra_options,
             },
             ctx=ctx,
-            policy_id=_rule_policy_id_var.get(None),
+            workflow_id=_rule_workflow_id_var.get(None),
             correlation_id=_correlation_id_var.get(None),
             justification=_justification_var.get(None),
         )

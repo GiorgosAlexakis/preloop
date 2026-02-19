@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from preloop.models.models import ApprovalPolicy
+    from preloop.models.models import ApprovalWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class AIApprovalService:
         result = await service.evaluate(
             tool_name="execute_command",
             tool_args={"command": "rm -rf /tmp/test"},
-            policy=approval_policy,
+            workflow=approval_workflow,
             context={"user": "admin", "environment": "staging"},
         )
         if result.decision == "approve":
@@ -103,7 +103,7 @@ class AIApprovalService:
         """Initialize the AI approval service.
 
         Args:
-            default_model: Default model to use if not specified in policy.
+            default_model: Default model to use if not specified in workflow.
             default_timeout: Default timeout in seconds for AI evaluation.
         """
         self._default_model = default_model or DEFAULT_MODEL
@@ -113,7 +113,7 @@ class AIApprovalService:
         self,
         tool_name: str,
         tool_args: Dict[str, Any],
-        policy: "ApprovalPolicy",
+        workflow: "ApprovalWorkflow",
         context: Optional[Dict[str, Any]] = None,
     ) -> AIApprovalResult:
         """Use the configured AI model to evaluate whether to approve the tool call.
@@ -121,7 +121,7 @@ class AIApprovalService:
         Args:
             tool_name: Name of the tool being called.
             tool_args: Arguments passed to the tool.
-            policy: The AI-driven approval policy with guidelines and model config.
+            workflow: The AI-driven approval workflow with guidelines and model config.
             context: Additional context for the evaluation (user, environment, etc.).
 
         Returns:
@@ -129,16 +129,18 @@ class AIApprovalService:
         """
         # Extract AI configuration - prefer dedicated columns, fall back to approval_config
         # for backward compatibility with older policies
-        ai_config = policy.approval_config or {}
+        ai_config = workflow.approval_config or {}
 
         # Use dedicated AI columns if available (set by policy-as-code and API)
-        model = getattr(policy, "ai_model", None) or ai_config.get(
+        model = getattr(workflow, "ai_model", None) or ai_config.get(
             "model", self._default_model
         )
-        guidelines = getattr(policy, "ai_guidelines", None) or ai_config.get(
+        guidelines = getattr(workflow, "ai_guidelines", None) or ai_config.get(
             "guidelines", ""
         )
-        ai_context = getattr(policy, "ai_context", None) or ai_config.get("context", {})
+        ai_context = getattr(workflow, "ai_context", None) or ai_config.get(
+            "context", {}
+        )
 
         # These are still from approval_config (no dedicated columns for secrets/provider)
         api_key = ai_config.get("api_key")
@@ -212,7 +214,7 @@ class AIApprovalService:
         Args:
             tool_name: Name of the tool.
             tool_args: Tool arguments.
-            guidelines: AI evaluation guidelines from the policy.
+            guidelines: AI evaluation guidelines from the workflow.
             context: Additional execution context.
 
         Returns:

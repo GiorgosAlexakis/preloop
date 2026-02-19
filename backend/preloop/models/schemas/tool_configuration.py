@@ -1,4 +1,4 @@
-"""Pydantic schemas for tool configuration and approval policies."""
+"""Pydantic schemas for tool configuration and approval workflows."""
 
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
@@ -24,9 +24,9 @@ class ToolConfigurationBase(BaseModel):
         None, description="Reference to HTTP endpoint (future: if tool_source='http')"
     )
     is_enabled: Optional[bool] = Field(True, description="Whether the tool is enabled")
-    approval_policy_id: Optional[UUID] = Field(
+    approval_workflow_id: Optional[UUID] = Field(
         None,
-        description="Reference to approval policy (approval required if set and condition matches)",
+        description="Reference to approval workflow (approval required if set and condition matches)",
     )
     tool_description: Optional[str] = Field(
         None, description="Description of what the tool does"
@@ -66,7 +66,7 @@ class ToolConfigurationResponse(ToolConfigurationBase):
     tool_source: str
     mcp_server_id: Optional[UUID] = None
     http_endpoint_id: Optional[UUID] = None
-    approval_policy_id: Optional[UUID] = None
+    approval_workflow_id: Optional[UUID] = None
     is_enabled: bool
     justification_mode: Optional[str] = None
     created_at: datetime
@@ -75,22 +75,24 @@ class ToolConfigurationResponse(ToolConfigurationBase):
     model_config = ConfigDict(from_attributes=True)
 
     @field_serializer(
-        "id", "account_id", "mcp_server_id", "http_endpoint_id", "approval_policy_id"
+        "id", "account_id", "mcp_server_id", "http_endpoint_id", "approval_workflow_id"
     )
     def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID to string."""
         return str(value) if value else None
 
 
-# Approval Policy Schemas
+# Approval workflow Schemas
 
 
-class ApprovalPolicyBase(BaseModel):
-    """Base schema for approval policy."""
+class ApprovalWorkflowBase(BaseModel):
+    """Base schema for approval workflow."""
 
-    name: Optional[str] = Field(None, description="Human-readable name for the policy")
+    name: Optional[str] = Field(
+        None, description="Human-readable name for the workflow"
+    )
     description: Optional[str] = Field(
-        None, description="Optional description of what this policy does"
+        None, description="Optional description of what this workflow does"
     )
     approval_type: Optional[str] = Field(
         "slack",
@@ -114,7 +116,7 @@ class ApprovalPolicyBase(BaseModel):
         description="When enabled, tool calls return immediately and agents poll for status",
     )
     is_default: Optional[bool] = Field(
-        False, description="Whether this is the default policy for the account"
+        False, description="Whether this is the default workflow for the account"
     )
     workflow_type: Optional[str] = Field(
         "simple",
@@ -166,26 +168,26 @@ class ApprovalPolicyBase(BaseModel):
         "escalate",
         description="Behavior when AI confidence is below threshold: 'escalate', 'approve', 'deny'",
     )
-    escalation_policy_id: Optional[UUID] = Field(
-        None, description="Policy to escalate to when fallback_behavior='escalate'"
+    escalation_workflow_id: Optional[UUID] = Field(
+        None, description="workflow to escalate to when fallback_behavior='escalate'"
     )
 
 
-class ApprovalPolicyCreate(ApprovalPolicyBase):
-    """Schema for creating approval policy."""
+class ApprovalWorkflowCreate(ApprovalWorkflowBase):
+    """Schema for creating approval workflow."""
 
     name: str
     approval_type: str = "slack"
 
 
-class ApprovalPolicyUpdate(ApprovalPolicyBase):
-    """Schema for updating approval policy."""
+class ApprovalWorkflowUpdate(ApprovalWorkflowBase):
+    """Schema for updating approval workflow."""
 
     pass
 
 
-class ApprovalPolicyResponse(ApprovalPolicyBase):
-    """Schema for approval policy response."""
+class ApprovalWorkflowResponse(ApprovalWorkflowBase):
+    """Schema for approval workflow response."""
 
     id: UUID
     account_id: UUID
@@ -200,14 +202,14 @@ class ApprovalPolicyResponse(ApprovalPolicyBase):
     ai_context: Optional[Dict[str, Any]] = None
     ai_confidence_threshold: float
     ai_fallback_behavior: str
-    escalation_policy_id: Optional[UUID] = None
+    escalation_workflow_id: Optional[UUID] = None
     # Timestamps
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("id", "account_id", "escalation_policy_id")
+    @field_serializer("id", "account_id", "escalation_workflow_id")
     def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID to string."""
         return str(value) if value else None

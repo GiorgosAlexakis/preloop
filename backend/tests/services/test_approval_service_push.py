@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from preloop.models.models import ApprovalPolicy, ApprovalRequest
+from preloop.models.models import ApprovalWorkflow, ApprovalRequest
 
 from preloop.services.approval_service import ApprovalService
 
@@ -28,9 +28,9 @@ def approval_service(mock_db):
 
 
 @pytest.fixture
-def sample_approval_policy():
-    """Create sample approval policy with mobile_push channel."""
-    policy = MagicMock(spec=ApprovalPolicy)
+def sample_approval_workflow():
+    """Create sample approval workflow with mobile_push channel."""
+    policy = MagicMock(spec=ApprovalWorkflow)
     policy.id = uuid.uuid4()
     policy.notification_channels = ["mobile_push"]
     policy.approver_user_ids = [uuid.uuid4(), uuid.uuid4()]
@@ -44,7 +44,7 @@ def sample_approval_request():
     request.id = uuid.uuid4()
     request.account_id = "test_account"
     request.tool_configuration_id = uuid.uuid4()
-    request.approval_policy_id = uuid.uuid4()
+    request.approval_workflow_id = uuid.uuid4()
     request.tool_name = "create_issue"
     request.tool_args = {"title": "Test Issue"}
     request.agent_reasoning = "Need to create an issue"
@@ -70,7 +70,7 @@ class TestSendPushNotification:
         self,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
         mock_apns_service,
     ):
         """Test successful push notification send."""
@@ -83,7 +83,7 @@ class TestSendPushNotification:
         mock_sync_session.close = MagicMock()
 
         # Mock the _get_all_approver_user_ids_sync to return approvers
-        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
+        user_id_1, user_id_2 = sample_approval_workflow.approver_user_ids
 
         # Create a mock that returns the approvers and tokens when executor runs
         def mock_run_in_executor(executor, func):
@@ -106,7 +106,7 @@ class TestSendPushNotification:
                 mock_get_loop.return_value = mock_loop
 
                 result = await approval_service._send_push_notification(
-                    sample_approval_request, sample_approval_policy
+                    sample_approval_request, sample_approval_workflow
                 )
 
                 assert result["success"] is True
@@ -116,11 +116,11 @@ class TestSendPushNotification:
         self,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
         mock_apns_service,
     ):
         """Test sending to multiple approvers."""
-        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
+        user_id_1, user_id_2 = sample_approval_workflow.approver_user_ids
 
         def mock_run_in_executor(executor, func):
             import asyncio
@@ -146,7 +146,7 @@ class TestSendPushNotification:
                 mock_get_loop.return_value = mock_loop
 
                 result = await approval_service._send_push_notification(
-                    sample_approval_request, sample_approval_policy
+                    sample_approval_request, sample_approval_workflow
                 )
 
                 assert result["sent"] == 2
@@ -155,7 +155,7 @@ class TestSendPushNotification:
         self, approval_service, sample_approval_request, mock_apns_service
     ):
         """Test handling when no approvers are configured."""
-        policy_no_approvers = MagicMock(spec=ApprovalPolicy)
+        policy_no_approvers = MagicMock(spec=ApprovalWorkflow)
         policy_no_approvers.id = uuid.uuid4()
         policy_no_approvers.approver_user_ids = []
         policy_no_approvers.approver_team_ids = []
@@ -186,7 +186,7 @@ class TestSendPushNotification:
                 assert result["error"] == "No approvers configured"
 
     async def test_send_push_notification_apns_not_configured(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test graceful handling when push notifications are not configured."""
         with patch(
@@ -201,7 +201,7 @@ class TestSendPushNotification:
                     return_value=False,
                 ):
                     result = await approval_service._send_push_notification(
-                        sample_approval_request, sample_approval_policy
+                        sample_approval_request, sample_approval_workflow
                     )
 
                     assert result["success"] is False
@@ -211,7 +211,7 @@ class TestSendPushNotification:
         self,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
         mock_apns_service,
     ):
         """Test that invalid tokens are removed (410 response)."""
@@ -220,7 +220,7 @@ class TestSendPushNotification:
             return_value=(False, 410, "Unregistered")
         )
 
-        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
+        user_id_1, user_id_2 = sample_approval_workflow.approver_user_ids
 
         def mock_run_in_executor(executor, func):
             import asyncio
@@ -246,7 +246,7 @@ class TestSendPushNotification:
                 mock_get_loop.return_value = mock_loop
 
                 result = await approval_service._send_push_notification(
-                    sample_approval_request, sample_approval_policy
+                    sample_approval_request, sample_approval_workflow
                 )
 
                 # Both tokens should be marked for removal
@@ -256,12 +256,12 @@ class TestSendPushNotification:
         self,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
         mock_apns_service,
     ):
         """Test that send_notifications triggers push notification when mobile_push is in channels."""
         # Ensure policy has mobile_push in channels
-        sample_approval_policy.notification_channels = ["mobile_push"]
+        sample_approval_workflow.notification_channels = ["mobile_push"]
 
         # Mock push notification method
         with patch.object(
@@ -270,7 +270,7 @@ class TestSendPushNotification:
             new=AsyncMock(return_value={"success": True, "sent": 1}),
         ) as mock_send_push:
             await approval_service.send_notifications(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             # Verify _send_push_notification was called
@@ -281,7 +281,7 @@ class TestSendPushNotification:
     ):
         """Test that push is always attempted (filtering happens based on user preferences)."""
         # Create policy - notification_channels no longer controls push behavior
-        policy = MagicMock(spec=ApprovalPolicy)
+        policy = MagicMock(spec=ApprovalWorkflow)
         policy.id = uuid.uuid4()
         policy.notification_channels = ["email"]  # Doesn't affect push anymore
         policy.approval_type = "standard"
@@ -309,7 +309,7 @@ class TestSendPushNotification:
         self,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
         mock_apns_service,
     ):
         """Test that exceptions in push notification don't crash the service."""
@@ -318,7 +318,7 @@ class TestSendPushNotification:
             side_effect=Exception("Network error")
         )
 
-        user_id_1, user_id_2 = sample_approval_policy.approver_user_ids
+        user_id_1, user_id_2 = sample_approval_workflow.approver_user_ids
 
         def mock_run_in_executor(executor, func):
             import asyncio
@@ -344,7 +344,7 @@ class TestSendPushNotification:
                 mock_get_loop.return_value = mock_loop
 
                 result = await approval_service._send_push_notification(
-                    sample_approval_request, sample_approval_policy
+                    sample_approval_request, sample_approval_workflow
                 )
 
                 # Should handle exception gracefully

@@ -84,7 +84,7 @@ metadata:
   name: "Test Policy"
   description: "A test policy for unit tests"
 
-approval_policies:
+approval_workflows:
   - name: "test-approval"
     timeout_seconds: 300
     require_reason: false
@@ -94,7 +94,7 @@ tools:
   - name: "bash"
     source: "mcp"
     enabled: true
-    approval_policy: "test-approval"
+    approval_workflow: "test-approval"
     conditions:
       - expression: "args.command.contains('rm ')"
         action: "require_approval"
@@ -118,7 +118,7 @@ def invalid_yaml_missing_field():
     return """
 version: "1.0"
 # Missing required metadata field
-approval_policies:
+approval_workflows:
   - name: "test-approval"
 """
 
@@ -515,7 +515,7 @@ metadata:
   name: "Complex Policy"
   description: "Policy with complex conditions"
 
-approval_policies:
+approval_workflows:
   - name: "complex-approval"
     timeout_seconds: 600
     require_reason: true
@@ -525,7 +525,7 @@ tools:
   - name: "bash"
     source: "mcp"
     enabled: true
-    approval_policy: "complex-approval"
+    approval_workflow: "complex-approval"
     conditions:
       - expression: "args.command.contains('rm ') || args.command.contains('sudo ')"
         action: "require_approval"
@@ -548,7 +548,7 @@ tools:
     async def test_validate_policy_with_invalid_reference(
         self, mock_db, mock_account, mock_upload_file
     ):
-        """Test validating policy with invalid approval_policy reference."""
+        """Test validating policy with invalid approval_workflow reference."""
         yaml_content = """
 version: "1.0"
 metadata:
@@ -558,7 +558,7 @@ tools:
   - name: "bash"
     source: "mcp"
     enabled: true
-    approval_policy: "nonexistent-policy"  # This policy doesn't exist
+    approval_workflow: "nonexistent-policy"  # This policy doesn't exist
 """
         file = await mock_upload_file(yaml_content, "invalid_ref.yaml")
 

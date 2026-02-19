@@ -37,7 +37,7 @@ def mock_approval_request(mock_user):
     request.agent_reasoning = "Test reasoning"
     request.execution_id = str(uuid.uuid4())
     request.tool_configuration_id = uuid.uuid4()
-    request.approval_policy_id = uuid.uuid4()
+    request.approval_workflow_id = uuid.uuid4()
     request.webhook_posted_at = None
     request.webhook_error = None
     return request

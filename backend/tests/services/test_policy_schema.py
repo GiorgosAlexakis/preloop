@@ -3,7 +3,7 @@
 import pytest
 
 from preloop.services.policy.schema import (
-    ApprovalPolicyDefinition,
+    ApprovalWorkflowDefinition,
     ConditionAction,
     ConditionType,
     DefaultsDefinition,
@@ -36,7 +36,7 @@ def _server(name: str = "my-server", **kw) -> dict:
     return base
 
 
-def _approval_policy(name: str = "default-policy", **kw) -> dict:
+def _approval_workflow(name: str = "default-policy", **kw) -> dict:
     base = {"name": name, "timeout_seconds": 300, "required_approvals": 1}
     base.update(kw)
     return base
@@ -66,16 +66,16 @@ class TestPolicyDocumentValid:
     def test_full_document(self):
         data = _minimal_doc(
             mcp_servers=[_server("srv")],
-            approval_policies=[_approval_policy("pol")],
-            tools=[_tool("bash", approval_policy="pol")],
+            approval_workflows=[_approval_workflow("pol")],
+            tools=[_tool("bash", approval_workflow="pol")],
             defaults={
                 "unknown_tools": "deny",
-                "default_approval_policy": "pol",
+                "default_approval_workflow": "pol",
             },
         )
         doc = PolicyDocument(**data)
         assert len(doc.mcp_servers) == 1
-        assert len(doc.approval_policies) == 1
+        assert len(doc.approval_workflows) == 1
         assert len(doc.tools) == 1
         assert doc.defaults.unknown_tools == "deny"
 
@@ -89,11 +89,11 @@ class TestPolicyDocumentValid:
 
     def test_tool_with_conditions(self):
         data = _minimal_doc(
-            approval_policies=[_approval_policy("pol")],
+            approval_workflows=[_approval_workflow("pol")],
             tools=[
                 _tool(
                     "bash",
-                    approval_policy="pol",
+                    approval_workflow="pol",
                     conditions=[
                         {
                             "expression": "args.command.contains('rm')",
@@ -111,10 +111,13 @@ class TestPolicyDocumentValid:
     def test_multiple_tools_and_servers(self):
         data = _minimal_doc(
             mcp_servers=[_server("srv-a"), _server("srv-b")],
-            approval_policies=[_approval_policy("pol-a"), _approval_policy("pol-b")],
+            approval_workflows=[
+                _approval_workflow("pol-a"),
+                _approval_workflow("pol-b"),
+            ],
             tools=[
-                _tool("tool-a", source="srv-a", approval_policy="pol-a"),
-                _tool("tool-b", source="srv-b", approval_policy="pol-b"),
+                _tool("tool-a", source="srv-a", approval_workflow="pol-a"),
+                _tool("tool-b", source="srv-b", approval_workflow="pol-b"),
             ],
         )
         doc = PolicyDocument(**data)
@@ -136,19 +139,19 @@ class TestPolicyDocumentReferenceErrors:
         with pytest.raises(ValueError, match="Duplicate MCP server name"):
             PolicyDocument(**data)
 
-    def test_duplicate_approval_policy_name(self):
+    def test_duplicate_approval_workflow_name(self):
         data = _minimal_doc(
-            approval_policies=[_approval_policy("dup"), _approval_policy("dup")],
+            approval_workflows=[_approval_workflow("dup"), _approval_workflow("dup")],
         )
-        with pytest.raises(ValueError, match="Duplicate approval policy name"):
+        with pytest.raises(ValueError, match="Duplicate approval workflow name"):
             PolicyDocument(**data)
 
-    def test_tool_references_unknown_approval_policy(self):
+    def test_tool_references_unknown_approval_workflow(self):
         data = _minimal_doc(
-            approval_policies=[_approval_policy("real-pol")],
-            tools=[_tool("bash", approval_policy="nonexistent")],
+            approval_workflows=[_approval_workflow("real-pol")],
+            tools=[_tool("bash", approval_workflow="nonexistent")],
         )
-        with pytest.raises(ValueError, match="unknown approval policy"):
+        with pytest.raises(ValueError, match="unknown approval workflow"):
             PolicyDocument(**data)
 
     def test_tool_references_unknown_mcp_server(self):
@@ -159,40 +162,40 @@ class TestPolicyDocumentReferenceErrors:
         with pytest.raises(ValueError, match="unknown MCP server"):
             PolicyDocument(**data)
 
-    def test_default_approval_policy_unknown(self):
+    def test_default_approval_workflow_unknown(self):
         data = _minimal_doc(
-            defaults={"default_approval_policy": "missing"},
+            defaults={"default_approval_workflow": "missing"},
         )
-        with pytest.raises(ValueError, match="Default approval policy"):
+        with pytest.raises(ValueError, match="Default approval workflow"):
             PolicyDocument(**data)
 
-    def test_escalation_policy_unknown(self):
+    def test_escalation_workflow_unknown(self):
         data = _minimal_doc(
-            approval_policies=[
-                _approval_policy(
+            approval_workflows=[
+                _approval_workflow(
                     "ai-pol",
                     approval_type="ai_driven",
                     ai_model="claude-sonnet-4-20250514",
                     ai_guidelines="Review for safety",
-                    escalation_policy="missing-policy",
+                    escalation_workflow="missing-policy",
                 ),
             ],
         )
-        with pytest.raises(ValueError, match="unknown.*escalation_policy"):
+        with pytest.raises(ValueError, match="unknown.*escalation_workflow"):
             PolicyDocument(**data)
 
 
 # ===========================================================================
-# ApprovalPolicyDefinition — AI-driven validation
+# ApprovalWorkflowDefinition — AI-driven validation
 # ===========================================================================
 
 
-class TestApprovalPolicyAIDriven:
-    """Test AI-driven approval policy validation."""
+class TestApprovalWorkflowAIDriven:
+    """Test AI-driven approval workflow validation."""
 
     def test_ai_driven_requires_model(self):
         with pytest.raises(ValueError, match="ai_model.*required"):
-            ApprovalPolicyDefinition(
+            ApprovalWorkflowDefinition(
                 name="bad",
                 approval_type="ai_driven",
                 # ai_model missing
@@ -201,7 +204,7 @@ class TestApprovalPolicyAIDriven:
 
     def test_ai_driven_without_guidelines_is_valid(self):
         # ai_guidelines is optional — only ai_model is required for ai_driven
-        policy = ApprovalPolicyDefinition(
+        policy = ApprovalWorkflowDefinition(
             name="no-guidelines",
             approval_type="ai_driven",
             ai_model="claude-sonnet-4-20250514",
@@ -209,7 +212,7 @@ class TestApprovalPolicyAIDriven:
         assert policy.ai_guidelines is None
 
     def test_ai_driven_valid(self):
-        policy = ApprovalPolicyDefinition(
+        policy = ApprovalWorkflowDefinition(
             name="ai-review",
             approval_type="ai_driven",
             ai_model="claude-sonnet-4-20250514",
@@ -221,7 +224,7 @@ class TestApprovalPolicyAIDriven:
         assert policy.ai_fallback_behavior == "deny"
 
     def test_standard_policy_valid(self):
-        policy = ApprovalPolicyDefinition(
+        policy = ApprovalWorkflowDefinition(
             name="standard",
             timeout_seconds=600,
             required_approvals=2,
@@ -231,21 +234,21 @@ class TestApprovalPolicyAIDriven:
     def test_ai_driven_with_escalation(self):
         """AI policy with escalation works when referenced in full doc."""
         data = _minimal_doc(
-            approval_policies=[
-                _approval_policy("human-fallback"),
-                _approval_policy(
+            approval_workflows=[
+                _approval_workflow("human-fallback"),
+                _approval_workflow(
                     "ai-review",
                     approval_type="ai_driven",
                     ai_model="gpt-4o",
                     ai_guidelines="Review for safety",
                     ai_fallback_behavior="escalate",
-                    escalation_policy="human-fallback",
+                    escalation_workflow="human-fallback",
                 ),
             ],
         )
         doc = PolicyDocument(**data)
-        ai_pol = [p for p in doc.approval_policies if p.name == "ai-review"][0]
-        assert ai_pol.escalation_policy == "human-fallback"
+        ai_pol = [p for p in doc.approval_workflows if p.name == "ai-review"][0]
+        assert ai_pol.escalation_workflow == "human-fallback"
 
 
 # ===========================================================================
@@ -340,7 +343,7 @@ class TestDefaultsDefinition:
         d = DefaultsDefinition(
             unknown_tools="require_approval",
             require_approval_for_new_tools=False,
-            default_approval_policy=None,
+            default_approval_workflow=None,
             inherit_from_parent=False,
         )
         assert d.inherit_from_parent is False

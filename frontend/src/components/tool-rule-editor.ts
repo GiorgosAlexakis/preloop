@@ -12,8 +12,8 @@ import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/switch/switch.js';
-import './approval-policy-dialog';
-import type { ApprovalPolicy } from './tool-card';
+import './approval-workflow-dialog';
+import type { ApprovalWorkflow } from './tool-card';
 import type { AccessRule } from '../api';
 
 export interface RuleFormData {
@@ -22,7 +22,7 @@ export interface RuleFormData {
   condition_type: 'simple' | 'cel';
   description: string | null;
   is_enabled: boolean;
-  approval_policy_id: string | null;
+  approval_workflow_id: string | null;
 }
 
 interface SimpleCondition {
@@ -36,7 +36,7 @@ export class ToolRuleEditor extends LitElement {
   @property({ type: Boolean }) open = false;
   @property({ type: Object }) rule: AccessRule | null = null;
   @property({ type: String }) toolName = '';
-  @property({ type: Array }) policies: ApprovalPolicy[] = [];
+  @property({ type: Array }) workflows: ApprovalWorkflow[] = [];
   @property({ type: Object }) features: { [key: string]: boolean | string[] } =
     {};
   @property({ type: Object }) toolSchema: any = null;
@@ -61,10 +61,10 @@ export class ToolRuleEditor extends LitElement {
   @state() private _conditionOperator: 'AND' | 'OR' = 'AND';
   @state() private _useCelEditor = false;
 
-  // Approval policy state
-  @state() private _approvalPolicyId: string | null = null;
+  // Approval workflow state
+  @state() private _approvalWorkflowId: string | null = null;
   @state() private _approvalMode: 'human' | 'ai' = 'human';
-  @state() private _showPolicyDialog = false;
+  @state() private _showWorkflowDialog = false;
   private _initializing = false;
 
   private get _isEditing(): boolean {
@@ -277,7 +277,7 @@ export class ToolRuleEditor extends LitElement {
       gap: var(--sl-spacing-2x-small);
     }
 
-    /* Approval policy section */
+    /* Approval workflow section */
     .approval-section {
       background: var(--sl-color-neutral-50);
       border: 1px solid var(--sl-color-neutral-200);
@@ -321,13 +321,13 @@ export class ToolRuleEditor extends LitElement {
       font-size: var(--sl-font-size-small);
     }
 
-    .policy-select-row {
+    .workflow-select-row {
       display: flex;
       align-items: end;
       gap: var(--sl-spacing-small);
     }
 
-    .policy-select-row sl-select {
+    .workflow-select-row sl-select {
       flex: 1;
     }
   `;
@@ -347,14 +347,14 @@ export class ToolRuleEditor extends LitElement {
       this._description = this.rule.description || '';
       this._isEnabled = this.rule.is_enabled;
 
-      // Approval policy
-      this._approvalPolicyId = this.rule.approval_policy_id || null;
-      if (this._approvalPolicyId) {
-        const policy = this.policies.find(
-          (p) => p.id === this._approvalPolicyId
+      // Approval workflow
+      this._approvalWorkflowId = this.rule.approval_workflow_id || null;
+      if (this._approvalWorkflowId) {
+        const workflow = this.workflows.find(
+          (p) => p.id === this._approvalWorkflowId
         );
         this._approvalMode =
-          policy?.approval_type === 'ai_driven' ? 'ai' : 'human';
+          workflow?.approval_type === 'ai_driven' ? 'ai' : 'human';
       } else {
         this._approvalMode = 'human';
       }
@@ -398,10 +398,10 @@ export class ToolRuleEditor extends LitElement {
       this._conditions = [{ field: '', operator: '==', value: '' }];
       this._conditionOperator = 'AND';
       this._useCelEditor = false;
-      this._approvalPolicyId = null;
+      this._approvalWorkflowId = null;
       this._approvalMode = 'human';
     }
-    this._showPolicyDialog = false;
+    this._showWorkflowDialog = false;
     this._error = null;
     this._saving = false;
     // Clear the guard after Shoelace has processed slotted options
@@ -607,18 +607,18 @@ export class ToolRuleEditor extends LitElement {
       conditionExpr = this._buildSimpleExpression() || null;
     }
 
-    // Read the policy select value directly from the DOM as a safety net
+    // Read the workflow select value directly from the DOM as a safety net
     // in case sl-change events were suppressed during initialization.
-    let approvalPolicyId: string | null = this._approvalPolicyId;
+    let approvalWorkflowId: string | null = this._approvalWorkflowId;
     if (this._action === 'require_approval') {
-      const policySelect = this.shadowRoot?.querySelector(
-        '.policy-select-row sl-select'
+      const workflowSelect = this.shadowRoot?.querySelector(
+        '.workflow-select-row sl-select'
       ) as any;
-      if (policySelect) {
-        approvalPolicyId = policySelect.value || null;
+      if (workflowSelect) {
+        approvalWorkflowId = workflowSelect.value || null;
       }
     } else {
-      approvalPolicyId = null;
+      approvalWorkflowId = null;
     }
 
     const formData: RuleFormData = {
@@ -627,7 +627,7 @@ export class ToolRuleEditor extends LitElement {
       condition_type: conditionExpr ? 'cel' : 'simple',
       description: this._description.trim() || null,
       is_enabled: this._isEnabled,
-      approval_policy_id: approvalPolicyId,
+      approval_workflow_id: approvalWorkflowId,
     };
 
     this.dispatchEvent(
@@ -904,10 +904,10 @@ export class ToolRuleEditor extends LitElement {
 
   private _renderApprovalSection() {
     const hasAdvanced = this._hasAdvancedConditions;
-    const humanPolicies = this.policies.filter(
+    const humanWorkflows = this.workflows.filter(
       (p) => p.approval_type !== 'ai_driven'
     );
-    const aiPolicies = this.policies.filter(
+    const aiWorkflows = this.workflows.filter(
       (p) => p.approval_type === 'ai_driven'
     );
 
@@ -924,7 +924,7 @@ export class ToolRuleEditor extends LitElement {
                       : ''}"
                     @click=${() => {
                       this._approvalMode = 'human';
-                      this._approvalPolicyId = null;
+                      this._approvalWorkflowId = null;
                     }}
                   >
                     <div class="mode-icon">
@@ -938,7 +938,7 @@ export class ToolRuleEditor extends LitElement {
                       : ''}"
                     @click=${() => {
                       this._approvalMode = 'ai';
-                      this._approvalPolicyId = null;
+                      this._approvalWorkflowId = null;
                     }}
                   >
                     <div class="mode-icon">
@@ -950,38 +950,38 @@ export class ToolRuleEditor extends LitElement {
               `
             : ''}
 
-          <div class="policy-select-row">
+          <div class="workflow-select-row">
             <sl-select
               size="small"
-              placeholder="Select an approval policy..."
-              .value=${this._approvalPolicyId || ''}
+              placeholder="Select an approval workflow..."
+              .value=${this._approvalWorkflowId || ''}
               clearable
               @sl-change=${(e: Event) => {
                 if (this._initializing) return;
                 const val = (e.target as any).value;
-                this._approvalPolicyId = val || null;
+                this._approvalWorkflowId = val || null;
               }}
               @sl-clear=${() => {
-                this._approvalPolicyId = null;
+                this._approvalWorkflowId = null;
               }}
             >
               ${this._approvalMode === 'ai'
                 ? html`
-                    ${aiPolicies.length === 0
+                    ${aiWorkflows.length === 0
                       ? html`<sl-option disabled value=""
-                          >No AI policies — create one below</sl-option
+                          >No AI workflows — create one below</sl-option
                         >`
-                      : aiPolicies.map(
+                      : aiWorkflows.map(
                           (p) =>
                             html`<sl-option value=${p.id}>${p.name}</sl-option>`
                         )}
                   `
                 : html`
-                    ${humanPolicies.length === 0
+                    ${humanWorkflows.length === 0
                       ? html`<sl-option disabled value=""
-                          >No policies — create one below</sl-option
+                          >No workflows — create one below</sl-option
                         >`
-                      : humanPolicies.map(
+                      : humanWorkflows.map(
                           (p) =>
                             html`<sl-option value=${p.id}>${p.name}</sl-option>`
                         )}
@@ -991,7 +991,7 @@ export class ToolRuleEditor extends LitElement {
               size="small"
               variant="text"
               @click=${() => {
-                this._showPolicyDialog = true;
+                this._showWorkflowDialog = true;
               }}
             >
               <sl-icon slot="prefix" name="plus-lg"></sl-icon>
@@ -1001,12 +1001,12 @@ export class ToolRuleEditor extends LitElement {
 
           ${this._approvalMode === 'ai' &&
           hasAdvanced &&
-          !this._approvalPolicyId
+          !this._approvalWorkflowId
             ? html`<div
                 class="hint"
                 style="margin-top: var(--sl-spacing-small);"
               >
-                Select an existing AI policy or create a new one to configure
+                Select an existing AI workflow or create a new one to configure
                 model, prompt, confidence threshold, and fallback behavior.
               </div>`
             : ''}
@@ -1015,36 +1015,36 @@ export class ToolRuleEditor extends LitElement {
     `;
   }
 
-  private _handlePolicyDialogSaved(e: CustomEvent) {
+  private _handleWorkflowDialogSaved(e: CustomEvent) {
     e.stopPropagation();
-    const savedPolicy = e.detail?.policy;
-    this._showPolicyDialog = false;
+    const savedWorkflow = e.detail?.workflow;
+    this._showWorkflowDialog = false;
 
-    if (savedPolicy?.id) {
-      // Add the new policy to the local list immediately so the sl-select
+    if (savedWorkflow?.id) {
+      // Add the new workflow to the local list immediately so the sl-select
       // has a matching option before the parent's async refresh completes.
-      if (!this.policies.find((p) => p.id === savedPolicy.id)) {
-        this.policies = [...this.policies, savedPolicy];
+      if (!this.workflows.find((p) => p.id === savedWorkflow.id)) {
+        this.workflows = [...this.workflows, savedWorkflow];
       }
-      // Auto-select the newly created policy
-      this._approvalPolicyId = savedPolicy.id;
-      // Detect approval mode from the saved policy type
+      // Auto-select the newly created workflow
+      this._approvalWorkflowId = savedWorkflow.id;
+      // Detect approval mode from the saved workflow type
       this._approvalMode =
-        savedPolicy.approval_type === 'ai_driven' ? 'ai' : 'human';
+        savedWorkflow.approval_type === 'ai_driven' ? 'ai' : 'human';
     }
 
-    // Notify parent to refresh the policies list
+    // Notify parent to refresh the workflows list
     this.dispatchEvent(
-      new CustomEvent('policy-created', {
+      new CustomEvent('workflow-created', {
         bubbles: true,
         composed: true,
       })
     );
   }
 
-  private _handlePolicyDialogClose(e: Event) {
+  private _handleWorkflowDialogClose(e: Event) {
     e.stopPropagation();
-    this._showPolicyDialog = false;
+    this._showWorkflowDialog = false;
   }
 
   render() {
@@ -1192,13 +1192,13 @@ export class ToolRuleEditor extends LitElement {
         </div>
       </sl-dialog>
 
-      <approval-policy-dialog
-        ?open=${this._showPolicyDialog}
-        .existingPolicies=${this.policies}
+      <approval-workflow-dialog
+        ?open=${this._showWorkflowDialog}
+        .existingWorkflows=${this.workflows}
         .features=${this.features}
-        @saved=${this._handlePolicyDialogSaved}
-        @close=${this._handlePolicyDialogClose}
-      ></approval-policy-dialog>
+        @saved=${this._handleWorkflowDialogSaved}
+        @close=${this._handleWorkflowDialogClose}
+      ></approval-workflow-dialog>
     `;
   }
 }

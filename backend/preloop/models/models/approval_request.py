@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .account import Account
-from .tool_configuration import ApprovalPolicy, ToolConfiguration
+from .tool_configuration import ApprovalWorkflow, ToolConfiguration
 
 from .base import Base
 
@@ -53,12 +53,12 @@ class ApprovalRequest(Base):
         comment="Reference to the tool configuration",
     )
 
-    approval_policy_id: Mapped[uuid.UUID] = mapped_column(
+    approval_workflow_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("approval_policy.id", ondelete="CASCADE"),
+        ForeignKey("approval_workflow.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="Reference to the approval policy",
+        comment="Reference to the approval workflow",
     )
 
     execution_id: Mapped[str] = mapped_column(
@@ -201,8 +201,8 @@ class ApprovalRequest(Base):
     tool_configuration: Mapped["ToolConfiguration"] = relationship(
         "ToolConfiguration", back_populates="approval_requests"
     )
-    approval_policy: Mapped["ApprovalPolicy"] = relationship(
-        "ApprovalPolicy", back_populates="approval_requests"
+    approval_workflow: Mapped["ApprovalWorkflow"] = relationship(
+        "ApprovalWorkflow", back_populates="approval_requests"
     )
     events: Mapped[list["ApprovalEvent"]] = relationship(
         "ApprovalEvent",

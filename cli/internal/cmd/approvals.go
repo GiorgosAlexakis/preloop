@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	approvalPoliciesPath = "/api/v1/approval-policies"
+	approvalPoliciesPath = "/api/v1/approval-workflows"
 	approvalRequestsPath = "/api/v1/approval-requests"
 )
 
-// ApprovalPolicy represents an approval policy.
-type ApprovalPolicy struct {
+// ApprovalWorkflow represents an approval workflow.
+type ApprovalWorkflow struct {
 	ID          string   `json:"id" yaml:"id"`
 	Name        string   `json:"name" yaml:"name"`
 	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
@@ -54,8 +54,8 @@ var approvalsCmd = &cobra.Command{
 // approvalsListCmd represents the approvals list command.
 var approvalsListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List approval policies",
-	Long: `List all approval policies configured for your organization.
+	Short: "List approval workflows",
+	Long: `List all approval workflows configured for your organization.
 
 Examples:
   preloop approvals list
@@ -122,7 +122,7 @@ func init() {
 	approvalsDenyCmd.Flags().StringP("reason", "r", "", "reason for denial")
 }
 
-// runApprovalsList lists all approval policies.
+// runApprovalsList lists all approval workflows.
 func runApprovalsList(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString("format")
 
@@ -135,13 +135,13 @@ func runApprovalsList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
 	}
 
-	var policies []ApprovalPolicy
+	var policies []ApprovalWorkflow
 	if err := client.Get(approvalPoliciesPath, &policies); err != nil {
-		return fmt.Errorf("failed to list approval policies: %w", err)
+		return fmt.Errorf("failed to list approval workflows: %w", err)
 	}
 
 	if len(policies) == 0 {
-		fmt.Println("No approval policies configured")
+		fmt.Println("No approval workflows configured")
 		return nil
 	}
 

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from preloop.models.models import ApprovalPolicy, ApprovalRequest
+from preloop.models.models import ApprovalWorkflow, ApprovalRequest
 from preloop.models.schemas.approval_request import ApprovalRequestUpdate
 
 from preloop.services.approval_service import ApprovalService
@@ -26,9 +26,9 @@ def approval_service(mock_db):
 
 
 @pytest.fixture
-def sample_approval_policy():
-    """Create sample approval policy."""
-    policy = MagicMock(spec=ApprovalPolicy)
+def sample_approval_workflow():
+    """Create sample approval workflow."""
+    policy = MagicMock(spec=ApprovalWorkflow)
     policy.id = uuid.uuid4()
     policy.approval_type = "slack"
     policy.timeout_seconds = 300
@@ -44,7 +44,7 @@ def sample_approval_request():
     request.id = uuid.uuid4()
     request.account_id = "test_account"
     request.tool_configuration_id = uuid.uuid4()
-    request.approval_policy_id = uuid.uuid4()
+    request.approval_workflow_id = uuid.uuid4()
     request.tool_name = "test_tool"
     request.tool_args = {"arg1": "value1"}
     request.agent_reasoning = "This is why I need approval"
@@ -58,8 +58,8 @@ def sample_approval_request():
 class TestCreateApprovalRequest:
     """Test create_approval_request method."""
 
-    def _setup_mock_db_for_create(self, mock_db, sample_approval_policy):
-        """Set up mock_db to handle the execute call for approval policy lookup."""
+    def _setup_mock_db_for_create(self, mock_db, sample_approval_workflow):
+        """Set up mock_db to handle the execute call for approval workflow lookup."""
 
         # Mock db.refresh to set created fields
         def mock_refresh(obj):
@@ -68,24 +68,24 @@ class TestCreateApprovalRequest:
 
         mock_db.refresh.side_effect = mock_refresh
 
-        # Mock the execute call that queries ApprovalPolicy
+        # Mock the execute call that queries ApprovalWorkflow
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = sample_approval_policy
+        mock_result.scalar_one_or_none.return_value = sample_approval_workflow
         mock_db.execute.return_value = mock_result
 
     async def test_create_approval_request_success(
-        self, approval_service, mock_db, sample_approval_policy
+        self, approval_service, mock_db, sample_approval_workflow
     ):
         """Test creating a new approval request."""
         account_id = "test_account"
         tool_config_id = uuid.uuid4()
 
-        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
+        self._setup_mock_db_for_create(mock_db, sample_approval_workflow)
 
         result = await approval_service.create_approval_request(
             account_id=account_id,
             tool_configuration_id=tool_config_id,
-            approval_policy_id=sample_approval_policy.id,
+            approval_workflow_id=sample_approval_workflow.id,
             tool_name="create_issue",
             tool_args={"title": "Bug", "description": "Fix this"},
             agent_reasoning="Need to create an issue",
@@ -96,17 +96,17 @@ class TestCreateApprovalRequest:
         assert mock_db.refresh.called
 
     async def test_create_approval_request_with_execution_id(
-        self, approval_service, mock_db, sample_approval_policy
+        self, approval_service, mock_db, sample_approval_workflow
     ):
         """Test creating approval request with execution ID."""
         execution_id = "exec_123"
 
-        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
+        self._setup_mock_db_for_create(mock_db, sample_approval_workflow)
 
         result = await approval_service.create_approval_request(
             account_id="test_account",
             tool_configuration_id=uuid.uuid4(),
-            approval_policy_id=sample_approval_policy.id,
+            approval_workflow_id=sample_approval_workflow.id,
             tool_name="delete_issue",
             tool_args={"issue_id": "123"},
             execution_id=execution_id,
@@ -115,15 +115,15 @@ class TestCreateApprovalRequest:
         assert mock_db.add.called
 
     async def test_create_approval_request_custom_timeout(
-        self, approval_service, mock_db, sample_approval_policy
+        self, approval_service, mock_db, sample_approval_workflow
     ):
         """Test creating approval request with custom timeout."""
-        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
+        self._setup_mock_db_for_create(mock_db, sample_approval_workflow)
 
         result = await approval_service.create_approval_request(
             account_id="test_account",
             tool_configuration_id=uuid.uuid4(),
-            approval_policy_id=sample_approval_policy.id,
+            approval_workflow_id=sample_approval_workflow.id,
             tool_name="test_tool",
             tool_args={},
             timeout_seconds=600,  # 10 minutes
@@ -132,15 +132,15 @@ class TestCreateApprovalRequest:
         assert mock_db.add.called
 
     async def test_create_approval_request_default_timeout(
-        self, approval_service, mock_db, sample_approval_policy
+        self, approval_service, mock_db, sample_approval_workflow
     ):
         """Test creating approval request with default timeout."""
-        self._setup_mock_db_for_create(mock_db, sample_approval_policy)
+        self._setup_mock_db_for_create(mock_db, sample_approval_workflow)
 
         result = await approval_service.create_approval_request(
             account_id="test_account",
             tool_configuration_id=uuid.uuid4(),
-            approval_policy_id=sample_approval_policy.id,
+            approval_workflow_id=sample_approval_workflow.id,
             tool_name="test_tool",
             tool_args={},
         )
@@ -237,16 +237,16 @@ class TestApproveRequest:
     """Test approve_request method."""
 
     async def test_approve_request_success(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test approving a request."""
         request_id = sample_approval_request.id
         comment = "Approved for production use"
 
         # Set up the approval request with policy (quorum=1 by default)
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = []
-        sample_approval_policy.approvals_required = 1
+        sample_approval_workflow.approvals_required = 1
 
         # Mock get_approval_request_for_update and update_approval_request
         with patch.object(
@@ -273,15 +273,15 @@ class TestApproveRequest:
                 assert update.approver_comment == comment
 
     async def test_approve_request_without_comment(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test approving a request without a comment."""
         request_id = sample_approval_request.id
 
         # Set up the approval request with policy
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = []
-        sample_approval_policy.approvals_required = 1
+        sample_approval_workflow.approvals_required = 1
 
         with patch.object(
             approval_service,
@@ -304,16 +304,16 @@ class TestDeclineRequest:
     """Test decline_request method."""
 
     async def test_decline_request_success(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test declining a request."""
         request_id = sample_approval_request.id
         comment = "Security concerns"
 
         # Set up the approval request with policy
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = []
-        sample_approval_policy.approvals_required = 1
+        sample_approval_workflow.approvals_required = 1
 
         with patch.object(
             approval_service,
@@ -337,15 +337,15 @@ class TestDeclineRequest:
                 assert update.approver_comment == comment
 
     async def test_decline_request_without_comment(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test declining a request without a comment."""
         request_id = sample_approval_request.id
 
         # Set up the approval request with policy
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = []
-        sample_approval_policy.approvals_required = 1
+        sample_approval_workflow.approvals_required = 1
 
         with patch.object(
             approval_service,
@@ -373,7 +373,7 @@ class TestPostWebhookNotification:
         mock_client_class,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
     ):
         """Test posting webhook notification to Slack."""
         # Mock httpx client
@@ -386,7 +386,7 @@ class TestPostWebhookNotification:
         # Mock update_approval_request
         with patch.object(approval_service, "update_approval_request") as mock_update:
             result = await approval_service.post_webhook_notification(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             assert result is True
@@ -400,10 +400,10 @@ class TestPostWebhookNotification:
         mock_client_class,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
     ):
         """Test posting webhook notification to Mattermost."""
-        sample_approval_policy.approval_type = "mattermost"
+        sample_approval_workflow.approval_type = "mattermost"
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
@@ -413,7 +413,7 @@ class TestPostWebhookNotification:
 
         with patch.object(approval_service, "update_approval_request"):
             result = await approval_service.post_webhook_notification(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             assert result is True
@@ -424,10 +424,10 @@ class TestPostWebhookNotification:
         mock_client_class,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
     ):
         """Test posting webhook notification to generic webhook."""
-        sample_approval_policy.approval_type = "webhook"
+        sample_approval_workflow.approval_type = "webhook"
 
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
@@ -437,20 +437,20 @@ class TestPostWebhookNotification:
 
         with patch.object(approval_service, "update_approval_request"):
             result = await approval_service.post_webhook_notification(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             assert result is True
 
     async def test_post_webhook_no_webhook_url(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test posting webhook when no webhook URL is configured."""
-        sample_approval_policy.approval_config = {}
+        sample_approval_workflow.approval_config = {}
 
         with patch.object(approval_service, "update_approval_request") as mock_update:
             result = await approval_service.post_webhook_notification(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             assert result is False
@@ -461,14 +461,14 @@ class TestPostWebhookNotification:
             assert "webhook_error" in update.model_dump(exclude_unset=True)
 
     async def test_post_webhook_no_config(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test posting webhook when approval_config is None."""
-        sample_approval_policy.approval_config = None
+        sample_approval_workflow.approval_config = None
 
         with patch.object(approval_service, "update_approval_request"):
             result = await approval_service.post_webhook_notification(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             assert result is False
@@ -479,7 +479,7 @@ class TestPostWebhookNotification:
         mock_client_class,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
     ):
         """Test posting webhook when HTTP error occurs."""
         # Mock httpx client to raise error
@@ -489,7 +489,7 @@ class TestPostWebhookNotification:
 
         with patch.object(approval_service, "update_approval_request") as mock_update:
             result = await approval_service.post_webhook_notification(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             assert result is False
@@ -505,7 +505,7 @@ class TestPostWebhookNotification:
         mock_client_class,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
     ):
         """Test posting webhook with agent reasoning included."""
         sample_approval_request.agent_reasoning = "Need to update critical issue"
@@ -518,7 +518,7 @@ class TestPostWebhookNotification:
 
         with patch.object(approval_service, "update_approval_request"):
             result = await approval_service.post_webhook_notification(
-                sample_approval_request, sample_approval_policy
+                sample_approval_request, sample_approval_workflow
             )
 
             assert result is True
@@ -539,7 +539,7 @@ class TestCreateAndNotify:
     """Test create_and_notify method."""
 
     async def test_create_and_notify_success(
-        self, approval_service, mock_db, sample_approval_policy
+        self, approval_service, mock_db, sample_approval_workflow
     ):
         """Test creating and notifying approval request."""
         account_id = "test_account"
@@ -564,7 +564,7 @@ class TestCreateAndNotify:
             result = await approval_service.create_and_notify(
                 account_id=account_id,
                 tool_configuration_id=tool_config_id,
-                approval_policy=sample_approval_policy,
+                approval_workflow=sample_approval_workflow,
                 tool_name="create_issue",
                 tool_args={"title": "Bug"},
                 agent_reasoning="Need approval",
@@ -576,7 +576,7 @@ class TestCreateAndNotify:
             assert mock_webhook.called
 
     async def test_create_and_notify_with_execution_id(
-        self, approval_service, sample_approval_policy
+        self, approval_service, sample_approval_workflow
     ):
         """Test creating and notifying with execution ID."""
         execution_id = "exec_456"
@@ -598,7 +598,7 @@ class TestCreateAndNotify:
             result = await approval_service.create_and_notify(
                 account_id="test_account",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=sample_approval_policy,
+                approval_workflow=sample_approval_workflow,
                 tool_name="test_tool",
                 tool_args={},
                 execution_id=execution_id,
@@ -749,15 +749,15 @@ class TestQuorumVoteTracking:
     """Regression tests for quorum > 1 vote tracking."""
 
     async def test_approve_request_quorum_not_met_records_vote(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that approval vote is recorded when quorum is not yet met."""
         request_id = sample_approval_request.id
         user_id = uuid.uuid4()
 
         # Set up quorum > 1
-        sample_approval_policy.approvals_required = 2
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = []
         sample_approval_request.status = "pending"
 
@@ -788,7 +788,7 @@ class TestQuorumVoteTracking:
                 assert call_args[0][1] == "vote_received"
 
     async def test_approve_request_quorum_met_resolves(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that request resolves when quorum is met."""
         request_id = sample_approval_request.id
@@ -796,8 +796,8 @@ class TestQuorumVoteTracking:
         user_id_2 = uuid.uuid4()
 
         # Set up quorum = 2 with one existing vote
-        sample_approval_policy.approvals_required = 2
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = [
             {
                 "user_id": str(user_id_1),
@@ -834,15 +834,15 @@ class TestQuorumVoteTracking:
                     assert update_arg.status == "approved"
 
     async def test_approve_request_duplicate_vote_rejected(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that duplicate votes from same user are rejected."""
         request_id = sample_approval_request.id
         user_id = uuid.uuid4()
 
         # Set up with existing vote from same user
-        sample_approval_policy.approvals_required = 2
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = [
             {
                 "user_id": str(user_id),
@@ -866,14 +866,14 @@ class TestQuorumVoteTracking:
             assert len(result.responses) == 1
 
     async def test_anonymous_vote_capped_at_one(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that only one anonymous vote is allowed per request."""
         request_id = sample_approval_request.id
 
         # Set up with existing anonymous vote
-        sample_approval_policy.approvals_required = 3
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.approvals_required = 3
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = [
             {
                 "user_id": "anonymous",
@@ -898,14 +898,14 @@ class TestQuorumVoteTracking:
             assert len(result.responses) == 1
 
     async def test_anonymous_cannot_vote_approve_and_decline(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that anonymous user cannot vote both approve AND decline (double-vote attack)."""
         request_id = sample_approval_request.id
 
         # Set up with existing anonymous APPROVAL
-        sample_approval_policy.approvals_required = 2
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = [
             {
                 "user_id": "anonymous",
@@ -931,14 +931,14 @@ class TestQuorumVoteTracking:
             assert result.responses[0]["decision"] == "approved"
 
     async def test_anonymous_cannot_vote_decline_and_approve(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that anonymous user cannot vote decline then approve (reverse double-vote attack)."""
         request_id = sample_approval_request.id
 
         # Set up with existing anonymous DECLINE
-        sample_approval_policy.approvals_required = 2
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_request.approval_workflow = sample_approval_workflow
         sample_approval_request.responses = [
             {
                 "user_id": "anonymous",
@@ -973,16 +973,16 @@ class TestEscalationBehavior:
         mock_sleep,
         approval_service,
         sample_approval_request,
-        sample_approval_policy,
+        sample_approval_workflow,
     ):
         """Test that escalation is triggered when timeout expires with escalation configured."""
         # Set up expired request with escalation configured
         sample_approval_request.status = "pending"
         sample_approval_request.expires_at = datetime.utcnow() - timedelta(seconds=10)
         sample_approval_request.escalation_triggered_at = None
-        sample_approval_policy.escalation_user_ids = [uuid.uuid4()]
-        sample_approval_policy.timeout_seconds = 60
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.escalation_user_ids = [uuid.uuid4()]
+        sample_approval_workflow.timeout_seconds = 60
+        sample_approval_request.approval_workflow = sample_approval_workflow
 
         call_count = 0
 
@@ -1023,7 +1023,7 @@ class TestEscalationBehavior:
                     assert result.status == "approved"
 
     async def test_wait_for_approval_no_escalation_when_already_triggered(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that escalation is not triggered twice."""
         # Set up expired request with escalation already triggered
@@ -1032,8 +1032,8 @@ class TestEscalationBehavior:
         sample_approval_request.escalation_triggered_at = datetime.utcnow() - timedelta(
             seconds=5
         )
-        sample_approval_policy.escalation_user_ids = [uuid.uuid4()]
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.escalation_user_ids = [uuid.uuid4()]
+        sample_approval_request.approval_workflow = sample_approval_workflow
 
         with patch.object(
             approval_service,
@@ -1066,15 +1066,15 @@ class TestEscalationBehavior:
                         assert not mock_escalation.called
 
     async def test_wait_for_approval_expires_without_escalation(
-        self, approval_service, sample_approval_request, sample_approval_policy
+        self, approval_service, sample_approval_request, sample_approval_workflow
     ):
         """Test that request expires normally when no escalation configured."""
         sample_approval_request.status = "pending"
         sample_approval_request.expires_at = datetime.utcnow() - timedelta(seconds=10)
         sample_approval_request.escalation_triggered_at = None
-        sample_approval_policy.escalation_user_ids = None
-        sample_approval_policy.escalation_team_ids = None
-        sample_approval_request.approval_policy = sample_approval_policy
+        sample_approval_workflow.escalation_user_ids = None
+        sample_approval_workflow.escalation_team_ids = None
+        sample_approval_request.approval_workflow = sample_approval_workflow
 
         with patch.object(
             approval_service,
@@ -1216,8 +1216,8 @@ class TestAIDrivenApprovalFlow:
 
     @pytest.fixture
     def ai_driven_policy(self):
-        """Create an AI-driven approval policy."""
-        policy = MagicMock(spec=ApprovalPolicy)
+        """Create an AI-driven approval workflow."""
+        policy = MagicMock(spec=ApprovalWorkflow)
         policy.id = uuid.uuid4()
         policy.name = "AI Review Policy"
         policy.approval_mode = "ai_driven"
@@ -1225,7 +1225,7 @@ class TestAIDrivenApprovalFlow:
         policy.timeout_seconds = 300
         policy.ai_confidence_threshold = 0.8
         policy.ai_fallback_behavior = "escalate"
-        policy.escalation_policy_id = None
+        policy.escalation_workflow_id = None
         policy.notification_channels = ["slack"]
         policy.approval_config = {"webhook_url": "https://hooks.slack.com/test"}
         return policy
@@ -1276,7 +1276,7 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="get_issue",
                 tool_args={"issue_id": "123"},
             )
@@ -1325,7 +1325,7 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="shell_exec",
                 tool_args={"command": "rm -rf /"},
             )
@@ -1377,7 +1377,7 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="test_tool",
                 tool_args={},
             )
@@ -1424,7 +1424,7 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="test_tool",
                 tool_args={},
             )
@@ -1438,7 +1438,7 @@ class TestAIDrivenApprovalFlow:
     ):
         """Test fallback behavior 'escalate' (default) sends to human review."""
         ai_driven_policy.ai_fallback_behavior = "escalate"
-        ai_driven_policy.escalation_policy_id = None
+        ai_driven_policy.escalation_workflow_id = None
 
         mock_request = MagicMock(spec=ApprovalRequest)
         mock_request.id = uuid.uuid4()
@@ -1483,7 +1483,7 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="test_tool",
                 tool_args={},
             )
@@ -1498,21 +1498,21 @@ class TestAIDrivenApprovalFlow:
             # Should send human notifications using original policy
             mock_notify.assert_called_once_with(refreshed_request, ai_driven_policy)
 
-    async def test_escalation_with_escalation_policy(
+    async def test_escalation_with_escalation_workflow(
         self, approval_service, mock_db, ai_driven_policy
     ):
-        """Test that escalation uses the escalation_policy for notifications when set."""
-        escalation_policy_id = uuid.uuid4()
+        """Test that escalation uses the escalation_workflow for notifications when set."""
+        escalation_workflow_id = uuid.uuid4()
         ai_driven_policy.ai_fallback_behavior = "escalate"
-        ai_driven_policy.escalation_policy_id = escalation_policy_id
+        ai_driven_policy.escalation_workflow_id = escalation_workflow_id
 
         mock_request = MagicMock(spec=ApprovalRequest)
         mock_request.id = uuid.uuid4()
         refreshed_request = MagicMock(spec=ApprovalRequest)
 
-        escalation_policy = MagicMock(spec=ApprovalPolicy)
-        escalation_policy.id = escalation_policy_id
-        escalation_policy.name = "Human Escalation Policy"
+        escalation_workflow = MagicMock(spec=ApprovalWorkflow)
+        escalation_workflow.id = escalation_workflow_id
+        escalation_workflow.name = "Human Escalation Policy"
 
         ai_result = self._mock_ai_result(
             decision="uncertain", confidence=0.3, reasoning="Needs human"
@@ -1546,9 +1546,9 @@ class TestAIDrivenApprovalFlow:
                 return_value={"email": {"success": True}},
             ) as mock_notify,
             patch(
-                "preloop.models.crud.approval_policy.get_approval_policy_async",
+                "preloop.models.crud.approval_workflow.get_approval_workflow_async",
                 new_callable=AsyncMock,
-                return_value=escalation_policy,
+                return_value=escalation_workflow,
             ),
         ):
             mock_ai_svc = AsyncMock()
@@ -1558,21 +1558,21 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="test_tool",
                 tool_args={},
             )
 
             assert result == refreshed_request
             # Should send notifications using the escalation policy, not original
-            mock_notify.assert_called_once_with(refreshed_request, escalation_policy)
+            mock_notify.assert_called_once_with(refreshed_request, escalation_workflow)
 
-    async def test_escalation_policy_not_found_falls_back(
+    async def test_escalation_workflow_not_found_falls_back(
         self, approval_service, mock_db, ai_driven_policy
     ):
         """Test that missing escalation policy falls back to original policy."""
         ai_driven_policy.ai_fallback_behavior = "escalate"
-        ai_driven_policy.escalation_policy_id = uuid.uuid4()
+        ai_driven_policy.escalation_workflow_id = uuid.uuid4()
 
         mock_request = MagicMock(spec=ApprovalRequest)
         mock_request.id = uuid.uuid4()
@@ -1610,7 +1610,7 @@ class TestAIDrivenApprovalFlow:
                 return_value={},
             ) as mock_notify,
             patch(
-                "preloop.models.crud.approval_policy.get_approval_policy_async",
+                "preloop.models.crud.approval_workflow.get_approval_workflow_async",
                 new_callable=AsyncMock,
                 return_value=None,  # Escalation policy not found
             ),
@@ -1622,7 +1622,7 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="test_tool",
                 tool_args={},
             )
@@ -1660,7 +1660,7 @@ class TestAIDrivenApprovalFlow:
             result = await approval_service.create_and_notify(
                 account_id="acct-1",
                 tool_configuration_id=uuid.uuid4(),
-                approval_policy=ai_driven_policy,
+                approval_workflow=ai_driven_policy,
                 tool_name="test_tool",
                 tool_args={},
             )

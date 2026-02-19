@@ -1,4 +1,4 @@
-# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 21px;" /> Preloop: The Policy Engine for AI Agents
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 21px;" height="18px" /> Preloop: The Policy Engine for AI Agents
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -59,7 +59,7 @@ metadata:
   description: "Require approval before deploying to production"
   tags: [security, production]
 
-approval_policies:
+approval_workflows:
   - name: "deploy-approval"
     timeout_seconds: 600
     required_approvals: 1
@@ -68,7 +68,7 @@ approval_policies:
 tools:
   - name: "bash"
     source: mcp
-    approval_policy: "deploy-approval"
+    approval_workflow: "deploy-approval"
     justification: required        # Agent must explain the call
     conditions:
       - expression: "args.command.contains('deploy') && args.command.contains('production')"
@@ -125,7 +125,7 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 
 ### Safety & Control
 
-- **Policy Engine.** Define allow, deny, and approval policies for any tool or action.
+- **Policy Engine.** Define allow, deny, and approval workflows for any tool or action.
 - **Access Rules.** Multiple ordered rules per tool with allow/deny/require approval actions.
 - **Drag-and-Drop Priority.** Reorder rule evaluation priority visually.
 - **Fine-Grained Rules.** Policies can check tool names, parameter values, and context.
@@ -491,10 +491,10 @@ Preloop provides a RESTful API with the following key endpoints:
 - `DELETE /api/v1/access-rules/{rule_id}` - Delete access rule
 
 ### Approval Management
-- `GET /api/v1/approval-policies` - List approval policies
-- `POST /api/v1/approval-policies` - Create approval policy
-- `PUT /api/v1/approval-policies/{id}` - Update approval policy
-- `DELETE /api/v1/approval-policies/{id}` - Delete approval policy
+- `GET /api/v1/approval-workflows` - List approval workflows
+- `POST /api/v1/approval-workflows` - Create approval workflow
+- `PUT /api/v1/approval-workflows/{id}` - Update approval workflow
+- `DELETE /api/v1/approval-workflows/{id}` - Delete approval workflow
 - `GET /api/v1/approval-requests` - List approval requests (authenticated)
 - `GET /api/v1/approval-requests/{request_id}` - Get approval request details (authenticated)
 - `POST /api/v1/approval-requests/{request_id}/approve` - Approve request (authenticated)
@@ -680,14 +680,14 @@ If you are not using an MCP client and want to interact with the tool endpoints 
 Preloop provides approval workflows for tool execution. Control which operations require approval before execution.
 
 **Key Concepts:**
-- **Tool Configuration**: Enable/disable tools and assign approval policies
-- **Approval Policies**: Define approval requirements, approvers, timeouts, and notification channels
+- **Tool Configuration**: Enable/disable tools and assign approval workflows
+- **Approval Workflows**: Define approval requirements, approvers, timeouts, and notification channels
 - **Email Notifications**: Receive approval requests via email with one-click approve/decline
 
-**Example: Create an Approval Policy**
+**Example: Create an Approval Workflow**
 
 ```bash
-curl -X POST "https://YOUR_PRELOOP_URL/api/v1/approval-policies" \
+curl -X POST "https://YOUR_PRELOOP_URL/api/v1/approval-workflows" \
 -H "Authorization: Bearer YOUR_API_KEY" \
 -H "Content-Type: application/json" \
 -d '{
@@ -711,7 +711,7 @@ curl -X POST "https://YOUR_PRELOOP_URL/api/v1/tool-configurations" \
   "tool_name": "update_issue",
   "tool_source": "preloop_builtin",
   "is_enabled": true,
-  "approval_policy_id": "<policy_id_from_above>"
+  "approval_workflow_id": "<workflow_id_from_above>"
 }'
 ```
 
@@ -757,9 +757,9 @@ When using approval workflows, tool calls may take several minutes while waiting
 }
 ```
 
-The timeout value is in milliseconds. 600000ms = 10 minutes, which should be sufficient for most approval workflows. Adjust based on your approval policy's `timeout_seconds` setting.
+The timeout value is in milliseconds. 600000ms = 10 minutes, which should be sufficient for most approval workflows. Adjust based on your approval workflow's `timeout_seconds` setting.
 
-> **Tip**: If your approval policy has **async mode** enabled (`async_approval: true`), the tool returns immediately with a `pending_approval` status and a `request_id`. The agent automatically polls `get_approval_status(request_id)` until the human approves, at which point the tool executes and the result is returned in the poll response. No client timeout increase is needed in this mode.
+> **Tip**: If your approval workflow has **async mode** enabled (`async_approval: true`), the tool returns immediately with a `pending_approval` status and a `request_id`. The agent automatically polls `get_approval_status(request_id)` until the human approves, at which point the tool executes and the result is returned in the poll response. No client timeout increase is needed in this mode.
 
 ### Mobile Push Notifications (iOS/Android)
 
@@ -834,6 +834,17 @@ The webhook endpoint tests (`tests/endpoints/test_webhooks.py`) validate:
 
 These tests use mocking to isolate the webhook handling logic from external dependencies.
 
+## Roadmap
+
+Preloop is evolving into a comprehensive control plane for AI agents. Here's what's coming:
+
+- 🔜 **Agent Registry** — Register, credential, and manage AI agents as first-class entities
+- 🔜 **AI Model Gateway** — Unified model proxy with cost tracking, rate limits, and usage analytics
+- 🔜 **Agent Monitoring** — Real-time visibility into agent activity, spending, and health
+- 🔜 **Budget Controls** — Per-agent spending caps with alerts and enforcement
+
+Star the repo and watch for updates!
+
 ## Enterprise Features
 
 Preloop Enterprise Edition extends the open-source core with additional features for teams and organizations:
@@ -850,15 +861,15 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | Web UI | ✅ | ✅ |
 | **Role-Based Access Control (RBAC)** | ❌ | ✅ |
 | **Team management** | ❌ | ✅ |
-| **CEL conditional approval policies** | ❌ | ✅ |
+| **CEL conditional approval workflows** | ❌ | ✅ |
 | **Access rules with CEL conditions** | Basic (single condition) | Advanced (multiple conditions, AND/OR, CEL editor) |
-| **AI-driven approval policies** | ❌ | ✅ |
+| **AI-driven approval workflows** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
 | **Async approval mode** | ❌ | ✅ |
 | **Per-tool justification settings** | ❌ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
-| **Slack notifications** | ❌ | ✅ |
-| **Mattermost notifications** | ❌ | ✅ |
+| Slack notifications | ✅ | ✅ |
+| Mattermost notifications | ✅ | ✅ |
 | **Admin dashboard** | ❌ | ✅ |
 | **Audit logging & impersonation tracking** | ❌ | ✅ |
 | **Billing & subscription management** | ❌ | ✅ |

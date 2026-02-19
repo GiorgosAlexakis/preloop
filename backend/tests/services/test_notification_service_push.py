@@ -75,7 +75,7 @@ def test_approval_request(test_account):
         id=uuid.uuid4(),
         account_id=str(test_account.id),
         tool_configuration_id=uuid.uuid4(),
-        approval_policy_id=uuid.uuid4(),
+        approval_workflow_id=uuid.uuid4(),
         tool_name="create_issue",
         tool_args={"title": "Test Issue"},
         agent_reasoning="Need to create an issue for testing",

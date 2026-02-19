@@ -45,13 +45,13 @@ export interface Tool {
   required_tracker_types?: string[];
   is_supported?: boolean;
   unsupported_reason?: string | null;
-  approval_policy_id: string | null;
+  approval_workflow_id: string | null;
   has_approval_condition: boolean;
   config_id: string | null;
   justification_mode?: string | null;
 }
 
-export interface ApprovalPolicy {
+export interface ApprovalWorkflow {
   id: string;
   name: string;
   description?: string;
@@ -75,7 +75,7 @@ export interface ApprovalPolicy {
   ai_guidelines?: string;
   ai_confidence_threshold?: number;
   ai_fallback_behavior?: 'escalate' | 'approve' | 'deny';
-  escalation_policy_id?: string;
+  escalation_workflow_id?: string;
 }
 
 @customElement('tool-card')
@@ -84,7 +84,7 @@ export class ToolCard extends LitElement {
   tool?: Tool;
 
   @property({ type: Array })
-  policies: ApprovalPolicy[] = [];
+  policies: ApprovalWorkflow[] = [];
 
   @property({ type: Object })
   features: { [key: string]: boolean | string[] } = {};
@@ -158,7 +158,7 @@ export class ToolCard extends LitElement {
     'escalate';
 
   @state()
-  private newPolicyEscalationPolicyId = '';
+  private newPolicyEscalationWorkflowId = '';
 
   @state()
   private availableUsers: Array<{
@@ -702,7 +702,7 @@ export class ToolCard extends LitElement {
     if (!this.tool) return;
 
     // If turning OFF, remove policy immediately
-    if (this.tool.approval_policy_id || this.pendingApproval) {
+    if (this.tool.approval_workflow_id || this.pendingApproval) {
       this.pendingApproval = false;
       this.dispatchEvent(
         new CustomEvent('toggle-approval', {
@@ -714,7 +714,7 @@ export class ToolCard extends LitElement {
     } else {
       // If turning ON
       // Check if there's already a policy assigned
-      if (this.tool.approval_policy_id) {
+      if (this.tool.approval_workflow_id) {
         // Has policy: already enabled (shouldn't reach here)
         // Just ensure it's enabled
         this.dispatchEvent(
@@ -1000,7 +1000,7 @@ export class ToolCard extends LitElement {
     this.resetPolicyForm();
   }
 
-  private handleEditPolicy(policy: ApprovalPolicy) {
+  private handleEditPolicy(policy: ApprovalWorkflow) {
     // Switch to create/edit mode
     this.isCreatingPolicy = true;
     this.editingPolicyId = policy.id;
@@ -1025,7 +1025,7 @@ export class ToolCard extends LitElement {
     this.newPolicyAiConfidenceThreshold = policy.ai_confidence_threshold ?? 0.8;
     this.newPolicyAiFallbackBehavior =
       policy.ai_fallback_behavior || 'escalate';
-    this.newPolicyEscalationPolicyId = policy.escalation_policy_id || '';
+    this.newPolicyEscalationWorkflowId = policy.escalation_workflow_id || '';
   }
 
   private resetPolicyForm() {
@@ -1051,7 +1051,7 @@ export class ToolCard extends LitElement {
     this.newPolicyAiGuidelines = '';
     this.newPolicyAiConfidenceThreshold = 0.8;
     this.newPolicyAiFallbackBehavior = 'escalate';
-    this.newPolicyEscalationPolicyId = '';
+    this.newPolicyEscalationWorkflowId = '';
   }
 
   private handleConfirmPolicy() {
@@ -1138,10 +1138,10 @@ export class ToolCard extends LitElement {
         basePolicyData.ai_fallback_behavior = this.newPolicyAiFallbackBehavior;
         if (
           this.newPolicyAiFallbackBehavior === 'escalate' &&
-          this.newPolicyEscalationPolicyId
+          this.newPolicyEscalationWorkflowId
         ) {
-          basePolicyData.escalation_policy_id =
-            this.newPolicyEscalationPolicyId;
+          basePolicyData.escalation_workflow_id =
+            this.newPolicyEscalationWorkflowId;
         }
       }
 
@@ -1588,7 +1588,8 @@ export class ToolCard extends LitElement {
                 ${this.tool.source_name}
               </sl-badge>
               ${
-                this.tool.approval_policy_id || this.tool.has_approval_condition
+                this.tool.approval_workflow_id ||
+                this.tool.has_approval_condition
                   ? html`
                       <sl-tooltip
                         content="This tool has governance rules configured"
@@ -1650,7 +1651,7 @@ export class ToolCard extends LitElement {
                           </span>
                         </span>
                         <sl-switch
-                          ?checked=${this.tool.approval_policy_id ||
+                          ?checked=${this.tool.approval_workflow_id ||
                           this.pendingApproval}
                           ?disabled=${!this.tool.is_enabled}
                           @sl-change=${this.handleApprovalToggle}
@@ -1658,14 +1659,14 @@ export class ToolCard extends LitElement {
                       </div>
                       ${this.hasAdvancedApprovals()
                         ? html`
-                            ${this.tool.approval_policy_id &&
+                            ${this.tool.approval_workflow_id &&
                             this.tool.is_enabled
                               ? html`
                                   <div class="policy-selector">
                                     <sl-select
                                       size="small"
                                       placeholder="Select a policy..."
-                                      value=${this.tool.approval_policy_id ||
+                                      value=${this.tool.approval_workflow_id ||
                                       ''}
                                       @sl-change=${this.handlePolicySelect}
                                     >
@@ -1728,7 +1729,7 @@ export class ToolCard extends LitElement {
                           `
                         : html`
                             <!-- Open Source: Simple approval with default policy -->
-                            ${(this.tool.approval_policy_id ||
+                            ${(this.tool.approval_workflow_id ||
                               this.pendingApproval) &&
                             this.tool.is_enabled
                               ? html`
@@ -1757,7 +1758,7 @@ export class ToolCard extends LitElement {
       </sl-card>
 
       <sl-dialog
-        label="Configure approval policy"
+        label="Configure approval workflow"
         ?open=${this.showPreloopDialog}
         @sl-request-close=${(e: any) => {
           if (e.detail.source === 'overlay' || e.detail.source === 'keyboard') {
@@ -1769,7 +1770,7 @@ export class ToolCard extends LitElement {
       >
         <div class="dialog-content">
           <p>
-            Configure approval policy for <strong>${this.tool.name}</strong>
+            Configure approval workflow for <strong>${this.tool.name}</strong>
           </p>
           <p
             style="color: var(--sl-color-neutral-600); font-size: var(--sl-font-size-small); margin-top: 0;"
@@ -1779,7 +1780,7 @@ export class ToolCard extends LitElement {
             ${
               this.pendingApproval
                 ? 'Select an existing policy or create a new one to enable approval for this tool.'
-                : 'Manage approval policies for this tool.'
+                : 'Manage approval workflows for this tool.'
             }
           </p>
 
@@ -1899,7 +1900,7 @@ export class ToolCard extends LitElement {
                     <div class="form-field">
                       <label class="form-label">Policy Name *</label>
                       <sl-input
-                        placeholder="e.g., Default Approval Policy"
+                        placeholder="e.g., Default Approval Workflow"
                         value=${this.newPolicyName}
                         @sl-input=${(e: any) => {
                           e.stopPropagation();
@@ -2071,14 +2072,15 @@ DENY if:
                                       >Escalation Policy</label
                                     >
                                     <sl-select
-                                      value=${this.newPolicyEscalationPolicyId}
+                                      value=${this
+                                        .newPolicyEscalationWorkflowId}
                                       @sl-change=${(e: any) => {
                                         e.stopPropagation();
-                                        this.newPolicyEscalationPolicyId =
+                                        this.newPolicyEscalationWorkflowId =
                                           e.target.value;
                                       }}
                                       placeholder="Select a policy for escalation..."
-                                      help-text="The approval policy to use when AI confidence is below threshold"
+                                      help-text="The approval workflow to use when AI confidence is below threshold"
                                     >
                                       ${this.policies
                                         .filter(
@@ -2092,7 +2094,7 @@ DENY if:
                                           `
                                         )}
                                     </sl-select>
-                                    ${!this.newPolicyEscalationPolicyId &&
+                                    ${!this.newPolicyEscalationWorkflowId &&
                                     this.policies.filter(
                                       (p) => p.approval_type === 'standard'
                                     ).length > 0

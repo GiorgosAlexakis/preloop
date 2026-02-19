@@ -243,7 +243,7 @@ class DynamicMCPServer:
                 # Evaluate policy rules to determine action (allow/deny/require_approval)
                 (
                     action,
-                    approval_policy_id,
+                    approval_workflow_id,
                     rule_description,
                 ) = await self._evaluate_policy(user_context, name, arguments or {})
 
@@ -272,7 +272,7 @@ class DynamicMCPServer:
                     try:
                         # Wait for approval
                         await self._request_and_wait_for_approval(
-                            user_context, name, arguments or {}, approval_policy_id
+                            user_context, name, arguments or {}, approval_workflow_id
                         )
                         logger.info(f"Tool {name} approved - proceeding with execution")
                     except TimeoutError as e:
@@ -423,9 +423,9 @@ class DynamicMCPServer:
             tool_args: Tool arguments for condition evaluation
 
         Returns:
-            Tuple of (action, approval_policy_id, rule_description)
+            Tuple of (action, approval_workflow_id, rule_description)
             - action: 'allow', 'deny', or 'require_approval'
-            - approval_policy_id: UUID of approval policy (if require_approval)
+            - approval_workflow_id: UUID of approval workflow (if require_approval)
             - rule_description: Description of the matched rule
         """
         try:
@@ -463,7 +463,7 @@ class DynamicMCPServer:
                 # Evaluate policy rules
                 (
                     action,
-                    approval_policy_id,
+                    approval_workflow_id,
                     rule_description,
                 ) = await evaluate_policy_async(
                     db=db,
@@ -477,11 +477,11 @@ class DynamicMCPServer:
 
                 logger.info(
                     f"Policy evaluation result for '{tool_name}': "
-                    f"action={action}, approval_policy_id={approval_policy_id}, "
+                    f"action={action}, approval_workflow_id={approval_workflow_id}, "
                     f"rule='{rule_description}'"
                 )
 
-                return action, approval_policy_id, rule_description
+                return action, approval_workflow_id, rule_description
 
         except Exception as e:
             # SECURITY: Fail closed on errors
@@ -508,7 +508,9 @@ class DynamicMCPServer:
             from preloop.models.crud.tool_configuration import (
                 get_tool_config_by_name_and_source_async,
             )
-            from preloop.models.crud.approval_policy import get_approval_policy_async
+            from preloop.models.crud.approval_workflow import (
+                get_approval_workflow_async,
+            )
             from preloop.services.approval_service import ApprovalService
             import os
 
@@ -532,20 +534,20 @@ class DynamicMCPServer:
                         tool_source="mcp",
                     )
 
-                if not config or not config.approval_policy_id:
-                    raise Exception("No approval policy configured for this tool")
+                if not config or not config.approval_workflow_id:
+                    raise Exception("No approval workflow configured for this tool")
 
-                # Get approval policy using CRUD
-                policy = await get_approval_policy_async(
-                    db, policy_id=config.approval_policy_id
+                # Get approval workflow using CRUD
+                policy = await get_approval_workflow_async(
+                    db, workflow_id=config.approval_workflow_id
                 )
 
                 if not policy:
-                    raise Exception("Approval policy not found")
+                    raise Exception("Approval workflow not found")
 
                 # Debug: Log policy escalation configuration
                 logger.info(
-                    f"Approval policy loaded: id={policy.id}, "
+                    f"Approval workflow loaded: id={policy.id}, "
                     f"timeout_seconds={policy.timeout_seconds}, "
                     f"escalation_user_ids={policy.escalation_user_ids}, "
                     f"escalation_team_ids={policy.escalation_team_ids}, "
@@ -559,7 +561,7 @@ class DynamicMCPServer:
                 approval_request = await approval_service.create_and_notify(
                     account_id=user_context.account_id,
                     tool_configuration_id=config.id,
-                    approval_policy=policy,
+                    approval_workflow=policy,
                     tool_name=tool_name,
                     tool_args=tool_args,
                     agent_reasoning=None,  # Could be extracted from context if available

@@ -26,7 +26,7 @@ describe('ToolListItem – justification settings', () => {
     schema: {},
     is_enabled: true,
     is_supported: true,
-    approval_policy_id: null,
+    approval_workflow_id: null,
     has_approval_condition: false,
     config_id: null as string | null,
     justification_mode: null as string | null,

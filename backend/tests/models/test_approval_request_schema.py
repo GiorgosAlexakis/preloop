@@ -52,33 +52,33 @@ class TestApprovalRequestCreate:
         """Test creating ApprovalRequestCreate with required fields."""
         account_id = str(uuid4())
         tool_config_id = uuid4()
-        policy_id = uuid4()
+        workflow_id = uuid4()
 
         request = ApprovalRequestCreate(
             tool_name="test_tool",
             account_id=account_id,
             tool_configuration_id=tool_config_id,
-            approval_policy_id=policy_id,
+            approval_workflow_id=workflow_id,
         )
 
         assert request.tool_name == "test_tool"
         assert request.account_id == account_id
         assert request.tool_configuration_id == tool_config_id
-        assert request.approval_policy_id == policy_id
+        assert request.approval_workflow_id == workflow_id
         assert request.expires_at is None
 
     def test_create_with_expiration(self):
         """Test creating ApprovalRequestCreate with expiration."""
         account_id = str(uuid4())
         tool_config_id = uuid4()
-        policy_id = uuid4()
+        workflow_id = uuid4()
         expires_at = datetime(2025, 12, 31, 23, 59, 59)
 
         request = ApprovalRequestCreate(
             tool_name="test_tool",
             account_id=account_id,
             tool_configuration_id=tool_config_id,
-            approval_policy_id=policy_id,
+            approval_workflow_id=workflow_id,
             expires_at=expires_at,
         )
 
@@ -88,13 +88,13 @@ class TestApprovalRequestCreate:
         """Test that ApprovalRequestCreate inherits from Base."""
         account_id = str(uuid4())
         tool_config_id = uuid4()
-        policy_id = uuid4()
+        workflow_id = uuid4()
 
         request = ApprovalRequestCreate(
             tool_name="test_tool",
             account_id=account_id,
             tool_configuration_id=tool_config_id,
-            approval_policy_id=policy_id,
+            approval_workflow_id=workflow_id,
             tool_args={"key": "value"},
             agent_reasoning="Test reasoning",
         )
@@ -158,14 +158,14 @@ class TestApprovalRequestResponse:
         request_id = uuid4()
         account_id = uuid4()  # Changed from str(uuid4()) to uuid4()
         tool_config_id = uuid4()
-        policy_id = uuid4()
+        workflow_id = uuid4()
         requested_at = datetime.now()
 
         response = ApprovalRequestResponse(
             id=request_id,
             account_id=account_id,
             tool_configuration_id=tool_config_id,
-            approval_policy_id=policy_id,
+            approval_workflow_id=workflow_id,
             tool_name="test_tool",
             status="pending",
             requested_at=requested_at,
@@ -179,7 +179,7 @@ class TestApprovalRequestResponse:
         assert response.id == request_id
         assert response.account_id == account_id
         assert response.tool_configuration_id == tool_config_id
-        assert response.approval_policy_id == policy_id
+        assert response.approval_workflow_id == workflow_id
         assert response.tool_name == "test_tool"
         assert response.status == "pending"
         assert response.requested_at == requested_at
@@ -189,7 +189,7 @@ class TestApprovalRequestResponse:
         request_id = uuid4()
         account_id = uuid4()  # Changed from str(uuid4()) to uuid4()
         tool_config_id = uuid4()
-        policy_id = uuid4()
+        workflow_id = uuid4()
         requested_at = datetime.now()
         resolved_at = datetime.now()
         expires_at = datetime(2025, 12, 31, 23, 59, 59)
@@ -199,7 +199,7 @@ class TestApprovalRequestResponse:
             id=request_id,
             account_id=account_id,
             tool_configuration_id=tool_config_id,
-            approval_policy_id=policy_id,
+            approval_workflow_id=workflow_id,
             tool_name="create_issue",
             tool_args={"project": "PROJ"},
             agent_reasoning="User requested",
@@ -232,14 +232,14 @@ class TestApprovalRequestResponse:
         request_id = uuid4()
         account_id = uuid4()
         tool_config_id = uuid4()
-        policy_id = uuid4()
+        workflow_id = uuid4()
         requested_at = datetime.now()
 
         response = ApprovalRequestResponse(
             id=request_id,
             account_id=account_id,
             tool_configuration_id=tool_config_id,
-            approval_policy_id=policy_id,
+            approval_workflow_id=workflow_id,
             tool_name="test_tool",
             status="pending",
             requested_at=requested_at,
@@ -259,8 +259,8 @@ class TestApprovalRequestResponse:
         assert response_dict["account_id"] == str(account_id)
         assert isinstance(response_dict["tool_configuration_id"], str)
         assert response_dict["tool_configuration_id"] == str(tool_config_id)
-        assert isinstance(response_dict["approval_policy_id"], str)
-        assert response_dict["approval_policy_id"] == str(policy_id)
+        assert isinstance(response_dict["approval_workflow_id"], str)
+        assert response_dict["approval_workflow_id"] == str(workflow_id)
 
 
 class TestApprovalDecision:

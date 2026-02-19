@@ -152,7 +152,7 @@ async def validate_policy(
     checking for:
     - Valid YAML/JSON syntax
     - Required fields
-    - Valid references (approval policies, MCP servers)
+    - Valid references (approval workflows, MCP servers)
     - Expression syntax
     - MCP server availability (if check_server_references=true)
 
@@ -166,7 +166,7 @@ async def validate_policy(
     Returns:
         PolicyValidationResult with validation status and any errors.
     """
-    from preloop.models.crud import crud_approval_policy, crud_mcp_server
+    from preloop.models.crud import crud_approval_workflow, crud_mcp_server
     from preloop.services.policy.schema import PolicyValidationError
 
     # Read file content
@@ -198,9 +198,9 @@ async def validate_policy(
             policy_servers = {server.name.lower() for server in policy.mcp_servers}
 
         # Build set of policies defined in the policy file
-        policy_approval_policies = set()
-        if policy.approval_policies:
-            policy_approval_policies = {p.name for p in policy.approval_policies}
+        policy_approval_workflows = set()
+        if policy.approval_workflows:
+            policy_approval_workflows = {w.name for w in policy.approval_workflows}
 
         # Get existing servers from the database
         existing_servers = crud_mcp_server.get_active_by_account(
@@ -210,11 +210,11 @@ async def validate_policy(
         all_available_servers = policy_servers | existing_server_names
 
         # Get existing policies from the database
-        existing_policies = crud_approval_policy.get_multi_by_account(
+        existing_workflows = crud_approval_workflow.get_multi_by_account(
             db, account_id=str(account.id)
         )
-        existing_policy_names = {p.name for p in existing_policies}
-        all_available_policies = policy_approval_policies | existing_policy_names
+        existing_workflow_names = {w.name for w in existing_workflows}
+        all_available_workflows = policy_approval_workflows | existing_workflow_names
 
         # Check tool references
         if policy.tools:
@@ -242,26 +242,26 @@ async def validate_policy(
                                 f"Available MCP servers: [{available_list}]"
                             )
 
-                # Check approval policy references
-                if tool.approval_policy:
-                    if tool.approval_policy not in all_available_policies:
-                        available_list = ", ".join(sorted(all_available_policies))
+                # Check approval workflow references
+                if tool.approval_workflow:
+                    if tool.approval_workflow not in all_available_workflows:
+                        available_list = ", ".join(sorted(all_available_workflows))
                         result.errors.append(
                             PolicyValidationError(
-                                path=f"$.tools[{idx}].approval_policy",
+                                path=f"$.tools[{idx}].approval_workflow",
                                 message=(
-                                    f"Tool '{tool.name}' references approval policy "
-                                    f"'{tool.approval_policy}' which is not defined. "
-                                    f"Either add the policy to your policy file "
-                                    f"under 'approval_policies', or configure it in "
+                                    f"Tool '{tool.name}' references approval workflow "
+                                    f"'{tool.approval_workflow}' which is not defined. "
+                                    f"Either add the workflow to your policy file "
+                                    f"under 'approval_workflows', or configure it in "
                                     f"the console first."
                                 ),
-                                value=tool.approval_policy,
+                                value=tool.approval_workflow,
                             )
                         )
-                        if all_available_policies:
+                        if all_available_workflows:
                             result.warnings.append(
-                                f"Available approval policies: [{available_list}]"
+                                f"Available approval workflows: [{available_list}]"
                             )
 
         # Update validity based on new errors
@@ -306,7 +306,7 @@ async def upload_policy(
     This endpoint:
     1. Parses and validates the policy file
     2. Creates/updates MCP servers defined in the policy
-    3. Creates/updates approval policies
+    3. Creates/updates approval workflows
     4. Creates/updates tool configurations
     5. Applies default behavior settings
 
@@ -404,7 +404,7 @@ async def upload_policy(
     "/policies/export",
     summary="Export current configuration as policy",
     description=(
-        "Export your current MCP servers, approval policies, and tool "
+        "Export your current MCP servers, approval workflows, and tool "
         "configurations as a YAML or JSON policy file."
     ),
 )
@@ -584,7 +584,7 @@ async def get_policy_schema() -> dict:
     schema["title"] = "Preloop Policy Schema"
     schema["description"] = (
         "Schema for Preloop policy-as-code YAML/JSON files. "
-        "Define MCP servers, approval policies, tool configurations, and defaults."
+        "Define MCP servers, approval workflows, tool configurations, and defaults."
     )
 
     return schema
@@ -723,7 +723,7 @@ async def create_policy_version(
 ) -> PolicyVersionFull:
     """Create a new policy version snapshot.
 
-    Takes a snapshot of the current MCP servers, approval policies,
+    Takes a snapshot of the current MCP servers, approval workflows,
     tool configurations, and defaults.
 
     Args:
@@ -854,7 +854,7 @@ async def rollback_to_version(
     """Rollback to a previous policy version.
 
     This endpoint applies the snapshot from a previous version, restoring
-    MCP servers, approval policies, and tool configurations to that state.
+    MCP servers, approval workflows, and tool configurations to that state.
 
     If preview_only is True, returns the diff without making changes.
 

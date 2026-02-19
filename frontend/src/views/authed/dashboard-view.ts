@@ -953,7 +953,7 @@ export class DashboardView extends AuthedElement {
               </div>
               <div class="step-description">
                 Set up Model Context Protocol servers to extend your
-                capabilities with custom tools. Configure approval policies for
+                capabilities with custom tools. Configure approval workflows for
                 tools that need human oversight.
               </div>
               ${!hasMCPServers
@@ -1370,7 +1370,7 @@ export class DashboardView extends AuthedElement {
                       <div class="tool-count-value">
                         ${this.tools.filter(
                           (t) =>
-                            (t.approval_policy_id != null ||
+                            (t.approval_workflow_id != null ||
                               t.has_approval_condition === true) &&
                             t.is_supported !== false
                         ).length}

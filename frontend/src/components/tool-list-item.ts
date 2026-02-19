@@ -14,7 +14,7 @@ import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
 import '@shoelace-style/shoelace/dist/components/radio/radio.js';
 import './tool-rule-editor';
-import type { Tool, ApprovalPolicy } from './tool-card';
+import type { Tool, ApprovalWorkflow } from './tool-card';
 import type { AccessRule } from '../api';
 
 export interface AccessRuleSummary {
@@ -25,14 +25,14 @@ export interface AccessRuleSummary {
   priority: number;
   description: string | null;
   is_enabled: boolean;
-  approval_policy_id: string | null;
+  approval_workflow_id: string | null;
 }
 
 @customElement('tool-list-item')
 export class ToolListItem extends LitElement {
   @property({ type: Object }) tool!: Tool;
   @property({ type: Array }) accessRules: AccessRuleSummary[] = [];
-  @property({ type: Array }) policies: ApprovalPolicy[] = [];
+  @property({ type: Array }) policies: ApprovalWorkflow[] = [];
   @property({ type: Object }) features: { [key: string]: boolean | string[] } =
     {};
   @property({ type: Boolean }) expanded = false;
@@ -407,10 +407,10 @@ export class ToolListItem extends LitElement {
     this._closeRuleEditor();
   }
 
-  private _handlePolicyCreated() {
+  private _handleWorkflowCreated() {
     // Bubble up to tools-view to refresh the policies list
     this.dispatchEvent(
-      new CustomEvent('policy-created', {
+      new CustomEvent('workflow-created', {
         bubbles: true,
         composed: true,
       })
@@ -563,10 +563,10 @@ export class ToolListItem extends LitElement {
   }
 
   private _renderRuleItem(rule: AccessRuleSummary, index: number) {
-    const policy = rule.approval_policy_id
-      ? this.policies.find((p) => p.id === rule.approval_policy_id)
-      : this.tool.approval_policy_id
-        ? this.policies.find((p) => p.id === this.tool.approval_policy_id)
+    const workflow = rule.approval_workflow_id
+      ? this.policies.find((p) => p.id === rule.approval_workflow_id)
+      : this.tool.approval_workflow_id
+        ? this.policies.find((p) => p.id === this.tool.approval_workflow_id)
         : null;
 
     const colorClass = this._getActionColorClass(rule.action);
@@ -600,10 +600,10 @@ export class ToolListItem extends LitElement {
         <div class="rule-details">
           <span class="rule-action-label ${colorClass}">
             ${this._getActionLabel(rule.action)}${rule.action ===
-              'require_approval' && policy
+              'require_approval' && workflow
               ? html` <span
                   style="font-weight: normal; font-size: var(--sl-font-size-x-small);"
-                  >(${policy.name})</span
+                  >(${workflow.name})</span
                 >`
               : ''}
           </span>
@@ -746,7 +746,7 @@ export class ToolListItem extends LitElement {
         .features=${this.features}
         .toolSchema=${this.tool.schema}
         @save-rule=${this._handleSaveRule}
-        @policy-created=${this._handlePolicyCreated}
+        @workflow-created=${this._handleWorkflowCreated}
         @close=${this._closeRuleEditor}
       ></tool-rule-editor>
 

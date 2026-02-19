@@ -1,4 +1,4 @@
-"""Tests for approval_policy CRUD operations."""
+"""Tests for approval_workflow CRUD operations."""
 
 import pytest
 from unittest.mock import MagicMock
@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from preloop.models.crud.approval_policy import CRUDApprovalPolicy
+from preloop.models.crud.approval_workflow import CRUDApprovalWorkflow
 
 
 @pytest.fixture
@@ -17,51 +17,51 @@ def mock_db_session():
 
 
 @pytest.fixture
-def crud_approval_policy():
-    """Fixture for a CRUDApprovalPolicy instance."""
-    return CRUDApprovalPolicy()
+def crud_approval_workflow():
+    """Fixture for a CRUDApprovalWorkflow instance."""
+    return CRUDApprovalWorkflow()
 
 
-def test_get(crud_approval_policy, mock_db_session):
-    """Test retrieving an approval policy by ID."""
+def test_get(crud_approval_workflow, mock_db_session):
+    """Test retrieving an approval workflow by ID."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
-    mock_policy = MagicMock()
-    mock_policy.id = policy_id
-    mock_policy.account_id = account_id
+    mock_workflow = MagicMock()
+    mock_workflow.id = workflow_id
+    mock_workflow.account_id = account_id
 
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
-    mock_query.first.return_value = mock_policy
+    mock_query.first.return_value = mock_workflow
 
     # Act
-    result = crud_approval_policy.get(
-        mock_db_session, id=policy_id, account_id=account_id
+    result = crud_approval_workflow.get(
+        mock_db_session, id=workflow_id, account_id=account_id
     )
 
     # Assert
-    assert result.id == policy_id
+    assert result.id == workflow_id
     assert result.account_id == account_id
 
 
-def test_get_by_name(crud_approval_policy, mock_db_session):
-    """Test retrieving an approval policy by name and account."""
+def test_get_by_name(crud_approval_workflow, mock_db_session):
+    """Test retrieving an approval workflow by name and account."""
     # Arrange
     account_id = str(uuid4())
     policy_name = "test-policy"
-    mock_policy = MagicMock()
-    mock_policy.name = policy_name
-    mock_policy.account_id = account_id
+    mock_workflow = MagicMock()
+    mock_workflow.name = policy_name
+    mock_workflow.account_id = account_id
 
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
-    mock_query.first.return_value = mock_policy
+    mock_query.first.return_value = mock_workflow
 
     # Act
-    result = crud_approval_policy.get_by_name(
+    result = crud_approval_workflow.get_by_name(
         mock_db_session, account_id=account_id, name=policy_name
     )
 
@@ -70,15 +70,15 @@ def test_get_by_name(crud_approval_policy, mock_db_session):
     assert result.account_id == account_id
 
 
-def test_get_multi_by_account(crud_approval_policy, mock_db_session):
-    """Test retrieving approval policies for a specific account."""
+def test_get_multi_by_account(crud_approval_workflow, mock_db_session):
+    """Test retrieving approval workflows for a specific account."""
     # Arrange
     account_id = str(uuid4())
-    mock_policy1 = MagicMock()
-    mock_policy1.account_id = account_id
-    mock_policy2 = MagicMock()
-    mock_policy2.account_id = account_id
-    mock_policies = [mock_policy1, mock_policy2]
+    mock_workflow1 = MagicMock()
+    mock_workflow1.account_id = account_id
+    mock_workflow2 = MagicMock()
+    mock_workflow2.account_id = account_id
+    mock_policies = [mock_workflow1, mock_workflow2]
 
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
@@ -88,7 +88,7 @@ def test_get_multi_by_account(crud_approval_policy, mock_db_session):
     mock_query.all.return_value = mock_policies
 
     # Act
-    result = crud_approval_policy.get_multi_by_account(
+    result = crud_approval_workflow.get_multi_by_account(
         mock_db_session, account_id=account_id, skip=0, limit=100
     )
 
@@ -97,41 +97,41 @@ def test_get_multi_by_account(crud_approval_policy, mock_db_session):
     assert all(policy.account_id == account_id for policy in result)
 
 
-def test_remove(crud_approval_policy, mock_db_session):
-    """Test removing an approval policy by ID."""
+def test_remove(crud_approval_workflow, mock_db_session):
+    """Test removing an approval workflow by ID."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
-    mock_policy = MagicMock()
-    mock_policy.id = policy_id
-    mock_policy.account_id = account_id
-    mock_policy.is_default = False
+    mock_workflow = MagicMock()
+    mock_workflow.id = workflow_id
+    mock_workflow.account_id = account_id
+    mock_workflow.is_default = False
 
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
     mock_query.order_by.return_value = mock_query
-    mock_query.first.return_value = mock_policy
+    mock_query.first.return_value = mock_workflow
     mock_db_session.delete = MagicMock()
     mock_db_session.flush = MagicMock()
     mock_db_session.commit = MagicMock()
 
     # Act
-    result = crud_approval_policy.remove(
-        mock_db_session, id=policy_id, account_id=account_id
+    result = crud_approval_workflow.remove(
+        mock_db_session, id=workflow_id, account_id=account_id
     )
 
     # Assert
-    assert result.id == policy_id
-    mock_db_session.delete.assert_called_once_with(mock_policy)
+    assert result.id == workflow_id
+    mock_db_session.delete.assert_called_once_with(mock_workflow)
     mock_db_session.flush.assert_called_once()
     mock_db_session.commit.assert_called_once()
 
 
-def test_remove_not_found(crud_approval_policy, mock_db_session):
-    """Test removing a non-existent approval policy."""
+def test_remove_not_found(crud_approval_workflow, mock_db_session):
+    """Test removing a non-existent approval workflow."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
 
     mock_query = MagicMock()
@@ -143,8 +143,8 @@ def test_remove_not_found(crud_approval_policy, mock_db_session):
     mock_db_session.commit = MagicMock()
 
     # Act
-    result = crud_approval_policy.remove(
-        mock_db_session, id=policy_id, account_id=account_id
+    result = crud_approval_workflow.remove(
+        mock_db_session, id=workflow_id, account_id=account_id
     )
 
     # Assert
@@ -153,28 +153,28 @@ def test_remove_not_found(crud_approval_policy, mock_db_session):
     mock_db_session.commit.assert_not_called()
 
 
-def test_get_default(crud_approval_policy, mock_db_session):
-    """Test retrieving the default approval policy for an account."""
+def test_get_default(crud_approval_workflow, mock_db_session):
+    """Test retrieving the default approval workflow for an account."""
     # Arrange
     account_id = str(uuid4())
-    mock_policy = MagicMock()
-    mock_policy.is_default = True
-    mock_policy.account_id = account_id
+    mock_workflow = MagicMock()
+    mock_workflow.is_default = True
+    mock_workflow.account_id = account_id
 
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
-    mock_query.first.return_value = mock_policy
+    mock_query.first.return_value = mock_workflow
 
     # Act
-    result = crud_approval_policy.get_default(mock_db_session, account_id=account_id)
+    result = crud_approval_workflow.get_default(mock_db_session, account_id=account_id)
 
     # Assert
     assert result is not None
     assert result.is_default is True
 
 
-def test_get_default_not_found(crud_approval_policy, mock_db_session):
+def test_get_default_not_found(crud_approval_workflow, mock_db_session):
     """Test retrieving default policy when none exists."""
     # Arrange
     account_id = str(uuid4())
@@ -185,13 +185,13 @@ def test_get_default_not_found(crud_approval_policy, mock_db_session):
     mock_query.first.return_value = None
 
     # Act
-    result = crud_approval_policy.get_default(mock_db_session, account_id=account_id)
+    result = crud_approval_workflow.get_default(mock_db_session, account_id=account_id)
 
     # Assert
     assert result is None
 
 
-def test_create_first_policy_becomes_default(crud_approval_policy, mock_db_session):
+def test_create_first_policy_becomes_default(crud_approval_workflow, mock_db_session):
     """Test that first policy for an account becomes default."""
     # Arrange
     account_id = str(uuid4())
@@ -208,7 +208,7 @@ def test_create_first_policy_becomes_default(crud_approval_policy, mock_db_sessi
     mock_db_session.refresh = MagicMock()
 
     # Act
-    result = crud_approval_policy.create(
+    result = crud_approval_workflow.create(
         mock_db_session, obj_in=policy_data, account_id=account_id
     )
 
@@ -218,7 +218,7 @@ def test_create_first_policy_becomes_default(crud_approval_policy, mock_db_sessi
     mock_db_session.commit.assert_called_once()
 
 
-def test_create_with_explicit_default(crud_approval_policy, mock_db_session):
+def test_create_with_explicit_default(crud_approval_workflow, mock_db_session):
     """Test creating policy with explicit is_default=True."""
     # Arrange
     account_id = str(uuid4())
@@ -241,7 +241,7 @@ def test_create_with_explicit_default(crud_approval_policy, mock_db_session):
     mock_db_session.flush = MagicMock()
 
     # Act
-    result = crud_approval_policy.create(
+    result = crud_approval_workflow.create(
         mock_db_session, obj_in=policy_data, account_id=account_id
     )
 
@@ -251,7 +251,7 @@ def test_create_with_explicit_default(crud_approval_policy, mock_db_session):
 
 
 def test_create_without_default_when_policies_exist(
-    crud_approval_policy, mock_db_session
+    crud_approval_workflow, mock_db_session
 ):
     """Test creating non-default policy when others exist."""
     # Arrange
@@ -269,7 +269,7 @@ def test_create_without_default_when_policies_exist(
     mock_db_session.refresh = MagicMock()
 
     # Act
-    result = crud_approval_policy.create(
+    result = crud_approval_workflow.create(
         mock_db_session, obj_in=policy_data, account_id=account_id
     )
 
@@ -277,15 +277,15 @@ def test_create_without_default_when_policies_exist(
     assert result is not None
 
 
-def test_update_setting_as_default(crud_approval_policy, mock_db_session):
+def test_update_setting_as_default(crud_approval_workflow, mock_db_session):
     """Test updating policy to become default."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
-    mock_policy = MagicMock()
-    mock_policy.id = policy_id
-    mock_policy.account_id = account_id
-    mock_policy.is_default = False
+    mock_workflow = MagicMock()
+    mock_workflow.id = workflow_id
+    mock_workflow.account_id = account_id
+    mock_workflow.is_default = False
 
     update_data = {"is_default": True}
 
@@ -300,8 +300,8 @@ def test_update_setting_as_default(crud_approval_policy, mock_db_session):
     mock_db_session.flush = MagicMock()
 
     # Act
-    result = crud_approval_policy.update(
-        mock_db_session, db_obj=mock_policy, obj_in=update_data
+    result = crud_approval_workflow.update(
+        mock_db_session, db_obj=mock_workflow, obj_in=update_data
     )
 
     # Assert
@@ -309,15 +309,15 @@ def test_update_setting_as_default(crud_approval_policy, mock_db_session):
     mock_db_session.commit.assert_called_once()
 
 
-def test_update_not_changing_default(crud_approval_policy, mock_db_session):
+def test_update_not_changing_default(crud_approval_workflow, mock_db_session):
     """Test updating policy without changing default status."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
-    mock_policy = MagicMock()
-    mock_policy.id = policy_id
-    mock_policy.account_id = account_id
-    mock_policy.is_default = True
+    mock_workflow = MagicMock()
+    mock_workflow.id = workflow_id
+    mock_workflow.account_id = account_id
+    mock_workflow.is_default = True
 
     update_data = {"name": "Updated Name"}
 
@@ -326,8 +326,8 @@ def test_update_not_changing_default(crud_approval_policy, mock_db_session):
     mock_db_session.refresh = MagicMock()
 
     # Act
-    result = crud_approval_policy.update(
-        mock_db_session, db_obj=mock_policy, obj_in=update_data
+    result = crud_approval_workflow.update(
+        mock_db_session, db_obj=mock_workflow, obj_in=update_data
     )
 
     # Assert
@@ -335,15 +335,15 @@ def test_update_not_changing_default(crud_approval_policy, mock_db_session):
     mock_db_session.commit.assert_called_once()
 
 
-def test_remove_default_promotes_another(crud_approval_policy, mock_db_session):
+def test_remove_default_promotes_another(crud_approval_workflow, mock_db_session):
     """Test that removing default policy promotes another policy."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
-    mock_policy = MagicMock()
-    mock_policy.id = policy_id
-    mock_policy.account_id = account_id
-    mock_policy.is_default = True
+    mock_workflow = MagicMock()
+    mock_workflow.id = workflow_id
+    mock_workflow.account_id = account_id
+    mock_workflow.is_default = True
 
     replacement_policy = MagicMock()
     replacement_policy.is_default = False
@@ -353,7 +353,7 @@ def test_remove_default_promotes_another(crud_approval_policy, mock_db_session):
     mock_query.filter.return_value = mock_query
     mock_query.order_by.return_value = mock_query
     # First call returns policy to delete, second call returns replacement
-    mock_query.first.side_effect = [mock_policy, replacement_policy]
+    mock_query.first.side_effect = [mock_workflow, replacement_policy]
 
     mock_db_session.delete = MagicMock()
     mock_db_session.flush = MagicMock()
@@ -361,51 +361,51 @@ def test_remove_default_promotes_another(crud_approval_policy, mock_db_session):
     mock_db_session.commit = MagicMock()
 
     # Act
-    result = crud_approval_policy.remove(
-        mock_db_session, id=policy_id, account_id=account_id
+    result = crud_approval_workflow.remove(
+        mock_db_session, id=workflow_id, account_id=account_id
     )
 
     # Assert
-    assert result == mock_policy
-    mock_db_session.delete.assert_called_once_with(mock_policy)
+    assert result == mock_workflow
+    mock_db_session.delete.assert_called_once_with(mock_workflow)
     mock_db_session.commit.assert_called_once()
     # Replacement should be marked as default
     assert replacement_policy.is_default is True
 
 
-def test_remove_default_no_replacement(crud_approval_policy, mock_db_session):
+def test_remove_default_no_replacement(crud_approval_workflow, mock_db_session):
     """Test removing default policy when no other policies exist."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
-    mock_policy = MagicMock()
-    mock_policy.id = policy_id
-    mock_policy.account_id = account_id
-    mock_policy.is_default = True
+    mock_workflow = MagicMock()
+    mock_workflow.id = workflow_id
+    mock_workflow.account_id = account_id
+    mock_workflow.is_default = True
 
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
     mock_query.order_by.return_value = mock_query
     # First call returns policy to delete, second call returns None (no replacement)
-    mock_query.first.side_effect = [mock_policy, None]
+    mock_query.first.side_effect = [mock_workflow, None]
 
     mock_db_session.delete = MagicMock()
     mock_db_session.flush = MagicMock()
     mock_db_session.commit = MagicMock()
 
     # Act
-    result = crud_approval_policy.remove(
-        mock_db_session, id=policy_id, account_id=account_id
+    result = crud_approval_workflow.remove(
+        mock_db_session, id=workflow_id, account_id=account_id
     )
 
     # Assert
-    assert result == mock_policy
-    mock_db_session.delete.assert_called_once_with(mock_policy)
+    assert result == mock_workflow
+    mock_db_session.delete.assert_called_once_with(mock_workflow)
     mock_db_session.commit.assert_called_once()
 
 
-def test_get_by_name_not_found(crud_approval_policy, mock_db_session):
+def test_get_by_name_not_found(crud_approval_workflow, mock_db_session):
     """Test retrieving policy by name that doesn't exist."""
     # Arrange
     account_id = str(uuid4())
@@ -416,7 +416,7 @@ def test_get_by_name_not_found(crud_approval_policy, mock_db_session):
     mock_query.first.return_value = None
 
     # Act
-    result = crud_approval_policy.get_by_name(
+    result = crud_approval_workflow.get_by_name(
         mock_db_session, account_id=account_id, name="Non-existent"
     )
 
@@ -424,10 +424,10 @@ def test_get_by_name_not_found(crud_approval_policy, mock_db_session):
     assert result is None
 
 
-def test_get_not_found(crud_approval_policy, mock_db_session):
+def test_get_not_found(crud_approval_workflow, mock_db_session):
     """Test retrieving policy by ID that doesn't exist."""
     # Arrange
-    policy_id = uuid4()
+    workflow_id = uuid4()
     account_id = str(uuid4())
 
     mock_query = MagicMock()
@@ -436,15 +436,15 @@ def test_get_not_found(crud_approval_policy, mock_db_session):
     mock_query.first.return_value = None
 
     # Act
-    result = crud_approval_policy.get(
-        mock_db_session, id=policy_id, account_id=account_id
+    result = crud_approval_workflow.get(
+        mock_db_session, id=workflow_id, account_id=account_id
     )
 
     # Assert
     assert result is None
 
 
-def test_get_multi_by_account_empty(crud_approval_policy, mock_db_session):
+def test_get_multi_by_account_empty(crud_approval_workflow, mock_db_session):
     """Test retrieving policies when none exist."""
     # Arrange
     account_id = str(uuid4())
@@ -457,7 +457,7 @@ def test_get_multi_by_account_empty(crud_approval_policy, mock_db_session):
     mock_query.all.return_value = []
 
     # Act
-    result = crud_approval_policy.get_multi_by_account(
+    result = crud_approval_workflow.get_multi_by_account(
         mock_db_session, account_id=account_id
     )
 
@@ -465,7 +465,7 @@ def test_get_multi_by_account_empty(crud_approval_policy, mock_db_session):
     assert result == []
 
 
-def test_get_multi_by_account_with_pagination(crud_approval_policy, mock_db_session):
+def test_get_multi_by_account_with_pagination(crud_approval_workflow, mock_db_session):
     """Test retrieving policies with pagination."""
     # Arrange
     account_id = str(uuid4())
@@ -479,7 +479,7 @@ def test_get_multi_by_account_with_pagination(crud_approval_policy, mock_db_sess
     mock_query.all.return_value = mock_policies
 
     # Act
-    result = crud_approval_policy.get_multi_by_account(
+    result = crud_approval_workflow.get_multi_by_account(
         mock_db_session, account_id=account_id, skip=10, limit=5
     )
 

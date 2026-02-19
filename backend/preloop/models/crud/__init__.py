@@ -42,7 +42,7 @@ from .issue_set import CRUDIssueSet
 from .tool_configuration import CRUDToolConfiguration
 from .mcp_server import CRUDMCPServer
 from .mcp_tool import CRUDMCPTool
-from .approval_policy import CRUDApprovalPolicy
+from .approval_workflow import CRUDApprovalWorkflow
 from .approval_request import CRUDApprovalRequest, crud_approval_request
 from .tool_access_rule import CRUDToolAccessRule
 from .plan import (
@@ -99,7 +99,7 @@ crud_issue_set = CRUDIssueSet(IssueSet)
 crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
 crud_mcp_server = CRUDMCPServer()  # Instantiate CRUDMCPServer
 crud_mcp_tool = CRUDMCPTool()  # Instantiate CRUDMCPTool
-crud_approval_policy = CRUDApprovalPolicy()  # Instantiate CRUDApprovalPolicy
+crud_approval_workflow = CRUDApprovalWorkflow()  # Instantiate CRUDApprovalWorkflow
 crud_tool_access_rule = CRUDToolAccessRule()  # Instantiate CRUDToolAccessRule
 
 __all__ = [
@@ -125,7 +125,7 @@ __all__ = [
     "CRUDToolConfiguration",
     "CRUDMCPServer",
     "CRUDMCPTool",
-    "CRUDApprovalPolicy",
+    "CRUDApprovalWorkflow",
     "CRUDApprovalRequest",
     "CRUDToolAccessRule",
     "CRUDPlan",
@@ -162,7 +162,7 @@ __all__ = [
     "crud_tool_configuration",
     "crud_mcp_server",
     "crud_mcp_tool",
-    "crud_approval_policy",
+    "crud_approval_workflow",
     "crud_approval_request",
     "crud_tool_access_rule",
     "plan",

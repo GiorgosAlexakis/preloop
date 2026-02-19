@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Context variable to pass policy evaluation results from _call_tool() to
 # individual tool wrappers (which call require_approval()).
-# When set, require_approval() should use this policy_id instead of looking
+# When set, require_approval() should use this workflow_id instead of looking
 # it up from the tool configuration.
-_rule_policy_id_var: ContextVar[Optional[str]] = ContextVar(
-    "_rule_policy_id_var", default=None
+_rule_workflow_id_var: ContextVar[Optional[str]] = ContextVar(
+    "_rule_workflow_id_var", default=None
 )
 
 # Context variable to pass a unique correlation_id from _call_tool() through
@@ -473,9 +473,9 @@ async def {internal_name}({params_str}) -> str:
     justification = _justification_var.get(None)
 
     # Check approval with streaming (we have Context!)
-    # The policy_id may have been set by _call_tool() after evaluating access rules.
+    # The workflow_id may have been set by _call_tool() after evaluating access rules.
     from preloop.services.approval_helper import require_approval
-    rule_policy_id = _rule_policy_id_var.get(None)
+    rule_workflow_id = _rule_workflow_id_var.get(None)
     corr_id = _correlation_id_var.get(None)
 
     approved, error = await require_approval(
@@ -484,7 +484,7 @@ async def {internal_name}({params_str}) -> str:
         account_id=account_id,
         arguments=arguments,
         ctx=ctx,
-        policy_id=rule_policy_id,
+        workflow_id=rule_workflow_id,
         correlation_id=corr_id,
         justification=justification,
     )
@@ -549,7 +549,7 @@ async def {internal_name}({params_str}) -> str:
             "get_mcp_client_pool": get_mcp_client_pool,
             "Optional": Optional,
             "Context": Context,
-            "_rule_policy_id_var": _rule_policy_id_var,
+            "_rule_workflow_id_var": _rule_workflow_id_var,
             "_correlation_id_var": _correlation_id_var,
         }
 
@@ -716,7 +716,7 @@ async def {internal_name}({params_str}) -> str:
             from preloop.services.policy_evaluator import evaluate_policy_async
 
             async with get_async_db_session() as db:
-                action, approval_policy_id, reason = await evaluate_policy_async(
+                action, approval_workflow_id, reason = await evaluate_policy_async(
                     db=db,
                     tool_name=name,
                     tool_args=arguments,
@@ -727,7 +727,7 @@ async def {internal_name}({params_str}) -> str:
 
             logger.info(
                 f"Policy evaluation for '{name}': action={action}, "
-                f"policy_id={approval_policy_id}, reason={reason}"
+                f"workflow_id={approval_workflow_id}, reason={reason}"
             )
 
             if action == "deny":
@@ -738,12 +738,12 @@ async def {internal_name}({params_str}) -> str:
                     ]
                 )
 
-            if action == "require_approval" and approval_policy_id:
-                # Store the policy_id so require_approval() in the tool wrapper
+            if action == "require_approval" and approval_workflow_id:
+                # Store the workflow_id so require_approval() in the tool wrapper
                 # picks it up instead of relying on the legacy config-level policy.
-                _rule_policy_id_var.set(str(approval_policy_id))
+                _rule_workflow_id_var.set(str(approval_workflow_id))
             else:
-                _rule_policy_id_var.set(None)
+                _rule_workflow_id_var.set(None)
 
         except Exception as e:
             logger.error(
@@ -751,7 +751,7 @@ async def {internal_name}({params_str}) -> str:
             )
             # Fail open for evaluation errors to avoid blocking all tools
             # (the policy_evaluator already fails closed per-rule)
-            _rule_policy_id_var.set(None)
+            _rule_workflow_id_var.set(None)
 
         # ── Translate and execute ───────────────────────────────────────
         # Translate tool name for proxied tools
@@ -781,7 +781,7 @@ async def {internal_name}({params_str}) -> str:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
             # Clean up context vars after execution
-            _rule_policy_id_var.set(None)
+            _rule_workflow_id_var.set(None)
             _correlation_id_var.set(None)
 
             # ── Audit: log tool execution ───────────────────────────────

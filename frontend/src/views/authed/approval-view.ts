@@ -15,7 +15,7 @@ interface ApprovalRequest {
   id: string;
   account_id: string;
   tool_configuration_id: string;
-  approval_policy_id: string;
+  approval_workflow_id: string;
   execution_id: string | null;
   tool_name: string;
   tool_args: Record<string, any>;

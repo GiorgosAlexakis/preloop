@@ -178,7 +178,7 @@ class PolicyGenerationService:
         """Export the account's current policy config as YAML context.
 
         The output is structured so the LLM knows it should preserve
-        existing items (MCP servers, approval policies, tools with rules)
+        existing items (MCP servers, approval workflows, tools with rules)
         and only add or modify what the user's prompt requests.
         """
         try:
@@ -195,18 +195,18 @@ class PolicyGenerationService:
 
             # Count existing items for the annotation
             n_servers = len(current.mcp_servers or [])
-            n_policies = len(current.approval_policies or [])
+            n_policies = len(current.approval_workflows or [])
             n_tools = len(current.tools or [])
 
             header_lines = [
                 "\n\n--- CURRENT ACCOUNT CONFIGURATION ---",
                 f"The account currently has {n_servers} MCP server(s), "
-                f"{n_policies} approval policy/ies, and {n_tools} tool "
+                f"{n_policies} approval workflow/ies, and {n_tools} tool "
                 f"configuration(s) with their access rules.",
                 "",
                 "IMPORTANT: You MUST keep the items below unless the "
                 "user's prompt explicitly contradicts them. Reference "
-                "existing approval_policies by name instead of creating "
+                "existing approval_workflows by name instead of creating "
                 "duplicates. Carry forward existing tool conditions/rules "
                 "that are compatible with the user's request.",
                 "",
@@ -232,8 +232,8 @@ no markdown fences, no explanation.
 ### RULES
 - The YAML MUST conform to the following JSON Schema.
 - Use `version: "1.0"`.
-- Every `approval_policy` referenced by a tool MUST be defined in
-  `approval_policies`.
+- Every `approval_workflow` referenced by a tool MUST be defined in
+  `approval_workflows`.
 - Prefer `condition_type: simple` unless the description clearly
   requires CEL capabilities (contains, startsWith, regex, etc.).
 - If the user mentions specific people or teams, include them in
@@ -249,8 +249,8 @@ If a "CURRENT ACCOUNT CONFIGURATION" block is provided below, you MUST
 follow these rules:
 1. **Preserve existing MCP servers** — include them unchanged in the
    `mcp_servers` section unless the user says to remove or replace one.
-2. **Reuse existing approval policies** — if the account already has
-   suitable approval policies (e.g. for human review or AI triage),
+2. **Reuse existing approval workflows** — if the account already has
+   suitable approval workflows (e.g. for human review or AI triage),
    reference them by name in tool configs instead of creating new ones.
    Only create a new policy when no existing one satisfies the request.
 3. **Keep existing tool rules** — for tools already configured with
@@ -289,14 +289,14 @@ Output ONLY the raw YAML — no fences, no explanation.
 ### RULES
 - The YAML MUST conform to the following JSON Schema.
 - Use `version: "1.0"`.
-- Every `approval_policy` referenced MUST be defined.
+- Every `approval_workflow` referenced MUST be defined.
 - Prefer `condition_type: simple` for straightforward conditions.
 - Set `defaults.unknown_tools` to `require_approval` since we're
   generating a norm-based policy.
 
 ### REUSE EXISTING CONFIGURATION
 If a "CURRENT ACCOUNT CONFIGURATION" block is provided below:
-1. **Reuse existing approval policies** by name when they fit. Only
+1. **Reuse existing approval workflows** by name when they fit. Only
    create new ones when the audit patterns require different behaviour.
 2. **Keep existing MCP servers** unchanged in the output.
 3. **Merge with existing tool configs** — add or tighten rules based

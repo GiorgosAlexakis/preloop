@@ -5,7 +5,7 @@ for MCP governance. Policies can be defined in YAML/JSON files and imported
 via the API to configure:
 
 - MCP servers
-- Approval policies
+- Approval workflows
 - Tool configurations with conditions
 - Default behaviors
 
@@ -21,7 +21,7 @@ Example YAML:
         transport: "streamable-http"
         auth_type: "bearer"
 
-    approval_policies:
+    approval_workflows:
       - name: "high-risk"
         timeout_seconds: 300
         require_reason: true
@@ -31,7 +31,7 @@ Example YAML:
       - name: "execute_command"
         source: "builtin"
         enabled: true
-        approval_policy: "high-risk"
+        approval_workflow: "high-risk"
         conditions:
           - expression: "args.command.contains('rm -rf')"
             action: "require_approval"
@@ -128,8 +128,8 @@ class ApprovalWorkflowType(str, Enum):
     CONSENSUS = "consensus"
 
 
-class ApprovalPolicyDefinition(BaseModel):
-    """Approval policy definition in policy YAML.
+class ApprovalWorkflowDefinition(BaseModel):
+    """Approval workflow definition in policy YAML.
 
     Note: notification_channels is no longer used in the schema. Approvers
     configure their own notification preferences in user settings.
@@ -153,7 +153,7 @@ class ApprovalPolicyDefinition(BaseModel):
         ai_context: Additional context for the AI (examples, domain knowledge).
         ai_confidence_threshold: Minimum confidence for AI to auto-decide (0.0-1.0).
         ai_fallback_behavior: What to do when AI is uncertain.
-        escalation_policy: Policy to escalate to when AI is uncertain.
+        escalation_workflow: Policy to escalate to when AI is uncertain.
     """
 
     name: str = Field(..., description="Unique name for this policy")
@@ -215,7 +215,7 @@ class ApprovalPolicyDefinition(BaseModel):
         "escalate",
         description="What to do when AI is uncertain: escalate to humans, auto-approve, or auto-deny",
     )
-    escalation_policy: Optional[str] = Field(
+    escalation_workflow: Optional[str] = Field(
         None,
         description="Name of policy to escalate to when AI is uncertain (for fallback_behavior='escalate')",
     )
@@ -227,8 +227,8 @@ class ApprovalPolicyDefinition(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
     @model_validator(mode="after")
-    def validate_ai_driven_settings(self) -> "ApprovalPolicyDefinition":
-        """Validate AI-driven approval policy settings."""
+    def validate_ai_driven_settings(self) -> "ApprovalWorkflowDefinition":
+        """Validate AI-driven approval workflow settings."""
         if self.approval_type == "ai_driven":
             if not self.ai_model:
                 raise ValueError(
@@ -341,7 +341,7 @@ class ToolDefinition(BaseModel):
         name: Tool name (must match actual tool name).
         source: Source type or MCP server name.
         enabled: Whether the tool is enabled.
-        approval_policy: Name of approval policy to use (reference).
+        approval_workflow: Name of approval workflow to use (reference).
         conditions: List of conditions for conditional behavior.
         description: Optional custom description override.
         custom_config: Additional tool-specific configuration.
@@ -353,8 +353,8 @@ class ToolDefinition(BaseModel):
         description="Source: 'builtin', 'mcp', 'http', or MCP server name",
     )
     enabled: bool = Field(True, description="Whether the tool is enabled")
-    approval_policy: Optional[str] = Field(
-        None, description="Name of approval policy to use"
+    approval_workflow: Optional[str] = Field(
+        None, description="Name of approval workflow to use"
     )
     conditions: Optional[List[ToolCondition]] = Field(
         None, description="Conditions for conditional behavior"
@@ -393,7 +393,7 @@ class DefaultsDefinition(BaseModel):
     Attributes:
         unknown_tools: How to handle tools not explicitly configured.
         require_approval_for_new_tools: Require approval for newly discovered tools.
-        default_approval_policy: Default approval policy for tools requiring approval.
+        default_approval_workflow: Default approval workflow for tools requiring approval.
         inherit_from_parent: Whether to inherit settings from parent/global policy.
     """
 
@@ -404,8 +404,8 @@ class DefaultsDefinition(BaseModel):
     require_approval_for_new_tools: bool = Field(
         False, description="Require approval for newly discovered tools"
     )
-    default_approval_policy: Optional[str] = Field(
-        None, description="Default approval policy name"
+    default_approval_workflow: Optional[str] = Field(
+        None, description="Default approval workflow name"
     )
     inherit_from_parent: bool = Field(
         True, description="Whether to inherit from parent/global policy"
@@ -423,7 +423,7 @@ class PolicyDocument(BaseModel):
         version: Schema version for compatibility checking.
         metadata: Policy metadata (name, description, etc.).
         mcp_servers: List of MCP server definitions.
-        approval_policies: List of approval policy definitions.
+        approval_workflows: List of approval workflow definitions.
         tools: List of tool configuration definitions.
         defaults: Default behavior settings.
     """
@@ -435,8 +435,8 @@ class PolicyDocument(BaseModel):
     mcp_servers: Optional[List[MCPServerDefinition]] = Field(
         None, description="MCP server definitions"
     )
-    approval_policies: Optional[List[ApprovalPolicyDefinition]] = Field(
-        None, description="Approval policy definitions"
+    approval_workflows: Optional[List[ApprovalWorkflowDefinition]] = Field(
+        None, description="Approval workflow definitions"
     )
     tools: Optional[List[ToolDefinition]] = Field(
         None, description="Tool configuration definitions"
@@ -459,20 +459,25 @@ class PolicyDocument(BaseModel):
                 mcp_server_names.add(server.name)
 
         policy_names = set()
-        if self.approval_policies:
-            for policy in self.approval_policies:
+        if self.approval_workflows:
+            for policy in self.approval_workflows:
                 if policy.name in policy_names:
-                    raise ValueError(f"Duplicate approval policy name: '{policy.name}'")
+                    raise ValueError(
+                        f"Duplicate approval workflow name: '{policy.name}'"
+                    )
                 policy_names.add(policy.name)
 
         # Validate tool references
         if self.tools:
             for tool in self.tools:
-                # Check approval policy references
-                if tool.approval_policy and tool.approval_policy not in policy_names:
+                # Check approval workflow references
+                if (
+                    tool.approval_workflow
+                    and tool.approval_workflow not in policy_names
+                ):
                     raise ValueError(
-                        f"Tool '{tool.name}' references unknown approval policy "
-                        f"'{tool.approval_policy}'. Available policies: {policy_names}"
+                        f"Tool '{tool.name}' references unknown approval workflow "
+                        f"'{tool.approval_workflow}'. Available policies: {policy_names}"
                     )
 
                 # Check MCP server references (if source is not builtin/http)
@@ -485,24 +490,24 @@ class PolicyDocument(BaseModel):
                             f"'{tool.source}'. Available servers: {mcp_server_names}"
                         )
 
-        # Validate default approval policy reference
-        if self.defaults and self.defaults.default_approval_policy:
-            if self.defaults.default_approval_policy not in policy_names:
+        # Validate default approval workflow reference
+        if self.defaults and self.defaults.default_approval_workflow:
+            if self.defaults.default_approval_workflow not in policy_names:
                 raise ValueError(
-                    f"Default approval policy '{self.defaults.default_approval_policy}' "
+                    f"Default approval workflow '{self.defaults.default_approval_workflow}' "
                     f"not found. Available policies: {policy_names}"
                 )
 
-        # Validate escalation_policy references in AI-driven policies
-        if self.approval_policies:
-            for policy in self.approval_policies:
+        # Validate escalation_workflow references in AI-driven policies
+        if self.approval_workflows:
+            for policy in self.approval_workflows:
                 if (
-                    policy.escalation_policy
-                    and policy.escalation_policy not in policy_names
+                    policy.escalation_workflow
+                    and policy.escalation_workflow not in policy_names
                 ):
                     raise ValueError(
-                        f"Approval policy '{policy.name}' references unknown "
-                        f"escalation_policy '{policy.escalation_policy}'. "
+                        f"Approval workflow '{policy.name}' references unknown "
+                        f"escalation_workflow '{policy.escalation_workflow}'. "
                         f"Available policies: {policy_names}"
                     )
 
@@ -558,8 +563,8 @@ class PolicyImportResult(BaseModel):
     policy_name: str = Field(..., description="Name of the imported policy")
     mcp_servers_created: int = Field(0, description="Number of MCP servers created")
     mcp_servers_updated: int = Field(0, description="Number of MCP servers updated")
-    policies_created: int = Field(0, description="Number of approval policies created")
-    policies_updated: int = Field(0, description="Number of approval policies updated")
+    policies_created: int = Field(0, description="Number of approval workflows created")
+    policies_updated: int = Field(0, description="Number of approval workflows updated")
     tools_created: int = Field(0, description="Number of tool configs created")
     tools_updated: int = Field(0, description="Number of tool configs updated")
     tools_skipped: int = Field(

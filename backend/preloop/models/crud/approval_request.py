@@ -110,7 +110,7 @@ async def get_approval_request_async(
 ) -> Optional[ApprovalRequest]:
     """Async: Retrieve an approval request by its ID.
 
-    Eagerly loads the approval_policy relationship to avoid lazy loading
+    Eagerly loads the approval_workflow relationship to avoid lazy loading
     issues in async context.
 
     Args:
@@ -123,7 +123,7 @@ async def get_approval_request_async(
     result = await db.execute(
         select(ApprovalRequest)
         .where(ApprovalRequest.id == request_id)
-        .options(selectinload(ApprovalRequest.approval_policy))
+        .options(selectinload(ApprovalRequest.approval_workflow))
     )
     return result.scalar_one_or_none()
 
@@ -137,7 +137,7 @@ async def get_approval_request_for_update_async(
     This should be used when updating the responses field to avoid
     lost updates from concurrent votes.
 
-    Eagerly loads the approval_policy relationship to avoid lazy loading
+    Eagerly loads the approval_workflow relationship to avoid lazy loading
     issues in async context.
 
     Args:
@@ -150,7 +150,7 @@ async def get_approval_request_for_update_async(
     result = await db.execute(
         select(ApprovalRequest)
         .where(ApprovalRequest.id == request_id)
-        .options(selectinload(ApprovalRequest.approval_policy))
+        .options(selectinload(ApprovalRequest.approval_workflow))
         .with_for_update()
     )
     return result.scalar_one_or_none()

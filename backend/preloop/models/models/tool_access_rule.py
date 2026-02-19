@@ -12,7 +12,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .account import Account
-    from .tool_configuration import ApprovalPolicy, ToolConfiguration
+    from .tool_configuration import ApprovalWorkflow, ToolConfiguration
 
 
 class ToolAccessRule(Base):
@@ -112,13 +112,13 @@ class ToolAccessRule(Base):
         comment="Whether the rule is currently active",
     )
 
-    # Approval policy reference (only used when action='require_approval')
-    approval_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    # Approval workflow reference (only used when action='require_approval')
+    approval_workflow_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("approval_policy.id", ondelete="SET NULL"),
+        ForeignKey("approval_workflow.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Approval policy to use when action is 'require_approval'",
+        comment="Approval workflow to use when action is 'require_approval'",
     )
 
     # Note: created_at and updated_at are inherited from Base class
@@ -131,9 +131,9 @@ class ToolAccessRule(Base):
         "ToolConfiguration",
         back_populates="access_rules",
     )
-    approval_policy: Mapped[Optional["ApprovalPolicy"]] = relationship(
-        "ApprovalPolicy",
-        foreign_keys=[approval_policy_id],
+    approval_workflow: Mapped[Optional["ApprovalWorkflow"]] = relationship(
+        "ApprovalWorkflow",
+        foreign_keys=[approval_workflow_id],
     )
 
     def __repr__(self) -> str:

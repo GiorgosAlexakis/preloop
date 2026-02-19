@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Approval remaining_seconds TypeError**: Subtracting a timezone-aware `datetime.now(timezone.utc)` from a naive `expires_at` column raised `TypeError`. Fixed to use consistent naive UTC datetimes.
 - **Event timestamp serialization**: `event.timestamp.isoformat() + "Z"` produced invalid RFC 3339 when the timestamp already included a timezone offset. Fixed by stripping tzinfo before serialization.
 - **Justification bypass**: `justification_mode=required` was only enforced via schema injection. Clients skipping schema validation could call tools without justification. Added server-side enforcement in `_call_tool`.
-- **OSS 404 errors**: Frontend components (`approval-policy-dialog`, settings views) unconditionally fetched `/api/v1/users`, `/api/v1/teams`, `/api/v1/roles` which don't exist in the open-source edition. Gated behind `advanced_approvals` and `user_management` feature flags.
+- **OSS 404 errors**: Frontend components (`approval-workflow-dialog`, settings views) unconditionally fetched `/api/v1/users`, `/api/v1/teams`, `/api/v1/roles` which don't exist in the open-source edition. Gated behind `advanced_approvals` and `user_management` feature flags.
 - **Flow edit form empty values**: When editing an existing flow, select fields (model, tracker, tools) appeared empty until reference data loaded. Added loading spinners and parallelized API calls.
 
 - **OAuth Sign-in/Sign-up**: Authenticate users via external OAuth providers (GitHub, Google, GitLab)
@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GET /api/v1/policies/export`: Export current configuration as YAML
   - `POST /api/v1/policies/validate`: Validate policy syntax without applying
   - `POST /api/v1/policies/diff`: Compare policy document against current state
-  - Supports MCP servers, approval policies, tool configurations, and access rules
+  - Supports MCP servers, approval workflows, tool configurations, and access rules
 - **Policy Versioning & Rollback**: Version control for policy configurations
   - `GET /api/v1/policies/versions`: List all policy versions
   - `POST /api/v1/policies/versions`: Create a snapshot of current policy state
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DELETE /api/v1/policies/versions/{id}`: Delete old versions (supports pruning by age)
   - Credential-safe rollbacks: MCP server credentials are preserved during rollback
 - **AI-Driven Approvals**: New approval type where an AI model evaluates tool call requests
-  - Configure approval policies with `approval_mode: "ai_driven"`
+  - Configure approval workflows with `approval_mode: "ai_driven"`
   - Set AI model, custom guidelines, confidence threshold (0.0-1.0)
   - Fallback behavior when AI is uncertain: escalate to human, auto-approve, or auto-deny
   - Full audit logging of AI decisions with reasoning and confidence scores
@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Tool Access Control**: Replaced `tool_approval_conditions` table with `tool_access_rules` supporting multiple rules per tool with allow/deny/require_approval actions and priority-based evaluation
-- **Approval Policy Schema**: Added AI-driven approval fields (`approval_mode`, `ai_model`, `ai_guidelines`, `ai_context`, `ai_confidence_threshold`, `ai_fallback_behavior`, `escalation_policy_id`)
+- **Approval Workflow Schema**: Added AI-driven approval fields (`approval_mode`, `ai_model`, `ai_guidelines`, `ai_context`, `ai_confidence_threshold`, `ai_fallback_behavior`, `escalation_workflow_id`)
 - **FCM Service**: Moved Firebase SDK calls to thread pool executor to avoid blocking the event loop
 - **Session Manager**: Database writes now run in thread pool to prevent event loop blocking during connection spikes
 - **WebSocket Endpoints**: Updated to support message-based authentication for browsers
@@ -144,6 +144,6 @@ New environment variables (see `.env.example`):
 New migration `20260201_policy_engine_enhancements`:
 - Creates `tool_access_rules` table (replaces `tool_approval_conditions`)
 - Creates `policy_snapshot` table for policy versioning
-- Adds AI approval columns to `approval_policy` table
+- Adds AI approval columns to `approval_workflow` table
 - Migrates existing `tool_approval_conditions` data to new schema
 - Run `alembic upgrade head` after updating

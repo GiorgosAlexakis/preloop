@@ -21,7 +21,7 @@ async def require_approval(
     account_id: str,
     arguments: dict,
     ctx: Optional[Context] = None,
-    policy_id: Optional[str] = None,
+    workflow_id: Optional[str] = None,
     correlation_id: Optional[str] = None,
     justification: Optional[str] = None,
 ) -> Tuple[bool, str]:
@@ -37,7 +37,7 @@ async def require_approval(
         account_id: Account ID of the user executing the tool
         arguments: Tool arguments
         ctx: FastMCP Context for streaming progress updates
-        policy_id: Optional approval policy ID. If provided, uses this policy directly
+        workflow_id: Optional approval workflow ID. If provided, uses this workflow directly
                   instead of looking up from tool configuration. Useful for standalone
                   approval requests where no tool configuration exists.
         correlation_id: Optional correlation ID for grouping related audit events.
@@ -63,7 +63,7 @@ async def require_approval(
         from preloop.models.crud.tool_configuration import (
             get_tool_config_by_name_and_source_async,
         )
-        from preloop.models.crud.approval_policy import get_approval_policy_async
+        from preloop.models.crud.approval_workflow import get_approval_workflow_async
 
         logger.info(
             f"Checking approval requirement for {tool_source} tool '{tool_name}' "
@@ -79,18 +79,20 @@ async def require_approval(
                 tool_source=tool_source,
             )
 
-            # If policy_id is provided directly (for standalone requests), use it
-            if policy_id:
+            # If workflow_id is provided directly (for standalone requests), use it
+            if workflow_id:
                 logger.info(
-                    f"Using explicitly provided policy_id={policy_id} for tool {tool_name}"
+                    f"Using explicitly provided workflow_id={workflow_id} for tool {tool_name}"
                 )
-                policy = await get_approval_policy_async(db, policy_id=policy_id)
+                workflow = await get_approval_workflow_async(
+                    db, workflow_id=workflow_id
+                )
 
-                if not policy:
-                    logger.error(f"Provided approval policy {policy_id} not found")
+                if not workflow:
+                    logger.error(f"Provided approval workflow {workflow_id} not found")
                     return (
                         False,
-                        f"Error: Approval policy with ID '{policy_id}' not found",
+                        f"Error: Approval workflow with ID '{workflow_id}' not found",
                     )
 
                 # If no config exists, this is a standalone approval request
@@ -112,7 +114,7 @@ async def require_approval(
                         tool_name=tool_name,
                         tool_source=tool_source,
                         account_id=account_id,
-                        approval_policy_id=policy_id,
+                        approval_workflow_id=workflow_id,
                         is_enabled=True,
                         custom_config={},
                     )
@@ -125,9 +127,9 @@ async def require_approval(
 
                 # Convert async db to sync for the evaluator (it uses sync queries)
                 # We'll need to fetch the config and evaluate in the async context
-                if not config or not config.approval_policy_id:
+                if not config or not config.approval_workflow_id:
                     logger.info(
-                        f"Tool {tool_name} ({tool_source}) does not require approval (no policy configured)"
+                        f"Tool {tool_name} ({tool_source}) does not require approval (no workflow configured)"
                     )
                     return (True, "")
 
@@ -213,7 +215,7 @@ async def require_approval(
                         break  # Proceed to approval flow below
 
                 # If access rules exist but none matched, default to allow.
-                # This is consistent with policy_evaluator.py's behavior.
+                # This is consistent with workflow_evaluator.py's behavior.
                 if access_rules and not matched_require_approval:
                     logger.info(
                         f"Tool {tool_name} ({tool_source}): {len(access_rules)} "
@@ -221,18 +223,18 @@ async def require_approval(
                     )
                     return (True, "")
 
-                # Get approval policy from tool configuration
-                policy = await get_approval_policy_async(
-                    db, policy_id=config.approval_policy_id
+                # Get approval workflow from tool configuration
+                workflow = await get_approval_workflow_async(
+                    db, workflow_id=config.approval_workflow_id
                 )
 
-                if not policy:
+                if not workflow:
                     logger.error(
-                        f"Approval policy {config.approval_policy_id} not found for tool {tool_name}"
+                        f"Approval workflow {config.approval_workflow_id} not found for tool {tool_name}"
                     )
                     return (
                         False,
-                        f"Error: Approval policy not found for tool '{tool_name}'",
+                        f"Error: Approval workflow not found for tool '{tool_name}'",
                     )
 
             # Tool requires approval - handle it with streaming
@@ -252,7 +254,7 @@ async def require_approval(
                 approval_request = await approval_service.create_and_notify(
                     account_id=account_id,
                     tool_configuration_id=config.id,
-                    approval_policy=policy,
+                    approval_workflow=workflow,
                     tool_name=tool_name,
                     tool_args=arguments,
                     agent_reasoning=justification,
@@ -263,7 +265,7 @@ async def require_approval(
 
                 # Derive notification channel from approval_type
                 notification_channels = (
-                    [policy.approval_type] if policy.approval_type else ["manual"]
+                    [workflow.approval_type] if workflow.approval_type else ["manual"]
                 )
                 channels_display = ", ".join(notification_channels)
 
@@ -275,8 +277,8 @@ async def require_approval(
                     f"Arguments: {arguments}\n"
                     f"Request ID: {approval_request.id}\n"
                     f"Notification sent via: {channels_display}\n"
-                    f"Approval type: {policy.approval_type}\n"
-                    f"Timeout: {policy.timeout_seconds or 300}s\n"
+                    f"Approval type: {workflow.approval_type}\n"
+                    f"Timeout: {workflow.timeout_seconds or 300}s\n"
                     f"Approval URL: {approval_url}\n"
                     f"{'=' * 60}\n"
                     f"⏳ Waiting for approval (polling every 2s)..."
@@ -310,17 +312,17 @@ async def require_approval(
                     await event_db.commit()
 
                 # Check if async approval mode is enabled
-                if getattr(policy, "async_approval_enabled", False):
+                if getattr(workflow, "async_approval_enabled", False):
                     import json
 
                     logger.info(
-                        f"Async approval enabled for policy '{policy.name}' - "
+                        f"Async approval enabled for workflow '{workflow.name}' - "
                         f"returning immediately with polling instructions"
                     )
 
                     # Build approver display names
                     approver_display = []
-                    if policy.approver_user_ids:
+                    if workflow.approver_user_ids:
                         # Try to resolve user emails
                         try:
                             from sqlalchemy import select
@@ -329,33 +331,33 @@ async def require_approval(
                             async with get_async_db_session() as user_db:
                                 users_result = await user_db.execute(
                                     select(User).where(
-                                        User.id.in_(policy.approver_user_ids)
+                                        User.id.in_(workflow.approver_user_ids)
                                     )
                                 )
                                 for u in users_result.scalars():
                                     approver_display.append(u.email or u.username)
                         except Exception:
                             approver_display = [
-                                str(uid) for uid in policy.approver_user_ids
+                                str(uid) for uid in workflow.approver_user_ids
                             ]
 
-                    poll_interval = min(15, (policy.timeout_seconds or 300) // 20)
+                    poll_interval = min(15, (workflow.timeout_seconds or 300) // 20)
                     poll_interval = max(5, poll_interval)  # At least 5 seconds
 
                     async_response = {
                         "status": "pending_approval",
                         "request_id": str(approval_request.id),
                         "message": (
-                            f"This tool call triggered approval policy '{policy.name}'. "
+                            f"This tool call triggered approval workflow '{workflow.name}'. "
                             f"Approval request has been sent to {', '.join(approver_display) if approver_display else 'configured approvers'} "
                             f"via {channels_display}. "
                             f"Poll the approval status by calling get_approval_status(request_id='{approval_request.id}') "
-                            f"every {poll_interval} seconds for up to {policy.timeout_seconds or 300} seconds. "
+                            f"every {poll_interval} seconds for up to {workflow.timeout_seconds or 300} seconds. "
                             f"When the status is 'approved', the response will include the tool execution result. "
                             f"When the status is 'declined' or 'expired', stop polling and inform the user."
                         ),
                         "poll_interval_seconds": poll_interval,
-                        "timeout_seconds": policy.timeout_seconds or 300,
+                        "timeout_seconds": workflow.timeout_seconds or 300,
                         "channels": notification_channels,
                         # NOTE: approval_url intentionally excluded from
                         # agent-visible response. The URL contains a bearer
@@ -433,18 +435,18 @@ async def require_approval(
 
                 # Polling loop with progress updates
                 poll_interval = 2.0
-                timeout_seconds = policy.timeout_seconds or 300
+                timeout_seconds = workflow.timeout_seconds or 300
                 elapsed = 0
                 escalation_triggered = False
 
                 # Check if escalation is configured
                 has_escalation = bool(
-                    policy.escalation_user_ids or policy.escalation_team_ids
+                    workflow.escalation_user_ids or workflow.escalation_team_ids
                 )
                 logger.info(
                     f"[Polling] Escalation configured: {has_escalation}, "
-                    f"escalation_user_ids={policy.escalation_user_ids}, "
-                    f"escalation_team_ids={policy.escalation_team_ids}"
+                    f"escalation_user_ids={workflow.escalation_user_ids}, "
+                    f"escalation_team_ids={workflow.escalation_team_ids}"
                 )
 
                 while True:
@@ -457,9 +459,18 @@ async def require_approval(
                         current_request = await get_approval_request_async(
                             poll_db, request_id=approval_request.id
                         )
+                        # Extract needed fields before session closes to avoid DetachedInstanceError
+                        current_status = (
+                            current_request.status if current_request else None
+                        )
+                        current_comment = (
+                            current_request.approver_comment
+                            if current_request
+                            else None
+                        )
 
                     logger.info(
-                        f"[Polling] Checked approval status: {current_request.status if current_request else 'NOT_FOUND'} "
+                        f"[Polling] Checked approval status: {current_status if current_status else 'NOT_FOUND'} "
                         f"(elapsed: {elapsed}s, escalation_triggered: {escalation_triggered})"
                     )
 
@@ -470,11 +481,12 @@ async def require_approval(
                         )
 
                     # Check if resolved
-                    if current_request.status in ["approved", "declined", "cancelled"]:
+                    if current_status in ["approved", "declined", "cancelled"]:
                         logger.info(
-                            f"[Polling] ✅ Approval resolved with status: {current_request.status}"
+                            f"[Polling] ✅ Approval resolved with status: {current_status}"
                         )
-                        final_request = current_request
+                        final_status = current_status
+                        final_comment = current_comment
                         break
 
                     # Check if initial timeout expired
@@ -523,10 +535,10 @@ async def require_approval(
                                 fresh_request.escalation_triggered_at = (
                                     datetime.utcnow()
                                 )
-                                fresh_request.expires_at = (
-                                    datetime.utcnow()
-                                    + timedelta(seconds=timeout_seconds)
+                                new_expires_at = datetime.utcnow() + timedelta(
+                                    seconds=timeout_seconds
                                 )
+                                fresh_request.expires_at = new_expires_at
                                 await escalation_db.commit()
 
                                 escalation_service = ApprovalService(
@@ -535,7 +547,7 @@ async def require_approval(
 
                                 # Send escalation notifications
                                 await escalation_service._send_escalation_notifications(
-                                    fresh_request, policy
+                                    fresh_request, workflow
                                 )
 
                                 # Broadcast escalation event
@@ -543,12 +555,12 @@ async def require_approval(
                                     fresh_request,
                                     "escalated",
                                     extra_data={
-                                        "new_expires_at": fresh_request.expires_at.isoformat()
+                                        "new_expires_at": new_expires_at.isoformat()
                                     },
                                 )
 
                                 logger.info(
-                                    f"[Polling] Escalation triggered, new timeout: {fresh_request.expires_at}"
+                                    f"[Polling] Escalation triggered, new timeout: {new_expires_at}"
                                 )
 
                             # Send escalation notification via Context (outside DB transaction)

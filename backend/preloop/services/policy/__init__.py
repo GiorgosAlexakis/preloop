@@ -7,7 +7,7 @@ This module provides declarative policy management for MCP governance:
 """
 
 from preloop.services.policy.schema import (
-    ApprovalPolicyDefinition,
+    ApprovalWorkflowDefinition,
     ApprovalWorkflowType,
     ConditionAction,
     DefaultsDefinition,
@@ -48,7 +48,7 @@ __all__ = [
     "MCPServerAuthType",
     "MCPServerTransport",
     # Approval policies
-    "ApprovalPolicyDefinition",
+    "ApprovalWorkflowDefinition",
     "ApprovalWorkflowType",
     # Tools
     "ToolDefinition",

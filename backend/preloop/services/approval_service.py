@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from preloop.models.models import ApprovalRequest, ApprovalPolicy
+from preloop.models.models import ApprovalRequest, ApprovalWorkflow
 from preloop.models.schemas.approval_request import (
     ApprovalRequestUpdate,
 )
@@ -154,7 +154,7 @@ class ApprovalService:
                 "approval_request_id": str(approval_request.id),
                 "account_id": str(approval_request.account_id),
                 "tool_configuration_id": str(approval_request.tool_configuration_id),
-                "approval_policy_id": str(approval_request.approval_policy_id),
+                "approval_workflow_id": str(approval_request.approval_workflow_id),
                 "execution_id": approval_request.execution_id,
                 "tool_name": approval_request.tool_name,
                 "tool_args": approval_request.tool_args,
@@ -193,7 +193,7 @@ class ApprovalService:
         self,
         account_id: str,
         tool_configuration_id: uuid.UUID,
-        approval_policy_id: uuid.UUID,
+        approval_workflow_id: uuid.UUID,
         tool_name: str,
         tool_args: Dict[str, Any],
         agent_reasoning: Optional[str] = None,
@@ -205,7 +205,7 @@ class ApprovalService:
         Args:
             account_id: The account creating the request
             tool_configuration_id: Tool configuration ID
-            approval_policy_id: Approval policy ID
+            approval_workflow_id: Approval workflow ID
             tool_name: Name of the tool being executed
             tool_args: Arguments passed to the tool
             agent_reasoning: Agent's reasoning for the tool call
@@ -224,7 +224,7 @@ class ApprovalService:
             id=uuid.uuid4(),
             account_id=account_id,
             tool_configuration_id=tool_configuration_id,
-            approval_policy_id=approval_policy_id,
+            approval_workflow_id=approval_workflow_id,
             execution_id=execution_id,
             tool_name=tool_name,
             tool_args=tool_args,
@@ -258,7 +258,7 @@ class ApprovalService:
             execution_id=execution_id,
             correlation_id=corr_id,
             extra_details={
-                "approval_policy_id": str(approval_policy_id),
+                "approval_workflow_id": str(approval_workflow_id),
                 "tool_args": tool_args,
                 "timeout_seconds": timeout,
             },
@@ -379,10 +379,10 @@ class ApprovalService:
         if not approval_request:
             return None
 
-        # Get the approval policy to check quorum requirements
-        approval_policy = approval_request.approval_policy
+        # Get the approval workflow to check quorum requirements
+        approval_workflow = approval_request.approval_workflow
         approvals_required = (
-            approval_policy.approvals_required if approval_policy else 1
+            approval_workflow.approvals_required if approval_workflow else 1
         )
 
         # Record this vote
@@ -409,7 +409,7 @@ class ApprovalService:
             # No user_id (e.g., public token-based approval)
             # For quorum=1, resolve immediately.
             if approvals_required == 1:
-                # Immediate resolution for single-approval policies
+                # Immediate resolution for single-approval workflows
                 await self._record_event(
                     approval_request_id=request_id,
                     account_id=approval_request.account_id,
@@ -546,10 +546,10 @@ class ApprovalService:
         if not approval_request:
             return None
 
-        # Get the approval policy to check quorum requirements
-        approval_policy = approval_request.approval_policy
+        # Get the approval workflow to check quorum requirements
+        approval_workflow = approval_request.approval_workflow
         approvals_required = (
-            approval_policy.approvals_required if approval_policy else 1
+            approval_workflow.approvals_required if approval_workflow else 1
         )
 
         # Record this vote
@@ -576,7 +576,7 @@ class ApprovalService:
             # No user_id (e.g., public token-based decline)
             # For quorum=1, resolve immediately.
             if approvals_required == 1:
-                # Immediate resolution for single-approval policies
+                # Immediate resolution for single-approval workflows
                 await self._record_event(
                     approval_request_id=request_id,
                     account_id=approval_request.account_id,
@@ -643,7 +643,7 @@ class ApprovalService:
         )
 
         # Get actual total approvers count (only reliable for direct user approvers)
-        total_approvers, is_exact = self._count_total_approvers(approval_policy)
+        total_approvers, is_exact = self._count_total_approvers(approval_workflow)
 
         # Determine if we should resolve as declined
         should_decline = False
@@ -722,12 +722,12 @@ class ApprovalService:
             return approval_request
 
     def _count_total_approvers(
-        self, approval_policy: ApprovalPolicy
+        self, approval_workflow: ApprovalWorkflow
     ) -> tuple[int, bool]:
-        """Count total potential approvers for a policy.
+        """Count total potential approvers for a workflow.
 
         Args:
-            approval_policy: The approval policy
+            approval_workflow: The approval workflow
 
         Returns:
             Tuple of (count, is_exact):
@@ -735,21 +735,21 @@ class ApprovalService:
             - is_exact: True if count is exact (only direct user approvers),
                        False if teams are involved (count is unreliable)
         """
-        if not approval_policy:
+        if not approval_workflow:
             return (1, True)
 
         total = 0
         is_exact = True
 
         # Count direct user approvers (exact count)
-        if approval_policy.approver_user_ids:
-            total += len(approval_policy.approver_user_ids)
+        if approval_workflow.approver_user_ids:
+            total += len(approval_workflow.approver_user_ids)
 
         # Team approvers make the count inexact
         # We can't reliably count team members without querying the database
         if (
-            approval_policy.approver_team_ids
-            and len(approval_policy.approver_team_ids) > 0
+            approval_workflow.approver_team_ids
+            and len(approval_workflow.approver_team_ids) > 0
         ):
             is_exact = False
             # Don't add an estimate - the count is unreliable for decision-making
@@ -851,24 +851,24 @@ class ApprovalService:
         return updated_request
 
     async def post_webhook_notification(
-        self, approval_request: ApprovalRequest, approval_policy: ApprovalPolicy
+        self, approval_request: ApprovalRequest, approval_workflow: ApprovalWorkflow
     ) -> bool:
         """Post webhook notification for approval request.
 
         Args:
             approval_request: The approval request
-            approval_policy: The approval policy with webhook config
+            approval_workflow: The approval workflow with webhook config
 
         Returns:
             True if successful, False otherwise
         """
-        # Get webhook URL from policy
+        # Get webhook URL from workflow
         webhook_url = None
-        if approval_policy.approval_config:
-            webhook_url = approval_policy.approval_config.get("webhook_url")
+        if approval_workflow.approval_config:
+            webhook_url = approval_workflow.approval_config.get("webhook_url")
 
         if not webhook_url:
-            error_msg = "No webhook URL configured in approval policy"
+            error_msg = "No webhook URL configured in approval workflow"
             await self.update_approval_request(
                 approval_request.id,
                 ApprovalRequestUpdate(webhook_error=error_msg),
@@ -892,7 +892,7 @@ class ApprovalService:
         tool_args_formatted = json.dumps(approval_request.tool_args, indent=2)
 
         # Create message based on approval type
-        if approval_policy.approval_type in ["slack", "mattermost"]:
+        if approval_workflow.approval_type in ["slack", "mattermost"]:
             # Build message text with all details
             message_text = f"⚠️ **Approval Required: {approval_request.tool_name}**\n\n"
             message_text += f"**Tool:** `{approval_request.tool_name}`\n"
@@ -1015,7 +1015,7 @@ class ApprovalService:
         self,
         account_id: str,
         tool_configuration_id: uuid.UUID,
-        approval_policy: ApprovalPolicy,
+        approval_workflow: ApprovalWorkflow,
         tool_name: str,
         tool_args: Dict[str, Any],
         agent_reasoning: Optional[str] = None,
@@ -1024,13 +1024,13 @@ class ApprovalService:
     ) -> ApprovalRequest:
         """Create approval request and send notifications through configured channels.
 
-        For AI-driven approval policies, immediately evaluates the request using AI
+        For AI-driven approval workflows, immediately evaluates the request using AI
         and auto-approves/denies based on the result and confidence threshold.
 
         Args:
             account_id: The account creating the request
             tool_configuration_id: Tool configuration ID
-            approval_policy: The approval policy to use
+            approval_workflow: The approval workflow to use
             tool_name: Name of the tool being executed
             tool_args: Arguments passed to the tool
             agent_reasoning: Agent's reasoning for the tool call
@@ -1044,27 +1044,27 @@ class ApprovalService:
         approval_request = await self.create_approval_request(
             account_id=account_id,
             tool_configuration_id=tool_configuration_id,
-            approval_policy_id=approval_policy.id,
+            approval_workflow_id=approval_workflow.id,
             tool_name=tool_name,
             tool_args=tool_args,
             agent_reasoning=agent_reasoning,
             execution_id=execution_id,
-            timeout_seconds=approval_policy.timeout_seconds,
+            timeout_seconds=approval_workflow.timeout_seconds,
         )
 
-        # Check if this is an AI-driven approval policy
-        if approval_policy.approval_mode == "ai_driven":
+        # Check if this is an AI-driven approval workflow
+        if approval_workflow.approval_mode == "ai_driven":
             # Evaluate using AI
             logger.info(
                 f"Evaluating approval request {approval_request.id} using AI "
-                f"(policy: {approval_policy.name})"
+                f"(workflow: {approval_workflow.name})"
             )
 
             ai_service = get_ai_approval_service()
             ai_result = await ai_service.evaluate(
                 tool_name=tool_name,
                 tool_args=tool_args,
-                policy=approval_policy,
+                workflow=approval_workflow,
                 context={
                     "execution_id": str(execution_id) if execution_id else None,
                     "user_id": str(user_id) if user_id else None,
@@ -1079,7 +1079,7 @@ class ApprovalService:
             )
 
             # Apply the decision based on confidence threshold
-            if ai_result.confidence >= approval_policy.ai_confidence_threshold:
+            if ai_result.confidence >= approval_workflow.ai_confidence_threshold:
                 if ai_result.decision == "approve":
                     # Auto-approve the request
                     logger.info(
@@ -1110,11 +1110,11 @@ class ApprovalService:
             # If uncertain or low confidence, apply fallback behavior
             logger.info(
                 f"AI uncertain or low confidence ({ai_result.confidence:.2f} < "
-                f"{approval_policy.ai_confidence_threshold}), "
-                f"applying fallback: {approval_policy.ai_fallback_behavior}"
+                f"{approval_workflow.ai_confidence_threshold}), "
+                f"applying fallback: {approval_workflow.ai_fallback_behavior}"
             )
 
-            if approval_policy.ai_fallback_behavior == "approve":
+            if approval_workflow.ai_fallback_behavior == "approve":
                 return await self._auto_approve_request(
                     request_id=approval_request.id,
                     reason=f"Fallback approval (AI uncertain): {ai_result.reasoning}",
@@ -1122,7 +1122,7 @@ class ApprovalService:
                     ai_model=ai_result.model_used,
                     ai_confidence=ai_result.confidence,
                 )
-            elif approval_policy.ai_fallback_behavior == "deny":
+            elif approval_workflow.ai_fallback_behavior == "deny":
                 return await self._auto_deny_request(
                     request_id=approval_request.id,
                     reason=f"Fallback denial (AI uncertain): {ai_result.reasoning}",
@@ -1141,68 +1141,68 @@ class ApprovalService:
                     ),
                 )
 
-                # If escalation_policy_id is set, load and use that policy for notifications
-                notification_policy = approval_policy
-                if approval_policy.escalation_policy_id:
-                    from preloop.models.crud.approval_policy import (
-                        get_approval_policy_async,
+                # If escalation_workflow_id is set, load and use that workflow for notifications
+                notification_workflow = approval_workflow
+                if approval_workflow.escalation_workflow_id:
+                    from preloop.models.crud.approval_workflow import (
+                        get_approval_workflow_async,
                     )
 
-                    escalation_policy = await get_approval_policy_async(
-                        self.db, policy_id=approval_policy.escalation_policy_id
+                    escalation_workflow = await get_approval_workflow_async(
+                        self.db, workflow_id=approval_workflow.escalation_workflow_id
                     )
-                    if escalation_policy:
+                    if escalation_workflow:
                         logger.info(
-                            f"Using escalation policy '{escalation_policy.name}' "
-                            f"(id={escalation_policy.id}) for human review notifications"
+                            f"Using escalation workflow '{escalation_workflow.name}' "
+                            f"(id={escalation_workflow.id}) for human review notifications"
                         )
-                        notification_policy = escalation_policy
+                        notification_workflow = escalation_workflow
 
-                        # Update the approval request to reference the escalation policy
-                        # so approvers from that policy are used
+                        # Update the approval request to reference the escalation workflow
+                        # so approvers from that workflow are used
                         await self.update_approval_request(
                             approval_request.id,
                             ApprovalRequestUpdate(
-                                approval_policy_id=escalation_policy.id,
+                                approval_workflow_id=escalation_workflow.id,
                             ),
                         )
                     else:
                         logger.warning(
-                            f"Escalation policy {approval_policy.escalation_policy_id} "
-                            f"not found, using original policy for notifications"
+                            f"Escalation workflow {approval_workflow.escalation_workflow_id} "
+                            f"not found, using original workflow for notifications"
                         )
 
                 # Refresh the approval request to get updated fields
                 approval_request = await self.get_approval_request(approval_request.id)
 
-                # Send notifications for human review using the appropriate policy
-                await self.send_notifications(approval_request, notification_policy)
+                # Send notifications for human review using the appropriate workflow
+                await self.send_notifications(approval_request, notification_workflow)
 
                 return approval_request
 
         # Standard (human) approval - send notifications
-        await self.send_notifications(approval_request, approval_policy)
+        await self.send_notifications(approval_request, approval_workflow)
 
         return approval_request
 
     async def send_notifications(
         self,
         approval_request: ApprovalRequest,
-        approval_policy: ApprovalPolicy,
+        approval_workflow: ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send notifications for an approval request based on user preferences.
 
         Notification channels are determined by each user's notification preferences,
-        not by the policy. Each approver will be notified via their preferred channels:
+        not by the workflow. Each approver will be notified via their preferred channels:
         - Email if they have enable_email=True
         - Push notification if they have enable_mobile_push=True and registered devices
 
         For webhook-based policies (slack, mattermost, webhook), those are sent
-        as configured in the policy since they're not per-user.
+        as configured in the workflow since they're not per-user.
 
         Args:
             approval_request: The approval request to notify about
-            approval_policy: The approval policy with approver configuration
+            approval_workflow: The approval workflow with approver configuration
 
         Returns:
             Dict with results per notification channel
@@ -1230,7 +1230,7 @@ class ApprovalService:
         # Send email notifications to users who have email enabled
         try:
             email_result = await self._send_email_notification(
-                approval_request, approval_policy
+                approval_request, approval_workflow
             )
             results["email"] = email_result
         except Exception as e:
@@ -1240,23 +1240,23 @@ class ApprovalService:
         # Send push notifications to users who have push enabled
         try:
             push_result = await self._send_push_notification(
-                approval_request, approval_policy
+                approval_request, approval_workflow
             )
             results["mobile_push"] = push_result
         except Exception as e:
             logger.error(f"Failed to send push notifications: {str(e)}")
             results["mobile_push"] = {"success": False, "error": str(e)}
 
-        # Handle webhook-based notifications (these are policy-level, not per-user)
+        # Handle webhook-based notifications (these are workflow-level, not per-user)
         # Derive notification channels from approval_type (the model field)
-        policy_channels = (
-            [approval_policy.approval_type] if approval_policy.approval_type else []
+        workflow_channels = (
+            [approval_workflow.approval_type] if approval_workflow.approval_type else []
         )
-        for channel in policy_channels:
+        for channel in workflow_channels:
             if channel in ["slack", "mattermost", "webhook"]:
                 try:
                     result = await self.post_webhook_notification(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
                     results[channel] = {"success": result}
                 except Exception as e:
@@ -1266,12 +1266,12 @@ class ApprovalService:
         return results
 
     async def _get_all_approver_user_ids(
-        self, approval_policy: ApprovalPolicy
+        self, approval_workflow: ApprovalWorkflow
     ) -> List[uuid.UUID]:
         """Get all approver user IDs, expanding team memberships (async version).
 
         Args:
-            approval_policy: The approval policy
+            approval_workflow: The approval workflow
 
         Returns:
             List of user IDs who can approve
@@ -1282,12 +1282,12 @@ class ApprovalService:
         user_ids: Set[uuid.UUID] = set()
 
         # Add direct user approvers
-        if approval_policy.approver_user_ids:
-            user_ids.update(approval_policy.approver_user_ids)
+        if approval_workflow.approver_user_ids:
+            user_ids.update(approval_workflow.approver_user_ids)
 
         # Expand team approvers to individual users
-        if approval_policy.approver_team_ids:
-            for team_id in approval_policy.approver_team_ids:
+        if approval_workflow.approver_team_ids:
+            for team_id in approval_workflow.approver_team_ids:
                 result = await self.db.execute(
                     select(TeamMembership.user_id).where(
                         TeamMembership.team_id == team_id
@@ -1301,13 +1301,13 @@ class ApprovalService:
     async def _send_email_notification(
         self,
         approval_request: ApprovalRequest,
-        approval_policy: ApprovalPolicy,
+        approval_workflow: ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send email notification for approval request.
 
         Args:
             approval_request: The approval request
-            approval_policy: The approval policy
+            approval_workflow: The approval workflow
 
         Returns:
             Dict with send result
@@ -1317,11 +1317,11 @@ class ApprovalService:
         from sqlalchemy import select
 
         # Get all approver user IDs (including team members)
-        approver_user_ids = await self._get_all_approver_user_ids(approval_policy)
+        approver_user_ids = await self._get_all_approver_user_ids(approval_workflow)
 
         if not approver_user_ids:
             logger.warning(
-                f"No approvers configured for approval policy {approval_policy.id}"
+                f"No approvers configured for approval workflow {approval_workflow.id}"
             )
             return {"success": False, "error": "No approvers configured"}
 
@@ -1403,12 +1403,12 @@ class ApprovalService:
         }
 
     def _get_all_approver_user_ids_sync(
-        self, approval_policy: ApprovalPolicy, sync_db
+        self, approval_workflow: ApprovalWorkflow, sync_db
     ) -> List[uuid.UUID]:
         """Get all approver user IDs, expanding team memberships (sync version).
 
         Args:
-            approval_policy: The approval policy
+            approval_workflow: The approval workflow
             sync_db: Synchronous database session
 
         Returns:
@@ -1419,12 +1419,12 @@ class ApprovalService:
         user_ids: Set[uuid.UUID] = set()
 
         # Add direct user approvers
-        if approval_policy.approver_user_ids:
-            user_ids.update(approval_policy.approver_user_ids)
+        if approval_workflow.approver_user_ids:
+            user_ids.update(approval_workflow.approver_user_ids)
 
         # Expand team approvers to individual users
-        if approval_policy.approver_team_ids:
-            for team_id in approval_policy.approver_team_ids:
+        if approval_workflow.approver_team_ids:
+            for team_id in approval_workflow.approver_team_ids:
                 team_members = (
                     sync_db.query(TeamMembership.user_id)
                     .filter(TeamMembership.team_id == team_id)
@@ -1437,7 +1437,7 @@ class ApprovalService:
     async def _send_push_notification(
         self,
         approval_request: ApprovalRequest,
-        approval_policy: ApprovalPolicy,
+        approval_workflow: ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send mobile push notification for approval request.
 
@@ -1447,7 +1447,7 @@ class ApprovalService:
 
         Args:
             approval_request: The approval request
-            approval_policy: The approval policy
+            approval_workflow: The approval workflow
 
         Returns:
             Dict with send result
@@ -1486,7 +1486,7 @@ class ApprovalService:
             try:
                 # Get all approver user IDs (including team members)
                 approver_user_ids = self._get_all_approver_user_ids_sync(
-                    approval_policy, sync_db
+                    approval_workflow, sync_db
                 )
 
                 if not approver_user_ids:
@@ -1519,12 +1519,14 @@ class ApprovalService:
         )
 
         if not approver_user_ids:
-            logger.warning(f"No approvers configured for policy {approval_policy.id}")
+            logger.warning(
+                f"No approvers configured for workflow {approval_workflow.id}"
+            )
             return {"success": False, "error": "No approvers configured"}
 
         if not ios_tokens and not android_tokens:
             logger.info(
-                f"No push-enabled devices for approvers in policy {approval_policy.id}"
+                f"No push-enabled devices for approvers in workflow {approval_workflow.id}"
             )
             return {"success": True, "sent": 0, "failed": 0, "no_devices": True}
 
@@ -1738,23 +1740,23 @@ class ApprovalService:
                 approval_request.expires_at
                 and datetime.utcnow() > approval_request.expires_at
             ):
-                # Get the approval policy to check for escalation configuration
-                approval_policy = approval_request.approval_policy
+                # Get the approval workflow to check for escalation configuration
+                approval_workflow = approval_request.approval_workflow
 
                 # Debug logging for escalation check
                 logger.info(
                     f"Checking escalation for request {request_id}: "
-                    f"approval_policy={approval_policy}, "
-                    f"approval_policy_id={approval_request.approval_policy_id}, "
-                    f"escalation_user_ids={getattr(approval_policy, 'escalation_user_ids', None) if approval_policy else None}, "
-                    f"escalation_team_ids={getattr(approval_policy, 'escalation_team_ids', None) if approval_policy else None}, "
+                    f"approval_workflow={approval_workflow}, "
+                    f"approval_workflow_id={approval_request.approval_workflow_id}, "
+                    f"escalation_user_ids={getattr(approval_workflow, 'escalation_user_ids', None) if approval_workflow else None}, "
+                    f"escalation_team_ids={getattr(approval_workflow, 'escalation_team_ids', None) if approval_workflow else None}, "
                     f"escalation_triggered_at={approval_request.escalation_triggered_at}"
                 )
 
                 # Check if escalation is configured and hasn't been triggered yet
-                has_escalation = approval_policy and (
-                    approval_policy.escalation_user_ids
-                    or approval_policy.escalation_team_ids
+                has_escalation = approval_workflow and (
+                    approval_workflow.escalation_user_ids
+                    or approval_workflow.escalation_team_ids
                 )
                 escalation_already_triggered = (
                     approval_request.escalation_triggered_at is not None
@@ -1776,7 +1778,7 @@ class ApprovalService:
                     approval_request.escalation_triggered_at = datetime.utcnow()
 
                     # Extend the timeout - give escalation recipients the same amount of time
-                    original_timeout = approval_policy.timeout_seconds or 300
+                    original_timeout = approval_workflow.timeout_seconds or 300
                     new_expires_at = datetime.utcnow() + timedelta(
                         seconds=original_timeout
                     )
@@ -1787,7 +1789,7 @@ class ApprovalService:
 
                     # Send escalation notifications
                     await self._send_escalation_notifications(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
 
                     # Broadcast escalation event
@@ -1829,7 +1831,7 @@ class ApprovalService:
     async def _send_escalation_notifications(
         self,
         approval_request: ApprovalRequest,
-        approval_policy: ApprovalPolicy,
+        approval_workflow: ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send notifications to escalation targets.
 
@@ -1837,7 +1839,7 @@ class ApprovalService:
 
         Args:
             approval_request: The approval request that timed out
-            approval_policy: The approval policy with escalation configuration
+            approval_workflow: The approval workflow with escalation configuration
 
         Returns:
             Dict with notification results
@@ -1884,11 +1886,11 @@ class ApprovalService:
                 # Collect escalation user IDs
                 escalation_user_ids = set()
 
-                if approval_policy.escalation_user_ids:
-                    escalation_user_ids.update(approval_policy.escalation_user_ids)
+                if approval_workflow.escalation_user_ids:
+                    escalation_user_ids.update(approval_workflow.escalation_user_ids)
 
-                if approval_policy.escalation_team_ids:
-                    for team_id in approval_policy.escalation_team_ids:
+                if approval_workflow.escalation_team_ids:
+                    for team_id in approval_workflow.escalation_team_ids:
                         team_members = crud_team.get_team_members(sync_db, team_id)
                         escalation_user_ids.update(m.user_id for m in team_members)
 
