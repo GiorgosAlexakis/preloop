@@ -71,5 +71,6 @@ func init() {
 	rootCmd.AddCommand(policyCmd)
 	rootCmd.AddCommand(toolsCmd)
 	rootCmd.AddCommand(approvalsCmd)
+	rootCmd.AddCommand(agentsCmd)
 	rootCmd.AddCommand(versionCmd)
 }

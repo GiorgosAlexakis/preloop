@@ -238,6 +238,9 @@ export class FlowView extends LitElement {
   private showTestRunModal = false;
 
   @state()
+  private _loadingReferenceData = false;
+
+  @state()
   private formError: string | null = null;
 
   @state()
@@ -305,24 +308,40 @@ export class FlowView extends LitElement {
         )
         .slice(0, 10);
 
-      // Load all necessary data for editing
-      this.trackers = await getTrackers();
-      this.models = await getAIModels();
-      this.availableTools = await getAllTools();
-      this.mcpServers = await getMCPServers();
-
-      // Load all organizations and projects for git clone project selection
-      // This needs to happen regardless of trigger type
-      const allOrganizations = await listOrganizations();
-      this.organizations = allOrganizations;
-
-      const allProjects = await listProjects();
-      this.projects = allProjects;
+      // Load all necessary data for editing (in parallel)
+      this._loadingReferenceData = true;
+      try {
+        const [
+          trackers,
+          models,
+          tools,
+          servers,
+          allOrganizations,
+          allProjects,
+        ] = await Promise.all([
+          getTrackers(),
+          getAIModels(),
+          getAllTools(),
+          getMCPServers(),
+          listOrganizations(),
+          listProjects(),
+        ]);
+        this.trackers = trackers;
+        this.models = models;
+        this.availableTools = tools;
+        this.mcpServers = servers;
+        this.organizations = allOrganizations;
+        this.projects = allProjects;
+      } catch (error) {
+        console.error('Failed to load reference data:', error);
+      } finally {
+        this._loadingReferenceData = false;
+      }
 
       // Additional trigger-specific setup if this is a tracker-based flow
       if (this.triggerType === 'tracker' && this.flow.trigger_event_source) {
         // Start polling if no organizations for this tracker yet
-        const trackerOrgs = allOrganizations.filter(
+        const trackerOrgs = (this.organizations || []).filter(
           (org: any) => org.tracker_id === this.flow.trigger_event_source
         );
         if (trackerOrgs.length === 0 && this.flow.trigger_organization_id) {
@@ -331,7 +350,7 @@ export class FlowView extends LitElement {
 
         // Start polling projects if we have a trigger organization but no projects
         if (this.flow.trigger_organization_id) {
-          const orgProjects = allProjects.filter(
+          const orgProjects = (this.projects || []).filter(
             (proj: any) =>
               proj.organization_id === this.flow.trigger_organization_id
           );
@@ -1137,15 +1156,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     const agentProviderMap: Record<string, string[]> = {
       gemini: ['google'],
       codex: ['openai', 'google', 'deepseek', 'qwen', 'custom'],
-      aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'], // Aider supports multiple providers
-      openhands: [
-        'openai',
-        'anthropic',
-        'google',
-        'deepseek',
-        'qwen',
-        'custom',
-      ], // OpenHands supports multiple
+      // aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'], // Aider supports multiple providers
+      opencode: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'],
     };
 
     const compatibleProviders = agentProviderMap[agentType] || [];
@@ -1204,7 +1216,16 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
 
           ${this.triggerType === 'webhook'
             ? this.renderWebhookTriggerFields()
-            : this.renderTrackerTriggerFields()}
+            : this._loadingReferenceData
+              ? html`
+                  <div
+                    style="display: flex; align-items: center; gap: var(--sl-spacing-small); padding: var(--sl-spacing-medium); color: var(--sl-color-neutral-500);"
+                  >
+                    <sl-spinner style="font-size: 1rem;"></sl-spinner>
+                    Loading trackers...
+                  </div>
+                `
+              : this.renderTrackerTriggerFields()}
         </sl-card>
 
         <sl-card>
@@ -1224,72 +1245,80 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
           >
             <sl-option value="codex">Codex (Recommended)</sl-option>
             <sl-option value="gemini">Gemini CLI</sl-option>
-            <sl-option value="aider">Aider</sl-option>
-            <sl-option value="openhands">OpenHands</sl-option>
+            <sl-option value="opencode">OpenCode</sl-option>
           </sl-select>
 
-          ${this.models.length === 0
+          ${this._loadingReferenceData
             ? html`
                 <div
-                  style="text-align: center; padding: var(--sl-spacing-2x-large); background: var(--sl-color-neutral-50); border-radius: var(--sl-border-radius-medium); margin-bottom: var(--sl-spacing-medium);"
+                  style="display: flex; align-items: center; gap: var(--sl-spacing-small); padding: var(--sl-spacing-medium); color: var(--sl-color-neutral-500);"
                 >
-                  <p
-                    style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
-                  >
-                    No AI models configured yet.
-                  </p>
-                  <sl-button
-                    variant="primary"
-                    @click=${this.openAddAIModelDialog}
-                  >
-                    <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                    Add AI Model
-                  </sl-button>
+                  <sl-spinner style="font-size: 1rem;"></sl-spinner>
+                  Loading AI models...
                 </div>
               `
-            : (() => {
-                const compatibleModels = this.getCompatibleModels();
-                const agentType = this.flow.agent_type || 'codex';
-                const providerNames: Record<string, string> = {
-                  gemini: 'Google',
-                  codex: 'OpenAI',
-                  aider: 'OpenAI/Anthropic',
-                  openhands: 'OpenAI/Anthropic/Google',
-                };
-                const providerName = providerNames[agentType] || 'compatible';
-
-                return html`
-                  <div>
-                    <sl-select
-                      label="AI Model"
-                      .value=${this.flow.ai_model_id || ''}
-                      @sl-change=${(e: any) =>
-                        (this.flow.ai_model_id = e.target.value)}
-                      help-text="Showing ${providerName} models compatible with ${agentType}"
+            : this.models.length === 0
+              ? html`
+                  <div
+                    style="text-align: center; padding: var(--sl-spacing-2x-large); background: var(--sl-color-neutral-50); border-radius: var(--sl-border-radius-medium); margin-bottom: var(--sl-spacing-medium);"
+                  >
+                    <p
+                      style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
                     >
-                      ${compatibleModels.length === 0
-                        ? html`<sl-option value="" disabled>
-                            No compatible models available
-                          </sl-option>`
-                        : compatibleModels.map(
-                            (model) =>
-                              html`<sl-option value=${model.id}
-                                >${model.name}</sl-option
-                              >`
-                          )}
-                    </sl-select>
+                      No AI models configured yet.
+                    </p>
                     <sl-button
-                      size="small"
-                      variant="text"
+                      variant="primary"
                       @click=${this.openAddAIModelDialog}
-                      style="margin-top: 0.5rem;"
                     >
                       <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                      Add New AI Model
+                      Add AI Model
                     </sl-button>
                   </div>
-                `;
-              })()}
+                `
+              : (() => {
+                  const compatibleModels = this.getCompatibleModels();
+                  const agentType = this.flow.agent_type || 'codex';
+                  const providerNames: Record<string, string> = {
+                    gemini: 'Google',
+                    codex: 'OpenAI',
+                    aider: 'OpenAI/Anthropic',
+                    openhands: 'OpenAI/Anthropic/Google',
+                  };
+                  const providerName = providerNames[agentType] || 'compatible';
+
+                  return html`
+                    <div>
+                      <sl-select
+                        label="AI Model"
+                        .value=${this.flow.ai_model_id || ''}
+                        @sl-change=${(e: any) =>
+                          (this.flow.ai_model_id = e.target.value)}
+                        help-text="Showing ${providerName} models compatible with ${agentType}"
+                      >
+                        ${compatibleModels.length === 0
+                          ? html`<sl-option value="" disabled>
+                              No compatible models available
+                            </sl-option>`
+                          : compatibleModels.map(
+                              (model) =>
+                                html`<sl-option value=${model.id}
+                                  >${model.name}</sl-option
+                                >`
+                            )}
+                      </sl-select>
+                      <sl-button
+                        size="small"
+                        variant="text"
+                        @click=${this.openAddAIModelDialog}
+                        style="margin-top: 0.5rem;"
+                      >
+                        <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                        Add New AI Model
+                      </sl-button>
+                    </div>
+                  `;
+                })()}
           <sl-textarea
             class="prompt"
             label="Prompt"
@@ -1877,11 +1906,12 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   renderToolSelection() {
-    if (this.availableTools.length === 0) {
+    if (this._loadingReferenceData || this.availableTools.length === 0) {
       return html`
         <div
-          style="padding: 1rem; background: var(--sl-color-neutral-50); border-radius: 4px;"
+          style="display: flex; align-items: center; gap: var(--sl-spacing-small); padding: var(--sl-spacing-medium); color: var(--sl-color-neutral-500);"
         >
+          <sl-spinner style="font-size: 1rem;"></sl-spinner>
           Loading tools...
         </div>
       `;

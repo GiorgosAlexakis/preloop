@@ -4610,6 +4610,66 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/policies/generate:
+    post:
+      tags:
+      - Policies
+      summary: Generate a policy from a description
+      description: Use an AI model to generate a valid Preloop policy YAML from a
+        natural-language description. Requires at least one AI model configured on
+        the account.
+      operationId: generate_policy_api_v1_policies_generate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeneratePolicyRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneratePolicyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/policies/generate-from-audit:
+    post:
+      tags:
+      - Policies
+      summary: Generate a policy from audit-log patterns
+      description: Analyse historical MCP tool-call audit logs and generate a policy
+        that allows observed-normal calls and requires approval for outliers. Requires
+        at least one AI model configured on the account.
+      operationId: generate_policy_from_audit_api_v1_policies_generate_from_audit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeneratePolicyFromAuditRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneratePolicyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/roles:
     get:
       tags:
@@ -5211,6 +5271,14 @@ components:
           title: Require Reason
           description: Whether approver must provide a reason
           default: false
+        async_approval_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Async Approval Enabled
+          description: When enabled, tool calls return immediately and agents poll
+            for status
+          default: false
         is_default:
           anyOf:
           - type: boolean
@@ -5383,6 +5451,10 @@ components:
           - type: 'null'
           title: Require Reason
           description: Whether approver must provide a reason
+          default: false
+        async_approval_enabled:
+          type: boolean
+          title: Async Approval Enabled
           default: false
         is_default:
           type: boolean
@@ -5564,6 +5636,14 @@ components:
           - type: 'null'
           title: Require Reason
           description: Whether approver must provide a reason
+          default: false
+        async_approval_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Async Approval Enabled
+          description: When enabled, tool calls return immediately and agents poll
+            for status
           default: false
         is_default:
           anyOf:
@@ -6820,6 +6900,64 @@ components:
           default: false
       type: object
       title: FlowUpdate
+    GeneratePolicyFromAuditRequest:
+      properties:
+        start_date:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Start Date
+          description: Only consider logs after this ISO date (e.g. 2026-01-01)
+        end_date:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: End Date
+          description: Only consider logs before this ISO date
+        audit_logs_json:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audit Logs Json
+          description: Raw JSON dump of audit logs to analyse instead of querying
+            the database. Must be a JSON array of log entries.
+      type: object
+      title: GeneratePolicyFromAuditRequest
+      description: Request to generate a policy from audit-log patterns.
+    GeneratePolicyRequest:
+      properties:
+        prompt:
+          type: string
+          title: Prompt
+          description: Natural-language description of the desired policy
+        include_current_config:
+          type: boolean
+          title: Include Current Config
+          description: Include the account's current MCP servers and tools as context
+            for the LLM (recommended for more accurate generation)
+          default: true
+      type: object
+      required:
+      - prompt
+      title: GeneratePolicyRequest
+      description: Request to generate a policy from a natural-language prompt.
+    GeneratePolicyResponse:
+      properties:
+        yaml:
+          type: string
+          title: Yaml
+          description: Generated policy YAML
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+          description: Non-fatal warnings from validation
+      type: object
+      required:
+      - yaml
+      title: GeneratePolicyResponse
+      description: Response from a policy generation endpoint.
     GitCloneConfig-Input:
       properties:
         enabled:
@@ -8646,6 +8784,16 @@ components:
           - type: 'null'
           title: Custom Config
           description: Additional configuration options
+        justification_mode:
+          anyOf:
+          - type: string
+            enum:
+            - optional
+            - required
+          - type: 'null'
+          title: Justification Mode
+          description: 'Justification parameter mode: null (disabled), ''optional'',
+            or ''required'''
         account_id:
           type: string
           title: Account Id
@@ -8701,6 +8849,11 @@ components:
           - type: 'null'
           title: Custom Config
           description: Additional configuration options
+        justification_mode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Justification Mode
         id:
           anyOf:
           - type: string
@@ -8792,6 +8945,16 @@ components:
           - type: 'null'
           title: Custom Config
           description: Additional configuration options
+        justification_mode:
+          anyOf:
+          - type: string
+            enum:
+            - optional
+            - required
+          - type: 'null'
+          title: Justification Mode
+          description: 'Justification parameter mode: null (disabled), ''optional'',
+            or ''required'''
       type: object
       title: ToolConfigurationUpdate
       description: Schema for updating tool configuration.

@@ -219,6 +219,10 @@ class ApprovalPolicyDefinition(BaseModel):
         None,
         description="Name of policy to escalate to when AI is uncertain (for fallback_behavior='escalate')",
     )
+    async_approval: bool = Field(
+        False,
+        description="When enabled, tool calls return immediately and agents poll for approval status",
+    )
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -356,6 +360,10 @@ class ToolDefinition(BaseModel):
         None, description="Conditions for conditional behavior"
     )
     description: Optional[str] = Field(None, description="Custom description override")
+    justification: Optional[Literal["optional", "required"]] = Field(
+        None,
+        description="Justification mode: 'optional' (agent may provide), 'required' (agent must provide)",
+    )
     custom_config: Optional[Dict[str, Any]] = Field(
         None, description="Additional tool-specific configuration"
     )

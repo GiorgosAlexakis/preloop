@@ -423,6 +423,23 @@ BUILTIN_TOOLS = [
             "required": ["project", "title", "source_branch", "target_branch"],
         },
     },
+    {
+        "name": "get_approval_status",
+        "description": "Check the status of a pending approval request. Returns a detailed event log of the approval workflow.",
+        "source": "builtin",
+        "requires_tracker": False,
+        "required_tracker_types": [],
+        "schema": {
+            "type": "object",
+            "properties": {
+                "request_id": {
+                    "type": "string",
+                    "description": "The approval request ID returned by a tool that triggered an approval workflow",
+                },
+            },
+            "required": ["request_id"],
+        },
+    },
 ]
 
 

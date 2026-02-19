@@ -14,6 +14,7 @@ import {
   getTeamRoles,
   assignTeamRole,
   removeTeamRole,
+  getFeatures,
 } from '../../../api';
 import type {
   Team,
@@ -248,8 +249,21 @@ export class TeamManagementView extends LitElement {
     }
   `;
 
+  @state()
+  private featureEnabled = true;
+
   async connectedCallback() {
     super.connectedCallback();
+    try {
+      const featuresResponse = await getFeatures();
+      if (!featuresResponse.features?.['user_management']) {
+        this.featureEnabled = false;
+        this.isLoading = false;
+        return;
+      }
+    } catch {
+      // If features endpoint fails, proceed optimistically
+    }
     await Promise.all([
       this.fetchTeams(),
       this.fetchUsers(),
@@ -418,6 +432,14 @@ export class TeamManagementView extends LitElement {
       return html`
         <div class="loading">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
+        </div>
+      `;
+    }
+
+    if (!this.featureEnabled) {
+      return html`
+        <div class="loading">
+          <p>Team management is not available in this edition.</p>
         </div>
       `;
     }

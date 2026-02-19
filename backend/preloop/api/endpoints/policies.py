@@ -971,3 +971,225 @@ async def prune_policy_versions(
     logger.info(f"Pruned {deleted_count} versions for account {account.id}")
 
     return PruneResponse(deleted_count=deleted_count)
+
+
+# ============================================================================
+# Policy Generation Endpoints
+# ============================================================================
+
+
+class GeneratePolicyRequest(BaseModel):
+    """Request to generate a policy from a natural-language prompt."""
+
+    prompt: str = Field(
+        ..., description="Natural-language description of the desired policy"
+    )
+    include_current_config: bool = Field(
+        True,
+        description=(
+            "Include the account's current MCP servers and tools as context "
+            "for the LLM (recommended for more accurate generation)"
+        ),
+    )
+
+
+class GeneratePolicyFromAuditRequest(BaseModel):
+    """Request to generate a policy from audit-log patterns."""
+
+    start_date: Optional[str] = Field(
+        None, description="Only consider logs after this ISO date (e.g. 2026-01-01)"
+    )
+    end_date: Optional[str] = Field(
+        None, description="Only consider logs before this ISO date"
+    )
+    audit_logs_json: Optional[str] = Field(
+        None,
+        description=(
+            "Raw JSON dump of audit logs to analyse instead of querying "
+            "the database. Must be a JSON array of log entries."
+        ),
+    )
+
+
+class GeneratePolicyResponse(BaseModel):
+    """Response from a policy generation endpoint."""
+
+    yaml: str = Field(..., description="Generated policy YAML")
+    warnings: List[str] = Field(
+        default_factory=list, description="Non-fatal warnings from validation"
+    )
+
+
+@router.post(
+    "/policies/generate",
+    response_model=GeneratePolicyResponse,
+    summary="Generate a policy from a description",
+    description=(
+        "Use an AI model to generate a valid Preloop policy YAML from a "
+        "natural-language description. Requires at least one AI model "
+        "configured on the account."
+    ),
+)
+async def generate_policy(
+    request: GeneratePolicyRequest,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> GeneratePolicyResponse:
+    """Generate a policy YAML from a natural-language description.
+
+    The endpoint picks the account's default AI model (or the most recently
+    added one) and asks it to produce a valid policy YAML matching the
+    Preloop schema.  The generated YAML is validated before being returned.
+
+    Args:
+        request: The generation request containing the prompt.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        GeneratePolicyResponse with the YAML and any warnings.
+
+    Raises:
+        HTTPException: If no AI model is configured or generation fails.
+    """
+    from preloop.services.policy_generation import (
+        PolicyGenerationError,
+        PolicyGenerationService,
+    )
+
+    import asyncio
+
+    try:
+        service = PolicyGenerationService(db, str(account.id))
+
+        # Do all DB reads on the main (async) thread — Sessions
+        # are not thread-safe and must not be shared across threads.
+        model = service._resolve_model()
+        context_block = (
+            service._build_context_block() if request.include_current_config else ""
+        )
+
+        # Only the LLM call (network I/O, CPU-bound tokenization)
+        # runs in a worker thread.
+        import json
+        from preloop.services.policy.schema import PolicyDocument
+
+        schema_json = json.dumps(PolicyDocument.model_json_schema(), indent=2)
+        system_prompt = service._build_system_prompt(schema_json, context_block)
+
+        yaml_output = await asyncio.to_thread(
+            service._call_llm, model, system_prompt, request.prompt
+        )
+        warnings = service._validate_output(yaml_output)
+        result = {"yaml": yaml_output, "warnings": warnings}
+    except PolicyGenerationError as exc:
+        logger.warning("Policy generation failed for account %s: %s", account.id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    logger.info("Generated policy from prompt for account %s", account.id)
+    return GeneratePolicyResponse(**result)
+
+
+@router.post(
+    "/policies/generate-from-audit",
+    response_model=GeneratePolicyResponse,
+    summary="Generate a policy from audit-log patterns",
+    description=(
+        "Analyse historical MCP tool-call audit logs and generate a policy "
+        "that allows observed-normal calls and requires approval for "
+        "outliers. Requires at least one AI model configured on the account."
+    ),
+)
+async def generate_policy_from_audit(
+    request: GeneratePolicyFromAuditRequest,
+    account: Account = Depends(get_account_for_user),
+    db: Session = Depends(get_db_session),
+) -> GeneratePolicyResponse:
+    """Generate a policy from audit-log tool-call patterns.
+
+    Args:
+        request: The generation request with optional date range or raw logs.
+        account: Current user's account.
+        db: Database session.
+
+    Returns:
+        GeneratePolicyResponse with the YAML and any warnings.
+
+    Raises:
+        HTTPException: If no AI model is configured, no logs found, or
+            generation fails.
+    """
+    from datetime import datetime as dt
+
+    from preloop.services.policy_generation import (
+        PolicyGenerationError,
+        PolicyGenerationService,
+    )
+
+    start = None
+    end = None
+    if request.start_date:
+        try:
+            start = dt.fromisoformat(request.start_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid start_date format: {request.start_date}",
+            )
+    if request.end_date:
+        try:
+            end = dt.fromisoformat(request.end_date)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid end_date format: {request.end_date}",
+            )
+
+    import asyncio
+
+    try:
+        service = PolicyGenerationService(db, str(account.id))
+
+        # Do all DB reads on the main thread (Session is not thread-safe).
+        model = service._resolve_model()
+
+        if request.audit_logs_json:
+            summary = service._summarise_external_logs(request.audit_logs_json)
+        else:
+            summary = service._summarise_account_logs(start, end)
+
+        if not summary:
+            raise PolicyGenerationError(
+                "No tool-call audit logs found for the specified criteria. "
+                "Run some MCP tool calls first, then retry."
+            )
+
+        import json
+        from preloop.services.policy.schema import PolicyDocument
+
+        schema_json = json.dumps(PolicyDocument.model_json_schema(), indent=2)
+        context_block = service._build_context_block()
+        system_prompt = service._build_audit_system_prompt(schema_json, context_block)
+
+        # Only the LLM call runs in a worker thread.
+        yaml_output = await asyncio.to_thread(
+            service._call_llm, model, system_prompt, summary
+        )
+        warnings = service._validate_output(yaml_output)
+        result = {"yaml": yaml_output, "warnings": warnings}
+    except PolicyGenerationError as exc:
+        logger.warning(
+            "Audit-based policy generation failed for account %s: %s",
+            account.id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    logger.info("Generated policy from audit logs for account %s", account.id)
+    return GeneratePolicyResponse(**result)

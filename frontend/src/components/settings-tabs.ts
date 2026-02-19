@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
 import '@shoelace-style/shoelace/dist/components/tab/tab.js';
@@ -8,6 +8,9 @@ import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 export class SettingsTabs extends LitElement {
   @property({ type: String })
   active = '';
+
+  @property({ type: Object })
+  features: { [key: string]: boolean | string[] } = {};
 
   static styles = css`
     :host {
@@ -19,17 +22,21 @@ export class SettingsTabs extends LitElement {
     }
   `;
 
-  private tabs = [
-    { path: '/console/settings/profile', label: 'Profile' },
-    { path: '/console/settings/security', label: 'Security' },
-    { path: '/console/settings/account', label: 'Account' },
-    { path: '/console/settings/users', label: 'Users' },
-    { path: '/console/settings/teams', label: 'Teams' },
-    { path: '/console/settings/invitations', label: 'Invitations' },
-    { path: '/console/settings/api-keys', label: 'API Keys' },
-    { path: '/console/settings/ai-models', label: 'AI Models' },
-    { path: '/console/settings/appearance', label: 'Appearance' },
-  ];
+  private get tabs() {
+    const hasUserMgmt = this.features['user_management'] === true;
+    const allTabs = [
+      { path: '/console/settings/profile', label: 'Profile' },
+      { path: '/console/settings/security', label: 'Security' },
+      { path: '/console/settings/account', label: 'Account', ee: true },
+      { path: '/console/settings/users', label: 'Users', ee: true },
+      { path: '/console/settings/teams', label: 'Teams', ee: true },
+      { path: '/console/settings/invitations', label: 'Invitations', ee: true },
+      { path: '/console/settings/api-keys', label: 'API Keys' },
+      { path: '/console/settings/ai-models', label: 'AI Models' },
+      { path: '/console/settings/appearance', label: 'Appearance' },
+    ];
+    return allTabs.filter((t) => !t.ee || hasUserMgmt);
+  }
 
   private onTabSelect(e: CustomEvent) {
     const panel = e.detail.name;

@@ -326,6 +326,32 @@ class ApprovalService:
 
         return approval_request
 
+    async def _record_event(
+        self,
+        approval_request_id: uuid.UUID,
+        account_id: uuid.UUID,
+        event_type: str,
+        detail: str,
+        comment: Optional[str] = None,
+        actor_id: Optional[uuid.UUID] = None,
+    ) -> None:
+        """Record an event in the approval event log for async polling."""
+        try:
+            from preloop.models.models.approval_event import ApprovalEvent
+
+            event = ApprovalEvent(
+                approval_request_id=approval_request_id,
+                account_id=account_id,
+                event_type=event_type,
+                detail=detail,
+                comment=comment,
+                actor_id=actor_id,
+            )
+            self.db.add(event)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to record approval event: {e}")
+
     async def approve_request(
         self,
         request_id: uuid.UUID,
@@ -384,6 +410,19 @@ class ApprovalService:
             # For quorum=1, resolve immediately.
             if approvals_required == 1:
                 # Immediate resolution for single-approval policies
+                await self._record_event(
+                    approval_request_id=request_id,
+                    account_id=approval_request.account_id,
+                    event_type="vote_received",
+                    detail="Approval vote received (token-based)",
+                    comment=comment,
+                )
+                await self._record_event(
+                    approval_request_id=request_id,
+                    account_id=approval_request.account_id,
+                    event_type="approval_complete",
+                    detail="Approval request approved",
+                )
                 update = ApprovalRequestUpdate(
                     status="approved",
                     approver_comment=comment,
@@ -424,6 +463,17 @@ class ApprovalService:
         # Count approvals
         approval_count = sum(1 for r in responses if r.get("decision") == "approved")
 
+        # Record vote event
+        voter_display = str(user_id) if user_id else "anonymous"
+        await self._record_event(
+            approval_request_id=request_id,
+            account_id=approval_request.account_id,
+            event_type="vote_received",
+            detail=f"Approval vote received from {voter_display} ({approval_count}/{approvals_required})",
+            comment=comment,
+            actor_id=user_id,
+        )
+
         # Check if quorum is met
         if approval_count >= approvals_required:
             # Quorum met - resolve as approved
@@ -435,6 +485,13 @@ class ApprovalService:
             # Update responses in the database
             approval_request.responses = responses
             await self.db.commit()
+
+            await self._record_event(
+                approval_request_id=request_id,
+                account_id=approval_request.account_id,
+                event_type="approval_complete",
+                detail=f"Approval request approved (quorum {approval_count}/{approvals_required} met)",
+            )
 
             updated_request = await self.update_approval_request(request_id, update)
             if updated_request:
@@ -520,6 +577,19 @@ class ApprovalService:
             # For quorum=1, resolve immediately.
             if approvals_required == 1:
                 # Immediate resolution for single-approval policies
+                await self._record_event(
+                    approval_request_id=request_id,
+                    account_id=approval_request.account_id,
+                    event_type="vote_received",
+                    detail="Decline vote received (token-based)",
+                    comment=comment,
+                )
+                await self._record_event(
+                    approval_request_id=request_id,
+                    account_id=approval_request.account_id,
+                    event_type="approval_complete",
+                    detail="Approval request declined",
+                )
                 update = ApprovalRequestUpdate(
                     status="declined",
                     approver_comment=comment,
@@ -561,6 +631,17 @@ class ApprovalService:
         approval_count = sum(1 for r in responses if r.get("decision") == "approved")
         decline_count = sum(1 for r in responses if r.get("decision") == "declined")
 
+        # Record decline vote event
+        voter_display = str(user_id) if user_id else "anonymous"
+        await self._record_event(
+            approval_request_id=request_id,
+            account_id=approval_request.account_id,
+            event_type="vote_received",
+            detail=f"Decline vote received from {voter_display} ({decline_count} decline(s))",
+            comment=comment,
+            actor_id=user_id,
+        )
+
         # Get actual total approvers count (only reliable for direct user approvers)
         total_approvers, is_exact = self._count_total_approvers(approval_policy)
 
@@ -598,6 +679,14 @@ class ApprovalService:
             # Update responses in the database
             approval_request.responses = responses
             await self.db.commit()
+
+            await self._record_event(
+                approval_request_id=request_id,
+                account_id=approval_request.account_id,
+                event_type="approval_complete",
+                detail=f"Approval request declined (quorum cannot be reached: {decline_count} decline(s))",
+                comment=comment,
+            )
 
             updated_request = await self.update_approval_request(request_id, update)
             if updated_request:
@@ -1767,6 +1856,13 @@ class ApprovalService:
 
         logger.info(
             f"Sending escalation notifications for request {approval_request.id}"
+        )
+
+        await self._record_event(
+            approval_request_id=approval_request.id,
+            account_id=approval_request.account_id,
+            event_type="escalation_triggered",
+            detail="Approval request escalated due to timeout - notifying escalation contacts",
         )
 
         loop = asyncio.get_event_loop()

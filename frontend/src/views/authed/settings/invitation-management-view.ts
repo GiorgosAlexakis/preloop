@@ -7,6 +7,7 @@ import {
   resendInvitation,
   cancelInvitation,
   getTeams,
+  getFeatures,
 } from '../../../api';
 import type { UserInvitation, InvitationCreate, Team } from '../../../types';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
@@ -148,8 +149,21 @@ export class InvitationManagementView extends LitElement {
     }
   `;
 
+  @state()
+  private featureEnabled = true;
+
   async connectedCallback() {
     super.connectedCallback();
+    try {
+      const featuresResponse = await getFeatures();
+      if (!featuresResponse.features?.['user_management']) {
+        this.featureEnabled = false;
+        this.isLoading = false;
+        return;
+      }
+    } catch {
+      // If features endpoint fails, proceed optimistically
+    }
     await Promise.all([this.fetchInvitations(), this.fetchTeams()]);
   }
 
@@ -256,6 +270,14 @@ export class InvitationManagementView extends LitElement {
       return html`
         <div class="loading">
           <sl-spinner style="font-size: 3rem;"></sl-spinner>
+        </div>
+      `;
+    }
+
+    if (!this.featureEnabled) {
+      return html`
+        <div class="loading">
+          <p>Invitation management is not available in this edition.</p>
         </div>
       `;
     }

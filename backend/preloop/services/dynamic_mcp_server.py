@@ -82,15 +82,14 @@ def _log_tool_execution_async(
             except (ValueError, TypeError):
                 pass
 
-        audit_service.log_tool_execution_async(
+        audit_service.log_tool_call_async(
             db_factory=db_factory,
             account_id=account_id,
             user_id=user_uuid,
             tool_name=tool_name,
             tool_args=tool_args,
-            status=status,
-            result=result,
-            execution_time_ms=execution_time_ms,
+            result=status,
+            duration_ms=execution_time_ms,
             execution_id=execution_uuid,
         )
     except Exception as e:

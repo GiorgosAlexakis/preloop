@@ -2834,19 +2834,40 @@ async def update_comment(
             # Resolve/unresolve discussion if requested
             if resolved is not None:
                 # GitLab's resolve_mr_discussion requires the discussion ID, not a note ID.
-                # We must have a valid thread_id (discussion_id) to proceed.
+                # If thread_id is not provided, auto-lookup the discussion containing
+                # this note ID.
                 if not thread_id:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            "GitLab discussion resolution requires a thread_id parameter "
-                            "(the discussion ID). The comment_id provided "
-                            f"('{comment_id}') is a note ID, not a discussion ID. "
-                            "To resolve a discussion, you must provide the discussion ID. "
-                            "You can find this in the 'discussion_id' field when "
-                            "fetching MR discussions."
-                        ),
+                    logger.info(
+                        f"Auto-looking up discussion ID for GitLab note {comment_id} "
+                        f"in MR {pr_mr_number}"
                     )
+                    try:
+                        discussions = await tracker_client.get_mr_discussions(
+                            mr_iid=pr_mr_number
+                        )
+                        for discussion in discussions:
+                            for note in discussion.get("notes", []):
+                                if str(note.get("id")) == str(comment_id):
+                                    thread_id = discussion["id"]
+                                    logger.info(
+                                        f"Found discussion ID {thread_id} for "
+                                        f"note {comment_id}"
+                                    )
+                                    break
+                            if thread_id:
+                                break
+                    except Exception as e:
+                        logger.warning(f"Failed to auto-lookup discussion ID: {e}")
+
+                    if not thread_id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "Could not find the discussion containing "
+                                f"note '{comment_id}'. Please provide the "
+                                "discussion ID via the thread_id parameter."
+                            ),
+                        )
                 logger.info(
                     f"{'Resolving' if resolved else 'Unresolving'} GitLab MR "
                     f"discussion {thread_id}"

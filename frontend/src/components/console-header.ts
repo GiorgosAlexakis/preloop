@@ -40,9 +40,6 @@ interface ApprovalRequest {
   agent_reasoning?: string;
 }
 
-// LocalStorage key for notification preferences
-const NOTIFICATION_PREF_KEY = 'preloop_desktop_notifications_enabled';
-
 interface UserNotification {
   id: string;
   type:
@@ -378,10 +375,10 @@ export class ConsoleHeader extends LitElement {
           const newExecution: FlowExecution = {
             id: message.execution_id,
             flow_id: message.flow_id,
-            status: message.payload.status || 'PENDING',
+            status: message.payload?.status || 'PENDING',
             start_time: message.timestamp,
             end_time: null,
-            flow_name: message.payload.flow_name,
+            flow_name: message.payload?.flow_name,
           };
 
           // Add to running executions if not already there
@@ -400,7 +397,7 @@ export class ConsoleHeader extends LitElement {
 
         // Handle status updates
         if (message.type === 'status_update' && message.execution_id) {
-          const status = message.payload.status;
+          const status = message.payload?.status;
           const executionIndex = this._runningExecutions.findIndex(
             (exec) => exec.id === message.execution_id
           );
@@ -413,16 +410,19 @@ export class ConsoleHeader extends LitElement {
               status !== 'STARTING' &&
               status !== 'INITIALIZING'
             ) {
+              const finishedExecution = this._runningExecutions[executionIndex];
               this._runningExecutions = [
                 ...this._runningExecutions.slice(0, executionIndex),
                 ...this._runningExecutions.slice(executionIndex + 1),
               ];
+              // Show desktop notification for finished execution
+              this.showExecutionFinishedNotification(finishedExecution, status);
             } else {
               // Update the execution
               const updatedExecution = {
                 ...this._runningExecutions[executionIndex],
                 status: status,
-                end_time: message.payload.end_time || null,
+                end_time: message.payload?.end_time || null,
               };
               this._runningExecutions = [
                 ...this._runningExecutions.slice(0, executionIndex),
@@ -478,6 +478,12 @@ export class ConsoleHeader extends LitElement {
           message.type === 'approval_expired' ||
           message.type === 'approval_cancelled'
         ) {
+          // Show desktop notification for resolution
+          this.showApprovalResolvedNotification(
+            message.approval_request_id,
+            message.tool_name || 'Tool',
+            message.type
+          );
           // Remove from pending approvals
           this._pendingApprovals = this._pendingApprovals.filter(
             (approval) => approval.id !== message.approval_request_id
@@ -544,15 +550,6 @@ export class ConsoleHeader extends LitElement {
   // ============================================
 
   /**
-   * Check if desktop notifications are enabled by the user preference.
-   */
-  private isDesktopNotificationsEnabled(): boolean {
-    const pref = localStorage.getItem(NOTIFICATION_PREF_KEY);
-    // Default to enabled if not set
-    return pref !== 'false';
-  }
-
-  /**
    * Request notification permission from the browser if not already granted.
    */
   private async requestNotificationPermission(): Promise<void> {
@@ -575,19 +572,31 @@ export class ConsoleHeader extends LitElement {
    * Show desktop notification when a flow execution starts.
    */
   private showExecutionNotification(execution: FlowExecution): void {
-    if (!this.isDesktopNotificationsEnabled()) {
+    if (!('Notification' in window)) {
+      console.log('[Notification] Browser does not support Notification API');
       return;
     }
 
-    if (!('Notification' in window) || Notification.permission !== 'granted') {
+    if (Notification.permission !== 'granted') {
+      console.log(
+        `[Notification] Permission not granted (current: ${Notification.permission}), requesting...`
+      );
+      // Proactively request if still default
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
       return;
     }
 
     // Prevent duplicate notifications for the same execution
     if (this.shownExecutionNotifications.has(execution.id)) {
+      console.log(`[Notification] Already shown for execution ${execution.id}`);
       return;
     }
     this.shownExecutionNotifications.add(execution.id);
+    console.log(
+      `[Notification] Showing start notification for ${execution.flow_name || 'Flow'} (${execution.id})`
+    );
 
     try {
       const notification = new Notification('Flow Execution Started', {
@@ -610,13 +619,54 @@ export class ConsoleHeader extends LitElement {
   }
 
   /**
-   * Show desktop notification when an approval is requested.
+   * Show desktop notification when a flow execution finishes.
    */
-  private showApprovalNotification(approval: ApprovalRequest): void {
-    if (!this.isDesktopNotificationsEnabled()) {
+  private showExecutionFinishedNotification(
+    execution: FlowExecution,
+    status: string
+  ): void {
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      console.log(
+        `[Notification] Cannot show finished notification (permission: ${'Notification' in window ? Notification.permission : 'unsupported'})`
+      );
       return;
     }
 
+    console.log(
+      `[Notification] Showing finished notification for ${execution.flow_name || 'Flow'} (${execution.id}) — status: ${status}`
+    );
+
+    // Build notification based on final status
+    const succeeded = status === 'SUCCEEDED';
+    const title = succeeded
+      ? 'Flow Execution Succeeded'
+      : 'Flow Execution Failed';
+    const body = `${execution.flow_name || 'Flow'} ${succeeded ? 'completed successfully' : `finished with status: ${status}`}`;
+
+    try {
+      const notification = new Notification(title, {
+        body,
+        icon: '/images/logos/preloop_logo_dark.svg',
+        tag: `execution-done-${execution.id}`,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        Router.go(`/console/flows/executions/${execution.id}`);
+        notification.close();
+      };
+
+      // Auto-close after 10 seconds
+      setTimeout(() => notification.close(), 10000);
+    } catch (error) {
+      console.error('Failed to show execution finished notification:', error);
+    }
+  }
+
+  /**
+   * Show desktop notification when an approval is requested.
+   */
+  private showApprovalNotification(approval: ApprovalRequest): void {
     if (!('Notification' in window) || Notification.permission !== 'granted') {
       return;
     }
@@ -646,6 +696,49 @@ export class ConsoleHeader extends LitElement {
       };
     } catch (error) {
       console.error('Failed to show approval notification:', error);
+    }
+  }
+
+  /**
+   * Show desktop notification when an approval is resolved.
+   */
+  private showApprovalResolvedNotification(
+    approvalId: string,
+    toolName: string,
+    eventType: string
+  ): void {
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    const statusMap: Record<string, { title: string; emoji: string }> = {
+      approval_approved: { title: 'Approved', emoji: '✅' },
+      approval_declined: { title: 'Declined', emoji: '❌' },
+      approval_expired: { title: 'Expired', emoji: '⏰' },
+      approval_cancelled: { title: 'Cancelled', emoji: '🚫' },
+    };
+
+    const status = statusMap[eventType] || { title: 'Resolved', emoji: '📋' };
+
+    try {
+      const notification = new Notification(
+        `${status.emoji} Approval ${status.title}`,
+        {
+          body: `${toolName} was ${status.title.toLowerCase()}`,
+          icon: '/images/logos/preloop_logo_dark.svg',
+          tag: `approval-resolved-${approvalId}`,
+        }
+      );
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+
+      // Auto-close after 8 seconds
+      setTimeout(() => notification.close(), 8000);
+    } catch (error) {
+      console.error('Failed to show approval resolved notification:', error);
     }
   }
 
@@ -868,7 +961,11 @@ export class ConsoleHeader extends LitElement {
         <div class="user-menu">
           <!-- Notification Center -->
           <sl-dropdown distance="8" placement="bottom-end">
-            <div slot="trigger" class="notification-button">
+            <div
+              slot="trigger"
+              class="notification-button"
+              @click=${() => this.requestNotificationPermission()}
+            >
               <sl-icon-button
                 name="bell"
                 label="Notifications"

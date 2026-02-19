@@ -6,6 +6,8 @@ while keeping FastMCP's proven StreamableHTTP transport implementation.
 Phase 1B: Added support for proxied tools from external MCP servers.
 """
 
+import asyncio
+import copy
 import logging
 import uuid
 from contextvars import ContextVar
@@ -20,8 +22,7 @@ from preloop.services.dynamic_mcp_server import (
     get_tracker_types,
 )
 from preloop.services.mcp_client_pool import get_mcp_client_pool
-from preloop.services.mcp_tool_discovery import get_all_enabled_proxied_tools
-from preloop.models.crud import crud_mcp_server
+from preloop.models.crud import crud_mcp_server, crud_tool_configuration
 from preloop.models.db.session import get_db_session as get_db
 from preloop.api.endpoints.tools import BUILTIN_TOOLS
 
@@ -41,6 +42,21 @@ _rule_policy_id_var: ContextVar[Optional[str]] = ContextVar(
 # frontend can group them into a single timeline entry.
 _correlation_id_var: ContextVar[Optional[str]] = ContextVar(
     "_correlation_id_var", default=None
+)
+
+# Context variable to pass justification extracted from tool arguments
+# through to require_approval(). The justification is injected into the tool
+# schema by _list_tools() and popped from arguments in _call_tool() before
+# the actual tool function is invoked.
+_justification_var: ContextVar[Optional[str]] = ContextVar(
+    "_justification_var", default=None
+)
+
+# Context variable to bypass approval checks during re-execution of an
+# already-approved async tool call.  Set by get_approval_status() before
+# replaying the tool so that require_approval() returns (True, "") immediately.
+_bypass_approval_var: ContextVar[bool] = ContextVar(
+    "_bypass_approval_var", default=False
 )
 
 
@@ -150,84 +166,94 @@ class DynamicFastMCP(FastMCP):
         # Add proxied tools from external MCP servers (Phase 1B)
         # Now with dynamic registration for streaming approval support
         try:
-            db = next(get_db())
-            try:
-                proxied_tools_data = await get_all_enabled_proxied_tools(
-                    user_context.account_id, db
-                )
-
-                # Dynamically register wrapper functions for proxied tools
-                proxied_tool_map = {}  # Track original_name -> internal_name mapping
-
-                for mcp_server, mcp_tool in proxied_tools_data:
-                    # Create internal name with namespace (sanitize account_id)
-                    safe_account_id = user_context.account_id.replace("-", "_")
-                    internal_name = f"account_{safe_account_id}_{mcp_tool.name}"
-                    proxied_tool_map[mcp_tool.name] = (
-                        internal_name,
-                        mcp_tool,
-                        mcp_server,
+            # Run sync DB calls in a thread to avoid blocking the event loop.
+            def _fetch_proxied_tools():
+                db = next(get_db())
+                try:
+                    from preloop.services.mcp_tool_discovery import (
+                        _get_proxied_tools_sync,
                     )
 
-                    # Only register if not already registered
-                    if internal_name not in self._registered_proxied_tools:
-                        logger.info(
-                            f"Dynamically registering proxied tool: {mcp_tool.name} "
-                            f"(internal: {internal_name})"
-                        )
+                    return _get_proxied_tools_sync(user_context.account_id, db)
+                finally:
+                    db.close()
 
-                        # Create wrapper function with approval and streaming
-                        wrapper = self._create_proxied_tool_wrapper(
-                            tool_name=mcp_tool.name,
-                            server_id=str(mcp_server.id),
-                            account_id=user_context.account_id,
-                            description=mcp_tool.description or "",
-                            input_schema=mcp_tool.input_schema,
-                        )
+            logger.info("Fetching proxied tools via executor...")
+            proxied_tools_data = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, _fetch_proxied_tools),
+                timeout=30,
+            )
+            logger.info(f"Fetched {len(proxied_tools_data)} proxied tools")
 
-                        # Register with FastMCP using @mcp.tool() decorator
-                        self.tool()(wrapper)
+            # Dynamically register wrapper functions for proxied tools
+            proxied_tool_map = {}  # Track original_name -> internal_name mapping
 
-                        # Track as registered
-                        self._registered_proxied_tools.add(internal_name)
-
-                    # Always track the mapping for name translation
-                    self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
-
-                # Now get all registered tools and map back to original names
-                all_registered = await super()._list_tools(context)
-                logger.info(
-                    f"Total registered tools after dynamic registration: {len(all_registered)}"
-                )
-
-                for original_name, (
+            for mcp_server, mcp_tool in proxied_tools_data:
+                # Create internal name with namespace (sanitize account_id)
+                safe_account_id = user_context.account_id.replace("-", "_")
+                internal_name = f"account_{safe_account_id}_{mcp_tool.name}"
+                proxied_tool_map[mcp_tool.name] = (
                     internal_name,
                     mcp_tool,
                     mcp_server,
-                ) in proxied_tool_map.items():
-                    # Check if this tool was registered
-                    if any(t.name == internal_name for t in all_registered):
-                        # Add with original name for client visibility
-                        tool = Tool(
-                            name=original_name,  # Client sees original name
-                            description=mcp_tool.description or "",
-                            parameters=mcp_tool.input_schema,
-                        )
-                        available_tools.append(tool)
-                        logger.info(
-                            f"Exposing proxied tool: {original_name} (internal: {internal_name}) mcp_server: {mcp_server}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Proxied tool {internal_name} was not found in registered tools!"
-                        )
-
-                logger.info(
-                    f"Added {len(proxied_tool_map)} proxied tools to available list"
                 )
 
-            finally:
-                db.close()
+                # Only register if not already registered
+                if internal_name not in self._registered_proxied_tools:
+                    logger.info(
+                        f"Dynamically registering proxied tool: {mcp_tool.name} "
+                        f"(internal: {internal_name})"
+                    )
+
+                    # Create wrapper function with approval and streaming
+                    wrapper = self._create_proxied_tool_wrapper(
+                        tool_name=mcp_tool.name,
+                        server_id=str(mcp_server.id),
+                        account_id=user_context.account_id,
+                        description=mcp_tool.description or "",
+                        input_schema=mcp_tool.input_schema,
+                    )
+
+                    # Register with FastMCP using @mcp.tool() decorator
+                    self.tool()(wrapper)
+
+                    # Track as registered
+                    self._registered_proxied_tools.add(internal_name)
+
+                    # Always track the mapping for name translation
+                self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
+
+                # Now get all registered tools and map back to original names
+            all_registered = await super()._list_tools(context)
+            logger.info(
+                f"Total registered tools after dynamic registration: {len(all_registered)}"
+            )
+
+            for original_name, (
+                internal_name,
+                mcp_tool,
+                mcp_server,
+            ) in proxied_tool_map.items():
+                # Check if this tool was registered
+                if any(t.name == internal_name for t in all_registered):
+                    # Add with original name for client visibility
+                    tool = Tool(
+                        name=original_name,  # Client sees original name
+                        description=mcp_tool.description or "",
+                        parameters=mcp_tool.input_schema,
+                    )
+                    available_tools.append(tool)
+                    logger.info(
+                        f"Exposing proxied tool: {original_name} (internal: {internal_name}) mcp_server: {mcp_server}"
+                    )
+                else:
+                    logger.warning(
+                        f"Proxied tool {internal_name} was not found in registered tools!"
+                    )
+
+            logger.info(
+                f"Added {len(proxied_tool_map)} proxied tools to available list"
+            )
 
         except Exception as e:
             logger.error(f"Error loading proxied tools: {e}", exc_info=True)
@@ -247,6 +273,72 @@ class DynamicFastMCP(FastMCP):
                 f"Flow execution restriction: filtered {original_count} tools down to "
                 f"{len(available_tools)} allowed tools for flow execution "
                 f"{user_context.flow_execution_id}"
+            )
+
+        # ── Inject justification parameter based on ToolConfiguration ────
+        try:
+
+            def _fetch_tool_configs():
+                db = next(get_db())
+                try:
+                    configs = crud_tool_configuration.get_multi_by_account(
+                        db,
+                        account_id=str(user_context.account_id),
+                        limit=1000,
+                    )
+                    # Extract just the fields we need to avoid detached-instance
+                    # errors once the session is closed.
+                    return {
+                        tc.tool_name: tc.justification_mode
+                        for tc in configs
+                        if tc.justification_mode in ("optional", "required")
+                    }
+                finally:
+                    db.close()
+
+            justification_modes = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, _fetch_tool_configs),
+                timeout=30,
+            )
+
+            modified_tools = []
+            for tool in available_tools:
+                j_mode = justification_modes.get(tool.name)
+                if j_mode:
+                    modified_schema = copy.deepcopy(tool.parameters)
+                    if "properties" not in modified_schema:
+                        modified_schema["properties"] = {}
+                    modified_schema["properties"]["justification"] = {
+                        "type": "string",
+                        "description": (
+                            "Provide your reasoning and context for why "
+                            "this tool is being called. This will be "
+                            "reviewed by approvers and logged for audit "
+                            "purposes."
+                        ),
+                    }
+                    if j_mode == "required":
+                        required = list(modified_schema.get("required", []))
+                        if "justification" not in required:
+                            required.append("justification")
+                            modified_schema["required"] = required
+                    tool = Tool(
+                        name=tool.name,
+                        description=tool.description or "",
+                        parameters=modified_schema,
+                    )
+                    logger.info(
+                        f"Injected justification parameter "
+                        f"(mode={j_mode}) into "
+                        f"tool '{tool.name}'"
+                    )
+                modified_tools.append(tool)
+
+            available_tools = modified_tools
+        except Exception as e:
+            logger.error(
+                f"Error injecting justification parameters: {e}",
+                exc_info=True,
             )
 
         logger.info(
@@ -375,6 +467,11 @@ async def {internal_name}({params_str}) -> str:
         if value is not None:
             arguments[param_name] = value
 
+    # Read justification from context var — _call_tool() already stripped it
+    # from arguments and stored it in _justification_var.
+    from preloop.services.dynamic_fastmcp import _justification_var
+    justification = _justification_var.get(None)
+
     # Check approval with streaming (we have Context!)
     # The policy_id may have been set by _call_tool() after evaluating access rules.
     from preloop.services.approval_helper import require_approval
@@ -389,6 +486,7 @@ async def {internal_name}({params_str}) -> str:
         ctx=ctx,
         policy_id=rule_policy_id,
         correlation_id=corr_id,
+        justification=justification,
     )
 
     if not approved:
@@ -494,10 +592,90 @@ async def {internal_name}({params_str}) -> str:
         name = context.message.name
         arguments = context.message.arguments or {}
 
+        # Extract justification from arguments before it reaches the tool function.
+        # Justification is injected into the schema by _list_tools() but isn't part
+        # of the actual tool's function signature.
+        justification = arguments.pop("justification", None)
+        _justification_var.set(justification)
+        context.message.arguments = arguments
+
         logger.info(f"!!! _call_tool called for tool: {name} !!!")
 
         # Get current user context
         user_context = self._get_current_user_context()
+
+        # ── Server-side justification enforcement ─────────────────────────
+        # Schema injection alone isn't sufficient — clients can skip
+        # validation. Verify server-side that required justifications are
+        # actually provided.
+        # Skip during async re-execution (_bypass_approval_var=True) because
+        # justification was already validated on the original call and is not
+        # persisted in tool_args.
+        if user_context and not _bypass_approval_var.get(False):
+            try:
+
+                def _check_justification_mode():
+                    db = next(get_db())
+                    try:
+                        configs = crud_tool_configuration.get_multi_by_account(
+                            db,
+                            account_id=str(user_context.account_id),
+                            limit=1000,
+                        )
+                        for tc in configs:
+                            if (
+                                tc.tool_name == name
+                                and tc.justification_mode == "required"
+                            ):
+                                return True
+                        return False
+                    finally:
+                        db.close()
+
+                requires_justification = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, _check_justification_mode
+                    ),
+                    timeout=30,
+                )
+                if requires_justification and not justification:
+                    from fastmcp.tools.tool import ToolResult
+                    from mcp.types import TextContent
+
+                    return ToolResult(
+                        content=[
+                            TextContent(
+                                type="text",
+                                text=(
+                                    f"Justification required: Tool '{name}' requires a "
+                                    f"'justification' parameter explaining why this tool "
+                                    f"is being called."
+                                ),
+                            )
+                        ]
+                    )
+            except Exception as e:
+                # SECURITY: Fail closed — if we cannot verify whether
+                # justification is required, block the call rather than
+                # allowing potentially unjustified tool executions.
+                logger.error(
+                    f"Justification enforcement check failed for '{name}': {e}. "
+                    f"Blocking tool call (fail closed)."
+                )
+                from fastmcp.tools.tool import ToolResult
+                from mcp.types import TextContent
+
+                return ToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Error: Unable to verify justification requirements "
+                                f"for tool '{name}'. Please try again."
+                            ),
+                        )
+                    ]
+                )
 
         if not user_context:
             logger.warning("No user context available for tool call")
@@ -613,15 +791,16 @@ async def {internal_name}({params_str}) -> str:
                 plugin_manager = get_plugin_manager()
                 audit_service = plugin_manager.get_service("audit_service")
                 if audit_service:
-                    audit_service.log_tool_execution_async(
+                    audit_service.log_tool_call_async(
                         db_factory=lambda: next(get_db()),
                         account_id=uuid.UUID(user_context.account_id),
                         user_id=uuid.UUID(user_context.user_id),
                         tool_name=name,
                         tool_args=arguments,
-                        status=exec_status,
-                        execution_time_ms=elapsed_ms,
-                        correlation_id=correlation_id,
+                        result=exec_status,
+                        duration_ms=elapsed_ms,
+                        policy_decision=None,
+                        rule_matched=None,
                     )
             except Exception as audit_err:
                 logger.debug(f"Failed to audit tool execution: {audit_err}")

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from mcp import types
+from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
 from preloop.services.dynamic_fastmcp import (
@@ -137,13 +138,18 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
-                result = await dynamic_mcp._list_tools()
+                with patch.object(
+                    FastMCP,
+                    "_list_tools",
+                    new=AsyncMock(return_value=[]),
+                ):
+                    result = await dynamic_mcp._list_tools()
 
         # User without tracker still may get builtin tools that don't require a tracker
         assert isinstance(result, list)
@@ -164,17 +170,16 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -207,17 +212,16 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -241,17 +245,16 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -289,17 +292,16 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[],
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=default_tools),
-                    create=True,
                 ):
                     result = await dynamic_mcp._list_tools()
 
@@ -328,18 +330,17 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[(mock_mcp_server, mock_mcp_tool)],
             ):
                 # Mock super()._list_tools to return the "registered" internal tool
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=[registered_tool]),
-                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     # Mock tool registration
                     with patch.object(dynamic_mcp, "tool", return_value=lambda x: x):
@@ -357,17 +358,16 @@ class TestListTools:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
-                "preloop.services.dynamic_fastmcp.get_all_enabled_proxied_tools",
+                "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 side_effect=Exception("DB Error"),
             ):
                 with patch.object(
-                    dynamic_mcp.__class__.__bases__[0],
+                    FastMCP,
                     "_list_tools",
                     new=AsyncMock(return_value=[]),
-                    create=True,  # Allow creating the method if it doesn't exist
                 ):
                     # Should not raise, just continue with default tools
                     result = await dynamic_mcp._list_tools()
@@ -599,7 +599,7 @@ class TestHelperFunctions:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.dynamic_fastmcp.has_tracker",
@@ -643,7 +643,7 @@ class TestHelperFunctions:
         with patch("preloop.services.dynamic_fastmcp.get_db") as mock_get_db:
             mock_db = MagicMock()
             mock_db.close = MagicMock()
-            mock_get_db.return_value = iter([mock_db])
+            mock_get_db.side_effect = lambda: iter([mock_db])
 
             with patch(
                 "preloop.services.dynamic_fastmcp.has_tracker",

@@ -75,6 +75,34 @@ class FlowTriggerService:
 
         return None
 
+    def _extract_repo_key(self, event_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract a repository identifier from the event payload.
+
+        Used together with commit SHA for deduplication: an execution is
+        considered a duplicate only when both the repo AND the commit SHA
+        match a running execution.
+
+        Returns:
+            A key like "github:owner/repo" or "gitlab:group/project", or None.
+        """
+        source = event_data.get("source", "").lower()
+        payload = event_data.get("payload", {})
+
+        if source == "github":
+            repo = payload.get("repository", {})
+            repo_full_name = repo.get("full_name", "")
+            if repo_full_name:
+                return f"github:{repo_full_name}"
+
+        elif source == "gitlab":
+            project = payload.get("project", {})
+            project_path = project.get("path_with_namespace", "")
+            if project_path:
+                return f"gitlab:{project_path}"
+
+        return None
+
     def _extract_project_id(self, event_data: Dict[str, Any]) -> Optional[str]:
         """
         Extract the internal project_id from webhook event data.
@@ -107,42 +135,58 @@ class FlowTriggerService:
             return None
 
         repo_identifier = None
+        repo_external_id = None  # Numeric ID from the tracker platform
 
         if source == "github":
             repo = payload.get("repository", {})
             # GitHub uses full_name like "owner/repo"
             repo_identifier = repo.get("full_name") or repo.get("name")
+            repo_external_id = str(repo.get("id", "")) if repo.get("id") else None
 
         elif source == "gitlab":
             project = payload.get("project", {})
             # GitLab uses path_with_namespace like "group/project"
             repo_identifier = project.get("path_with_namespace") or project.get("name")
+            repo_external_id = str(project.get("id", "")) if project.get("id") else None
 
         if not repo_identifier:
             return None
 
-        # Look up project by name/identifier within the tracker
-        # This is a simple lookup - projects are identified by name within a tracker
+        # Derive the short repo name (last segment of path)
+        repo_name = (
+            repo_identifier.split("/")[-1]
+            if "/" in repo_identifier
+            else repo_identifier
+        )
+
+        # Look up project by name/identifier/slug within the tracker.
+        # GitLab projects store: identifier=numeric_id, slug=path_with_namespace, name=display_name
+        # GitHub projects store: identifier=numeric_id, slug=full_name, name=repo_name
         projects = crud_project.get_for_tracker(
             self.db, tracker_id=tracker_id, limit=1000
         )
 
         for proj in projects:
-            # Match by name or external_id if available
-            if proj.name == repo_identifier or (
-                hasattr(proj, "external_id") and proj.external_id == repo_identifier
-            ):
+            # Match by slug (path_with_namespace / full_name) - case-insensitive
+            if proj.slug and proj.slug.lower() == repo_identifier.lower():
                 return str(proj.id)
 
-            # Also try matching just the repo name (last part of path)
-            repo_name = (
-                repo_identifier.split("/")[-1]
-                if "/" in repo_identifier
-                else repo_identifier
-            )
-            if proj.name == repo_name:
+            # Match by identifier (numeric platform ID stored as string)
+            if repo_external_id and proj.identifier == repo_external_id:
                 return str(proj.id)
 
+            # Match by name - case-insensitive
+            if proj.name and proj.name.lower() == repo_identifier.lower():
+                return str(proj.id)
+
+            # Match short repo name against project name - case-insensitive
+            if proj.name and proj.name.lower() == repo_name.lower():
+                return str(proj.id)
+
+        logger.debug(
+            f"Could not match repo '{repo_identifier}' (external_id={repo_external_id}) "
+            f"to any of {len(projects)} projects for tracker {tracker_id}"
+        )
         return None
 
     def _has_running_execution(
@@ -254,23 +298,33 @@ class FlowTriggerService:
         return None
 
     def _has_execution_for_commit(
-        self, flow_id: uuid.UUID, commit_sha: str, account_id: str
+        self,
+        flow_id: uuid.UUID,
+        commit_sha: str,
+        account_id: str,
+        repo_key: Optional[str] = None,
     ) -> bool:
         """
-        Check if there's already an execution (running or recent) for this commit.
+        Check if there's already a running execution for this repo + commit.
 
-        This prevents duplicate executions when multiple events are triggered
-        for the same commit (e.g., push + PR description update).
+        Deduplication is scoped to (repo, commit_sha) so that:
+        - Same repo + same commit SHA  → blocked (duplicate)
+        - Same repo + different commit SHA → allowed
+        - Different repo + same commit SHA → allowed
 
         Args:
             flow_id: The flow to check
             commit_sha: The commit SHA to check
             account_id: Account ID for scoping
+            repo_key: Repository identifier (e.g. "github:owner/repo")
+                      for repo-level scoping.  When provided, only
+                      executions for the same repo are considered
+                      duplicates.
 
         Returns:
-            True if there's already an execution for this commit.
+            True if there's already a running execution for this
+            repo + commit combination.
         """
-        # Query for executions of this flow
         executions = crud_flow_execution.get_running_by_flow(
             self.db,
             flow_id=flow_id,
@@ -283,12 +337,26 @@ class FlowTriggerService:
             trigger_details = execution.trigger_event_details or {}
             exec_sha = self._extract_commit_sha(trigger_details)
 
-            if exec_sha and exec_sha == commit_sha:
-                logger.info(
-                    f"Found running execution {execution.id} for flow {flow_id} "
-                    f"and commit {commit_sha[:8]} (status: {execution.status})"
-                )
-                return True
+            if not exec_sha or exec_sha != commit_sha:
+                continue
+
+            # Commit SHA matches — now check repo scoping
+            if repo_key:
+                exec_event_data = {
+                    "source": trigger_details.get("source", ""),
+                    "payload": trigger_details.get("payload", {}),
+                }
+                exec_repo_key = self._extract_repo_key(exec_event_data)
+                if exec_repo_key != repo_key:
+                    # Same commit in a different repo — allow it
+                    continue
+
+            logger.info(
+                f"Found running execution {execution.id} for flow {flow_id}, "
+                f"repo {repo_key or '(any)'}, and commit {commit_sha[:8]} "
+                f"(status: {execution.status})"
+            )
+            return True
 
         return False
 
@@ -560,42 +628,30 @@ class FlowTriggerService:
             # Get NATS client for publishing updates
             nats_client = await get_nats_client()
 
-            # Extract resource key for deduplication
-            resource_key = self._extract_resource_key(event_data)
-            if resource_key:
-                logger.info(f"Extracted resource key for deduplication: {resource_key}")
-
-            # Extract commit SHA for deduplication
+            # Extract repo key and commit SHA for deduplication.
+            # Dedup is scoped to (repo, commit_sha) so that different repos
+            # or different commits for the same repo can run in parallel.
+            repo_key = self._extract_repo_key(event_data)
             commit_sha = self._extract_commit_sha(event_data)
+            if repo_key:
+                logger.info(f"Extracted repo key for deduplication: {repo_key}")
             if commit_sha:
                 logger.info(f"Extracted commit SHA for deduplication: {commit_sha[:8]}")
 
             # Trigger each matching flow
             for flow in flows_to_trigger:
                 try:
-                    # Check for running execution on the same resource
-                    if resource_key and account_id:
-                        if self._has_running_execution(
-                            flow.id, resource_key, account_id
-                        ):
-                            logger.info(
-                                f"Skipping flow '{flow.name}' ({flow.id}) - "
-                                f"already has a running execution for resource {resource_key}. "
-                                f"To avoid duplicate executions, events about the same resource "
-                                f"are not processed while an execution is in progress."
-                            )
-                            continue
-
-                    # Check for running execution with the same commit SHA
-                    # This catches cases where multiple events are triggered for the same
-                    # commit (e.g., push event + PR update when description is edited)
+                    # Check for a running execution with the same repo + commit SHA.
+                    # This catches duplicate events for the same commit
+                    # (e.g., push + PR update when description is edited).
                     if commit_sha and account_id:
                         if self._has_execution_for_commit(
-                            flow.id, commit_sha, account_id
+                            flow.id, commit_sha, account_id, repo_key=repo_key
                         ):
                             logger.info(
                                 f"Skipping flow '{flow.name}' ({flow.id}) - "
-                                f"already has a running execution for commit {commit_sha[:8]}. "
+                                f"already has a running execution for "
+                                f"repo {repo_key or '(any)'} commit {commit_sha[:8]}. "
                                 f"This prevents duplicate executions when multiple events "
                                 f"are triggered for the same commit."
                             )

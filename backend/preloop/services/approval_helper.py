@@ -23,6 +23,7 @@ async def require_approval(
     ctx: Optional[Context] = None,
     policy_id: Optional[str] = None,
     correlation_id: Optional[str] = None,
+    justification: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Check if tool requires approval and wait for decision with streaming.
 
@@ -40,6 +41,9 @@ async def require_approval(
                   instead of looking up from tool configuration. Useful for standalone
                   approval requests where no tool configuration exists.
         correlation_id: Optional correlation ID for grouping related audit events.
+        justification: Optional justification text provided by the agent explaining
+                      why this tool is being called. Injected by DynamicFastMCP when
+                      justification_mode is configured on the tool.
 
     Returns:
         Tuple of (approved: bool, error_message: str)
@@ -47,6 +51,14 @@ async def require_approval(
         - If declined/error: (False, "error message")
     """
     try:
+        # Check if approval should be bypassed (e.g. during async re-execution
+        # of an already-approved tool call).
+        from preloop.services.dynamic_fastmcp import _bypass_approval_var
+
+        if _bypass_approval_var.get(False):
+            logger.info(f"Bypassing approval for '{tool_name}' (async re-execution)")
+            return (True, "")
+
         from preloop.models.db.session import get_async_db_session
         from preloop.models.crud.tool_configuration import (
             get_tool_config_by_name_and_source_async,
@@ -135,6 +147,7 @@ async def require_approval(
 
                 logger.info(f"Access rules found: {len(access_rules)}")
 
+                matched_require_approval = False
                 for rule in access_rules:
                     logger.info(
                         f"  - rule={rule.id}, action={rule.action}, "
@@ -150,6 +163,13 @@ async def require_approval(
 
                             evaluator = ArgumentEvaluator()
 
+                            # Normalise expression: prepend 'args.' if missing.
+                            # Users configure rules with plain field names,
+                            # e.g. "amount > 300" instead of "args.amount > 300".
+                            expression = rule.condition_expression.strip()
+                            if not expression.startswith("args."):
+                                expression = f"args.{expression}"
+
                             eval_context = {
                                 "tool_name": tool_name,
                                 "args": arguments,
@@ -163,9 +183,7 @@ async def require_approval(
                             }
 
                             matches = await evaluator.evaluate(
-                                condition_config={
-                                    "expression": rule.condition_expression
-                                },
+                                condition_config={"expression": expression},
                                 tool_args=arguments,
                                 context=eval_context,
                             )
@@ -190,7 +208,18 @@ async def require_approval(
                             f"Tool {tool_name} ({tool_source}) denied by access rule"
                         )
                         return (False, f"Tool '{tool_name}' is denied by access rule")
-                    # 'require_approval' falls through to the approval flow below
+                    elif rule.action == "require_approval":
+                        matched_require_approval = True
+                        break  # Proceed to approval flow below
+
+                # If access rules exist but none matched, default to allow.
+                # This is consistent with policy_evaluator.py's behavior.
+                if access_rules and not matched_require_approval:
+                    logger.info(
+                        f"Tool {tool_name} ({tool_source}): {len(access_rules)} "
+                        f"access rules exist but none matched — default allow"
+                    )
+                    return (True, "")
 
                 # Get approval policy from tool configuration
                 policy = await get_approval_policy_async(
@@ -226,7 +255,7 @@ async def require_approval(
                     approval_policy=policy,
                     tool_name=tool_name,
                     tool_args=arguments,
-                    agent_reasoning=None,
+                    agent_reasoning=justification,
                     execution_id=None,
                 )
 
@@ -252,6 +281,92 @@ async def require_approval(
                     f"{'=' * 60}\n"
                     f"⏳ Waiting for approval (polling every 2s)..."
                 )
+
+                # Record initial events in the event log
+                from preloop.models.models.approval_event import (
+                    ApprovalEvent as ApprovalEventModel,
+                )
+
+                async with get_async_db_session() as event_db:
+                    # Record approval request creation
+                    event_db.add(
+                        ApprovalEventModel(
+                            approval_request_id=approval_request.id,
+                            account_id=account_id,
+                            event_type="approval_requested",
+                            detail=f"Approval request created for tool '{tool_name}'",
+                        )
+                    )
+                    # Record notification events
+                    for channel in notification_channels:
+                        event_db.add(
+                            ApprovalEventModel(
+                                approval_request_id=approval_request.id,
+                                account_id=account_id,
+                                event_type="notification_sent",
+                                detail=f"Notification sent via {channel}",
+                            )
+                        )
+                    await event_db.commit()
+
+                # Check if async approval mode is enabled
+                if getattr(policy, "async_approval_enabled", False):
+                    import json
+
+                    logger.info(
+                        f"Async approval enabled for policy '{policy.name}' - "
+                        f"returning immediately with polling instructions"
+                    )
+
+                    # Build approver display names
+                    approver_display = []
+                    if policy.approver_user_ids:
+                        # Try to resolve user emails
+                        try:
+                            from sqlalchemy import select
+                            from preloop.models.models.user import User
+
+                            async with get_async_db_session() as user_db:
+                                users_result = await user_db.execute(
+                                    select(User).where(
+                                        User.id.in_(policy.approver_user_ids)
+                                    )
+                                )
+                                for u in users_result.scalars():
+                                    approver_display.append(u.email or u.username)
+                        except Exception:
+                            approver_display = [
+                                str(uid) for uid in policy.approver_user_ids
+                            ]
+
+                    poll_interval = min(15, (policy.timeout_seconds or 300) // 20)
+                    poll_interval = max(5, poll_interval)  # At least 5 seconds
+
+                    async_response = {
+                        "status": "pending_approval",
+                        "request_id": str(approval_request.id),
+                        "message": (
+                            f"This tool call triggered approval policy '{policy.name}'. "
+                            f"Approval request has been sent to {', '.join(approver_display) if approver_display else 'configured approvers'} "
+                            f"via {channels_display}. "
+                            f"Poll the approval status by calling get_approval_status(request_id='{approval_request.id}') "
+                            f"every {poll_interval} seconds for up to {policy.timeout_seconds or 300} seconds. "
+                            f"When the status is 'approved', the response will include the tool execution result. "
+                            f"When the status is 'declined' or 'expired', stop polling and inform the user."
+                        ),
+                        "poll_interval_seconds": poll_interval,
+                        "timeout_seconds": policy.timeout_seconds or 300,
+                        "channels": notification_channels,
+                        # NOTE: approval_url intentionally excluded from
+                        # agent-visible response. The URL contains a bearer
+                        # token; exposing it would let the agent self-approve.
+                        # The link is delivered only via trusted notification
+                        # channels (email, Slack, mobile push, web UI).
+                    }
+                    if approver_display:
+                        async_response["approvers"] = approver_display
+
+                    return (False, json.dumps(async_response))
 
                 # Send initial notification via Context (FastMCP streaming)
                 if ctx:

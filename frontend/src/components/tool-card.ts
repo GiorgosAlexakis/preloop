@@ -48,6 +48,7 @@ export interface Tool {
   approval_policy_id: string | null;
   has_approval_condition: boolean;
   config_id: string | null;
+  justification_mode?: string | null;
 }
 
 export interface ApprovalPolicy {

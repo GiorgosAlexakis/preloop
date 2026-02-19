@@ -7,6 +7,12 @@ import '@shoelace-style/shoelace/dist/components/switch/switch.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
+import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
+import '@shoelace-style/shoelace/dist/components/menu/menu.js';
+import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
+import '@shoelace-style/shoelace/dist/components/radio/radio.js';
 import './tool-rule-editor';
 import type { Tool, ApprovalPolicy } from './tool-card';
 import type { AccessRule } from '../api';
@@ -33,6 +39,9 @@ export class ToolListItem extends LitElement {
 
   @state() private _showRuleEditor = false;
   @state() private _editingRule: AccessRule | null = null;
+
+  @state() private _showJustificationDialog = false;
+  @state() private _justificationMode: string = 'disabled';
 
   @state() private _dragIndex: number | null = null;
   @state() private _dragOverIndex: number | null = null;
@@ -146,6 +155,7 @@ export class ToolListItem extends LitElement {
 
     .tool-toggle {
       flex-shrink: 0;
+      margin-top: -3px;
     }
 
     /* Expanded content */
@@ -514,6 +524,44 @@ export class ToolListItem extends LitElement {
     this._dragOverIndex = null;
   }
 
+  private _openJustificationDialog() {
+    this._justificationMode = this.tool.justification_mode || 'disabled';
+    this._showJustificationDialog = true;
+  }
+
+  private async _saveJustificationMode() {
+    try {
+      const { updateToolConfiguration, createToolConfiguration } =
+        await import('../api');
+      let configId = this.tool.config_id;
+      if (!configId) {
+        const config = await createToolConfiguration({
+          tool_name: this.tool.name,
+          tool_source: this.tool.source || 'builtin',
+          is_enabled: this.tool.is_enabled !== false,
+          justification_mode:
+            this._justificationMode === 'disabled'
+              ? null
+              : this._justificationMode,
+        });
+        configId = config.id;
+      } else {
+        await updateToolConfiguration(configId, {
+          justification_mode:
+            this._justificationMode === 'disabled'
+              ? null
+              : this._justificationMode,
+        });
+      }
+      this._showJustificationDialog = false;
+      this.dispatchEvent(
+        new CustomEvent('tool-updated', { bubbles: true, composed: true })
+      );
+    } catch (error) {
+      console.error('Failed to save justification mode:', error);
+    }
+  }
+
   private _renderRuleItem(rule: AccessRuleSummary, index: number) {
     const policy = rule.approval_policy_id
       ? this.policies.find((p) => p.id === rule.approval_policy_id)
@@ -667,6 +715,23 @@ export class ToolListItem extends LitElement {
               @sl-change=${this._handleToggleEnabled}
             ></sl-switch>
           </div>
+
+          <div @click=${(e: Event) => e.stopPropagation()}>
+            <sl-dropdown>
+              <sl-icon-button
+                slot="trigger"
+                name="three-dots-vertical"
+                label="Tool settings"
+                style="font-size: 1.2rem;"
+              ></sl-icon-button>
+              <sl-menu>
+                <sl-menu-item @click=${() => this._openJustificationDialog()}>
+                  <sl-icon slot="prefix" name="shield-shaded"></sl-icon>
+                  Justification settings
+                </sl-menu-item>
+              </sl-menu>
+            </sl-dropdown>
+          </div>
         </div>
 
         ${this.expanded ? this._renderExpandedContent() : ''}
@@ -684,6 +749,38 @@ export class ToolListItem extends LitElement {
         @policy-created=${this._handlePolicyCreated}
         @close=${this._closeRuleEditor}
       ></tool-rule-editor>
+
+      <sl-dialog
+        label="Justification Settings"
+        ?open=${this._showJustificationDialog}
+        @sl-after-hide=${() => {
+          this._showJustificationDialog = false;
+        }}
+      >
+        <p style="margin-top: 0; color: var(--sl-color-neutral-600);">
+          Configure whether agents must provide justification when calling this
+          tool. Justification is used for auditing and approval workflows.
+        </p>
+        <sl-radio-group
+          label="Justification requirement"
+          value=${this._justificationMode}
+          @sl-change=${(e: Event) => {
+            this._justificationMode = (e.target as any).value;
+          }}
+        >
+          <sl-radio value="disabled">Disabled</sl-radio>
+          <sl-radio value="optional">Optional</sl-radio>
+          <sl-radio value="required">Required</sl-radio>
+        </sl-radio-group>
+        <div slot="footer">
+          <sl-button
+            variant="primary"
+            @click=${() => this._saveJustificationMode()}
+          >
+            Save
+          </sl-button>
+        </div>
+      </sl-dialog>
     `;
   }
 }

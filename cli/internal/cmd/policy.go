@@ -15,11 +15,13 @@ import (
 )
 
 const (
-	policiesValidatePath = "/api/v1/policies/validate"
-	policiesUploadPath   = "/api/v1/policies/upload"
-	policiesDiffPath     = "/api/v1/policies/diff"
-	policiesExportPath   = "/api/v1/policies/export"
-	policiesListPath     = "/api/v1/policies"
+	policiesValidatePath       = "/api/v1/policies/validate"
+	policiesUploadPath         = "/api/v1/policies/upload"
+	policiesDiffPath           = "/api/v1/policies/diff"
+	policiesExportPath         = "/api/v1/policies/export"
+	policiesListPath           = "/api/v1/policies"
+	policiesGeneratePath       = "/api/v1/policies/generate"
+	policiesGenerateAuditPath  = "/api/v1/policies/generate-from-audit"
 )
 
 // PolicyFile represents a policy file for upload.
@@ -140,6 +142,33 @@ var policyListCmd = &cobra.Command{
 	RunE:  runPolicyList,
 }
 
+// policyGenerateCmd represents the policy generate command.
+var policyGenerateCmd = &cobra.Command{
+	Use:   "generate",
+	Short: "Generate a policy using AI",
+	Long: `Generate a Preloop policy YAML from a natural-language description
+or from historical audit-log tool-call patterns.
+
+Requires at least one AI model configured on your account.
+
+Examples:
+  # Generate from an inline prompt
+  preloop policy generate "require approval for any payment over $500"
+
+  # Generate from a prompt file
+  preloop policy generate --file prompt.txt
+
+  # Generate from audit logs (last 30 days)
+  preloop policy generate --from-audit-logs
+
+  # Generate from audit logs with a date range
+  preloop policy generate --from-audit-logs --start-date 2026-01-01 --end-date 2026-02-01
+
+  # Write generated policy to a file
+  preloop policy generate "deny all destructive tools" -o policy.yaml`,
+	RunE: runPolicyGenerate,
+}
+
 func init() {
 	// Add subcommands
 	policyCmd.AddCommand(policyValidateCmd)
@@ -147,6 +176,7 @@ func init() {
 	policyCmd.AddCommand(policyDiffCmd)
 	policyCmd.AddCommand(policyExportCmd)
 	policyCmd.AddCommand(policyListCmd)
+	policyCmd.AddCommand(policyGenerateCmd)
 
 	// Flags for apply
 	policyApplyCmd.Flags().Bool("dry-run", false, "validate and show what would be applied without making changes")
@@ -157,6 +187,14 @@ func init() {
 
 	// Flags for list
 	policyListCmd.Flags().StringP("format", "f", "table", "output format (table, json, yaml)")
+
+	// Flags for generate
+	policyGenerateCmd.Flags().StringP("output", "o", "", "output file (default: stdout)")
+	policyGenerateCmd.Flags().StringP("file", "f", "", "read prompt from a file instead of inline argument")
+	policyGenerateCmd.Flags().Bool("from-audit-logs", false, "generate policy from audit-log tool-call patterns")
+	policyGenerateCmd.Flags().String("start-date", "", "only consider audit logs after this ISO date (e.g. 2026-01-01)")
+	policyGenerateCmd.Flags().String("end-date", "", "only consider audit logs before this ISO date")
+	policyGenerateCmd.Flags().Bool("no-context", false, "do not include current account config as context for the LLM")
 }
 
 // runPolicyValidate validates a policy file.
@@ -453,4 +491,98 @@ func runPolicyList(cmd *cobra.Command, args []string) error {
 		}
 		return w.Flush()
 	}
+}
+
+// GenerateResponse represents the response from policy generation.
+type GenerateResponse struct {
+	YAML     string   `json:"yaml"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// runPolicyGenerate generates a policy using AI.
+func runPolicyGenerate(cmd *cobra.Command, args []string) error {
+	fromAuditLogs, _ := cmd.Flags().GetBool("from-audit-logs")
+	output, _ := cmd.Flags().GetString("output")
+	promptFile, _ := cmd.Flags().GetString("file")
+	noContext, _ := cmd.Flags().GetBool("no-context")
+	startDate, _ := cmd.Flags().GetString("start-date")
+	endDate, _ := cmd.Flags().GetString("end-date")
+
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	if !client.IsAuthenticated() {
+		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+	}
+
+	var result GenerateResponse
+
+	if fromAuditLogs {
+		// Generate from audit logs
+		fmt.Println("Analysing audit-log tool-call patterns...")
+
+		request := map[string]interface{}{}
+		if startDate != "" {
+			request["start_date"] = startDate
+		}
+		if endDate != "" {
+			request["end_date"] = endDate
+		}
+
+		if err := client.Post(policiesGenerateAuditPath, request, &result); err != nil {
+			return fmt.Errorf("failed to generate policy from audit logs: %w", err)
+		}
+	} else {
+		// Generate from prompt
+		var prompt string
+
+		if promptFile != "" {
+			content, err := os.ReadFile(promptFile)
+			if err != nil {
+				return fmt.Errorf("failed to read prompt file: %w", err)
+			}
+			prompt = string(content)
+		} else if len(args) > 0 {
+			prompt = strings.Join(args, " ")
+		} else {
+			return fmt.Errorf("provide a prompt as an argument or use --file to read from a file")
+		}
+
+		fmt.Println("Generating policy from description...")
+
+		request := map[string]interface{}{
+			"prompt":                 prompt,
+			"include_current_config": !noContext,
+		}
+
+		if err := client.Post(policiesGeneratePath, request, &result); err != nil {
+			return fmt.Errorf("failed to generate policy: %w", err)
+		}
+	}
+
+	// Show warnings
+	if len(result.Warnings) > 0 {
+		fmt.Println("\nWarnings:")
+		for _, w := range result.Warnings {
+			fmt.Printf("  ⚠ %s\n", w)
+		}
+		fmt.Println()
+	}
+
+	// Output the YAML
+	if output != "" {
+		if err := os.WriteFile(output, []byte(result.YAML), 0644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+		fmt.Printf("✓ Generated policy written to: %s\n", output)
+	} else {
+		fmt.Println("\n---")
+		fmt.Print(result.YAML)
+		fmt.Println("---")
+		fmt.Println("\nTip: Use -o policy.yaml to write to a file, then 'preloop policy apply policy.yaml' to apply it.")
+	}
+
+	return nil
 }

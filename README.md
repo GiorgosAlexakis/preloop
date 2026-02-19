@@ -42,6 +42,8 @@ When AI attempts a protected operation, Preloop pauses and notifies you:
 
 - **Instant notifications** via mobile app, Slack, email, or Mattermost
 - **One-tap approvals** from your phone, watch, or desktop
+- **Async approval mode** — tool returns immediately with a polling handle; the agent polls `get_approval_status` until approved, then receives the tool result (Enterprise)
+- **Per-tool justification** — require or optionally request agents to explain *why* a tool is being called before approval (Enterprise)
 - **Team-based approvals** with quorum requirements (Enterprise)
 - **Escalation policies** for time-sensitive operations (Enterprise)
 
@@ -61,11 +63,13 @@ approval_policies:
   - name: "deploy-approval"
     timeout_seconds: 600
     required_approvals: 1
+    async_approval: true          # Agent polls instead of blocking
 
 tools:
   - name: "bash"
     source: mcp
     approval_policy: "deploy-approval"
+    justification: required        # Agent must explain the call
     conditions:
       - expression: "args.command.contains('deploy') && args.command.contains('production')"
         action: require_approval
@@ -128,6 +132,8 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 - **Instant Notifications.** Get alerts on mobile, Slack, email, or Mattermost.
 - **One-Tap Approvals.** Approve or reject from your phone, watch, or desktop.
 - **Full Audit Trail.** Complete log of every AI action and policy decision.
+- **Async Approval Mode (Enterprise).** Non-blocking approval: tool returns immediately, agent polls `get_approval_status` until the human decides.
+- **Per-Tool Justification (Enterprise).** Require agents to provide a reason for each tool call. Mode: `required` (blocks without it) or `optional` (agent may provide one).
 - **Flexible Conditions.** Use CEL expressions for context-aware rules (Enterprise).
 - **AI Approval (Enterprise).** AI-driven approval with configurable model, prompt, confidence threshold, and fallback behavior.
 - **Team Approvals.** Require quorum from multiple team members for critical ops (Enterprise).
@@ -511,6 +517,56 @@ Preloop provides a RESTful API with the following key endpoints:
 - `POST /api/v1/flows/executions/{id}/command` - Send command to execution (e.g., stop)
 - `POST /api/v1/flows/executions/{id}/retry` - Retry a failed/stopped/cancelled execution
 
+### Policy Generation
+- `POST /api/v1/policies/generate` - Generate policy YAML from a natural-language prompt
+- `POST /api/v1/policies/generate-from-audit` - Generate policy YAML from audit-log tool-call patterns
+
+**Prerequisites:** At least one AI model must be configured in Settings → AI Models.
+
+**Generate from Prompt:**
+
+```bash
+curl -X POST "https://YOUR_PRELOOP_URL/api/v1/policies/generate" \
+-H "Authorization: Bearer YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+  "prompt": "require approval for any bash command that modifies production",
+  "include_current_config": true
+}'
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `prompt` | string | Yes | Natural-language description of the desired policy |
+| `include_current_config` | boolean | No | Include current account config as LLM context (default: `true`) |
+
+**Generate from Audit Logs:**
+
+```bash
+curl -X POST "https://YOUR_PRELOOP_URL/api/v1/policies/generate-from-audit" \
+-H "Authorization: Bearer YOUR_API_KEY" \
+-H "Content-Type: application/json" \
+-d '{
+  "start_date": "2026-01-01",
+  "end_date": "2026-02-01"
+}'
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `start_date` | string | No | ISO date to filter audit logs from (e.g. `2026-01-01`) |
+| `end_date` | string | No | ISO date to filter audit logs until |
+| `audit_logs_json` | string | No | Raw JSON array of external audit logs (bypasses DB lookup) |
+
+**Response (both endpoints):**
+
+```json
+{
+  "yaml": "version: \"1.0\"\nmetadata:\n  name: ...",
+  "warnings": ["Optional validation warnings"]
+}
+```
+
 ## Trackers
 - `GET /api/v1/trackers` - List trackers
 - `GET /api/v1/trackers/{tracker_id}` - Get tracker details
@@ -661,6 +717,50 @@ curl -X POST "https://YOUR_PRELOOP_URL/api/v1/tool-configurations" \
 
 > **Enterprise Features**: Preloop Enterprise Edition adds CEL-based conditional approvals, team-based approvals with quorum, escalation policies, and multi-channel notifications (Slack, Mattermost, mobile push). Contact sales@spacecode.ai for more information.
 
+### Configuring Timeouts for Approval Workflows
+
+When using approval workflows, tool calls may take several minutes while waiting for human approval. Most MCP clients have default timeouts that are too short for approval workflows. Configure your client's timeout accordingly:
+
+**Claude Code** (`~/.claude.json` or project `.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "preloop": {
+      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
+      "timeout": 600000
+    }
+  }
+}
+```
+
+**Cursor / VS Code** (`.cursor/mcp.json` or VS Code settings):
+```json
+{
+  "mcpServers": {
+    "preloop": {
+      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
+      "timeout": 600000
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "preloop": {
+      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
+      "timeout": 600000
+    }
+  }
+}
+```
+
+The timeout value is in milliseconds. 600000ms = 10 minutes, which should be sufficient for most approval workflows. Adjust based on your approval policy's `timeout_seconds` setting.
+
+> **Tip**: If your approval policy has **async mode** enabled (`async_approval: true`), the tool returns immediately with a `pending_approval` status and a `request_id`. The agent automatically polls `get_approval_status(request_id)` until the human approves, at which point the tool executes and the result is returned in the poll response. No client timeout increase is needed in this mode.
+
 ### Mobile Push Notifications (iOS/Android)
 
 Open-source users can enable mobile push notifications by proxying requests through the production Preloop server at https://preloop.ai.
@@ -754,6 +854,8 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | **Access rules with CEL conditions** | Basic (single condition) | Advanced (multiple conditions, AND/OR, CEL editor) |
 | **AI-driven approval policies** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
+| **Async approval mode** | ❌ | ✅ |
+| **Per-tool justification settings** | ❌ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
 | **Slack notifications** | ❌ | ✅ |
 | **Mattermost notifications** | ❌ | ✅ |
