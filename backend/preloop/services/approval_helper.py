@@ -684,20 +684,18 @@ async def require_approval(
                 if ctx:
                     try:
                         # Determine final status message
-                        if final_request.status == "approved":
+                        if final_status == "approved":
                             status_message = "Approved"
-                            if final_request.approver_comment:
-                                status_message += f": {final_request.approver_comment}"
-                        elif final_request.status == "declined":
+                            if final_comment:
+                                status_message += f": {final_comment}"
+                        elif final_status == "declined":
                             status_message = "Declined"
-                            if final_request.approver_comment:
-                                status_message += f": {final_request.approver_comment}"
-                        elif final_request.status == "cancelled":
+                            if final_comment:
+                                status_message += f": {final_comment}"
+                        elif final_status == "cancelled":
                             status_message = "Request cancelled"
                         else:
-                            status_message = (
-                                f"Unexpected status: {final_request.status}"
-                            )
+                            status_message = f"Unexpected status: {final_status}"
 
                         await ctx.report_progress(
                             progress=100, total=100, message=status_message
@@ -712,24 +710,20 @@ async def require_approval(
                         )
 
                 # Check final status
-                if final_request.status == "declined":
+                if final_status == "declined":
                     logger.warning(f"Tool {tool_name} execution declined")
-                    comment = (
-                        f": {final_request.approver_comment}"
-                        if final_request.approver_comment
-                        else ""
-                    )
+                    comment = f": {final_comment}" if final_comment else ""
                     return (False, f"Tool execution declined{comment}")
-                elif final_request.status == "cancelled":
+                elif final_status == "cancelled":
                     logger.warning(f"Tool {tool_name} execution cancelled")
                     return (False, "Tool execution cancelled")
-                elif final_request.status != "approved":
+                elif final_status != "approved":
                     logger.error(
-                        f"Unexpected approval status for tool {tool_name}: {final_request.status}"
+                        f"Unexpected approval status for tool {tool_name}: {final_status}"
                     )
                     return (
                         False,
-                        f"Unexpected approval status: {final_request.status}",
+                        f"Unexpected approval status: {final_status}",
                     )
 
                 # Approved! Continue with execution
