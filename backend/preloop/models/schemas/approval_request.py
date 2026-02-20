@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, computed_field
 
 
 class ApprovalRequestBase(BaseModel):
@@ -65,6 +65,12 @@ class ApprovalRequestResponse(ApprovalRequestBase):
     ai_model: Optional[str] = None
     ai_confidence: Optional[float] = None
     ai_reasoning: Optional[str] = None
+
+    # Computed fields for backward compatibility
+    @computed_field
+    def approval_policy_id(self) -> str:
+        """Alias for backward compatibility with older mobile app versions."""
+        return str(self.approval_workflow_id)
 
     model_config = ConfigDict(from_attributes=True)
 

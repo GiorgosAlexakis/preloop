@@ -5322,6 +5322,11 @@ components:
           - type: string
           - type: 'null'
           title: Ai Reasoning
+        approval_policy_id:
+          type: string
+          title: Approval Policy Id
+          description: Alias for backward compatibility with older mobile app versions.
+          readOnly: true
       type: object
       required:
       - tool_name
@@ -5336,6 +5341,7 @@ components:
       - approver_comment
       - webhook_posted_at
       - webhook_error
+      - approval_policy_id
       title: ApprovalRequestResponse
       description: Schema for approval request response.
     ApprovalWorkflowCreate:
