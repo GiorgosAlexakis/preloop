@@ -489,7 +489,11 @@ class DynamicMCPServer:
             return "require_approval", None, f"Policy evaluation error: {e}"
 
     async def _request_and_wait_for_approval(
-        self, user_context: UserContext, tool_name: str, tool_args: dict
+        self,
+        user_context: UserContext,
+        tool_name: str,
+        tool_args: dict,
+        approval_workflow_id: Optional[str] = None,
     ):
         """Request approval and wait for user response.
 
@@ -534,12 +538,15 @@ class DynamicMCPServer:
                         tool_source="mcp",
                     )
 
-                if not config or not config.approval_workflow_id:
+                final_workflow_id = approval_workflow_id or (
+                    config.approval_workflow_id if config else None
+                )
+                if not final_workflow_id:
                     raise Exception("No approval workflow configured for this tool")
 
                 # Get approval workflow using CRUD
                 policy = await get_approval_workflow_async(
-                    db, workflow_id=config.approval_workflow_id
+                    db, workflow_id=final_workflow_id
                 )
 
                 if not policy:
@@ -560,7 +567,7 @@ class DynamicMCPServer:
                 # Create approval request and send notification
                 approval_request = await approval_service.create_and_notify(
                     account_id=user_context.account_id,
-                    tool_configuration_id=config.id,
+                    tool_configuration_id=config.id if config else None,
                     approval_workflow=policy,
                     tool_name=tool_name,
                     tool_args=tool_args,
