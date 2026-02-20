@@ -2069,7 +2069,7 @@ DENY if:
                               ? html`
                                   <div class="form-field">
                                     <label class="form-label"
-                                      >Escalation Policy</label
+                                      >Escalation Workflow</label
                                     >
                                     <sl-select
                                       value=${this
@@ -2079,7 +2079,7 @@ DENY if:
                                         this.newPolicyEscalationWorkflowId =
                                           e.target.value;
                                       }}
-                                      placeholder="Select a policy for escalation..."
+                                      placeholder="Select a workflow for escalation..."
                                       help-text="The approval workflow to use when AI confidence is below threshold"
                                     >
                                       ${this.policies
@@ -2106,8 +2106,8 @@ DENY if:
                                               name="exclamation-triangle"
                                             ></sl-icon>
                                             <span
-                                              >No escalation policy selected. AI
-                                              decisions below threshold will
+                                              >No escalation workflow selected.
+                                              AI decisions below threshold will
                                               have no fallback.</span
                                             >
                                           </div>

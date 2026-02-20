@@ -624,12 +624,12 @@ DENY if:
         ${this._aiFallbackBehavior === 'escalate'
           ? html`
               <div class="form-field">
-                <label class="form-label">Escalation Policy</label>
+                <label class="form-label">Escalation Workflow</label>
                 <sl-select
                   .value=${this._escalationWorkflowId}
                   @sl-change=${(e: any) =>
                     (this._escalationWorkflowId = e.target.value)}
-                  placeholder="Select a policy for escalation..."
+                  placeholder="Select a workflow for escalation..."
                   clearable
                 >
                   ${standardPolicies.map(

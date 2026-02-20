@@ -1058,7 +1058,7 @@ class PolicyApplier:
             if not policy:
                 continue
 
-            # Look up the escalation policy by name
+            # Look up the escalation workflow by name
             escalation_workflow_id = self._policy_map.get(
                 policy_def.escalation_workflow
             )
@@ -1075,7 +1075,7 @@ class PolicyApplier:
             if escalation_workflow_id:
                 policy.escalation_workflow_id = escalation_workflow_id
                 logger.info(
-                    f"Resolved escalation policy '{policy_def.escalation_workflow}' "
+                    f"Resolved escalation workflow '{policy_def.escalation_workflow}' "
                     f"for policy '{policy_def.name}'"
                 )
             else:
@@ -1449,7 +1449,7 @@ def export_current_policy(
         db, account_id=account_id_str
     )
 
-    # Build policy name lookup first (needed for escalation policy resolution)
+    # Build workflow name lookup first (needed for escalation workflow resolution)
     workflow_name_map = {str(p.id): p.name for p in policies}
 
     policy_defs = []
@@ -1462,7 +1462,7 @@ def export_current_policy(
             else "standard"
         )
 
-        # Resolve escalation policy name from ID
+        # Resolve escalation workflow name from ID
         escalation_workflow_name = None
         escalation_workflow_id = getattr(policy, "escalation_workflow_id", None)
         if escalation_workflow_id:
