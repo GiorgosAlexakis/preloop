@@ -99,11 +99,16 @@ export class RegisterView extends LitElement {
     const password = formData.get('password') as string;
 
     try {
-      await post('/api/v1/auth/register', {
+      const registerResult = await post('/api/v1/auth/register', {
         username,
         email,
         password,
       });
+
+      // If the backend returns an error in the payload instead of throwing an HTTP error
+      if (registerResult && registerResult.error) {
+        throw new Error(registerResult.error);
+      }
 
       if (this._billingEnabled) {
         try {
@@ -146,6 +151,7 @@ export class RegisterView extends LitElement {
         }
       }
 
+      // Only go to login if billing is disabled or if stripe fails and doesn't redirect
       Router.go('/login?registered=true');
     } catch (error) {
       if (error instanceof Error) {
@@ -154,6 +160,8 @@ export class RegisterView extends LitElement {
         this.error = 'Failed to create an account';
       }
       console.error('Create account failed', error);
+      // Ensure we don't proceed with checkout if registration failed
+      return;
     }
   }
 
@@ -163,22 +171,22 @@ export class RegisterView extends LitElement {
     return html`
       <div class="oauth-section">
         ${this.oauthProviders.map((provider) => {
-          const config = OAUTH_PROVIDER_CONFIG[provider];
-          if (!config) return nothing;
-          return html`
+      const config = OAUTH_PROVIDER_CONFIG[provider];
+      if (!config) return nothing;
+      return html`
             <sl-button
               class="oauth-button"
               variant="default"
               size="large"
               @click=${() => {
-                window.location.href = `/api/v1/auth/oauth/${provider}/authorize`;
-              }}
+          window.location.href = `/api/v1/auth/oauth/${provider}/authorize`;
+        }}
             >
               <sl-icon name="${config.icon}" slot="prefix"></sl-icon>
               Sign up with ${config.label}
             </sl-button>
           `;
-        })}
+    })}
       </div>
       <div class="divider">or sign up with email</div>
     `;
@@ -195,8 +203,8 @@ export class RegisterView extends LitElement {
         <div class="form-container">
           <h2>Create a ${getBrandConfig().name} account</h2>
           ${this.error
-            ? html`<div class="error-message">${this.error}</div>`
-            : ''}
+        ? html`<div class="error-message">${this.error}</div>`
+        : ''}
           ${this._renderOAuthButtons()}
           <form @submit=${this.handleRegister}>
             <div class="form-group">
