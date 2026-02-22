@@ -529,6 +529,7 @@ export class LandingView extends LitElement {
               <section class="extended-description-section main-section">
                 <div class="section-container">
                   <p class="lead text-center">${this._extendedDescription}</p>
+                  <img src="/assets/mcp-firewall.svg" />
                 </div>
               </section>
             `

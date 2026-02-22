@@ -24,6 +24,9 @@ export class RegisterView extends LitElement {
   @state()
   private oauthProviders: string[] = [];
 
+  @state()
+  private _billingEnabled = false;
+
   static styles = [
     formStyles,
     css`
@@ -80,8 +83,10 @@ export class RegisterView extends LitElement {
       const features = await getFeatures();
       const providers = features.features['oauth_providers'];
       this.oauthProviders = Array.isArray(providers) ? providers : [];
+      this._billingEnabled = features.features['billing'] === true;
     } catch (error) {
       this.oauthProviders = [];
+      this._billingEnabled = false;
     }
   }
 
@@ -99,6 +104,48 @@ export class RegisterView extends LitElement {
         email,
         password,
       });
+
+      if (this._billingEnabled) {
+        try {
+          const authData = await post('/api/v1/auth/token/json', {
+            username,
+            password,
+          });
+
+          if (authData && authData.access_token) {
+            localStorage.setItem('accessToken', authData.access_token);
+
+            const response = await fetch(
+              '/api/v1/billing/create-checkout-session',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${authData.access_token}`,
+                },
+                body: JSON.stringify({
+                  plan_id: 'teams',
+                  interval: 'month',
+                }),
+              }
+            );
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result.action === 'redirect' && result.url) {
+                window.location.href = result.url;
+                return;
+              }
+            }
+          }
+        } catch (checkoutError) {
+          console.error(
+            'Failed to create checkout session after registration',
+            checkoutError
+          );
+        }
+      }
+
       Router.go('/login?registered=true');
     } catch (error) {
       if (error instanceof Error) {

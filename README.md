@@ -7,7 +7,7 @@ Preloop is a comprehensive MCP firewall that gives you complete control over wha
 
 
   <a href="https://youtu.be/yTtXn8WibTY" target="_blank">
-    <img alt="Preloop Logo" src="assets/tools-screenshot.png" alt="Watch the video" style="width: 100%; max-width: 1135px;" />
+    <img alt="Preloop Logo" src="frontend/public/assets/mcp-firewall.svg" alt="Watch the video" style="width: 100%; max-width: 1135px;" />
   </a>
 
 **Works with OpenClaw, Claude Code, Cursor, Codex, and any MCP-compatible agent.**
