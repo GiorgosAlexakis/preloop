@@ -22,6 +22,9 @@ export class RegisterView extends LitElement {
   private error = '';
 
   @state()
+  private _loading = false;
+
+  @state()
   private oauthProviders: string[] = [];
 
   @state()
@@ -92,6 +95,7 @@ export class RegisterView extends LitElement {
 
   private async handleRegister(event: SubmitEvent) {
     event.preventDefault();
+    this._loading = true;
     const form = event.target as HTMLFormElement;
     const formData = new FormData(form);
     const username = formData.get('username') as string;
@@ -152,8 +156,10 @@ export class RegisterView extends LitElement {
       }
 
       // Only go to login if billing is disabled or if stripe fails and doesn't redirect
+      this._loading = false;
       Router.go('/login?registered=true');
     } catch (error) {
+      this._loading = false;
       if (error instanceof Error) {
         this.error = error.message;
       } else {
@@ -171,22 +177,22 @@ export class RegisterView extends LitElement {
     return html`
       <div class="oauth-section">
         ${this.oauthProviders.map((provider) => {
-      const config = OAUTH_PROVIDER_CONFIG[provider];
-      if (!config) return nothing;
-      return html`
+          const config = OAUTH_PROVIDER_CONFIG[provider];
+          if (!config) return nothing;
+          return html`
             <sl-button
               class="oauth-button"
               variant="default"
               size="large"
               @click=${() => {
-          window.location.href = `/api/v1/auth/oauth/${provider}/authorize`;
-        }}
+                window.location.href = `/api/v1/auth/oauth/${provider}/authorize`;
+              }}
             >
               <sl-icon name="${config.icon}" slot="prefix"></sl-icon>
               Sign up with ${config.label}
             </sl-button>
           `;
-    })}
+        })}
       </div>
       <div class="divider">or sign up with email</div>
     `;
@@ -203,8 +209,8 @@ export class RegisterView extends LitElement {
         <div class="form-container">
           <h2>Create a ${getBrandConfig().name} account</h2>
           ${this.error
-        ? html`<div class="error-message">${this.error}</div>`
-        : ''}
+            ? html`<div class="error-message">${this.error}</div>`
+            : ''}
           ${this._renderOAuthButtons()}
           <form @submit=${this.handleRegister}>
             <div class="form-group">
@@ -236,7 +242,10 @@ export class RegisterView extends LitElement {
               ></sl-input>
             </div>
             <div class="form-actions">
-              <sl-button type="submit" variant="primary"
+              <sl-button
+                type="submit"
+                variant="primary"
+                ?loading=${this._loading}
                 >Create account</sl-button
               >
             </div>

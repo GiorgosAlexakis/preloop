@@ -5959,7 +5959,7 @@ components:
       properties:
         file:
           type: string
-          format: binary
+          contentMediaType: application/octet-stream
           title: File
           description: YAML or JSON policy file to compare
       type: object
@@ -6005,7 +6005,7 @@ components:
       properties:
         file:
           type: string
-          format: binary
+          contentMediaType: application/octet-stream
           title: File
           description: YAML or JSON policy file to apply
         dry_run:
@@ -6032,7 +6032,7 @@ components:
       properties:
         file:
           type: string
-          format: binary
+          contentMediaType: application/octet-stream
           title: File
           description: YAML or JSON policy file to validate
         check_server_references:
