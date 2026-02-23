@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 680" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 70 1000 480" width="100%" height="100%">
     <defs>
+
+
 
         <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="4" result="blur" />
@@ -63,9 +65,9 @@
 
     <rect width="1000" height="680" fill="url(#bg-glow)" />
     <rect width="1000" height="680" fill="url(#grid)" />
-
-    <text x="40" y="45" fill="#f8fafc" font-family="monospace" font-size="28" font-weight="bold">Preloop MCP Firewall</text>
-    <text x="40" y="75" fill="#94a3b8" font-family="sans-serif" font-size="16">Parameter-based Policy Engine with Contextual Multi-Agent &amp; Human Approvals</text>
+    <text x="10" y="125" fill="#f8fafc" font-family="helvetica" font-size="28" font-weight="bold">Preloop MCP Firewall</text>
+    <text x="10" y="155" fill="#94a3b8" font-family="helvetica" font-size="16">Parameter-based Policy Engine with</text>
+    <text x="10" y="180" fill="#94a3b8" font-family="sans-serif" font-size="16">Contextual Multi-Agent &amp; Human Approvals.</text>
 
     <path class="flow-line" d="M 220 320 L 400 320" />
     <path class="flow-line" d="M 500 320 C 600 320, 600 170, 770 170" />
@@ -309,8 +311,8 @@
         </g>
     </g>
 
-    <g transform="translate(150, 550)">
-        <rect width="700" height="110" rx="8" fill="#020617" stroke="#1e293b" stroke-width="2"/>
+    <g transform="translate(10, 434)">
+        <rect width="600" height="110" rx="8" fill="#020617" stroke="#1e293b" stroke-width="2"/>
         <text x="20" y="25" fill="#64748b" font-family="monospace" font-size="12">Preloop Policy Execution Log</text>
 
         <g opacity="0">

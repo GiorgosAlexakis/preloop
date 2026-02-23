@@ -12,7 +12,7 @@ import {
   getApprovalWorkflows,
   deleteApprovalWorkflow,
   getFeatures,
-  getAccountDetails,
+  getUserProfile,
   createAccessRule,
   updateAccessRule,
   deleteAccessRule,
@@ -522,7 +522,7 @@ export class ToolsView extends LitElement {
           getMCPServers(),
           getApprovalWorkflows(),
           getFeatures(),
-          getAccountDetails(),
+          getUserProfile(),
         ]);
 
       this.currentUser = currentUser;

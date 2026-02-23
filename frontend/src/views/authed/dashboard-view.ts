@@ -965,7 +965,17 @@ export class DashboardView extends AuthedElement {
                     <sl-icon slot="prefix" name="tools"></sl-icon>
                     Configure Tools
                   </sl-button>`
-                : html`<sl-badge variant="success">Completed</sl-badge>`}
+                : html`<sl-button
+                    variant="success"
+                    outline
+                    size="small"
+                    href="/console/tools"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="tools"></sl-icon>
+                    Tools Configured
+                    <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                  </sl-button>`}
             </div>
           </div>
 
@@ -991,13 +1001,23 @@ export class DashboardView extends AuthedElement {
               ${!hasFlows
                 ? html`<sl-button
                     size="small"
-                    href="/console/flows"
+                    href="/console/flows/new"
                     class="step-action"
                   >
                     <sl-icon slot="prefix" name="diagram-3"></sl-icon>
                     Create Flow
                   </sl-button>`
-                : html`<sl-badge variant="success">Completed</sl-badge>`}
+                : html`<sl-button
+                    variant="success"
+                    outline
+                    size="small"
+                    href="/console/flows/new"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="diagram-3"></sl-icon>
+                    Flows Created
+                    <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                  </sl-button>`}
             </div>
           </div>
 
@@ -1021,32 +1041,46 @@ export class DashboardView extends AuthedElement {
                 power your flows, detect duplicate issues, and assess
                 compliance.
               </div>
-              ${!hasTrackersAndModels
-                ? html`
-                    <div style="display: flex; gap: var(--sl-spacing-small);">
-                      ${!this.trackers.length
-                        ? html`<sl-button
-                            size="small"
-                            href="/console/trackers"
-                            class="step-action"
-                          >
-                            <sl-icon slot="prefix" name="link-45deg"></sl-icon>
-                            Add Tracker
-                          </sl-button>`
-                        : ''}
-                      ${!this.hasAIModels
-                        ? html`<sl-button
-                            size="small"
-                            href="/console/settings/ai-models"
-                            class="step-action"
-                          >
-                            <sl-icon slot="prefix" name="cpu"></sl-icon>
-                            Add AI Model
-                          </sl-button>`
-                        : ''}
-                    </div>
-                  `
-                : html`<sl-badge variant="success">Completed</sl-badge>`}
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center; margin-top: var(--sl-spacing-x-small);"
+              >
+                ${!this.trackers.length
+                  ? html`<sl-button
+                      size="small"
+                      href="/console/trackers?action=add"
+                    >
+                      <sl-icon slot="prefix" name="link-45deg"></sl-icon>
+                      Add Tracker
+                    </sl-button>`
+                  : html`<sl-button
+                      variant="success"
+                      outline
+                      size="small"
+                      href="/console/trackers?action=add"
+                    >
+                      <sl-icon slot="prefix" name="link-45deg"></sl-icon>
+                      Trackers Connected
+                      <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                    </sl-button>`}
+                ${!this.hasAIModels
+                  ? html`<sl-button
+                      size="small"
+                      href="/console/settings/ai-models"
+                    >
+                      <sl-icon slot="prefix" name="cpu"></sl-icon>
+                      Add AI Model
+                    </sl-button>`
+                  : html`<sl-button
+                      variant="success"
+                      outline
+                      size="small"
+                      href="/console/settings/ai-models"
+                    >
+                      <sl-icon slot="prefix" name="cpu"></sl-icon>
+                      AI Models Connected
+                      <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                    </sl-button>`}
+              </div>
             </div>
           </div>
         </div>

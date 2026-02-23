@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
-import { getAccountDetails, getFeatures } from '../api';
+import { getUserProfile, getFeatures } from '../api';
 import { getBrandConfig, isSaaS } from '../brand-config';
 
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -190,7 +190,7 @@ export class AppHeader extends LitElement {
     this.isAuthenticated = !!token;
     if (this.isAuthenticated) {
       try {
-        this.user = await getAccountDetails();
+        this.user = await getUserProfile();
       } catch (error) {
         console.error('Failed to fetch user details', error);
         this.logout();

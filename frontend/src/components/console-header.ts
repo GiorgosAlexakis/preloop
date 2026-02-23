@@ -744,7 +744,7 @@ export class ConsoleHeader extends LitElement {
 
   async fetchUserDetails() {
     try {
-      this._user = await api.getAccountDetails();
+      this._user = await api.getUserProfile();
     } catch (error) {
       console.error('Failed to fetch user details', error);
     }

@@ -151,6 +151,23 @@ export class AddAIModelModal extends LitElement {
     this.requestUpdate();
   }
 
+  private _getProviderKeyUrl(provider: string | undefined): string {
+    switch (provider) {
+      case 'openai':
+        return 'https://platform.openai.com/api-keys';
+      case 'anthropic':
+        return 'https://console.anthropic.com/settings/keys';
+      case 'google':
+        return 'https://aistudio.google.com/app/apikey';
+      case 'qwen':
+        return 'https://dashscope.console.aliyun.com/apiKey';
+      case 'deepseek':
+        return 'https://platform.deepseek.com/api_keys';
+      default:
+        return '';
+    }
+  }
+
   private async _fetchModelSuggestionsForProvider(
     provider: string,
     apiKey?: string
@@ -324,10 +341,30 @@ export class AddAIModelModal extends LitElement {
               ? 'Leave blank to keep existing key'
               : ''}
             ?disabled=${this._isSubmitting}
-            help-text=${this._isEditing
-              ? ''
-              : 'Enter your API key to fetch available models'}
-          ></sl-input>
+          >
+            ${!this._isEditing &&
+            this._getProviderKeyUrl(this._currentModel.provider_name)
+              ? html`
+                  <div slot="help-text">
+                    Enter your API key to fetch available models.
+                    <a
+                      href=${this._getProviderKeyUrl(
+                        this._currentModel.provider_name
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      >Get your API key here.</a
+                    >
+                  </div>
+                `
+              : html`
+                  <div slot="help-text">
+                    ${this._isEditing
+                      ? ''
+                      : 'Enter your API key to fetch available models'}
+                  </div>
+                `}
+          </sl-input>
 
           <div class="full-width">
             <sl-button

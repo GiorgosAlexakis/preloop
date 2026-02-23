@@ -416,22 +416,30 @@ export async function commitIssueDependencies(
 }
 
 // Account
-export async function getAccountDetails() {
+export async function getUserProfile() {
   const response = await fetchWithAuth('/api/v1/auth/users/me');
+  if (!response.ok) {
+    throw new Error('Failed to fetch user profile');
+  }
+  return response.json();
+}
+
+export async function getAccountDetails() {
+  const response = await fetchWithAuth('/api/v1/account/details');
   if (!response.ok) {
     throw new Error('Failed to fetch account details');
   }
   return response.json();
 }
 
-export async function updateAccountDetails(details: { full_name: string }) {
+export async function updateUserProfile(details: { full_name: string }) {
   const response = await fetchWithAuth('/api/v1/auth/users/me', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(details),
   });
   if (!response.ok) {
-    throw new Error('Failed to update account details');
+    throw new Error('Failed to update user profile');
   }
   return response.json();
 }

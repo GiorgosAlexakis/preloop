@@ -82,6 +82,7 @@ export class WelcomeView extends LitElement {
       try {
         const { authorization_url, state } = await api.getGitHubAuthUrl();
         sessionStorage.setItem('github_oauth_state', state);
+        sessionStorage.setItem('github_oauth_from_welcome', 'true');
         window.location.href = authorization_url;
         return; // Don't reset loading, let the redirect happen
       } catch (error: any) {

@@ -4,7 +4,7 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import {
   getUsers,
   getTeams,
-  getAccountDetails,
+  getUserProfile,
   getToolApprovalCondition,
   fetchWithAuth,
 } from '../api';
@@ -235,7 +235,7 @@ export class ToolCard extends LitElement {
 
   private async loadCurrentUser() {
     try {
-      const currentUser = await getAccountDetails();
+      const currentUser = await getUserProfile();
       this.currentUserId = currentUser?.id || '';
     } catch (error) {
       console.error('Failed to load current user:', error);

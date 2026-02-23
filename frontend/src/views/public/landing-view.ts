@@ -503,6 +503,7 @@ export class LandingView extends LitElement {
                 : ''}
               <h1 class="fw-bold">${unsafeHTML(this._heroTitle)}</h1>
               <p class="lead">${this._heroLead}</p>
+
               <div class="hero-buttons">
                 <sl-button
                   variant="primary"
@@ -528,8 +529,9 @@ export class LandingView extends LitElement {
           ? html`
               <section class="extended-description-section main-section">
                 <div class="section-container">
-                  <p class="lead text-center">${this._extendedDescription}</p>
-                  <img src="/assets/mcp-firewall.svg" />
+                  <a href="/register" title=${this._extendedDescription}
+                    ><img src="/assets/mcp-firewall2.svg"
+                  /></a>
                 </div>
               </section>
             `
