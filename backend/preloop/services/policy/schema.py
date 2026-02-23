@@ -82,6 +82,7 @@ class MCPServerAuthType(str, Enum):
     NONE = "none"
     BEARER = "bearer"
     API_KEY = "api_key"
+    OAUTH = "oauth"
 
 
 class MCPServerTransport(str, Enum):

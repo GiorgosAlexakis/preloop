@@ -27,6 +27,9 @@ def drop_tables(force: bool):
         click.echo("ERROR: DATABASE_URL environment variable not set.")
         sys.exit(1)
 
+    # Strip SQLAlchemy dialect suffix (e.g. postgresql+psycopg:// -> postgresql://)
+    db_url = db_url.replace("postgresql+psycopg://", "postgresql://")
+
     # Connect to database
     try:
         conn = psycopg2.connect(db_url)
@@ -75,11 +78,32 @@ def drop_tables(force: bool):
     try:
         cursor.execute("SET session_replication_role = 'replica';")
         for table in tables:
-            cursor.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+            cursor.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE;')
         cursor.execute("SET session_replication_role = 'origin';")
         click.echo("All tables have been dropped successfully.")
     except Exception as e:
         click.echo(f"ERROR: Could not drop tables: {str(e)}")
+        conn.close()
+        return
+
+    # Drop all custom enum types
+    try:
+        cursor.execute(
+            """
+            SELECT typname FROM pg_type
+            JOIN pg_namespace ON pg_type.typnamespace = pg_namespace.oid
+            WHERE pg_namespace.nspname = 'public' AND pg_type.typtype = 'e'
+            """
+        )
+        enums = [row[0] for row in cursor.fetchall()]
+        if enums:
+            for enum in enums:
+                cursor.execute(f'DROP TYPE IF EXISTS "{enum}" CASCADE;')
+            click.echo(f"Dropped {len(enums)} enum type(s).")
+        else:
+            click.echo("No enum types to drop.")
+    except Exception as e:
+        click.echo(f"WARNING: Could not drop enum types: {str(e)}")
     finally:
         conn.close()
 

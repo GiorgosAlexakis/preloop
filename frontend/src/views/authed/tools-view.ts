@@ -73,6 +73,7 @@ export class ToolsView extends LitElement {
   @state() private collapsedGroups: Set<string> = new Set();
   @state() private filterText = '';
   @state() private isExporting = false;
+  @state() private oauthAlert: 'success' | 'error' | null = null;
 
   // Single active filter — only one at a time (besides text/policy)
   @state() private activeFilter:
@@ -503,6 +504,20 @@ export class ToolsView extends LitElement {
     if (saved) {
       this.activeFilter = saved as typeof this.activeFilter;
     }
+
+    // Check for OAuth callback hash (#setup_mcp=success or #setup_mcp=error)
+    if (window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const setupMcp = hashParams.get('setup_mcp');
+      if (setupMcp === 'success') {
+        this.oauthAlert = 'success';
+      } else if (setupMcp === 'error') {
+        this.oauthAlert = 'error';
+      }
+      // Clean up the hash
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     this.loadData();
   }
 
@@ -1448,6 +1463,30 @@ export class ToolsView extends LitElement {
                 @server-updated=${this._handleServerUpdated}
                 @close-modal=${this._closeServerForm}
               ></mcp-server-form>`
+            : ''}
+          ${this.oauthAlert === 'success'
+            ? html`<sl-alert
+                variant="success"
+                open
+                closable
+                @sl-after-hide=${() => (this.oauthAlert = null)}
+              >
+                <sl-icon slot="icon" name="check2-circle"></sl-icon>
+                <strong>OAuth Connected!</strong> The MCP server has been
+                successfully authenticated via OAuth.
+              </sl-alert>`
+            : ''}
+          ${this.oauthAlert === 'error'
+            ? html`<sl-alert
+                variant="danger"
+                open
+                closable
+                @sl-after-hide=${() => (this.oauthAlert = null)}
+              >
+                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                <strong>OAuth Failed</strong> — Could not authenticate with the
+                external MCP server. Please try again.
+              </sl-alert>`
             : ''}
           ${this.error
             ? html`<sl-alert

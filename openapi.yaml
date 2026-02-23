@@ -1003,6 +1003,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp-servers/{server_id}/oauth/authorize:
+    get:
+      tags:
+      - MCP Servers OAuth
+      summary: Mcp Server Oauth Authorize
+      description: 'Initiate the MCP OAuth client flow for an external MCP server.
+
+
+        This endpoint is on the public router because the browser navigates
+
+        to it directly (302 redirect flow). Auth is via the `token` query param.
+
+
+        1. Fetches the server''s /.well-known/oauth-authorization-server metadata.
+
+        2. Dynamically registers as an OAuth client (RFC 7591) if needed.
+
+        3. Generates PKCE code_challenge / code_verifier.
+
+        4. Redirects the user to the external server''s authorization endpoint.'
+      operationId: mcp_server_oauth_authorize_api_v1_mcp_servers__server_id__oauth_authorize_get
+      parameters:
+      - name: server_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Server Id
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+          description: JWT access token for authentication
+          title: Token
+        description: JWT access token for authentication
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/mcp-servers/oauth/callback:
+    get:
+      tags:
+      - MCP Servers OAuth
+      summary: Mcp Server Oauth Callback
+      description: 'Handle the OAuth callback from an external MCP server.
+
+
+        Exchanges the authorization code for access/refresh tokens using PKCE,
+
+        saves them in the MCP server''s auth_config, and redirects to the frontend.'
+      operationId: mcp_server_oauth_callback_api_v1_mcp_servers_oauth_callback_get
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+          title: State
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/tools:
     get:
       tags:
@@ -7478,7 +7567,7 @@ components:
           - type: string
           - type: 'null'
           title: Auth Type
-          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'', ''oauth'''
           default: none
         auth_config:
           anyOf:
@@ -7531,7 +7620,7 @@ components:
           - type: string
           - type: 'null'
           title: Auth Type
-          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'', ''oauth'''
           default: none
         auth_config:
           anyOf:
@@ -7605,7 +7694,7 @@ components:
           - type: string
           - type: 'null'
           title: Auth Type
-          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'', ''oauth'''
           default: none
         auth_config:
           anyOf:

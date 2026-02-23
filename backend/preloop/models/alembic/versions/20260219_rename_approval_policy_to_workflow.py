@@ -62,6 +62,7 @@ def upgrade():
 
 def downgrade():
     # Reverse all renames
+    return
     op.drop_constraint("uq_account_workflow_name", "approval_workflow", type_="unique")
     op.create_unique_constraint(
         "uq_account_policy_name", "approval_workflow", ["account_id", "name"]

@@ -59,7 +59,7 @@ def init_db(force: bool):
         # Run alembic upgrade head
         click.echo("Running Alembic migrations to create database tables...")
         result = subprocess.run(
-            ["alembic", "upgrade", "head"],
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
             cwd=alembic_dir,
             capture_output=True,
             text=True,

@@ -131,6 +131,7 @@ export class MCPServerForm extends LitElement {
         >
           <sl-option value="none">None</sl-option>
           <sl-option value="bearer">Bearer Token</sl-option>
+          <sl-option value="oauth">OAuth 2.0</sl-option>
         </sl-select>
 
         ${this.authType === 'bearer'
@@ -148,6 +149,30 @@ export class MCPServerForm extends LitElement {
                 Enter the bearer token required to authenticate with this MCP
                 server
               </div>
+            `
+          : ''}
+        ${this.authType === 'oauth'
+          ? html`
+              <div class="help-text">
+                OAuth credentials will be obtained automatically via the MCP
+                standard discovery flow. After saving, click "Connect OAuth
+                Account" to authorize.
+              </div>
+              ${this.server
+                ? html`
+                    <sl-button
+                      variant="primary"
+                      outline
+                      @click=${() => this._startOAuthFlow()}
+                    >
+                      <sl-icon
+                        slot="prefix"
+                        name="box-arrow-up-right"
+                      ></sl-icon>
+                      Connect OAuth Account
+                    </sl-button>
+                  `
+                : ''}
             `
           : ''}
         ${this.errorMessage
@@ -196,6 +221,9 @@ export class MCPServerForm extends LitElement {
     let authConfigObj = null;
     if (this.authType === 'bearer' && this.bearerToken.trim()) {
       authConfigObj = { token: this.bearerToken };
+    } else if (this.authType === 'oauth' && this.server?.auth_config) {
+      // Preserve existing OAuth auth_config (tokens, client_id, etc.)
+      authConfigObj = this.server.auth_config;
     }
 
     const serverData = {
@@ -213,6 +241,11 @@ export class MCPServerForm extends LitElement {
           this.server.id,
           serverData
         );
+        // If editing an OAuth server, redirect immediately (keep modal open)
+        if (this.authType === 'oauth') {
+          this._startOAuthFlow(updatedServer.id);
+          return;
+        }
         this.dispatchEvent(
           new CustomEvent('server-updated', {
             detail: { server: updatedServer },
@@ -220,6 +253,11 @@ export class MCPServerForm extends LitElement {
         );
       } else {
         const newServer = await this._api.createMCPServer(serverData);
+        // For new OAuth servers, redirect immediately (keep modal open)
+        if (this.authType === 'oauth') {
+          this._startOAuthFlow(newServer.id);
+          return;
+        }
         this.dispatchEvent(
           new CustomEvent('server-added', {
             detail: { server: newServer },
@@ -232,6 +270,18 @@ export class MCPServerForm extends LitElement {
     } finally {
       this.isLoading = false;
     }
+  }
+
+  private _startOAuthFlow(serverId?: string) {
+    const id = serverId || this.server?.id;
+    if (!id) return;
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      this.errorMessage = 'Not authenticated. Please log in again.';
+      return;
+    }
+    // Navigate directly — the backend will 302 redirect to the consent form
+    window.location.href = `/api/v1/mcp-servers/${id}/oauth/authorize?token=${encodeURIComponent(token)}`;
   }
 
   closeModal(success = false) {

@@ -698,6 +698,8 @@ def create_app() -> FastAPI:
         tags=["MCP Servers"],
         dependencies=[Depends(get_current_active_user)],
     )
+    # Public MCP OAuth callback (no auth — user is redirected by external server)
+    app.include_router(mcp_servers.oauth_callback_router)
     app.include_router(
         tools.router,
         prefix="/api/v1",
