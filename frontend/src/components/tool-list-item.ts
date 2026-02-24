@@ -742,7 +742,7 @@ export class ToolListItem extends LitElement {
         ?open=${this._showRuleEditor}
         .rule=${this._editingRule}
         .toolName=${this.tool.name}
-        .policies=${this.policies}
+        .workflows=${this.policies}
         .features=${this.features}
         .toolSchema=${this.tool.schema}
         @save-rule=${this._handleSaveRule}
