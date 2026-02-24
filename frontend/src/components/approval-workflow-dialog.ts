@@ -473,10 +473,13 @@ export class ApprovalWorkflowDialog extends LitElement {
             placeholder="Select users or teams..."
             multiple
             clearable
-            .value=${[...this._approverUserIds, ...this._approverTeamIds]}
+            hoist
+            .value=${[
+              ...this._approverUserIds.map((id) => `user:${id}`),
+              ...this._approverTeamIds.map((id) => `team:${id}`),
+            ]}
             @sl-change=${(e: any) => this._handleApproverChange(e)}
           >
-            <small slot="label">Users</small>
             ${this._users.map(
               (user) => html`
                 <sl-option value=${`user:${user.id}`}>
@@ -485,7 +488,6 @@ export class ApprovalWorkflowDialog extends LitElement {
               `
             )}
             <sl-divider></sl-divider>
-            <small slot="label">Teams</small>
             ${this._teams.map(
               (team) => html`
                 <sl-option value=${`team:${team.id}`}>${team.name}</sl-option>
@@ -539,6 +541,7 @@ export class ApprovalWorkflowDialog extends LitElement {
         <div class="form-field">
           <label class="form-label required">AI Model</label>
           <sl-select
+            hoist
             placeholder=${this._loadingModels
               ? 'Loading models...'
               : 'Select an AI model...'}
@@ -626,6 +629,7 @@ DENY if:
               <div class="form-field">
                 <label class="form-label">Escalation Workflow</label>
                 <sl-select
+                  hoist
                   .value=${this._escalationWorkflowId}
                   @sl-change=${(e: any) =>
                     (this._escalationWorkflowId = e.target.value)}
@@ -740,6 +744,7 @@ DENY if:
           <div class="form-field">
             <label class="form-label">Type</label>
             <sl-select
+              hoist
               .value=${this._approvalType}
               @sl-change=${(e: any) => (this._approvalType = e.target.value)}
             >

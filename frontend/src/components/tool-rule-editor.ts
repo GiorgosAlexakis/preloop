@@ -953,6 +953,7 @@ export class ToolRuleEditor extends LitElement {
           <div class="workflow-select-row">
             <sl-select
               size="small"
+              hoist
               placeholder="Select an approval workflow..."
               .value=${this._approvalWorkflowId || ''}
               clearable
@@ -1194,7 +1195,7 @@ export class ToolRuleEditor extends LitElement {
 
       <approval-workflow-dialog
         ?open=${this._showWorkflowDialog}
-        .existingWorkflows=${this.workflows}
+        .existingPolicies=${this.workflows}
         .features=${this.features}
         @saved=${this._handleWorkflowDialogSaved}
         @close=${this._handleWorkflowDialogClose}
