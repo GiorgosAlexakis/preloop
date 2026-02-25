@@ -22,6 +22,14 @@ from preloop.utils.tokens import create_email_verification_token
 
 logger = logging.getLogger(__name__)
 
+TESTING_DOMAINS = [
+    "preloop.ai",
+    "spacecode.ai",
+    "spacebridge.io",
+    "example.com",
+    "dmo.ai",
+]
+
 
 def notify_admins_new_user_signup(
     username: str,
@@ -49,6 +57,12 @@ def notify_admins_new_user_signup(
     if source_ip == "testclient":
         logger.info(
             f"Skipping admin notification for new user signup for test client: {source_ip}"
+        )
+        return
+
+    if email.split("@")[1] in TESTING_DOMAINS:
+        logger.info(
+            f"Skipping admin notification for new user signup for email: {email}"
         )
         return
 
@@ -122,6 +136,10 @@ def notify_admins_user_login_after_inactivity(
         logger.info(
             f"Skipping admin notification for user login after inactivity for test client: {source_ip} or username: {username}"
         )
+        return
+
+    if email.split("@")[1] in TESTING_DOMAINS:
+        logger.info(f"Skipping admin notification for login for email: {email}")
         return
 
     if last_login:

@@ -60,7 +60,7 @@ class TestNotifyAdminsNewUserSignup:
         """Test that notification is sent for standard signup."""
         notify_admins_new_user_signup(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             signup_source="standard",
         )
 
@@ -71,7 +71,7 @@ class TestNotifyAdminsNewUserSignup:
 
         assert "testuser" in subject
         assert "testuser" in message
-        assert "test@example.com" in message
+        assert "test@test.com" in message
         assert "standard" in message
 
     @patch("preloop.services.account_setup_service.notify_admins")
@@ -80,7 +80,7 @@ class TestNotifyAdminsNewUserSignup:
         account_id = uuid.uuid4()
         notify_admins_new_user_signup(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             signup_source="stripe",
             full_name="Test User",
             source_ip="192.168.1.1",
@@ -104,7 +104,7 @@ class TestNotifyAdminsNewUserSignup:
         """Test that notification is skipped for testclient IP."""
         notify_admins_new_user_signup(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             signup_source="standard",
             source_ip="testclient",
         )
@@ -119,7 +119,7 @@ class TestNotifyAdminsNewUserSignup:
         # Should not raise exception
         notify_admins_new_user_signup(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             signup_source="standard",
         )
 
@@ -134,7 +134,7 @@ class TestNotifyAdminsUserLoginAfterInactivity:
 
         notify_admins_user_login_after_inactivity(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             last_login=last_login,
         )
 
@@ -145,7 +145,7 @@ class TestNotifyAdminsUserLoginAfterInactivity:
 
         assert "10 Days" in subject
         assert "testuser" in message
-        assert "test@example.com" in message
+        assert "test@test.com" in message
         assert "Days Inactive: 10" in message
 
     @patch("preloop.services.account_setup_service.notify_admins")
@@ -153,7 +153,7 @@ class TestNotifyAdminsUserLoginAfterInactivity:
         """Test notification for first ever login."""
         notify_admins_user_login_after_inactivity(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             last_login=None,
         )
 
@@ -170,7 +170,7 @@ class TestNotifyAdminsUserLoginAfterInactivity:
         """Test that source IP is included when provided."""
         notify_admins_user_login_after_inactivity(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             last_login=None,
             source_ip="10.0.0.1",
         )
@@ -186,7 +186,7 @@ class TestNotifyAdminsUserLoginAfterInactivity:
         """Test that notification is skipped for testclient IP."""
         notify_admins_user_login_after_inactivity(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             last_login=None,
             source_ip="testclient",
         )
@@ -201,7 +201,7 @@ class TestNotifyAdminsUserLoginAfterInactivity:
         # Should not raise exception
         notify_admins_user_login_after_inactivity(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             last_login=None,
         )
 
@@ -214,7 +214,7 @@ class TestNotifyAdminsUserJoinedOrganization:
         """Test sending basic notification."""
         notify_admins_user_joined_organization(
             username="newuser",
-            email="new@example.com",
+            email="new@test.com",
         )
 
         mock_notify.assert_called_once()
@@ -224,7 +224,7 @@ class TestNotifyAdminsUserJoinedOrganization:
 
         assert "Joined Organization" in subject
         assert "newuser" in message
-        assert "new@example.com" in message
+        assert "new@test.com" in message
 
     @patch("preloop.services.account_setup_service.notify_admins")
     def test_includes_optional_fields(self, mock_notify):
@@ -233,10 +233,10 @@ class TestNotifyAdminsUserJoinedOrganization:
 
         notify_admins_user_joined_organization(
             username="newuser",
-            email="new@example.com",
+            email="new@test.com",
             organization_name="Test Org",
             account_id=account_id,
-            invited_by="admin@example.com",
+            invited_by="admin@test.com",
         )
 
         mock_notify.assert_called_once()
@@ -246,7 +246,7 @@ class TestNotifyAdminsUserJoinedOrganization:
 
         assert "Test Org" in message
         assert str(account_id) in message
-        assert "admin@example.com" in message
+        assert "admin@test.com" in message
         assert "Test Org" in message_html
 
     @patch("preloop.services.account_setup_service.notify_admins")
@@ -257,7 +257,7 @@ class TestNotifyAdminsUserJoinedOrganization:
         # Should not raise exception
         notify_admins_user_joined_organization(
             username="newuser",
-            email="new@example.com",
+            email="new@test.com",
         )
 
 
@@ -285,14 +285,14 @@ class TestCompleteNewAccountSetup:
         complete_new_account_setup(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
         )
 
         # Verify all tasks were called
-        mock_create_token.assert_called_once_with("test@example.com")
+        mock_create_token.assert_called_once_with("test@test.com")
         mock_send_email.assert_called_once_with(
-            user_email="test@example.com",
+            user_email="test@test.com",
             token="test_token",
         )
         mock_create_policy.assert_called_once_with(account_id, user_id)
@@ -318,7 +318,7 @@ class TestCompleteNewAccountSetup:
         complete_new_account_setup(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
             send_verification=False,
         )
@@ -349,7 +349,7 @@ class TestCompleteNewAccountSetup:
         complete_new_account_setup(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
             full_name="Test User",
             organization_name="Test Org",
@@ -359,7 +359,7 @@ class TestCompleteNewAccountSetup:
 
         mock_notify.assert_called_once_with(
             username="testuser",
-            email="test@example.com",
+            email="test@test.com",
             signup_source="stripe",
             full_name="Test User",
             source_ip="192.168.1.1",
@@ -390,7 +390,7 @@ class TestCompleteNewAccountSetup:
         complete_new_account_setup(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
         )
 
@@ -421,7 +421,7 @@ class TestCompleteNewAccountSetup:
         complete_new_account_setup(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
         )
 
@@ -451,7 +451,7 @@ class TestCompleteNewAccountSetup:
         complete_new_account_setup(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
         )
 
@@ -468,7 +468,7 @@ class TestCompleteNewAccountSetupBackground:
         complete_new_account_setup_background(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
             full_name="Test User",
             organization_name="Test Org",
@@ -480,7 +480,7 @@ class TestCompleteNewAccountSetupBackground:
         mock_complete.assert_called_once_with(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
             full_name="Test User",
             organization_name="Test Org",
@@ -500,6 +500,6 @@ class TestCompleteNewAccountSetupBackground:
         complete_new_account_setup_background(
             account_id=account_id,
             user_id=user_id,
-            user_email="test@example.com",
+            user_email="test@test.com",
             username="testuser",
         )

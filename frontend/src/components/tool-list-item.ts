@@ -392,6 +392,7 @@ export class ToolListItem extends LitElement {
   }
 
   private _handleSaveRule(e: CustomEvent) {
+    e.stopPropagation();
     const { rule, formData } = e.detail;
     this.dispatchEvent(
       new CustomEvent('save-rule', {
