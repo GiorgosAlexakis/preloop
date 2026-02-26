@@ -72,7 +72,7 @@ const EVENT_TYPE_OPTIONS = [
   { value: 'tool_call', label: 'Tool Calls' },
   { value: 'config:tool_configuration', label: 'Tool Enabled / Disabled' },
   { value: 'config:tool_rule', label: 'Rule Changes' },
-  { value: 'config:approval_policy', label: 'Approval Policy Changes' },
+  { value: 'config:approval_workflow', label: 'Approval Workflow Changes' },
   { value: 'config:mcp_server', label: 'MCP Server Changes' },
   { value: 'config:tracker', label: 'Tracker Changes' },
   { value: 'config:flow', label: 'Flow Changes' },
@@ -322,7 +322,7 @@ export class AuditView extends AuthedElement {
           mcp_server: 'MCP Server',
           tool_configuration: 'Tool',
           tool_rule: 'Tool Rule',
-          approval_policy: 'Approval Policy',
+          approval_workflow: 'Approval Workflow',
           tracker: 'Tracker',
           flow: 'Flow',
         };

@@ -21,7 +21,7 @@ interface ApprovalRequest {
   id: string;
   account_id: string;
   tool_configuration_id: string;
-  approval_policy_id: string;
+  approval_workflow_id: string;
   execution_id: string | null;
   tool_name: string;
   tool_args: Record<string, any>;
@@ -271,7 +271,7 @@ export class ApprovalsView extends AuthedElement {
         id: message.approval_request_id,
         account_id: message.account_id || '',
         tool_configuration_id: message.tool_configuration_id || '',
-        approval_policy_id: message.approval_policy_id || '',
+        approval_workflow_id: message.approval_workflow_id || '',
         execution_id: message.execution_id || null,
         tool_name: message.tool_name,
         tool_args: message.tool_args || {},

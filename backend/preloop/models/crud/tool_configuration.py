@@ -260,19 +260,19 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             .all()
         )
 
-    def count_by_policy(self, db: Session, policy_id: str) -> int:
-        """Count tool configurations using a specific approval policy.
+    def count_by_workflow(self, db: Session, workflow_id: str) -> int:
+        """Count tool configurations using a specific approval workflow.
 
         Args:
             db: The database session.
-            policy_id: The ID of the approval policy.
+            workflow_id: The ID of the approval workflow.
 
         Returns:
-            The count of tool configurations using this policy.
+            The count of tool configurations using this workflow.
         """
         return (
             db.query(self.model)
-            .filter(self.model.approval_policy_id == policy_id)
+            .filter(self.model.approval_workflow_id == workflow_id)
             .count()
         )
 

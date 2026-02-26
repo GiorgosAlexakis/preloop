@@ -11,11 +11,11 @@ from preloop.schemas.auth import AuthUserResponse
 from preloop.models.models.account import Account
 from preloop.models.models.mcp_server import MCPServer
 from preloop.models.models.mcp_tool import MCPTool
-from preloop.models.models.tool_configuration import ApprovalPolicy, ToolConfiguration
+from preloop.models.models.tool_configuration import ApprovalWorkflow, ToolConfiguration
 from preloop.models.schemas.tool_configuration import (
-    ApprovalPolicyCreate,
-    ApprovalPolicyResponse,
-    ApprovalPolicyUpdate,
+    ApprovalWorkflowCreate,
+    ApprovalWorkflowResponse,
+    ApprovalWorkflowUpdate,
     ToolConfigurationCreate,
     ToolConfigurationResponse,
     ToolConfigurationUpdate,
@@ -79,14 +79,14 @@ class TestListAllTools:
     ):
         """Test listing tools with existing configurations."""
         # Create mock tool configuration
-        policy_id = uuid.uuid4()
+        workflow_id = uuid.uuid4()
         config = MagicMock(spec=ToolConfiguration)
         config.id = uuid.uuid4()
         config.tool_name = "get_issue"
         config.tool_source = "builtin"
         config.mcp_server_id = None
         config.is_enabled = False
-        config.approval_policy_id = policy_id
+        config.approval_workflow_id = workflow_id
 
         # Mock CRUD operations
         mocker.patch(
@@ -103,7 +103,7 @@ class TestListAllTools:
         # Find the configured tool
         get_issue_tool = next(t for t in result if t["name"] == "get_issue")
         assert get_issue_tool["is_enabled"] is False
-        assert get_issue_tool["approval_policy_id"] == str(policy_id)
+        assert get_issue_tool["approval_workflow_id"] == str(workflow_id)
 
     async def test_list_tools_with_mcp_servers(
         self, mock_db, mock_user, mock_account, mocker
@@ -250,7 +250,7 @@ class TestToolConfigurationEndpoints:
         mock_existing_config.is_enabled = True
         mock_existing_config.mcp_server_id = None
         mock_existing_config.http_endpoint_id = None
-        mock_existing_config.approval_policy_id = None
+        mock_existing_config.approval_workflow_id = None
         mock_existing_config.tool_description = None
         mock_existing_config.tool_schema = None
         mock_existing_config.custom_config = None
@@ -290,7 +290,7 @@ class TestToolConfigurationEndpoints:
         config.tool_source = "builtin"
         config.mcp_server_id = None
         config.http_endpoint_id = None
-        config.approval_policy_id = None
+        config.approval_workflow_id = None
         config.is_enabled = True
         config.tool_description = None
         config.tool_schema = None
@@ -346,7 +346,7 @@ class TestToolConfigurationEndpoints:
         config.tool_source = "builtin"
         config.mcp_server_id = None
         config.http_endpoint_id = None
-        config.approval_policy_id = None
+        config.approval_workflow_id = None
         config.is_enabled = True
         config.tool_description = None
         config.tool_schema = None
@@ -401,17 +401,17 @@ class TestToolConfigurationEndpoints:
         )
 
 
-class TestApprovalPolicyEndpoints:
-    """Test approval policy CRUD endpoints."""
+class TestApprovalWorkflowEndpoints:
+    """Test approval workflow CRUD endpoints."""
 
-    async def test_list_approval_policies(
+    async def test_list_approval_workflows(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test listing approval policies."""
-        policy = MagicMock(spec=ApprovalPolicy)
+        """Test listing approval workflows."""
+        policy = MagicMock(spec=ApprovalWorkflow)
         policy.id = uuid.uuid4()
         policy.account_id = str(mock_account.id)
-        policy.name = "Test Policy"
+        policy.name = "Test Workflow"
         policy.description = "Test description"
         policy.approval_type = "slack"
         policy.channel = "#approvals"
@@ -436,18 +436,18 @@ class TestApprovalPolicyEndpoints:
         policy.ai_context = None
         policy.ai_confidence_threshold = 0.8
         policy.ai_fallback_behavior = "escalate"
-        policy.escalation_policy_id = None
+        policy.escalation_workflow_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
         policy.updated_at = datetime.now(UTC)
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get_multi_by_account",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get_multi_by_account",
             return_value=[policy],
         )
 
-        result = await tools.list_approval_policies(
+        result = await tools.list_approval_workflows(
             account=mock_account,
             db=mock_db,
         )
@@ -455,30 +455,30 @@ class TestApprovalPolicyEndpoints:
         assert isinstance(result, list)
         assert len(result) == 1
 
-    async def test_create_approval_policy_success(
+    async def test_create_approval_workflow_success(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test creating an approval policy."""
-        policy_data = ApprovalPolicyCreate(
-            name="Test Policy",
+        """Test creating an approval workflow."""
+        workflow_data = ApprovalWorkflowCreate(
+            name="Test Workflow",
             approval_type="slack",
             channel="#approvals",
         )
 
         # Mock no existing policy with same name
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get_by_name",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get_by_name",
             return_value=None,
         )
 
         # Mock the created policy
-        created_policy = MagicMock(spec=ApprovalPolicy)
+        created_policy = MagicMock(spec=ApprovalWorkflow)
         created_policy.id = uuid.uuid4()
         created_policy.account_id = str(mock_account.id)
-        created_policy.name = policy_data.name
+        created_policy.name = workflow_data.name
         created_policy.description = None
-        created_policy.approval_type = policy_data.approval_type
-        created_policy.channel = policy_data.channel
+        created_policy.approval_type = workflow_data.approval_type
+        created_policy.channel = workflow_data.channel
         created_policy.user = None
         created_policy.approval_config = None
         created_policy.timeout_seconds = 300
@@ -500,49 +500,49 @@ class TestApprovalPolicyEndpoints:
         created_policy.ai_context = None
         created_policy.ai_confidence_threshold = 0.8
         created_policy.ai_fallback_behavior = "escalate"
-        created_policy.escalation_policy_id = None
+        created_policy.escalation_workflow_id = None
         from datetime import datetime, UTC
 
         created_policy.created_at = datetime.now(UTC)
         created_policy.updated_at = datetime.now(UTC)
 
-        # Mock crud_approval_policy.create
+        # Mock crud_approval_workflow.create
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.create",
+            "preloop.api.endpoints.tools.crud_approval_workflow.create",
             return_value=created_policy,
         )
 
-        result = await tools.create_approval_policy(
-            policy_data=policy_data,
+        result = await tools.create_approval_workflow(
+            workflow_data=workflow_data,
             account=mock_account,
             db=mock_db,
         )
 
-        assert isinstance(result, ApprovalPolicyResponse)
-        assert result.name == policy_data.name
+        assert isinstance(result, ApprovalWorkflowResponse)
+        assert result.name == workflow_data.name
         assert result.is_default
 
-    async def test_create_approval_policy_duplicate_name(
+    async def test_create_approval_workflow_duplicate_name(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test creating approval policy with duplicate name."""
-        policy_data = ApprovalPolicyCreate(
-            name="Test Policy",
+        """Test creating approval workflow with duplicate name."""
+        workflow_data = ApprovalWorkflowCreate(
+            name="Test Workflow",
             approval_type="slack",
             channel="#approvals",
         )
 
         # Mock existing policy
-        existing_policy = MagicMock(spec=ApprovalPolicy)
+        existing_policy = MagicMock(spec=ApprovalWorkflow)
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get_by_name",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get_by_name",
             return_value=existing_policy,
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await tools.create_approval_policy(
-                policy_data=policy_data,
+            await tools.create_approval_workflow(
+                workflow_data=workflow_data,
                 account=mock_account,
                 db=mock_db,
             )
@@ -550,15 +550,15 @@ class TestApprovalPolicyEndpoints:
         assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
         assert "already exists" in exc_info.value.detail
 
-    async def test_get_approval_policy_success(
+    async def test_get_approval_workflow_success(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test getting an approval policy."""
-        policy_id = uuid.uuid4()
-        policy = MagicMock(spec=ApprovalPolicy)
-        policy.id = policy_id
+        """Test getting an approval workflow."""
+        workflow_id = uuid.uuid4()
+        policy = MagicMock(spec=ApprovalWorkflow)
+        policy.id = workflow_id
         policy.account_id = str(mock_account.id)
-        policy.name = "Test Policy"
+        policy.name = "Test Workflow"
         policy.description = "Test description"
         policy.approval_type = "slack"
         policy.channel = "#approvals"
@@ -583,32 +583,32 @@ class TestApprovalPolicyEndpoints:
         policy.ai_context = None
         policy.ai_confidence_threshold = 0.8
         policy.ai_fallback_behavior = "escalate"
-        policy.escalation_policy_id = None
+        policy.escalation_workflow_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
         policy.updated_at = datetime.now(UTC)
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=policy,
         )
 
-        result = await tools.get_approval_policy(
-            policy_id=policy_id,
+        result = await tools.get_approval_workflow(
+            workflow_id=workflow_id,
             account=mock_account,
             db=mock_db,
         )
 
-        assert isinstance(result, ApprovalPolicyResponse)
+        assert isinstance(result, ApprovalWorkflowResponse)
 
-    async def test_update_approval_policy_success(
+    async def test_update_approval_workflow_success(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test updating an approval policy."""
-        policy_id = uuid.uuid4()
-        policy = MagicMock(spec=ApprovalPolicy)
-        policy.id = policy_id
+        """Test updating an approval workflow."""
+        workflow_id = uuid.uuid4()
+        policy = MagicMock(spec=ApprovalWorkflow)
+        policy.id = workflow_id
         policy.account_id = str(mock_account.id)
         policy.name = "Old Name"
         policy.description = "Test description"
@@ -635,7 +635,7 @@ class TestApprovalPolicyEndpoints:
         policy.ai_context = None
         policy.ai_confidence_threshold = 0.8
         policy.ai_fallback_behavior = "escalate"
-        policy.escalation_policy_id = None
+        policy.escalation_workflow_id = None
         from datetime import datetime, UTC
 
         policy.created_at = datetime.now(UTC)
@@ -643,61 +643,61 @@ class TestApprovalPolicyEndpoints:
 
         # Mock the get method to return policy
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=policy,
         )
 
         # Mock the get_by_name method for duplicate check (no duplicate with new name)
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get_by_name",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get_by_name",
             return_value=None,
         )
 
         # Mock the update method to return the updated policy
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.update",
+            "preloop.api.endpoints.tools.crud_approval_workflow.update",
             return_value=policy,
         )
 
-        update_data = ApprovalPolicyUpdate(name="New Name")
+        update_data = ApprovalWorkflowUpdate(name="New Name")
 
-        result = await tools.update_approval_policy(
-            policy_id=policy_id,
-            policy_update=update_data,
+        result = await tools.update_approval_workflow(
+            workflow_id=workflow_id,
+            workflow_update=update_data,
             account=mock_account,
             db=mock_db,
         )
 
-        assert isinstance(result, ApprovalPolicyResponse)
+        assert isinstance(result, ApprovalWorkflowResponse)
 
-    async def test_delete_approval_policy_success(
+    async def test_delete_approval_workflow_success(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test deleting an approval policy."""
-        policy_id = uuid.uuid4()
-        policy = MagicMock(spec=ApprovalPolicy)
-        policy.id = policy_id
+        """Test deleting an approval workflow."""
+        workflow_id = uuid.uuid4()
+        policy = MagicMock(spec=ApprovalWorkflow)
+        policy.id = workflow_id
 
         # Mock policy lookup
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=policy,
         )
 
         # Mock tool count query
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_tool_configuration.count_by_policy",
+            "preloop.api.endpoints.tools.crud_tool_configuration.count_by_workflow",
             return_value=2,
         )
 
-        # Mock crud_approval_policy.remove (which handles the actual deletion)
+        # Mock crud_approval_workflow.remove (which handles the actual deletion)
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.remove",
+            "preloop.api.endpoints.tools.crud_approval_workflow.remove",
             return_value=policy,
         )
 
-        result = await tools.delete_approval_policy(
-            policy_id=policy_id,
+        result = await tools.delete_approval_workflow(
+            workflow_id=workflow_id,
             account=mock_account,
             db=mock_db,
         )
@@ -706,23 +706,23 @@ class TestApprovalPolicyEndpoints:
         assert "2 tool(s)" in result["message"]
 
 
-class TestApprovalPolicyEndpointsErrorHandling:
-    """Test approval policy endpoints error handling."""
+class TestApprovalWorkflowEndpointsErrorHandling:
+    """Test approval workflow endpoints error handling."""
 
-    async def test_get_approval_policy_not_found(
+    async def test_get_approval_workflow_not_found(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test getting non-existent approval policy returns 404."""
-        policy_id = uuid.uuid4()
+        """Test getting non-existent approval workflow returns 404."""
+        workflow_id = uuid.uuid4()
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=None,
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await tools.get_approval_policy(
-                policy_id=policy_id,
+            await tools.get_approval_workflow(
+                workflow_id=workflow_id,
                 account=mock_account,
                 db=mock_db,
             )
@@ -730,60 +730,60 @@ class TestApprovalPolicyEndpointsErrorHandling:
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
         assert "not found" in exc_info.value.detail.lower()
 
-    async def test_update_approval_policy_not_found(
+    async def test_update_approval_workflow_not_found(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test updating non-existent approval policy returns 404."""
-        policy_id = uuid.uuid4()
-        update_data = ApprovalPolicyUpdate(name="New Name")
+        """Test updating non-existent approval workflow returns 404."""
+        workflow_id = uuid.uuid4()
+        update_data = ApprovalWorkflowUpdate(name="New Name")
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=None,
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await tools.update_approval_policy(
-                policy_id=policy_id,
-                policy_update=update_data,
+            await tools.update_approval_workflow(
+                workflow_id=workflow_id,
+                workflow_update=update_data,
                 account=mock_account,
                 db=mock_db,
             )
 
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_update_approval_policy_duplicate_name(
+    async def test_update_approval_workflow_duplicate_name(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test updating approval policy with duplicate name returns 400."""
-        policy_id = uuid.uuid4()
-        another_policy_id = uuid.uuid4()
+        """Test updating approval workflow with duplicate name returns 400."""
+        workflow_id = uuid.uuid4()
+        another_workflow_id = uuid.uuid4()
 
-        policy = MagicMock(spec=ApprovalPolicy)
-        policy.id = policy_id
+        policy = MagicMock(spec=ApprovalWorkflow)
+        policy.id = workflow_id
         policy.name = "Original Name"
         policy.account_id = str(mock_account.id)
         policy.is_default = False
 
-        existing_policy = MagicMock(spec=ApprovalPolicy)
-        existing_policy.id = another_policy_id
+        existing_policy = MagicMock(spec=ApprovalWorkflow)
+        existing_policy.id = another_workflow_id
         existing_policy.name = "Conflicting Name"
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=policy,
         )
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get_by_name",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get_by_name",
             return_value=existing_policy,
         )
 
-        update_data = ApprovalPolicyUpdate(name="Conflicting Name")
+        update_data = ApprovalWorkflowUpdate(name="Conflicting Name")
 
         with pytest.raises(HTTPException) as exc_info:
-            await tools.update_approval_policy(
-                policy_id=policy_id,
-                policy_update=update_data,
+            await tools.update_approval_workflow(
+                workflow_id=workflow_id,
+                workflow_update=update_data,
                 account=mock_account,
                 db=mock_db,
             )
@@ -791,78 +791,78 @@ class TestApprovalPolicyEndpointsErrorHandling:
         assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
         assert "already exists" in exc_info.value.detail
 
-    async def test_delete_approval_policy_not_found(
+    async def test_delete_approval_workflow_not_found(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test deleting non-existent approval policy returns 404."""
-        policy_id = uuid.uuid4()
+        """Test deleting non-existent approval workflow returns 404."""
+        workflow_id = uuid.uuid4()
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=None,
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await tools.delete_approval_policy(
-                policy_id=policy_id,
+            await tools.delete_approval_workflow(
+                workflow_id=workflow_id,
                 account=mock_account,
                 db=mock_db,
             )
 
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_delete_approval_policy_remove_fails(
+    async def test_delete_approval_workflow_remove_fails(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test deleting approval policy when remove returns None."""
-        policy_id = uuid.uuid4()
-        policy = MagicMock(spec=ApprovalPolicy)
-        policy.id = policy_id
+        """Test deleting approval workflow when remove returns None."""
+        workflow_id = uuid.uuid4()
+        policy = MagicMock(spec=ApprovalWorkflow)
+        policy.id = workflow_id
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get",
             return_value=policy,
         )
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_tool_configuration.count_by_policy",
+            "preloop.api.endpoints.tools.crud_tool_configuration.count_by_workflow",
             return_value=0,
         )
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.remove",
+            "preloop.api.endpoints.tools.crud_approval_workflow.remove",
             return_value=None,
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await tools.delete_approval_policy(
-                policy_id=policy_id,
+            await tools.delete_approval_workflow(
+                workflow_id=workflow_id,
                 account=mock_account,
                 db=mock_db,
             )
 
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
 
-    async def test_create_approval_policy_error(
+    async def test_create_approval_workflow_error(
         self, mock_db, mock_user, mock_account, mocker
     ):
-        """Test creating approval policy with database error."""
-        policy_data = ApprovalPolicyCreate(
-            name="Test Policy",
+        """Test creating approval workflow with database error."""
+        workflow_data = ApprovalWorkflowCreate(
+            name="Test Workflow",
             approval_type="slack",
             channel="#approvals",
         )
 
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.get_by_name",
+            "preloop.api.endpoints.tools.crud_approval_workflow.get_by_name",
             return_value=None,
         )
         mocker.patch(
-            "preloop.api.endpoints.tools.crud_approval_policy.create",
+            "preloop.api.endpoints.tools.crud_approval_workflow.create",
             side_effect=Exception("Database error"),
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await tools.create_approval_policy(
-                policy_data=policy_data,
+            await tools.create_approval_workflow(
+                workflow_data=workflow_data,
                 account=mock_account,
                 db=mock_db,
             )

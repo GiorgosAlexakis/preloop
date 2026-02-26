@@ -1,4 +1,4 @@
-"""Tool configuration model for managing tool settings and approval policies."""
+"""Tool configuration model for managing tool settings and approval workflows."""
 
 import uuid
 from typing import TYPE_CHECKING, Dict, List, Optional
@@ -21,7 +21,7 @@ class ToolConfiguration(Base):
     """Tool configuration model for managing per-account tool settings.
 
     This model controls which tools are available to each account and
-    their approval policies. It supports:
+    their approval workflows. It supports:
     - Built-in/default tools (always available)
     - External MCP server tools
     - Future HTTP tools
@@ -34,7 +34,7 @@ class ToolConfiguration(Base):
         mcp_server_id: Reference to MCP server (if tool_source='mcp').
         is_enabled: Whether the tool is enabled for this account.
         requires_approval: Whether the tool requires pre-execution approval ("preloop").
-        approval_policy_id: Reference to approval policy (if requires_approval=True).
+        approval_workflow_id: Reference to approval workflow (if requires_approval=True).
         tool_description: Description of what the tool does.
         tool_schema: JSON schema for tool parameters.
         custom_config: Additional configuration options.
@@ -72,13 +72,13 @@ class ToolConfiguration(Base):
         Boolean, nullable=False, default=True, comment="Whether the tool is enabled"
     )
 
-    # Reference to reusable approval policy
-    approval_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    # Reference to reusable approval workflow
+    approval_workflow_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("approval_policy.id", ondelete="SET NULL"),
+        ForeignKey("approval_workflow.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Reference to approval policy (if set, tool requires approval)",
+        comment="Reference to approval workflow (if set, tool requires approval)",
     )
 
     # Metadata
@@ -113,8 +113,8 @@ class ToolConfiguration(Base):
     mcp_server: Mapped[Optional["MCPServer"]] = relationship(
         "MCPServer", back_populates="tool_configurations"
     )
-    approval_policy: Mapped[Optional["ApprovalPolicy"]] = relationship(
-        "ApprovalPolicy",
+    approval_workflow: Mapped[Optional["ApprovalWorkflow"]] = relationship(
+        "ApprovalWorkflow",
         back_populates="tool_configurations",
     )
     approval_requests: Mapped[list["ApprovalRequest"]] = relationship(
@@ -142,22 +142,22 @@ class ToolConfiguration(Base):
     def __repr__(self) -> str:
         """Return string representation of the configuration."""
         status = "enabled" if self.is_enabled else "disabled"
-        approval = " (approval required)" if self.approval_policy_id else ""
+        approval = " (approval required)" if self.approval_workflow_id else ""
         return f"<ToolConfiguration {self.tool_name} [{self.tool_source}] ({status}{approval}) for account {self.account_id}>"
 
 
-class ApprovalPolicy(Base):
-    """Reusable approval policy for tools that require pre-execution approval.
+class ApprovalWorkflow(Base):
+    """Reusable approval workflow for tools that require pre-execution approval.
 
     This model defines how approval requests should be handled for tools
     with requires_approval=True. Policies are account-scoped and reusable
     across multiple tool configurations.
 
     Attributes:
-        id: Unique identifier for the policy.
-        account_id: The account this policy belongs to.
-        name: Human-readable name for the policy.
-        description: Optional description of what this policy does.
+        id: Unique identifier for the workflow.
+        account_id: The account this workflow belongs to.
+        name: Human-readable name for the workflow.
+        description: Optional description of what this workflow does.
         approval_type: Type of approval mechanism ('slack', 'mattermost', etc.).
         channel: Slack/Mattermost channel for approval requests.
         user: Specific user to request approval from.
@@ -166,26 +166,26 @@ class ApprovalPolicy(Base):
         require_reason: Whether approver must provide a reason.
     """
 
-    __tablename__ = "approval_policy"
+    __tablename__ = "approval_workflow"
 
-    # Policy identification
+    # workflow identification
     account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="The account this policy belongs to",
+        comment="The account this workflow belongs to",
     )
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
         index=True,
-        comment="Human-readable name for the policy",
+        comment="Human-readable name for the workflow",
     )
     description: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
-        comment="Optional description of what this policy does",
+        comment="Optional description of what this workflow does",
     )
 
     # Approval mechanism
@@ -209,7 +209,7 @@ class ApprovalPolicy(Base):
         JSON, nullable=True, comment="Generic configuration for approval mechanism"
     )
 
-    # Policy settings
+    # workflow settings
     timeout_seconds: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
@@ -234,7 +234,7 @@ class ApprovalPolicy(Base):
         nullable=False,
         default=False,
         index=True,
-        comment="Whether this is the default policy for the account",
+        comment="Whether this is the default workflow for the account",
     )
 
     # Workflow configuration (Phase 2+)
@@ -326,41 +326,41 @@ class ApprovalPolicy(Base):
         server_default="escalate",
         comment="Behavior when AI confidence is below threshold: 'escalate', 'approve', 'deny'",
     )
-    escalation_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    escalation_workflow_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("approval_policy.id", ondelete="SET NULL"),
+        ForeignKey("approval_workflow.id", ondelete="SET NULL"),
         nullable=True,
-        comment="Policy to escalate to when fallback_behavior='escalate'",
+        comment="workflow to escalate to when fallback_behavior='escalate'",
     )
 
     # Relationships
     account: Mapped["Account"] = relationship("Account")
     tool_configurations: Mapped[list["ToolConfiguration"]] = relationship(
-        "ToolConfiguration", back_populates="approval_policy"
+        "ToolConfiguration", back_populates="approval_workflow"
     )
     approval_requests: Mapped[list["ApprovalRequest"]] = relationship(
         "ApprovalRequest",
-        back_populates="approval_policy",
+        back_populates="approval_workflow",
         cascade="all, delete-orphan",
     )
-    # The policy to escalate to when AI confidence is below threshold
-    escalation_policy: Mapped[Optional["ApprovalPolicy"]] = relationship(
-        "ApprovalPolicy",
-        remote_side="ApprovalPolicy.id",
-        foreign_keys=[escalation_policy_id],
+    # The workflow to escalate to when AI confidence is below threshold
+    escalation_workflow: Mapped[Optional["ApprovalWorkflow"]] = relationship(
+        "ApprovalWorkflow",
+        remote_side="ApprovalWorkflow.id",
+        foreign_keys=[escalation_workflow_id],
         uselist=False,
     )
 
-    # Unique constraint: one policy name per account
+    # Unique constraint: one workflow name per account
     __table_args__ = (
         UniqueConstraint(
             "account_id",
             "name",
-            name="uq_account_policy_name",
+            name="uq_account_workflow_name",
         ),
     )
 
     def __repr__(self) -> str:
-        """Return string representation of the policy."""
+        """Return string representation of the workflow."""
         target = self.channel or self.user or "unknown"
-        return f"<ApprovalPolicy(name={self.name}, type={self.approval_type}, target={target})>"
+        return f"<ApprovalWorkflow(name={self.name}, type={self.approval_type}, target={target})>"

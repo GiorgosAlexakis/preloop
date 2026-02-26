@@ -64,7 +64,7 @@ def notify_admins(subject: str, message: str, message_html: str = None):
     admin_email = settings.product_team_email
     if admin_email:
         # Include instance URL in email subject
-        email_subject = f"{instance_prefix}{subject}"
+        email_subject = f"{subject}"
         send_email(admin_email, email_subject, message, message_html)
 
     # Send Slack notification if webhook is configured

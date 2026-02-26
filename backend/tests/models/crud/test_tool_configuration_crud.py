@@ -207,10 +207,10 @@ def test_get_by_source(crud_tool_config, mock_db_session):
     assert all(config.tool_source == tool_source for config in result)
 
 
-def test_count_by_policy(crud_tool_config, mock_db_session):
-    """Test counting tool configurations by policy."""
+def test_count_by_workflow(crud_tool_config, mock_db_session):
+    """Test counting tool configurations by workflow."""
     # Arrange
-    policy_id = str(uuid4())
+    workflow_id = str(uuid4())
     expected_count = 5
 
     mock_query = MagicMock()
@@ -219,7 +219,9 @@ def test_count_by_policy(crud_tool_config, mock_db_session):
     mock_query.count.return_value = expected_count
 
     # Act
-    result = crud_tool_config.count_by_policy(mock_db_session, policy_id=policy_id)
+    result = crud_tool_config.count_by_workflow(
+        mock_db_session, workflow_id=workflow_id
+    )
 
     # Assert
     assert result == expected_count

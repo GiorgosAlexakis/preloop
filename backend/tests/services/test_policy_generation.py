@@ -34,13 +34,13 @@ version: "1.0"
 metadata:
   name: "Generated Policy"
   description: "Auto-generated"
-approval_policies:
+approval_workflows:
   - name: "review"
     timeout_seconds: 300
 tools:
   - name: "bash"
     source: "builtin"
-    approval_policy: "review"
+    approval_workflow: "review"
 """
 
 INVALID_POLICY_YAML = """\

@@ -126,9 +126,9 @@ def evaluate_policy(
         trigger_event: Optional trigger event data (for condition evaluation context).
 
     Returns:
-        Tuple of (action, approval_policy_id, matched_rule_description).
+        Tuple of (action, approval_workflow_id, matched_rule_description).
         - action: 'allow', 'deny', or 'require_approval'
-        - approval_policy_id: Policy ID to use if action is 'require_approval'
+        - approval_workflow_id: Policy ID to use if action is 'require_approval'
         - matched_rule_description: Description of the matched rule (or reason for default)
     """
     # Get tool configuration
@@ -179,16 +179,16 @@ def evaluate_policy(
 
     logger.info(
         f"Policy evaluation for '{tool_name}': found {len(rules)} access rules, "
-        f"tool_config.approval_policy_id={tool_config.approval_policy_id}"
+        f"tool_config.approval_workflow_id={tool_config.approval_workflow_id}"
     )
 
     if not rules:
-        # No rules defined, check for legacy approval_policy_id on tool config
-        if tool_config.approval_policy_id:
-            # Legacy behavior: tool has approval policy but no rules
+        # No rules defined, check for legacy approval_workflow_id on tool config
+        if tool_config.approval_workflow_id:
+            # Legacy behavior: tool has approval workflow but no rules
             logger.warning(
-                f"LEGACY PATH: tool '{tool_name}' has approval_policy_id="
-                f"{tool_config.approval_policy_id} but no access rules. "
+                f"LEGACY PATH: tool '{tool_name}' has approval_workflow_id="
+                f"{tool_config.approval_workflow_id} but no access rules. "
                 f"ALL calls will require approval regardless of arguments. "
                 f"Add access rules with conditions to enable conditional approval."
             )
@@ -196,15 +196,15 @@ def evaluate_policy(
                 account_id=account_id,
                 tool_name=tool_name,
                 action="require_approval",
-                rule_description="Tool has approval policy configured (legacy mode)",
+                rule_description="Tool has approval workflow configured (legacy mode)",
                 tool_args=tool_args,
                 user_id=user_id,
                 execution_id=execution_id,
             )
             return (
                 "require_approval",
-                tool_config.approval_policy_id,
-                "Tool has approval policy configured (legacy mode)",
+                tool_config.approval_workflow_id,
+                "Tool has approval workflow configured (legacy mode)",
             )
         _log_policy_decision_async(
             account_id=account_id,
@@ -249,12 +249,12 @@ def evaluate_policy(
                     f"-> action={rule.action}"
                 )
 
-                # Determine approval policy ID for require_approval action
-                approval_policy_id = None
+                # Determine approval workflow ID for require_approval action
+                approval_workflow_id = None
                 if rule.action == "require_approval":
                     # Prefer the rule-level policy; fall back to tool config default
-                    approval_policy_id = (
-                        rule.approval_policy_id or tool_config.approval_policy_id
+                    approval_workflow_id = (
+                        rule.approval_workflow_id or tool_config.approval_workflow_id
                     )
 
                 rule_desc = (
@@ -275,7 +275,7 @@ def evaluate_policy(
 
                 return (
                     rule.action,
-                    approval_policy_id,
+                    approval_workflow_id,
                     rule_desc,
                 )
 
@@ -303,7 +303,7 @@ def evaluate_policy(
             )
             return (
                 "require_approval",
-                tool_config.approval_policy_id,
+                tool_config.approval_workflow_id,
                 error_desc,
             )
 
@@ -652,13 +652,13 @@ async def evaluate_policy_async(
     rules = result.scalars().all()
 
     if not rules:
-        # No rules defined, check for legacy approval_policy_id on tool config
-        if tool_config.approval_policy_id:
+        # No rules defined, check for legacy approval_workflow_id on tool config
+        if tool_config.approval_workflow_id:
             _log_policy_decision_async(
                 account_id=account_id,
                 tool_name=tool_name,
                 action="require_approval",
-                rule_description="Tool has approval policy configured (legacy mode)",
+                rule_description="Tool has approval workflow configured (legacy mode)",
                 tool_args=tool_args,
                 user_id=user_id,
                 execution_id=execution_id,
@@ -666,8 +666,8 @@ async def evaluate_policy_async(
             )
             return (
                 "require_approval",
-                tool_config.approval_policy_id,
-                "Tool has approval policy configured (legacy mode)",
+                tool_config.approval_workflow_id,
+                "Tool has approval workflow configured (legacy mode)",
             )
         _log_policy_decision_async(
             account_id=account_id,
@@ -707,12 +707,12 @@ async def evaluate_policy_async(
                     f"-> action={rule.action}"
                 )
 
-                approval_policy_id = None
+                approval_workflow_id = None
                 if rule.action == "require_approval":
-                    # Prefer the rule's own approval_policy_id; fall back to
-                    # the tool config's legacy approval_policy_id.
-                    approval_policy_id = (
-                        rule.approval_policy_id or tool_config.approval_policy_id
+                    # Prefer the rule's own approval_workflow_id; fall back to
+                    # the tool config's legacy approval_workflow_id.
+                    approval_workflow_id = (
+                        rule.approval_workflow_id or tool_config.approval_workflow_id
                     )
 
                 rule_desc = (
@@ -734,7 +734,7 @@ async def evaluate_policy_async(
 
                 return (
                     rule.action,
-                    approval_policy_id,
+                    approval_workflow_id,
                     rule_desc,
                 )
 
@@ -758,7 +758,7 @@ async def evaluate_policy_async(
             )
             return (
                 "require_approval",
-                tool_config.approval_policy_id,
+                tool_config.approval_workflow_id,
                 error_desc,
             )
 

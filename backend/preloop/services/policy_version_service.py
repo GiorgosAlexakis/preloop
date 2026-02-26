@@ -56,7 +56,7 @@ class PolicyVersionService:
     ) -> PolicySnapshot:
         """Create a snapshot of the current policy state.
 
-        Exports the current MCP servers, approval policies, tool configurations,
+        Exports the current MCP servers, approval workflows, tool configurations,
         and defaults into a versioned snapshot.
 
         Args:
@@ -80,7 +80,7 @@ class PolicyVersionService:
 
         # Get counts for summary
         mcp_servers_count = len(policy.mcp_servers or [])
-        policies_count = len(policy.approval_policies or [])
+        policies_count = len(policy.approval_workflows or [])
         tools_count = len(policy.tools or [])
 
         # Convert to JSON-serializable dict

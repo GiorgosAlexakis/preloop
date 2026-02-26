@@ -23,7 +23,7 @@ describe('ToolsView (approvals + conditions)', () => {
       schema: {},
       is_enabled: true,
       is_supported: true,
-      approval_policy_id: null,
+      approval_workflow_id: null,
       has_approval_condition: false,
       config_id: null,
     };
@@ -56,7 +56,7 @@ describe('ToolsView (approvals + conditions)', () => {
           });
         }
 
-        if (url.endsWith('/api/v1/approval-policies') && method === 'GET') {
+        if (url.endsWith('/api/v1/approval-workflows') && method === 'GET') {
           return new Response(JSON.stringify([defaultPolicy]), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
@@ -164,7 +164,7 @@ describe('ToolsView (approvals + conditions)', () => {
             condition_type: 'cel',
             description: null,
             is_enabled: true,
-            approval_policy_id: 'policy-1',
+            approval_workflow_id: 'policy-1',
           },
         },
         bubbles: true,
@@ -211,7 +211,7 @@ describe('ToolsView – filter persistence', () => {
             headers: { 'Content-Type': 'application/json' },
           });
         }
-        if (url.endsWith('/api/v1/approval-policies') && method === 'GET') {
+        if (url.endsWith('/api/v1/approval-workflows') && method === 'GET') {
           return new Response(JSON.stringify([]), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },

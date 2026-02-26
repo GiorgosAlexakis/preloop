@@ -113,14 +113,14 @@ The `Preloop Console` application is structured around a component-based archite
 
 The Tools page has been redesigned from a card-based layout to a tree-style list view:
 
-*   **Summary stats table:** Interactive statistics panel showing tool counts (total, available/unavailable, enabled/disabled, built-in/proxied, with rules/no rules, require approval/no approval, approval policies). Each stat is a clickable filter link.
-*   **Unified filter system:** Single active filter at a time, text search, and approval policy filter dropdown.
+*   **Summary stats table:** Interactive statistics panel showing tool counts (total, available/unavailable, enabled/disabled, built-in/proxied, with rules/no rules, require approval/no approval, approval workflows). Each stat is a clickable filter link.
+*   **Unified filter system:** Single active filter at a time, text search, and approval workflow filter dropdown.
 *   **Tool groups:** Tools grouped by source — external MCP servers listed first, then HTTP tools, then built-in tools.
 *   **Import/Export:** Full configuration export/import as YAML.
 *   **Key components:**
     *   `tool-list-item.ts` — Individual tool row with expand/collapse, enable/disable toggle, rule summary badges, and drag-and-drop rule reordering.
-    *   `tool-rule-editor.ts` — Dialog for creating/editing access rules with action selection (deny/require approval/allow), condition builder (simple or CEL), and approval policy configuration (human or AI-driven).
-    *   `approval-policy-dialog.ts` — Dialog for creating/editing approval policies.
+    *   `tool-rule-editor.ts` — Dialog for creating/editing access rules with action selection (deny/require approval/allow), condition builder (simple or CEL), and approval workflow configuration (human or AI-driven).
+    *   `approval-policy-dialog.ts` — Dialog for creating/editing approval workflows.
 *   **Access rule UI semantics:** Actions use semantic icons and colors — Deny (red, `x-octagon-fill`), Require Approval (blue/primary, `shield-lock-fill`), Allow (green, `check-circle-fill`).
 
 ## Core Components
@@ -376,14 +376,14 @@ Preloop includes comprehensive infrastructure for managing tool configurations a
 
 **Database Models:**
 - **`ToolConfiguration`**: Defines which tools are enabled for an account, their configuration parameters, and approval requirements
-  - Links to an optional `ApprovalPolicy` for tools requiring human approval
+  - Links to an optional `ApprovalWorkflow` for tools requiring human approval
   - Supports both default (built-in) and proxied (external MCP server) tools
   - Stores tool-specific configuration in JSONB format
 
-- **`ApprovalPolicy`**: Defines rules for when and how tool executions require approval
+- **`ApprovalWorkflow`**: Defines rules for when and how tool executions require approval
   - Configurable approval modes: manual, auto-approve, auto-reject
   - Optional webhook integration for external approval systems
-  - Supports policy-specific settings (e.g., timeout duration, required approvers)
+  - Supports workflow-specific settings (e.g., timeout duration, required approvers)
 
 #### Approval Workflow Architecture
 
@@ -445,8 +445,8 @@ graph TD
 - `POST /api/v1/tool-configurations` - Create new tool configuration
 - `PUT /api/v1/tool-configurations/{id}` - Update tool configuration
 - `DELETE /api/v1/tool-configurations/{id}` - Delete tool configuration
-- `GET /api/v1/approval-policies` - List approval policies
-- `POST /api/v1/approval-policies` - Create approval policy
+- `GET /api/v1/approval-workflows` - List approval workflows
+- `POST /api/v1/approval-workflows` - Create approval workflow
 - `GET /api/v1/approval-requests` - List approval requests
 - `GET /approval/{id}/data` - Public endpoint for getting approval request details (token-based)
 - `POST /approval/{id}/decide` - Public endpoint for approval responses (token-based)
@@ -465,7 +465,7 @@ The tool configuration system has been expanded with a **ToolAccessRule** model 
 | `priority` | Integer for rule ordering (evaluated in priority order, first match wins) |
 | `description` | Human-readable description (for deny rules, returned as denial message to the agent) |
 | `is_enabled` | Toggle individual rules on/off |
-| `approval_policy_id` | Links to an ApprovalPolicy for "require_approval" rules |
+| `approval_workflow_id` | Links to an ApprovalWorkflow for "require_approval" rules |
 
 **Evaluation:** Rules are evaluated at runtime in `DynamicFastMCP._evaluate_policy()` — the first matching enabled rule determines the action. If no rules match, the tool call is allowed by default (but audited in EE).
 

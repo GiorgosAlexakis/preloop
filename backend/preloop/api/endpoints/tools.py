@@ -17,7 +17,7 @@ from preloop.api.auth import get_current_active_user
 from preloop.api.common import get_account_for_user
 from preloop.models.models.user import User
 from preloop.models.crud import (
-    crud_approval_policy,
+    crud_approval_workflow,
     crud_mcp_server,
     crud_mcp_tool,
     crud_tool_configuration,
@@ -27,9 +27,9 @@ from preloop.models.crud import (
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
 from preloop.models.schemas.tool_configuration import (
-    ApprovalPolicyCreate,
-    ApprovalPolicyResponse,
-    ApprovalPolicyUpdate,
+    ApprovalWorkflowCreate,
+    ApprovalWorkflowResponse,
+    ApprovalWorkflowUpdate,
     ToolConfigurationCreate,
     ToolConfigurationResponse,
     ToolConfigurationUpdate,
@@ -74,9 +74,9 @@ BUILTIN_TOOLS = [
                     "type": "string",
                     "description": "Optional: Name of the agent or flow requesting approval (auto-populated if not specified)",
                 },
-                "approval_policy": {
+                "approval_workflow": {
                     "type": "string",
-                    "description": "Optional name of the approval policy to use",
+                    "description": "Optional name of the approval workflow to use",
                 },
             },
             "required": ["operation", "context", "reasoning"],
@@ -498,8 +498,8 @@ async def list_all_tools(
                 "priority": rule.priority,
                 "description": rule.description,
                 "is_enabled": rule.is_enabled,
-                "approval_policy_id": str(rule.approval_policy_id)
-                if rule.approval_policy_id
+                "approval_workflow_id": str(rule.approval_workflow_id)
+                if rule.approval_workflow_id
                 else None,
             }
         )
@@ -545,8 +545,8 @@ async def list_all_tools(
                 "required_tracker_types": required_tracker_types,
                 "is_supported": is_supported,
                 "unsupported_reason": unsupported_reason,
-                "approval_policy_id": str(config.approval_policy_id)
-                if config and config.approval_policy_id
+                "approval_workflow_id": str(config.approval_workflow_id)
+                if config and config.approval_workflow_id
                 else None,
                 "config_id": config_id,
                 "has_approval_condition": condition_map.get(config_id, False)
@@ -578,8 +578,8 @@ async def list_all_tools(
                     "required_tracker_types": [],
                     "is_supported": True,
                     "unsupported_reason": None,
-                    "approval_policy_id": str(config.approval_policy_id)
-                    if config and config.approval_policy_id
+                    "approval_workflow_id": str(config.approval_workflow_id)
+                    if config and config.approval_workflow_id
                     else None,
                     "config_id": config_id,
                     "has_approval_condition": condition_map.get(config_id, False)
@@ -955,211 +955,223 @@ async def delete_tool_configuration(
         )
 
 
-# Approval Policy endpoints
+# Approval workflow endpoints
 
 
-@router.get("/approval-policies", response_model=List[ApprovalPolicyResponse])
-async def list_approval_policies(
+@router.get("/approval-workflows", response_model=List[ApprovalWorkflowResponse])
+async def list_approval_workflows(
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
-) -> List[ApprovalPolicyResponse]:
-    """List all approval policies for the current user's account.
+) -> List[ApprovalWorkflowResponse]:
+    """List all approval workflows for the current user's account.
 
     Args:
         account: Current user's account (from dependency)
         db: Database session
 
     Returns:
-        List of approval policies
+        List of approval workflows
     """
-    policies = crud_approval_policy.get_multi_by_account(db, account_id=str(account.id))
+    policies = crud_approval_workflow.get_multi_by_account(
+        db, account_id=str(account.id)
+    )
 
-    logger.info(f"Returning {len(policies)} approval policies for user {account.id}")
+    logger.info(f"Returning {len(policies)} approval workflows for user {account.id}")
 
-    return [ApprovalPolicyResponse.model_validate(p) for p in policies]
+    return [ApprovalWorkflowResponse.model_validate(p) for p in policies]
 
 
-@router.post("/approval-policies", status_code=status.HTTP_201_CREATED)
-async def create_approval_policy(
-    policy_data: ApprovalPolicyCreate,
+@router.post("/approval-workflows", status_code=status.HTTP_201_CREATED)
+async def create_approval_workflow(
+    workflow_data: ApprovalWorkflowCreate,
     account: Account = Depends(get_account_for_user),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
-) -> ApprovalPolicyResponse:
-    """Create a reusable approval policy.
+) -> ApprovalWorkflowResponse:
+    """Create a reusable approval workflow.
 
     Args:
-        policy_data: Approval policy data
+        workflow_data: Approval workflow data
         account: Current user's account (from dependency)
         db: Database session
 
     Returns:
-        Created approval policy
+        Created approval workflow
 
     Raises:
-        HTTPException: If policy with same name already exists or creation fails
+        HTTPException: If workflow with same name already exists or creation fails
     """
-    # Check if policy with same name already exists
-    existing_policy = crud_approval_policy.get_by_name(
-        db, account_id=str(account.id), name=policy_data.name
+    # Check if workflow with same name already exists
+    existing_workflow = crud_approval_workflow.get_by_name(
+        db, account_id=str(account.id), name=workflow_data.name
     )
 
-    if existing_policy:
+    if existing_workflow:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Approval policy with name '{policy_data.name}' already exists",
+            detail=f"Approval workflow with name '{workflow_data.name}' already exists",
         )
 
     try:
-        # Use CRUD layer for proper default policy handling
-        new_policy = crud_approval_policy.create(
-            db, obj_in=policy_data, account_id=str(account.id)
+        # Use CRUD layer for proper default workflow handling
+        new_workflow = crud_approval_workflow.create(
+            db, obj_in=workflow_data, account_id=str(account.id)
         )
 
         log_config_change(
             db,
             user=current_user,
-            config_type="approval_policy",
+            config_type="approval_workflow",
             action="created",
-            new_value={"id": str(new_policy.id), "name": new_policy.name},
+            new_value={"id": str(new_workflow.id), "name": new_workflow.name},
         )
 
         logger.info(
-            f"Created approval policy '{policy_data.name}' (user: {account.id}, is_default: {new_policy.is_default})"
+            f"Created approval workflow '{workflow_data.name}' (user: {account.id}, is_default: {new_workflow.is_default})"
         )
 
-        return ApprovalPolicyResponse.model_validate(new_policy)
+        return ApprovalWorkflowResponse.model_validate(new_workflow)
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Error creating approval policy: {e}", exc_info=True)
+        logger.error(f"Error creating approval workflow: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating approval policy: {str(e)}",
+            detail=f"Error creating approval workflow: {str(e)}",
         )
 
 
-@router.get("/approval-policies/{policy_id}", response_model=ApprovalPolicyResponse)
-async def get_approval_policy(
-    policy_id: UUID,
+@router.get(
+    "/approval-workflows/{workflow_id}", response_model=ApprovalWorkflowResponse
+)
+async def get_approval_workflow(
+    workflow_id: UUID,
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
-) -> ApprovalPolicyResponse:
-    """Get an approval policy by ID.
+) -> ApprovalWorkflowResponse:
+    """Get an approval workflow by ID.
 
     Args:
-        policy_id: Approval policy ID
+        workflow_id: Approval workflow ID
         account: Current user's account (from dependency)
         db: Database session
 
     Returns:
-        Approval policy details
+        Approval workflow details
 
     Raises:
-        HTTPException: If policy not found or access denied
+        HTTPException: If workflow not found or access denied
     """
-    policy = crud_approval_policy.get(db, id=policy_id, account_id=str(account.id))
+    workflow = crud_approval_workflow.get(
+        db, id=workflow_id, account_id=str(account.id)
+    )
 
-    if not policy:
+    if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Approval policy not found or access denied",
+            detail="Approval workflow not found or access denied",
         )
 
-    return ApprovalPolicyResponse.model_validate(policy)
+    return ApprovalWorkflowResponse.model_validate(workflow)
 
 
-@router.put("/approval-policies/{policy_id}", response_model=ApprovalPolicyResponse)
-async def update_approval_policy(
-    policy_id: UUID,
-    policy_update: ApprovalPolicyUpdate,
+@router.put(
+    "/approval-workflows/{workflow_id}", response_model=ApprovalWorkflowResponse
+)
+async def update_approval_workflow(
+    workflow_id: UUID,
+    workflow_update: ApprovalWorkflowUpdate,
     account: Account = Depends(get_account_for_user),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
-) -> ApprovalPolicyResponse:
-    """Update an approval policy.
+) -> ApprovalWorkflowResponse:
+    """Update an approval workflow.
 
     Args:
-        policy_id: Approval policy ID
-        policy_update: Updated policy data
+        workflow_id: Approval workflow ID
+        workflow_update: Updated workflow data
         account: Current user's account (from dependency)
         db: Database session
 
     Returns:
-        Updated approval policy
+        Updated approval workflow
 
     Raises:
-        HTTPException: If policy not found or update fails
+        HTTPException: If workflow not found or update fails
     """
-    policy = crud_approval_policy.get(db, id=policy_id, account_id=str(account.id))
+    workflow = crud_approval_workflow.get(
+        db, id=workflow_id, account_id=str(account.id)
+    )
 
-    if not policy:
+    if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Approval policy not found or access denied",
+            detail="Approval workflow not found or access denied",
         )
 
     # Update fields
-    update_data = policy_update.model_dump(exclude_unset=True)
+    update_data = workflow_update.model_dump(exclude_unset=True)
 
     try:
         # Check if name is being updated and if it conflicts
-        if "name" in update_data and update_data["name"] != policy.name:
-            existing_policy = crud_approval_policy.get_by_name(
+        if "name" in update_data and update_data["name"] != workflow.name:
+            existing_workflow = crud_approval_workflow.get_by_name(
                 db, account_id=str(account.id), name=update_data["name"]
             )
-            if existing_policy and existing_policy.id != policy_id:
+            if existing_workflow and existing_workflow.id != workflow_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Approval policy with name '{update_data['name']}' already exists",
+                    detail=f"Approval workflow with name '{update_data['name']}' already exists",
                 )
 
-        # Use CRUD layer for proper default policy handling
-        updated_policy = crud_approval_policy.update(
-            db, db_obj=policy, obj_in=policy_update
+        # Use CRUD layer for proper default workflow handling
+        updated_workflow = crud_approval_workflow.update(
+            db, db_obj=workflow, obj_in=workflow_update
         )
 
         log_config_change(
             db,
             user=current_user,
-            config_type="approval_policy",
+            config_type="approval_workflow",
             action="updated",
-            old_value={"id": str(policy_id), "name": policy.name},
-            new_value={"id": str(policy_id), "name": updated_policy.name},
+            old_value={"id": str(workflow_id), "name": workflow.name},
+            new_value={"id": str(workflow_id), "name": updated_workflow.name},
         )
 
         logger.info(
-            f"Updated approval policy {policy_id} for user {account.id} (is_default: {updated_policy.is_default})"
+            f"Updated approval workflow {workflow_id} for user {account.id} (is_default: {updated_workflow.is_default})"
         )
 
-        return ApprovalPolicyResponse.model_validate(updated_policy)
+        return ApprovalWorkflowResponse.model_validate(updated_workflow)
 
     except HTTPException:
         db.rollback()
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Error updating approval policy {policy_id}: {e}", exc_info=True)
+        logger.error(
+            f"Error updating approval workflow {workflow_id}: {e}", exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error updating approval policy: {str(e)}",
+            detail=f"Error updating approval workflow: {str(e)}",
         )
 
 
-@router.delete("/approval-policies/{policy_id}", status_code=status.HTTP_200_OK)
-async def delete_approval_policy(
-    policy_id: UUID,
+@router.delete("/approval-workflows/{workflow_id}", status_code=status.HTTP_200_OK)
+async def delete_approval_workflow(
+    workflow_id: UUID,
     account: Account = Depends(get_account_for_user),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
-    """Delete an approval policy.
+    """Delete an approval workflow.
 
-    Note: This will set approval_policy_id to NULL for any tool configurations
-    using this policy (due to ondelete="SET NULL").
+    Note: This will set approval_workflow_id to NULL for any tool configurations
+    using this workflow (due to ondelete="SET NULL").
 
     Args:
-        policy_id: Approval policy ID
+        workflow_id: Approval workflow ID
         account: Current user's account (from dependency)
         db: Database session
 
@@ -1167,48 +1179,50 @@ async def delete_approval_policy(
         Success message
 
     Raises:
-        HTTPException: If policy not found or deletion fails
+        HTTPException: If workflow not found or deletion fails
     """
-    policy = crud_approval_policy.get(db, id=policy_id, account_id=str(account.id))
+    workflow = crud_approval_workflow.get(
+        db, id=workflow_id, account_id=str(account.id)
+    )
 
-    if not policy:
+    if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Approval policy not found or access denied",
+            detail="Approval workflow not found or access denied",
         )
 
     try:
-        # Count how many tool configurations use this policy
-        tool_count = crud_tool_configuration.count_by_policy(
-            db, policy_id=str(policy_id)
+        # Count how many tool configurations use this workflow
+        tool_count = crud_tool_configuration.count_by_workflow(
+            db, workflow_id=str(workflow_id)
         )
 
-        # Use CRUD layer for proper default policy handling
-        deleted_policy = crud_approval_policy.remove(
-            db, id=policy_id, account_id=str(account.id)
+        # Use CRUD layer for proper default workflow handling
+        deleted_workflow = crud_approval_workflow.remove(
+            db, id=workflow_id, account_id=str(account.id)
         )
 
-        if not deleted_policy:
+        if not deleted_workflow:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Approval policy not found or already deleted",
+                detail="Approval workflow not found or already deleted",
             )
 
         log_config_change(
             db,
             user=current_user,
-            config_type="approval_policy",
+            config_type="approval_workflow",
             action="deleted",
-            old_value={"id": str(policy_id), "name": policy.name},
+            old_value={"id": str(workflow_id), "name": workflow.name},
         )
 
         logger.info(
-            f"Deleted approval policy {policy_id} (was used by {tool_count} tools) "
+            f"Deleted approval workflow {workflow_id} (was used by {tool_count} tools) "
             f"for user {account.id}"
         )
 
         return {
-            "message": f"Approval policy deleted successfully. {tool_count} tool(s) were using this policy."
+            "message": f"Approval workflow deleted successfully. {tool_count} tool(s) were using this workflow."
         }
 
     except HTTPException:
@@ -1216,10 +1230,12 @@ async def delete_approval_policy(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Error deleting approval policy {policy_id}: {e}", exc_info=True)
+        logger.error(
+            f"Error deleting approval workflow {workflow_id}: {e}", exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting approval policy: {str(e)}",
+            detail=f"Error deleting approval workflow: {str(e)}",
         )
 
 
@@ -1563,8 +1579,8 @@ class AccessRuleCreate(BaseModel):
         None, description="Description or denial message"
     )
     is_enabled: bool = Field(True, description="Whether the rule is active")
-    approval_policy_id: Optional[str] = Field(
-        None, description="Approval policy ID (for 'require_approval' action)"
+    approval_workflow_id: Optional[str] = Field(
+        None, description="Approval workflow ID (for 'require_approval' action)"
     )
 
 
@@ -1577,7 +1593,7 @@ class AccessRuleUpdate(BaseModel):
     priority: Optional[int] = None
     description: Optional[str] = None
     is_enabled: Optional[bool] = None
-    approval_policy_id: Optional[str] = None
+    approval_workflow_id: Optional[str] = None
 
 
 class AccessRuleResponse(BaseModel):
@@ -1592,7 +1608,7 @@ class AccessRuleResponse(BaseModel):
     priority: int
     description: Optional[str]
     is_enabled: bool
-    approval_policy_id: Optional[str] = None
+    approval_workflow_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1631,8 +1647,8 @@ async def list_access_rules(
             priority=r.priority,
             description=r.description,
             is_enabled=r.is_enabled,
-            approval_policy_id=str(r.approval_policy_id)
-            if r.approval_policy_id
+            approval_workflow_id=str(r.approval_workflow_id)
+            if r.approval_workflow_id
             else None,
         )
         for r in rules
@@ -1679,7 +1695,7 @@ async def create_access_rule(
                 "priority": rule_in.priority,
                 "description": rule_in.description,
                 "is_enabled": rule_in.is_enabled,
-                "approval_policy_id": rule_in.approval_policy_id,
+                "approval_workflow_id": rule_in.approval_workflow_id,
             },
         )
 
@@ -1711,8 +1727,8 @@ async def create_access_rule(
             priority=rule.priority,
             description=rule.description,
             is_enabled=rule.is_enabled,
-            approval_policy_id=str(rule.approval_policy_id)
-            if rule.approval_policy_id
+            approval_workflow_id=str(rule.approval_workflow_id)
+            if rule.approval_workflow_id
             else None,
         )
     except Exception as e:
@@ -1789,8 +1805,8 @@ async def update_access_rule(
             priority=rule.priority,
             description=rule.description,
             is_enabled=rule.is_enabled,
-            approval_policy_id=str(rule.approval_policy_id)
-            if rule.approval_policy_id
+            approval_workflow_id=str(rule.approval_workflow_id)
+            if rule.approval_workflow_id
             else None,
         )
     except Exception as e:

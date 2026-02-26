@@ -56,7 +56,10 @@ def with_approval(tool_func: Callable) -> Callable:
             from preloop.models.crud.tool_configuration import (
                 get_tool_config_by_name_and_source_async,
             )
-            from preloop.models.crud.approval_policy import get_approval_policy_async
+            from preloop.models.crud.approval_workflow import (
+                get_approval_workflow_async,
+            )
+            from preloop.services.policy_evaluator import evaluate_policy_async
 
             logger.info(
                 f"Checking approval requirement for tool '{tool_name}' "
@@ -72,13 +75,12 @@ def with_approval(tool_func: Callable) -> Callable:
                     tool_source="builtin",
                 )
 
-                # Evaluate policy rules (ToolAccessRule) to determine action
+                # Evaluate workflow rules (ToolAccessRule) to determine action
                 # This checks allow/deny/require_approval rules with conditions
-                from preloop.services.policy_evaluator import evaluate_policy_async
 
                 (
                     action,
-                    approval_policy_id,
+                    approval_workflow_id,
                     rule_description,
                 ) = await evaluate_policy_async(
                     db=db,
@@ -110,26 +112,30 @@ def with_approval(tool_func: Callable) -> Callable:
                     return await tool_func(*args, **kwargs)
 
                 # Handle require_approval action
-                # Get approval policy (from rule evaluation or tool config fallback)
-                policy_id = approval_policy_id or (
-                    config.approval_policy_id if config else None
+                # Get approval workflow (from rule evaluation or tool config fallback)
+                workflow_id = approval_workflow_id or (
+                    config.approval_workflow_id if config else None
                 )
 
-                if not policy_id:
-                    # No approval policy configured - fail closed (require approval by default)
+                if not workflow_id:
+                    # No approval workflow configured - fail closed (require approval by default)
                     logger.warning(
-                        f"Tool {tool_name} requires approval but no policy configured - failing closed"
+                        f"Tool {tool_name} requires approval but no workflow configured - failing closed"
                     )
-                    return "Tool requires approval but no approval policy is configured"
+                    return (
+                        "Tool requires approval but no approval workflow is configured"
+                    )
 
-                # Get approval policy using CRUD
-                policy = await get_approval_policy_async(db, policy_id=policy_id)
+                # Get approval workflow using CRUD
+                workflow = await get_approval_workflow_async(
+                    db, workflow_id=workflow_id
+                )
 
-                if not policy:
+                if not workflow:
                     logger.error(
-                        f"Approval policy {policy_id} not found for tool {tool_name}"
+                        f"Approval workflow {workflow_id} not found for tool {tool_name}"
                     )
-                    return f"Error: Approval policy not found for tool '{tool_name}'"
+                    return f"Error: Approval workflow not found for tool '{tool_name}'"
 
                 # Tool requires approval - handle it with streaming
                 logger.info(
@@ -150,7 +156,7 @@ def with_approval(tool_func: Callable) -> Callable:
                     approval_request = await approval_service.create_and_notify(
                         account_id=user_context.account_id,
                         tool_configuration_id=config.id,
-                        approval_policy=policy,
+                        approval_workflow=workflow,
                         tool_name=tool_name,
                         tool_args=kwargs,  # Use kwargs as tool arguments
                         agent_reasoning=None,
@@ -159,10 +165,10 @@ def with_approval(tool_func: Callable) -> Callable:
 
                     approval_url = f"{base_url}/approval/{approval_request.id}?token={approval_request.approval_token}"
                     notification_channel = (
-                        f"#{policy.channel}"
-                        if policy.channel
-                        else f"@{policy.user}"
-                        if policy.user
+                        f"#{workflow.channel}"
+                        if workflow.channel
+                        else f"@{workflow.user}"
+                        if workflow.user
                         else "webhook"
                     )
 
@@ -173,8 +179,8 @@ def with_approval(tool_func: Callable) -> Callable:
                         f"Tool: {tool_name}\n"
                         f"Arguments: {kwargs}\n"
                         f"Request ID: {approval_request.id}\n"
-                        f"Notification sent to: {policy.approval_type} ({notification_channel})\n"
-                        f"Timeout: {policy.timeout_seconds or 300}s\n"
+                        f"Notification sent to: {workflow.approval_type} ({notification_channel})\n"
+                        f"Timeout: {workflow.timeout_seconds or 300}s\n"
                         f"Approval URL: {approval_url}\n"
                         f"{'=' * 60}\n"
                         f"⏳ Waiting for approval (polling every 2s)..."
@@ -191,7 +197,7 @@ def with_approval(tool_func: Callable) -> Callable:
 
                     # Polling loop with progress updates
                     poll_interval = 2.0
-                    timeout_seconds = policy.timeout_seconds or 300
+                    timeout_seconds = workflow.timeout_seconds or 300
                     elapsed = 0
 
                     while True:
@@ -204,9 +210,18 @@ def with_approval(tool_func: Callable) -> Callable:
                             current_request = await get_approval_request_async(
                                 poll_db, request_id=approval_request.id
                             )
+                            # Extract needed fields before session closes to avoid DetachedInstanceError
+                            current_status = (
+                                current_request.status if current_request else None
+                            )
+                            current_comment = (
+                                current_request.approver_comment
+                                if current_request
+                                else None
+                            )
 
                         logger.info(
-                            f"[Polling] Checked approval status: {current_request.status if current_request else 'NOT_FOUND'} "
+                            f"[Polling] Checked approval status: {current_status if current_status else 'NOT_FOUND'} "
                             f"(elapsed: {elapsed}s)"
                         )
 
@@ -216,15 +231,16 @@ def with_approval(tool_func: Callable) -> Callable:
                             )
 
                         # Check if resolved
-                        if current_request.status in [
+                        if current_status in [
                             "approved",
                             "declined",
                             "cancelled",
                         ]:
                             logger.info(
-                                f"[Polling] ✅ Approval resolved with status: {current_request.status}"
+                                f"[Polling] ✅ Approval resolved with status: {current_status}"
                             )
-                            final_request = current_request
+                            final_status = current_status
+                            final_comment = current_comment
                             break
 
                         # Check if expired
@@ -276,22 +292,18 @@ def with_approval(tool_func: Callable) -> Callable:
                             )
 
                     # Check final status
-                    if final_request.status == "declined":
+                    if final_status == "declined":
                         logger.warning(f"Tool {tool_name} execution declined")
-                        comment = (
-                            f": {final_request.approver_comment}"
-                            if final_request.approver_comment
-                            else ""
-                        )
+                        comment = f": {final_comment}" if final_comment else ""
                         return f"Tool execution declined{comment}"
-                    elif final_request.status == "cancelled":
+                    elif final_status == "cancelled":
                         logger.warning(f"Tool {tool_name} execution cancelled")
                         return "Tool execution cancelled"
-                    elif final_request.status != "approved":
+                    elif final_status != "approved":
                         logger.error(
-                            f"Unexpected approval status for tool {tool_name}: {final_request.status}"
+                            f"Unexpected approval status for tool {tool_name}: {final_status}"
                         )
-                        return f"Unexpected approval status: {final_request.status}"
+                        return f"Unexpected approval status: {final_status}"
 
                     # Approved! Continue with execution
                     logger.warning(
@@ -314,7 +326,9 @@ def with_approval(tool_func: Callable) -> Callable:
                 f"Error checking approval requirement for {tool_name}: {e}",
                 exc_info=True,
             )
-            return f"Tool execution blocked: Error evaluating access policy - {str(e)}"
+            return (
+                f"Tool execution blocked: Error evaluating access workflow - {str(e)}"
+            )
 
         # This should not be reached - all paths above either return or raise
         logger.error(f"Unexpected code path reached for tool {tool_name}")

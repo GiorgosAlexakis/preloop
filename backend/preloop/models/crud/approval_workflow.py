@@ -1,4 +1,4 @@
-"""CRUD operations for ApprovalPolicy model."""
+"""CRUD operations for ApprovalWorkflow model."""
 
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
@@ -7,29 +7,29 @@ from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 
 from .. import models
-from ..schemas.tool_configuration import ApprovalPolicyCreate, ApprovalPolicyUpdate
+from ..schemas.tool_configuration import ApprovalWorkflowCreate, ApprovalWorkflowUpdate
 from .base import CRUDBase
 
 
-class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
-    """CRUD operations for ApprovalPolicy model."""
+class CRUDApprovalWorkflow(CRUDBase[models.ApprovalWorkflow]):
+    """CRUD operations for ApprovalWorkflow model."""
 
     def __init__(self):
-        """Initialize with the ApprovalPolicy model."""
-        super().__init__(model=models.ApprovalPolicy)
+        """Initialize with the ApprovalWorkflow model."""
+        super().__init__(model=models.ApprovalWorkflow)
 
     def get(
         self, db: Session, id: UUID, account_id: str
-    ) -> Optional[models.ApprovalPolicy]:
-        """Retrieve an approval policy by its ID.
+    ) -> Optional[models.ApprovalWorkflow]:
+        """Retrieve an approval workflow by its ID.
 
         Args:
             db: The database session.
-            id: The ID of the approval policy to retrieve.
-            account_id: The ID of the account associated with the policy.
+            id: The ID of the approval workflow to retrieve.
+            account_id: The ID of the account associated with the workflow.
 
         Returns:
-            The approval policy object if found, otherwise None.
+            The approval workflow object if found, otherwise None.
         """
         return (
             db.query(self.model)
@@ -42,16 +42,16 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
 
     def get_by_name(
         self, db: Session, account_id: str, name: str
-    ) -> Optional[models.ApprovalPolicy]:
-        """Retrieve an approval policy by name and account.
+    ) -> Optional[models.ApprovalWorkflow]:
+        """Retrieve an approval workflow by name and account.
 
         Args:
             db: The database session.
             account_id: The ID of the account.
-            name: The name of the approval policy.
+            name: The name of the approval workflow.
 
         Returns:
-            The approval policy object if found, otherwise None.
+            The approval workflow object if found, otherwise None.
         """
         return (
             db.query(self.model)
@@ -68,8 +68,8 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
         account_id: str,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[models.ApprovalPolicy]:
-        """Retrieve approval policies for a specific account.
+    ) -> List[models.ApprovalWorkflow]:
+        """Retrieve approval workflows for a specific account.
 
         Args:
             db: The database session.
@@ -78,7 +78,7 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
             limit: Maximum number of records to return.
 
         Returns:
-            List of approval policy objects.
+            List of approval workflow objects.
         """
         return (
             db.query(self.model)
@@ -90,15 +90,15 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
 
     def get_default(
         self, db: Session, account_id: str
-    ) -> Optional[models.ApprovalPolicy]:
-        """Retrieve the default approval policy for an account.
+    ) -> Optional[models.ApprovalWorkflow]:
+        """Retrieve the default approval workflow for an account.
 
         Args:
             db: The database session.
             account_id: The ID of the account.
 
         Returns:
-            The default approval policy if found, otherwise None.
+            The default approval workflow if found, otherwise None.
         """
         return (
             db.query(self.model)
@@ -113,24 +113,24 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
         self,
         db: Session,
         *,
-        obj_in: Union[ApprovalPolicyCreate, Dict[str, Any]],
+        obj_in: Union[ApprovalWorkflowCreate, Dict[str, Any]],
         account_id: str,
-    ) -> models.ApprovalPolicy:
-        """Create a new approval policy.
+    ) -> models.ApprovalWorkflow:
+        """Create a new approval workflow.
 
-        If this is the first policy for the account, it will be marked as default.
+        If this is the first workflow for the account, it will be marked as default.
         If is_default is explicitly set to True, any existing default will be unmarked.
 
         Args:
             db: The database session.
-            obj_in: The approval policy data.
+            obj_in: The approval workflow data.
             account_id: The ID of the account.
 
         Returns:
-            The created approval policy.
+            The created approval workflow.
         """
         # Convert to dict if it's a Pydantic model
-        if isinstance(obj_in, ApprovalPolicyCreate):
+        if isinstance(obj_in, ApprovalWorkflowCreate):
             obj_data = obj_in.model_dump(exclude_unset=True)
         else:
             obj_data = obj_in.copy()
@@ -138,7 +138,7 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
         # Ensure account_id is set
         obj_data["account_id"] = account_id
 
-        # Check if this is the first policy for the account
+        # Check if this is the first workflow for the account
         existing_count = (
             db.query(self.model).filter(self.model.account_id == account_id).count()
         )
@@ -150,7 +150,7 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
             # If explicitly setting as default, unmark existing default
             self._unmark_default(db, account_id)
 
-        # Create the policy
+        # Create the workflow
         db_obj = self.model(**obj_data)
         db.add(db_obj)
         db.commit()
@@ -161,23 +161,23 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
         self,
         db: Session,
         *,
-        db_obj: models.ApprovalPolicy,
-        obj_in: Union[ApprovalPolicyUpdate, Dict[str, Any]],
-    ) -> models.ApprovalPolicy:
-        """Update an approval policy.
+        db_obj: models.ApprovalWorkflow,
+        obj_in: Union[ApprovalWorkflowUpdate, Dict[str, Any]],
+    ) -> models.ApprovalWorkflow:
+        """Update an approval workflow.
 
         If is_default is set to True, any existing default will be unmarked.
 
         Args:
             db: The database session.
-            db_obj: The existing approval policy object.
+            db_obj: The existing approval workflow object.
             obj_in: The update data.
 
         Returns:
-            The updated approval policy.
+            The updated approval workflow.
         """
         # Convert to dict if it's a Pydantic model
-        if isinstance(obj_in, ApprovalPolicyUpdate):
+        if isinstance(obj_in, ApprovalWorkflowUpdate):
             update_data = obj_in.model_dump(exclude_unset=True)
         else:
             update_data = obj_in.copy()
@@ -196,7 +196,7 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
         return db_obj
 
     def _unmark_default(self, db: Session, account_id: str) -> None:
-        """Unmark any existing default policy for the account.
+        """Unmark any existing default workflow for the account.
 
         Args:
             db: The database session.
@@ -210,21 +210,21 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
 
     def remove(
         self, db: Session, *, id: UUID, account_id: str
-    ) -> Optional[models.ApprovalPolicy]:
-        """Remove an approval policy by its ID.
+    ) -> Optional[models.ApprovalWorkflow]:
+        """Remove an approval workflow by its ID.
 
-        If removing the default policy and other policies exist, the most recently
-        created remaining policy will be marked as default.
+        If removing the default workflow and other policies exist, the most recently
+        created remaining workflow will be marked as default.
 
         Args:
             db: The database session.
-            id: The ID of the approval policy to remove.
+            id: The ID of the approval workflow to remove.
             account_id: The ID of the account.
 
         Returns:
-            The removed approval policy object if found and deleted, otherwise None.
+            The removed approval workflow object if found and deleted, otherwise None.
         """
-        db_policy = (
+        db_workflow = (
             db.query(self.model)
             .filter(
                 self.model.id == id,
@@ -233,12 +233,12 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
             .order_by(self.model.created_at.desc())
             .first()
         )
-        if db_policy:
-            was_default = db_policy.is_default
-            db.delete(db_policy)
+        if db_workflow:
+            was_default = db_workflow.is_default
+            db.delete(db_workflow)
             db.flush()
 
-            # If we deleted the default policy, make another one default
+            # If we deleted the default workflow, make another one default
             if was_default:
                 replacement = (
                     db.query(self.model)
@@ -251,23 +251,23 @@ class CRUDApprovalPolicy(CRUDBase[models.ApprovalPolicy]):
                     db.add(replacement)
 
             db.commit()
-        return db_policy
+        return db_workflow
 
 
 # Async helper functions
-async def get_approval_policy_async(
-    db: Session, policy_id: UUID
-) -> Optional[models.ApprovalPolicy]:
-    """Async: Retrieve an approval policy by its ID.
+async def get_approval_workflow_async(
+    db: Session, workflow_id: UUID
+) -> Optional[models.ApprovalWorkflow]:
+    """Async: Retrieve an approval workflow by its ID.
 
     Args:
         db: The async database session.
-        policy_id: The ID of the approval policy.
+        workflow_id: The ID of the approval workflow.
 
     Returns:
-        The approval policy object if found, otherwise None.
+        The approval workflow object if found, otherwise None.
     """
     result = await db.execute(
-        select(models.ApprovalPolicy).where(models.ApprovalPolicy.id == policy_id)
+        select(models.ApprovalWorkflow).where(models.ApprovalWorkflow.id == workflow_id)
     )
     return result.scalar_one_or_none()

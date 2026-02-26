@@ -1,6 +1,6 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { getAccountDetails, updateAccountDetails } from '../../../api';
+import { getUserProfile, updateUserProfile } from '../../../api';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import consoleStyles from '../../../styles/console-styles.css?inline';
@@ -24,7 +24,7 @@ export class ProfileView extends LitElement {
 
   async loadAccountDetails() {
     try {
-      this.user = await getAccountDetails();
+      this.user = await getUserProfile();
       this.fullName = this.user?.full_name || '';
     } catch (error) {
       console.error('Failed to load account details', error);
@@ -35,7 +35,7 @@ export class ProfileView extends LitElement {
   async handleUpdateProfile(event: Event) {
     event.preventDefault();
     try {
-      await updateAccountDetails({ full_name: this.fullName });
+      await updateUserProfile({ full_name: this.fullName });
       this.updateProfileMessage = 'Profile updated successfully.';
     } catch (error) {
       this.updateProfileMessage = 'Failed to update profile.';

@@ -1,5 +1,6 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state, query } from 'lit/decorators.js';
+import { Router } from '@vaadin/router';
 import '../../components/tracker-list.ts';
 import '../../components/add-tracker-modal.ts';
 import type { Tracker } from '../../components/tracker-item.ts';
@@ -30,7 +31,19 @@ export class TrackersView extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this._handleUrlAction();
     this._handleGitHubCallback();
+  }
+
+  private _handleUrlAction() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'add') {
+      this.isAddingTracker = true;
+      // Clean up the URL subtly
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('action');
+      window.history.replaceState({}, '', newUrl.toString());
+    }
   }
 
   private _handleGitHubCallback() {
@@ -80,6 +93,12 @@ export class TrackersView extends LitElement {
   private _closeAddTrackerForm() {
     this.isAddingTracker = false;
     this.editingTracker = null;
+
+    const fromWelcome = sessionStorage.getItem('github_oauth_from_welcome');
+    if (fromWelcome) {
+      sessionStorage.removeItem('github_oauth_from_welcome');
+      Router.go('/console');
+    }
   }
 
   private async _handleTrackerAdded(event: CustomEvent) {

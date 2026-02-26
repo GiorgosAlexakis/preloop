@@ -266,7 +266,7 @@ class TestCompleteNewAccountSetup:
 
     @patch("preloop.services.account_setup_service.notify_admins_new_user_signup")
     @patch(
-        "preloop.services.account_setup_service.create_default_approval_policy_for_account"
+        "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
@@ -300,7 +300,7 @@ class TestCompleteNewAccountSetup:
 
     @patch("preloop.services.account_setup_service.notify_admins_new_user_signup")
     @patch(
-        "preloop.services.account_setup_service.create_default_approval_policy_for_account"
+        "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
@@ -330,7 +330,7 @@ class TestCompleteNewAccountSetup:
 
     @patch("preloop.services.account_setup_service.notify_admins_new_user_signup")
     @patch(
-        "preloop.services.account_setup_service.create_default_approval_policy_for_account"
+        "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
@@ -369,7 +369,7 @@ class TestCompleteNewAccountSetup:
 
     @patch("preloop.services.account_setup_service.notify_admins_new_user_signup")
     @patch(
-        "preloop.services.account_setup_service.create_default_approval_policy_for_account"
+        "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
@@ -400,7 +400,7 @@ class TestCompleteNewAccountSetup:
 
     @patch("preloop.services.account_setup_service.notify_admins_new_user_signup")
     @patch(
-        "preloop.services.account_setup_service.create_default_approval_policy_for_account"
+        "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
@@ -430,7 +430,7 @@ class TestCompleteNewAccountSetup:
 
     @patch("preloop.services.account_setup_service.notify_admins_new_user_signup")
     @patch(
-        "preloop.services.account_setup_service.create_default_approval_policy_for_account"
+        "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")

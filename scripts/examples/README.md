@@ -4,7 +4,7 @@ This directory contains example code for working with Preloop.
 
 ## Example MCP Server
 
-`example_mcp_server.py` is a simple MCP server built with FastMCP that provides several example tools for testing external MCP server integration and approval policies.
+`example_mcp_server.py` is a simple MCP server built with FastMCP that provides several example tools for testing external MCP server integration and approval workflows.
 
 ### Available Tools
 
@@ -107,13 +107,13 @@ curl -X POST https://preloop.ai/api/v1/mcp-servers \
 4. Click "Save"
 5. Server will be scanned automatically for available tools
 
-### Testing Approval Policies
+### Testing Approval Workflows
 
-The example server is designed to test approval policies in flows:
+The example server is designed to test approval workflows in flows:
 
-#### Create Approval Policy
+#### Create Approval Workflow
 
-1. In Preloop, create an approval policy for the `add` tool:
+1. In Preloop, create an approval workflow for the `add` tool:
 ```json
 {
   "tool_name": "add",

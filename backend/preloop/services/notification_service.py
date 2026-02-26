@@ -1,11 +1,11 @@
 """Notification service for approval requests.
 
 This module handles sending notifications through various channels:
-- Email (Open Core + Proprietary)
-- Mobile Push (Open Core + Proprietary)
-- Slack (Proprietary)
-- Mattermost (Proprietary)
-- Webhook (Proprietary)
+- Email (Open Source)
+- Mobile Push (Open Source)
+- Slack (Open Source)
+- Mattermost (Open Source)
+- Webhook (Open Source)
 """
 
 import asyncio
@@ -37,7 +37,7 @@ class NotificationService:
     async def notify_approval_request(
         self,
         approval_request: models.ApprovalRequest,
-        approval_policy: models.ApprovalPolicy,
+        approval_workflow: models.ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send notifications for an approval request.
 
@@ -49,7 +49,7 @@ class NotificationService:
 
         Args:
             approval_request: The approval request to notify about.
-            approval_policy: The approval policy containing notification config.
+            approval_workflow: The approval workflow containing notification config.
 
         Returns:
             Dict with notification results per channel.
@@ -57,7 +57,7 @@ class NotificationService:
         results = {}
 
         # Get list of approvers (expand teams to users)
-        approver_user_ids = await self._get_approver_user_ids(approval_policy)
+        approver_user_ids = await self._get_approver_user_ids(approval_workflow)
 
         # Partition users by which notification channels they have enabled
         push_only, email_only, both = self._partition_users_by_channel(
@@ -103,26 +103,26 @@ class NotificationService:
                 "delay_seconds": 15,
             }
 
-        # Send to policy-configured channels (slack, mattermost, webhook)
+        # Send to workflow-configured channels (slack, mattermost, webhook)
         # based on what's present in channel_configs
-        channel_configs = approval_policy.channel_configs or {}
+        channel_configs = approval_workflow.channel_configs or {}
         for channel in ["slack", "mattermost", "webhook"]:
             if channel not in channel_configs:
                 continue
             try:
                 if channel == "slack":
                     result = await self._send_slack_notification(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
                     results["slack"] = result
                 elif channel == "mattermost":
                     result = await self._send_mattermost_notification(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
                     results["mattermost"] = result
                 elif channel == "webhook":
                     result = await self._send_webhook_notification(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
                     results["webhook"] = result
             except Exception as e:
@@ -134,13 +134,13 @@ class NotificationService:
     async def notify_escalation(
         self,
         approval_request: models.ApprovalRequest,
-        approval_policy: models.ApprovalPolicy,
+        approval_workflow: models.ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send escalation notifications.
 
         Args:
             approval_request: The approval request that timed out.
-            approval_policy: The approval policy containing escalation config.
+            approval_workflow: The approval workflow containing escalation config.
 
         Returns:
             Dict with notification results per channel.
@@ -148,7 +148,7 @@ class NotificationService:
         results = {}
 
         # Get escalation approvers
-        escalation_user_ids = await self._get_escalation_user_ids(approval_policy)
+        escalation_user_ids = await self._get_escalation_user_ids(approval_workflow)
 
         if not escalation_user_ids:
             logger.warning("No escalation approvers configured")
@@ -173,25 +173,25 @@ class NotificationService:
             logger.error(f"Failed to send escalation push notifications: {str(e)}")
             results["mobile_push"] = {"success": False, "error": str(e)}
 
-        # Also send to policy-configured channels with escalation context
-        channel_configs = approval_policy.channel_configs or {}
+        # Also send to workflow-configured channels with escalation context
+        channel_configs = approval_workflow.channel_configs or {}
         for channel in ["slack", "mattermost", "webhook"]:
             if channel not in channel_configs:
                 continue
             try:
                 if channel == "slack":
                     result = await self._send_slack_notification(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
                     results["slack"] = result
                 elif channel == "mattermost":
                     result = await self._send_mattermost_notification(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
                     results["mattermost"] = result
                 elif channel == "webhook":
                     result = await self._send_webhook_notification(
-                        approval_request, approval_policy
+                        approval_request, approval_workflow
                     )
                     results["webhook"] = result
             except Exception as e:
@@ -293,12 +293,12 @@ class NotificationService:
             )
 
     async def _get_approver_user_ids(
-        self, approval_policy: models.ApprovalPolicy
+        self, approval_workflow: models.ApprovalWorkflow
     ) -> List[uuid.UUID]:
         """Get list of approver user IDs, expanding teams.
 
         Args:
-            approval_policy: Approval policy.
+            approval_workflow: Approval workflow.
 
         Returns:
             List of user IDs who can approve.
@@ -306,12 +306,12 @@ class NotificationService:
         user_ids = set()
 
         # Add direct user approvers
-        if approval_policy.approver_user_ids:
-            user_ids.update(approval_policy.approver_user_ids)
+        if approval_workflow.approver_user_ids:
+            user_ids.update(approval_workflow.approver_user_ids)
 
         # Expand team approvers to individual users
-        if approval_policy.approver_team_ids:
-            for team_id in approval_policy.approver_team_ids:
+        if approval_workflow.approver_team_ids:
+            for team_id in approval_workflow.approver_team_ids:
                 team_members = (
                     self.db.query(models.TeamMembership.user_id)
                     .filter(models.TeamMembership.team_id == team_id)
@@ -322,12 +322,12 @@ class NotificationService:
         return list(user_ids)
 
     async def _get_escalation_user_ids(
-        self, approval_policy: models.ApprovalPolicy
+        self, approval_workflow: models.ApprovalWorkflow
     ) -> List[uuid.UUID]:
         """Get list of escalation approver user IDs, expanding teams.
 
         Args:
-            approval_policy: Approval policy.
+            approval_workflow: Approval workflow.
 
         Returns:
             List of escalation user IDs.
@@ -335,12 +335,12 @@ class NotificationService:
         user_ids = set()
 
         # Add direct escalation users
-        if approval_policy.escalation_user_ids:
-            user_ids.update(approval_policy.escalation_user_ids)
+        if approval_workflow.escalation_user_ids:
+            user_ids.update(approval_workflow.escalation_user_ids)
 
         # Expand escalation teams
-        if approval_policy.escalation_team_ids:
-            for team_id in approval_policy.escalation_team_ids:
+        if approval_workflow.escalation_team_ids:
+            for team_id in approval_workflow.escalation_team_ids:
                 team_members = (
                     self.db.query(models.TeamMembership.user_id)
                     .filter(models.TeamMembership.team_id == team_id)
@@ -565,18 +565,18 @@ class NotificationService:
     async def _send_slack_notification(
         self,
         approval_request: models.ApprovalRequest,
-        approval_policy: models.ApprovalPolicy,
+        approval_workflow: models.ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send Slack notification.
 
         Args:
             approval_request: Approval request.
-            approval_policy: Approval policy with Slack configuration.
+            approval_workflow: Approval workflow with Slack configuration.
 
         Returns:
             Dict with send result.
         """
-        channel_config = approval_policy.channel_configs.get("slack", {})
+        channel_config = approval_workflow.channel_configs.get("slack", {})
         webhook_url = channel_config.get("webhook_url")
 
         if not webhook_url:
@@ -605,18 +605,18 @@ class NotificationService:
     async def _send_mattermost_notification(
         self,
         approval_request: models.ApprovalRequest,
-        approval_policy: models.ApprovalPolicy,
+        approval_workflow: models.ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send Mattermost notification.
 
         Args:
             approval_request: Approval request.
-            approval_policy: Approval policy with Mattermost configuration.
+            approval_workflow: Approval workflow with Mattermost configuration.
 
         Returns:
             Dict with send result.
         """
-        channel_config = approval_policy.channel_configs.get("mattermost", {})
+        channel_config = approval_workflow.channel_configs.get("mattermost", {})
         webhook_url = channel_config.get("webhook_url")
 
         if not webhook_url:
@@ -645,18 +645,18 @@ class NotificationService:
     async def _send_webhook_notification(
         self,
         approval_request: models.ApprovalRequest,
-        approval_policy: models.ApprovalPolicy,
+        approval_workflow: models.ApprovalWorkflow,
     ) -> Dict[str, Any]:
         """Send generic webhook notification.
 
         Args:
             approval_request: Approval request.
-            approval_policy: Approval policy with webhook configuration.
+            approval_workflow: Approval workflow with webhook configuration.
 
         Returns:
             Dict with send result.
         """
-        channel_config = approval_policy.channel_configs.get("webhook", {})
+        channel_config = approval_workflow.channel_configs.get("webhook", {})
         webhook_url = channel_config.get("url")
 
         if not webhook_url:

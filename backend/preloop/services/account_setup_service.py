@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from preloop.services.approval_policy_service import (
-    create_default_approval_policy_for_account,
+from preloop.services.approval_workflow_service import (
+    create_default_approval_workflow_for_account,
 )
 from preloop.sync.tasks import notify_admins
 from preloop.utils.email import send_verification_email
@@ -278,7 +278,7 @@ def complete_new_account_setup(
     This should be called after creating a new account and its primary user.
     It handles:
     1. Sending verification email (if enabled)
-    2. Creating default approval policy for the account
+    2. Creating default approval workflow for the account
     3. Notifying admins about the new signup
 
     Args:
@@ -306,13 +306,13 @@ def complete_new_account_setup(
         except Exception as e:
             logger.error(f"Failed to send verification email to {user_email}: {e}")
 
-    # 2. Create default approval policy
+    # 2. Create default approval workflow
     try:
-        create_default_approval_policy_for_account(account_id, user_id)
-        logger.info(f"Default approval policy created for account {account_id}")
+        create_default_approval_workflow_for_account(account_id, user_id)
+        logger.info(f"Default approval workflow created for account {account_id}")
     except Exception as e:
         logger.error(
-            f"Failed to create default approval policy for account {account_id}: {e}"
+            f"Failed to create default approval workflow for account {account_id}: {e}"
         )
 
     # 3. Notify admins about new signup

@@ -416,22 +416,30 @@ export async function commitIssueDependencies(
 }
 
 // Account
-export async function getAccountDetails() {
+export async function getUserProfile() {
   const response = await fetchWithAuth('/api/v1/auth/users/me');
+  if (!response.ok) {
+    throw new Error('Failed to fetch user profile');
+  }
+  return response.json();
+}
+
+export async function getAccountDetails() {
+  const response = await fetchWithAuth('/api/v1/account/details');
   if (!response.ok) {
     throw new Error('Failed to fetch account details');
   }
   return response.json();
 }
 
-export async function updateAccountDetails(details: { full_name: string }) {
+export async function updateUserProfile(details: { full_name: string }) {
   const response = await fetchWithAuth('/api/v1/auth/users/me', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(details),
   });
   if (!response.ok) {
-    throw new Error('Failed to update account details');
+    throw new Error('Failed to update user profile');
   }
   return response.json();
 }
@@ -1134,7 +1142,7 @@ export interface AccessRule {
   priority: number;
   description: string | null;
   is_enabled: boolean;
-  approval_policy_id: string | null;
+  approval_workflow_id: string | null;
 }
 
 export interface AccessRuleCreate {
@@ -1144,7 +1152,7 @@ export interface AccessRuleCreate {
   priority?: number;
   description?: string | null;
   is_enabled?: boolean;
-  approval_policy_id?: string | null;
+  approval_workflow_id?: string | null;
 }
 
 export interface AccessRuleUpdate {
@@ -1154,7 +1162,7 @@ export interface AccessRuleUpdate {
   priority?: number;
   description?: string | null;
   is_enabled?: boolean;
-  approval_policy_id?: string | null;
+  approval_workflow_id?: string | null;
 }
 
 export async function listAccessRules(configId: string): Promise<AccessRule[]> {
@@ -1215,68 +1223,72 @@ export async function deleteAccessRule(ruleId: string): Promise<void> {
   }
 }
 
-// Approval Policies API
-export async function getApprovalPolicies(): Promise<any[]> {
-  const response = await fetchWithAuth('/api/v1/approval-policies');
+// Approval Workflows API
+export async function getApprovalWorkflows(): Promise<any[]> {
+  const response = await fetchWithAuth('/api/v1/approval-workflows');
   if (!response.ok) {
-    throw new Error('Failed to fetch approval policies');
+    throw new Error('Failed to fetch approval workflows');
   }
   return response.json();
 }
 
-export async function createApprovalPolicy(policy: any): Promise<any> {
-  const response = await fetchWithAuth('/api/v1/approval-policies', {
+export async function createApprovalWorkflow(workflow: any): Promise<any> {
+  const response = await fetchWithAuth('/api/v1/approval-workflows', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(policy),
+    body: JSON.stringify(workflow),
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      extractErrorMessage(errorData, 'Failed to create approval policy')
+      extractErrorMessage(errorData, 'Failed to create approval workflow')
     );
   }
   return response.json();
 }
 
-export async function getApprovalPolicy(policyId: string): Promise<any> {
-  const response = await fetchWithAuth(`/api/v1/approval-policies/${policyId}`);
+export async function getApprovalWorkflow(workflowId: string): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/approval-workflows/${workflowId}`
+  );
   if (!response.ok) {
-    throw new Error('Failed to fetch approval policy');
+    throw new Error('Failed to fetch approval workflow');
   }
   return response.json();
 }
 
-export async function updateApprovalPolicy(
-  policyId: string,
-  policy: any
+export async function updateApprovalWorkflow(
+  workflowId: string,
+  workflow: any
 ): Promise<any> {
   const response = await fetchWithAuth(
-    `/api/v1/approval-policies/${policyId}`,
+    `/api/v1/approval-workflows/${workflowId}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(policy),
+      body: JSON.stringify(workflow),
     }
   );
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(
-      extractErrorMessage(errorData, 'Failed to update approval policy')
+      extractErrorMessage(errorData, 'Failed to update approval workflow')
     );
   }
   return response.json();
 }
 
-export async function deleteApprovalPolicy(policyId: string): Promise<void> {
+export async function deleteApprovalWorkflow(
+  workflowId: string
+): Promise<void> {
   const response = await fetchWithAuth(
-    `/api/v1/approval-policies/${policyId}`,
+    `/api/v1/approval-workflows/${workflowId}`,
     {
       method: 'DELETE',
     }
   );
   if (!response.ok) {
-    throw new Error('Failed to delete approval policy');
+    throw new Error('Failed to delete approval workflow');
   }
 }
 

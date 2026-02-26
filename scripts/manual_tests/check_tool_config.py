@@ -5,7 +5,7 @@ import os
 
 from sqlalchemy import select
 from preloop.models.db.session import get_async_db_session
-from preloop.models.models import ApprovalPolicy, ToolConfiguration
+from preloop.models.models import ApprovalWorkflow, ToolConfiguration
 
 
 async def check_approval_config(tool_name: str = "estimate_compliance"):
@@ -29,27 +29,27 @@ async def check_approval_config(tool_name: str = "estimate_compliance"):
             print("  1. Go to Preloop UI: /console/tools")
             print(f"  2. Find '{tool_name}' tool")
             print("  3. Enable 'Requires Approval'")
-            print("  4. Select or create an approval policy")
+            print("  4. Select or create an approval workflow")
             return
 
         for config in configs:
             print(f"Account ID: {config.account_id}")
             print(f"Tool Name: {config.tool_name}")
             print(f"Tool Source: {config.tool_source}")
-            print(f"Requires Approval: {bool(config.approval_policy_id)}")
-            print(f"Approval Policy ID: {config.approval_policy_id}")
+            print(f"Requires Approval: {bool(config.approval_workflow_id)}")
+            print(f"Approval Workflow ID: {config.approval_workflow_id}")
 
-            if config.approval_policy_id:
-                # Get the approval policy
+            if config.approval_workflow_id:
+                # Get the approval workflow
                 policy_result = await db.execute(
-                    select(ApprovalPolicy).where(
-                        ApprovalPolicy.id == config.approval_policy_id
+                    select(ApprovalWorkflow).where(
+                        ApprovalWorkflow.id == config.approval_workflow_id
                     )
                 )
                 policy = policy_result.scalar_one_or_none()
 
                 if policy:
-                    print("\n✅ Approval Policy Configuration:")
+                    print("\n✅ Approval Workflow Configuration:")
                     print(f"   - Type: {policy.approval_type}")
                     print(f"   - User: {policy.user or 'N/A'}")
                     print(f"   - Channel: {policy.channel or 'N/A'}")
@@ -57,11 +57,11 @@ async def check_approval_config(tool_name: str = "estimate_compliance"):
                     print(f"   - Timeout: {policy.timeout_seconds or 300}s")
                 else:
                     print(
-                        f"\n❌ Approval policy {config.approval_policy_id} not found!"
+                        f"\n❌ Approval workflow {config.approval_workflow_id} not found!"
                     )
             else:
                 print(
-                    "\n❌ Approval not required for this tool (no approval_policy_id)"
+                    "\n❌ Approval not required for this tool (no approval_workflow_id)"
                 )
 
             print(f"\n{'-' * 80}\n")

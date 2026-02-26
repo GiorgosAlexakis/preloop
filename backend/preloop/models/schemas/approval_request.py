@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, computed_field
 
 
 class ApprovalRequestBase(BaseModel):
@@ -27,7 +27,7 @@ class ApprovalRequestCreate(ApprovalRequestBase):
 
     account_id: str
     tool_configuration_id: UUID
-    approval_policy_id: UUID
+    approval_workflow_id: UUID
     expires_at: Optional[datetime] = None
 
 
@@ -52,7 +52,7 @@ class ApprovalRequestResponse(ApprovalRequestBase):
     id: UUID
     account_id: UUID  # Changed from str to UUID for validation, serializer converts to str for JSON
     tool_configuration_id: UUID
-    approval_policy_id: UUID
+    approval_workflow_id: UUID
     status: str
     requested_at: datetime
     resolved_at: Optional[datetime]
@@ -66,9 +66,17 @@ class ApprovalRequestResponse(ApprovalRequestBase):
     ai_confidence: Optional[float] = None
     ai_reasoning: Optional[str] = None
 
+    # Computed fields for backward compatibility
+    @computed_field
+    def approval_policy_id(self) -> str:
+        """Alias for backward compatibility with older mobile app versions."""
+        return str(self.approval_workflow_id)
+
     model_config = ConfigDict(from_attributes=True)
 
-    @field_serializer("id", "account_id", "tool_configuration_id", "approval_policy_id")
+    @field_serializer(
+        "id", "account_id", "tool_configuration_id", "approval_workflow_id"
+    )
     def serialize_uuid(self, value: Optional[UUID]) -> Optional[str]:
         """Serialize UUID to string."""
         return str(value) if value else None

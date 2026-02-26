@@ -36,13 +36,13 @@ def tool_config():
     """Create a mock ToolConfiguration."""
     config = MagicMock()
     config.id = str(uuid4())
-    config.approval_policy_id = str(uuid4())  # Tool requires approval if this is set
+    config.approval_workflow_id = str(uuid4())  # Tool requires approval if this is set
     return config
 
 
 @pytest.fixture
-def approval_policy():
-    """Create a mock ApprovalPolicy."""
+def approval_workflow():
+    """Create a mock ApprovalWorkflow."""
     policy = MagicMock()
     policy.id = str(uuid4())
     policy.approval_type = "slack"
@@ -105,36 +105,10 @@ class TestRequireApprovalNoConfig:
         assert error == ""
 
     async def test_tool_without_requires_approval_returns_true(self, tool_config):
-        """Test that tool without approval_policy_id allows execution."""
+        """Test that tool without approval_workflow_id allows execution."""
         mock_db = create_mock_db_session()
-        # Set approval_policy_id to None (no approval required)
-        tool_config.approval_policy_id = None
-
-        mock_db = create_mock_db_session()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none = MagicMock(return_value=tool_config)
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        with patch(
-            "preloop.models.db.session.get_async_db_session",
-            return_value=mock_db,
-        ):
-            approved, error = await require_approval(
-                tool_name="test_tool",
-                tool_source="builtin",
-                account_id="account_123",
-                arguments={"arg": "value"},
-                ctx=None,
-            )
-
-        assert approved is True
-        assert error == ""
-
-    async def test_tool_without_approval_policy_id_returns_true(self, tool_config):
-        """Test that tool without approval_policy_id allows execution."""
-        mock_db = create_mock_db_session()
-        # Explicitly set approval_policy_id to None (no approval required)
-        tool_config.approval_policy_id = None
+        # Set approval_workflow_id to None (no approval required)
+        tool_config.approval_workflow_id = None
 
         mock_db = create_mock_db_session()
         mock_result = MagicMock()
@@ -156,14 +130,40 @@ class TestRequireApprovalNoConfig:
         assert approved is True
         assert error == ""
 
+    async def test_tool_without_approval_workflow_id_returns_true(self, tool_config):
+        """Test that tool without approval_workflow_id allows execution."""
+        mock_db = create_mock_db_session()
+        # Explicitly set approval_workflow_id to None (no approval required)
+        tool_config.approval_workflow_id = None
 
-class TestRequireApprovalPolicyErrors:
-    """Test cases for approval policy errors."""
+        mock_db = create_mock_db_session()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none = MagicMock(return_value=tool_config)
+        mock_db.execute = AsyncMock(return_value=mock_result)
 
-    async def test_approval_policy_not_found_returns_false(
+        with patch(
+            "preloop.models.db.session.get_async_db_session",
+            return_value=mock_db,
+        ):
+            approved, error = await require_approval(
+                tool_name="test_tool",
+                tool_source="builtin",
+                account_id="account_123",
+                arguments={"arg": "value"},
+                ctx=None,
+            )
+
+        assert approved is True
+        assert error == ""
+
+
+class TestRequireApprovalWorkflowErrors:
+    """Test cases for approval workflow errors."""
+
+    async def test_approval_workflow_not_found_returns_false(
         self, tool_config, approval_condition
     ):
-        """Test that missing approval policy returns error."""
+        """Test that missing approval workflow returns error."""
         mock_db = create_mock_db_session()
         # First query returns tool config, second returns condition, third returns no policy
         mock_config_result = AsyncMock()
@@ -172,11 +172,11 @@ class TestRequireApprovalPolicyErrors:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=None)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(return_value=None)
 
         mock_db.execute = AsyncMock(
-            side_effect=[mock_config_result, mock_rules_result, mock_policy_result]
+            side_effect=[mock_config_result, mock_rules_result, mock_workflow_result]
         )
 
         with patch(
@@ -192,7 +192,7 @@ class TestRequireApprovalPolicyErrors:
             )
 
         assert approved is False
-        assert "Approval policy not found" in error
+        assert "Approval workflow not found" in error
 
 
 class TestRequireApprovalSuccess:
@@ -201,7 +201,7 @@ class TestRequireApprovalSuccess:
     async def test_approval_granted_returns_true(
         self,
         tool_config,
-        approval_policy,
+        approval_workflow,
         approval_request,
         approval_condition,
         mock_context,
@@ -215,8 +215,10 @@ class TestRequireApprovalSuccess:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         # Approval request is immediately approved
         approval_request.status = "approved"
@@ -231,7 +233,7 @@ class TestRequireApprovalSuccess:
         execute_calls = [
             mock_config_result,  # First: get tool config
             mock_rules_result,  # Second: get approval condition
-            mock_policy_result,  # Third: get approval policy
+            mock_workflow_result,  # Third: get approval workflow
             mock_approval_result,  # Fourth: check approval status
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -270,12 +272,12 @@ class TestRequireApprovalSuccess:
         assert mock_context.report_progress.called
 
     async def test_approval_with_webhook_policy(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test approval with webhook policy (no channel or user)."""
         mock_db = create_mock_db_session()
-        approval_policy.channel = None
-        approval_policy.user = None
+        approval_workflow.channel = None
+        approval_workflow.user = None
         approval_request.status = "approved"
 
         mock_config_result = AsyncMock()
@@ -284,8 +286,10 @@ class TestRequireApprovalSuccess:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -295,7 +299,7 @@ class TestRequireApprovalSuccess:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -331,12 +335,12 @@ class TestRequireApprovalSuccess:
         assert error == ""
 
     async def test_approval_with_user_policy(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test approval with user policy (no channel)."""
         mock_db = create_mock_db_session()
-        approval_policy.channel = None
-        approval_policy.user = "john.doe"
+        approval_workflow.channel = None
+        approval_workflow.user = "john.doe"
         approval_request.status = "approved"
 
         mock_config_result = AsyncMock()
@@ -345,8 +349,10 @@ class TestRequireApprovalSuccess:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -356,7 +362,7 @@ class TestRequireApprovalSuccess:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -396,7 +402,7 @@ class TestRequireApprovalDeclined:
     """Test cases for declined approvals."""
 
     async def test_approval_declined_returns_false(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test that declined approval denies execution."""
         mock_db = create_mock_db_session()
@@ -409,8 +415,10 @@ class TestRequireApprovalDeclined:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -420,7 +428,7 @@ class TestRequireApprovalDeclined:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -457,7 +465,7 @@ class TestRequireApprovalDeclined:
         assert "Not safe" in error
 
     async def test_approval_declined_without_comment(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test declined approval without comment."""
         mock_db = create_mock_db_session()
@@ -470,8 +478,10 @@ class TestRequireApprovalDeclined:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -481,7 +491,7 @@ class TestRequireApprovalDeclined:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -521,7 +531,7 @@ class TestRequireApprovalCancelled:
     """Test cases for cancelled approvals."""
 
     async def test_approval_cancelled_returns_false(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test that cancelled approval denies execution."""
         mock_db = create_mock_db_session()
@@ -533,8 +543,10 @@ class TestRequireApprovalCancelled:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -544,7 +556,7 @@ class TestRequireApprovalCancelled:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -584,12 +596,12 @@ class TestRequireApprovalTimeout:
     """Test cases for approval timeout."""
 
     async def test_approval_timeout_returns_false(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test that approval timeout denies execution."""
         mock_db = create_mock_db_session()
         # Set short timeout
-        approval_policy.timeout_seconds = 1
+        approval_workflow.timeout_seconds = 1
 
         # Approval stays pending
         approval_request.status = "pending"
@@ -600,8 +612,10 @@ class TestRequireApprovalTimeout:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         # Each poll returns pending status
         mock_approval_result = AsyncMock()
@@ -613,7 +627,7 @@ class TestRequireApprovalTimeout:
         execute_calls = [
             mock_config_result,  # First: get tool config
             mock_rules_result,  # Second: get approval condition
-            mock_policy_result,  # Third: get approval policy
+            mock_workflow_result,  # Third: get approval workflow
             mock_approval_result,  # Fourth: first poll
             mock_approval_result,  # Fifth: second poll
             mock_approval_result,  # Sixth: third poll
@@ -662,7 +676,7 @@ class TestRequireApprovalEdgeCases:
     """Test edge cases and error handling."""
 
     async def test_approval_request_not_found_during_poll(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test when approval request disappears during polling."""
         mock_db = create_mock_db_session()
@@ -672,8 +686,10 @@ class TestRequireApprovalEdgeCases:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         # First poll returns None (request not found)
         mock_approval_result = AsyncMock()
@@ -682,7 +698,7 @@ class TestRequireApprovalEdgeCases:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -718,7 +734,7 @@ class TestRequireApprovalEdgeCases:
         assert "not found" in error.lower()
 
     async def test_unexpected_approval_status(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test handling unexpected approval status."""
         mock_db = create_mock_db_session()
@@ -739,8 +755,10 @@ class TestRequireApprovalEdgeCases:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = MagicMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = MagicMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         # First poll returns unknown_status (loop continues)
         mock_approval_result1 = MagicMock()
@@ -759,7 +777,7 @@ class TestRequireApprovalEdgeCases:
         execute_calls = [
             mock_config_result,  # get tool config
             mock_rules_result,  # get approval condition
-            mock_policy_result,  # get approval policy
+            mock_workflow_result,  # get approval workflow
             mock_approval_result1,  # first poll - unknown_status
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -798,7 +816,7 @@ class TestRequireApprovalEdgeCases:
         assert "error" in error.lower() or "stopasynciteration" in error.lower()
 
     async def test_approval_service_creation_error(
-        self, tool_config, approval_policy, approval_condition
+        self, tool_config, approval_workflow, approval_condition
     ):
         """Test error during approval request creation."""
         mock_db = create_mock_db_session()
@@ -808,11 +826,13 @@ class TestRequireApprovalEdgeCases:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_db.execute = AsyncMock(
-            side_effect=[mock_config_result, mock_rules_result, mock_policy_result]
+            side_effect=[mock_config_result, mock_rules_result, mock_workflow_result]
         )
 
         # Approval service raises error
@@ -875,7 +895,7 @@ class TestRequireApprovalProgressReporting:
     async def test_progress_report_on_initial_notification(
         self,
         tool_config,
-        approval_policy,
+        approval_workflow,
         approval_request,
         approval_condition,
         mock_context,
@@ -890,8 +910,10 @@ class TestRequireApprovalProgressReporting:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -901,7 +923,7 @@ class TestRequireApprovalProgressReporting:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -940,7 +962,7 @@ class TestRequireApprovalProgressReporting:
     async def test_progress_report_error_handling(
         self,
         tool_config,
-        approval_policy,
+        approval_workflow,
         approval_request,
         approval_condition,
         mock_context,
@@ -960,8 +982,10 @@ class TestRequireApprovalProgressReporting:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -971,7 +995,7 @@ class TestRequireApprovalProgressReporting:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -1009,7 +1033,7 @@ class TestRequireApprovalProgressReporting:
         assert error == ""
 
     async def test_progress_report_without_context(
-        self, tool_config, approval_policy, approval_request, approval_condition
+        self, tool_config, approval_workflow, approval_request, approval_condition
     ):
         """Test approval flow works without Context (no progress reporting)."""
         mock_db = create_mock_db_session()
@@ -1021,8 +1045,10 @@ class TestRequireApprovalProgressReporting:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -1032,7 +1058,7 @@ class TestRequireApprovalProgressReporting:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)
@@ -1071,7 +1097,7 @@ class TestRequireApprovalProgressReporting:
     async def test_progress_token_error_handling(
         self,
         tool_config,
-        approval_policy,
+        approval_workflow,
         approval_request,
         approval_condition,
         mock_context,
@@ -1092,8 +1118,10 @@ class TestRequireApprovalProgressReporting:
         mock_rules_result = MagicMock()
         mock_rules_result.scalars = MagicMock(return_value=iter([]))
 
-        mock_policy_result = AsyncMock()
-        mock_policy_result.scalar_one_or_none = MagicMock(return_value=approval_policy)
+        mock_workflow_result = AsyncMock()
+        mock_workflow_result.scalar_one_or_none = MagicMock(
+            return_value=approval_workflow
+        )
 
         mock_approval_result = AsyncMock()
         mock_approval_result.scalar_one_or_none = MagicMock(
@@ -1103,7 +1131,7 @@ class TestRequireApprovalProgressReporting:
         execute_calls = [
             mock_config_result,
             mock_rules_result,
-            mock_policy_result,
+            mock_workflow_result,
             mock_approval_result,
         ]
         mock_db.execute = AsyncMock(side_effect=execute_calls)

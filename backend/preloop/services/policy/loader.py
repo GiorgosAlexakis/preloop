@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from preloop.services.policy.schema import (
-    ApprovalPolicyDefinition,
+    ApprovalWorkflowDefinition,
     ConditionAction,
     ConditionType,
     DefaultsDefinition,
@@ -265,23 +265,23 @@ def load_policy_from_string(
     # Add warnings for deprecated or unusual configurations
     if policy.tools:
         for tool in policy.tools:
-            if tool.conditions and not tool.approval_policy:
+            if tool.conditions and not tool.approval_workflow:
                 warnings.append(
-                    f"Tool '{tool.name}' has conditions but no approval_policy set. "
+                    f"Tool '{tool.name}' has conditions but no approval_workflow set. "
                     "Conditions with 'require_approval' action will have no effect."
                 )
 
-    # Add warnings for AI-driven policies with escalate behavior but no escalation_policy
-    if policy.approval_policies:
-        for ap in policy.approval_policies:
+    # Add warnings for AI-driven policies with escalate behavior but no escalation_workflow
+    if policy.approval_workflows:
+        for ap in policy.approval_workflows:
             if (
                 ap.approval_type == "ai_driven"
                 and ap.ai_fallback_behavior == "escalate"
-                and not ap.escalation_policy
+                and not ap.escalation_workflow
             ):
                 warnings.append(
                     f"AI-driven policy '{ap.name}' has fallback_behavior='escalate' "
-                    "but no escalation_policy specified. Requests will fail to escalate "
+                    "but no escalation_workflow specified. Requests will fail to escalate "
                     "when AI confidence is below threshold."
                 )
 
@@ -505,9 +505,9 @@ def compute_policy_diff(
     # Compare MCP servers
     diff_named_lists("$.mcp_servers", current.mcp_servers, incoming.mcp_servers)
 
-    # Compare approval policies
+    # Compare approval workflows
     diff_named_lists(
-        "$.approval_policies", current.approval_policies, incoming.approval_policies
+        "$.approval_workflows", current.approval_workflows, incoming.approval_workflows
     )
 
     # Compare tools
@@ -598,18 +598,18 @@ class MissingServerError:
         )
 
 
-class MissingPolicyError:
-    """Details about a missing approval policy reference."""
+class MissingWorkflowError:
+    """Details about a missing approval workflow reference."""
 
-    def __init__(self, tool_name: str, policy_name: str, suggestion: str):
+    def __init__(self, tool_name: str, workflow_name: str, suggestion: str):
         self.tool_name = tool_name
-        self.policy_name = policy_name
+        self.workflow_name = workflow_name
         self.suggestion = suggestion
 
     def to_message(self) -> str:
         """Format as a user-friendly error message."""
         return (
-            f"Tool '{self.tool_name}' references approval policy '{self.policy_name}' "
+            f"Tool '{self.tool_name}' references approval workflow '{self.workflow_name}' "
             f"which is not defined. {self.suggestion}"
         )
 
@@ -684,8 +684,8 @@ class PolicyApplier:
             if policy.mcp_servers:
                 self._apply_mcp_servers(policy.mcp_servers, dry_run)
 
-            if policy.approval_policies:
-                self._apply_approval_policies(policy.approval_policies, dry_run)
+            if policy.approval_workflows:
+                self._apply_approval_workflows(policy.approval_workflows, dry_run)
 
             if policy.tools:
                 self._apply_tools(policy.tools, dry_run, skip_missing_servers)
@@ -717,7 +717,7 @@ class PolicyApplier:
         This pre-check phase validates that:
         1. All MCP server references can be resolved (either defined in the
            policy file or already configured in the account)
-        2. All approval policy references can be resolved (either defined
+        2. All approval workflow references can be resolved (either defined
            in the policy file or already configured in the account)
 
         Args:
@@ -728,7 +728,7 @@ class PolicyApplier:
         Returns:
             List of error messages. Empty list if validation passes.
         """
-        from preloop.models.crud import crud_approval_policy, crud_mcp_server
+        from preloop.models.crud import crud_approval_workflow, crud_mcp_server
 
         errors: List[str] = []
 
@@ -738,9 +738,9 @@ class PolicyApplier:
             policy_servers = {server.name.lower() for server in policy.mcp_servers}
 
         # Build set of policies defined in the policy file
-        policy_approval_policies = set()
-        if policy.approval_policies:
-            policy_approval_policies = {p.name for p in policy.approval_policies}
+        policy_approval_workflows = set()
+        if policy.approval_workflows:
+            policy_approval_workflows = {p.name for p in policy.approval_workflows}
 
         # Get existing servers from the database
         existing_servers = crud_mcp_server.get_active_by_account(
@@ -750,16 +750,16 @@ class PolicyApplier:
         all_available_servers = policy_servers | existing_server_names
 
         # Get existing policies from the database
-        existing_policies = crud_approval_policy.get_multi_by_account(
+        existing_workflows = crud_approval_workflow.get_multi_by_account(
             self.db, account_id=self.account_id
         )
-        existing_policy_names = {p.name for p in existing_policies}
-        all_available_policies = policy_approval_policies | existing_policy_names
+        existing_workflow_names = {p.name for p in existing_workflows}
+        all_available_workflows = policy_approval_workflows | existing_workflow_names
 
         # Validate tool references
         if policy.tools:
             missing_servers: List[MissingServerError] = []
-            missing_policies: List[MissingPolicyError] = []
+            missing_workflows: List[MissingWorkflowError] = []
 
             for tool in policy.tools:
                 # Check MCP server references
@@ -778,16 +778,16 @@ class PolicyApplier:
                             )
                         )
 
-                # Check approval policy references
-                if tool.approval_policy:
-                    if tool.approval_policy not in all_available_policies:
-                        suggestion = self._get_policy_suggestion(
-                            tool.approval_policy, all_available_policies
+                # Check approval workflow references
+                if tool.approval_workflow:
+                    if tool.approval_workflow not in all_available_workflows:
+                        suggestion = self._get_workflow_suggestion(
+                            tool.approval_workflow, all_available_workflows
                         )
-                        missing_policies.append(
-                            MissingPolicyError(
+                        missing_workflows.append(
+                            MissingWorkflowError(
                                 tool_name=tool.name,
-                                policy_name=tool.approval_policy,
+                                workflow_name=tool.approval_workflow,
                                 suggestion=suggestion,
                             )
                         )
@@ -809,17 +809,17 @@ class PolicyApplier:
                         errors.append(missing.to_message())
 
             # Missing policies are always errors (can't be skipped)
-            for missing in missing_policies:
+            for missing in missing_workflows:
                 errors.append(missing.to_message())
 
-        # Validate defaults.default_approval_policy
-        if policy.defaults and policy.defaults.default_approval_policy:
-            if policy.defaults.default_approval_policy not in all_available_policies:
-                suggestion = self._get_policy_suggestion(
-                    policy.defaults.default_approval_policy, all_available_policies
+        # Validate defaults.default_approval_workflow
+        if policy.defaults and policy.defaults.default_approval_workflow:
+            if policy.defaults.default_approval_workflow not in all_available_workflows:
+                suggestion = self._get_workflow_suggestion(
+                    policy.defaults.default_approval_workflow, all_available_workflows
                 )
                 errors.append(
-                    f"Default approval policy '{policy.defaults.default_approval_policy}' "
+                    f"Default approval workflow '{policy.defaults.default_approval_workflow}' "
                     f"is not defined. {suggestion}"
                 )
 
@@ -847,25 +847,27 @@ class PolicyApplier:
             "or configure it in the console first."
         )
 
-    def _get_policy_suggestion(self, policy_name: str, available_policies: set) -> str:
+    def _get_workflow_suggestion(
+        self, workflow_name: str, available_workflows: set
+    ) -> str:
         """Generate a helpful suggestion for missing policy references.
 
         Args:
-            policy_name: The missing policy name.
-            available_policies: Set of available policy names.
+            workflow_name: The missing approval workflow name.
+            available_workflows: Set of available policy names.
 
         Returns:
             A suggestion string for how to fix the issue.
         """
-        if available_policies:
-            available_list = ", ".join(sorted(available_policies))
+        if available_workflows:
+            available_list = ", ".join(sorted(available_workflows))
             return (
-                f"Either add the policy to your policy file under 'approval_policies', "
+                f"Either add the policy to your policy file under 'approval_workflows', "
                 f"or configure it in the console first. "
                 f"Available policies: [{available_list}]"
             )
         return (
-            "Add the policy to your policy file under 'approval_policies', "
+            "Add the policy to your policy file under 'approval_workflows', "
             "or configure it in the console first."
         )
 
@@ -939,20 +941,20 @@ class PolicyApplier:
                 self._result.mcp_servers_created += 1
                 logger.info(f"Created MCP server: {server_def.name}")
 
-    def _apply_approval_policies(
+    def _apply_approval_workflows(
         self,
-        policies: List[ApprovalPolicyDefinition],
+        policies: List[ApprovalWorkflowDefinition],
         dry_run: bool,
     ) -> None:
-        """Apply approval policy definitions.
+        """Apply approval workflow definitions.
 
         Note: notification_channels is no longer used. Approvers configure their
         own notification preferences in user settings.
 
-        Handles both standard (human) and AI-driven approval policies.
+        Handles both standard (human) and AI-driven approval workflows.
         """
-        from preloop.models.crud import crud_approval_policy
-        from preloop.models.models.tool_configuration import ApprovalPolicy
+        from preloop.models.crud import crud_approval_workflow
+        from preloop.models.models.tool_configuration import ApprovalWorkflow
 
         for policy_def in policies:
             # Map YAML approval_type to database approval_mode
@@ -964,7 +966,7 @@ class PolicyApplier:
             )
 
             # Check if policy exists by name
-            existing = crud_approval_policy.get_by_name(
+            existing = crud_approval_workflow.get_by_name(
                 self.db, account_id=self.account_id, name=policy_def.name
             )
 
@@ -990,15 +992,17 @@ class PolicyApplier:
                     )
                     existing.ai_fallback_behavior = policy_def.ai_fallback_behavior
                     existing.async_approval_enabled = policy_def.async_approval
-                    # Store escalation_policy name for second-pass resolution
-                    existing._pending_escalation_policy = policy_def.escalation_policy
+                    # Store escalation_workflow name for second-pass resolution
+                    existing._pending_escalation_workflow = (
+                        policy_def.escalation_workflow
+                    )
                 self._policy_map[policy_def.name] = existing.id
                 self._result.policies_updated += 1
-                logger.info(f"Updated approval policy: {policy_def.name}")
+                logger.info(f"Updated approval workflow: {policy_def.name}")
             else:
                 # Create new policy
                 if not dry_run:
-                    new_policy = ApprovalPolicy(
+                    new_policy = ApprovalWorkflow(
                         account_id=self.account_id,
                         name=policy_def.name,
                         description=policy_def.description,
@@ -1017,66 +1021,70 @@ class PolicyApplier:
                         ai_confidence_threshold=policy_def.ai_confidence_threshold,
                         ai_fallback_behavior=policy_def.ai_fallback_behavior,
                         async_approval_enabled=policy_def.async_approval,
-                        # escalation_policy_id resolved in second pass
+                        # escalation_workflow_id resolved in second pass
                     )
-                    # Store escalation_policy name for second-pass resolution
-                    new_policy._pending_escalation_policy = policy_def.escalation_policy
+                    # Store escalation_workflow name for second-pass resolution
+                    new_policy._pending_escalation_workflow = (
+                        policy_def.escalation_workflow
+                    )
                     self.db.add(new_policy)
                     self.db.flush()
                     self._policy_map[policy_def.name] = new_policy.id
                 self._result.policies_created += 1
-                logger.info(f"Created approval policy: {policy_def.name}")
+                logger.info(f"Created approval workflow: {policy_def.name}")
 
-        # Second pass: resolve escalation_policy references
+        # Second pass: resolve escalation_workflow references
         if not dry_run:
-            self._resolve_escalation_policies(policies)
+            self._resolve_escalation_workflows(policies)
 
-    def _resolve_escalation_policies(
-        self, policies: List[ApprovalPolicyDefinition]
+    def _resolve_escalation_workflows(
+        self, policies: List[ApprovalWorkflowDefinition]
     ) -> None:
-        """Resolve escalation_policy names to IDs (second pass).
+        """Resolve escalation_workflow names to IDs (second pass).
 
         This is called after all policies are created/updated, so we can
         resolve cross-references between policies.
         """
-        from preloop.models.crud import crud_approval_policy
+        from preloop.models.crud import crud_approval_workflow
 
         for policy_def in policies:
-            if not policy_def.escalation_policy:
+            if not policy_def.escalation_workflow:
                 continue
 
             # Get the policy we just created/updated
-            policy = crud_approval_policy.get_by_name(
+            policy = crud_approval_workflow.get_by_name(
                 self.db, account_id=self.account_id, name=policy_def.name
             )
             if not policy:
                 continue
 
-            # Look up the escalation policy by name
-            escalation_policy_id = self._policy_map.get(policy_def.escalation_policy)
-            if not escalation_policy_id:
+            # Look up the escalation workflow by name
+            escalation_workflow_id = self._policy_map.get(
+                policy_def.escalation_workflow
+            )
+            if not escalation_workflow_id:
                 # Try to find it in the database
-                escalation_policy = crud_approval_policy.get_by_name(
+                escalation_workflow = crud_approval_workflow.get_by_name(
                     self.db,
                     account_id=self.account_id,
-                    name=policy_def.escalation_policy,
+                    name=policy_def.escalation_workflow,
                 )
-                if escalation_policy:
-                    escalation_policy_id = escalation_policy.id
+                if escalation_workflow:
+                    escalation_workflow_id = escalation_workflow.id
 
-            if escalation_policy_id:
-                policy.escalation_policy_id = escalation_policy_id
+            if escalation_workflow_id:
+                policy.escalation_workflow_id = escalation_workflow_id
                 logger.info(
-                    f"Resolved escalation policy '{policy_def.escalation_policy}' "
+                    f"Resolved escalation workflow '{policy_def.escalation_workflow}' "
                     f"for policy '{policy_def.name}'"
                 )
             else:
                 logger.warning(
-                    f"Escalation policy '{policy_def.escalation_policy}' not found "
+                    f"Escalation policy '{policy_def.escalation_workflow}' not found "
                     f"for policy '{policy_def.name}'"
                 )
                 self._result.warnings.append(
-                    f"Escalation policy '{policy_def.escalation_policy}' not found "
+                    f"Escalation policy '{policy_def.escalation_workflow}' not found "
                     f"for policy '{policy_def.name}'"
                 )
 
@@ -1138,25 +1146,25 @@ class PolicyApplier:
                         )
                         mcp_server_id = None
 
-            # Look up approval policy ID
-            approval_policy_id = None
-            if tool_def.approval_policy:
-                if tool_def.approval_policy in self._policy_map:
-                    approval_policy_id = self._policy_map[tool_def.approval_policy]
+            # Look up approval workflow ID
+            approval_workflow_id = None
+            if tool_def.approval_workflow:
+                if tool_def.approval_workflow in self._policy_map:
+                    approval_workflow_id = self._policy_map[tool_def.approval_workflow]
                 else:
                     # Try to find in database
-                    from preloop.models.crud import crud_approval_policy
+                    from preloop.models.crud import crud_approval_workflow
 
-                    policy = crud_approval_policy.get_by_name(
+                    policy = crud_approval_workflow.get_by_name(
                         self.db,
                         account_id=self.account_id,
-                        name=tool_def.approval_policy,
+                        name=tool_def.approval_workflow,
                     )
                     if policy:
-                        approval_policy_id = policy.id
+                        approval_workflow_id = policy.id
                     else:
                         self._result.warnings.append(
-                            f"Approval policy '{tool_def.approval_policy}' not found "
+                            f"Approval workflow '{tool_def.approval_workflow}' not found "
                             f"for tool '{tool_def.name}'"
                         )
 
@@ -1172,7 +1180,7 @@ class PolicyApplier:
                 # Update existing config
                 if not dry_run:
                     existing.is_enabled = tool_def.enabled
-                    existing.approval_policy_id = approval_policy_id
+                    existing.approval_workflow_id = approval_workflow_id
                     # Always update tool_source and mcp_server_id to keep consistent
                     # with YAML (including None to clear old references)
                     existing.tool_source = tool_source
@@ -1200,7 +1208,7 @@ class PolicyApplier:
                         tool_source=tool_source,
                         mcp_server_id=mcp_server_id,
                         is_enabled=tool_def.enabled,
-                        approval_policy_id=approval_policy_id,
+                        approval_workflow_id=approval_workflow_id,
                         tool_description=tool_def.description,
                         custom_config=tool_def.custom_config,
                         justification_mode=tool_def.justification,
@@ -1344,10 +1352,10 @@ class PolicyApplier:
                 "require_approval_for_new_tools=true (not yet implemented)"
             )
 
-        # Check default_approval_policy - not yet enforced
-        if defaults.default_approval_policy:
+        # Check default_approval_workflow - not yet enforced
+        if defaults.default_approval_workflow:
             unsupported_settings.append(
-                f"default_approval_policy='{defaults.default_approval_policy}' (not yet implemented)"
+                f"default_approval_workflow='{defaults.default_approval_workflow}' (not yet implemented)"
             )
 
         if unsupported_settings:
@@ -1394,7 +1402,7 @@ def export_current_policy(
     from datetime import datetime, timezone
 
     from preloop.models.crud import (
-        crud_approval_policy,
+        crud_approval_workflow,
         crud_mcp_server,
         crud_tool_configuration,
     )
@@ -1436,11 +1444,13 @@ def export_current_policy(
         )
         server_name_map = {str(s.id): s.name for s in mcp_servers}
 
-    # Export approval policies
-    policies = crud_approval_policy.get_multi_by_account(db, account_id=account_id_str)
+    # Export approval workflows
+    policies = crud_approval_workflow.get_multi_by_account(
+        db, account_id=account_id_str
+    )
 
-    # Build policy name lookup first (needed for escalation policy resolution)
-    policy_name_map = {str(p.id): p.name for p in policies}
+    # Build workflow name lookup first (needed for escalation workflow resolution)
+    workflow_name_map = {str(p.id): p.name for p in policies}
 
     policy_defs = []
     for policy in policies:
@@ -1452,13 +1462,15 @@ def export_current_policy(
             else "standard"
         )
 
-        # Resolve escalation policy name from ID
-        escalation_policy_name = None
-        escalation_policy_id = getattr(policy, "escalation_policy_id", None)
-        if escalation_policy_id:
-            escalation_policy_name = policy_name_map.get(str(escalation_policy_id))
+        # Resolve escalation workflow name from ID
+        escalation_workflow_name = None
+        escalation_workflow_id = getattr(policy, "escalation_workflow_id", None)
+        if escalation_workflow_id:
+            escalation_workflow_name = workflow_name_map.get(
+                str(escalation_workflow_id)
+            )
 
-        policy_def = ApprovalPolicyDefinition(
+        policy_def = ApprovalWorkflowDefinition(
             name=policy.name,
             description=policy.description,
             timeout_seconds=policy.timeout_seconds,
@@ -1474,7 +1486,7 @@ def export_current_policy(
             ai_context=getattr(policy, "ai_context", None),
             ai_confidence_threshold=getattr(policy, "ai_confidence_threshold", 0.8),
             ai_fallback_behavior=getattr(policy, "ai_fallback_behavior", "escalate"),
-            escalation_policy=escalation_policy_name,
+            escalation_workflow=escalation_workflow_name,
             async_approval=getattr(policy, "async_approval_enabled", False),
         )
         policy_defs.append(policy_def)
@@ -1520,9 +1532,9 @@ def export_current_policy(
             name=config.tool_name,
             source=source,
             enabled=config.is_enabled,
-            approval_policy=(
-                policy_name_map.get(str(config.approval_policy_id))
-                if config.approval_policy_id
+            approval_workflow=(
+                workflow_name_map.get(str(config.approval_workflow_id))
+                if config.approval_workflow_id
                 else None
             ),
             conditions=conditions if conditions else None,
@@ -1540,7 +1552,7 @@ def export_current_policy(
             created_at=datetime.now(timezone.utc),
         ),
         mcp_servers=server_defs if server_defs else None,
-        approval_policies=policy_defs if policy_defs else None,
+        approval_workflows=policy_defs if policy_defs else None,
         tools=tool_defs if tool_defs else None,
         defaults=DefaultsDefinition(),  # Default settings
     )

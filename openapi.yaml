@@ -1003,6 +1003,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/mcp-servers/{server_id}/oauth/authorize:
+    get:
+      tags:
+      - MCP Servers OAuth
+      summary: Mcp Server Oauth Authorize
+      description: 'Initiate the MCP OAuth client flow for an external MCP server.
+
+
+        This endpoint is on the public router because the browser navigates
+
+        to it directly (302 redirect flow). Auth is via the `token` query param.
+
+
+        1. Fetches the server''s /.well-known/oauth-authorization-server metadata.
+
+        2. Dynamically registers as an OAuth client (RFC 7591) if needed.
+
+        3. Generates PKCE code_challenge / code_verifier.
+
+        4. Redirects the user to the external server''s authorization endpoint.'
+      operationId: mcp_server_oauth_authorize_api_v1_mcp_servers__server_id__oauth_authorize_get
+      parameters:
+      - name: server_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Server Id
+      - name: token
+        in: query
+        required: true
+        schema:
+          type: string
+          description: JWT access token for authentication
+          title: Token
+        description: JWT access token for authentication
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/mcp-servers/oauth/callback:
+    get:
+      tags:
+      - MCP Servers OAuth
+      summary: Mcp Server Oauth Callback
+      description: 'Handle the OAuth callback from an external MCP server.
+
+
+        Exchanges the authorization code for access/refresh tokens using PKCE,
+
+        saves them in the MCP server''s auth_config, and redirects to the frontend.'
+      operationId: mcp_server_oauth_callback_api_v1_mcp_servers_oauth_callback_get
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+          title: State
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/tools:
     get:
       tags:
@@ -1211,15 +1300,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/approval-policies:
+  /api/v1/approval-workflows:
     get:
       tags:
       - Tools
-      summary: List Approval Policies
-      description: "List all approval policies for the current user's account.\n\n\
+      summary: List Approval Workflows
+      description: "List all approval workflows for the current user's account.\n\n\
         Args:\n    account: Current user's account (from dependency)\n    db: Database\
-        \ session\n\nReturns:\n    List of approval policies"
-      operationId: list_approval_policies_api_v1_approval_policies_get
+        \ session\n\nReturns:\n    List of approval workflows"
+      operationId: list_approval_workflows_api_v1_approval_workflows_get
       responses:
         '200':
           description: Successful Response
@@ -1227,25 +1316,27 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: '#/components/schemas/ApprovalPolicyResponse'
+                  $ref: '#/components/schemas/ApprovalWorkflowResponse'
                 type: array
-                title: Response List Approval Policies Api V1 Approval Policies Get
+                title: Response List Approval Workflows Api V1 Approval Workflows
+                  Get
       security:
       - bearerAuth: []
     post:
       tags:
       - Tools
-      summary: Create Approval Policy
-      description: "Create a reusable approval policy.\n\nArgs:\n    policy_data:\
-        \ Approval policy data\n    account: Current user's account (from dependency)\n\
-        \    db: Database session\n\nReturns:\n    Created approval policy\n\nRaises:\n\
-        \    HTTPException: If policy with same name already exists or creation fails"
-      operationId: create_approval_policy_api_v1_approval_policies_post
+      summary: Create Approval Workflow
+      description: "Create a reusable approval workflow.\n\nArgs:\n    workflow_data:\
+        \ Approval workflow data\n    account: Current user's account (from dependency)\n\
+        \    db: Database session\n\nReturns:\n    Created approval workflow\n\nRaises:\n\
+        \    HTTPException: If workflow with same name already exists or creation\
+        \ fails"
+      operationId: create_approval_workflow_api_v1_approval_workflows_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApprovalPolicyCreate'
+              $ref: '#/components/schemas/ApprovalWorkflowCreate'
         required: true
       responses:
         '201':
@@ -1253,7 +1344,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApprovalPolicyResponse'
+                $ref: '#/components/schemas/ApprovalWorkflowResponse'
         '422':
           description: Validation Error
           content:
@@ -1262,33 +1353,33 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/approval-policies/{policy_id}:
+  /api/v1/approval-workflows/{workflow_id}:
     get:
       tags:
       - Tools
-      summary: Get Approval Policy
-      description: "Get an approval policy by ID.\n\nArgs:\n    policy_id: Approval\
-        \ policy ID\n    account: Current user's account (from dependency)\n    db:\
-        \ Database session\n\nReturns:\n    Approval policy details\n\nRaises:\n \
-        \   HTTPException: If policy not found or access denied"
-      operationId: get_approval_policy_api_v1_approval_policies__policy_id__get
+      summary: Get Approval Workflow
+      description: "Get an approval workflow by ID.\n\nArgs:\n    workflow_id: Approval\
+        \ workflow ID\n    account: Current user's account (from dependency)\n   \
+        \ db: Database session\n\nReturns:\n    Approval workflow details\n\nRaises:\n\
+        \    HTTPException: If workflow not found or access denied"
+      operationId: get_approval_workflow_api_v1_approval_workflows__workflow_id__get
       security:
       - bearerAuth: []
       parameters:
-      - name: policy_id
+      - name: workflow_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: Policy Id
+          title: Workflow Id
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApprovalPolicyResponse'
+                $ref: '#/components/schemas/ApprovalWorkflowResponse'
         '422':
           description: Validation Error
           content:
@@ -1298,36 +1389,36 @@ paths:
     put:
       tags:
       - Tools
-      summary: Update Approval Policy
-      description: "Update an approval policy.\n\nArgs:\n    policy_id: Approval policy\
-        \ ID\n    policy_update: Updated policy data\n    account: Current user's\
-        \ account (from dependency)\n    db: Database session\n\nReturns:\n    Updated\
-        \ approval policy\n\nRaises:\n    HTTPException: If policy not found or update\
-        \ fails"
-      operationId: update_approval_policy_api_v1_approval_policies__policy_id__put
+      summary: Update Approval Workflow
+      description: "Update an approval workflow.\n\nArgs:\n    workflow_id: Approval\
+        \ workflow ID\n    workflow_update: Updated workflow data\n    account: Current\
+        \ user's account (from dependency)\n    db: Database session\n\nReturns:\n\
+        \    Updated approval workflow\n\nRaises:\n    HTTPException: If workflow\
+        \ not found or update fails"
+      operationId: update_approval_workflow_api_v1_approval_workflows__workflow_id__put
       security:
       - bearerAuth: []
       parameters:
-      - name: policy_id
+      - name: workflow_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: Policy Id
+          title: Workflow Id
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApprovalPolicyUpdate'
+              $ref: '#/components/schemas/ApprovalWorkflowUpdate'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApprovalPolicyResponse'
+                $ref: '#/components/schemas/ApprovalWorkflowResponse'
         '422':
           description: Validation Error
           content:
@@ -1337,24 +1428,24 @@ paths:
     delete:
       tags:
       - Tools
-      summary: Delete Approval Policy
-      description: "Delete an approval policy.\n\nNote: This will set approval_policy_id\
-        \ to NULL for any tool configurations\nusing this policy (due to ondelete=\"\
-        SET NULL\").\n\nArgs:\n    policy_id: Approval policy ID\n    account: Current\
-        \ user's account (from dependency)\n    db: Database session\n\nReturns:\n\
-        \    Success message\n\nRaises:\n    HTTPException: If policy not found or\
-        \ deletion fails"
-      operationId: delete_approval_policy_api_v1_approval_policies__policy_id__delete
+      summary: Delete Approval Workflow
+      description: "Delete an approval workflow.\n\nNote: This will set approval_workflow_id\
+        \ to NULL for any tool configurations\nusing this workflow (due to ondelete=\"\
+        SET NULL\").\n\nArgs:\n    workflow_id: Approval workflow ID\n    account:\
+        \ Current user's account (from dependency)\n    db: Database session\n\nReturns:\n\
+        \    Success message\n\nRaises:\n    HTTPException: If workflow not found\
+        \ or deletion fails"
+      operationId: delete_approval_workflow_api_v1_approval_workflows__workflow_id__delete
       security:
       - bearerAuth: []
       parameters:
-      - name: policy_id
+      - name: workflow_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: Policy Id
+          title: Workflow Id
       responses:
         '200':
           description: Successful Response
@@ -1364,7 +1455,7 @@ paths:
                 type: object
                 additionalProperties:
                   type: string
-                title: Response Delete Approval Policy Api V1 Approval Policies  Policy
+                title: Response Delete Approval Workflow Api V1 Approval Workflows  Workflow
                   Id  Delete
         '422':
           description: Validation Error
@@ -4250,7 +4341,7 @@ paths:
       tags:
       - Policies
       summary: Export current configuration as policy
-      description: Export your current MCP servers, approval policies, and tool configurations
+      description: Export your current MCP servers, approval workflows, and tool configurations
         as a YAML or JSON policy file.
       operationId: export_policy_api_v1_policies_export_get
       security:
@@ -4902,12 +4993,12 @@ components:
           title: Is Enabled
           description: Whether the rule is active
           default: true
-        approval_policy_id:
+        approval_workflow_id:
           anyOf:
           - type: string
           - type: 'null'
-          title: Approval Policy Id
-          description: Approval policy ID (for 'require_approval' action)
+          title: Approval Workflow Id
+          description: Approval workflow ID (for 'require_approval' action)
       type: object
       required:
       - action
@@ -4946,11 +5037,11 @@ components:
         is_enabled:
           type: boolean
           title: Is Enabled
-        approval_policy_id:
+        approval_workflow_id:
           anyOf:
           - type: string
           - type: 'null'
-          title: Approval Policy Id
+          title: Approval Workflow Id
       type: object
       required:
       - id
@@ -4996,11 +5087,11 @@ components:
           - type: boolean
           - type: 'null'
           title: Is Enabled
-        approval_policy_id:
+        approval_workflow_id:
           anyOf:
           - type: string
           - type: 'null'
-          title: Approval Policy Id
+          title: Approval Workflow Id
       type: object
       title: AccessRuleUpdate
       description: Schema for updating an access rule.
@@ -5223,7 +5314,126 @@ components:
       - approved
       title: ApprovalDecision
       description: Schema for approval decision.
-    ApprovalPolicyCreate:
+    ApprovalRequestResponse:
+      properties:
+        tool_name:
+          type: string
+          title: Tool Name
+          description: Name of the tool being executed
+        tool_args:
+          additionalProperties: true
+          type: object
+          title: Tool Args
+          description: Arguments passed to the tool
+        agent_reasoning:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Reasoning
+          description: Agent's reasoning for the tool call
+        execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Execution Id
+          description: Flow execution ID (if applicable)
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        account_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Id
+        tool_configuration_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Configuration Id
+        approval_workflow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approval Workflow Id
+        status:
+          type: string
+          title: Status
+        requested_at:
+          type: string
+          format: date-time
+          title: Requested At
+        resolved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolved At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        approver_comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approver Comment
+        webhook_posted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Webhook Posted At
+        webhook_error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Webhook Error
+        decided_by_ai:
+          type: boolean
+          title: Decided By Ai
+          default: false
+        ai_model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model
+        ai_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Ai Confidence
+        ai_reasoning:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Reasoning
+        approval_policy_id:
+          type: string
+          title: Approval Policy Id
+          description: Alias for backward compatibility with older mobile app versions.
+          readOnly: true
+      type: object
+      required:
+      - tool_name
+      - id
+      - account_id
+      - tool_configuration_id
+      - approval_workflow_id
+      - status
+      - requested_at
+      - resolved_at
+      - expires_at
+      - approver_comment
+      - webhook_posted_at
+      - webhook_error
+      - approval_policy_id
+      title: ApprovalRequestResponse
+      description: Schema for approval request response.
+    ApprovalWorkflowCreate:
       properties:
         name:
           type: string
@@ -5233,7 +5443,7 @@ components:
           - type: string
           - type: 'null'
           title: Description
-          description: Optional description of what this policy does
+          description: Optional description of what this workflow does
         approval_type:
           type: string
           title: Approval Type
@@ -5284,7 +5494,7 @@ components:
           - type: boolean
           - type: 'null'
           title: Is Default
-          description: Whether this is the default policy for the account
+          description: Whether this is the default workflow for the account
           default: false
         workflow_type:
           anyOf:
@@ -5393,19 +5603,19 @@ components:
           description: 'Behavior when AI confidence is below threshold: ''escalate'',
             ''approve'', ''deny'''
           default: escalate
-        escalation_policy_id:
+        escalation_workflow_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Escalation Policy Id
-          description: Policy to escalate to when fallback_behavior='escalate'
+          title: Escalation Workflow Id
+          description: workflow to escalate to when fallback_behavior='escalate'
       type: object
       required:
       - name
-      title: ApprovalPolicyCreate
-      description: Schema for creating approval policy.
-    ApprovalPolicyResponse:
+      title: ApprovalWorkflowCreate
+      description: Schema for creating approval workflow.
+    ApprovalWorkflowResponse:
       properties:
         name:
           type: string
@@ -5415,7 +5625,7 @@ components:
           - type: string
           - type: 'null'
           title: Description
-          description: Optional description of what this policy does
+          description: Optional description of what this workflow does
         approval_type:
           type: string
           title: Approval Type
@@ -5545,11 +5755,11 @@ components:
         ai_fallback_behavior:
           type: string
           title: Ai Fallback Behavior
-        escalation_policy_id:
+        escalation_workflow_id:
           anyOf:
           - type: string
           - type: 'null'
-          title: Escalation Policy Id
+          title: Escalation Workflow Id
         id:
           anyOf:
           - type: string
@@ -5580,22 +5790,22 @@ components:
       - account_id
       - created_at
       - updated_at
-      title: ApprovalPolicyResponse
-      description: Schema for approval policy response.
-    ApprovalPolicyUpdate:
+      title: ApprovalWorkflowResponse
+      description: Schema for approval workflow response.
+    ApprovalWorkflowUpdate:
       properties:
         name:
           anyOf:
           - type: string
           - type: 'null'
           title: Name
-          description: Human-readable name for the policy
+          description: Human-readable name for the workflow
         description:
           anyOf:
           - type: string
           - type: 'null'
           title: Description
-          description: Optional description of what this policy does
+          description: Optional description of what this workflow does
         approval_type:
           anyOf:
           - type: string
@@ -5650,7 +5860,7 @@ components:
           - type: boolean
           - type: 'null'
           title: Is Default
-          description: Whether this is the default policy for the account
+          description: Whether this is the default workflow for the account
           default: false
         workflow_type:
           anyOf:
@@ -5759,129 +5969,16 @@ components:
           description: 'Behavior when AI confidence is below threshold: ''escalate'',
             ''approve'', ''deny'''
           default: escalate
-        escalation_policy_id:
+        escalation_workflow_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Escalation Policy Id
-          description: Policy to escalate to when fallback_behavior='escalate'
+          title: Escalation Workflow Id
+          description: workflow to escalate to when fallback_behavior='escalate'
       type: object
-      title: ApprovalPolicyUpdate
-      description: Schema for updating approval policy.
-    ApprovalRequestResponse:
-      properties:
-        tool_name:
-          type: string
-          title: Tool Name
-          description: Name of the tool being executed
-        tool_args:
-          additionalProperties: true
-          type: object
-          title: Tool Args
-          description: Arguments passed to the tool
-        agent_reasoning:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Agent Reasoning
-          description: Agent's reasoning for the tool call
-        execution_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Execution Id
-          description: Flow execution ID (if applicable)
-        id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Id
-        account_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Account Id
-        tool_configuration_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Tool Configuration Id
-        approval_policy_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Approval Policy Id
-        status:
-          type: string
-          title: Status
-        requested_at:
-          type: string
-          format: date-time
-          title: Requested At
-        resolved_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Resolved At
-        expires_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Expires At
-        approver_comment:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Approver Comment
-        webhook_posted_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Webhook Posted At
-        webhook_error:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Webhook Error
-        decided_by_ai:
-          type: boolean
-          title: Decided By Ai
-          default: false
-        ai_model:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Ai Model
-        ai_confidence:
-          anyOf:
-          - type: number
-          - type: 'null'
-          title: Ai Confidence
-        ai_reasoning:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Ai Reasoning
-      type: object
-      required:
-      - tool_name
-      - id
-      - account_id
-      - tool_configuration_id
-      - approval_policy_id
-      - status
-      - requested_at
-      - resolved_at
-      - expires_at
-      - approver_comment
-      - webhook_posted_at
-      - webhook_error
-      title: ApprovalRequestResponse
-      description: Schema for approval request response.
+      title: ApprovalWorkflowUpdate
+      description: Schema for updating approval workflow.
     AuthUserCreate:
       properties:
         username:
@@ -5951,7 +6048,7 @@ components:
       properties:
         file:
           type: string
-          format: binary
+          contentMediaType: application/octet-stream
           title: File
           description: YAML or JSON policy file to compare
       type: object
@@ -5997,7 +6094,7 @@ components:
       properties:
         file:
           type: string
-          format: binary
+          contentMediaType: application/octet-stream
           title: File
           description: YAML or JSON policy file to apply
         dry_run:
@@ -6024,7 +6121,7 @@ components:
       properties:
         file:
           type: string
-          format: binary
+          contentMediaType: application/octet-stream
           title: File
           description: YAML or JSON policy file to validate
         check_server_references:
@@ -7470,7 +7567,7 @@ components:
           - type: string
           - type: 'null'
           title: Auth Type
-          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'', ''oauth'''
           default: none
         auth_config:
           anyOf:
@@ -7523,7 +7620,7 @@ components:
           - type: string
           - type: 'null'
           title: Auth Type
-          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'', ''oauth'''
           default: none
         auth_config:
           anyOf:
@@ -7597,7 +7694,7 @@ components:
           - type: string
           - type: 'null'
           title: Auth Type
-          description: 'Authentication type: ''none'', ''bearer'', ''api_key'''
+          description: 'Authentication type: ''none'', ''bearer'', ''api_key'', ''oauth'''
           default: none
         auth_config:
           anyOf:
@@ -8051,12 +8148,12 @@ components:
         policies_created:
           type: integer
           title: Policies Created
-          description: Number of approval policies created
+          description: Number of approval workflows created
           default: 0
         policies_updated:
           type: integer
           title: Policies Updated
-          description: Number of approval policies updated
+          description: Number of approval workflows updated
           default: 0
         tools_created:
           type: integer
@@ -8756,13 +8853,13 @@ components:
           title: Is Enabled
           description: Whether the tool is enabled
           default: true
-        approval_policy_id:
+        approval_workflow_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Approval Policy Id
-          description: Reference to approval policy (approval required if set and
+          title: Approval Workflow Id
+          description: Reference to approval workflow (approval required if set and
             condition matches)
         tool_description:
           anyOf:
@@ -8824,11 +8921,11 @@ components:
         is_enabled:
           type: boolean
           title: Is Enabled
-        approval_policy_id:
+        approval_workflow_id:
           anyOf:
           - type: string
           - type: 'null'
-          title: Approval Policy Id
+          title: Approval Workflow Id
         tool_description:
           anyOf:
           - type: string
@@ -8917,13 +9014,13 @@ components:
           title: Is Enabled
           description: Whether the tool is enabled
           default: true
-        approval_policy_id:
+        approval_workflow_id:
           anyOf:
           - type: string
             format: uuid
           - type: 'null'
-          title: Approval Policy Id
-          description: Reference to approval policy (approval required if set and
+          title: Approval Workflow Id
+          description: Reference to approval workflow (approval required if set and
             condition matches)
         tool_description:
           anyOf:

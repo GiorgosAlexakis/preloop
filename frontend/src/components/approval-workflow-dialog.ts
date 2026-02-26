@@ -4,8 +4,8 @@ import {
   getUsers,
   getTeams,
   getAIModels,
-  createApprovalPolicy,
-  updateApprovalPolicy,
+  createApprovalWorkflow,
+  updateApprovalWorkflow,
 } from '../api';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
@@ -22,7 +22,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import './add-ai-model-modal';
 
-export interface ApprovalPolicy {
+export interface ApprovalWorkflow {
   id: string;
   name: string;
   description?: string;
@@ -43,7 +43,7 @@ export interface ApprovalPolicy {
   ai_guidelines?: string;
   ai_confidence_threshold?: number;
   ai_fallback_behavior?: 'escalate' | 'approve' | 'deny';
-  escalation_policy_id?: string;
+  escalation_workflow_id?: string;
   async_approval_enabled?: boolean;
 }
 
@@ -65,11 +65,11 @@ interface Team {
   name: string;
 }
 
-@customElement('approval-policy-dialog')
-export class ApprovalPolicyDialog extends LitElement {
+@customElement('approval-workflow-dialog')
+export class ApprovalWorkflowDialog extends LitElement {
   @property({ type: Boolean }) open = false;
-  @property({ type: Object }) policy: ApprovalPolicy | null = null;
-  @property({ type: Array }) existingPolicies: ApprovalPolicy[] = [];
+  @property({ type: Object }) policy: ApprovalWorkflow | null = null;
+  @property({ type: Array }) existingPolicies: ApprovalWorkflow[] = [];
   @property({ type: Object }) features: { [key: string]: boolean | string[] } =
     {};
 
@@ -108,7 +108,7 @@ export class ApprovalPolicyDialog extends LitElement {
   @state() private _aiConfidenceThreshold = 0.8;
   @state() private _aiFallbackBehavior: 'escalate' | 'approve' | 'deny' =
     'escalate';
-  @state() private _escalationPolicyId = '';
+  @state() private _escalationWorkflowId = '';
 
   // Slack/Mattermost fields
   @state() private _channel = '';
@@ -281,7 +281,7 @@ export class ApprovalPolicyDialog extends LitElement {
       this._aiGuidelines = this.policy.ai_guidelines || '';
       this._aiConfidenceThreshold = this.policy.ai_confidence_threshold ?? 0.8;
       this._aiFallbackBehavior = this.policy.ai_fallback_behavior || 'escalate';
-      this._escalationPolicyId = this.policy.escalation_policy_id || '';
+      this._escalationWorkflowId = this.policy.escalation_workflow_id || '';
 
       // Slack/Mattermost
       this._channel = this.policy.channel || '';
@@ -307,7 +307,7 @@ export class ApprovalPolicyDialog extends LitElement {
     this._aiGuidelines = '';
     this._aiConfidenceThreshold = 0.8;
     this._aiFallbackBehavior = 'escalate';
-    this._escalationPolicyId = '';
+    this._escalationWorkflowId = '';
     this._channel = '';
     this._webhookUrl = '';
     this._error = null;
@@ -383,9 +383,9 @@ export class ApprovalPolicyDialog extends LitElement {
           policyData.ai_fallback_behavior = this._aiFallbackBehavior;
           if (
             this._aiFallbackBehavior === 'escalate' &&
-            this._escalationPolicyId
+            this._escalationWorkflowId
           ) {
-            policyData.escalation_policy_id = this._escalationPolicyId;
+            policyData.escalation_workflow_id = this._escalationWorkflowId;
           }
           break;
 
@@ -403,9 +403,9 @@ export class ApprovalPolicyDialog extends LitElement {
 
       let savedPolicy;
       if (this.policy) {
-        savedPolicy = await updateApprovalPolicy(this.policy.id, policyData);
+        savedPolicy = await updateApprovalWorkflow(this.policy.id, policyData);
       } else {
-        savedPolicy = await createApprovalPolicy(policyData);
+        savedPolicy = await createApprovalWorkflow(policyData);
       }
 
       this.dispatchEvent(
@@ -417,7 +417,7 @@ export class ApprovalPolicyDialog extends LitElement {
       );
       this._handleClose();
     } catch (error: any) {
-      this._error = error.message || 'Failed to save approval policy';
+      this._error = error.message || 'Failed to save approval workflow';
     } finally {
       this._loading = false;
     }
@@ -473,10 +473,10 @@ export class ApprovalPolicyDialog extends LitElement {
             placeholder="Select users or teams..."
             multiple
             clearable
+            hoist
             .value=${[...this._approverUserIds, ...this._approverTeamIds]}
             @sl-change=${(e: any) => this._handleApproverChange(e)}
           >
-            <small slot="label">Users</small>
             ${this._users.map(
               (user) => html`
                 <sl-option value=${`user:${user.id}`}>
@@ -485,7 +485,6 @@ export class ApprovalPolicyDialog extends LitElement {
               `
             )}
             <sl-divider></sl-divider>
-            <small slot="label">Teams</small>
             ${this._teams.map(
               (team) => html`
                 <sl-option value=${`team:${team.id}`}>${team.name}</sl-option>
@@ -539,6 +538,7 @@ export class ApprovalPolicyDialog extends LitElement {
         <div class="form-field">
           <label class="form-label required">AI Model</label>
           <sl-select
+            hoist
             placeholder=${this._loadingModels
               ? 'Loading models...'
               : 'Select an AI model...'}
@@ -624,12 +624,13 @@ DENY if:
         ${this._aiFallbackBehavior === 'escalate'
           ? html`
               <div class="form-field">
-                <label class="form-label">Escalation Policy</label>
+                <label class="form-label">Escalation Workflow</label>
                 <sl-select
-                  .value=${this._escalationPolicyId}
+                  hoist
+                  .value=${this._escalationWorkflowId}
                   @sl-change=${(e: any) =>
-                    (this._escalationPolicyId = e.target.value)}
-                  placeholder="Select a policy for escalation..."
+                    (this._escalationWorkflowId = e.target.value)}
+                  placeholder="Select a workflow for escalation..."
                   clearable
                 >
                   ${standardPolicies.map(
@@ -639,7 +640,7 @@ DENY if:
                   )}
                 </sl-select>
                 <small style="color: var(--sl-color-neutral-500);">
-                  The approval policy to use when AI confidence is below
+                  The approval workflow to use when AI confidence is below
                   threshold.
                 </small>
               </div>
@@ -703,7 +704,9 @@ DENY if:
   render() {
     return html`
       <sl-dialog
-        label=${this.policy ? 'Edit Approval Policy' : 'Create Approval Policy'}
+        label=${this.policy
+          ? 'Edit Approval Workflow'
+          : 'Create Approval Workflow'}
         ?open=${this.open}
         @sl-request-close=${this._handleClose}
       >
@@ -738,6 +741,7 @@ DENY if:
           <div class="form-field">
             <label class="form-label">Type</label>
             <sl-select
+              hoist
               .value=${this._approvalType}
               @sl-change=${(e: any) => (this._approvalType = e.target.value)}
             >
@@ -827,6 +831,6 @@ DENY if:
 
 declare global {
   interface HTMLElementTagNameMap {
-    'approval-policy-dialog': ApprovalPolicyDialog;
+    'approval-workflow-dialog': ApprovalWorkflowDialog;
   }
 }

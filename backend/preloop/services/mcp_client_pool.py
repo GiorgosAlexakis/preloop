@@ -50,13 +50,21 @@ class MCPClient:
         # Add authentication headers
         if self.auth_type == "bearer" and "token" in self.auth_config:
             headers["Authorization"] = f"Bearer {self.auth_config['token']}"
+        elif self.auth_type == "oauth" and "access_token" in self.auth_config:
+            headers["Authorization"] = f"Bearer {self.auth_config['access_token']}"
         elif self.auth_type == "api_key" and "api_key" in self.auth_config:
             key_name = self.auth_config.get("key_name", "X-API-Key")
             headers[key_name] = self.auth_config["api_key"]
 
         # Create auth object for httpx if using bearer token
         auth = None
+        bearer_token = None
         if self.auth_type == "bearer" and "token" in self.auth_config:
+            bearer_token = self.auth_config["token"]
+        elif self.auth_type == "oauth" and "access_token" in self.auth_config:
+            bearer_token = self.auth_config["access_token"]
+
+        if bearer_token:
             # Use httpx.Auth for bearer token
             class BearerAuth(httpx.Auth):
                 def __init__(self, token: str):
@@ -66,7 +74,7 @@ class MCPClient:
                     request.headers["Authorization"] = f"Bearer {self.token}"
                     yield request
 
-            auth = BearerAuth(self.auth_config["token"])
+            auth = BearerAuth(bearer_token)
 
         # Test connection with MCP SDK client
         try:
@@ -148,12 +156,20 @@ class MCPClient:
         headers = {}
         if self.auth_type == "bearer" and "token" in self.auth_config:
             headers["Authorization"] = f"Bearer {self.auth_config['token']}"
+        elif self.auth_type == "oauth" and "access_token" in self.auth_config:
+            headers["Authorization"] = f"Bearer {self.auth_config['access_token']}"
         elif self.auth_type == "api_key" and "api_key" in self.auth_config:
             key_name = self.auth_config.get("key_name", "X-API-Key")
             headers[key_name] = self.auth_config["api_key"]
 
         auth = None
+        bearer_token = None
         if self.auth_type == "bearer" and "token" in self.auth_config:
+            bearer_token = self.auth_config["token"]
+        elif self.auth_type == "oauth" and "access_token" in self.auth_config:
+            bearer_token = self.auth_config["access_token"]
+
+        if bearer_token:
 
             class BearerAuth(httpx.Auth):
                 def __init__(self, token: str):
@@ -163,7 +179,7 @@ class MCPClient:
                     request.headers["Authorization"] = f"Bearer {self.token}"
                     yield request
 
-            auth = BearerAuth(self.auth_config["token"])
+            auth = BearerAuth(bearer_token)
 
         # Create client connection (returns context manager)
         streams_context = streamablehttp_client(

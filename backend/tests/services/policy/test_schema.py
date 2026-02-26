@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from preloop.services.policy.schema import (
-    ApprovalPolicyDefinition,
+    ApprovalWorkflowDefinition,
     ConditionAction,
     DefaultsDefinition,
     MCPServerAuthType,
@@ -84,12 +84,12 @@ class TestMCPServerDefinition:
         assert "url" in errors
 
 
-class TestApprovalPolicyDefinition:
-    """Test ApprovalPolicyDefinition schema."""
+class TestApprovalWorkflowDefinition:
+    """Test ApprovalWorkflowDefinition schema."""
 
     def test_valid_policy(self):
-        """Test valid approval policy definition."""
-        policy = ApprovalPolicyDefinition(
+        """Test valid approval workflow definition."""
+        policy = ApprovalWorkflowDefinition(
             name="high-risk",
             description="Policy for high-risk operations",
             timeout_seconds=600,
@@ -102,8 +102,8 @@ class TestApprovalPolicyDefinition:
         assert policy.approvals_required == 2
 
     def test_policy_defaults(self):
-        """Test approval policy with defaults."""
-        policy = ApprovalPolicyDefinition(name="default")
+        """Test approval workflow with defaults."""
+        policy = ApprovalWorkflowDefinition(name="default")
         assert policy.timeout_seconds == 300
         assert policy.require_reason is False
         assert policy.is_default is False
@@ -113,16 +113,16 @@ class TestApprovalPolicyDefinition:
         """Test timeout_seconds validation bounds."""
         # Too short
         with pytest.raises(ValidationError) as exc_info:
-            ApprovalPolicyDefinition(name="test", timeout_seconds=10)
+            ApprovalWorkflowDefinition(name="test", timeout_seconds=10)
         assert "timeout_seconds" in str(exc_info.value)
 
         # Too long
         with pytest.raises(ValidationError) as exc_info:
-            ApprovalPolicyDefinition(name="test", timeout_seconds=100000)
+            ApprovalWorkflowDefinition(name="test", timeout_seconds=100000)
         assert "timeout_seconds" in str(exc_info.value)
 
         # Just right
-        policy = ApprovalPolicyDefinition(name="test", timeout_seconds=30)
+        policy = ApprovalWorkflowDefinition(name="test", timeout_seconds=30)
         assert policy.timeout_seconds == 30
 
 
@@ -168,7 +168,7 @@ class TestToolDefinition:
             name="execute_command",
             source="builtin",
             enabled=True,
-            approval_policy="high-risk",
+            approval_workflow="high-risk",
             conditions=[
                 ToolCondition(expression="args.command.contains('rm')"),
             ],
@@ -176,7 +176,7 @@ class TestToolDefinition:
         assert tool.name == "execute_command"
         assert tool.source == "builtin"
         assert tool.enabled is True
-        assert tool.approval_policy == "high-risk"
+        assert tool.approval_workflow == "high-risk"
         assert len(tool.conditions) == 1
 
     def test_tool_defaults(self):
@@ -184,7 +184,7 @@ class TestToolDefinition:
         tool = ToolDefinition(name="test_tool")
         assert tool.source == "builtin"
         assert tool.enabled is True
-        assert tool.approval_policy is None
+        assert tool.approval_workflow is None
         assert tool.conditions is None
 
     def test_tool_with_mcp_server_source(self):
@@ -201,18 +201,18 @@ class TestDefaultsDefinition:
         defaults = DefaultsDefinition(
             unknown_tools=UnknownToolsPolicy.DENY,
             require_approval_for_new_tools=True,
-            default_approval_policy="default-policy",
+            default_approval_workflow="default-policy",
         )
         assert defaults.unknown_tools == "deny"
         assert defaults.require_approval_for_new_tools is True
-        assert defaults.default_approval_policy == "default-policy"
+        assert defaults.default_approval_workflow == "default-policy"
 
     def test_defaults_with_defaults(self):
         """Test defaults with default values."""
         defaults = DefaultsDefinition()
         assert defaults.unknown_tools == "allow"
         assert defaults.require_approval_for_new_tools is False
-        assert defaults.default_approval_policy is None
+        assert defaults.default_approval_workflow is None
         assert defaults.inherit_from_parent is True
 
 
@@ -227,7 +227,7 @@ class TestPolicyDocument:
         assert policy.version == PolicyVersion.V1_0
         assert policy.metadata.name == "Minimal Policy"
         assert policy.mcp_servers is None
-        assert policy.approval_policies is None
+        assert policy.approval_workflows is None
         assert policy.tools is None
         assert policy.defaults is None
 
@@ -245,8 +245,8 @@ class TestPolicyDocument:
                     url="https://mcp.github.com",
                 ),
             ],
-            approval_policies=[
-                ApprovalPolicyDefinition(
+            approval_workflows=[
+                ApprovalWorkflowDefinition(
                     name="high-risk",
                     timeout_seconds=300,
                 ),
@@ -255,7 +255,7 @@ class TestPolicyDocument:
                 ToolDefinition(
                     name="execute_command",
                     source="builtin",
-                    approval_policy="high-risk",
+                    approval_workflow="high-risk",
                 ),
             ],
             defaults=DefaultsDefinition(
@@ -263,7 +263,7 @@ class TestPolicyDocument:
             ),
         )
         assert len(policy.mcp_servers) == 1
-        assert len(policy.approval_policies) == 1
+        assert len(policy.approval_workflows) == 1
         assert len(policy.tools) == 1
         assert policy.defaults.unknown_tools == "deny"
 
@@ -284,12 +284,12 @@ class TestPolicyDocument:
         with pytest.raises(ValidationError) as exc_info:
             PolicyDocument(
                 metadata=PolicyMetadata(name="Test"),
-                approval_policies=[
-                    ApprovalPolicyDefinition(name="policy1"),
-                    ApprovalPolicyDefinition(name="policy1"),
+                approval_workflows=[
+                    ApprovalWorkflowDefinition(name="policy1"),
+                    ApprovalWorkflowDefinition(name="policy1"),
                 ],
             )
-        assert "Duplicate approval policy name" in str(exc_info.value)
+        assert "Duplicate approval workflow name" in str(exc_info.value)
 
     def test_invalid_policy_reference_fails(self):
         """Test that invalid policy references raise validation error."""
@@ -299,11 +299,11 @@ class TestPolicyDocument:
                 tools=[
                     ToolDefinition(
                         name="test_tool",
-                        approval_policy="nonexistent-policy",
+                        approval_workflow="nonexistent-policy",
                     ),
                 ],
             )
-        assert "unknown approval policy" in str(exc_info.value).lower()
+        assert "unknown approval workflow" in str(exc_info.value).lower()
 
     def test_invalid_server_reference_fails(self):
         """Test that invalid server references raise validation error."""
@@ -327,22 +327,22 @@ class TestPolicyDocument:
             mcp_servers=[
                 MCPServerDefinition(name="my-server", url="http://localhost"),
             ],
-            approval_policies=[
-                ApprovalPolicyDefinition(name="my-policy"),
+            approval_workflows=[
+                ApprovalWorkflowDefinition(name="my-policy"),
             ],
             tools=[
                 ToolDefinition(
                     name="mcp_tool",
                     source="my-server",
-                    approval_policy="my-policy",
+                    approval_workflow="my-policy",
                 ),
             ],
             defaults=DefaultsDefinition(
-                default_approval_policy="my-policy",
+                default_approval_workflow="my-policy",
             ),
         )
         assert policy.tools[0].source == "my-server"
-        assert policy.tools[0].approval_policy == "my-policy"
+        assert policy.tools[0].approval_workflow == "my-policy"
 
     def test_builtin_source_doesnt_require_server(self):
         """Test that builtin source doesn't require a server definition."""

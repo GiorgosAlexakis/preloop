@@ -494,17 +494,19 @@ exit $GEMINI_EXIT_CODE
         # HOME is set by the container setup (container.py) based on the
         # configured UID. Don't hardcode it here.
 
-        # Configure MCP tool timeout based on approval policies
+        # Configure MCP tool timeout based on approval workflows
         # Base timeout is 600 seconds (10 minutes)
         mcp_timeout = 600
 
-        # Check if there are approval policies that may require longer timeouts
+        # Check if there are approval workflows that may require longer timeouts
         account_id = execution_context.get("account_id")
         if account_id:
             try:
                 from preloop.models.db.session import get_db_context
                 from preloop.models.crud import tool_configuration as tool_config_crud
-                from preloop.models.crud import approval_policy as approval_policy_crud
+                from preloop.models.crud import (
+                    approval_workflow as approval_workflow_crud,
+                )
 
                 with get_db_context() as db:
                     max_approval_timeout = 0
@@ -515,15 +517,15 @@ exit $GEMINI_EXIT_CODE
                     )
 
                     for config in tool_configs:
-                        if config.approval_policy_id:
-                            policy = approval_policy_crud.get(
-                                db, id=config.approval_policy_id
+                        if config.approval_workflow_id:
+                            workflow = approval_workflow_crud.get(
+                                db, id=config.approval_workflow_id
                             )
-                            if policy and policy.timeout_seconds:
+                            if workflow and workflow.timeout_seconds:
                                 max_approval_timeout = max(
-                                    max_approval_timeout, policy.timeout_seconds
+                                    max_approval_timeout, workflow.timeout_seconds
                                 )
-                                if policy.escalation_policy:
+                                if workflow.escalation_workflow:
                                     has_escalation = True
 
                     if max_approval_timeout > 0:
@@ -533,12 +535,12 @@ exit $GEMINI_EXIT_CODE
                             mcp_timeout = max_approval_timeout
 
                         self.logger.info(
-                            f"Set MCP_TOOL_TIMEOUT to {mcp_timeout}s based on approval policies "
+                            f"Set MCP_TOOL_TIMEOUT to {mcp_timeout}s based on approval workflows "
                             f"(max_approval_timeout={max_approval_timeout}, has_escalation={has_escalation})"
                         )
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to query approval policies for MCP timeout calculation: {e}. "
+                    f"Failed to query approval workflows for MCP timeout calculation: {e}. "
                     f"Using default timeout of {mcp_timeout}s"
                 )
 

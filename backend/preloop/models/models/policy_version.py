@@ -21,7 +21,7 @@ class PolicyVersion(Base):
 
     This table stores versioned snapshots of all policy-related configurations
     for an account. Each version captures the complete state of MCP servers,
-    tools, approval policies, access rules, and defaults at a point in time.
+    tools, approval workflows, access rules, and defaults at a point in time.
 
     Versions are auto-incrementing per account and can be optionally tagged
     for easy reference (e.g., "v1.0", "production", "before-migration").
@@ -72,7 +72,7 @@ class PolicyVersion(Base):
     )
 
     # Complete snapshot as JSONB
-    # Contains: mcp_servers, tools, approval_policies, access_rules, defaults
+    # Contains: mcp_servers, tools, approval_workflows, access_rules, defaults
     snapshot: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,

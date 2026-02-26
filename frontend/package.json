@@ -7,7 +7,7 @@
     "static-eval": "^2.1.0",
     "minimist": "^1.2.8",
     "koa": "^2.16.2",
-    "fast-xml-parser": "^5.3.4"
+    "fast-xml-parser": "^5.3.6"
   },
   "scripts": {
     "start": "npm run dev",

@@ -268,8 +268,8 @@ export class FlowView extends LitElement {
 
     // Check if current user is admin
     try {
-      const { getAccountDetails } = await import('../../api');
-      const currentUser = await getAccountDetails();
+      const { getUserProfile } = await import('../../api');
+      const currentUser = await getUserProfile();
       this.isAdmin = currentUser.is_superuser || false;
     } catch (error) {
       console.error('Failed to get current user:', error);

@@ -157,6 +157,7 @@ p.lead {
 .feature-section {
   position: relative;
   text-align: center;
+  padding-bottom: 2rem;
 }
 
 .feature-section .section-container {
@@ -220,6 +221,7 @@ sl-carousel-item {
 /* Extended Description Section */
 .extended-description-section {
   text-align: center;
+  padding-bottom: 0;
 }
 
 .extended-description-section .lead {

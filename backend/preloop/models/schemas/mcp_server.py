@@ -18,7 +18,8 @@ class MCPServerBase(BaseModel):
         "http-streaming", description="Transport protocol (default: http-streaming)"
     )
     auth_type: Optional[str] = Field(
-        "none", description="Authentication type: 'none', 'bearer', 'api_key'"
+        "none",
+        description="Authentication type: 'none', 'bearer', 'api_key', 'oauth'",
     )
     auth_config: Optional[Dict[str, Any]] = Field(
         None, description="JSON configuration for authentication"

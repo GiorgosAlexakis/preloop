@@ -3,16 +3,16 @@ import { customElement, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import {
   getTools,
-  getApprovalPolicies,
-  deleteApprovalPolicy,
+  getApprovalWorkflows,
+  deleteApprovalWorkflow,
   createToolConfiguration,
   updateToolConfiguration,
   getFeatures,
   fetchWithAuth,
 } from '../../api';
-import type { Tool, ApprovalPolicy } from '../../components/tool-card';
+import type { Tool, ApprovalWorkflow } from '../../components/tool-card';
 import '../../components/view-header';
-import '../../components/approval-policy-dialog';
+import '../../components/approval-workflow-dialog';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -45,7 +45,7 @@ interface ToolAccessRule {
   sourceId: string | null;
   sourceName: string;
   action: 'allow' | 'deny' | 'require_approval';
-  policyId: string | null;
+  workflowId: string | null;
   condition: string | null;
   isEnabled: boolean;
   configId: string | null;
@@ -63,7 +63,7 @@ interface PolicyFileHistory {
 // Types for diff result
 interface DiffChange {
   type: 'added' | 'removed' | 'modified';
-  category: 'mcp_servers' | 'approval_policies' | 'tools';
+  category: 'mcp_servers' | 'approval_workflows' | 'tools';
   name: string;
   details?: string;
 }
@@ -122,7 +122,7 @@ interface PruneResponse {
 export class PoliciesView extends LitElement {
   @state() private _activeTab = 'access';
   @state() private _tools: Tool[] = [];
-  @state() private _approvalPolicies: ApprovalPolicy[] = [];
+  @state() private _approvalPolicies: ApprovalWorkflow[] = [];
   @state() private _loading = false;
   @state() private _error: string | null = null;
   @state() private _features: { [key: string]: boolean | string[] } = {};
@@ -131,9 +131,9 @@ export class PoliciesView extends LitElement {
   @state() private _toolAccessRules: ToolAccessRule[] = [];
   @state() private _expandedTools: Set<string> = new Set();
 
-  // Approval policies state
+  // Approval workflows state
   @state() private _showPolicyDialog = false;
-  @state() private _editingPolicy: ApprovalPolicy | null = null;
+  @state() private _editingPolicy: ApprovalWorkflow | null = null;
 
   // Policy files state
   @state() private _policyFileHistory: PolicyFileHistory[] = [];
@@ -270,7 +270,7 @@ export class PoliciesView extends LitElement {
         flex: 1;
       }
 
-      /* Approval Policies Tab */
+      /* Approval Workflows Tab */
       .policies-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -651,7 +651,7 @@ export class PoliciesView extends LitElement {
     try {
       const [tools, policies, featuresResponse] = await Promise.all([
         getTools(),
-        getApprovalPolicies(),
+        getApprovalWorkflows(),
         getFeatures(),
       ]);
 
@@ -665,12 +665,12 @@ export class PoliciesView extends LitElement {
         source: tool.source,
         sourceId: tool.source_id,
         sourceName: tool.source_name,
-        action: tool.approval_policy_id
+        action: tool.approval_workflow_id
           ? 'require_approval'
           : tool.is_enabled
             ? 'allow'
             : 'deny',
-        policyId: tool.approval_policy_id,
+        workflowId: tool.approval_workflow_id,
         condition: tool.has_approval_condition ? '(condition set)' : null,
         isEnabled: tool.is_enabled,
         configId: tool.config_id,
@@ -720,7 +720,7 @@ export class PoliciesView extends LitElement {
         if (tool.config_id) {
           await updateToolConfiguration(tool.config_id, {
             is_enabled: false,
-            approval_policy_id: null,
+            approval_workflow_id: null,
           });
         } else {
           await createToolConfiguration({
@@ -736,7 +736,7 @@ export class PoliciesView extends LitElement {
         if (tool.config_id) {
           await updateToolConfiguration(tool.config_id, {
             is_enabled: true,
-            approval_policy_id: null,
+            approval_workflow_id: null,
           });
         } else {
           await createToolConfiguration({
@@ -748,14 +748,14 @@ export class PoliciesView extends LitElement {
           });
         }
       } else if (newAction === 'require_approval') {
-        // Enable with default approval policy
+        // Enable with default approval workflow
         const defaultPolicy =
           this._approvalPolicies.find((p) => p.is_default) ||
           this._approvalPolicies[0];
         if (tool.config_id) {
           await updateToolConfiguration(tool.config_id, {
             is_enabled: true,
-            approval_policy_id: defaultPolicy?.id || null,
+            approval_workflow_id: defaultPolicy?.id || null,
           });
         } else {
           await createToolConfiguration({
@@ -763,7 +763,7 @@ export class PoliciesView extends LitElement {
             tool_source: tool.source,
             mcp_server_id: tool.source_id,
             is_enabled: true,
-            approval_policy_id: defaultPolicy?.id || null,
+            approval_workflow_id: defaultPolicy?.id || null,
             account_id: '',
           });
         }
@@ -775,7 +775,7 @@ export class PoliciesView extends LitElement {
     }
   }
 
-  private openPolicyDialog(policy: ApprovalPolicy | null = null) {
+  private openPolicyDialog(policy: ApprovalWorkflow | null = null) {
     this._editingPolicy = policy;
     this._showPolicyDialog = true;
   }
@@ -785,7 +785,7 @@ export class PoliciesView extends LitElement {
     this._editingPolicy = null;
   }
 
-  private async deletePolicy(policy: ApprovalPolicy) {
+  private async deletePolicy(policy: ApprovalWorkflow) {
     if (
       !confirm(
         `Are you sure you want to delete the policy "${policy.name}"? This cannot be undone.`
@@ -795,7 +795,7 @@ export class PoliciesView extends LitElement {
     }
 
     try {
-      await deleteApprovalPolicy(policy.id);
+      await deleteApprovalWorkflow(policy.id);
       await this.loadData();
     } catch (err: any) {
       this._error = err.message || 'Failed to delete policy';
@@ -1167,7 +1167,7 @@ export class PoliciesView extends LitElement {
     const toolKey = this.getToolKey(rule);
     const isExpanded = this._expandedTools.has(toolKey);
     const assignedPolicy = this._approvalPolicies.find(
-      (p) => p.id === rule.policyId
+      (p) => p.id === rule.workflowId
     );
 
     return html`
@@ -1266,7 +1266,7 @@ export class PoliciesView extends LitElement {
       <div style="margin-bottom: var(--sl-spacing-large);">
         <sl-button variant="primary" @click=${() => this.openPolicyDialog()}>
           <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-          Create Approval Policy
+          Create Approval Workflow
         </sl-button>
       </div>
 
@@ -1274,11 +1274,11 @@ export class PoliciesView extends LitElement {
         ? html`
             <div class="empty-state">
               <sl-icon name="shield-check"></sl-icon>
-              <p>No approval policies configured yet.</p>
+              <p>No approval workflows configured yet.</p>
               <p
                 style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500);"
               >
-                Create an approval policy to define how tool executions are
+                Create an approval workflow to define how tool executions are
                 approved (human, AI, Slack, etc.).
               </p>
             </div>
@@ -1293,7 +1293,7 @@ export class PoliciesView extends LitElement {
             </div>
           `}
 
-      <approval-policy-dialog
+      <approval-workflow-dialog
         ?open=${this._showPolicyDialog}
         .policy=${this._editingPolicy}
         .existingPolicies=${this._approvalPolicies}
@@ -1301,7 +1301,7 @@ export class PoliciesView extends LitElement {
         @close=${this.closePolicyDialog}
         @saved=${this._handlePolicySaved}
         @add-model=${this._handleAddModel}
-      ></approval-policy-dialog>
+      ></approval-workflow-dialog>
     `;
   }
 
@@ -1314,7 +1314,7 @@ export class PoliciesView extends LitElement {
     window.location.href = '/console/settings/models';
   }
 
-  private renderPolicyCard(policy: ApprovalPolicy) {
+  private renderPolicyCard(policy: ApprovalWorkflow) {
     const isAiDriven = policy.approval_type === 'ai_driven';
     return html`
       <sl-card class="policy-card">
@@ -1440,7 +1440,7 @@ export class PoliciesView extends LitElement {
             style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-600); margin: 0 0 var(--sl-spacing-medium) 0;"
           >
             Preloop supports declarative policy-as-code using YAML files. Define
-            MCP servers, approval policies, and tool configurations in a single
+            MCP servers, approval workflows, and tool configurations in a single
             file.
           </p>
           <sl-details summary="Example Policy File">
@@ -1451,7 +1451,7 @@ metadata:
   name: "Production Safeguards"
   description: "Safety policies for production environment"
 
-approval_policies:
+approval_workflows:
   - name: "Critical Operations"
     approval_type: standard
     approvals_required: 2

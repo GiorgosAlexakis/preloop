@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.72.0",
     "uvicorn[standard]>=0.36.0",
-    "fastapi>=0.115.13",
+    "fastapi>=0.129.2",
     "sqlalchemy>=2.0.0",
     "greenlet>=3.0.0",  # Required for SQLAlchemy async operations
     "psycopg[binary]>=3.1.12",

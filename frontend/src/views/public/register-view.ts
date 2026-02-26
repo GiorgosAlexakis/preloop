@@ -22,7 +22,13 @@ export class RegisterView extends LitElement {
   private error = '';
 
   @state()
+  private _loading = false;
+
+  @state()
   private oauthProviders: string[] = [];
+
+  @state()
+  private _billingEnabled = false;
 
   static styles = [
     formStyles,
@@ -80,13 +86,16 @@ export class RegisterView extends LitElement {
       const features = await getFeatures();
       const providers = features.features['oauth_providers'];
       this.oauthProviders = Array.isArray(providers) ? providers : [];
+      this._billingEnabled = features.features['billing'] === true;
     } catch (error) {
       this.oauthProviders = [];
+      this._billingEnabled = false;
     }
   }
 
   private async handleRegister(event: SubmitEvent) {
     event.preventDefault();
+    this._loading = true;
     const form = event.target as HTMLFormElement;
     const formData = new FormData(form);
     const username = formData.get('username') as string;
@@ -94,19 +103,71 @@ export class RegisterView extends LitElement {
     const password = formData.get('password') as string;
 
     try {
-      await post('/api/v1/auth/register', {
+      const registerResult = await post('/api/v1/auth/register', {
         username,
         email,
         password,
       });
+
+      // If the backend returns an error in the payload instead of throwing an HTTP error
+      if (registerResult && registerResult.error) {
+        throw new Error(registerResult.error);
+      }
+
+      if (this._billingEnabled) {
+        try {
+          const authData = await post('/api/v1/auth/token/json', {
+            username,
+            password,
+          });
+
+          if (authData && authData.access_token) {
+            localStorage.setItem('accessToken', authData.access_token);
+
+            const response = await fetch(
+              '/api/v1/billing/create-checkout-session',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${authData.access_token}`,
+                },
+                body: JSON.stringify({
+                  plan_id: 'teams',
+                  interval: 'month',
+                }),
+              }
+            );
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result.action === 'redirect' && result.url) {
+                window.location.href = result.url;
+                return;
+              }
+            }
+          }
+        } catch (checkoutError) {
+          console.error(
+            'Failed to create checkout session after registration',
+            checkoutError
+          );
+        }
+      }
+
+      // Only go to login if billing is disabled or if stripe fails and doesn't redirect
+      this._loading = false;
       Router.go('/login?registered=true');
     } catch (error) {
+      this._loading = false;
       if (error instanceof Error) {
         this.error = error.message;
       } else {
         this.error = 'Failed to create an account';
       }
       console.error('Create account failed', error);
+      // Ensure we don't proceed with checkout if registration failed
+      return;
     }
   }
 
@@ -181,7 +242,10 @@ export class RegisterView extends LitElement {
               ></sl-input>
             </div>
             <div class="form-actions">
-              <sl-button type="submit" variant="primary"
+              <sl-button
+                type="submit"
+                variant="primary"
+                ?loading=${this._loading}
                 >Create account</sl-button
               >
             </div>

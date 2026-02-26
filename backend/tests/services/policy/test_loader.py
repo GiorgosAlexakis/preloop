@@ -13,7 +13,7 @@ from preloop.services.policy.loader import (
     resolve_env_vars,
 )
 from preloop.services.policy.schema import (
-    ApprovalPolicyDefinition,
+    ApprovalWorkflowDefinition,
     MCPServerDefinition,
     PolicyDocument,
     PolicyMetadata,
@@ -35,13 +35,13 @@ metadata:
 mcp_servers:
   - name: test-server
     url: http://localhost:8080
-approval_policies:
+approval_workflows:
   - name: default-policy
     timeout_seconds: 300
 tools:
   - name: test_tool
     source: test-server
-    approval_policy: default-policy
+    approval_workflow: default-policy
 """
         policy, result = load_policy_from_string(yaml_content, format="yaml")
 
@@ -50,7 +50,7 @@ tools:
         assert policy is not None
         assert policy.metadata.name == "Test Policy"
         assert len(policy.mcp_servers) == 1
-        assert len(policy.approval_policies) == 1
+        assert len(policy.approval_workflows) == 1
         assert len(policy.tools) == 1
 
     def test_load_valid_json(self):
@@ -133,14 +133,14 @@ tools:
     conditions:
       - expression: "args.amount > 100"
         action: require_approval
-    # No approval_policy set - should generate warning
+    # No approval_workflow set - should generate warning
 """
         policy, result = load_policy_from_string(yaml_content, format="yaml")
 
         assert result.is_valid is True
         assert policy is not None
         assert len(result.warnings) > 0
-        assert "approval_policy" in result.warnings[0].lower()
+        assert "approval_workflow" in result.warnings[0].lower()
 
 
 class TestExportPolicy:
@@ -161,8 +161,8 @@ class TestExportPolicy:
                     url="http://localhost:8080",
                 ),
             ],
-            approval_policies=[
-                ApprovalPolicyDefinition(
+            approval_workflows=[
+                ApprovalWorkflowDefinition(
                     name="test-policy",
                     timeout_seconds=300,
                 ),
@@ -171,7 +171,7 @@ class TestExportPolicy:
                 ToolDefinition(
                     name="test_tool",
                     source="test-server",
-                    approval_policy="test-policy",
+                    approval_workflow="test-policy",
                 ),
             ],
         )
@@ -211,7 +211,9 @@ class TestExportPolicy:
         assert reimported is not None
         assert reimported.metadata.name == sample_policy.metadata.name
         assert len(reimported.mcp_servers) == len(sample_policy.mcp_servers)
-        assert len(reimported.approval_policies) == len(sample_policy.approval_policies)
+        assert len(reimported.approval_workflows) == len(
+            sample_policy.approval_workflows
+        )
         assert len(reimported.tools) == len(sample_policy.tools)
 
 
@@ -226,12 +228,12 @@ class TestComputePolicyDiff:
             mcp_servers=[
                 MCPServerDefinition(name="server1", url="http://a.com"),
             ],
-            approval_policies=[
-                ApprovalPolicyDefinition(name="policy1", timeout_seconds=300),
+            approval_workflows=[
+                ApprovalWorkflowDefinition(name="policy1", timeout_seconds=300),
             ],
             tools=[
                 ToolDefinition(
-                    name="tool1", source="server1", approval_policy="policy1"
+                    name="tool1", source="server1", approval_workflow="policy1"
                 ),
             ],
         )
@@ -252,7 +254,7 @@ class TestComputePolicyDiff:
                 MCPServerDefinition(name="server1", url="http://a.com"),
                 MCPServerDefinition(name="server2", url="http://b.com"),
             ],
-            approval_policies=base_policy.approval_policies,
+            approval_workflows=base_policy.approval_workflows,
             tools=base_policy.tools,
         )
         diff = compute_policy_diff(base_policy, modified)
@@ -266,7 +268,7 @@ class TestComputePolicyDiff:
         modified = PolicyDocument(
             metadata=base_policy.metadata,
             mcp_servers=[],
-            approval_policies=base_policy.approval_policies,
+            approval_workflows=base_policy.approval_workflows,
             tools=[
                 ToolDefinition(name="tool1", source="builtin"),
             ],
@@ -280,12 +282,12 @@ class TestComputePolicyDiff:
         assert "removal" in diff.summary.lower()
 
     def test_modified_policy(self, base_policy):
-        """Test diff with modified approval policy."""
+        """Test diff with modified approval workflow."""
         modified = PolicyDocument(
             metadata=base_policy.metadata,
             mcp_servers=base_policy.mcp_servers,
-            approval_policies=[
-                ApprovalPolicyDefinition(
+            approval_workflows=[
+                ApprovalWorkflowDefinition(
                     name="policy1", timeout_seconds=600
                 ),  # Changed
             ],
@@ -304,7 +306,7 @@ class TestComputePolicyDiff:
         modified = PolicyDocument(
             metadata=PolicyMetadata(name="Modified Policy"),
             mcp_servers=base_policy.mcp_servers,
-            approval_policies=base_policy.approval_policies,
+            approval_workflows=base_policy.approval_workflows,
             tools=base_policy.tools,
         )
         diff = compute_policy_diff(base_policy, modified)
