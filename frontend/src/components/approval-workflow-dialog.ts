@@ -475,10 +475,7 @@ export class ApprovalWorkflowDialog extends LitElement {
             multiple
             clearable
             hoist
-            .value=${[
-              ...this._approverUserIds.map((id) => `user:${id}`),
-              ...this._approverTeamIds.map((id) => `team:${id}`),
-            ]}
+            .value=${[...this._approverUserIds, ...this._approverTeamIds]}
             @sl-change=${(e: any) => this._handleApproverChange(e)}
           >
             ${this._users.map(
