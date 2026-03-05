@@ -27,6 +27,7 @@ TESTING_DOMAINS = [
     "spacecode.ai",
     "spacebridge.io",
     "example.com",
+    "test.com",
     "dmo.ai",
 ]
 
