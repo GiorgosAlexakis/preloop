@@ -218,6 +218,7 @@ export class ApprovalWorkflowDialog extends LitElement {
       this._populateForm();
     }
     if (changedProperties.has('open') && this.open) {
+      this._populateForm();
       this._loadData();
     }
   }

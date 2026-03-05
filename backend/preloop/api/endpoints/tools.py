@@ -553,6 +553,7 @@ async def list_all_tools(
                 if config_id
                 else False,
                 "access_rules": rules_by_config.get(config_id, []) if config_id else [],
+                "justification_mode": config.justification_mode if config else None,
             }
         )
 
@@ -588,6 +589,7 @@ async def list_all_tools(
                     "access_rules": rules_by_config.get(config_id, [])
                     if config_id
                     else [],
+                    "justification_mode": config.justification_mode if config else None,
                 }
             )
 
