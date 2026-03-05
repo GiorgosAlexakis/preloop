@@ -200,7 +200,7 @@ The Preloop Console is in the `frontend` directory. It is built using modern web
 
 ```bash
 # Clone the repository
-git clone https://github.com/spacecode/preloop.git
+git clone https://github.com/preloop/preloop.git
 cd preloop
 
 # Create and activate a virtual environment
@@ -326,7 +326,7 @@ Preloop includes a built-in OAuth 2.1 Authorization Server for MCP client authen
 
 ```bash
 # Clone the repository
-git clone https://github.com/spacecode/preloop.git
+git clone https://github.com/preloop/preloop.git
 cd preloop
 
 # Run with Docker Compose (development)
