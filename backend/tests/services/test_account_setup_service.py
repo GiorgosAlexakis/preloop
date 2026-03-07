@@ -52,6 +52,7 @@ class TestShouldNotifyOnLogin:
         assert result is True
 
 
+@patch("preloop.services.account_setup_service.TESTING_DOMAINS", [])
 class TestNotifyAdminsNewUserSignup:
     """Tests for notify_admins_new_user_signup function."""
 
@@ -124,6 +125,7 @@ class TestNotifyAdminsNewUserSignup:
         )
 
 
+@patch("preloop.services.account_setup_service.TESTING_DOMAINS", [])
 class TestNotifyAdminsUserLoginAfterInactivity:
     """Tests for notify_admins_user_login_after_inactivity function."""
 
@@ -206,6 +208,7 @@ class TestNotifyAdminsUserLoginAfterInactivity:
         )
 
 
+@patch("preloop.services.account_setup_service.TESTING_DOMAINS", [])
 class TestNotifyAdminsUserJoinedOrganization:
     """Tests for notify_admins_user_joined_organization function."""
 
