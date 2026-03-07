@@ -548,6 +548,97 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
 
         return query.scalar()
 
+    def get_installer_download_stats(
+        self,
+        db: Session,
+        *,
+        account_id: Union[UUID, str],
+        days: int = 30,
+    ) -> Dict[str, Any]:
+        """Get aggregated stats for public installer downloads."""
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
+        day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+        account_id_str = str(account_id) if isinstance(account_id, UUID) else account_id
+
+        base_query = db.query(AuditLog).filter(
+            AuditLog.account_id == account_id_str,
+            AuditLog.action == "installer_download",
+            AuditLog.timestamp >= start_date,
+            AuditLog.status == "success",
+        )
+
+        total_downloads = base_query.count()
+        downloads_last_24h = (
+            base_query.filter(AuditLog.timestamp >= day_ago).count()
+            if total_downloads
+            else 0
+        )
+        unique_ips = (
+            base_query.with_entities(
+                func.count(func.distinct(AuditLog.ip_address))
+            ).scalar()
+            or 0
+        )
+        pinned_downloads = (
+            base_query.filter(
+                AuditLog.details["requested_version"].astext.isnot(None)
+            ).count()
+            if total_downloads
+            else 0
+        )
+        last_download_at = (
+            base_query.with_entities(func.max(AuditLog.timestamp)).scalar()
+            if total_downloads
+            else None
+        )
+
+        resource_rows = (
+            base_query.with_entities(
+                AuditLog.resource_id.label("resource_id"),
+                func.count().label("count"),
+            )
+            .group_by(AuditLog.resource_id)
+            .all()
+        )
+        resource_counts = {
+            (row.resource_id or "unknown"): row.count for row in resource_rows
+        }
+
+        version_expression = func.coalesce(
+            AuditLog.details["requested_version"].astext, "latest"
+        )
+        version_rows = (
+            base_query.with_entities(
+                version_expression.label("version"),
+                func.count().label("count"),
+            )
+            .group_by(version_expression)
+            .order_by(func.count().desc(), version_expression.asc())
+            .limit(5)
+            .all()
+        )
+        version_counts = {
+            row.version: row.count for row in version_rows if row.version is not None
+        }
+
+        return {
+            "audit_enabled": True,
+            "days": days,
+            "total_downloads": total_downloads,
+            "downloads_last_24h": downloads_last_24h,
+            "unique_ips": unique_ips,
+            "cli_downloads": resource_counts.get("cli", 0),
+            "oss_downloads": resource_counts.get("oss", 0),
+            "pinned_downloads": pinned_downloads,
+            "latest_version_downloads": version_counts.get("latest", 0),
+            "last_download_at": last_download_at,
+            "top_versions": [
+                {"version": row.version, "count": row.count}
+                for row in version_rows
+                if row.version is not None
+            ],
+        }
+
 
 # Global instance
 crud_audit_log = CRUDAuditLog(AuditLog)

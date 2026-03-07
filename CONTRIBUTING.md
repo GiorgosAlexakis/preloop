@@ -1,19 +1,24 @@
 # Contributing to Preloop
 
-We welcome contributions from the community. To ensure a high-quality codebase, we have established the following guidelines.
+We welcome contributions from the community.
 
 ## Code Style
 
-All Python code must be formatted with `black` and `isort`. We also use `ruff` to enforce a consistent code style.
+- Python code should pass `ruff check .` and `ruff format .`.
+- Frontend code should pass `npm run format:check` from `frontend/`.
+- Keep changes focused and update docs when behavior or setup changes.
 
 ## Testing
 
-All new features and bug fixes must be accompanied by tests. We use `pytest` for the backend and Web Test Runner for the frontend.
+All new features and bug fixes should include tests when practical.
 
-### Coverage
-
-We strive to maintain a high level of test coverage. The 60% coverage target is enforced in the CI/CD pipeline:
+- Backend: `pytest`
+- Frontend: `cd frontend && npm run test`
 
 ## Submitting Changes
 
-All changes must be submitted as a merge request. The merge request will be reviewed by a core contributor before it is merged.
+1. Fork the repository and create a feature branch.
+2. Make your changes and run the relevant checks locally.
+3. Open a GitHub pull request with a clear description of the change.
+
+Pull requests are reviewed by a core contributor before merge.

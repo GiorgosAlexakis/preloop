@@ -75,7 +75,7 @@ export class ApprovalWorkflowDialog extends LitElement {
 
   /**
    * Check if advanced approvals feature is enabled (EE only).
-   * This gates AI-driven, Slack, Mattermost, Webhook options.
+   * This gates multi-user approvers and AI-driven approvals.
    */
   private _hasAdvancedApprovals(): boolean {
     return this.features['advanced_approvals'] === true;
@@ -260,8 +260,8 @@ export class ApprovalWorkflowDialog extends LitElement {
     if (this.policy) {
       this._name = this.policy.name || '';
       this._description = this.policy.description || '';
-      // Fall back to standard if policy has EE-only type but feature not enabled
-      const eeTypes = ['ai_driven', 'slack', 'mattermost', 'webhook'];
+      // Fall back to standard only for truly EE-only types.
+      const eeTypes = ['ai_driven'];
       const policyType = this.policy.approval_type || 'standard';
       if (eeTypes.includes(policyType) && !this._hasAdvancedApprovals()) {
         this._approvalType = 'standard';
@@ -284,10 +284,8 @@ export class ApprovalWorkflowDialog extends LitElement {
       this._aiFallbackBehavior = this.policy.ai_fallback_behavior || 'escalate';
       this._escalationWorkflowId = this.policy.escalation_workflow_id || '';
 
-      // Slack/Mattermost
+      // Slack/Mattermost/Webhook
       this._channel = this.policy.channel || '';
-
-      // Webhook
       this._webhookUrl = this.policy.approval_config?.webhook_url || '';
     } else {
       this._resetForm();
@@ -337,10 +335,8 @@ export class ApprovalWorkflowDialog extends LitElement {
         return !!this._aiModel;
       case 'slack':
       case 'mattermost':
-        // Channel is required
-        return !!this._channel.trim();
       case 'webhook':
-        // Webhook URL is required
+        // Incoming webhook URL is required
         return !!this._webhookUrl.trim();
       default:
         return true;
@@ -392,6 +388,9 @@ export class ApprovalWorkflowDialog extends LitElement {
 
         case 'slack':
         case 'mattermost':
+          policyData.approval_config = {
+            webhook_url: this._webhookUrl.trim(),
+          };
           policyData.channel = this._channel.trim();
           break;
 
@@ -662,15 +661,30 @@ DENY if:
         </div>
 
         <div class="form-field">
-          <label class="form-label required">Channel</label>
+          <label class="form-label required">Incoming Webhook URL</label>
+          <sl-input
+            type="url"
+            .value=${this._webhookUrl}
+            @sl-input=${(e: any) => (this._webhookUrl = e.target.value)}
+            placeholder=${this._approvalType === 'slack'
+              ? 'https://hooks.slack.com/services/...'
+              : 'https://your-mattermost.com/hooks/...'}
+          ></sl-input>
+          <small style="color: var(--sl-color-neutral-500);">
+            Approval requests will be posted to this ${typeName} incoming
+            webhook.
+          </small>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label">Channel (Optional)</label>
           <sl-input
             .value=${this._channel}
             @sl-input=${(e: any) => (this._channel = e.target.value)}
             placeholder="#approval-requests"
           ></sl-input>
           <small style="color: var(--sl-color-neutral-500);">
-            The ${typeName} channel where approval requests will be posted.
-            Anyone with access to the channel can approve using the link.
+            Optional display target for your own bookkeeping.
           </small>
         </div>
       </div>
@@ -747,12 +761,12 @@ DENY if:
               @sl-change=${(e: any) => (this._approvalType = e.target.value)}
             >
               <sl-option value="standard">Standard Human Approval</sl-option>
+              <sl-option value="slack">Slack</sl-option>
+              <sl-option value="mattermost">Mattermost</sl-option>
+              <sl-option value="webhook">Webhook</sl-option>
               ${this._hasAdvancedApprovals()
                 ? html`
                     <sl-option value="ai_driven">AI-Driven Approval</sl-option>
-                    <sl-option value="slack">Slack</sl-option>
-                    <sl-option value="mattermost">Mattermost</sl-option>
-                    <sl-option value="webhook">Webhook</sl-option>
                   `
                 : ''}
             </sl-select>

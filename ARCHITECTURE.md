@@ -533,7 +533,7 @@ Preloop implements authentication and multi-tenancy:
 - Plugin discovery via module paths or file system paths
 - Lifecycle hooks: `on_startup()` and `on_shutdown()`
 
-> **Enterprise Features**: Preloop Enterprise Edition adds RBAC with 7 system roles, 32 fine-grained permissions, team management, and comprehensive audit logging. Contact sales@spacecode.ai for more information.
+> **Enterprise Features**: Preloop Enterprise Edition adds RBAC with 7 system roles, 32 fine-grained permissions, team management, and comprehensive audit logging. Contact sales@preloop.ai for more information.
 
 ### Deployment
 The system is designed to be containerized using Docker, enabling easy deployment in various environments including Kubernetes clusters. Stateless components enable horizontal scaling under load.
@@ -552,7 +552,7 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 - [ ] Session management and token revocation
 - [ ] Regular security audits and dependency updates
 
-> **Enterprise Security**: Preloop Enterprise Edition adds RBAC, comprehensive audit logging, and impersonation tracking for compliance requirements. Contact sales@spacecode.ai for more information.
+> **Enterprise Security**: Preloop Enterprise Edition adds RBAC, comprehensive audit logging, and impersonation tracking for compliance requirements. Contact sales@preloop.ai for more information.
 
 
 ## Real-Time Communication
@@ -575,7 +575,7 @@ Single WebSocket connection per client with pub/sub message routing:
 - Easy to add new message types/topics
 - Clear separation of concerns
 
-> **Enterprise Features**: Preloop Enterprise Edition adds session management, activity tracking, user impersonation with audit logging, and billing integration. Contact sales@spacecode.ai for more information.
+> **Enterprise Features**: Preloop Enterprise Edition adds session management, activity tracking, user impersonation with audit logging, and billing integration. Contact sales@preloop.ai for more information.
 
 ## Event-Driven Agentic Flows
 
@@ -909,4 +909,4 @@ Example automated workflows that can be configured:
 *   **New User Feedback -> Summarize & Categorize:** Parse feedback, categorize it, and create corresponding issues.
 *   **Scheduled Code Quality Scan -> Analyze & Report:** Run static analysis and create tasks for critical issues.
 
-> **Enterprise Features**: Preloop Enterprise Edition adds usage tracking, billing integration with Stripe, subscription management, and feature gating based on plan tiers. Contact sales@spacecode.ai for more information.
+> **Enterprise Features**: Preloop Enterprise Edition adds usage tracking, billing integration with Stripe, subscription management, and feature gating based on plan tiers. Contact sales@preloop.ai for more information.

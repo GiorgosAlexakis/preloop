@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from preloop.logging import configure_logging
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -35,23 +36,10 @@ def setup_logging() -> None:
     """
     log_level = getattr(logging, LOG_LEVEL.upper())
 
-    log_config = {
-        "level": log_level,
-        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    }
-
-    if LOG_FILE:
-        log_file_path = Path(LOG_FILE)
-        log_file_path.parent.mkdir(parents=True, exist_ok=True)
-        log_config["filename"] = LOG_FILE
-
-    logging.basicConfig(**log_config)
-
-    # Silence some verbose loggers
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-
     # Create a logger for the application
+    configure_logging()
     logger = logging.getLogger("preloop-sync")
+    logger.setLevel(log_level)
     return logger
 
 

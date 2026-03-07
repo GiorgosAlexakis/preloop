@@ -12,8 +12,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_BACKEND: ${{ github.repository }}
-  IMAGE_NAME_FRONTEND: ${{ github.repository }}/frontend
+  IMAGE_NAME_BACKEND: preloop/preloop
+  IMAGE_NAME_FRONTEND: preloop/console
 
 jobs:
   # ==========================================================================
@@ -248,6 +248,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -264,19 +267,43 @@ jobs:
           for dir in artifacts/cli-*; do
             [ -d "$dir" ] && cp "$dir"/* release-assets/
           done
+          # Package Helm chart
+          helm dependency build helm/preloop
+          helm package helm/preloop --destination release-assets/
+          # Copy installer assets
+          cp docker-compose.release.yaml release-assets/docker-compose.release.yaml
+          cp scripts/install-cli.sh release-assets/install-cli.sh
+          cp scripts/install-oss.sh release-assets/install-oss.sh
+          chmod +x release-assets/install-cli.sh release-assets/install-oss.sh
           ls -la release-assets/
 
       - name: Generate changelog
         id: changelog
         uses: orhun/git-cliff-action@v3
+        continue-on-error: true
         with:
           config: cliff.toml
           args: --latest --strip header
-        continue-on-error: true
 
-      - name: Compute pip version
+      - name: Finalize changelog
+        id: changelog_body
+        env:
+          CHANGELOG_CONTENT: ${{ steps.changelog.outputs.content }}
+          CHANGELOG_OUTCOME: ${{ steps.changelog.outcome }}
+        run: |
+          {
+            echo "content<<'EOF'"
+            if [ -n "$CHANGELOG_CONTENT" ]; then
+              printf '%s\n' "$CHANGELOG_CONTENT"
+            else
+              echo "_Changelog generation was unavailable for this release (${CHANGELOG_OUTCOME:-unknown})._"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Compute package version
         id: version
-        run: echo "pip_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: echo "package_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -287,22 +314,47 @@ jobs:
 
             ```bash
             # Backend
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            docker pull ghcr.io/preloop/preloop:${{ steps.version.outputs.package_version }}
 
             # Frontend
-            docker pull ghcr.io/${{ github.repository }}/frontend:${{ github.ref_name }}
+            docker pull ghcr.io/preloop/console:${{ steps.version.outputs.package_version }}
             ```
 
-            ## Install CLI
+            ## Install Python Package
 
-            Download the binary for your platform from the assets below, or install via pip:
+            Install the Python package from PyPI:
 
             ```bash
-            pip install preloop==${{ steps.version.outputs.pip_version }}
+            pip install preloop==${{ steps.version.outputs.package_version }}
+            ```
+
+            This package provides the backend and the `preloop-sync` CLI.
+
+            ## Install Standalone CLI
+
+            ```bash
+            curl -fsSL https://preloop.ai/install/cli | sh
+            ```
+
+            Download the platform-specific `preloop-*` binary from the release assets below, or set `PRELOOP_VERSION=${{ steps.version.outputs.package_version }}` to pin the installer.
+
+            ## Install Open Source Edition
+
+            ```bash
+            curl -fsSL https://preloop.ai/install/oss | sh
+            ```
+
+            This downloads the versioned `docker-compose.release.yaml`, writes a local `.env`, and starts the OSS stack with Docker Compose.
+
+            ## Helm
+
+            ```bash
+            helm install preloop \
+              https://github.com/preloop/preloop/releases/download/${{ github.ref_name }}/preloop-${{ steps.version.outputs.package_version }}.tgz
             ```
 
             ## Changelog
 
-            ${{ steps.changelog.outputs.content }}
+            ${{ steps.changelog_body.outputs.content }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

@@ -227,7 +227,7 @@ export class ToolCard extends LitElement {
    * - User/team approver selection
    * - Quorum (multiple approvals required)
    * - Escalation policies
-   * - Slack/Mattermost notification channels
+   * - AI-driven approval flows
    */
   private hasAdvancedApprovals(): boolean {
     return this.hasFeature('advanced_approvals');
@@ -1922,41 +1922,40 @@ export class ToolCard extends LitElement {
                       ></sl-textarea>
                     </div>
 
-                    ${this.hasAdvancedApprovals()
-                      ? html`
-                          <div class="form-field">
-                            <label class="form-label">Approval Type</label>
-                            <sl-radio-group
-                              value=${this.newPolicyType}
-                              @sl-change=${(e: any) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                e.stopImmediatePropagation();
-                                this.newPolicyType = e.target.value;
-                                this.requestUpdate();
-                              }}
-                            >
-                              <sl-radio value="standard">
-                                Standard - Human approvers review requests
-                              </sl-radio>
+                    <div class="form-field">
+                      <label class="form-label">Approval Type</label>
+                      <sl-radio-group
+                        value=${this.newPolicyType}
+                        @sl-change=${(e: any) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.stopImmediatePropagation();
+                          this.newPolicyType = e.target.value;
+                          this.requestUpdate();
+                        }}
+                      >
+                        <sl-radio value="standard">
+                          Standard - Human approvers review requests
+                        </sl-radio>
+                        <sl-radio value="slack">
+                          Slack - Send approval requests to Slack
+                        </sl-radio>
+                        <sl-radio value="mattermost">
+                          Mattermost - Send approval requests to Mattermost
+                        </sl-radio>
+                        <sl-radio value="webhook">
+                          Webhook - Send approval requests to a webhook
+                        </sl-radio>
+                        ${this.hasAdvancedApprovals()
+                          ? html`
                               <sl-radio value="ai_driven">
                                 AI-Driven - AI model automatically evaluates
                                 requests
                               </sl-radio>
-                              <sl-radio value="slack">
-                                Slack - Send approval requests to Slack
-                              </sl-radio>
-                              <sl-radio value="mattermost">
-                                Mattermost - Send approval requests to
-                                Mattermost
-                              </sl-radio>
-                              <sl-radio value="webhook">
-                                Webhook - Send approval requests to a webhook
-                              </sl-radio>
-                            </sl-radio-group>
-                          </div>
-                        `
-                      : ''}
+                            `
+                          : ''}
+                      </sl-radio-group>
+                    </div>
                     ${this.hasAdvancedApprovals() &&
                     this.newPolicyType === 'ai_driven'
                       ? html`

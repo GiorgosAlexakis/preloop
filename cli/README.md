@@ -186,4 +186,4 @@ cli/
 
 ## License
 
-Copyright © Preloop. All rights reserved.
+Apache License 2.0. See `../LICENSE`.
