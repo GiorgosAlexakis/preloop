@@ -2,6 +2,7 @@
 
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -13,20 +14,28 @@ logger = logging.getLogger(__name__)
 def _load_release_version(
     default: str = "0.8.0", version_file: Path | None = None
 ) -> str:
-    """Load the repository release version from the canonical VERSION file."""
+    """Load the release version.
+
+    Uses package metadata when installed via pip (importlib.metadata).
+    Falls back to the VERSION file for Docker and local dev.
+    """
+    try:
+        return version("preloop")
+    except PackageNotFoundError:
+        pass
+
     if version_file is None:
         version_file = Path(__file__).resolve().parents[2] / "VERSION"
     try:
-        version = version_file.read_text(encoding="utf-8").strip()
+        v = version_file.read_text(encoding="utf-8").strip()
+        if v:
+            return v
     except OSError:
         logger.warning("Could not read %s, using fallback version", version_file)
-        return default
+    except Exception:
+        pass
 
-    if not version:
-        logger.warning("%s is empty, using fallback version", version_file)
-        return default
-
-    return version
+    return default
 
 
 # Versioning
