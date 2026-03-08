@@ -68,24 +68,22 @@ service:
   type: ClusterIP
   port: 8000
 
-# Ingress configuration
+# Ingress configuration (disabled by default to avoid conflicts)
+# Enable and set your hostname for production. See helm/preloop/README.md.
 ingress:
-  enabled: true
+  enabled: false
   className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
-    - host: preloop.ai
+    - host: preloop.example.com
       paths:
         - path: /
           pathType: ImplementationSpecific
   tls:
     - secretName: preloop-tls
       hosts:
-        - preloop.ai
-        - www.preloop.ai
-        - api.preloop.ai
-        - install.preloop.ai
+        - preloop.example.com
 
 # API server resources
 api:
