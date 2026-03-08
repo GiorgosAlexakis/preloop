@@ -2,16 +2,46 @@
 
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
+
+def _load_release_version(
+    default: str = "0.8.0", version_file: Path | None = None
+) -> str:
+    """Load the release version.
+
+    Uses package metadata when installed via pip (importlib.metadata).
+    Falls back to the VERSION file for Docker and local dev.
+    """
+    try:
+        return version("preloop")
+    except PackageNotFoundError:
+        pass
+
+    if version_file is None:
+        version_file = Path(__file__).resolve().parents[2] / "VERSION"
+    try:
+        v = version_file.read_text(encoding="utf-8").strip()
+        if v:
+            return v
+    except OSError:
+        logger.warning("Could not read %s, using fallback version", version_file)
+    except Exception:
+        pass
+
+    return default
+
+
 # Versioning
-SERVER_VERSION = "0.3.0"  # Current server version
-MIN_CLIENT_VERSION = "0.3.0"  # Minimum compatible client version
-MAX_CLIENT_VERSION = "0.3.0"  # Maximum recommended client version
+SERVER_VERSION = _load_release_version()
+MIN_CLIENT_VERSION = SERVER_VERSION
+MAX_CLIENT_VERSION = SERVER_VERSION
 
 
 class DatabaseSettings(BaseModel):
@@ -166,6 +196,10 @@ class Settings(BaseSettings):
         "",
         description="Mattermost webhook URL for admin notifications",
     )
+    installer_audit_account_id: str = Field(
+        "",
+        description="Account ID used to store public installer download audit events",
+    )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -264,6 +298,7 @@ class Settings(BaseSettings):
             gitlab_oauth=gitlab_oauth,
             stripe_secret_key=stripe_secret_key,
             stripe_webhook_secret=stripe_webhook_secret,
+            installer_audit_account_id=os.getenv("INSTALLER_AUDIT_ACCOUNT_ID", ""),
         )
 
 

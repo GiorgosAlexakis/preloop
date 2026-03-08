@@ -40,7 +40,7 @@ Define fine-grained access controls for any AI tool or operation:
 
 When AI attempts a protected operation, Preloop pauses and notifies you:
 
-- **Instant notifications** via mobile app, Slack, email, or Mattermost
+- **Instant notifications** via mobile app, email, Slack, or Mattermost
 - **One-tap approvals** from your phone, watch, or desktop
 - **Async approval mode** — tool returns immediately with a polling handle; the agent polls `get_approval_status` until approved, then receives the tool result (Enterprise)
 - **Per-tool justification** — require or optionally request agents to explain *why* a tool is being called before approval (Enterprise)
@@ -129,7 +129,7 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 - **Access Rules.** Multiple ordered rules per tool with allow/deny/require approval actions.
 - **Drag-and-Drop Priority.** Reorder rule evaluation priority visually.
 - **Fine-Grained Rules.** Policies can check tool names, parameter values, and context.
-- **Instant Notifications.** Get alerts on mobile, Slack, email, or Mattermost.
+- **Instant Notifications.** Get alerts on mobile, email, Slack, or Mattermost.
 - **One-Tap Approvals.** Approve or reject from your phone, watch, or desktop.
 - **Full Audit Trail.** Complete log of every AI action and policy decision.
 - **Async Approval Mode (Enterprise).** Non-blocking approval: tool returns immediately, agent polls `get_approval_status` until the human decides.
@@ -158,8 +158,8 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 
 ### Open Source vs Enterprise (important)
 
-- **Open Source**: single-user approvals with **email + mobile app notifications**.
-- **Enterprise**: adds **advanced conditions (CEL)**, **team-based approvals (quorum)**, **escalation**, and **Slack & Mattermost** notifications.
+- **Open Source**: single-user approvals with **email, mobile app, Slack, and Mattermost notifications**.
+- **Enterprise**: adds **advanced conditions (CEL)**, **team-based approvals (quorum)**, and **escalation**.
 - **Mobile & Watch apps**: the iOS/Watch and Android apps can be used with **self-hosted / open-source** Preloop deployments.
 
 ## Supported Issue Trackers
@@ -231,6 +231,7 @@ Preloop is configured via environment variables. Copy `.env.example` to `.env` a
 | `SECRET_KEY` | (required) | Secret key for JWT tokens |
 | `ENVIRONMENT` | `development` | Environment (development, production) |
 | `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
+| `ROOT_LOG_LEVEL` | `WARNING` | Root logger verbosity level |
 
 #### Feature Flags
 
@@ -329,25 +330,41 @@ Preloop includes a built-in OAuth 2.1 Authorization Server for MCP client authen
 git clone https://github.com/preloop/preloop.git
 cd preloop
 
-# Run with Docker Compose (development)
-docker-compose up
+# Run the full development stack (backend + workers + frontend with HMR)
+docker compose up
 
 # Run with tagged release images (production)
-PRELOOP_VERSION=0.8.0 JWT_SECRET=$(openssl rand -hex 32) \
+PRELOOP_VERSION=0.8.0-beta.5 SECRET_KEY=$(openssl rand -hex 32) \
   docker compose -f docker-compose.release.yaml up -d
 ```
+
+Quick installers are also available:
+
+```bash
+# Install the standalone CLI
+curl -fsSL https://preloop.ai/install/cli | sh
+
+# Install the OSS stack
+curl -fsSL https://preloop.ai/install/oss | sh
+```
+
+Set `PRELOOP_VERSION=0.8.0-beta.5 before either command to pin a specific release, or use `https://preloop.ai/install/<script>?version=0.8.0-beta.5`.
+
+The default `docker compose up` command uses `docker-compose.override.yml` for local development, so source changes in `backend/` and `frontend/` are mounted directly into the containers. The frontend runs via Vite on `http://localhost:5173`, while the backend API stays on `http://localhost:8000`.
 
 See [`docker-compose.release.yaml`](docker-compose.release.yaml) for full configuration and required environment variables.
 
 #### Release Management
 
-Use the release script to prepare a new version (updates Helm chart, packages artifacts):
+Use the release script to prepare a new version across the main release surfaces:
 
 ```bash
-./scripts/release.sh 0.8.0
+./scripts/release.sh 0.8.0-beta.5
 ```
 
-See [`scripts/release.sh`](scripts/release.sh) for details.
+The script can also optionally commit the release prep, create and push `v<version>`, and watch the GitHub `Release` workflow with `gh`.
+
+See [`RELEASING.md`](RELEASING.md) for the full checklist and [`scripts/release.sh`](scripts/release.sh) for the release prep helper.
 
 ### Kubernetes Setup
 
@@ -360,6 +377,9 @@ Preloop can be deployed to Kubernetes using the provided Helm chart:
 
 # Install from the local chart
 helm install preloop ./helm/preloop
+
+# Or install the packaged chart from a GitHub release
+# helm install preloop https://github.com/preloop/preloop/releases/download/v0.8.0-beta.3/preloop-0.8.0-beta.3.tgz
 
 # Or install with custom values
 helm install preloop ./helm/preloop --values custom-values.yaml
@@ -715,7 +735,7 @@ curl -X POST "https://YOUR_PRELOOP_URL/api/v1/tool-configurations" \
 }'
 ```
 
-> **Enterprise Features**: Preloop Enterprise Edition adds CEL-based conditional approvals, team-based approvals with quorum, escalation policies, and multi-channel notifications (Slack, Mattermost, mobile push). Contact sales@spacecode.ai for more information.
+> **Enterprise Features**: Preloop Enterprise Edition adds CEL-based conditional approvals, team-based approvals with quorum, and escalation policies. Contact sales@preloop.ai for more information.
 
 ### Configuring Timeouts for Approval Workflows
 
@@ -875,7 +895,7 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | **Billing & subscription management** | ❌ | ✅ |
 | **Priority support** | ❌ | ✅ |
 
-Contact sales@spacecode.ai for Enterprise Edition licensing.
+Contact sales@preloop.ai for Enterprise Edition licensing.
 
 ## Contributing
 

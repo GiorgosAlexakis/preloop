@@ -5,7 +5,7 @@ replicaCount: 1
 
 # Image configuration
 image:
-  repository: registry.spacecode.ai/spacecode/preloop
+  repository: ghcr.io/preloop/preloop
   pullPolicy: Always
   tag: "latest"  # Overrides the image tag
 
@@ -31,7 +31,7 @@ worker:
       memory: "1Gi"
 
 console:
-  repository: registry.spacecode.ai/spacecode/console
+  repository: ghcr.io/preloop/console
   tag: "latest"
   pullPolicy: Always
   # Preloop Console frontend resources (nginx - lightweight)
@@ -68,24 +68,22 @@ service:
   type: ClusterIP
   port: 8000
 
-# Ingress configuration
+# Ingress configuration (disabled by default to avoid conflicts)
+# Enable and set your hostname for production. See helm/preloop/README.md.
 ingress:
-  enabled: true
+  enabled: false
   className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
-    - host: preloop.ai
+    - host: preloop.example.com
       paths:
         - path: /
           pathType: ImplementationSpecific
   tls:
     - secretName: preloop-tls
       hosts:
-        - preloop.ai
-        - www.preloop.ai
-        - api.preloop.ai
-        - install.preloop.ai
+        - preloop.example.com
 
 # API server resources
 api:
@@ -136,7 +134,6 @@ affinity: {}
 
 # Environment configuration
 environment:
-  preloopUrl: "https://preloop.ai"
   preloopUrl: "https://preloop.ai"
   debug: false
   # Skip execution recovery on startup (useful for debugging startup issues)

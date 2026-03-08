@@ -14,12 +14,12 @@ This Helm chart deploys Preloop, an event-driven automation platform with built-
 To install the chart with the release name `preloop`:
 
 ```bash
-# Add the Spacecode AI Helm repository (if available)
-# helm repo add spacecode https://charts.spacecode.ai
+# Add the Preloop Helm repository (if available)
+# helm repo add preloop https://charts.preloop.ai
 # helm repo update
 
 # Install the chart from local path
-helm install preloop ./charts/preloop
+helm install preloop ./helm/preloop
 ```
 
 The command deploys Preloop on the Kubernetes cluster in the default configuration. The [Parameters](#parameters) section lists the parameters that can be configured during installation.
@@ -39,7 +39,7 @@ helm uninstall preloop
 | Name                | Description                                                                                         | Value           |
 |---------------------|-----------------------------------------------------------------------------------------------------|-----------------|
 | `replicaCount`      | Number of replicas                                                                                 | `1`             |
-| `image.repository`  | Preloop image repository                                                                        | `registry.spacecode.ai/spacecode/preloop` |
+| `image.repository`  | Preloop image repository                                                                        | `ghcr.io/preloop/preloop` |
 | `image.tag`         | Preloop image tag                                                                               | `latest`        |
 | `image.pullPolicy`  | Preloop image pull policy                                                                       | `Always`  |
 | `imagePullSecrets`  | Secret names for pulling images                                                                    | `[]`            |

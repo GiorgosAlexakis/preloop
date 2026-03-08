@@ -2,11 +2,12 @@
 # Use this file for production-like deployments with tagged images.
 #
 # Usage:
-#   PRELOOP_VERSION=0.8.0 docker compose -f docker-compose.release.yaml up -d
+#   PRELOOP_VERSION=0.8.0 SECRET_KEY=$(openssl rand -hex 32) \
+#     docker compose -f docker-compose.release.yaml up -d
 #
 # Required environment variables (set in .env or export before running):
 #   PRELOOP_VERSION   - Image tag (e.g., 0.8.0, latest)
-#   JWT_SECRET        - Secret key for JWT token signing (generate with: openssl rand -hex 32)
+#   SECRET_KEY        - Secret key for JWT token signing (generate with: openssl rand -hex 32)
 #
 # Optional environment variables:
 #   POSTGRES_PASSWORD - Database password (default: postgres)
@@ -51,9 +52,9 @@ services:
       NATS_URL: nats://nats:4222
       HOST: 0.0.0.0
       PORT: 8000
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       JWT_ALGORITHM: HS256
-      JWT_EXPIRE_MINUTES: 60
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "8000:8000"
@@ -70,8 +71,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres/preloop
       NATS_URL: nats://nats:4222
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command: preloop-sync scheduler
 
@@ -86,8 +88,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres/preloop
       NATS_URL: nats://nats:4222
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command: preloop-sync worker
 

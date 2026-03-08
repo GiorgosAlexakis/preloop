@@ -3,6 +3,30 @@
 
 set -e
 
+activate_virtualenv_if_present() {
+  if [ -n "$VIRTUAL_ENV" ]; then
+    return
+  fi
+
+  local script_dir
+  script_dir="$(dirname "$0")"
+  local candidates=(
+    "$script_dir/.venv/bin/activate"
+    "$script_dir/../.venv/bin/activate"
+  )
+
+  for candidate in "${candidates[@]}"; do
+    if [ -f "$candidate" ]; then
+      echo "Activating virtual environment..."
+      # shellcheck disable=SC1090
+      source "$candidate"
+      return
+    fi
+  done
+
+  echo "No virtual environment found, using system Python."
+}
+
 # Load .env file if it exists and variables are not already set
 ENV_FILE=".env"
 if [ -f "$ENV_FILE" ]; then
@@ -36,11 +60,7 @@ else
 fi
 echo "" # Add a blank line for separation
 
-# Activate virtual environment if not already active
-if [ -z "$VIRTUAL_ENV" ]; then
-  echo "Activating virtual environment..."
-  source "$(dirname "$0")/.venv/bin/activate" || source "$(dirname "$0")/../.venv/bin/activate"
-fi
+activate_virtualenv_if_present
 
 # Initialize database tables, embedding model, and AI model using Alembic
 echo "Initializing database schema, embedding model, and AI model..."
@@ -117,11 +137,7 @@ echo " - User Documentation: http://localhost:$API_PORT/docs"
 echo " - Debug mode: $DEBUG"
 echo " - Init test data: $INIT_TEST_DATA"
 
-# Activate virtual environment if not already active
-if [ -z "$VIRTUAL_ENV" ]; then
-  echo "Activating virtual environment..."
-  source "$(dirname "$0")/../.venv/bin/activate"
-fi
+activate_virtualenv_if_present
 
 # Start the API server in the foreground
 python -m preloop.server --port "$API_PORT" $debug_flag $test_data_flag

@@ -37,7 +37,7 @@ async def create_test_data():
 
     try:
         # Create a test account if it doesn't exist
-        account = crud_account.get_by_email(db, email="admin@spacecode.ai")
+        account = crud_account.get_by_email(db, email="admin@preloop.ai")
         if account:
             logger.info(
                 f"Account already exists: {account.username} (ID: {account.id})"
@@ -52,7 +52,7 @@ async def create_test_data():
                 obj_in={
                     "id": str(uuid.uuid4()),
                     "username": "admin",
-                    "email": "admin@spacecode.ai",
+                    "email": "admin@preloop.ai",
                     "full_name": "Admin User",
                     "hashed_password": hashed_password,
                     "is_active": True,

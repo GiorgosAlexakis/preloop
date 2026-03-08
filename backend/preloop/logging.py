@@ -6,6 +6,7 @@ import os
 
 # Get log level from environment
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+ROOT_LOG_LEVEL = os.getenv("ROOT_LOG_LEVEL", "WARNING").upper()
 
 
 def configure_logging() -> None:
@@ -35,6 +36,11 @@ def configure_logging() -> None:
                 "level": LOG_LEVEL,
                 "propagate": False,
             },
+            "preloop-sync": {
+                "handlers": ["console"],
+                "level": LOG_LEVEL,
+                "propagate": False,
+            },
             "uvicorn": {
                 "handlers": ["console"],
                 "level": LOG_LEVEL,
@@ -45,8 +51,43 @@ def configure_logging() -> None:
                 "level": "WARNING",
                 "propagate": False,
             },
+            "fakeredis": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "httpx": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "httpcore": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "apscheduler": {
+                "handlers": ["console"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            "docket": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "docket.worker": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
+            "watchfiles": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
         },
-        "root": {"handlers": ["console"], "level": LOG_LEVEL},
+        "root": {"handlers": ["console"], "level": ROOT_LOG_LEVEL},
     }
 
     # Try to use JSON formatter if available

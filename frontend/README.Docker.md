@@ -4,6 +4,15 @@ This document provides comprehensive Docker support for Preloop Console with mul
 
 ## Quick Start
 
+### Full-stack development from the repo root
+```bash
+cd ..
+docker compose up
+```
+- **Frontend**: http://localhost:5173 (Vite dev server with HMR)
+- **Backend**: http://localhost:8000
+- **Workers/infra**: PostgreSQL + NATS + scheduler + worker
+
 ### Development (with live debugging)
 ```bash
 npm run docker:dev

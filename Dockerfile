@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements file first to leverage Docker cache
 COPY pyproject.toml .
+COPY VERSION .
 
 # Install build dependencies and Python packages in separate layers for better caching
 RUN pip install -U --no-cache-dir build setuptools pip wheel ipdb

@@ -1,0 +1,22 @@
+services:
+  console:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    image: ghcr.io/preloop/console:dev
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: development
+      VITE_API_URL: http://localhost:8000
+      VITE_API_PROXY_TARGET: http://api:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  frontend-node-modules:
