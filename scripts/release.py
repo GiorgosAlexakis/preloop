@@ -121,17 +121,25 @@ def update_readme(plan: ReleasePlan) -> Path:
     """Keep versioned examples aligned with the release."""
     path = ROOT_DIR / "README.md"
     text = read_text(path)
-    updated = replace_once(
-        text,
+    updated, count = re.subn(
         r"PRELOOP_VERSION=[^\s]+",
         f"PRELOOP_VERSION={plan.version}",
-        path,
+        text,
     )
-    updated = replace_once(
+    if count == 0:
+        raise ValueError(f"Expected at least one match for PRELOOP_VERSION in {path}")
+
+    # Also update any ?version= query parameters
+    updated, _ = re.subn(
+        r"\?version=[^\s`]+",
+        f"?version={plan.version}",
         updated,
+    )
+
+    updated, _ = re.subn(
         r"\./scripts/release\.sh [^\s]+",
         f"./scripts/release.sh {plan.version}",
-        path,
+        updated,
     )
     write_text(path, updated)
     return path

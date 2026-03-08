@@ -231,6 +231,7 @@ Preloop is configured via environment variables. Copy `.env.example` to `.env` a
 | `SECRET_KEY` | (required) | Secret key for JWT tokens |
 | `ENVIRONMENT` | `development` | Environment (development, production) |
 | `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
+| `ROOT_LOG_LEVEL` | `WARNING` | Root logger verbosity level |
 
 #### Feature Flags
 
@@ -333,7 +334,7 @@ cd preloop
 docker compose up
 
 # Run with tagged release images (production)
-PRELOOP_VERSION=0.8.0-beta.1 SECRET_KEY=$(openssl rand -hex 32) \
+PRELOOP_VERSION=0.8.0-beta.2 SECRET_KEY=$(openssl rand -hex 32) \
   docker compose -f docker-compose.release.yaml up -d
 ```
 
@@ -358,7 +359,7 @@ See [`docker-compose.release.yaml`](docker-compose.release.yaml) for full config
 Use the release script to prepare a new version across the main release surfaces:
 
 ```bash
-./scripts/release.sh 0.8.0-beta.1
+./scripts/release.sh 0.8.0-beta.2
 ```
 
 The script can also optionally commit the release prep, create and push `v<version>`, and watch the GitHub `Release` workflow with `gh`.
