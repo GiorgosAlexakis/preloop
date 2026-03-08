@@ -279,7 +279,7 @@ jobs:
 
       - name: Generate changelog
         id: changelog
-        uses: orhun/git-cliff-action@v3
+        uses: orhun/git-cliff-action@v4
         continue-on-error: true
         with:
           config: cliff.toml
@@ -292,7 +292,7 @@ jobs:
           CHANGELOG_OUTCOME: ${{ steps.changelog.outcome }}
         run: |
           {
-            echo "content<<'EOF'"
+            echo "content<<EOF"
             if [ -n "$CHANGELOG_CONTENT" ]; then
               printf '%s\n' "$CHANGELOG_CONTENT"
             else
@@ -303,7 +303,28 @@ jobs:
 
       - name: Compute package version
         id: version
-        run: echo "package_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          package_version="${GITHUB_REF_NAME#v}"
+          python_package_version="$(python3 - "$package_version" <<'PY'
+          import re
+          import sys
+
+          version = sys.argv[1]
+          match = re.fullmatch(
+              r"(?P<core>\d+\.\d+\.\d+)(?:-(?P<label>alpha|beta|rc)\.(?P<num>\d+))?(?:\+[0-9A-Za-z.-]+)?",
+              version,
+          )
+          if match and match.group("label"):
+              label_map = {"alpha": "a", "beta": "b", "rc": "rc"}
+              print(
+                  f"{match.group('core')}{label_map[match.group('label')]}{match.group('num')}"
+              )
+          else:
+              print(version)
+          PY
+          )"
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "python_package_version=$python_package_version" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -325,7 +346,7 @@ jobs:
             Install the Python package from PyPI:
 
             ```bash
-            pip install preloop==${{ steps.version.outputs.package_version }}
+            pip install preloop==${{ steps.version.outputs.python_package_version }}
             ```
 
             This package provides the backend and the `preloop-sync` CLI.

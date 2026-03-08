@@ -31,7 +31,7 @@ def _load_release_version(
 
 # Versioning
 SERVER_VERSION = _load_release_version()
-MIN_CLIENT_VERSION = "0.8.0"
+MIN_CLIENT_VERSION = SERVER_VERSION
 MAX_CLIENT_VERSION = SERVER_VERSION
 
 

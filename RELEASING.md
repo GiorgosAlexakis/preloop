@@ -64,6 +64,7 @@ It can also optionally:
 - [ ] Release is marked as a pre-release when the version contains a suffix like `-beta.1`.
 - [ ] Release body includes accurate changelog notes and working install instructions.
 - [ ] Uploaded assets match the release notes.
+- [ ] PyPI prereleases are expected to use PEP 440 normalization, so `0.8.0-beta.1` is published as `0.8.0b1`.
 
 ## First Public OSS Release Gate
 
