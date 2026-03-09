@@ -64,7 +64,6 @@ class TestSendPushViaProxy:
     @patch("preloop.services.push_proxy.PUSH_PROXY_API_KEY", "test-key")
     async def test_success_on_200(self, mock_configured):
         """Returns success when proxy returns 200 with success=True."""
-        from unittest.mock import MagicMock
 
         mock_response = MagicMock()
         mock_response.status_code = 200
