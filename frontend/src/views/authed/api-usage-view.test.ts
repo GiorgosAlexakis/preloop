@@ -160,6 +160,89 @@ describe('ApiUsageView', () => {
         );
       }
 
+      if (url.startsWith('/api/v1/account/gateway-usage/search')) {
+        return new Response(
+          JSON.stringify({
+            period_start: '2026-02-08T00:00:00Z',
+            period_end: '2026-03-09T23:59:59Z',
+            query: null,
+            total: 2,
+            limit: 10,
+            offset: 0,
+            items: [
+              {
+                api_usage_id: 'usage-1',
+                timestamp: '2026-03-09T19:15:00Z',
+                status_code: 200,
+                outcome: 'success',
+                endpoint: '/openai/v1/responses',
+                method: 'POST',
+                provider_name: 'OpenAI',
+                model_alias: 'openai/gpt-5',
+                flow_id: 'flow-1',
+                flow_name: 'Triage Assistant',
+                flow_execution_id: 'execution-1',
+                runtime_session_id: 'runtime-session-1',
+                session_source_type: 'flow_execution',
+                session_source_id: 'execution-1',
+                session_reference: 'session-abc123',
+                runtime_principal_type: 'flow_execution',
+                runtime_principal_id: 'execution-1',
+                runtime_principal_name: 'Triage Assistant',
+                estimated_cost: 0.27,
+                token_usage: {
+                  prompt_tokens: 250,
+                  completion_tokens: 80,
+                  total_tokens: 330,
+                },
+                excerpt:
+                  'request.input: Please review the production rollback checklist response.output_text: Rollback checklist reviewed successfully',
+                meta_data: {
+                  source: 'gateway_interaction',
+                  endpoint_kind: 'responses',
+                },
+              },
+              {
+                api_usage_id: 'usage-2',
+                timestamp: '2026-03-09T20:00:00Z',
+                status_code: 500,
+                outcome: 'error',
+                endpoint: '/anthropic/v1/messages',
+                method: 'POST',
+                provider_name: 'Anthropic',
+                model_alias: 'anthropic/claude-sonnet-4',
+                flow_id: null,
+                flow_name: null,
+                flow_execution_id: null,
+                runtime_session_id: 'runtime-session-2',
+                session_source_type: 'codex',
+                session_source_id: 'codex-run-1',
+                session_reference: 'terminal-session-42',
+                runtime_principal_type: 'codex',
+                runtime_principal_id: 'workspace-agent',
+                runtime_principal_name: 'Workspace Agent',
+                estimated_cost: 0.03,
+                token_usage: {
+                  prompt_tokens: 120,
+                  completion_tokens: 0,
+                  total_tokens: 120,
+                },
+                excerpt:
+                  'request.input: Diagnose failed deployment response.error: provider timeout',
+                meta_data: {
+                  source: 'gateway_interaction',
+                  endpoint_kind: 'messages',
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       return new Response(
         JSON.stringify({ detail: `Unhandled request: ${url}` }),
         {
@@ -203,6 +286,9 @@ describe('ApiUsageView', () => {
     expect(content).to.contain('codex-run-1');
     expect(content).to.contain('Budget Snapshot');
     expect(content).to.contain('$12.50');
+    expect(content).to.contain('Captured Interactions');
+    expect(content).to.contain('production rollback checklist');
+    expect(content).to.contain('provider timeout');
 
     const flowExecutionLink = element.shadowRoot?.querySelector(
       'a[href="/console/flows/executions/execution-1"]'
@@ -223,5 +309,14 @@ describe('ApiUsageView', () => {
     expect(summaryCall).to.not.equal(undefined);
     expect(String(summaryCall?.args[0])).to.contain('start_date=');
     expect(String(summaryCall?.args[0])).to.contain('end_date=');
+
+    const searchCall = fetchStub
+      .getCalls()
+      .find((call) =>
+        String(call.args[0]).startsWith('/api/v1/account/gateway-usage/search')
+      );
+
+    expect(searchCall).to.not.equal(undefined);
+    expect(String(searchCall?.args[0])).to.contain('limit=10');
   });
 });

@@ -362,11 +362,16 @@ export class ConsoleShell extends LitElement {
                       </a>
                     `
                 : ''}
-              <!-- Governance is now integrated into the Tools page -->
               <a href="/console/flows" @click=${this._closeSidebar}>
                 <sl-menu-item>
                   <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
                   <span class="sidebar-label">Flows</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/runtime-sessions" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="collection" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Runtime Sessions</span>
                 </sl-menu-item>
               </a>
               <a href="/console/trackers" @click=${this._closeSidebar}>

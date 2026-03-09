@@ -840,6 +840,7 @@ export class FlowExecutionView extends LitElement {
           console.log('No fallback logs available');
         }
       }
+      this.hydrateToolActivityLogs();
 
       try {
         if (gatewayEventsResult.status !== 'fulfilled') {
@@ -1025,6 +1026,60 @@ export class FlowExecutionView extends LitElement {
         }
       }
     }
+  }
+
+  private hydrateToolActivityLogs() {
+    if (!this.execution?.mcp_usage_logs?.length) {
+      return;
+    }
+
+    const existingToolEvents = new Set(
+      this.logs
+        .filter((log) => log.type === 'tool_call' || log.type === 'mcp_call')
+        .map((log) =>
+          this.getToolActivityKey(log.timestamp, log.payload?.tool_name)
+        )
+    );
+
+    const restoredToolLogs = this.execution.mcp_usage_logs
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry) => {
+        const timestamp =
+          typeof entry.timestamp === 'string'
+            ? entry.timestamp
+            : this.execution?.start_time || new Date().toISOString();
+        const toolName =
+          typeof entry.tool_name === 'string' ? entry.tool_name : 'unknown';
+        return {
+          execution_id: this.executionId || this.execution?.id || '',
+          timestamp,
+          type: 'mcp_call',
+          payload: {
+            ...entry,
+            tool_name: toolName,
+            message: `Called tool: ${toolName}`,
+            restored: true,
+          },
+        } satisfies FlowExecutionUpdate;
+      })
+      .filter(
+        (log) =>
+          !existingToolEvents.has(
+            this.getToolActivityKey(log.timestamp, log.payload.tool_name)
+          )
+      );
+
+    if (restoredToolLogs.length > 0) {
+      this.logs = [...this.logs, ...restoredToolLogs].sort(
+        (left, right) =>
+          new Date(left.timestamp).getTime() -
+          new Date(right.timestamp).getTime()
+      );
+    }
+  }
+
+  private getToolActivityKey(timestamp?: string, toolName?: string): string {
+    return `${timestamp || 'no-timestamp'}:${toolName || 'unknown'}`;
   }
 
   private getGatewayEventKey(event: FlowGatewayEvent): string {

@@ -84,6 +84,95 @@ class GatewayUsageBySession(BaseModel):
     last_request_at: Optional[datetime] = None
 
 
+class GatewayUsageSearchResultItem(BaseModel):
+    """One account-scoped gateway interaction search hit."""
+
+    api_usage_id: str
+    timestamp: datetime
+    status_code: int
+    outcome: str
+    endpoint: str
+    method: str
+    provider_name: Optional[str] = None
+    model_alias: Optional[str] = None
+    flow_id: Optional[str] = None
+    flow_name: Optional[str] = None
+    flow_execution_id: Optional[str] = None
+    runtime_session_id: Optional[str] = None
+    session_source_type: Optional[str] = None
+    session_source_id: Optional[str] = None
+    session_reference: Optional[str] = None
+    runtime_principal_type: Optional[str] = None
+    runtime_principal_id: Optional[str] = None
+    runtime_principal_name: Optional[str] = None
+    estimated_cost: float = 0.0
+    token_usage: GatewayTokenUsage
+    excerpt: str
+    meta_data: dict = Field(default_factory=dict)
+
+
+class AccountGatewayUsageSearchResponse(BaseModel):
+    """Account-scoped gateway interaction search results."""
+
+    period_start: datetime
+    period_end: datetime
+    query: Optional[str] = None
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+    items: List[GatewayUsageSearchResultItem] = Field(default_factory=list)
+
+
+class RuntimeSessionSummary(BaseModel):
+    """Aggregated runtime session summary for explorer views."""
+
+    id: str
+    session_source_type: str
+    session_source_id: str
+    session_reference: Optional[str] = None
+    runtime_principal_type: Optional[str] = None
+    runtime_principal_id: Optional[str] = None
+    runtime_principal_name: Optional[str] = None
+    started_at: datetime
+    last_activity_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    flow_id: Optional[str] = None
+    flow_name: Optional[str] = None
+    flow_execution_id: Optional[str] = None
+    latest_model_alias: Optional[str] = None
+    latest_provider_name: Optional[str] = None
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    token_usage: GatewayTokenUsage
+    estimated_cost: float = 0.0
+    last_request_at: Optional[datetime] = None
+
+
+class AccountRuntimeSessionListResponse(BaseModel):
+    """Account-scoped runtime session explorer list response."""
+
+    period_start: datetime
+    period_end: datetime
+    query: Optional[str] = None
+    session_source_type: Optional[str] = None
+    status: str = "all"
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+    items: List[RuntimeSessionSummary] = Field(default_factory=list)
+
+
+class AccountRuntimeSessionDetailResponse(BaseModel):
+    """One runtime session plus captured interaction timeline."""
+
+    period_start: datetime
+    period_end: datetime
+    session: RuntimeSessionSummary
+    usage_by_model: List[GatewayUsageByModel] = Field(default_factory=list)
+    interactions: AccountGatewayUsageSearchResponse
+
+
 class AccountGatewayUsageSummaryResponse(BaseModel):
     """Account-scoped gateway usage summary."""
 

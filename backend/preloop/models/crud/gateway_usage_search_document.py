@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from typing import Any, Dict, Optional
 
+from sqlalchemy import String, case, cast, func
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
+from ..models.flow import Flow
+from ..models.flow_execution import FlowExecution
 from ..models.gateway_usage_search_document import GatewayUsageSearchDocument
+from ..models.runtime_session import RuntimeSession
 from .base import CRUDBase
 
 
@@ -57,3 +62,166 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
+    def search_account_documents(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        query: Optional[str] = None,
+        provider_name: Optional[str] = None,
+        model_alias: Optional[str] = None,
+        flow_id: Optional[str] = None,
+        runtime_session_id: Optional[str] = None,
+        session_source_type: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Return account-scoped gateway interaction search hits."""
+        legacy_session_source_type = case(
+            (ApiUsage.flow_execution_id.isnot(None), "flow_execution"),
+            else_=None,
+        )
+        legacy_session_source_id = cast(ApiUsage.flow_execution_id, String)
+        resolved_session_source_type = func.coalesce(
+            RuntimeSession.session_source_type, legacy_session_source_type
+        )
+        resolved_session_source_id = func.coalesce(
+            RuntimeSession.session_source_id, legacy_session_source_id
+        )
+        resolved_session_reference = func.coalesce(
+            RuntimeSession.session_reference, FlowExecution.agent_session_reference
+        )
+
+        base_query = (
+            db.query(
+                GatewayUsageSearchDocument,
+                ApiUsage,
+                Flow.name.label("flow_name"),
+                RuntimeSession.id.label("resolved_runtime_session_id"),
+                resolved_session_source_type.label("resolved_session_source_type"),
+                resolved_session_source_id.label("resolved_session_source_id"),
+                resolved_session_reference.label("resolved_session_reference"),
+            )
+            .join(ApiUsage, GatewayUsageSearchDocument.api_usage_id == ApiUsage.id)
+            .outerjoin(Flow, ApiUsage.flow_id == Flow.id)
+            .outerjoin(FlowExecution, ApiUsage.flow_execution_id == FlowExecution.id)
+            .outerjoin(RuntimeSession, ApiUsage.runtime_session_id == RuntimeSession.id)
+            .filter(
+                ApiUsage.action_type == "model_gateway",
+                ApiUsage.account_id == account_id,
+                ApiUsage.timestamp >= start_date,
+                ApiUsage.timestamp < end_date,
+            )
+        )
+
+        if query:
+            normalized_query = f"%{' '.join(query.strip().split())}%"
+            base_query = base_query.filter(
+                GatewayUsageSearchDocument.searchable_text.ilike(normalized_query)
+            )
+        if provider_name:
+            base_query = base_query.filter(ApiUsage.provider_name == provider_name)
+        if model_alias:
+            base_query = base_query.filter(ApiUsage.model_alias == model_alias)
+        if flow_id:
+            base_query = base_query.filter(ApiUsage.flow_id == flow_id)
+        if runtime_session_id:
+            base_query = base_query.filter(
+                ApiUsage.runtime_session_id == runtime_session_id
+            )
+        if session_source_type:
+            base_query = base_query.filter(
+                resolved_session_source_type == session_source_type
+            )
+
+        total = base_query.with_entities(
+            func.count(GatewayUsageSearchDocument.id)
+        ).scalar()
+        rows = (
+            base_query.order_by(
+                ApiUsage.timestamp.desc(), GatewayUsageSearchDocument.id.desc()
+            )
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+        items = []
+        for row in rows:
+            document = row[0]
+            usage = row[1]
+            items.append(
+                {
+                    "api_usage_id": str(usage.id),
+                    "timestamp": usage.timestamp,
+                    "status_code": usage.status_code,
+                    "outcome": "error" if usage.status_code >= 400 else "success",
+                    "endpoint": usage.endpoint,
+                    "method": usage.method,
+                    "provider_name": usage.provider_name,
+                    "model_alias": usage.model_alias,
+                    "flow_id": str(usage.flow_id) if usage.flow_id else None,
+                    "flow_name": row.flow_name,
+                    "flow_execution_id": (
+                        str(usage.flow_execution_id)
+                        if usage.flow_execution_id
+                        else None
+                    ),
+                    "runtime_session_id": (
+                        str(row.resolved_runtime_session_id)
+                        if row.resolved_runtime_session_id
+                        else None
+                    ),
+                    "session_source_type": row.resolved_session_source_type,
+                    "session_source_id": row.resolved_session_source_id,
+                    "session_reference": row.resolved_session_reference,
+                    "runtime_principal_type": usage.runtime_principal_type,
+                    "runtime_principal_id": usage.runtime_principal_id,
+                    "runtime_principal_name": usage.runtime_principal_name,
+                    "estimated_cost": float(usage.estimated_cost or 0.0),
+                    "prompt_tokens": int(usage.prompt_tokens or 0),
+                    "completion_tokens": int(usage.completion_tokens or 0),
+                    "total_tokens": int(usage.total_tokens or 0),
+                    "excerpt": self._build_excerpt(
+                        document.searchable_text, query=query
+                    ),
+                    "meta_data": document.meta_data or {},
+                }
+            )
+
+        return {"total": int(total or 0), "items": items}
+
+    @staticmethod
+    def _build_excerpt(searchable_text: str, *, query: Optional[str]) -> str:
+        """Return a short readable preview for a search hit."""
+        normalized_text = " ".join((searchable_text or "").split())
+        if not normalized_text:
+            return ""
+
+        if not query:
+            return (
+                normalized_text[:317] + "..."
+                if len(normalized_text) > 320
+                else normalized_text
+            )
+
+        lowered_text = normalized_text.lower()
+        lowered_query = " ".join(query.strip().lower().split())
+        match_index = lowered_text.find(lowered_query)
+        if match_index < 0:
+            return (
+                normalized_text[:317] + "..."
+                if len(normalized_text) > 320
+                else normalized_text
+            )
+
+        start = max(match_index - 120, 0)
+        end = min(match_index + len(lowered_query) + 200, len(normalized_text))
+        excerpt = normalized_text[start:end]
+        if start > 0:
+            excerpt = "..." + excerpt
+        if end < len(normalized_text):
+            excerpt = excerpt + "..."
+        return excerpt

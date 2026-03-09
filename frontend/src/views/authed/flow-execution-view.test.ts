@@ -204,6 +204,16 @@ describe('FlowExecutionView', () => {
                 type: 'issue_comment',
               },
               tool_calls_count: 3,
+              mcp_usage_logs: [
+                {
+                  timestamp: '2026-03-09T10:00:10Z',
+                  tool_name: 'search_issues',
+                },
+                {
+                  timestamp: '2026-03-09T10:00:20Z',
+                  tool_name: 'get_issue',
+                },
+              ],
             }),
             {
               status: 200,
@@ -356,5 +366,11 @@ describe('FlowExecutionView', () => {
     );
 
     expect((element as any).toolCalls).to.equal(3);
+    expect(
+      (element as any).logs.some((log: any) => log.type === 'mcp_call')
+    ).to.equal(true);
+    expect(element.shadowRoot?.textContent || '').to.contain(
+      'Called tool: search_issues'
+    );
   });
 });

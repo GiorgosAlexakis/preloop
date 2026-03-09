@@ -7,10 +7,11 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from preloop.models.crud import crud_api_usage
+from preloop.models.crud import crud_api_usage, crud_gateway_usage_search_document
 from preloop.models.models.account import Account
 from preloop.models.models.flow import Flow
 from preloop.schemas.gateway_usage import (
+    AccountGatewayUsageSearchResponse,
     AccountGatewayUsageSummaryResponse,
     FlowGatewayUsageSummaryResponse,
     GatewayBudgetSummary,
@@ -19,6 +20,7 @@ from preloop.schemas.gateway_usage import (
     GatewayUsageByExecution,
     GatewayUsageByFlow,
     GatewayUsageByModel,
+    GatewayUsageSearchResultItem,
     GatewayUsageBySession,
 )
 
@@ -185,6 +187,47 @@ class ModelGatewayUsageService:
             ],
         )
 
+    def search_account_interactions(
+        self,
+        *,
+        account: Account,
+        query: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        provider_name: Optional[str] = None,
+        model_alias: Optional[str] = None,
+        flow_id: Optional[str] = None,
+        runtime_session_id: Optional[str] = None,
+        session_source_type: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> AccountGatewayUsageSearchResponse:
+        """Search or list indexed gateway interactions for one account."""
+        start_date, end_date = self._normalize_period(start_date, end_date)
+        results = crud_gateway_usage_search_document.search_account_documents(
+            self.db,
+            account_id=str(account.id),
+            start_date=start_date,
+            end_date=end_date,
+            query=query,
+            provider_name=provider_name,
+            model_alias=model_alias,
+            flow_id=flow_id,
+            runtime_session_id=runtime_session_id,
+            session_source_type=session_source_type,
+            limit=limit,
+            offset=offset,
+        )
+        return AccountGatewayUsageSearchResponse(
+            period_start=start_date,
+            period_end=end_date,
+            query=query,
+            total=results["total"],
+            limit=limit,
+            offset=offset,
+            items=[self._search_row_to_schema(item) for item in results["items"]],
+        )
+
     @staticmethod
     def _normalize_period(
         start_date: Optional[datetime], end_date: Optional[datetime]
@@ -268,4 +311,35 @@ class ModelGatewayUsageService:
             ),
             estimated_cost=row["estimated_cost"],
             last_request_at=row["last_request_at"],
+        )
+
+    @staticmethod
+    def _search_row_to_schema(item) -> GatewayUsageSearchResultItem:
+        return GatewayUsageSearchResultItem(
+            api_usage_id=item["api_usage_id"],
+            timestamp=item["timestamp"],
+            status_code=item["status_code"],
+            outcome=item["outcome"],
+            endpoint=item["endpoint"],
+            method=item["method"],
+            provider_name=item["provider_name"],
+            model_alias=item["model_alias"],
+            flow_id=item["flow_id"],
+            flow_name=item["flow_name"],
+            flow_execution_id=item["flow_execution_id"],
+            runtime_session_id=item["runtime_session_id"],
+            session_source_type=item["session_source_type"],
+            session_source_id=item["session_source_id"],
+            session_reference=item["session_reference"],
+            runtime_principal_type=item["runtime_principal_type"],
+            runtime_principal_id=item["runtime_principal_id"],
+            runtime_principal_name=item["runtime_principal_name"],
+            estimated_cost=item["estimated_cost"],
+            token_usage=GatewayTokenUsage(
+                prompt_tokens=item["prompt_tokens"],
+                completion_tokens=item["completion_tokens"],
+                total_tokens=item["total_tokens"],
+            ),
+            excerpt=item["excerpt"],
+            meta_data=item["meta_data"],
         )

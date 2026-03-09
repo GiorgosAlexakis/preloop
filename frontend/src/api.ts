@@ -17,6 +17,9 @@ import type {
   DependencyPair,
   DependencyResponse,
   FlowGatewayEventsResponse,
+  AccountGatewayUsageSearchResponse,
+  AccountRuntimeSessionDetailResponse,
+  AccountRuntimeSessionListResponse,
   AccountGatewayUsageSummaryResponse,
   FlowGatewayUsageSummaryResponse,
 } from './types';
@@ -171,9 +174,32 @@ export interface GatewayUsageSummaryParams {
   endDate?: string;
 }
 
-function buildGatewayUsageQuery(
-  params: GatewayUsageSummaryParams = {}
-): string {
+export interface GatewayUsageSearchParams extends GatewayUsageSummaryParams {
+  query?: string;
+  providerName?: string;
+  modelAlias?: string;
+  flowId?: string;
+  runtimeSessionId?: string;
+  sessionSourceType?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RuntimeSessionListParams extends GatewayUsageSummaryParams {
+  query?: string;
+  sessionSourceType?: string;
+  status?: 'all' | 'active' | 'ended';
+  limit?: number;
+  offset?: number;
+}
+
+export interface RuntimeSessionDetailParams extends GatewayUsageSummaryParams {
+  interactionQuery?: string;
+  interactionLimit?: number;
+  interactionOffset?: number;
+}
+
+function buildGatewayUsageQuery(params: GatewayUsageSearchParams = {}): string {
   const queryParams = new URLSearchParams();
 
   if (params.startDate) {
@@ -182,6 +208,38 @@ function buildGatewayUsageQuery(
 
   if (params.endDate) {
     queryParams.set('end_date', params.endDate);
+  }
+
+  if (params.query) {
+    queryParams.set('query', params.query);
+  }
+
+  if (params.providerName) {
+    queryParams.set('provider_name', params.providerName);
+  }
+
+  if (params.modelAlias) {
+    queryParams.set('model_alias', params.modelAlias);
+  }
+
+  if (params.flowId) {
+    queryParams.set('flow_id', params.flowId);
+  }
+
+  if (params.runtimeSessionId) {
+    queryParams.set('runtime_session_id', params.runtimeSessionId);
+  }
+
+  if (params.sessionSourceType) {
+    queryParams.set('session_source_type', params.sessionSourceType);
+  }
+
+  if (typeof params.limit === 'number') {
+    queryParams.set('limit', String(params.limit));
+  }
+
+  if (typeof params.offset === 'number') {
+    queryParams.set('offset', String(params.offset));
   }
 
   const queryString = queryParams.toString();
@@ -209,6 +267,87 @@ export async function getFlowGatewayUsageSummary(
   );
   if (!response.ok) {
     throw new Error('Failed to fetch flow gateway usage summary');
+  }
+  return response.json();
+}
+
+export async function getAccountGatewayUsageSearch(
+  params: GatewayUsageSearchParams = {}
+): Promise<AccountGatewayUsageSearchResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/account/gateway-usage/search${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch account gateway usage search results');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessions(
+  params: RuntimeSessionListParams = {}
+): Promise<AccountRuntimeSessionListResponse> {
+  const queryParams = new URLSearchParams();
+
+  if (params.startDate) {
+    queryParams.set('start_date', params.startDate);
+  }
+  if (params.endDate) {
+    queryParams.set('end_date', params.endDate);
+  }
+  if (params.query) {
+    queryParams.set('query', params.query);
+  }
+  if (params.sessionSourceType) {
+    queryParams.set('session_source_type', params.sessionSourceType);
+  }
+  if (params.status) {
+    queryParams.set('status', params.status);
+  }
+  if (typeof params.limit === 'number') {
+    queryParams.set('limit', String(params.limit));
+  }
+  if (typeof params.offset === 'number') {
+    queryParams.set('offset', String(params.offset));
+  }
+
+  const queryString = queryParams.toString();
+  const response = await fetchWithAuth(
+    `/api/v1/account/runtime-sessions${queryString ? `?${queryString}` : ''}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch runtime sessions');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessionDetail(
+  runtimeSessionId: string,
+  params: RuntimeSessionDetailParams = {}
+): Promise<AccountRuntimeSessionDetailResponse> {
+  const queryParams = new URLSearchParams();
+
+  if (params.startDate) {
+    queryParams.set('start_date', params.startDate);
+  }
+  if (params.endDate) {
+    queryParams.set('end_date', params.endDate);
+  }
+  if (params.interactionQuery) {
+    queryParams.set('interaction_query', params.interactionQuery);
+  }
+  if (typeof params.interactionLimit === 'number') {
+    queryParams.set('interaction_limit', String(params.interactionLimit));
+  }
+  if (typeof params.interactionOffset === 'number') {
+    queryParams.set('interaction_offset', String(params.interactionOffset));
+  }
+
+  const queryString = queryParams.toString();
+  const response = await fetchWithAuth(
+    `/api/v1/account/runtime-sessions/${runtimeSessionId}${queryString ? `?${queryString}` : ''}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch runtime session detail');
   }
   return response.json();
 }

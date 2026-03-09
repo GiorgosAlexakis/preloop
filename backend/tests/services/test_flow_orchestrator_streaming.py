@@ -169,6 +169,32 @@ class TestLogStreaming:
         assert orchestrator.tool_calls_count == 1
         orchestrator._persist_live_metrics.assert_awaited()
 
+    @pytest.mark.asyncio
+    async def test_persist_live_metrics_stores_mcp_usage_logs(
+        self, orchestrator, mock_db
+    ):
+        """Persisted live metrics should include tool activity details."""
+        orchestrator.tool_calls_count = 2
+        orchestrator.total_tokens = 99
+        orchestrator.estimated_cost = 0.12
+        orchestrator.execution_logger.mcp_usage_logs = [
+            {"timestamp": "2026-03-10T10:00:00Z", "tool_name": "search_issues"},
+            {"timestamp": "2026-03-10T10:00:01Z", "tool_name": "get_issue"},
+        ]
+
+        await orchestrator._persist_live_metrics()
+
+        assert orchestrator.execution_log.tool_calls_count == 2
+        assert orchestrator.execution_log.total_tokens == 99
+        assert orchestrator.execution_log.estimated_cost == 0.12
+        assert orchestrator.execution_log.mcp_usage_logs == [
+            {"timestamp": "2026-03-10T10:00:00Z", "tool_name": "search_issues"},
+            {"timestamp": "2026-03-10T10:00:01Z", "tool_name": "get_issue"},
+        ]
+        mock_db.add.assert_called_with(orchestrator.execution_log)
+        mock_db.commit.assert_called()
+        mock_db.refresh.assert_called_with(orchestrator.execution_log)
+
 
 class TestCommandListener:
     """Test command listener for user intervention."""

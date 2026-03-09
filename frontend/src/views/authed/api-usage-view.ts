@@ -13,13 +13,16 @@ import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/view-header.ts';
 import {
+  getAccountGatewayUsageSearch,
   getAccountGatewayUsageSummary,
   type GatewayUsageSummaryParams,
 } from '../../api';
 import type {
+  AccountGatewayUsageSearchResponse,
   AccountGatewayUsageSummaryResponse,
   GatewayBudgetSummary,
   GatewayTokenUsage,
+  GatewayUsageSearchResultItem,
   GatewayUsageByDay,
   GatewayUsageByFlow,
   GatewayUsageByModel,
@@ -35,6 +38,9 @@ export class ApiUsageView extends LitElement {
   private summary: AccountGatewayUsageSummaryResponse | null = null;
 
   @state()
+  private searchResults: AccountGatewayUsageSearchResponse | null = null;
+
+  @state()
   private loading = true;
 
   @state()
@@ -48,6 +54,9 @@ export class ApiUsageView extends LitElement {
 
   @state()
   private endDate = '';
+
+  @state()
+  private searchQuery = '';
 
   private initialized = false;
 
@@ -316,6 +325,47 @@ export class ApiUsageView extends LitElement {
         text-decoration: underline;
       }
 
+      .search-list {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .search-row {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-x-small);
+        padding: var(--sl-spacing-medium) 0;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+
+      .search-row:last-child {
+        border-bottom: none;
+      }
+
+      .search-header {
+        display: flex;
+        gap: var(--sl-spacing-small);
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+
+      .search-title {
+        font-weight: 600;
+        color: var(--sl-color-neutral-900);
+        overflow-wrap: anywhere;
+      }
+
+      .search-meta,
+      .search-excerpt {
+        color: var(--sl-color-neutral-600);
+        font-size: var(--sl-font-size-small);
+        overflow-wrap: anywhere;
+      }
+
+      .search-excerpt {
+        color: var(--sl-color-neutral-800);
+      }
+
       .cell-numeric {
         text-align: right;
         font-variant-numeric: tabular-nums;
@@ -402,7 +452,17 @@ export class ApiUsageView extends LitElement {
         params.endDate = new Date(`${this.endDate}T23:59:59.999`).toISOString();
       }
 
-      this.summary = await getAccountGatewayUsageSummary(params);
+      const searchQuery = this.searchQuery.trim();
+      const [summary, searchResults] = await Promise.all([
+        getAccountGatewayUsageSummary(params),
+        getAccountGatewayUsageSearch({
+          ...params,
+          query: searchQuery || undefined,
+          limit: 10,
+        }),
+      ]);
+      this.summary = summary;
+      this.searchResults = searchResults;
     } catch (error) {
       console.error('Failed to load account gateway usage summary:', error);
       this.error =
@@ -410,6 +470,7 @@ export class ApiUsageView extends LitElement {
           ? error.message
           : 'Failed to load gateway usage summary';
       this.summary = null;
+      this.searchResults = null;
     } finally {
       this.loading = false;
     }
@@ -462,6 +523,12 @@ export class ApiUsageView extends LitElement {
   private handleEndDateChange(event: Event) {
     this.endDate = (event.target as HTMLInputElement & { value: string }).value;
     this.selectedRange = 'custom';
+  }
+
+  private handleSearchQueryChange(event: Event) {
+    this.searchQuery = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
   }
 
   private async applyCustomFilters() {
@@ -573,6 +640,12 @@ export class ApiUsageView extends LitElement {
       this.getSessionSourceType(session) === 'flow_execution' &&
       Boolean(this.getSessionSourceId(session))
     );
+  }
+
+  private getRuntimeSessionHref(session: GatewayUsageBySession): string | null {
+    return session.runtime_session_id
+      ? `/console/runtime-sessions?sessionId=${session.runtime_session_id}`
+      : null;
   }
 
   private getSuccessRate(summary: AccountGatewayUsageSummaryResponse): number {
@@ -859,7 +932,15 @@ export class ApiUsageView extends LitElement {
             <div class="session-row">
               <div class="session-primary">
                 <div class="breakdown-name">
-                  ${this.getSessionDisplayName(session)}
+                  ${this.getRuntimeSessionHref(session)
+                    ? html`
+                        <a
+                          class="session-link"
+                          href=${this.getRuntimeSessionHref(session)!}
+                          >${this.getSessionDisplayName(session)}</a
+                        >
+                      `
+                    : this.getSessionDisplayName(session)}
                 </div>
                 <div class="breakdown-secondary">
                   ${session.model_alias || 'Unknown model'}
@@ -912,6 +993,65 @@ export class ApiUsageView extends LitElement {
             </div>
           `;
         })}
+      </div>
+    `;
+  }
+
+  private renderSearchResults(
+    results: AccountGatewayUsageSearchResponse | null
+  ) {
+    if (!results || results.items.length === 0) {
+      return html`
+        <div class="empty-state">
+          <sl-icon name="search"></sl-icon>
+          <div>
+            ${this.searchQuery.trim()
+              ? 'No captured gateway interactions matched this search.'
+              : 'No captured gateway interactions are available yet.'}
+          </div>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="search-list">
+        ${results.items.map((item) => this.renderSearchResult(item))}
+      </div>
+    `;
+  }
+
+  private renderSearchResult(item: GatewayUsageSearchResultItem) {
+    const sourceLabel = this.getSessionSourceLabel(item.session_source_type);
+
+    return html`
+      <div class="search-row">
+        <div class="search-header">
+          <div>
+            <div class="search-title">
+              ${item.model_alias || 'Unknown model'}
+              ${item.provider_name ? html`· ${item.provider_name}` : ''}
+            </div>
+            <div class="search-meta">
+              ${item.method} ${item.endpoint} · ${sourceLabel}
+              ${item.session_reference
+                ? html` · Session <code>${item.session_reference}</code>`
+                : ''}
+            </div>
+          </div>
+          <sl-badge variant=${item.outcome === 'error' ? 'danger' : 'success'}>
+            ${item.outcome}
+          </sl-badge>
+        </div>
+        <div class="search-excerpt">${item.excerpt}</div>
+        <div class="search-meta">
+          ${this.formatDateTimeLabel(item.timestamp)} ·
+          ${this.formatNumber(item.token_usage.total_tokens)} tokens ·
+          ${this.formatCost(item.estimated_cost)}
+          ${item.flow_name ? html` · ${item.flow_name}` : ''}
+          ${item.runtime_principal_name
+            ? html` · Principal ${item.runtime_principal_name}`
+            : ''}
+        </div>
       </div>
     `;
   }
@@ -991,6 +1131,13 @@ export class ApiUsageView extends LitElement {
                   @sl-change=${this.handleEndDateChange}
                 ></sl-input>
 
+                <sl-input
+                  label="Conversation search"
+                  placeholder="Search captured prompts, outputs, or metadata"
+                  .value=${this.searchQuery}
+                  @sl-input=${this.handleSearchQueryChange}
+                ></sl-input>
+
                 <div class="filters-actions">
                   <sl-button
                     variant="primary"
@@ -1049,6 +1196,21 @@ export class ApiUsageView extends LitElement {
                       ${this.renderSessionBreakdown(
                         this.summary.usage_by_session
                       )}
+                    </sl-card>
+
+                    <sl-card class="breakdown-card">
+                      <div slot="header" class="section-header">
+                        <div class="section-title">
+                          <sl-icon name="search"></sl-icon>
+                          <span>Captured Interactions</span>
+                        </div>
+                        <span class="section-subtitle">
+                          ${this.searchQuery.trim()
+                            ? 'Search results from the indexed gateway corpus'
+                            : 'Recent indexed gateway interactions'}
+                        </span>
+                      </div>
+                      ${this.renderSearchResults(this.searchResults)}
                     </sl-card>
 
                     <div class="content-grid">

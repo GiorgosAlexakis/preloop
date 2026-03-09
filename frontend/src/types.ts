@@ -161,6 +161,85 @@ export interface GatewayUsageBySession {
   ended_at?: string | null;
 }
 
+export interface GatewayUsageSearchResultItem {
+  api_usage_id: string;
+  timestamp: string;
+  status_code: number;
+  outcome: 'success' | 'error';
+  endpoint: string;
+  method: string;
+  provider_name: string | null;
+  model_alias: string | null;
+  flow_id: string | null;
+  flow_name: string | null;
+  flow_execution_id: string | null;
+  runtime_session_id: string | null;
+  session_source_type: string | null;
+  session_source_id: string | null;
+  session_reference: string | null;
+  runtime_principal_type: string | null;
+  runtime_principal_id: string | null;
+  runtime_principal_name: string | null;
+  estimated_cost: number;
+  token_usage: GatewayTokenUsage;
+  excerpt: string;
+  meta_data: Record<string, unknown>;
+}
+
+export interface AccountGatewayUsageSearchResponse {
+  period_start: string;
+  period_end: string;
+  query: string | null;
+  total: number;
+  limit: number;
+  offset: number;
+  items: GatewayUsageSearchResultItem[];
+}
+
+export interface RuntimeSessionSummary {
+  id: string;
+  session_source_type: string;
+  session_source_id: string;
+  session_reference: string | null;
+  runtime_principal_type: string | null;
+  runtime_principal_id: string | null;
+  runtime_principal_name: string | null;
+  started_at: string;
+  last_activity_at: string | null;
+  ended_at: string | null;
+  flow_id: string | null;
+  flow_name: string | null;
+  flow_execution_id: string | null;
+  latest_model_alias: string | null;
+  latest_provider_name: string | null;
+  total_requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  token_usage: GatewayTokenUsage;
+  estimated_cost: number;
+  last_request_at: string | null;
+}
+
+export interface AccountRuntimeSessionListResponse {
+  period_start: string;
+  period_end: string;
+  query: string | null;
+  session_source_type: string | null;
+  status: 'all' | 'active' | 'ended';
+  total: number;
+  limit: number;
+  offset: number;
+  items: RuntimeSessionSummary[];
+}
+
+export interface AccountRuntimeSessionDetailResponse {
+  period_start: string;
+  period_end: string;
+  session: RuntimeSessionSummary;
+  usage_by_model: GatewayUsageByModel[];
+  interactions: AccountGatewayUsageSearchResponse;
+}
+
 export interface AccountGatewayUsageSummaryResponse {
   period_start: string;
   period_end: string;

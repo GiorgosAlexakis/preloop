@@ -1365,6 +1365,7 @@ class FlowExecutionOrchestrator:
         self.execution_log.tool_calls_count = self.tool_calls_count
         self.execution_log.total_tokens = self.total_tokens
         self.execution_log.estimated_cost = self.estimated_cost
+        self.execution_log.mcp_usage_logs = self.execution_logger.get_mcp_usage_logs()
         self.db.add(self.execution_log)
         self.db.commit()
         self.db.refresh(self.execution_log)

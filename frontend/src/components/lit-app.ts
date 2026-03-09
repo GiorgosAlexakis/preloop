@@ -43,6 +43,7 @@ import '../views/authed/flows-view.ts';
 import '../views/authed/flow-view.ts';
 import '../views/authed/flow-executions-view.ts';
 import '../views/authed/flow-execution-view.ts';
+import '../views/authed/runtime-sessions-view.ts';
 import '../views/authed/approval-view.ts';
 import '../views/authed/approvals-view.ts';
 import '../views/authed/policies-view.ts';
@@ -370,6 +371,7 @@ export class LitApp extends LitElement {
               { path: ':flowId', component: 'flow-view' },
             ],
           },
+          { path: '/runtime-sessions', component: 'runtime-sessions-view' },
           { path: '/api-usage', component: 'api-usage-view' },
           { path: 'settings', redirect: '/console/settings/profile' },
           { path: 'settings/profile', component: 'profile-view' },

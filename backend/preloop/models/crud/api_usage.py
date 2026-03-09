@@ -268,6 +268,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         start_date: datetime,
         end_date: datetime,
         flow_id: Optional[str] = None,
+        runtime_session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get aggregated gateway usage totals for an account or flow."""
         query = db.query(
@@ -295,6 +296,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
 
         if flow_id:
             query = query.filter(ApiUsage.flow_id == flow_id)
+        if runtime_session_id:
+            query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
 
         row = query.one()
         return {
@@ -315,6 +318,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         start_date: datetime,
         end_date: datetime,
         flow_id: Optional[str] = None,
+        runtime_session_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by model."""
@@ -339,6 +343,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         )
         if flow_id:
             query = query.filter(ApiUsage.flow_id == flow_id)
+        if runtime_session_id:
+            query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
 
         rows = (
             query.group_by(

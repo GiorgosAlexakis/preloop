@@ -589,6 +589,269 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/gateway-usage/search:
+    get:
+      tags:
+      - Account
+      summary: Search Account Gateway Usage
+      description: Search or list indexed gateway interactions for the current account.
+      operationId: search_account_gateway_usage_api_v1_account_gateway_usage_search_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: provider_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+      - name: model_alias
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+      - name: flow_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+      - name: runtime_session_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/runtime-sessions:
+    get:
+      tags:
+      - Account
+      summary: List Account Runtime Sessions
+      description: List runtime sessions for the current account.
+      operationId: list_account_runtime_sessions_api_v1_account_runtime_sessions_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|ended)$
+          default: all
+          title: Status
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRuntimeSessionListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/runtime-sessions/{runtime_session_id}:
+    get:
+      tags:
+      - Account
+      summary: Get Account Runtime Session Detail
+      description: Return one runtime session with captured interaction details.
+      operationId: get_account_runtime_session_detail_api_v1_account_runtime_sessions__runtime_session_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: interaction_query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Interaction Query
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: interaction_limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Interaction Limit
+      - name: interaction_offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Interaction Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRuntimeSessionDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/account/deletion-request:
     post:
       tags:
@@ -5360,6 +5623,44 @@ components:
       type: object
       title: AccountDetailsUpdate
       description: Account details update request.
+    AccountGatewayUsageSearchResponse:
+      properties:
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        query:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Query
+        total:
+          type: integer
+          title: Total
+          default: 0
+        limit:
+          type: integer
+          title: Limit
+          default: 20
+        offset:
+          type: integer
+          title: Offset
+          default: 0
+        items:
+          items:
+            $ref: '#/components/schemas/GatewayUsageSearchResultItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - period_start
+      - period_end
+      title: AccountGatewayUsageSearchResponse
+      description: Account-scoped gateway interaction search results.
     AccountGatewayUsageSummaryResponse:
       properties:
         period_start:
@@ -5418,6 +5719,80 @@ components:
       - budget
       title: AccountGatewayUsageSummaryResponse
       description: Account-scoped gateway usage summary.
+    AccountRuntimeSessionDetailResponse:
+      properties:
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        session:
+          $ref: '#/components/schemas/RuntimeSessionSummary'
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+        interactions:
+          $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
+      type: object
+      required:
+      - period_start
+      - period_end
+      - session
+      - interactions
+      title: AccountRuntimeSessionDetailResponse
+      description: One runtime session plus captured interaction timeline.
+    AccountRuntimeSessionListResponse:
+      properties:
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        query:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Query
+        session_source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+        status:
+          type: string
+          title: Status
+          default: all
+        total:
+          type: integer
+          title: Total
+          default: 0
+        limit:
+          type: integer
+          title: Limit
+          default: 20
+        offset:
+          type: integer
+          title: Offset
+          default: 0
+        items:
+          items:
+            $ref: '#/components/schemas/RuntimeSessionSummary'
+          type: array
+          title: Items
+      type: object
+      required:
+      - period_start
+      - period_end
+      title: AccountRuntimeSessionListResponse
+      description: Account-scoped runtime session explorer list response.
     ApiKeyCreate:
       properties:
         name:
@@ -7536,6 +7911,112 @@ components:
       - token_usage
       title: GatewayUsageBySession
       description: Recent usage aggregate grouped by execution-backed session slices.
+    GatewayUsageSearchResultItem:
+      properties:
+        api_usage_id:
+          type: string
+          title: Api Usage Id
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        status_code:
+          type: integer
+          title: Status Code
+        outcome:
+          type: string
+          title: Outcome
+        endpoint:
+          type: string
+          title: Endpoint
+        method:
+          type: string
+          title: Method
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        runtime_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+        session_source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+        session_source_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        runtime_principal_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Type
+        runtime_principal_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Name
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        excerpt:
+          type: string
+          title: Excerpt
+        meta_data:
+          additionalProperties: true
+          type: object
+          title: Meta Data
+      type: object
+      required:
+      - api_usage_id
+      - timestamp
+      - status_code
+      - outcome
+      - endpoint
+      - method
+      - token_usage
+      - excerpt
+      title: GatewayUsageSearchResultItem
+      description: One account-scoped gateway interaction search hit.
     GeneratePolicyFromAuditRequest:
       properties:
         start_date:
@@ -9147,6 +9628,111 @@ components:
       - EXCLUDE
       title: RuleType
       description: Enum for rule types.
+    RuntimeSessionSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        session_source_type:
+          type: string
+          title: Session Source Type
+        session_source_id:
+          type: string
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        runtime_principal_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Type
+        runtime_principal_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Name
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        latest_model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Model Alias
+        latest_provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Provider Name
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - id
+      - session_source_type
+      - session_source_id
+      - started_at
+      - token_usage
+      title: RuntimeSessionSummary
+      description: Aggregated runtime session summary for explorer views.
     RuntimeSessionTokenCreate:
       properties:
         session_source_type:

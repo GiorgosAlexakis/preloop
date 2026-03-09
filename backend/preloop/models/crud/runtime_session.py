@@ -5,8 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
+from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.orm import Session
 
+from ..models.api_usage import ApiUsage
+from ..models.flow import Flow
 from ..models.runtime_session import RuntimeSession
 from .base import CRUDBase
 
@@ -87,6 +90,238 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         db.add(db_obj)
         db.flush()
         return db_obj
+
+    def list_account_sessions(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        query: Optional[str] = None,
+        session_source_type: Optional[str] = None,
+        status: str = "all",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """List runtime sessions with aggregated gateway usage."""
+        session_query = db.query(self.model).filter(self.model.account_id == account_id)
+
+        if query:
+            normalized_query = f"%{' '.join(query.strip().split())}%"
+            session_query = session_query.filter(
+                or_(
+                    self.model.session_source_type.ilike(normalized_query),
+                    self.model.session_source_id.ilike(normalized_query),
+                    self.model.session_reference.ilike(normalized_query),
+                    self.model.runtime_principal_name.ilike(normalized_query),
+                )
+            )
+        if session_source_type:
+            session_query = session_query.filter(
+                self.model.session_source_type == session_source_type
+            )
+        if status == "active":
+            session_query = session_query.filter(self.model.ended_at.is_(None))
+        elif status == "ended":
+            session_query = session_query.filter(self.model.ended_at.isnot(None))
+
+        total = session_query.count()
+        usage_join = self._usage_join_conditions(
+            start_date=start_date, end_date=end_date
+        )
+
+        rows = (
+            session_query.outerjoin(ApiUsage, usage_join)
+            .outerjoin(Flow, ApiUsage.flow_id == Flow.id)
+            .with_entities(
+                self.model.id,
+                self.model.session_source_type,
+                self.model.session_source_id,
+                self.model.session_reference,
+                self.model.runtime_principal_type,
+                self.model.runtime_principal_id,
+                self.model.runtime_principal_name,
+                self.model.started_at,
+                self.model.last_activity_at,
+                self.model.ended_at,
+                func.max(cast(ApiUsage.flow_id, String)).label("flow_id"),
+                func.max(Flow.name).label("flow_name"),
+                func.max(cast(ApiUsage.flow_execution_id, String)).label(
+                    "flow_execution_id"
+                ),
+                func.max(ApiUsage.model_alias).label("latest_model_alias"),
+                func.max(ApiUsage.provider_name).label("latest_provider_name"),
+                func.count(ApiUsage.id).label("request_count"),
+                func.coalesce(
+                    func.sum(case((ApiUsage.status_code < 400, 1), else_=0)), 0
+                ).label("success_count"),
+                func.coalesce(
+                    func.sum(case((ApiUsage.status_code >= 400, 1), else_=0)), 0
+                ).label("error_count"),
+                func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label(
+                    "prompt_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+                    "completion_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+                func.max(ApiUsage.timestamp).label("last_request_at"),
+            )
+            .group_by(
+                self.model.id,
+                self.model.session_source_type,
+                self.model.session_source_id,
+                self.model.session_reference,
+                self.model.runtime_principal_type,
+                self.model.runtime_principal_id,
+                self.model.runtime_principal_name,
+                self.model.started_at,
+                self.model.last_activity_at,
+                self.model.ended_at,
+            )
+            .order_by(
+                func.coalesce(
+                    func.max(ApiUsage.timestamp),
+                    self.model.last_activity_at,
+                    self.model.started_at,
+                ).desc()
+            )
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+
+        return {"total": total, "items": [self._row_to_summary(row) for row in rows]}
+
+    def get_account_session(
+        self, db: Session, *, account_id: str, runtime_session_id: str
+    ) -> Optional[RuntimeSession]:
+        """Return one runtime session for an account."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id, self.model.id == runtime_session_id
+            )
+            .first()
+        )
+
+    def get_account_session_summary(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        runtime_session_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Return one runtime session with aggregated gateway usage."""
+        usage_join = self._usage_join_conditions(
+            start_date=start_date, end_date=end_date
+        )
+        row = (
+            db.query(
+                self.model.id,
+                self.model.session_source_type,
+                self.model.session_source_id,
+                self.model.session_reference,
+                self.model.runtime_principal_type,
+                self.model.runtime_principal_id,
+                self.model.runtime_principal_name,
+                self.model.started_at,
+                self.model.last_activity_at,
+                self.model.ended_at,
+                func.max(cast(ApiUsage.flow_id, String)).label("flow_id"),
+                func.max(Flow.name).label("flow_name"),
+                func.max(cast(ApiUsage.flow_execution_id, String)).label(
+                    "flow_execution_id"
+                ),
+                func.max(ApiUsage.model_alias).label("latest_model_alias"),
+                func.max(ApiUsage.provider_name).label("latest_provider_name"),
+                func.count(ApiUsage.id).label("request_count"),
+                func.coalesce(
+                    func.sum(case((ApiUsage.status_code < 400, 1), else_=0)), 0
+                ).label("success_count"),
+                func.coalesce(
+                    func.sum(case((ApiUsage.status_code >= 400, 1), else_=0)), 0
+                ).label("error_count"),
+                func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label(
+                    "prompt_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+                    "completion_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+                func.max(ApiUsage.timestamp).label("last_request_at"),
+            )
+            .outerjoin(ApiUsage, usage_join)
+            .outerjoin(Flow, ApiUsage.flow_id == Flow.id)
+            .filter(
+                self.model.account_id == account_id, self.model.id == runtime_session_id
+            )
+            .group_by(
+                self.model.id,
+                self.model.session_source_type,
+                self.model.session_source_id,
+                self.model.session_reference,
+                self.model.runtime_principal_type,
+                self.model.runtime_principal_id,
+                self.model.runtime_principal_name,
+                self.model.started_at,
+                self.model.last_activity_at,
+                self.model.ended_at,
+            )
+            .first()
+        )
+        return self._row_to_summary(row) if row is not None else None
+
+    @staticmethod
+    def _usage_join_conditions(
+        *, start_date: Optional[datetime], end_date: Optional[datetime]
+    ):
+        conditions = [
+            ApiUsage.runtime_session_id == RuntimeSession.id,
+            ApiUsage.action_type == "model_gateway",
+        ]
+        if start_date is not None:
+            conditions.append(ApiUsage.timestamp >= start_date)
+        if end_date is not None:
+            conditions.append(ApiUsage.timestamp < end_date)
+        return and_(*conditions)
+
+    @staticmethod
+    def _row_to_summary(row) -> dict[str, Any]:
+        return {
+            "id": str(row.id),
+            "session_source_type": row.session_source_type,
+            "session_source_id": row.session_source_id,
+            "session_reference": row.session_reference,
+            "runtime_principal_type": row.runtime_principal_type,
+            "runtime_principal_id": row.runtime_principal_id,
+            "runtime_principal_name": row.runtime_principal_name,
+            "started_at": row.started_at,
+            "last_activity_at": row.last_activity_at,
+            "ended_at": row.ended_at,
+            "flow_id": row.flow_id,
+            "flow_name": row.flow_name,
+            "flow_execution_id": row.flow_execution_id,
+            "latest_model_alias": row.latest_model_alias,
+            "latest_provider_name": row.latest_provider_name,
+            "total_requests": int(row.request_count or 0),
+            "successful_requests": int(row.success_count or 0),
+            "failed_requests": int(row.error_count or 0),
+            "prompt_tokens": int(row.prompt_tokens or 0),
+            "completion_tokens": int(row.completion_tokens or 0),
+            "total_tokens": int(row.total_tokens or 0),
+            "estimated_cost": float(row.estimated_cost or 0.0),
+            "last_request_at": row.last_request_at,
+        }
 
 
 crud_runtime_session = CRUDRuntimeSession(RuntimeSession)

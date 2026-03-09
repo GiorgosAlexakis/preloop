@@ -13,8 +13,14 @@ from preloop.api.common import get_account_for_user
 from preloop.models.crud import crud_account
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
-from preloop.schemas.gateway_usage import AccountGatewayUsageSummaryResponse
+from preloop.schemas.gateway_usage import (
+    AccountRuntimeSessionDetailResponse,
+    AccountRuntimeSessionListResponse,
+    AccountGatewayUsageSearchResponse,
+    AccountGatewayUsageSummaryResponse,
+)
 from preloop.services.model_gateway_usage import ModelGatewayUsageService
+from preloop.services.runtime_session_explorer import RuntimeSessionExplorerService
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +115,94 @@ async def get_account_gateway_usage_summary(
         account=account,
         start_date=start_date,
         end_date=end_date,
+    )
+
+
+@router.get(
+    "/account/gateway-usage/search",
+    response_model=AccountGatewayUsageSearchResponse,
+)
+async def search_account_gateway_usage(
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+    query: Optional[str] = Query(None, min_length=1),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    provider_name: Optional[str] = Query(None),
+    model_alias: Optional[str] = Query(None),
+    flow_id: Optional[str] = Query(None),
+    runtime_session_id: Optional[str] = Query(None),
+    session_source_type: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Search or list indexed gateway interactions for the current account."""
+    return ModelGatewayUsageService(db).search_account_interactions(
+        account=account,
+        query=query,
+        start_date=start_date,
+        end_date=end_date,
+        provider_name=provider_name,
+        model_alias=model_alias,
+        flow_id=flow_id,
+        runtime_session_id=runtime_session_id,
+        session_source_type=session_source_type,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/account/runtime-sessions",
+    response_model=AccountRuntimeSessionListResponse,
+)
+async def list_account_runtime_sessions(
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+    query: Optional[str] = Query(None, min_length=1),
+    session_source_type: Optional[str] = Query(None),
+    status: str = Query("all", pattern="^(all|active|ended)$"),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """List runtime sessions for the current account."""
+    return RuntimeSessionExplorerService(db).list_account_sessions(
+        account=account,
+        query=query,
+        session_source_type=session_source_type,
+        status=status,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/account/runtime-sessions/{runtime_session_id}",
+    response_model=AccountRuntimeSessionDetailResponse,
+)
+async def get_account_runtime_session_detail(
+    runtime_session_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+    interaction_query: Optional[str] = Query(None, min_length=1),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    interaction_limit: int = Query(50, ge=1, le=200),
+    interaction_offset: int = Query(0, ge=0),
+):
+    """Return one runtime session with captured interaction details."""
+    return RuntimeSessionExplorerService(db).get_account_session_detail(
+        account=account,
+        runtime_session_id=runtime_session_id,
+        interaction_query=interaction_query,
+        start_date=start_date,
+        end_date=end_date,
+        interaction_limit=interaction_limit,
+        interaction_offset=interaction_offset,
     )
 
 
