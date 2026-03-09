@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from preloop.models.crud import crud_api_usage, crud_gateway_usage_search_document
 from preloop.models.models.account import Account
+from preloop.models.models.ai_model import AIModel
 from preloop.models.models.flow import Flow
+from preloop.schemas.ai_model import AIModelGatewayUsageSummaryResponse
 from preloop.schemas.gateway_usage import (
     AccountGatewayUsageSearchResponse,
     AccountGatewayUsageSummaryResponse,
@@ -187,6 +189,58 @@ class ModelGatewayUsageService:
             ],
         )
 
+    def get_ai_model_summary(
+        self,
+        *,
+        ai_model: AIModel,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> AIModelGatewayUsageSummaryResponse:
+        """Return gateway usage totals for one durable AI model."""
+        start_date, end_date = self._normalize_period(start_date, end_date)
+        totals = crud_api_usage.get_gateway_usage_summary(
+            self.db,
+            account_id=str(ai_model.account_id),
+            ai_model_id=str(ai_model.id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        usage_by_session = crud_api_usage.get_gateway_usage_by_session(
+            self.db,
+            account_id=str(ai_model.account_id),
+            ai_model_id=str(ai_model.id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        requests_by_day = crud_api_usage.get_gateway_usage_timeseries(
+            self.db,
+            account_id=str(ai_model.account_id),
+            ai_model_id=str(ai_model.id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return AIModelGatewayUsageSummaryResponse(
+            ai_model_id=str(ai_model.id),
+            model_name=ai_model.name,
+            provider_name=ai_model.provider_name,
+            model_identifier=ai_model.model_identifier,
+            period_start=start_date,
+            period_end=end_date,
+            total_requests=totals["request_count"],
+            successful_requests=totals["success_count"],
+            failed_requests=totals["error_count"],
+            token_usage=GatewayTokenUsage(
+                prompt_tokens=totals["prompt_tokens"],
+                completion_tokens=totals["completion_tokens"],
+                total_tokens=totals["total_tokens"],
+            ),
+            estimated_cost=totals["estimated_cost"],
+            requests_by_day=[GatewayUsageByDay(**row) for row in requests_by_day],
+            usage_by_session=[
+                self._session_row_to_schema(row) for row in usage_by_session
+            ],
+        )
+
     def search_account_interactions(
         self,
         *,
@@ -194,6 +248,7 @@ class ModelGatewayUsageService:
         query: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        ai_model_id: Optional[str] = None,
         provider_name: Optional[str] = None,
         model_alias: Optional[str] = None,
         flow_id: Optional[str] = None,
@@ -210,6 +265,7 @@ class ModelGatewayUsageService:
             start_date=start_date,
             end_date=end_date,
             query=query,
+            ai_model_id=ai_model_id,
             provider_name=provider_name,
             model_alias=model_alias,
             flow_id=flow_id,
@@ -294,6 +350,7 @@ class ModelGatewayUsageService:
     @staticmethod
     def _session_row_to_schema(row) -> GatewayUsageBySession:
         return GatewayUsageBySession(
+            ai_model_id=row["ai_model_id"],
             runtime_session_id=row["runtime_session_id"],
             session_source_type=row["session_source_type"],
             session_source_id=row["session_source_id"],
@@ -317,6 +374,7 @@ class ModelGatewayUsageService:
     def _search_row_to_schema(item) -> GatewayUsageSearchResultItem:
         return GatewayUsageSearchResultItem(
             api_usage_id=item["api_usage_id"],
+            ai_model_id=item["ai_model_id"],
             timestamp=item["timestamp"],
             status_code=item["status_code"],
             outcome=item["outcome"],
@@ -334,6 +392,9 @@ class ModelGatewayUsageService:
             runtime_principal_type=item["runtime_principal_type"],
             runtime_principal_id=item["runtime_principal_id"],
             runtime_principal_name=item["runtime_principal_name"],
+            auth_subject_type=item["auth_subject_type"],
+            api_key_id=item["api_key_id"],
+            api_key_name=item["api_key_name"],
             estimated_cost=item["estimated_cost"],
             token_usage=GatewayTokenUsage(
                 prompt_tokens=item["prompt_tokens"],

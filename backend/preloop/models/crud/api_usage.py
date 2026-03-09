@@ -269,6 +269,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         end_date: datetime,
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
+        ai_model_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get aggregated gateway usage totals for an account or flow."""
         query = db.query(
@@ -298,6 +299,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.flow_id == flow_id)
         if runtime_session_id:
             query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
+        if ai_model_id:
+            query = query.filter(ApiUsage.ai_model_id == ai_model_id)
 
         row = query.one()
         return {
@@ -501,6 +504,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         )
         rows = (
             db.query(
+                ApiUsage.ai_model_id,
                 RuntimeSession.id.label("runtime_session_id"),
                 session_source_type.label("session_source_type"),
                 session_source_id.label("session_source_id"),
@@ -537,6 +541,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
                 ApiUsage.timestamp < end_date,
             )
             .group_by(
+                ApiUsage.ai_model_id,
                 RuntimeSession.id,
                 session_source_type,
                 session_source_id,
@@ -555,6 +560,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         )
         return [
             {
+                "ai_model_id": str(row.ai_model_id) if row.ai_model_id else None,
                 "runtime_session_id": (
                     str(row.runtime_session_id) if row.runtime_session_id else None
                 ),

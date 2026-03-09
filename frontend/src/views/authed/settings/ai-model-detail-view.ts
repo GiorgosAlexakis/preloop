@@ -1,0 +1,885 @@
+import { LitElement, html, css, unsafeCSS } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/badge/badge.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '../../../components/view-header.ts';
+import {
+  getAIModel,
+  getAIModelGatewayUsageSearch,
+  getAIModelGatewayUsageSummary,
+  getAIModelRuntimeSessions,
+  type GatewayUsageSummaryParams,
+} from '../../../api';
+import type {
+  AIModel,
+  AIModelGatewayUsageSearchResponse,
+  AIModelGatewayUsageSummaryResponse,
+  AIModelRuntimeSessionListResponse,
+  GatewayUsageByDay,
+  GatewayUsageSearchResultItem,
+  RuntimeSessionSummary,
+} from '../../../types';
+import consoleStyles from '../../../styles/console-styles.css?inline';
+
+type DateRangePreset = 'last-7' | 'last-30' | 'last-90' | 'all' | 'custom';
+
+@customElement('ai-model-detail-view')
+export class AIModelDetailView extends LitElement {
+  @property({ type: String })
+  modelId = '';
+
+  @state()
+  private model: AIModel | null = null;
+
+  @state()
+  private summary: AIModelGatewayUsageSummaryResponse | null = null;
+
+  @state()
+  private sessions: AIModelRuntimeSessionListResponse | null = null;
+
+  @state()
+  private interactions: AIModelGatewayUsageSearchResponse | null = null;
+
+  @state()
+  private loading = true;
+
+  @state()
+  private error: string | null = null;
+
+  @state()
+  private selectedRange: DateRangePreset = 'last-30';
+
+  @state()
+  private startDate = '';
+
+  @state()
+  private endDate = '';
+
+  @state()
+  private interactionQuery = '';
+
+  private initialized = false;
+
+  static styles = [
+    unsafeCSS(consoleStyles),
+    css`
+      :host {
+        display: block;
+      }
+
+      .page,
+      .stack,
+      .daily-list,
+      .session-list,
+      .interaction-list {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .page,
+      .stack {
+        gap: var(--sl-spacing-large);
+      }
+
+      .filters-grid,
+      .interaction-toolbar {
+        display: flex;
+        gap: var(--sl-spacing-medium);
+        flex-wrap: wrap;
+        align-items: end;
+      }
+
+      .filters-grid sl-select,
+      .filters-grid sl-input,
+      .interaction-toolbar sl-input {
+        min-width: 180px;
+      }
+
+      .interaction-toolbar sl-input {
+        min-width: 280px;
+      }
+
+      .filters-actions {
+        display: flex;
+        gap: var(--sl-spacing-small);
+        margin-left: auto;
+      }
+
+      .period-caption,
+      .meta-line,
+      .session-meta,
+      .interaction-meta,
+      .interaction-excerpt,
+      .stat-detail {
+        color: var(--sl-color-neutral-600);
+        font-size: var(--sl-font-size-small);
+        overflow-wrap: anywhere;
+      }
+
+      .period-caption {
+        margin-top: var(--sl-spacing-small);
+      }
+
+      .model-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sl-spacing-medium);
+        flex-wrap: wrap;
+      }
+
+      .model-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--sl-color-neutral-900);
+      }
+
+      .badge-row,
+      .model-metadata {
+        display: flex;
+        gap: var(--sl-spacing-small);
+        flex-wrap: wrap;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: var(--sl-spacing-medium);
+      }
+
+      .stat-card {
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-0);
+      }
+
+      .stat-label {
+        color: var(--sl-color-neutral-600);
+        font-size: var(--sl-font-size-small);
+        margin-bottom: var(--sl-spacing-2x-small);
+      }
+
+      .stat-value {
+        font-size: 1.5rem;
+        line-height: 1.2;
+        font-weight: 700;
+        color: var(--sl-color-neutral-900);
+      }
+
+      .daily-row,
+      .session-row {
+        display: grid;
+        gap: var(--sl-spacing-small);
+        align-items: center;
+        padding: var(--sl-spacing-small) 0;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+
+      .daily-row {
+        grid-template-columns: minmax(110px, 140px) minmax(0, 1fr) 90px 120px;
+      }
+
+      .session-row {
+        grid-template-columns: minmax(0, 2fr) 90px 120px 100px 170px;
+      }
+
+      .daily-row:last-child,
+      .session-row:last-child,
+      .interaction-row:last-child {
+        border-bottom: none;
+      }
+
+      .trend-bar {
+        height: 10px;
+        border-radius: 999px;
+        background: var(--sl-color-neutral-100);
+        overflow: hidden;
+      }
+
+      .trend-bar-fill {
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          var(--sl-color-primary-400),
+          var(--sl-color-primary-600)
+        );
+        border-radius: 999px;
+      }
+
+      .session-primary {
+        min-width: 0;
+      }
+
+      .session-title,
+      .interaction-title {
+        font-weight: 600;
+        color: var(--sl-color-neutral-900);
+        overflow-wrap: anywhere;
+      }
+
+      .session-link {
+        color: var(--sl-color-primary-700);
+        text-decoration: none;
+      }
+
+      .session-link:hover {
+        text-decoration: underline;
+      }
+
+      .interaction-row {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-x-small);
+        padding: var(--sl-spacing-medium) 0;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+
+      .interaction-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--sl-spacing-small);
+      }
+
+      .cell-numeric {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .empty-state,
+      .loading-state {
+        text-align: center;
+        padding: var(--sl-spacing-x-large);
+        color: var(--sl-color-neutral-600);
+      }
+
+      .empty-state sl-icon,
+      .loading-state sl-spinner {
+        font-size: 2rem;
+        margin-bottom: var(--sl-spacing-small);
+      }
+
+      @media (max-width: 720px) {
+        .filters-actions {
+          margin-left: 0;
+          width: 100%;
+        }
+
+        .daily-row,
+        .session-row {
+          grid-template-columns: 1fr;
+        }
+
+        .cell-numeric {
+          text-align: left;
+        }
+      }
+    `,
+  ];
+
+  onBeforeEnter(location: { params: { modelId?: string } }) {
+    const nextModelId = location.params.modelId ?? '';
+    const changed = this.modelId !== nextModelId;
+    this.modelId = nextModelId;
+
+    if (this.initialized && changed) {
+      void this.loadData();
+    }
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+
+    if (!this.initialized) {
+      this.applyPresetDates(this.selectedRange);
+      this.initialized = true;
+      if (this.modelId) {
+        void this.loadData();
+      }
+    }
+  }
+
+  private async loadData() {
+    if (!this.modelId) {
+      this.error = 'Missing AI model id.';
+      this.loading = false;
+      return;
+    }
+
+    this.loading = true;
+    this.error = null;
+
+    try {
+      this.model = await getAIModel(this.modelId);
+    } catch (error) {
+      this.error =
+        error instanceof Error ? error.message : 'Failed to fetch AI model';
+      this.model = null;
+      this.summary = null;
+      this.sessions = null;
+      this.interactions = null;
+      this.loading = false;
+      return;
+    }
+
+    try {
+      const params = this.buildSummaryParams();
+      const [summary, sessions, interactions] = await Promise.all([
+        getAIModelGatewayUsageSummary(this.modelId, params),
+        getAIModelRuntimeSessions(this.modelId, {
+          ...params,
+          limit: 10,
+          status: 'all',
+        }),
+        getAIModelGatewayUsageSearch(this.modelId, {
+          ...params,
+          query: this.interactionQuery.trim() || undefined,
+          limit: 10,
+        }),
+      ]);
+      this.summary = summary;
+      this.sessions = sessions;
+      this.interactions = interactions;
+    } catch (error) {
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to fetch AI model observability data';
+      this.summary = null;
+      this.sessions = null;
+      this.interactions = null;
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private buildSummaryParams(): GatewayUsageSummaryParams {
+    const params: GatewayUsageSummaryParams = {};
+
+    if (this.startDate) {
+      params.startDate = new Date(`${this.startDate}T00:00:00`).toISOString();
+    }
+    if (this.endDate) {
+      params.endDate = new Date(`${this.endDate}T23:59:59.999`).toISOString();
+    }
+
+    return params;
+  }
+
+  private getLocalDateString(date: Date): string {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private applyPresetDates(range: Exclude<DateRangePreset, 'custom'>) {
+    if (range === 'all') {
+      this.startDate = '';
+      this.endDate = '';
+      return;
+    }
+
+    const today = new Date();
+    const startDate = new Date(today);
+    const days = range === 'last-7' ? 7 : range === 'last-30' ? 30 : 90;
+    startDate.setDate(startDate.getDate() - (days - 1));
+
+    this.startDate = this.getLocalDateString(startDate);
+    this.endDate = this.getLocalDateString(today);
+  }
+
+  private handleRangeChange(event: Event) {
+    const value = (event.target as HTMLInputElement & { value: string })
+      .value as DateRangePreset;
+    this.selectedRange = value;
+
+    if (value !== 'custom') {
+      this.applyPresetDates(value);
+      void this.loadData();
+    }
+  }
+
+  private handleStartDateChange(event: Event) {
+    this.startDate = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+    this.selectedRange = 'custom';
+  }
+
+  private handleEndDateChange(event: Event) {
+    this.endDate = (event.target as HTMLInputElement & { value: string }).value;
+    this.selectedRange = 'custom';
+  }
+
+  private handleInteractionQueryChange(event: Event) {
+    this.interactionQuery = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private async applyFilters() {
+    if (this.startDate && this.endDate && this.startDate > this.endDate) {
+      this.error = 'Start date must be earlier than end date.';
+      return;
+    }
+
+    await this.loadData();
+  }
+
+  private async clearFilters() {
+    this.selectedRange = 'last-30';
+    this.applyPresetDates('last-30');
+    this.interactionQuery = '';
+    await this.loadData();
+  }
+
+  private formatNumber(value: number | null | undefined): string {
+    return typeof value === 'number' ? value.toLocaleString() : '0';
+  }
+
+  private formatCost(value: number | null | undefined): string {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return '$0.00';
+    }
+    if (value === 0) {
+      return '$0.00';
+    }
+    return value >= 0.01 ? `$${value.toFixed(2)}` : `$${value.toFixed(4)}`;
+  }
+
+  private formatPercent(numerator: number, denominator: number): string {
+    if (denominator === 0) {
+      return '0.0%';
+    }
+    return `${((numerator / denominator) * 100).toFixed(1)}%`;
+  }
+
+  private formatDateLabel(value: string): string {
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(value));
+  }
+
+  private formatDateTime(value: string | null | undefined): string {
+    if (!value) {
+      return 'Unknown';
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(value));
+  }
+
+  private getSourceLabel(sourceType: string | null | undefined): string {
+    if (!sourceType) {
+      return 'Runtime session';
+    }
+    if (sourceType === 'flow_execution') {
+      return 'Flow execution';
+    }
+    return sourceType
+      .split(/[_-]+/g)
+      .filter(Boolean)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(' ');
+  }
+
+  private getSessionDisplayName(session: RuntimeSessionSummary): string {
+    return (
+      session.runtime_principal_name ??
+      session.flow_name ??
+      session.session_reference ??
+      `${this.getSourceLabel(session.session_source_type)} ${session.session_source_id}`
+    );
+  }
+
+  private renderStatCard(label: string, value: string, detail: string) {
+    return html`
+      <div class="stat-card">
+        <div class="stat-label">${label}</div>
+        <div class="stat-value">${value}</div>
+        <div class="stat-detail">${detail}</div>
+      </div>
+    `;
+  }
+
+  private renderDailyUsage(days: GatewayUsageByDay[]) {
+    if (days.length === 0) {
+      return html`
+        <div class="empty-state">
+          <sl-icon name="bar-chart"></sl-icon>
+          <div>No model activity was recorded for the selected period.</div>
+        </div>
+      `;
+    }
+
+    const maxRequests = Math.max(...days.map((day) => day.request_count), 1);
+
+    return html`
+      <div class="daily-list">
+        ${days.map(
+          (day) => html`
+            <div class="daily-row">
+              <div>${this.formatDateLabel(day.date)}</div>
+              <div class="trend-bar">
+                <div
+                  class="trend-bar-fill"
+                  style=${`width: ${(day.request_count / maxRequests) * 100}%`}
+                ></div>
+              </div>
+              <div class="cell-numeric">
+                ${this.formatNumber(day.request_count)} req
+              </div>
+              <div class="cell-numeric">
+                ${this.formatCost(day.estimated_cost)}
+              </div>
+            </div>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderSessions() {
+    if (!this.sessions || this.sessions.items.length === 0) {
+      return html`
+        <div class="empty-state">
+          <sl-icon name="collection"></sl-icon>
+          <div>No runtime sessions used this model in the selected period.</div>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="session-list">
+        ${this.sessions.items.map(
+          (session) => html`
+            <div class="session-row">
+              <div class="session-primary">
+                <div class="session-title">
+                  <a
+                    class="session-link"
+                    href=${`/console/runtime-sessions?sessionId=${session.id}`}
+                  >
+                    ${this.getSessionDisplayName(session)}
+                  </a>
+                </div>
+                <div class="session-meta">
+                  ${this.getSourceLabel(session.session_source_type)}
+                  ${session.session_reference
+                    ? html` · Session <code>${session.session_reference}</code>`
+                    : ''}
+                </div>
+                ${session.flow_execution_id
+                  ? html`
+                      <div class="session-meta">
+                        Flow execution
+                        <a
+                          class="session-link"
+                          href=${`/console/flows/executions/${session.flow_execution_id}`}
+                        >
+                          ${session.flow_execution_id}
+                        </a>
+                      </div>
+                    `
+                  : ''}
+              </div>
+              <div class="cell-numeric">
+                ${this.formatNumber(session.total_requests)}
+              </div>
+              <div class="cell-numeric">
+                ${this.formatNumber(session.token_usage.total_tokens)}
+              </div>
+              <div class="cell-numeric">
+                ${this.formatCost(session.estimated_cost)}
+              </div>
+              <div>
+                ${this.formatDateTime(
+                  session.last_request_at || session.last_activity_at
+                )}
+              </div>
+            </div>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderInteraction(item: GatewayUsageSearchResultItem) {
+    return html`
+      <div class="interaction-row">
+        <div class="interaction-header">
+          <div>
+            <div class="interaction-title">${item.method} ${item.endpoint}</div>
+            <div class="interaction-meta">
+              ${this.formatDateTime(item.timestamp)}
+              ${item.session_reference
+                ? html` · Session <code>${item.session_reference}</code>`
+                : ''}
+              ${item.runtime_session_id
+                ? html`
+                    ·
+                    <a
+                      class="session-link"
+                      href=${`/console/runtime-sessions?sessionId=${item.runtime_session_id}`}
+                    >
+                      Open runtime session
+                    </a>
+                  `
+                : ''}
+            </div>
+          </div>
+          <sl-badge variant=${item.outcome === 'error' ? 'danger' : 'success'}>
+            ${item.outcome}
+          </sl-badge>
+        </div>
+        <div class="interaction-excerpt">${item.excerpt}</div>
+        <div class="interaction-meta">
+          ${this.formatNumber(item.token_usage.total_tokens)} tokens ·
+          ${this.formatCost(item.estimated_cost)}
+          ${item.flow_name ? html` · ${item.flow_name}` : ''}
+          ${item.runtime_principal_name
+            ? html` · Principal ${item.runtime_principal_name}`
+            : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderInteractions() {
+    if (!this.interactions || this.interactions.items.length === 0) {
+      return html`
+        <div class="empty-state">
+          <sl-icon name="search"></sl-icon>
+          <div>
+            ${this.interactionQuery.trim()
+              ? 'No captured interactions matched this model search.'
+              : 'No captured interactions are available for this model yet.'}
+          </div>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="interaction-list">
+        ${this.interactions.items.map((item) => this.renderInteraction(item))}
+      </div>
+    `;
+  }
+
+  private renderSummarySection() {
+    if (!this.summary) {
+      return html`
+        <div class="empty-state">
+          <sl-icon name="cpu"></sl-icon>
+          <div>Model-scoped usage summary is not available yet.</div>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="stack">
+        <div class="summary-grid">
+          ${this.renderStatCard(
+            'Requests',
+            this.formatNumber(this.summary.total_requests),
+            `${this.formatNumber(this.summary.successful_requests)} succeeded, ${this.formatNumber(this.summary.failed_requests)} failed`
+          )}
+          ${this.renderStatCard(
+            'Estimated Cost',
+            this.formatCost(this.summary.estimated_cost),
+            `${this.formatPercent(this.summary.successful_requests, this.summary.total_requests)} success rate`
+          )}
+          ${this.renderStatCard(
+            'Total Tokens',
+            this.formatNumber(this.summary.token_usage.total_tokens),
+            `${this.formatNumber(this.summary.token_usage.prompt_tokens)} prompt, ${this.formatNumber(this.summary.token_usage.completion_tokens)} completion`
+          )}
+          ${this.renderStatCard(
+            'Tracked Period',
+            this.formatDateTime(this.summary.period_end),
+            `${this.formatDateTime(this.summary.period_start)} to ${this.formatDateTime(this.summary.period_end)}`
+          )}
+        </div>
+        <div>
+          <div
+            class="meta-line"
+            style="margin-bottom: var(--sl-spacing-small);"
+          >
+            Daily requests and spend for this model
+          </div>
+          ${this.renderDailyUsage(this.summary.requests_by_day)}
+        </div>
+      </div>
+    `;
+  }
+
+  render() {
+    const headerText = this.model?.name || 'AI Model';
+
+    return html`
+      <view-header headerText=${headerText} width="extra-wide">
+        <div slot="main-column">
+          <sl-button href="/console/settings/ai-models">
+            <sl-icon slot="prefix" name="arrow-left"></sl-icon>
+            Back to AI Models
+          </sl-button>
+        </div>
+      </view-header>
+      <div class="column-layout dashboard extra-wide">
+        <div class="main-column">
+          <div class="page">
+            <sl-card>
+              <div slot="header" class="model-heading">
+                <div class="model-title">Model Observability</div>
+                <div class="badge-row">
+                  ${this.model?.provider_name
+                    ? html`
+                        <sl-badge variant="neutral">
+                          ${this.model.provider_name}
+                        </sl-badge>
+                      `
+                    : ''}
+                  ${this.model?.is_default
+                    ? html`<sl-badge variant="success">Default</sl-badge>`
+                    : ''}
+                </div>
+              </div>
+              ${this.model
+                ? html`
+                    <div class="model-metadata">
+                      <span><strong>Name:</strong> ${this.model.name}</span>
+                      <span>
+                        <strong>Identifier:</strong>
+                        <code>${this.model.model_identifier}</code>
+                      </span>
+                      <span>
+                        <strong>Updated:</strong>
+                        ${this.formatDateTime(this.model.updated_at)}
+                      </span>
+                    </div>
+                  `
+                : html`
+                    <div class="meta-line">
+                      Loading model metadata and observability surfaces.
+                    </div>
+                  `}
+            </sl-card>
+
+            <sl-card>
+              <div slot="header" class="model-title">Filters</div>
+              <div class="filters-grid">
+                <sl-select
+                  label="Date range"
+                  value=${this.selectedRange}
+                  @sl-change=${this.handleRangeChange}
+                >
+                  <sl-option value="last-7">Last 7 days</sl-option>
+                  <sl-option value="last-30">Last 30 days</sl-option>
+                  <sl-option value="last-90">Last 90 days</sl-option>
+                  <sl-option value="all">All time</sl-option>
+                  <sl-option value="custom">Custom</sl-option>
+                </sl-select>
+                <sl-input
+                  type="date"
+                  label="Start date"
+                  .value=${this.startDate}
+                  @sl-change=${this.handleStartDateChange}
+                ></sl-input>
+                <sl-input
+                  type="date"
+                  label="End date"
+                  .value=${this.endDate}
+                  @sl-change=${this.handleEndDateChange}
+                ></sl-input>
+                <sl-input
+                  label="Captured interaction search"
+                  placeholder="Search prompts, outputs, or metadata"
+                  .value=${this.interactionQuery}
+                  @sl-input=${this.handleInteractionQueryChange}
+                ></sl-input>
+                <div class="filters-actions">
+                  <sl-button variant="primary" @click=${this.applyFilters}>
+                    Apply
+                  </sl-button>
+                  <sl-button variant="default" @click=${this.clearFilters}>
+                    Reset
+                  </sl-button>
+                </div>
+              </div>
+              ${this.summary
+                ? html`
+                    <div class="period-caption">
+                      Showing model-scoped activity from
+                      ${this.formatDateTime(this.summary.period_start)} to
+                      ${this.formatDateTime(this.summary.period_end)}.
+                    </div>
+                  `
+                : ''}
+            </sl-card>
+
+            ${this.error
+              ? html`
+                  <sl-alert variant="danger" open>
+                    <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+                    ${this.error}
+                  </sl-alert>
+                `
+              : ''}
+            ${this.loading
+              ? html`
+                  <sl-card>
+                    <div class="loading-state">
+                      <sl-spinner></sl-spinner>
+                      <div>Loading AI model observability...</div>
+                    </div>
+                  </sl-card>
+                `
+              : html`
+                  <sl-card>
+                    <div slot="header" class="model-title">Usage Summary</div>
+                    ${this.renderSummarySection()}
+                  </sl-card>
+
+                  <sl-card>
+                    <div slot="header" class="model-title">
+                      Runtime Sessions
+                    </div>
+                    <div class="meta-line" style="margin-bottom: 0.75rem;">
+                      Recent sessions that used this model during the selected
+                      period
+                    </div>
+                    ${this.renderSessions()}
+                  </sl-card>
+
+                  <sl-card>
+                    <div slot="header" class="model-title">
+                      Captured Interactions
+                    </div>
+                    <div class="meta-line" style="margin-bottom: 0.75rem;">
+                      Indexed prompts, outputs, and metadata scoped to this
+                      model
+                    </div>
+                    ${this.renderInteractions()}
+                  </sl-card>
+                `}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}

@@ -57,6 +57,13 @@ def _log_tool_execution_async(
     result: Optional[str] = None,
     execution_time_ms: Optional[int] = None,
     execution_id: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    runtime_session_id: Optional[str] = None,
+    runtime_principal_type: Optional[str] = None,
+    runtime_principal_id: Optional[str] = None,
+    runtime_principal_name: Optional[str] = None,
+    api_key_id: Optional[str] = None,
+    api_key_name: Optional[str] = None,
 ) -> None:
     """Log a tool execution asynchronously (fire-and-forget)."""
     try:
@@ -96,6 +103,13 @@ def _log_tool_execution_async(
             result=status,
             duration_ms=execution_time_ms,
             execution_id=execution_uuid,
+            correlation_id=correlation_id,
+            runtime_session_id=runtime_session_id,
+            runtime_principal_type=runtime_principal_type,
+            runtime_principal_id=runtime_principal_id,
+            runtime_principal_name=runtime_principal_name,
+            api_key_id=api_key_id,
+            api_key_name=api_key_name,
         )
     except Exception as e:
         logger.debug(f"Failed to log tool execution to audit: {e}")
@@ -119,6 +133,8 @@ class UserContext:
         runtime_principal_type: Optional[str] = None,
         runtime_principal_id: Optional[str] = None,
         runtime_principal_name: Optional[str] = None,
+        api_key_id: Optional[str] = None,
+        api_key_name: Optional[str] = None,
     ):
         self.user_id = user_id
         self.account_id = account_id
@@ -134,6 +150,8 @@ class UserContext:
         self.runtime_principal_type = runtime_principal_type
         self.runtime_principal_id = runtime_principal_id
         self.runtime_principal_name = runtime_principal_name
+        self.api_key_id = api_key_id
+        self.api_key_name = api_key_name
 
 
 class DynamicMCPServer:
@@ -360,6 +378,12 @@ class DynamicMCPServer:
                     result=result_text[:500] if result_text else None,
                     execution_time_ms=execution_time_ms,
                     execution_id=user_context.flow_execution_id,
+                    runtime_session_id=user_context.runtime_session_id,
+                    runtime_principal_type=user_context.runtime_principal_type,
+                    runtime_principal_id=user_context.runtime_principal_id,
+                    runtime_principal_name=user_context.runtime_principal_name,
+                    api_key_id=user_context.api_key_id,
+                    api_key_name=user_context.api_key_name,
                 )
 
                 return [types.TextContent(type="text", text=result_text)]
@@ -374,6 +398,20 @@ class DynamicMCPServer:
                     tool_args=arguments or {},
                     status="failed",
                     result=str(e)[:500],
+                    runtime_session_id=(
+                        user_context.runtime_session_id if user_context else None
+                    ),
+                    runtime_principal_type=(
+                        user_context.runtime_principal_type if user_context else None
+                    ),
+                    runtime_principal_id=(
+                        user_context.runtime_principal_id if user_context else None
+                    ),
+                    runtime_principal_name=(
+                        user_context.runtime_principal_name if user_context else None
+                    ),
+                    api_key_id=(user_context.api_key_id if user_context else None),
+                    api_key_name=(user_context.api_key_name if user_context else None),
                 )
                 return [
                     types.TextContent(
@@ -419,6 +457,12 @@ class DynamicMCPServer:
                 has_tracker=user_data.get("has_tracker", False),
                 enabled_default_tools=user_data.get("enabled_default_tools", []),
                 enabled_proxied_tools=user_data.get("enabled_proxied_tools", []),
+                runtime_session_id=user_data.get("runtime_session_id"),
+                runtime_principal_type=user_data.get("runtime_principal_type"),
+                runtime_principal_id=user_data.get("runtime_principal_id"),
+                runtime_principal_name=user_data.get("runtime_principal_name"),
+                api_key_id=user_data.get("api_key_id"),
+                api_key_name=user_data.get("api_key_name"),
             )
         except Exception as e:
             logger.error(f"Error extracting user context: {e}", exc_info=True)
@@ -488,6 +532,22 @@ class DynamicMCPServer:
                     tool_configuration_id=config.id if config else None,
                     user_id=getattr(user_context, "user_id", None),
                     execution_id=getattr(user_context, "execution_id", None),
+                    extra_details={
+                        "runtime_session_id": getattr(
+                            user_context, "runtime_session_id", None
+                        ),
+                        "runtime_principal_type": getattr(
+                            user_context, "runtime_principal_type", None
+                        ),
+                        "runtime_principal_id": getattr(
+                            user_context, "runtime_principal_id", None
+                        ),
+                        "runtime_principal_name": getattr(
+                            user_context, "runtime_principal_name", None
+                        ),
+                        "api_key_id": getattr(user_context, "api_key_id", None),
+                        "api_key_name": getattr(user_context, "api_key_name", None),
+                    },
                 )
 
                 logger.info(

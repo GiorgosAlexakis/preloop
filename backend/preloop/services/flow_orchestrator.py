@@ -637,6 +637,11 @@ class FlowExecutionOrchestrator:
 
         now = datetime.now(timezone.utc)
         execution_started_at = getattr(self.execution_log, "start_time", None) or now
+        previous_runtime_session = crud_runtime_session.get_by_source(
+            self.db,
+            session_source_type="flow_execution",
+            session_source_id=str(self.execution_log.id),
+        )
         self.runtime_session = crud_runtime_session.upsert_by_source(
             self.db,
             account_id=self.flow.account_id,
@@ -652,6 +657,40 @@ class FlowExecutionOrchestrator:
         )
         self.db.commit()
         self.db.refresh(self.runtime_session)
+
+        event_type = None
+        if previous_runtime_session is None:
+            event_type = "created"
+        elif ended_at is not None and previous_runtime_session.ended_at != ended_at:
+            event_type = "ended"
+        elif (
+            session_reference is not None
+            and previous_runtime_session.session_reference != session_reference
+        ):
+            event_type = "updated"
+
+        if event_type:
+            try:
+                from preloop.plugins.base import get_plugin_manager
+
+                plugin_manager = get_plugin_manager()
+                audit_service = plugin_manager.get_service("audit_service")
+                if audit_service:
+                    audit_service.log_runtime_session_event(
+                        db=self.db,
+                        account_id=self.flow.account_id,
+                        runtime_session_id=self.runtime_session.id,
+                        event=event_type,
+                        session_source_type=self.runtime_session.session_source_type,
+                        session_source_id=self.runtime_session.session_source_id,
+                        session_reference=self.runtime_session.session_reference,
+                        runtime_principal_type=self.runtime_session.runtime_principal_type,
+                        runtime_principal_id=self.runtime_session.runtime_principal_id,
+                        runtime_principal_name=self.runtime_session.runtime_principal_name,
+                        flow_execution_id=self.execution_log.id,
+                    )
+            except Exception:
+                logger.debug("Failed to audit runtime session lifecycle", exc_info=True)
         return self.runtime_session
 
     def _create_temporary_api_token(self) -> tuple[Optional[str], Optional[uuid.UUID]]:

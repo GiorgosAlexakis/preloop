@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -112,6 +113,61 @@ func TestPost_Success(t *testing.T) {
 	}
 	if result["id"] != "123" {
 		t.Errorf("expected id '123', got '%s'", result["id"])
+	}
+}
+
+func TestPostMultipart_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+
+		if err := r.ParseMultipartForm(1024 * 1024); err != nil {
+			t.Fatalf("failed to parse multipart request: %v", err)
+		}
+
+		if got := r.FormValue("dry_run"); got != "true" {
+			t.Errorf("expected dry_run=true, got %q", got)
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			t.Fatalf("expected multipart file field: %v", err)
+		}
+		defer file.Close()
+
+		content, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("failed reading multipart file: %v", err)
+		}
+
+		if header.Filename != "policy.yaml" {
+			t.Errorf("expected filename policy.yaml, got %q", header.Filename)
+		}
+		if string(content) != "version: \"1.0\"\n" {
+			t.Errorf("unexpected file content: %q", string(content))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	}))
+	defer server.Close()
+
+	client := NewClientWithToken(server.URL, "tok")
+	var result map[string]bool
+	err := client.PostMultipart(
+		"/upload",
+		map[string]string{"dry_run": "true"},
+		"file",
+		"policy.yaml",
+		[]byte("version: \"1.0\"\n"),
+		&result,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result["ok"] {
+		t.Error("expected ok to be true")
 	}
 }
 

@@ -1,11 +1,17 @@
 """Pydantic schemas for AIModel."""
 
 import uuid
-from typing import Dict, Optional
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from preloop.models.models.mixins import TimestampMixin
+from preloop.schemas.gateway_usage import (
+    GatewayTokenUsage,
+    GatewayUsageByDay,
+    GatewayUsageBySession,
+)
 
 
 class AIModelBase(BaseModel):
@@ -150,3 +156,21 @@ class AIModelRead(AIModelInDBBase):
     """Schema for reading AIModel entries, including timestamps."""
 
     pass
+
+
+class AIModelGatewayUsageSummaryResponse(BaseModel):
+    """Gateway usage summary for one durable AI model."""
+
+    ai_model_id: str
+    model_name: str
+    provider_name: str
+    model_identifier: str
+    period_start: datetime
+    period_end: datetime
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    token_usage: GatewayTokenUsage
+    estimated_cost: float = 0.0
+    requests_by_day: List[GatewayUsageByDay] = Field(default_factory=list)
+    usage_by_session: List[GatewayUsageBySession] = Field(default_factory=list)

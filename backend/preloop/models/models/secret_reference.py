@@ -20,10 +20,10 @@ class SecretReference(Base):
 
     __tablename__ = "secret_reference"
 
-    account_id: Mapped[uuid.UUID] = mapped_column(
+    account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("account.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -37,7 +37,7 @@ class SecretReference(Base):
         JSONB, nullable=True, default=dict
     )
 
-    account: Mapped["Account"] = relationship(
+    account: Mapped[Optional["Account"]] = relationship(
         "Account", back_populates="secret_references"
     )
     ai_models: Mapped[List["AIModel"]] = relationship(

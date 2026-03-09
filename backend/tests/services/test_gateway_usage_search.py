@@ -1,5 +1,6 @@
 """Tests for gateway interaction search corpus helpers."""
 
+from datetime import timedelta
 import hashlib
 from unittest.mock import patch
 
@@ -246,3 +247,35 @@ def test_auto_index_interaction_skips_failures_unless_explicitly_enabled(
     assert "outcome: error" in indexed.searchable_text
     assert "error_detail: Rate limit exceeded" in indexed.searchable_text
     assert "request.input: retry later" in indexed.searchable_text
+
+
+def test_search_account_documents_matches_non_contiguous_terms(db_session, test_user):
+    """Search should use token-aware matching instead of contiguous substring scans."""
+    usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+    )
+    service = GatewayUsageSearchService(db_session)
+    service.index_interaction(
+        usage=usage,
+        request_payload={"input": "Please review the production rollback checklist"},
+        response_payload={"output_text": "Checklist reviewed"},
+    )
+
+    results = crud_gateway_usage_search_document.search_account_documents(
+        db_session,
+        account_id=str(test_user.account_id),
+        start_date=usage.timestamp - timedelta(days=1),
+        end_date=usage.timestamp + timedelta(days=1),
+        query="rollback production",
+    )
+
+    assert results["total"] == 1
+    assert results["items"][0]["api_usage_id"] == str(usage.id)

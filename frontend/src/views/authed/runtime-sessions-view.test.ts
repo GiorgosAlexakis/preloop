@@ -165,6 +165,9 @@ describe('RuntimeSessionsView', () => {
                   runtime_principal_type: 'claude_code',
                   runtime_principal_id: 'workspace-42',
                   runtime_principal_name: 'Claude Workspace',
+                  auth_subject_type: 'api_key',
+                  api_key_id: 'api-key-1',
+                  api_key_name: 'Claude Workspace Token',
                   estimated_cost: 0.12,
                   token_usage: {
                     prompt_tokens: 200,
@@ -179,6 +182,68 @@ describe('RuntimeSessionsView', () => {
                 },
               ],
             },
+            activity_timeline: [
+              {
+                activity_type: 'session_started',
+                timestamp: '2026-03-09T18:00:00Z',
+                title: 'Session started',
+                summary: 'claude-session-42',
+                status: 'info',
+                api_usage_id: null,
+                tool_name: null,
+                server_name: null,
+                auth_subject_type: null,
+                api_key_id: null,
+                api_key_name: null,
+                estimated_cost: null,
+                total_tokens: null,
+              },
+              {
+                activity_type: 'tool_call',
+                timestamp: '2026-03-09T20:00:01Z',
+                title: 'search_issues',
+                summary: 'Found similar issues',
+                status: 'success',
+                api_usage_id: null,
+                tool_name: 'search_issues',
+                server_name: 'preloop-mcp',
+                auth_subject_type: null,
+                api_key_id: null,
+                api_key_name: null,
+                estimated_cost: null,
+                total_tokens: null,
+              },
+              {
+                activity_type: 'model_interaction',
+                timestamp: '2026-03-09T20:00:00Z',
+                title: 'anthropic/claude-sonnet-4',
+                summary: 'POST /anthropic/v1/messages',
+                status: 'success',
+                api_usage_id: 'usage-1',
+                tool_name: null,
+                server_name: null,
+                auth_subject_type: 'api_key',
+                api_key_id: 'api-key-1',
+                api_key_name: 'Claude Workspace Token',
+                estimated_cost: 0.12,
+                total_tokens: 275,
+              },
+              {
+                activity_type: 'session_ended',
+                timestamp: '2026-03-09T20:30:00Z',
+                title: 'Session ended',
+                summary: 'claude-session-42',
+                status: 'completed',
+                api_usage_id: null,
+                tool_name: null,
+                server_name: null,
+                auth_subject_type: null,
+                api_key_id: null,
+                api_key_name: null,
+                estimated_cost: null,
+                total_tokens: null,
+              },
+            ],
           }),
           {
             status: 200,
@@ -217,9 +282,14 @@ describe('RuntimeSessionsView', () => {
     const content = element.shadowRoot?.textContent || '';
     expect(content).to.contain('Runtime Sessions');
     expect(content).to.contain('Claude Workspace');
+    expect(content).to.contain('Activity Timeline');
+    expect(content).to.contain('search_issues');
     expect(content).to.contain('Captured Interactions');
     expect(content).to.contain('deployment risk review');
     expect(content).to.contain('anthropic/claude-sonnet-4');
+    expect(content).to.contain('Session started');
+    expect(content).to.contain('Session ended');
+    expect(content).to.contain('Claude Workspace Token');
 
     const listCall = fetchStub
       .getCalls()

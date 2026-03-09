@@ -94,6 +94,7 @@ class VaultKVV2SecretBackend:
         field = (meta_data or {}).get("field")
         if field is not None and not isinstance(field, str):
             raise ValueError("credentials_meta_data.field must be a string")
+        self._normalize_external_ref(external_ref)
 
     def resolve(self, secret_ref: SecretReference) -> str:
         self.validate_reference(
@@ -112,12 +113,40 @@ class VaultKVV2SecretBackend:
         return str(value)
 
     def _build_secret_path(self, external_ref: str) -> str:
-        raw_ref = external_ref.strip().strip("/")
-        if not raw_ref:
-            raise ValueError("credentials_external_ref must not be empty")
+        raw_ref = self._normalize_external_ref(external_ref)
         prefix = settings.vault_kv_v2.path_prefix.strip().strip("/")
         path = f"{prefix}/{raw_ref}" if prefix else raw_ref
         return f"{settings.vault_kv_v2.mount.strip('/')}/data/{path}"
+
+    @staticmethod
+    def _normalize_external_ref(external_ref: str) -> str:
+        raw_ref = external_ref.strip()
+        if not raw_ref:
+            raise ValueError("credentials_external_ref must not be empty")
+        if raw_ref != urllib_parse.unquote(raw_ref):
+            raise ValueError(
+                "credentials_external_ref must not contain percent-encoded characters"
+            )
+
+        normalized_parts: list[str] = []
+        for part in raw_ref.split("/"):
+            normalized_part = part.strip()
+            if normalized_part in {"", ".", ".."}:
+                raise ValueError(
+                    "credentials_external_ref must be a relative secret path "
+                    "without empty or traversal segments"
+                )
+            if "\\" in normalized_part:
+                raise ValueError(
+                    "credentials_external_ref must use forward slashes only"
+                )
+            if any(ord(char) < 32 for char in normalized_part):
+                raise ValueError(
+                    "credentials_external_ref must not contain control characters"
+                )
+            normalized_parts.append(normalized_part)
+
+        return "/".join(normalized_parts)
 
     def _read_secret(self, path: str, meta_data: dict) -> dict:
         base_url = settings.vault_kv_v2.url.rstrip("/")
@@ -187,7 +216,7 @@ class SecretService:
         self,
         db: Session,
         *,
-        account_id: UUID,
+        account_id: Optional[UUID],
         name: str,
         secret_kind: str,
         secret_value: str,
@@ -232,7 +261,7 @@ class SecretService:
         self,
         db: Session,
         *,
-        account_id: UUID,
+        account_id: Optional[UUID],
         name: str,
         secret_kind: str,
         backend_type: str,

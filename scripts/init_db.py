@@ -136,7 +136,7 @@ def init_db(force: bool):
 
         # AI model setup
         ai_provider = os.getenv("AI_PROVIDER", "openai")
-        ai_model_name = os.getenv("AI_MODEL_NAME", "o4-mini")
+        ai_model_name = os.getenv("AI_MODEL_NAME", "gpt-5.3-codex")
         ai_model_api_key = os.getenv("OPENAI_API_KEY")
         ai_model_api_url = os.getenv("AI_API_URL", "https://api.openai.com/v1")
         ai_model_version = os.getenv("AI_MODEL_VERSION", ai_model_name)

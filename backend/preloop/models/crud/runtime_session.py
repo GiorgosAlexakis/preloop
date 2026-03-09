@@ -99,6 +99,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         query: Optional[str] = None,
+        ai_model_id: Optional[str] = None,
         session_source_type: Optional[str] = None,
         status: str = "all",
         limit: int = 20,
@@ -117,6 +118,23 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                     self.model.runtime_principal_name.ilike(normalized_query),
                 )
             )
+        if ai_model_id:
+            matching_session_ids = db.query(ApiUsage.runtime_session_id).filter(
+                ApiUsage.runtime_session_id.isnot(None),
+                ApiUsage.action_type == "model_gateway",
+                ApiUsage.ai_model_id == ai_model_id,
+            )
+            if start_date is not None:
+                matching_session_ids = matching_session_ids.filter(
+                    ApiUsage.timestamp >= start_date
+                )
+            if end_date is not None:
+                matching_session_ids = matching_session_ids.filter(
+                    ApiUsage.timestamp < end_date
+                )
+            session_query = session_query.filter(
+                self.model.id.in_(matching_session_ids.distinct())
+            )
         if session_source_type:
             session_query = session_query.filter(
                 self.model.session_source_type == session_source_type
@@ -128,7 +146,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
 
         total = session_query.count()
         usage_join = self._usage_join_conditions(
-            start_date=start_date, end_date=end_date
+            start_date=start_date, end_date=end_date, ai_model_id=ai_model_id
         )
 
         rows = (
@@ -217,10 +235,11 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         runtime_session_id: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        ai_model_id: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Return one runtime session with aggregated gateway usage."""
         usage_join = self._usage_join_conditions(
-            start_date=start_date, end_date=end_date
+            start_date=start_date, end_date=end_date, ai_model_id=ai_model_id
         )
         row = (
             db.query(
@@ -283,7 +302,10 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
 
     @staticmethod
     def _usage_join_conditions(
-        *, start_date: Optional[datetime], end_date: Optional[datetime]
+        *,
+        start_date: Optional[datetime],
+        end_date: Optional[datetime],
+        ai_model_id: Optional[str] = None,
     ):
         conditions = [
             ApiUsage.runtime_session_id == RuntimeSession.id,
@@ -293,6 +315,8 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             conditions.append(ApiUsage.timestamp >= start_date)
         if end_date is not None:
             conditions.append(ApiUsage.timestamp < end_date)
+        if ai_model_id is not None:
+            conditions.append(ApiUsage.ai_model_id == ai_model_id)
         return and_(*conditions)
 
     @staticmethod

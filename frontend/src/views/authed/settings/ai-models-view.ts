@@ -74,6 +74,14 @@ export class AIModelsView extends LitElement {
         text-decoration: none;
         cursor: pointer;
       }
+      .model-link {
+        color: var(--sl-color-primary-700);
+        text-decoration: none;
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      .model-link:hover {
+        text-decoration: underline;
+      }
       .empty-state a:hover {
         text-decoration: underline;
       }
@@ -182,7 +190,14 @@ export class AIModelsView extends LitElement {
                   (model) => model.id,
                   (model) => html`
                     <tr>
-                      <td>${model.name}</td>
+                      <td>
+                        <a
+                          class="model-link"
+                          href=${`/console/settings/ai-models/${model.id}`}
+                        >
+                          ${model.name}
+                        </a>
+                      </td>
                       <td>${model.provider_name}</td>
                       <td>${model.model_identifier}</td>
                       <td>
@@ -204,6 +219,12 @@ export class AIModelsView extends LitElement {
                       </td>
                       <td>
                         <div class="actions">
+                          <sl-button
+                            size="small"
+                            href=${`/console/settings/ai-models/${model.id}`}
+                          >
+                            View
+                          </sl-button>
                           <sl-button
                             size="small"
                             circle

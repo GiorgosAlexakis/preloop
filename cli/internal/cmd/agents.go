@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -91,7 +94,7 @@ var agentsDiscoverCmd = &cobra.Command{
 	Short: "Discover AI agents on this machine",
 	Long: `Scan standard configuration paths for known AI agents, display their
 MCP server configurations, and optionally add their MCP servers to your
-Preloop account and issue scoped API keys.
+Preloop account and issue runtime-scoped session tokens.
 
 Supported agents: Claude Code, Cursor, Windsurf, VSCode/Copilot,
                   Gemini CLI, OpenCode, Codex CLI, OpenClaw.
@@ -103,11 +106,76 @@ Examples:
 	RunE: runAgentsDiscover,
 }
 
+type starterPolicyTool struct {
+	Name                 string                    `json:"name"`
+	Description          string                    `json:"description,omitempty"`
+	Source               string                    `json:"source"`
+	SourceID             string                    `json:"source_id,omitempty"`
+	SourceName           string                    `json:"source_name,omitempty"`
+	Schema               map[string]interface{}    `json:"schema,omitempty"`
+	IsEnabled            bool                      `json:"is_enabled"`
+	HasApprovalCondition bool                      `json:"has_approval_condition"`
+	AccessRules          []starterPolicyAccessRule `json:"access_rules,omitempty"`
+}
+
+type starterPolicyAccessRule struct {
+	Action             string `json:"action"`
+	ConditionType      string `json:"condition_type,omitempty"`
+	Description        string `json:"description,omitempty"`
+	ApprovalWorkflowID string `json:"approval_workflow_id,omitempty"`
+}
+
+type runtimeSessionTokenRequest struct {
+	SessionSourceType    string   `json:"session_source_type"`
+	SessionSourceID      string   `json:"session_source_id"`
+	SessionReference     string   `json:"session_reference,omitempty"`
+	RuntimePrincipalName string   `json:"runtime_principal_name,omitempty"`
+	ExpiresInMinutes     int      `json:"expires_in_minutes,omitempty"`
+	Scopes               []string `json:"scopes,omitempty"`
+	AllowedMCPServers    []string `json:"allowed_mcp_servers,omitempty"`
+}
+
+type runtimeSessionTokenResponse struct {
+	RuntimeSessionID  string `json:"runtime_session_id"`
+	Token             string `json:"token"`
+	ExpiresAt         string `json:"expires_at"`
+	SessionSourceType string `json:"session_source_type"`
+	SessionSourceID   string `json:"session_source_id"`
+	SessionReference  string `json:"session_reference,omitempty"`
+}
+
+// agentsStarterPolicyCmd generates a starter policy suggestion for an MCP server.
+var agentsStarterPolicyCmd = &cobra.Command{
+	Use:   "starter-policy <mcp-server>",
+	Short: "Generate a starter policy for an MCP server",
+	Long: `Generate a scoped starter policy suggestion for a specific MCP server
+using the existing policy generation API.
+
+The generated prompt is limited to the selected server and its discovered tools,
+preserves current account configuration, and prefers approvals for mutating or
+otherwise high-impact tools.
+
+Examples:
+  preloop agents starter-policy github
+  preloop agents starter-policy github --output github-policy.yaml
+  preloop agents starter-policy github --apply
+  preloop agents starter-policy github --apply --yes
+  preloop agents starter-policy github --apply --dry-run`,
+	Args: cobra.ExactArgs(1),
+	RunE: runAgentsStarterPolicy,
+}
+
 func init() {
 	agentsCmd.AddCommand(agentsDiscoverCmd)
+	agentsCmd.AddCommand(agentsStarterPolicyCmd)
 
 	agentsDiscoverCmd.Flags().Bool("add", false, "interactively add discovered MCP servers to your Preloop account")
 	agentsDiscoverCmd.Flags().Bool("json", false, "output discovered agents as JSON")
+	agentsStarterPolicyCmd.Flags().StringP("output", "o", "", "write generated policy YAML to a file")
+	agentsStarterPolicyCmd.Flags().Bool("apply", false, "apply the generated policy immediately")
+	agentsStarterPolicyCmd.Flags().Bool("dry-run", false, "when used with --apply, validate without applying changes")
+	agentsStarterPolicyCmd.Flags().Bool("yes", false, "skip the apply confirmation prompt after previewing changes")
+	agentsStarterPolicyCmd.Flags().Bool("no-context", false, "do not include current account config as context for the LLM")
 }
 
 // runAgentsDiscover scans for AI agents on the machine.
@@ -205,7 +273,9 @@ func addDiscoveredServers(agents []AgentConfig) error {
 	}
 
 	for _, agent := range agents {
-		for name, server := range agent.MCPServers {
+		addedServerNames := make([]string, 0, len(agent.MCPServers))
+		for _, name := range sortedServerNames(agent.MCPServers) {
+			server := agent.MCPServers[name]
 			fmt.Printf("Add MCP server '%s' from %s? (y/N): ", name, agent.Name)
 			var answer string
 			fmt.Scanln(&answer)
@@ -235,30 +305,384 @@ func addDiscoveredServers(agents []AgentConfig) error {
 			}
 
 			fmt.Printf("  ✓ Added MCP server '%s' (ID: %s)\n", result.Name, result.ID)
-
-			// Offer to create a scoped API key
-			fmt.Printf("  Issue a scoped API key for %s agent '%s'? (y/N): ", agent.Name, name)
-			fmt.Scanln(&answer)
-
-			if strings.ToLower(strings.TrimSpace(answer)) == "y" {
-				keyRequest := map[string]interface{}{
-					"name":   fmt.Sprintf("agent:%s:%s", agent.Name, name),
-					"scopes": []string{"mcp:proxy", "tools:read"},
-				}
-				var keyResult struct {
-					Key string `json:"key"`
-				}
-				if err := client.Post("/api/v1/api-keys", keyRequest, &keyResult); err != nil {
-					fmt.Printf("  ✗ Failed to create API key: %v\n", err)
-				} else {
-					fmt.Printf("  🔑 API Key: %s\n", keyResult.Key)
-					fmt.Println("     Store this key securely — it won't be shown again.")
-				}
-			}
+			addedServerNames = append(addedServerNames, result.Name)
 		}
+
+		if len(addedServerNames) == 0 {
+			continue
+		}
+
+		fmt.Printf(
+			"Issue a runtime session token for %s with %d managed MCP server(s)? (y/N): ",
+			agent.Name,
+			len(addedServerNames),
+		)
+		var answer string
+		fmt.Scanln(&answer)
+
+		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+			continue
+		}
+
+		tokenResult, err := issueRuntimeSessionToken(client, agent, addedServerNames)
+		if err != nil {
+			fmt.Printf("  ✗ Failed to create runtime session token: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("  🔑 Runtime Session Token: %s\n", tokenResult.Token)
+		fmt.Printf("     Session: %s / %s\n", tokenResult.SessionSourceType, tokenResult.SessionSourceID)
+		fmt.Printf("     Runtime session ID: %s\n", tokenResult.RuntimeSessionID)
+		if tokenResult.ExpiresAt != "" {
+			fmt.Printf("     Expires at: %s\n", tokenResult.ExpiresAt)
+		}
+		fmt.Println("     Store this token securely — it won't be shown again.")
 	}
 
 	return nil
+}
+
+func sortedServerNames(servers map[string]MCPDef) []string {
+	names := make([]string, 0, len(servers))
+	for name := range servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func issueRuntimeSessionToken(client *api.Client, agent AgentConfig, allowedServers []string) (*runtimeSessionTokenResponse, error) {
+	serverNames := append([]string(nil), allowedServers...)
+	sort.Strings(serverNames)
+
+	request := runtimeSessionTokenRequest{
+		SessionSourceType:    runtimeSessionSourceTypeForAgent(agent.Name),
+		SessionSourceID:      runtimeSessionSourceIDForAgent(agent),
+		SessionReference:     filepath.Clean(agent.ConfigPath),
+		RuntimePrincipalName: runtimePrincipalNameForAgent(agent),
+		ExpiresInMinutes:     120,
+		Scopes:               []string{"mcp:read", "mcp:write"},
+		AllowedMCPServers:    serverNames,
+	}
+
+	var result runtimeSessionTokenResponse
+	if err := client.Post("/api/v1/auth/runtime-sessions/token", request, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func runtimeSessionSourceTypeForAgent(agentName string) string {
+	switch strings.ToLower(strings.TrimSpace(agentName)) {
+	case "claude code":
+		return "claude_code"
+	case "claude desktop":
+		return "claude_desktop"
+	case "codex cli":
+		return "codex"
+	case "openclaw":
+		return "openclaw"
+	default:
+		return "desktop_agent"
+	}
+}
+
+func runtimeSessionSourceIDForAgent(agent AgentConfig) string {
+	sum := sha1.Sum([]byte(strings.ToLower(agent.Name) + "\x00" + filepath.Clean(agent.ConfigPath)))
+	prefix := strings.ToLower(agent.Name)
+	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", ":", "-", ".", "-")
+	prefix = strings.Trim(replacer.Replace(prefix), "-")
+	if prefix == "" {
+		prefix = "agent"
+	}
+	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(sum[:6]))
+}
+
+func runtimePrincipalNameForAgent(agent AgentConfig) string {
+	configBase := filepath.Base(filepath.Clean(agent.ConfigPath))
+	if configBase == "." || configBase == string(filepath.Separator) || configBase == "" {
+		return agent.Name
+	}
+	return fmt.Sprintf("%s (%s)", agent.Name, configBase)
+}
+
+func runAgentsStarterPolicy(cmd *cobra.Command, args []string) error {
+	serverName := args[0]
+	output, _ := cmd.Flags().GetString("output")
+	apply, _ := cmd.Flags().GetBool("apply")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	autoApprove, _ := cmd.Flags().GetBool("yes")
+	noContext, _ := cmd.Flags().GetBool("no-context")
+
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	if !client.IsAuthenticated() {
+		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+	}
+
+	matchedServerName, tools, err := findStarterPolicyTools(client, serverName)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"Generating starter policy for MCP server '%s' (%d discovered tool(s))...\n",
+		matchedServerName,
+		len(tools),
+	)
+
+	prompt := buildStarterPolicyPrompt(matchedServerName, tools)
+	result, err := generatePolicyFromPrompt(client, prompt, !noContext)
+	if err != nil {
+		return fmt.Errorf("failed to generate starter policy: %w", err)
+	}
+
+	printPolicyWarnings(result.Warnings)
+
+	fileName := defaultStarterPolicyFileName(matchedServerName)
+	if output != "" {
+		if err := os.WriteFile(output, []byte(result.YAML), 0644); err != nil {
+			return fmt.Errorf("failed to write generated policy: %w", err)
+		}
+		fmt.Printf("✓ Generated policy written to: %s\n", output)
+	} else {
+		fmt.Println("\n---")
+		fmt.Print(result.YAML)
+		fmt.Println("---")
+	}
+
+	diff, err := diffPolicyContent(client, fileName, []byte(result.YAML))
+	if err != nil {
+		return fmt.Errorf("failed to preview generated policy diff: %w", err)
+	}
+	printPolicyDiffPreview(diff)
+
+	if !apply {
+		if output == "" {
+			fmt.Println("\nTip: Review the diff above, then use --apply to apply it immediately or -o policy.yaml to save it.")
+		}
+		return nil
+	}
+
+	if !diff.HasChanges {
+		fmt.Println("Generated policy already matches the current configuration. Nothing to apply.")
+		return nil
+	}
+
+	if dryRun {
+		fmt.Println("\nValidating generated policy with the server (dry run)...")
+	} else {
+		_, _, removed := splitPolicyDiffChanges(diff)
+		fmt.Println("\nReview changes above carefully. Applying will update your active Preloop policy.")
+		if len(removed) > 0 {
+			fmt.Printf("Warning: %d existing item(s) will be removed if you continue.\n", len(removed))
+		}
+		if !autoApprove {
+			confirmed, err := confirmAction(os.Stdin, os.Stdout, buildPolicyApplyConfirmationPrompt(diff))
+			if err != nil {
+				return fmt.Errorf("failed to read confirmation: %w", err)
+			}
+			if !confirmed {
+				fmt.Println("Aborted without applying changes.")
+				return nil
+			}
+		}
+		fmt.Println("\nApplying generated policy...")
+	}
+
+	applyResult, err := applyPolicyContent(client, fileName, []byte(result.YAML), dryRun)
+	if err != nil {
+		return fmt.Errorf("failed to apply generated policy: %w", err)
+	}
+
+	if dryRun {
+		fmt.Println("✓ Generated policy validated successfully")
+	} else {
+		fmt.Println("✓ Generated policy applied successfully")
+	}
+	fmt.Printf("  Policy: %s\n", applyResult.PolicyName)
+	fmt.Printf("  MCP servers: %d created, %d updated\n", applyResult.MCPServersCreated, applyResult.MCPServersUpdated)
+	fmt.Printf("  Approval workflows: %d created, %d updated\n", applyResult.PoliciesCreated, applyResult.PoliciesUpdated)
+	fmt.Printf("  Tools: %d created, %d updated", applyResult.ToolsCreated, applyResult.ToolsUpdated)
+	if applyResult.ToolsSkipped > 0 {
+		fmt.Printf(", %d skipped", applyResult.ToolsSkipped)
+	}
+	fmt.Println()
+	printPolicyWarnings(applyResult.Warnings)
+
+	return nil
+}
+
+func findStarterPolicyTools(client *api.Client, serverName string) (string, []starterPolicyTool, error) {
+	var tools []starterPolicyTool
+	if err := client.Get(toolsListPath, &tools); err != nil {
+		return "", nil, fmt.Errorf("failed to list tools: %w", err)
+	}
+
+	var exactMatches []starterPolicyTool
+	for _, tool := range tools {
+		if tool.Source != "mcp" {
+			continue
+		}
+		if tool.SourceName == serverName || tool.SourceID == serverName {
+			exactMatches = append(exactMatches, tool)
+		}
+	}
+	if len(exactMatches) > 0 {
+		sort.Slice(exactMatches, func(i, j int) bool { return exactMatches[i].Name < exactMatches[j].Name })
+		return exactMatches[0].SourceName, exactMatches, nil
+	}
+
+	var caseInsensitiveMatches []starterPolicyTool
+	for _, tool := range tools {
+		if tool.Source != "mcp" {
+			continue
+		}
+		if strings.EqualFold(tool.SourceName, serverName) || strings.EqualFold(tool.SourceID, serverName) {
+			caseInsensitiveMatches = append(caseInsensitiveMatches, tool)
+		}
+	}
+	if len(caseInsensitiveMatches) > 0 {
+		sort.Slice(caseInsensitiveMatches, func(i, j int) bool { return caseInsensitiveMatches[i].Name < caseInsensitiveMatches[j].Name })
+		return caseInsensitiveMatches[0].SourceName, caseInsensitiveMatches, nil
+	}
+
+	availableSet := make(map[string]struct{})
+	for _, tool := range tools {
+		if tool.Source == "mcp" && tool.SourceName != "" {
+			availableSet[tool.SourceName] = struct{}{}
+		}
+	}
+
+	available := make([]string, 0, len(availableSet))
+	for name := range availableSet {
+		available = append(available, name)
+	}
+	sort.Strings(available)
+
+	if len(available) == 0 {
+		return "", nil, fmt.Errorf("no MCP server tools found. Add a server first, then retry")
+	}
+
+	return "", nil, fmt.Errorf(
+		"MCP server '%s' not found. Available servers with discovered tools: %s",
+		serverName,
+		strings.Join(available, ", "),
+	)
+}
+
+func buildStarterPolicyPrompt(serverName string, tools []starterPolicyTool) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "Generate a starter Preloop policy update for MCP server %q.\n\n", serverName)
+	b.WriteString("Requirements:\n")
+	b.WriteString("- Preserve the current account configuration.\n")
+	b.WriteString("- Scope changes to this MCP server and its tools.\n")
+	b.WriteString("- Do not modify unrelated MCP servers, tool rules, approval workflows, or defaults unless needed for safe onboarding.\n")
+	b.WriteString("- Reuse existing approval workflows from the current configuration when they already fit.\n")
+	b.WriteString("- Prefer allow rules for clearly read-only/query/list/get/search tools.\n")
+	b.WriteString("- Prefer require_approval for mutating, write-capable, privileged, destructive, or otherwise high-impact tools.\n")
+	b.WriteString("- If a tool is ambiguous, prefer require_approval.\n")
+	b.WriteString("- If a new approval workflow is required, keep it minimal and reusable.\n")
+	b.WriteString("- Preserve any existing tool rules for this server unless they conflict with the safe starter posture.\n\n")
+	b.WriteString("Discovered tools for this server:\n")
+
+	for _, tool := range tools {
+		props, required := summarizeToolSchema(tool.Schema)
+		fmt.Fprintf(
+			&b,
+			"- %s: %s Suggested posture: %s.",
+			tool.Name,
+			strings.TrimSpace(tool.Description),
+			starterPolicyPosture(tool),
+		)
+		if len(props) > 0 {
+			fmt.Fprintf(&b, " Args: %s.", strings.Join(props, ", "))
+		}
+		if len(required) > 0 {
+			fmt.Fprintf(&b, " Required args: %s.", strings.Join(required, ", "))
+		}
+		if len(tool.AccessRules) > 0 {
+			fmt.Fprintf(&b, " Existing rules: %s.", summarizeAccessRules(tool.AccessRules))
+		} else if tool.HasApprovalCondition {
+			b.WriteString(" Existing approval condition present.")
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+func starterPolicyPosture(tool starterPolicyTool) string {
+	text := strings.ToLower(tool.Name + " " + tool.Description)
+
+	switch {
+	case containsAny(text, "get", "list", "read", "search", "find", "fetch", "view", "describe"):
+		return "allow unless existing rules already require approval"
+	case containsAny(text, "create", "update", "delete", "remove", "write", "edit", "send", "post", "merge", "deploy", "execute", "run", "restart", "shutdown", "grant", "revoke", "invite", "approve", "comment"):
+		return "require approval"
+	default:
+		return "require approval unless the schema clearly indicates read-only behavior"
+	}
+}
+
+func summarizeToolSchema(schema map[string]interface{}) ([]string, []string) {
+	var props []string
+	if rawProps, ok := schema["properties"].(map[string]interface{}); ok {
+		for key := range rawProps {
+			props = append(props, key)
+		}
+		sort.Strings(props)
+	}
+
+	var required []string
+	if rawRequired, ok := schema["required"].([]interface{}); ok {
+		for _, item := range rawRequired {
+			if name, ok := item.(string); ok {
+				required = append(required, name)
+			}
+		}
+		sort.Strings(required)
+	}
+
+	return props, required
+}
+
+func summarizeAccessRules(rules []starterPolicyAccessRule) string {
+	summaries := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		summary := rule.Action
+		if rule.ConditionType != "" {
+			summary += " (" + rule.ConditionType + ")"
+		}
+		summaries = append(summaries, summary)
+	}
+	sort.Strings(summaries)
+	return strings.Join(summaries, ", ")
+}
+
+func defaultStarterPolicyFileName(serverName string) string {
+	safe := strings.ToLower(serverName)
+	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", ":", "-", ".", "-")
+	safe = replacer.Replace(safe)
+	safe = strings.Trim(safe, "-")
+	if safe == "" {
+		safe = "mcp-server"
+	}
+	return fmt.Sprintf("%s-starter-policy.yaml", safe)
+}
+
+func containsAny(value string, parts ...string) bool {
+	for _, part := range parts {
+		if strings.Contains(value, part) {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Config parsers ───────────────────────────────────────────────────

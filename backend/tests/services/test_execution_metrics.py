@@ -63,7 +63,14 @@ class TestGetExecutionMetrics:
             mock_flow,
             mock_account,
         ]
-        mock_db.query.return_value.filter.return_value.count.return_value = 0
+        mock_db.query.return_value.filter.return_value.one.return_value = MagicMock(
+            api_requests=0,
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            estimated_cost=0.0,
+            priced_requests=0,
+        )
 
         service = ExecutionMetricsService(mock_db)
         result = service.get_execution_metrics(str(mock_execution.id))
@@ -210,6 +217,7 @@ class TestCountApiRequests:
     def test_no_start_time_returns_zero(self, mock_db, mock_execution):
         """When start_time is None, return 0."""
         mock_execution.start_time = None
+        mock_db.query.return_value.filter.return_value.count.return_value = 0
 
         service = ExecutionMetricsService(mock_db)
         count = service._count_api_requests(mock_execution)
@@ -222,6 +230,7 @@ class TestCountApiRequests:
             MagicMock(flow_id=mock_execution.flow_id, account_id=uuid4()),
             None,  # account not found
         ]
+        mock_db.query.return_value.filter.return_value.count.return_value = 0
 
         service = ExecutionMetricsService(mock_db)
         count = service._count_api_requests(mock_execution)

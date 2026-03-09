@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"time"
 
@@ -70,6 +71,33 @@ func (c *Client) Post(path string, body, result interface{}) error {
 	return c.do(http.MethodPost, path, body, result)
 }
 
+// PostMultipart performs a multipart/form-data POST request with one file.
+func (c *Client) PostMultipart(path string, fields map[string]string, fileFieldName, fileName string, fileContent []byte, result interface{}) error {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			return fmt.Errorf("failed to write multipart field %q: %w", key, err)
+		}
+	}
+
+	part, err := writer.CreateFormFile(fileFieldName, fileName)
+	if err != nil {
+		return fmt.Errorf("failed to create multipart file %q: %w", fileFieldName, err)
+	}
+
+	if _, err := part.Write(fileContent); err != nil {
+		return fmt.Errorf("failed to write multipart file %q: %w", fileName, err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("failed to finalize multipart request: %w", err)
+	}
+
+	return c.doWithBody(http.MethodPost, path, &body, writer.FormDataContentType(), result)
+}
+
 // Put performs a PUT request to the specified path with the given body.
 func (c *Client) Put(path string, body, result interface{}) error {
 	return c.do(http.MethodPut, path, body, result)
@@ -82,9 +110,8 @@ func (c *Client) Delete(path string, result interface{}) error {
 
 // do performs an HTTP request and decodes the response.
 func (c *Client) do(method, path string, body, result interface{}) error {
-	url := c.baseURL + path
-
 	var bodyReader io.Reader
+	contentType := "application/json"
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
 		if err != nil {
@@ -93,12 +120,20 @@ func (c *Client) do(method, path string, body, result interface{}) error {
 		bodyReader = bytes.NewReader(jsonBody)
 	}
 
+	return c.doWithBody(method, path, bodyReader, contentType, result)
+}
+
+func (c *Client) doWithBody(method, path string, bodyReader io.Reader, contentType string, result interface{}) error {
+	url := c.baseURL + path
+
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	req.Header.Set("Accept", "application/json")
 
 	if c.token != "" {

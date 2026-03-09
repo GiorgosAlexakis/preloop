@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,13 +18,13 @@ import (
 )
 
 const (
-	policiesValidatePath       = "/api/v1/policies/validate"
-	policiesUploadPath         = "/api/v1/policies/upload"
-	policiesDiffPath           = "/api/v1/policies/diff"
-	policiesExportPath         = "/api/v1/policies/export"
-	policiesListPath           = "/api/v1/policies"
-	policiesGeneratePath       = "/api/v1/policies/generate"
-	policiesGenerateAuditPath  = "/api/v1/policies/generate-from-audit"
+	policiesValidatePath      = "/api/v1/policies/validate"
+	policiesUploadPath        = "/api/v1/policies/upload"
+	policiesDiffPath          = "/api/v1/policies/diff"
+	policiesExportPath        = "/api/v1/policies/export"
+	policiesListPath          = "/api/v1/policies"
+	policiesGeneratePath      = "/api/v1/policies/generate"
+	policiesGenerateAuditPath = "/api/v1/policies/generate-from-audit"
 )
 
 // PolicyFile represents a policy file for upload.
@@ -32,7 +35,7 @@ type PolicyFile struct {
 
 // ValidationResult represents the result of policy validation.
 type ValidationResult struct {
-	Valid    bool              `json:"valid"`
+	IsValid  bool              `json:"is_valid"`
 	Errors   []ValidationError `json:"errors,omitempty"`
 	Warnings []string          `json:"warnings,omitempty"`
 }
@@ -48,16 +51,16 @@ type ValidationError struct {
 // PolicyDiff represents the diff between local and remote policy.
 type PolicyDiff struct {
 	HasChanges bool         `json:"has_changes"`
-	Added      []string     `json:"added,omitempty"`
-	Removed    []string     `json:"removed,omitempty"`
-	Modified   []DiffChange `json:"modified,omitempty"`
+	Changes    []DiffChange `json:"changes,omitempty"`
+	Summary    string       `json:"summary,omitempty"`
 }
 
 // DiffChange represents a single change in the diff.
 type DiffChange struct {
-	Path     string `json:"path"`
-	OldValue string `json:"old_value,omitempty"`
-	NewValue string `json:"new_value,omitempty"`
+	Path      string      `json:"path"`
+	Operation string      `json:"operation"`
+	OldValue  interface{} `json:"old_value,omitempty"`
+	NewValue  interface{} `json:"new_value,omitempty"`
 }
 
 // PolicyInfo represents a policy in the list response.
@@ -68,6 +71,21 @@ type PolicyInfo struct {
 	Version     string `json:"version,omitempty"`
 	Active      bool   `json:"active"`
 	UpdatedAt   string `json:"updated_at"`
+}
+
+// PolicyImportResult represents the result of applying a policy.
+type PolicyImportResult struct {
+	Success           bool     `json:"success"`
+	PolicyName        string   `json:"policy_name"`
+	MCPServersCreated int      `json:"mcp_servers_created"`
+	MCPServersUpdated int      `json:"mcp_servers_updated"`
+	PoliciesCreated   int      `json:"policies_created"`
+	PoliciesUpdated   int      `json:"policies_updated"`
+	ToolsCreated      int      `json:"tools_created"`
+	ToolsUpdated      int      `json:"tools_updated"`
+	ToolsSkipped      int      `json:"tools_skipped"`
+	Warnings          []string `json:"warnings,omitempty"`
+	Errors            []string `json:"errors,omitempty"`
 }
 
 // policyCmd represents the policy command group.
@@ -197,6 +215,174 @@ func init() {
 	policyGenerateCmd.Flags().Bool("no-context", false, "do not include current account config as context for the LLM")
 }
 
+func postPolicyFile(client *api.Client, path, fileName string, content []byte, fields map[string]string, result interface{}) error {
+	return client.PostMultipart(path, fields, "file", fileName, content, result)
+}
+
+func validatePolicyContent(client *api.Client, fileName string, content []byte) (*ValidationResult, error) {
+	var result ValidationResult
+	if err := postPolicyFile(client, policiesValidatePath, fileName, content, nil, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func applyPolicyContent(client *api.Client, fileName string, content []byte, dryRun bool) (*PolicyImportResult, error) {
+	fields := map[string]string{
+		"dry_run": fmt.Sprintf("%t", dryRun),
+	}
+
+	var result PolicyImportResult
+	if err := postPolicyFile(client, policiesUploadPath, fileName, content, fields, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func diffPolicyContent(client *api.Client, fileName string, content []byte) (*PolicyDiff, error) {
+	var result PolicyDiff
+	if err := postPolicyFile(client, policiesDiffPath, fileName, content, nil, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func generatePolicyFromPrompt(client *api.Client, prompt string, includeCurrentConfig bool) (*GenerateResponse, error) {
+	request := map[string]interface{}{
+		"prompt":                 prompt,
+		"include_current_config": includeCurrentConfig,
+	}
+
+	var result GenerateResponse
+	if err := client.Post(policiesGeneratePath, request, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func printPolicyWarnings(warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+
+	fmt.Println("\nWarnings:")
+	for _, w := range warnings {
+		fmt.Printf("  ⚠ %s\n", w)
+	}
+	fmt.Println()
+}
+
+func splitPolicyDiffChanges(diff *PolicyDiff) (added, modified, removed []DiffChange) {
+	if diff == nil {
+		return nil, nil, nil
+	}
+
+	for _, change := range diff.Changes {
+		switch change.Operation {
+		case "add":
+			added = append(added, change)
+		case "remove":
+			removed = append(removed, change)
+		default:
+			modified = append(modified, change)
+		}
+	}
+
+	return added, modified, removed
+}
+
+func formatPolicyDiffValue(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+
+	switch typed := value.(type) {
+	case string:
+		return typed
+	default:
+		data, err := json.MarshalIndent(value, "", "  ")
+		if err != nil {
+			return fmt.Sprintf("%v", value)
+		}
+		return string(data)
+	}
+}
+
+func printPolicyDiffPreview(diff *PolicyDiff) {
+	if diff == nil {
+		return
+	}
+
+	fmt.Println("\nPolicy diff preview:")
+	if diff.Summary != "" {
+		fmt.Printf("  %s\n", diff.Summary)
+	}
+
+	if !diff.HasChanges {
+		fmt.Println("  No changes detected against the current policy.")
+		return
+	}
+
+	printSection := func(title, symbol string, changes []DiffChange) {
+		if len(changes) == 0 {
+			return
+		}
+
+		fmt.Printf("\n  %s (%d)\n", title, len(changes))
+		for _, change := range changes {
+			fmt.Printf("    %s %s\n", symbol, change.Path)
+			if oldValue := formatPolicyDiffValue(change.OldValue); oldValue != "" {
+				fmt.Printf("      current: %s\n", oldValue)
+			}
+			if newValue := formatPolicyDiffValue(change.NewValue); newValue != "" {
+				fmt.Printf("      generated: %s\n", newValue)
+			}
+		}
+	}
+
+	added, modified, removed := splitPolicyDiffChanges(diff)
+	printSection("Added", "+", added)
+	printSection("Modified", "~", modified)
+	printSection("Removed", "-", removed)
+	fmt.Println()
+}
+
+func buildPolicyApplyConfirmationPrompt(diff *PolicyDiff) string {
+	added, modified, removed := splitPolicyDiffChanges(diff)
+	if len(removed) > 0 {
+		return fmt.Sprintf(
+			"Apply %d addition(s), %d modification(s), and %d removal(s) to your live policy? (y/N): ",
+			len(added),
+			len(modified),
+			len(removed),
+		)
+	}
+
+	return fmt.Sprintf(
+		"Apply %d addition(s) and %d modification(s) to your live policy? (y/N): ",
+		len(added),
+		len(modified),
+	)
+}
+
+func confirmAction(reader io.Reader, writer io.Writer, prompt string) (bool, error) {
+	if _, err := fmt.Fprint(writer, prompt); err != nil {
+		return false, err
+	}
+
+	input, err := bufio.NewReader(reader).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+
+	answer := strings.ToLower(strings.TrimSpace(input))
+	return answer == "y" || answer == "yes", nil
+}
+
 // runPolicyValidate validates a policy file.
 func runPolicyValidate(cmd *cobra.Command, args []string) error {
 	filePath := args[0]
@@ -229,17 +415,12 @@ func runPolicyValidate(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	request := map[string]string{
-		"name":    filepath.Base(filePath),
-		"content": string(content),
-	}
-
-	var result ValidationResult
-	if err := client.Post(policiesValidatePath, request, &result); err != nil {
+	result, err := validatePolicyContent(client, filepath.Base(filePath), content)
+	if err != nil {
 		return fmt.Errorf("API validation failed: %w", err)
 	}
 
-	if !result.Valid {
+	if !result.IsValid {
 		fmt.Printf("\n✗ Policy validation failed\n")
 		for _, e := range result.Errors {
 			if e.Line > 0 {
@@ -254,13 +435,7 @@ func runPolicyValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ API validation passed\n")
-
-	if len(result.Warnings) > 0 {
-		fmt.Printf("\nWarnings:\n")
-		for _, w := range result.Warnings {
-			fmt.Printf("  ⚠ %s\n", w)
-		}
-	}
+	printPolicyWarnings(result.Warnings)
 
 	return nil
 }
@@ -295,17 +470,12 @@ func runPolicyApply(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		fmt.Printf("Dry run - validating policy: %s\n\n", filePath)
 
-		request := map[string]string{
-			"name":    filepath.Base(filePath),
-			"content": string(content),
-		}
-
-		var result ValidationResult
-		if err := client.Post(policiesValidatePath, request, &result); err != nil {
+		result, err := validatePolicyContent(client, filepath.Base(filePath), content)
+		if err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}
 
-		if !result.Valid {
+		if !result.IsValid {
 			fmt.Printf("✗ Policy validation failed\n")
 			for _, e := range result.Errors {
 				fmt.Printf("  %s\n", e.Message)
@@ -314,33 +484,28 @@ func runPolicyApply(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Printf("✓ Policy is valid and would be applied\n")
+		printPolicyWarnings(result.Warnings)
 		return nil
 	}
 
 	// Upload and apply the policy
 	fmt.Printf("Applying policy: %s\n", filePath)
 
-	request := map[string]string{
-		"name":    filepath.Base(filePath),
-		"content": string(content),
-	}
-
-	var result struct {
-		ID      string `json:"id"`
-		Message string `json:"message"`
-	}
-
-	if err := client.Post(policiesUploadPath, request, &result); err != nil {
+	result, err := applyPolicyContent(client, filepath.Base(filePath), content, false)
+	if err != nil {
 		return fmt.Errorf("failed to apply policy: %w", err)
 	}
 
 	fmt.Printf("✓ Policy applied successfully\n")
-	if result.ID != "" {
-		fmt.Printf("  Policy ID: %s\n", result.ID)
+	fmt.Printf("  Policy: %s\n", result.PolicyName)
+	fmt.Printf("  MCP servers: %d created, %d updated\n", result.MCPServersCreated, result.MCPServersUpdated)
+	fmt.Printf("  Approval workflows: %d created, %d updated\n", result.PoliciesCreated, result.PoliciesUpdated)
+	fmt.Printf("  Tools: %d created, %d updated", result.ToolsCreated, result.ToolsUpdated)
+	if result.ToolsSkipped > 0 {
+		fmt.Printf(", %d skipped", result.ToolsSkipped)
 	}
-	if result.Message != "" {
-		fmt.Printf("  %s\n", result.Message)
-	}
+	fmt.Println()
+	printPolicyWarnings(result.Warnings)
 
 	return nil
 }
@@ -364,13 +529,8 @@ func runPolicyDiff(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
 	}
 
-	request := map[string]string{
-		"name":    filepath.Base(filePath),
-		"content": string(content),
-	}
-
-	var diff PolicyDiff
-	if err := client.Post(policiesDiffPath, request, &diff); err != nil {
+	diff, err := diffPolicyContent(client, filepath.Base(filePath), content)
+	if err != nil {
 		return fmt.Errorf("failed to compute diff: %w", err)
 	}
 
@@ -381,32 +541,25 @@ func runPolicyDiff(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Changes for: %s\n\n", filePath)
 
-	if len(diff.Added) > 0 {
-		fmt.Println("Added:")
-		for _, item := range diff.Added {
-			fmt.Printf("  + %s\n", item)
-		}
-		fmt.Println()
+	if diff.Summary != "" {
+		fmt.Printf("%s\n\n", diff.Summary)
 	}
 
-	if len(diff.Removed) > 0 {
-		fmt.Println("Removed:")
-		for _, item := range diff.Removed {
-			fmt.Printf("  - %s\n", item)
+	for _, change := range diff.Changes {
+		symbol := "~"
+		switch change.Operation {
+		case "add":
+			symbol = "+"
+		case "remove":
+			symbol = "-"
 		}
-		fmt.Println()
-	}
 
-	if len(diff.Modified) > 0 {
-		fmt.Println("Modified:")
-		for _, change := range diff.Modified {
-			fmt.Printf("  ~ %s\n", change.Path)
-			if change.OldValue != "" {
-				fmt.Printf("    - %s\n", change.OldValue)
-			}
-			if change.NewValue != "" {
-				fmt.Printf("    + %s\n", change.NewValue)
-			}
+		fmt.Printf("  %s %s\n", symbol, change.Path)
+		if change.OldValue != nil {
+			fmt.Printf("    old: %v\n", change.OldValue)
+		}
+		if change.NewValue != nil {
+			fmt.Printf("    new: %v\n", change.NewValue)
 		}
 	}
 
@@ -552,24 +705,14 @@ func runPolicyGenerate(cmd *cobra.Command, args []string) error {
 
 		fmt.Println("Generating policy from description...")
 
-		request := map[string]interface{}{
-			"prompt":                 prompt,
-			"include_current_config": !noContext,
-		}
-
-		if err := client.Post(policiesGeneratePath, request, &result); err != nil {
+		generated, err := generatePolicyFromPrompt(client, prompt, !noContext)
+		if err != nil {
 			return fmt.Errorf("failed to generate policy: %w", err)
 		}
+		result = *generated
 	}
 
-	// Show warnings
-	if len(result.Warnings) > 0 {
-		fmt.Println("\nWarnings:")
-		for _, w := range result.Warnings {
-			fmt.Printf("  ⚠ %s\n", w)
-		}
-		fmt.Println()
-	}
+	printPolicyWarnings(result.Warnings)
 
 	// Output the YAML
 	if output != "" {

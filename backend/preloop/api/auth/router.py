@@ -17,9 +17,11 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from preloop.api.auth.permissions import require_permission
 from preloop.api.auth.jwt import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
@@ -60,11 +62,14 @@ from preloop.models.crud import (
     crud_user,
     crud_api_key,
     crud_api_usage,
+    crud_mcp_server,
     crud_role,
     crud_runtime_session,
     crud_user_role,
 )
 from preloop.models.db.session import get_db_session
+from preloop.models.models.mcp_tool import MCPTool
+from preloop.models.models.tool_configuration import ToolConfiguration
 from preloop.models.models.user import User as UserModel
 from preloop.models.models.api_key import ApiKey
 from pydantic import BaseModel
@@ -85,6 +90,175 @@ RUNTIME_SESSION_SOURCE_TYPES = {
     "desktop_agent",
     "custom",
 }
+RUNTIME_SESSION_ALLOWED_SCOPES = ("mcp:read", "mcp:write")
+
+
+def _normalize_runtime_session_scopes(requested_scopes: List[str]) -> List[str]:
+    """Return a deduplicated runtime-safe scope list."""
+    if not requested_scopes:
+        return list(RUNTIME_SESSION_ALLOWED_SCOPES)
+
+    normalized_scopes: List[str] = []
+    invalid_scopes: List[str] = []
+    for scope in requested_scopes:
+        if not isinstance(scope, str):
+            invalid_scopes.append(str(scope))
+            continue
+        normalized_scope = scope.strip()
+        if (
+            not normalized_scope
+            or normalized_scope not in RUNTIME_SESSION_ALLOWED_SCOPES
+        ):
+            invalid_scopes.append(scope)
+            continue
+        if normalized_scope not in normalized_scopes:
+            normalized_scopes.append(normalized_scope)
+
+    if invalid_scopes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Runtime session tokens only support these scopes: "
+                + ", ".join(RUNTIME_SESSION_ALLOWED_SCOPES)
+            ),
+        )
+
+    return normalized_scopes or list(RUNTIME_SESSION_ALLOWED_SCOPES)
+
+
+def _normalize_runtime_session_server_names(server_names: List[str]) -> List[str]:
+    """Return deduplicated MCP server names."""
+    normalized_names: List[str] = []
+    for server_name in server_names:
+        if not isinstance(server_name, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="allowed_mcp_servers must only contain strings",
+            )
+        normalized_name = server_name.strip()
+        if not normalized_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="allowed_mcp_servers must not contain empty names",
+            )
+        if normalized_name not in normalized_names:
+            normalized_names.append(normalized_name)
+    return normalized_names
+
+
+def _normalize_runtime_session_tool_names(requested_tools: List[Any]) -> List[str]:
+    """Extract requested tool names from strings or tool spec objects."""
+    normalized_names: List[str] = []
+    for tool in requested_tools:
+        tool_name: Optional[str]
+        if isinstance(tool, str):
+            tool_name = tool
+        elif isinstance(tool, dict):
+            candidate = tool.get("tool_name") or tool.get("name")
+            tool_name = candidate if isinstance(candidate, str) else None
+        else:
+            tool_name = None
+
+        if not tool_name or not tool_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "allowed_mcp_tools entries must be strings or objects with "
+                    "'tool_name' or 'name'"
+                ),
+            )
+
+        normalized_name = tool_name.strip()
+        if normalized_name not in normalized_names:
+            normalized_names.append(normalized_name)
+
+    return normalized_names
+
+
+def _resolve_runtime_session_tool_restrictions(
+    db: Session,
+    *,
+    account_id: UUID,
+    requested_server_names: List[str],
+    requested_tools: List[Any],
+) -> tuple[List[str], List[Dict[str, str]]]:
+    """Resolve caller input into account-authorized runtime MCP restrictions."""
+    normalized_server_names = _normalize_runtime_session_server_names(
+        requested_server_names
+    )
+    normalized_tool_names = _normalize_runtime_session_tool_names(requested_tools)
+
+    authorized_tool_names: List[str] = []
+    server_ids: List[UUID] = []
+    if normalized_server_names:
+        active_servers = crud_mcp_server.get_active_by_account(
+            db, account_id=str(account_id)
+        )
+        active_server_by_name = {server.name: server for server in active_servers}
+        missing_servers = [
+            server_name
+            for server_name in normalized_server_names
+            if server_name not in active_server_by_name
+        ]
+        if missing_servers:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "allowed_mcp_servers must reference active MCP servers in the "
+                    "current account"
+                ),
+            )
+
+        server_ids = [
+            active_server_by_name[server_name].id
+            for server_name in normalized_server_names
+        ]
+        server_tool_rows = (
+            db.query(MCPTool.name)
+            .filter(MCPTool.mcp_server_id.in_(server_ids))
+            .distinct()
+            .all()
+        )
+        for row in server_tool_rows:
+            if row.name not in authorized_tool_names:
+                authorized_tool_names.append(row.name)
+
+    if normalized_tool_names:
+        allowed_tool_rows = (
+            db.query(ToolConfiguration.tool_name)
+            .filter(
+                ToolConfiguration.account_id == account_id,
+                ToolConfiguration.is_enabled.is_(True),
+                ToolConfiguration.tool_name.in_(normalized_tool_names),
+                or_(
+                    ToolConfiguration.mcp_server_id.is_(None),
+                    ToolConfiguration.mcp_server_id.in_(server_ids),
+                ),
+            )
+            .distinct()
+            .all()
+        )
+        allowed_tool_names = {row.tool_name for row in allowed_tool_rows}
+        missing_tool_names = [
+            tool_name
+            for tool_name in normalized_tool_names
+            if tool_name not in allowed_tool_names
+        ]
+        if missing_tool_names:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "allowed_mcp_tools must reference enabled tools in the current "
+                    "account"
+                ),
+            )
+        for tool_name in normalized_tool_names:
+            if tool_name not in authorized_tool_names:
+                authorized_tool_names.append(tool_name)
+
+    return normalized_server_names, [
+        {"tool_name": tool_name} for tool_name in authorized_tool_names
+    ]
 
 
 class OnboardingRequest(BaseModel):
@@ -733,6 +907,7 @@ async def create_api_key(
     response_model=RuntimeSessionTokenResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@require_permission("execute_tools")
 async def create_runtime_session_token(
     session_data: RuntimeSessionTokenCreate,
     current_user: UserModel = Depends(get_current_active_user),
@@ -748,11 +923,24 @@ async def create_runtime_session_token(
             ),
         )
 
+    scopes = _normalize_runtime_session_scopes(session_data.scopes)
+    allowed_mcp_servers, allowed_mcp_tools = _resolve_runtime_session_tool_restrictions(
+        db,
+        account_id=current_user.account_id,
+        requested_server_names=session_data.allowed_mcp_servers,
+        requested_tools=session_data.allowed_mcp_tools,
+    )
+
     expires_at = datetime.now(UTC) + timedelta(minutes=session_data.expires_in_minutes)
     runtime_principal_name = (
         session_data.runtime_principal_name
         or session_data.session_reference
         or session_data.session_source_id
+    )
+    existing_runtime_session = crud_runtime_session.get_by_source(
+        db,
+        session_source_type=session_data.session_source_type,
+        session_source_id=session_data.session_source_id,
     )
 
     runtime_session = crud_runtime_session.upsert_by_source(
@@ -769,7 +957,7 @@ async def create_runtime_session_token(
     db.commit()
     db.refresh(runtime_session)
 
-    _, token_value = crud_api_key.create_runtime_key(
+    api_key, token_value = crud_api_key.create_runtime_key(
         db,
         name=(
             f"Runtime Session {session_data.session_source_type}:"
@@ -777,12 +965,12 @@ async def create_runtime_session_token(
         ),
         account_id=current_user.account_id,
         user_id=current_user.id,
-        scopes=session_data.scopes,
+        scopes=scopes,
         expires_at=expires_at,
         context_data={
             "runtime_session_id": str(runtime_session.id),
-            "allowed_mcp_tools": session_data.allowed_mcp_tools,
-            "allowed_mcp_servers": session_data.allowed_mcp_servers,
+            "allowed_mcp_tools": allowed_mcp_tools,
+            "allowed_mcp_servers": allowed_mcp_servers,
             "runtime_principal": {
                 "type": session_data.session_source_type,
                 "id": session_data.session_source_id,
@@ -792,6 +980,33 @@ async def create_runtime_session_token(
             },
         },
     )
+
+    try:
+        from preloop.plugins.base import get_plugin_manager
+
+        plugin_manager = get_plugin_manager()
+        audit_service = plugin_manager.get_service("audit_service")
+        if audit_service:
+            audit_service.log_runtime_session_event(
+                db=db,
+                account_id=current_user.account_id,
+                runtime_session_id=runtime_session.id,
+                event="created" if existing_runtime_session is None else "updated",
+                session_source_type=runtime_session.session_source_type,
+                session_source_id=runtime_session.session_source_id,
+                session_reference=runtime_session.session_reference,
+                runtime_principal_type=runtime_session.runtime_principal_type,
+                runtime_principal_id=runtime_session.runtime_principal_id,
+                runtime_principal_name=runtime_session.runtime_principal_name,
+                api_key_id=api_key.id,
+                api_key_name=(
+                    f"Runtime Session {session_data.session_source_type}:"
+                    f"{session_data.session_source_id}"
+                ),
+                user_id=current_user.id,
+            )
+    except Exception:
+        logger.debug("Failed to audit runtime session token creation", exc_info=True)
 
     return RuntimeSessionTokenResponse(
         runtime_session_id=runtime_session.id,

@@ -1,5 +1,6 @@
 """Tests for secret service."""
 
+import pytest
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -97,3 +98,43 @@ def test_resolve_external_secret_reference_with_openbao_backend(monkeypatch):
     assert resolved.backend_type == OPENBAO_KV_V2_BACKEND
     assert captured["path"] == "kv/data/preloop/providers/team-a/openai"
     assert captured["meta_data"] == {"field": "api_key", "version": 2}
+
+
+@pytest.mark.parametrize(
+    "external_ref",
+    [
+        "../team-a/openai",
+        "team-a/../openai",
+        "team-a//openai",
+        "team-a/%2e%2e/openai",
+        r"team-a\openai",
+    ],
+)
+def test_resolve_external_secret_reference_rejects_path_traversal(
+    monkeypatch, external_ref: str
+):
+    """External secret refs should reject traversal and malformed path segments."""
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "enabled", True)
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2,
+        "url",
+        "https://openbao.example.test",
+    )
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2, "token", "test-token"
+    )
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "mount", "kv")
+
+    service = SecretService()
+    secret_ref = SecretReference(
+        account_id=uuid4(),
+        name="OpenAI API key",
+        backend_type=OPENBAO_KV_V2_BACKEND,
+        secret_kind="ai_model_api_key",
+        external_ref=external_ref,
+        status="active",
+        meta_data={"field": "api_key"},
+    )
+
+    with pytest.raises(ValueError, match="credentials_external_ref"):
+        service.resolve_secret_reference(secret_ref)

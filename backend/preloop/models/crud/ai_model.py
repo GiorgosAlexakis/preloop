@@ -7,6 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from preloop.models.models.ai_model import AIModel
+from preloop.models.crud.secret_reference import crud_secret_reference
 from preloop.services.secret_service import get_secret_service
 from .base import CRUDBase
 
@@ -138,10 +139,27 @@ class CRUDAIModel(CRUDBase[AIModel]):
 
         return super().update(db, db_obj=db_obj, obj_in=obj_data)
 
-    def remove(self, db: Session, *, id: uuid.UUID) -> AIModel:
-        """Delete an AIModel."""
+    def remove(self, db: Session, *, id: uuid.UUID) -> Optional[AIModel]:
+        """Delete an AIModel and any unreferenced credential secret."""
         obj = db.get(self.model, id)
+        if obj is None:
+            return None
+
+        secret_id = obj.credentials_secret_id
         db.delete(obj)
+        db.flush()
+
+        if secret_id is not None:
+            remaining_reference = (
+                db.query(self.model.id)
+                .filter(self.model.credentials_secret_id == secret_id)
+                .first()
+            )
+            if remaining_reference is None:
+                secret_ref = crud_secret_reference.get(db, id=secret_id)
+                if secret_ref is not None:
+                    db.delete(secret_ref)
+
         db.commit()
         return obj
 

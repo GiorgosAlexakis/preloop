@@ -22,6 +22,10 @@ import type {
   AccountRuntimeSessionListResponse,
   AccountGatewayUsageSummaryResponse,
   FlowGatewayUsageSummaryResponse,
+  AIModelGatewayUsageSummaryResponse,
+  AIModelRuntimeSessionListResponse,
+  AIModelGatewayUsageSearchResponse,
+  AIModel,
 } from './types';
 
 // Global refresh promise to prevent concurrent refresh requests
@@ -246,6 +250,37 @@ function buildGatewayUsageQuery(params: GatewayUsageSearchParams = {}): string {
   return queryString ? `?${queryString}` : '';
 }
 
+function buildRuntimeSessionListQuery(
+  params: RuntimeSessionListParams = {}
+): string {
+  const queryParams = new URLSearchParams();
+
+  if (params.startDate) {
+    queryParams.set('start_date', params.startDate);
+  }
+  if (params.endDate) {
+    queryParams.set('end_date', params.endDate);
+  }
+  if (params.query) {
+    queryParams.set('query', params.query);
+  }
+  if (params.sessionSourceType) {
+    queryParams.set('session_source_type', params.sessionSourceType);
+  }
+  if (params.status) {
+    queryParams.set('status', params.status);
+  }
+  if (typeof params.limit === 'number') {
+    queryParams.set('limit', String(params.limit));
+  }
+  if (typeof params.offset === 'number') {
+    queryParams.set('offset', String(params.offset));
+  }
+
+  const queryString = queryParams.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
 export async function getAccountGatewayUsageSummary(
   params: GatewayUsageSummaryParams = {}
 ): Promise<AccountGatewayUsageSummaryResponse> {
@@ -286,33 +321,8 @@ export async function getAccountGatewayUsageSearch(
 export async function getAccountRuntimeSessions(
   params: RuntimeSessionListParams = {}
 ): Promise<AccountRuntimeSessionListResponse> {
-  const queryParams = new URLSearchParams();
-
-  if (params.startDate) {
-    queryParams.set('start_date', params.startDate);
-  }
-  if (params.endDate) {
-    queryParams.set('end_date', params.endDate);
-  }
-  if (params.query) {
-    queryParams.set('query', params.query);
-  }
-  if (params.sessionSourceType) {
-    queryParams.set('session_source_type', params.sessionSourceType);
-  }
-  if (params.status) {
-    queryParams.set('status', params.status);
-  }
-  if (typeof params.limit === 'number') {
-    queryParams.set('limit', String(params.limit));
-  }
-  if (typeof params.offset === 'number') {
-    queryParams.set('offset', String(params.offset));
-  }
-
-  const queryString = queryParams.toString();
   const response = await fetchWithAuth(
-    `/api/v1/account/runtime-sessions${queryString ? `?${queryString}` : ''}`
+    `/api/v1/account/runtime-sessions${buildRuntimeSessionListQuery(params)}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch runtime sessions');
@@ -689,10 +699,18 @@ export async function deleteApiKey(keyId: string) {
 }
 
 // AI Models
-export async function getAIModels() {
+export async function getAIModels(): Promise<AIModel[]> {
   const response = await fetchWithAuth('/api/v1/ai-models');
   if (!response.ok) {
     throw new Error('Failed to fetch AI models');
+  }
+  return response.json();
+}
+
+export async function getAIModel(modelId: string): Promise<AIModel> {
+  const response = await fetchWithAuth(`/api/v1/ai-models/${modelId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model');
   }
   return response.json();
 }
@@ -754,6 +772,45 @@ export async function getAvailableModelsForProvider(
     throw new Error(
       extractErrorMessage(errorData, 'Failed to fetch available models')
     );
+  }
+  return response.json();
+}
+
+export async function getAIModelGatewayUsageSummary(
+  modelId: string,
+  params: GatewayUsageSummaryParams = {}
+): Promise<AIModelGatewayUsageSummaryResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/ai-models/${modelId}/summary${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model usage summary');
+  }
+  return response.json();
+}
+
+export async function getAIModelRuntimeSessions(
+  modelId: string,
+  params: RuntimeSessionListParams = {}
+): Promise<AIModelRuntimeSessionListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/ai-models/${modelId}/runtime-sessions${buildRuntimeSessionListQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model runtime sessions');
+  }
+  return response.json();
+}
+
+export async function getAIModelGatewayUsageSearch(
+  modelId: string,
+  params: GatewayUsageSearchParams = {}
+): Promise<AIModelGatewayUsageSearchResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/ai-models/${modelId}/interactions${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model interactions');
   }
   return response.json();
 }

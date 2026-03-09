@@ -180,6 +180,9 @@ export interface GatewayUsageSearchResultItem {
   runtime_principal_type: string | null;
   runtime_principal_id: string | null;
   runtime_principal_name: string | null;
+  auth_subject_type: string | null;
+  api_key_id: string | null;
+  api_key_name: string | null;
   estimated_cost: number;
   token_usage: GatewayTokenUsage;
   excerpt: string;
@@ -238,6 +241,23 @@ export interface AccountRuntimeSessionDetailResponse {
   session: RuntimeSessionSummary;
   usage_by_model: GatewayUsageByModel[];
   interactions: AccountGatewayUsageSearchResponse;
+  activity_timeline: RuntimeSessionActivityItem[];
+}
+
+export interface RuntimeSessionActivityItem {
+  activity_type: 'model_interaction' | 'tool_call' | string;
+  timestamp: string;
+  title: string;
+  summary: string | null;
+  status: string | null;
+  api_usage_id: string | null;
+  tool_name: string | null;
+  server_name: string | null;
+  auth_subject_type: string | null;
+  api_key_id: string | null;
+  api_key_name: string | null;
+  estimated_cost: number | null;
+  total_tokens: number | null;
 }
 
 export interface AccountGatewayUsageSummaryResponse {
@@ -269,6 +289,28 @@ export interface FlowGatewayUsageSummaryResponse {
   usage_by_model: GatewayUsageByModel[];
   usage_by_execution: GatewayUsageByExecution[];
 }
+
+export interface AIModelGatewayUsageSummaryResponse {
+  ai_model_id: string;
+  model_name: string;
+  provider_name: string;
+  model_identifier: string;
+  period_start: string;
+  period_end: string;
+  total_requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  token_usage: GatewayTokenUsage;
+  estimated_cost: number;
+  requests_by_day: GatewayUsageByDay[];
+  usage_by_session: GatewayUsageBySession[];
+}
+
+export type AIModelRuntimeSessionListResponse =
+  AccountRuntimeSessionListResponse;
+
+export type AIModelGatewayUsageSearchResponse =
+  AccountGatewayUsageSearchResponse;
 
 export interface FetchIssuesListParams {
   query?: string;

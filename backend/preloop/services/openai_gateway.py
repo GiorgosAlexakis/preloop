@@ -26,6 +26,7 @@ from preloop.services.model_gateway_errors import (
 from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
 from preloop.services.gateway_usage_search import GatewayUsageSearchService
 from preloop.services.secret_service import get_secret_service
+from preloop.utils.audit import log_model_gateway_request
 
 _PROVIDER_PREFIX: Dict[str, str] = {
     "openai": "openai",
@@ -1252,6 +1253,48 @@ class OpenAIGatewayService:
                 else None,
             },
         )
+        if status_code >= 400:
+            log_model_gateway_request(
+                self.db,
+                account_id=self.auth_context.user.account_id,
+                user_id=self.auth_context.user.id,
+                api_usage_id=str(usage_row.id),
+                endpoint=endpoint,
+                endpoint_kind=endpoint_kind,
+                status_code=status_code,
+                outcome=self._audit_outcome(status_code, error_detail),
+                requested_model=requested_model,
+                model_alias=runtime.model_gateway_model_alias or requested_model,
+                provider_name=ai_model.provider_name,
+                gateway_provider=runtime.model_gateway_provider,
+                auth_subject_type=usage_row.auth_subject_type,
+                runtime_session_id=(
+                    str(usage_row.runtime_session_id)
+                    if usage_row.runtime_session_id
+                    else None
+                ),
+                runtime_principal_type=usage_row.runtime_principal_type,
+                runtime_principal_id=usage_row.runtime_principal_id,
+                runtime_principal_name=usage_row.runtime_principal_name,
+                api_key_id=(
+                    str(self.auth_context.api_key.id)
+                    if self.auth_context.api_key
+                    else None
+                ),
+                api_key_name=self.auth_context.api_key.name
+                if self.auth_context.api_key
+                else None,
+                flow_id=str(usage_row.flow_id) if usage_row.flow_id else None,
+                flow_execution_id=(
+                    str(usage_row.flow_execution_id)
+                    if usage_row.flow_execution_id
+                    else None
+                ),
+                upstream_request_id=usage_row.upstream_request_id,
+                error_detail=error_detail,
+                error_type=self._audit_error_type(status_code, error_detail),
+                budget=self._budget_meta_data(budget_result),
+            )
         ModelGatewayEventEmitter(self.db).emit_for_usage(
             usage=usage_row,
             request_payload=request_payload,
@@ -1340,6 +1383,38 @@ class OpenAIGatewayService:
         if budget_result.enforcement_reason == "flow_budget_exceeded":
             return "Model gateway budget exceeded: flow monthly limit reached"
         return "Model gateway budget exceeded"
+
+    @staticmethod
+    def _audit_outcome(status_code: int, error_detail: Optional[str]) -> str:
+        if (
+            status_code == 403
+            and error_detail
+            and "budget exceeded" in error_detail.lower()
+        ):
+            return "budget_denied"
+        return "failed"
+
+    @staticmethod
+    def _audit_error_type(status_code: int, error_detail: Optional[str]) -> str:
+        if (
+            status_code == 403
+            and error_detail
+            and "budget exceeded" in error_detail.lower()
+        ):
+            return "budget_limit_exceeded"
+        if status_code == 400:
+            return "validation_error"
+        if status_code == 401:
+            return "authentication_error"
+        if status_code == 403:
+            return "permission_error"
+        if status_code == 404:
+            return "not_found_error"
+        if status_code == 429:
+            return "rate_limit_error"
+        if status_code >= 500:
+            return "upstream_error"
+        return "gateway_error"
 
     @staticmethod
     def _to_anthropic_stop_reason(finish_reason: Optional[str]) -> Optional[str]:

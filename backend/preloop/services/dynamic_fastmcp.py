@@ -723,6 +723,14 @@ async def {internal_name}({params_str}) -> str:
                     account_id=uuid.UUID(user_context.account_id),
                     user_id=uuid.UUID(user_context.user_id),
                     correlation_id=correlation_id,
+                    extra_details={
+                        "runtime_session_id": user_context.runtime_session_id,
+                        "runtime_principal_type": user_context.runtime_principal_type,
+                        "runtime_principal_id": user_context.runtime_principal_id,
+                        "runtime_principal_name": user_context.runtime_principal_name,
+                        "api_key_id": user_context.api_key_id,
+                        "api_key_name": user_context.api_key_name,
+                    },
                 )
 
             logger.info(
@@ -802,6 +810,13 @@ async def {internal_name}({params_str}) -> str:
                         duration_ms=elapsed_ms,
                         policy_decision=None,
                         rule_matched=None,
+                        correlation_id=correlation_id,
+                        runtime_session_id=user_context.runtime_session_id,
+                        runtime_principal_type=user_context.runtime_principal_type,
+                        runtime_principal_id=user_context.runtime_principal_id,
+                        runtime_principal_name=user_context.runtime_principal_name,
+                        api_key_id=user_context.api_key_id,
+                        api_key_name=user_context.api_key_name,
                     )
             except Exception as audit_err:
                 logger.debug(f"Failed to audit tool execution: {audit_err}")
@@ -876,6 +891,8 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         runtime_principal_type = None
         runtime_principal_id = None
         runtime_principal_name = None
+        api_key_id = str(api_key.id) if api_key else None
+        api_key_name = api_key.name if api_key else None
         if api_key and api_key.context_data:
             flow_execution_id = api_key.context_data.get("flow_execution_id")
             runtime_session_id = api_key.context_data.get("runtime_session_id")
@@ -917,6 +934,8 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             runtime_principal_type=runtime_principal_type,
             runtime_principal_id=runtime_principal_id,
             runtime_principal_name=runtime_principal_name,
+            api_key_id=api_key_id,
+            api_key_name=api_key_name,
         )
 
         logger.info(

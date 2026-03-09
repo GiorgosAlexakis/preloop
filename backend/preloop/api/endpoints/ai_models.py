@@ -1,26 +1,61 @@
 import logging
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
 
 from preloop.api.auth.jwt import get_current_active_user
+from preloop.models.crud import crud_account
 from preloop.schemas.ai_model import (
     AIModelCreate,
+    AIModelGatewayUsageSummaryResponse,
     AIModelRead,
     AIModelUpdate,
 )
 from preloop.models.crud import crud_ai_model
 from preloop.models.db.session import get_db_session
+from preloop.models.models.account import Account
 from preloop.models.models.user import User
 from preloop.models.models.ai_model import AIModel
+from preloop.schemas.gateway_usage import (
+    AccountGatewayUsageSearchResponse,
+    AccountRuntimeSessionListResponse,
+)
+from preloop.services.model_gateway_usage import ModelGatewayUsageService
+from preloop.services.runtime_session_explorer import RuntimeSessionExplorerService
 from preloop.utils.permissions import require_permission
 from preloop.services.ai_model_provider import get_available_models_for_provider
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 public_router = APIRouter()  # Router for endpoints that don't require authentication
+
+
+def _get_account_ai_model(
+    *,
+    db: Session,
+    model_id: uuid.UUID,
+    current_user: User,
+) -> AIModel:
+    """Return an account-owned AI model or raise 404."""
+    db_model = crud_ai_model.get(db=db, id=model_id)
+    if not db_model or db_model.account_id != current_user.account_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
+        )
+    return db_model
+
+
+def _get_current_account(*, db: Session, current_user: User) -> Account:
+    """Return the current user's account."""
+    account = crud_account.get(db=db, id=current_user.account_id)
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
+        )
+    return account
 
 
 @router.post(
@@ -80,13 +115,106 @@ def get_ai_model(
     current_user: User = Depends(get_current_active_user),
 ) -> AIModelRead:
     """Retrieve a specific AI Model by its ID."""
-    db_model = crud_ai_model.get(db=db, id=model_id)
+    return _get_account_ai_model(db=db, model_id=model_id, current_user=current_user)
 
-    if not db_model or db_model.account_id != current_user.account_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
-        )
-    return db_model
+
+@router.get(
+    "/ai-models/{model_id}/summary",
+    response_model=AIModelGatewayUsageSummaryResponse,
+    summary="Get AI Model Usage Summary",
+    tags=["AI Models"],
+)
+@require_permission("view_ai_models")
+def get_ai_model_usage_summary(
+    model_id: uuid.UUID,
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_active_user),
+) -> AIModelGatewayUsageSummaryResponse:
+    """Return model-scoped gateway usage totals for one AI model."""
+    db_model = _get_account_ai_model(
+        db=db, model_id=model_id, current_user=current_user
+    )
+    return ModelGatewayUsageService(db).get_ai_model_summary(
+        ai_model=db_model,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@router.get(
+    "/ai-models/{model_id}/runtime-sessions",
+    response_model=AccountRuntimeSessionListResponse,
+    summary="List AI Model Runtime Sessions",
+    tags=["AI Models"],
+)
+@require_permission("view_ai_models")
+def list_ai_model_runtime_sessions(
+    model_id: uuid.UUID,
+    query: Optional[str] = Query(None, min_length=1),
+    session_source_type: Optional[str] = Query(None),
+    status: str = Query("all", pattern="^(all|active|ended)$"),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_active_user),
+) -> AccountRuntimeSessionListResponse:
+    """List runtime sessions that used one durable AI model."""
+    db_model = _get_account_ai_model(
+        db=db, model_id=model_id, current_user=current_user
+    )
+    account = _get_current_account(db=db, current_user=current_user)
+    return RuntimeSessionExplorerService(db).list_account_sessions(
+        account=account,
+        query=query,
+        ai_model_id=str(db_model.id),
+        session_source_type=session_source_type,
+        status=status,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/ai-models/{model_id}/interactions",
+    response_model=AccountGatewayUsageSearchResponse,
+    summary="List AI Model Interactions",
+    tags=["AI Models"],
+)
+@require_permission("view_ai_models")
+def list_ai_model_interactions(
+    model_id: uuid.UUID,
+    query: Optional[str] = Query(None, min_length=1),
+    runtime_session_id: Optional[str] = Query(None),
+    session_source_type: Optional[str] = Query(None),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_active_user),
+) -> AccountGatewayUsageSearchResponse:
+    """List indexed gateway interactions scoped to one AI model."""
+    db_model = _get_account_ai_model(
+        db=db, model_id=model_id, current_user=current_user
+    )
+    account = _get_current_account(db=db, current_user=current_user)
+    return ModelGatewayUsageService(db).search_account_interactions(
+        account=account,
+        query=query,
+        start_date=start_date,
+        end_date=end_date,
+        ai_model_id=str(db_model.id),
+        runtime_session_id=runtime_session_id,
+        session_source_type=session_source_type,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.put(
@@ -103,12 +231,9 @@ def update_ai_model(
     current_user: User = Depends(get_current_active_user),
 ) -> AIModelRead:
     """Update an existing AI Model by its ID."""
-    db_model = crud_ai_model.get(db=db, id=model_id)
-
-    if not db_model or db_model.account_id != current_user.account_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
-        )
+    db_model = _get_account_ai_model(
+        db=db, model_id=model_id, current_user=current_user
+    )
 
     try:
         updated_model = crud_ai_model.update(
@@ -137,11 +262,7 @@ def delete_ai_model(
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete an AI Model by its ID."""
-    db_model = crud_ai_model.get(db=db, id=model_id)
-    if not db_model or db_model.account_id != current_user.account_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
-        )
+    _get_account_ai_model(db=db, model_id=model_id, current_user=current_user)
 
     crud_ai_model.remove(db=db, id=model_id)
 

@@ -69,6 +69,7 @@ class GatewayUsageByExecution(BaseModel):
 class GatewayUsageBySession(BaseModel):
     """Recent usage aggregate grouped by execution-backed session slices."""
 
+    ai_model_id: Optional[str] = None
     runtime_session_id: Optional[str] = None
     session_source_type: Optional[str] = None
     session_source_id: Optional[str] = None
@@ -88,6 +89,7 @@ class GatewayUsageSearchResultItem(BaseModel):
     """One account-scoped gateway interaction search hit."""
 
     api_usage_id: str
+    ai_model_id: Optional[str] = None
     timestamp: datetime
     status_code: int
     outcome: str
@@ -105,6 +107,9 @@ class GatewayUsageSearchResultItem(BaseModel):
     runtime_principal_type: Optional[str] = None
     runtime_principal_id: Optional[str] = None
     runtime_principal_name: Optional[str] = None
+    auth_subject_type: Optional[str] = None
+    api_key_id: Optional[str] = None
+    api_key_name: Optional[str] = None
     estimated_cost: float = 0.0
     token_usage: GatewayTokenUsage
     excerpt: str
@@ -163,6 +168,24 @@ class AccountRuntimeSessionListResponse(BaseModel):
     items: List[RuntimeSessionSummary] = Field(default_factory=list)
 
 
+class RuntimeSessionActivityItem(BaseModel):
+    """One activity item in a runtime session timeline."""
+
+    activity_type: str
+    timestamp: datetime
+    title: str
+    summary: Optional[str] = None
+    status: Optional[str] = None
+    api_usage_id: Optional[str] = None
+    tool_name: Optional[str] = None
+    server_name: Optional[str] = None
+    auth_subject_type: Optional[str] = None
+    api_key_id: Optional[str] = None
+    api_key_name: Optional[str] = None
+    estimated_cost: Optional[float] = None
+    total_tokens: Optional[int] = None
+
+
 class AccountRuntimeSessionDetailResponse(BaseModel):
     """One runtime session plus captured interaction timeline."""
 
@@ -171,6 +194,7 @@ class AccountRuntimeSessionDetailResponse(BaseModel):
     session: RuntimeSessionSummary
     usage_by_model: List[GatewayUsageByModel] = Field(default_factory=list)
     interactions: AccountGatewayUsageSearchResponse
+    activity_timeline: List[RuntimeSessionActivityItem] = Field(default_factory=list)
 
 
 class AccountGatewayUsageSummaryResponse(BaseModel):

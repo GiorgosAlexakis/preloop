@@ -9,6 +9,7 @@ from preloop.models.models.api_usage import ApiUsage
 from preloop.models.crud import (
     crud_account,
     crud_ai_model,
+    crud_audit_log,
     crud_flow,
     crud_flow_execution,
     crud_gateway_usage_search_document,
@@ -420,6 +421,16 @@ def test_create_response_denies_when_flow_budget_exceeded(db_session, test_user)
     assert exc.value.status_code == 403
     mock_completion.assert_not_called()
 
+    audit_logs = crud_audit_log.get_by_account(
+        db_session, account_id=test_user.account_id
+    )
+    gateway_logs = [log for log in audit_logs if log.action == "model_gateway_request"]
+    assert len(gateway_logs) == 1
+    assert gateway_logs[0].status == "budget_denied"
+    assert gateway_logs[0].details["requested_model"] == "openai/gpt-5"
+    assert gateway_logs[0].details["api_key_name"] == "Gateway Runtime Token"
+    assert gateway_logs[0].details["error_type"] == "budget_limit_exceeded"
+
 
 def test_create_response_maps_upstream_status_to_openai_error(db_session, test_user):
     """Upstream status codes should become OpenAI-native gateway errors."""
@@ -467,6 +478,16 @@ def test_create_response_maps_upstream_status_to_openai_error(db_session, test_u
             "code": None,
         }
     }
+
+    audit_logs = crud_audit_log.get_by_account(
+        db_session, account_id=test_user.account_id
+    )
+    gateway_logs = [log for log in audit_logs if log.action == "model_gateway_request"]
+    assert len(gateway_logs) == 1
+    assert gateway_logs[0].status == "failed"
+    assert gateway_logs[0].details["status_code"] == 429
+    assert gateway_logs[0].details["error_type"] == "rate_limit_error"
+    assert gateway_logs[0].details["error_detail"] == "Rate limit exceeded"
 
 
 def test_stream_response_records_usage_after_completion(db_session, test_user):

@@ -30,6 +30,7 @@ import '../views/authed/api-usage-view.ts';
 import '../views/authed/settings-view.ts';
 import '../views/authed/settings/api-keys-view.ts';
 import '../views/authed/settings/ai-models-view.ts';
+import '../views/authed/settings/ai-model-detail-view.ts';
 import '../views/authed/settings/profile-view.ts';
 import '../views/authed/settings/security-view.ts';
 import '../views/authed/settings/appearance-view.ts';
@@ -378,6 +379,10 @@ export class LitApp extends LitElement {
           { path: 'settings/security', component: 'security-view' },
           { path: 'settings/api-keys', component: 'api-keys-view' },
           { path: 'settings/ai-models', component: 'ai-models-view' },
+          {
+            path: 'settings/ai-models/:modelId',
+            component: 'ai-model-detail-view',
+          },
           { path: 'settings/appearance', component: 'appearance-view' },
           { path: 'settings/account', component: 'account-view' },
           { path: 'settings/users', component: 'user-management-view' },

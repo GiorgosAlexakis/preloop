@@ -54,6 +54,7 @@ def _log_policy_decision_async(
     user_id: Optional[uuid.UUID] = None,
     execution_id: Optional[uuid.UUID] = None,
     correlation_id: Optional[str] = None,
+    extra_details: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Log a policy decision asynchronously (fire-and-forget).
 
@@ -91,6 +92,7 @@ def _log_policy_decision_async(
             user_id=user_id,
             execution_id=execution_id,
             correlation_id=correlation_id,
+            extra_details=extra_details,
         )
     except Exception as e:
         logger.debug(f"Failed to log policy decision to audit: {e}")
@@ -602,6 +604,7 @@ async def evaluate_policy_async(
     execution_id: Optional[uuid.UUID] = None,
     trigger_event: Optional[Dict[str, Any]] = None,
     correlation_id: Optional[str] = None,
+    extra_details: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, Optional[uuid.UUID], Optional[str]]:
     """Async version of evaluate_policy.
 
@@ -636,6 +639,7 @@ async def evaluate_policy_async(
             user_id=user_id,
             execution_id=execution_id,
             correlation_id=correlation_id,
+            extra_details=extra_details,
         )
         return "allow", None, "No tool configuration found"
 
@@ -663,6 +667,7 @@ async def evaluate_policy_async(
                 user_id=user_id,
                 execution_id=execution_id,
                 correlation_id=correlation_id,
+                extra_details=extra_details,
             )
             return (
                 "require_approval",
@@ -678,6 +683,7 @@ async def evaluate_policy_async(
             user_id=user_id,
             execution_id=execution_id,
             correlation_id=correlation_id,
+            extra_details=extra_details,
         )
         return "allow", None, "No access rules defined"
 
@@ -730,6 +736,7 @@ async def evaluate_policy_async(
                     user_id=user_id,
                     execution_id=execution_id,
                     correlation_id=correlation_id,
+                    extra_details=extra_details,
                 )
 
                 return (
@@ -755,6 +762,7 @@ async def evaluate_policy_async(
                 user_id=user_id,
                 execution_id=execution_id,
                 correlation_id=correlation_id,
+                extra_details=extra_details,
             )
             return (
                 "require_approval",
@@ -772,5 +780,6 @@ async def evaluate_policy_async(
         user_id=user_id,
         execution_id=execution_id,
         correlation_id=correlation_id,
+        extra_details=extra_details,
     )
     return "allow", None, "No rules matched (default allow)"

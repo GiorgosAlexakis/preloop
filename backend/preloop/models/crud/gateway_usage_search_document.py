@@ -10,6 +10,7 @@ from sqlalchemy import String, case, cast, func
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
+from ..models.api_key import ApiKey
 from ..models.flow import Flow
 from ..models.flow_execution import FlowExecution
 from ..models.gateway_usage_search_document import GatewayUsageSearchDocument
@@ -71,6 +72,7 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
         start_date: datetime,
         end_date: datetime,
         query: Optional[str] = None,
+        ai_model_id: Optional[str] = None,
         provider_name: Optional[str] = None,
         model_alias: Optional[str] = None,
         flow_id: Optional[str] = None,
@@ -100,6 +102,7 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
                 GatewayUsageSearchDocument,
                 ApiUsage,
                 Flow.name.label("flow_name"),
+                ApiKey.name.label("api_key_name"),
                 RuntimeSession.id.label("resolved_runtime_session_id"),
                 resolved_session_source_type.label("resolved_session_source_type"),
                 resolved_session_source_id.label("resolved_session_source_id"),
@@ -107,6 +110,7 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             )
             .join(ApiUsage, GatewayUsageSearchDocument.api_usage_id == ApiUsage.id)
             .outerjoin(Flow, ApiUsage.flow_id == Flow.id)
+            .outerjoin(ApiKey, ApiUsage.api_key_id == ApiKey.id)
             .outerjoin(FlowExecution, ApiUsage.flow_execution_id == FlowExecution.id)
             .outerjoin(RuntimeSession, ApiUsage.runtime_session_id == RuntimeSession.id)
             .filter(
@@ -117,11 +121,15 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             )
         )
 
-        if query:
-            normalized_query = f"%{' '.join(query.strip().split())}%"
+        normalized_query = " ".join(query.strip().split()) if query else None
+        if normalized_query:
             base_query = base_query.filter(
-                GatewayUsageSearchDocument.searchable_text.ilike(normalized_query)
+                func.to_tsvector(
+                    "simple", GatewayUsageSearchDocument.searchable_text
+                ).op("@@")(func.websearch_to_tsquery("simple", normalized_query))
             )
+        if ai_model_id:
+            base_query = base_query.filter(ApiUsage.ai_model_id == ai_model_id)
         if provider_name:
             base_query = base_query.filter(ApiUsage.provider_name == provider_name)
         if model_alias:
@@ -155,6 +163,9 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             items.append(
                 {
                     "api_usage_id": str(usage.id),
+                    "ai_model_id": str(usage.ai_model_id)
+                    if usage.ai_model_id
+                    else None,
                     "timestamp": usage.timestamp,
                     "status_code": usage.status_code,
                     "outcome": "error" if usage.status_code >= 400 else "success",
@@ -180,12 +191,15 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
                     "runtime_principal_type": usage.runtime_principal_type,
                     "runtime_principal_id": usage.runtime_principal_id,
                     "runtime_principal_name": usage.runtime_principal_name,
+                    "auth_subject_type": usage.auth_subject_type,
+                    "api_key_id": str(usage.api_key_id) if usage.api_key_id else None,
+                    "api_key_name": row.api_key_name,
                     "estimated_cost": float(usage.estimated_cost or 0.0),
                     "prompt_tokens": int(usage.prompt_tokens or 0),
                     "completion_tokens": int(usage.completion_tokens or 0),
                     "total_tokens": int(usage.total_tokens or 0),
                     "excerpt": self._build_excerpt(
-                        document.searchable_text, query=query
+                        document.searchable_text, query=normalized_query
                     ),
                     "meta_data": document.meta_data or {},
                 }

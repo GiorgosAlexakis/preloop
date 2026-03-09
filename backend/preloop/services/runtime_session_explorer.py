@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 from typing import Optional
 
 from fastapi import HTTPException
@@ -14,11 +15,13 @@ from preloop.models.crud import (
     crud_runtime_session,
 )
 from preloop.models.models.account import Account
+from preloop.models.models.flow_execution import FlowExecution
 from preloop.schemas.gateway_usage import (
     AccountGatewayUsageSearchResponse,
     AccountRuntimeSessionDetailResponse,
     AccountRuntimeSessionListResponse,
     GatewayTokenUsage,
+    RuntimeSessionActivityItem,
     RuntimeSessionSummary,
 )
 from preloop.services.model_gateway_usage import ModelGatewayUsageService
@@ -35,6 +38,7 @@ class RuntimeSessionExplorerService:
         *,
         account: Account,
         query: Optional[str] = None,
+        ai_model_id: Optional[str] = None,
         session_source_type: Optional[str] = None,
         status: str = "all",
         start_date: Optional[datetime] = None,
@@ -49,6 +53,7 @@ class RuntimeSessionExplorerService:
             start_date=start_date,
             end_date=end_date,
             query=query,
+            ai_model_id=ai_model_id,
             session_source_type=session_source_type,
             status=status,
             limit=limit,
@@ -106,6 +111,10 @@ class RuntimeSessionExplorerService:
             limit=interaction_limit,
             offset=interaction_offset,
         )
+        interaction_items = [
+            ModelGatewayUsageService._search_row_to_schema(item)
+            for item in interactions["items"]
+        ]
 
         return AccountRuntimeSessionDetailResponse(
             period_start=start_date,
@@ -122,10 +131,11 @@ class RuntimeSessionExplorerService:
                 total=interactions["total"],
                 limit=interaction_limit,
                 offset=interaction_offset,
-                items=[
-                    ModelGatewayUsageService._search_row_to_schema(item)
-                    for item in interactions["items"]
-                ],
+                items=interaction_items,
+            ),
+            activity_timeline=self._build_activity_timeline(
+                summary_row=summary_row,
+                interactions=interaction_items,
             ),
         )
 
@@ -174,3 +184,100 @@ class RuntimeSessionExplorerService:
             estimated_cost=row["estimated_cost"],
             last_request_at=row["last_request_at"],
         )
+
+    def _build_activity_timeline(
+        self,
+        *,
+        summary_row: dict,
+        interactions,
+    ) -> list[RuntimeSessionActivityItem]:
+        items: list[RuntimeSessionActivityItem] = []
+
+        started_at = summary_row.get("started_at")
+        if started_at is not None:
+            items.append(
+                RuntimeSessionActivityItem(
+                    activity_type="session_started",
+                    timestamp=self._normalize_timestamp(started_at),
+                    title="Session started",
+                    summary=summary_row.get("session_reference")
+                    or summary_row.get("runtime_principal_name")
+                    or summary_row.get("session_source_id"),
+                    status="info",
+                )
+            )
+
+        items.extend(
+            RuntimeSessionActivityItem(
+                activity_type="model_interaction",
+                timestamp=self._normalize_timestamp(interaction.timestamp),
+                title=interaction.model_alias or "Model interaction",
+                summary=f"{interaction.method} {interaction.endpoint}",
+                status=interaction.outcome,
+                api_usage_id=interaction.api_usage_id,
+                auth_subject_type=interaction.auth_subject_type,
+                api_key_id=interaction.api_key_id,
+                api_key_name=interaction.api_key_name,
+                estimated_cost=interaction.estimated_cost,
+                total_tokens=interaction.token_usage.total_tokens,
+            )
+            for interaction in interactions
+        )
+
+        flow_execution_id = summary_row.get("flow_execution_id")
+        if flow_execution_id:
+            execution = (
+                self.db.query(FlowExecution)
+                .filter(FlowExecution.id == UUID(flow_execution_id))
+                .first()
+            )
+            if execution and isinstance(execution.mcp_usage_logs, list):
+                for log in execution.mcp_usage_logs:
+                    timestamp = self._parse_timestamp(log.get("timestamp"))
+                    if timestamp is None:
+                        continue
+                    items.append(
+                        RuntimeSessionActivityItem(
+                            activity_type="tool_call",
+                            timestamp=self._normalize_timestamp(timestamp),
+                            title=log.get("tool_name") or "Tool call",
+                            summary=log.get("result_summary")
+                            or log.get("error")
+                            or log.get("server_name"),
+                            status=log.get("status"),
+                            tool_name=log.get("tool_name"),
+                            server_name=log.get("server_name"),
+                        )
+                    )
+
+        ended_at = summary_row.get("ended_at")
+        if ended_at is not None:
+            items.append(
+                RuntimeSessionActivityItem(
+                    activity_type="session_ended",
+                    timestamp=self._normalize_timestamp(ended_at),
+                    title="Session ended",
+                    summary=summary_row.get("session_reference")
+                    or summary_row.get("runtime_principal_name")
+                    or summary_row.get("session_source_id"),
+                    status="completed",
+                )
+            )
+
+        return sorted(items, key=lambda item: item.timestamp, reverse=True)
+
+    @staticmethod
+    def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        normalized = value.replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _normalize_timestamp(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)

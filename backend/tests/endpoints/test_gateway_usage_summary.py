@@ -1,6 +1,7 @@
 """Endpoint tests for gateway usage summaries."""
 
 from preloop.models.crud import (
+    crud_ai_model,
     crud_api_usage,
     crud_flow,
     crud_flow_execution,
@@ -347,4 +348,257 @@ def test_account_runtime_sessions_endpoints(client, db_session, test_user):
     assert detail_body["interactions"]["total"] == 1
     assert (
         "deployment risk" in detail_body["interactions"]["items"][0]["excerpt"].lower()
+    )
+
+
+def test_ai_model_detail_endpoints_scope_by_durable_model_id(
+    client, db_session, test_user
+):
+    """AI model detail endpoints should scope by ai_model_id, not alias alone."""
+    primary_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Primary GPT-5",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "is_default": False,
+        },
+        account_id=test_user.account_id,
+    )
+    secondary_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Secondary GPT-5",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "is_default": False,
+        },
+        account_id=test_user.account_id,
+    )
+
+    primary_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-primary",
+        session_reference="claude-primary",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-primary",
+        runtime_principal_name="Primary Workspace",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
+    )
+    secondary_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-secondary",
+        session_reference="claude-secondary",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-secondary",
+        runtime_principal_name="Secondary Workspace",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
+    )
+    db_session.commit()
+
+    primary_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        ai_model_id=str(primary_model.id),
+        runtime_session_id=str(primary_session.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=15,
+        completion_tokens=5,
+        total_tokens=20,
+        estimated_cost=0.04,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-primary",
+        runtime_principal_name="Primary Workspace",
+    )
+    secondary_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=500,
+        duration=0.2,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        ai_model_id=str(secondary_model.id),
+        runtime_session_id=str(secondary_session.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=9,
+        completion_tokens=0,
+        total_tokens=9,
+        estimated_cost=0.02,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-secondary",
+        runtime_principal_name="Secondary Workspace",
+    )
+    search_service = GatewayUsageSearchService(db_session)
+    search_service.index_interaction(
+        usage=primary_usage,
+        request_payload={"input": "Review the rollout checklist"},
+        response_payload={"output_text": "Rollout checklist reviewed"},
+    )
+    search_service.index_interaction(
+        usage=secondary_usage,
+        request_payload={"input": "Review the incident checklist"},
+        response_payload={"error": "provider timeout"},
+    )
+
+    summary_response = client.get(f"/api/v1/ai-models/{primary_model.id}/summary")
+    sessions_response = client.get(
+        f"/api/v1/ai-models/{primary_model.id}/runtime-sessions"
+    )
+    interactions_response = client.get(
+        f"/api/v1/ai-models/{primary_model.id}/interactions",
+        params={"query": "rollout checklist"},
+    )
+
+    assert summary_response.status_code == 200
+    summary_body = summary_response.json()
+    assert summary_body["ai_model_id"] == str(primary_model.id)
+    assert summary_body["total_requests"] == 1
+    assert summary_body["failed_requests"] == 0
+    assert summary_body["token_usage"]["total_tokens"] == 20
+    assert summary_body["estimated_cost"] == 0.04
+    assert len(summary_body["requests_by_day"]) == 1
+    assert summary_body["usage_by_session"][0]["runtime_session_id"] == str(
+        primary_session.id
+    )
+
+    assert sessions_response.status_code == 200
+    sessions_body = sessions_response.json()
+    assert sessions_body["total"] == 1
+    assert sessions_body["items"][0]["id"] == str(primary_session.id)
+    assert sessions_body["items"][0]["runtime_principal_name"] == "Primary Workspace"
+    assert sessions_body["items"][0]["token_usage"]["total_tokens"] == 20
+
+    assert interactions_response.status_code == 200
+    interactions_body = interactions_response.json()
+    assert interactions_body["total"] == 1
+    assert interactions_body["items"][0]["api_usage_id"] == str(primary_usage.id)
+    assert interactions_body["items"][0]["ai_model_id"] == str(primary_model.id)
+    assert interactions_body["items"][0]["runtime_session_id"] == str(
+        primary_session.id
+    )
+    assert "rollout checklist" in interactions_body["items"][0]["excerpt"].lower()
+
+
+def test_runtime_session_detail_includes_flow_activity_timeline(
+    client, db_session, test_user
+):
+    """Flow-backed runtime sessions should include tool and model activity."""
+    flow = crud_flow.create(
+        db=db_session,
+        flow_in=FlowCreate(
+            name="Timeline Flow",
+            prompt_template="Test",
+            trigger_event_source="github",
+            trigger_event_types=["test"],
+            agent_type="codex",
+            agent_config={},
+            allowed_mcp_servers=[],
+            allowed_mcp_tools=[],
+            account_id=test_user.account_id,
+        ),
+        account_id=test_user.account_id,
+    )
+    execution = crud_flow_execution.create(
+        db_session,
+        FlowExecutionCreate(
+            flow_id=flow.id,
+            status="SUCCEEDED",
+            agent_session_reference="timeline-session-1",
+            mcp_usage_logs=[
+                {
+                    "timestamp": "2026-03-10T10:00:01Z",
+                    "server_name": "preloop-mcp",
+                    "tool_name": "search_issues",
+                    "status": "success",
+                    "result_summary": "Found similar issues",
+                }
+            ],
+        ),
+    )
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="flow_execution",
+        session_source_id=str(execution.id),
+        session_reference="timeline-session-1",
+        runtime_principal_type="flow_execution",
+        runtime_principal_id=str(execution.id),
+        runtime_principal_name=flow.name,
+        started_at=execution.start_time,
+        last_activity_at=execution.start_time,
+    )
+    db_session.commit()
+    api_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        flow_id=str(flow.id),
+        flow_execution_id=str(execution.id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=20,
+        completion_tokens=10,
+        total_tokens=30,
+        estimated_cost=0.08,
+        auth_subject_type="api_key",
+    )
+    GatewayUsageSearchService(db_session).index_interaction(
+        usage=api_usage,
+        request_payload={"input": "Summarize recent issue history"},
+        response_payload={"output_text": "Issue history summarized"},
+    )
+
+    detail_response = client.get(
+        f"/api/v1/account/runtime-sessions/{runtime_session.id}"
+    )
+
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert len(detail_body["activity_timeline"]) == 4
+    activity_types = {
+        item["activity_type"] for item in detail_body["activity_timeline"]
+    }
+    assert activity_types == {
+        "session_started",
+        "tool_call",
+        "model_interaction",
+        "session_ended",
+    }
+    assert any(
+        item["activity_type"] == "session_started"
+        and item["title"] == "Session started"
+        for item in detail_body["activity_timeline"]
+    )
+    assert any(
+        item["activity_type"] == "tool_call" and item["title"] == "search_issues"
+        for item in detail_body["activity_timeline"]
+    )
+    assert any(
+        item["activity_type"] == "model_interaction"
+        and item["api_usage_id"] == str(api_usage.id)
+        and item["auth_subject_type"] == "api_key"
+        for item in detail_body["activity_timeline"]
+    )
+    assert any(
+        item["activity_type"] == "session_ended" and item["title"] == "Session ended"
+        for item in detail_body["activity_timeline"]
     )

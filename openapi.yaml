@@ -3859,6 +3859,237 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-models/{model_id}/summary:
+    get:
+      tags:
+      - AI Models
+      - AI Models
+      summary: Get AI Model Usage Summary
+      description: Return model-scoped gateway usage totals for one AI model.
+      operationId: get_ai_model_usage_summary_api_v1_ai_models__model_id__summary_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Model Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIModelGatewayUsageSummaryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-models/{model_id}/runtime-sessions:
+    get:
+      tags:
+      - AI Models
+      - AI Models
+      summary: List AI Model Runtime Sessions
+      description: List runtime sessions that used one durable AI model.
+      operationId: list_ai_model_runtime_sessions_api_v1_ai_models__model_id__runtime_sessions_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Model Id
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|ended)$
+          default: all
+          title: Status
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRuntimeSessionListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-models/{model_id}/interactions:
+    get:
+      tags:
+      - AI Models
+      - AI Models
+      summary: List AI Model Interactions
+      description: List indexed gateway interactions scoped to one AI model.
+      operationId: list_ai_model_interactions_api_v1_ai_models__model_id__interactions_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Model Id
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: runtime_session_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/ai-models/providers/{provider}/available-models:
     get:
       tags:
@@ -5278,6 +5509,67 @@ components:
       - model_identifier
       title: AIModelCreate
       description: Schema for creating a new AIModel entry.
+    AIModelGatewayUsageSummaryResponse:
+      properties:
+        ai_model_id:
+          type: string
+          title: Ai Model Id
+        model_name:
+          type: string
+          title: Model Name
+        provider_name:
+          type: string
+          title: Provider Name
+        model_identifier:
+          type: string
+          title: Model Identifier
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        requests_by_day:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByDay'
+          type: array
+          title: Requests By Day
+        usage_by_session:
+          items:
+            $ref: '#/components/schemas/GatewayUsageBySession'
+          type: array
+          title: Usage By Session
+      type: object
+      required:
+      - ai_model_id
+      - model_name
+      - provider_name
+      - model_identifier
+      - period_start
+      - period_end
+      - token_usage
+      title: AIModelGatewayUsageSummaryResponse
+      description: Gateway usage summary for one durable AI model.
     AIModelRead:
       properties:
         id:
@@ -5738,6 +6030,11 @@ components:
           title: Usage By Model
         interactions:
           $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
+        activity_timeline:
+          items:
+            $ref: '#/components/schemas/RuntimeSessionActivityItem'
+          type: array
+          title: Activity Timeline
       type: object
       required:
       - period_start
@@ -7845,6 +8142,11 @@ components:
       description: Usage aggregate grouped by model.
     GatewayUsageBySession:
       properties:
+        ai_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Id
         runtime_session_id:
           anyOf:
           - type: string
@@ -7916,6 +8218,11 @@ components:
         api_usage_id:
           type: string
           title: Api Usage Id
+        ai_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Id
         timestamp:
           type: string
           format: date-time
@@ -7992,6 +8299,21 @@ components:
           - type: string
           - type: 'null'
           title: Runtime Principal Name
+        auth_subject_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auth Subject Type
+        api_key_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Id
+        api_key_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Name
         estimated_cost:
           type: number
           title: Estimated Cost
@@ -9628,6 +9950,75 @@ components:
       - EXCLUDE
       title: RuleType
       description: Enum for rule types.
+    RuntimeSessionActivityItem:
+      properties:
+        activity_type:
+          type: string
+          title: Activity Type
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        title:
+          type: string
+          title: Title
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        api_usage_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Usage Id
+        tool_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Name
+        server_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Server Name
+        auth_subject_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auth Subject Type
+        api_key_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Id
+        api_key_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Name
+        estimated_cost:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimated Cost
+        total_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Total Tokens
+      type: object
+      required:
+      - activity_type
+      - timestamp
+      - title
+      title: RuntimeSessionActivityItem
+      description: One activity item in a runtime session timeline.
     RuntimeSessionSummary:
       properties:
         id:
