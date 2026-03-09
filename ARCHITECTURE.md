@@ -546,7 +546,7 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 - [x] Password hashing with industry-standard algorithms
 - [x] Input validation for all parameters via Pydantic models
 - [ ] Issue tracker credentials encrypted at rest (currently stored securely but not encrypted)
-- [ ] Sensitive data masked in logs
+- [x] Sensitive data masked in logs (see Redaction Policy below)
 - [ ] Rate limiting to prevent abuse (partial implementation exists)
 - [ ] 2FA/MFA support for user accounts
 - [ ] Session management and token revocation
@@ -554,6 +554,23 @@ The system is designed to be containerized using Docker, enabling easy deploymen
 
 > **Enterprise Security**: Preloop Enterprise Edition adds RBAC, comprehensive audit logging, and impersonation tracking for compliance requirements. Contact sales@preloop.ai for more information.
 
+### Redaction Policy
+
+Preloop redacts sensitive data before logging, persisting to audit surfaces, or sending notifications. The centralized redaction module (`preloop.utils.redaction`) provides:
+
+- **`redact_dict(data)`**: Recursively replaces values for sensitive field names (e.g. `password`, `api_key`, `token`, `secret`, `credential`) with `***REDACTED***`.
+- **`redact_for_log(data)`**: Produces a safe JSON string for log messages, with sensitive fields redacted and output truncated.
+
+**Redaction is applied in:**
+- MCP tool execution logs (tool arguments)
+- Approval flow logs and notifications (tool args, approval URLs)
+- Flow execution MCP usage logs (persisted to DB)
+- Audit trail (configuration changes, tool executions)
+- Approval request emails and Slack/Mattermost messages
+
+**Known exceptions:** Approval URLs are not logged in full (replaced with `[sent via notification]`). Progress tokens and request context metadata are not logged. Tracker credentials and AI model API keys are not logged when present in payloads.
+
+**Tests:** `tests/utils/test_redaction.py` asserts that representative secrets never appear in redacted output.
 
 ## Real-Time Communication
 

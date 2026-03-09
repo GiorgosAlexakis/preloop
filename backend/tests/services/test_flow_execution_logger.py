@@ -1,6 +1,7 @@
 """Tests for FlowExecutionLogger service."""
 
 from preloop.services.flow_execution_logger import FlowExecutionLogger
+from preloop.utils.redaction import REDACTED_STRING
 
 
 class TestFlowExecutionLoggerInit:
@@ -69,6 +70,27 @@ class TestLogMCPToolCall:
         log_entry = logger.mcp_usage_logs[0]
         assert log_entry["status"] == "failed"
         assert log_entry["error"] == "Connection timeout"
+
+    def test_log_mcp_tool_call_redacts_sensitive_arguments(self):
+        """Test that sensitive arguments are redacted before storage."""
+        logger = FlowExecutionLogger()
+
+        logger.log_mcp_tool_call(
+            server_name="test-server",
+            tool_name="create_issue",
+            arguments={
+                "project": "my-org/repo",
+                "title": "Fix bug",
+                "api_key": "sk-secret-key-123",
+                "password": "super_secret",
+            },
+        )
+
+        log_entry = logger.mcp_usage_logs[0]
+        assert log_entry["arguments"]["project"] == "my-org/repo"
+        assert log_entry["arguments"]["title"] == "Fix bug"
+        assert log_entry["arguments"]["api_key"] == REDACTED_STRING
+        assert log_entry["arguments"]["password"] == REDACTED_STRING
 
     def test_log_multiple_mcp_tool_calls(self):
         """Test logging multiple MCP tool calls."""

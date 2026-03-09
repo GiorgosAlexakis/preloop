@@ -172,16 +172,18 @@ def with_approval(tool_func: Callable) -> Callable:
                         else "webhook"
                     )
 
+                    from preloop.utils.redaction import redact_for_log
+
                     logger.warning(
                         f"\n{'=' * 60}\n"
                         f"🚨 APPROVAL REQUIRED 🚨\n"
                         f"{'=' * 60}\n"
                         f"Tool: {tool_name}\n"
-                        f"Arguments: {kwargs}\n"
+                        f"Arguments: {redact_for_log(kwargs)}\n"
                         f"Request ID: {approval_request.id}\n"
                         f"Notification sent to: {workflow.approval_type} ({notification_channel})\n"
                         f"Timeout: {workflow.timeout_seconds or 300}s\n"
-                        f"Approval URL: {approval_url}\n"
+                        f"Approval URL: [sent via notification]\n"
                         f"{'=' * 60}\n"
                         f"⏳ Waiting for approval (polling every 2s)..."
                     )

@@ -787,6 +787,7 @@ async def {internal_name}({params_str}) -> str:
             # ── Audit: log tool execution ───────────────────────────────
             try:
                 from preloop.plugins.base import get_plugin_manager
+                from preloop.utils.redaction import redact_dict
 
                 plugin_manager = get_plugin_manager()
                 audit_service = plugin_manager.get_service("audit_service")
@@ -796,7 +797,7 @@ async def {internal_name}({params_str}) -> str:
                         account_id=uuid.UUID(user_context.account_id),
                         user_id=uuid.UUID(user_context.user_id),
                         tool_name=name,
-                        tool_args=arguments,
+                        tool_args=redact_dict(arguments),
                         result=exec_status,
                         duration_ms=elapsed_ms,
                         policy_decision=None,

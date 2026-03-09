@@ -148,7 +148,9 @@ class ApprovalService:
                 logger.warning("NATS not available for broadcasting approval update")
                 return
 
-            # Prepare update message
+            from preloop.utils.redaction import redact_dict
+
+            # Prepare update message (redact tool_args for broadcast/display)
             update_data = {
                 "type": f"approval_{event_type}",
                 "approval_request_id": str(approval_request.id),
@@ -157,7 +159,7 @@ class ApprovalService:
                 "approval_workflow_id": str(approval_request.approval_workflow_id),
                 "execution_id": approval_request.execution_id,
                 "tool_name": approval_request.tool_name,
-                "tool_args": approval_request.tool_args,
+                "tool_args": redact_dict(approval_request.tool_args or {}),
                 "agent_reasoning": approval_request.agent_reasoning,
                 "status": approval_request.status,
                 "requested_at": approval_request.requested_at.isoformat(),
@@ -250,6 +252,8 @@ class ApprovalService:
             corr_id = _correlation_id_var.get(None)
         except Exception:
             pass
+        from preloop.utils.redaction import redact_dict
+
         _log_approval_lifecycle_async(
             account_id=account_id,
             approval_id=approval_request.id,
@@ -259,7 +263,7 @@ class ApprovalService:
             correlation_id=corr_id,
             extra_details={
                 "approval_workflow_id": str(approval_workflow_id),
-                "tool_args": tool_args,
+                "tool_args": redact_dict(tool_args),
                 "timeout_seconds": timeout,
             },
         )
@@ -888,8 +892,11 @@ class ApprovalService:
             self.base_url, f"/approval/{approval_request.id}?token={token}"
         )
 
-        # Format tool arguments for display
-        tool_args_formatted = json.dumps(approval_request.tool_args, indent=2)
+        # Format tool arguments for display (redact sensitive fields)
+        from preloop.utils.redaction import redact_dict
+
+        tool_args_redacted = redact_dict(approval_request.tool_args or {})
+        tool_args_formatted = json.dumps(tool_args_redacted, indent=2)
 
         # Create message based on approval type
         if approval_workflow.approval_type in ["slack", "mattermost"]:
@@ -965,12 +972,12 @@ class ApprovalService:
                     },
                 )
         else:
-            # Generic webhook message
+            # Generic webhook message (redact tool_args for external webhooks)
             message = {
                 "type": "approval_request",
                 "request_id": str(approval_request.id),
                 "tool_name": approval_request.tool_name,
-                "tool_args": approval_request.tool_args,
+                "tool_args": tool_args_redacted,
                 "agent_reasoning": approval_request.agent_reasoning,
                 "status": approval_request.status,
                 "requested_at": approval_request.requested_at.isoformat(),
@@ -1040,6 +1047,8 @@ class ApprovalService:
         Returns:
             Created approval request (may be already resolved if AI-driven)
         """
+        # Store raw tool_args for execution; redact only for logging/notifications
+        # (see ARCHITECTURE.md Redaction Policy)
         # Create approval request first
         approval_request = await self.create_approval_request(
             account_id=account_id,
@@ -1377,11 +1386,13 @@ class ApprovalService:
                     f"{self.base_url}/approval/{approval_request.id}?token={token}"
                 )
 
-                # Send email
+                # Send email (redact tool_args for display)
+                from preloop.utils.redaction import redact_dict
+
                 await send_approval_request_email(
                     user_email=user.email,
                     tool_name=approval_request.tool_name,
-                    tool_args=approval_request.tool_args,
+                    tool_args=redact_dict(approval_request.tool_args or {}),
                     approval_url=approval_url,
                     agent_reasoning=approval_request.agent_reasoning,
                 )
@@ -1534,14 +1545,16 @@ class ApprovalService:
         # Default to "medium" for normal requests
         priority_str = getattr(approval_request, "priority", None) or "medium"
 
-        # Build notification payload with tool args for context
+        # Build notification payload (redact tool_args for push display)
+        from preloop.utils.redaction import redact_dict
+
         payload = NotificationPayloadBuilder.new_approval_request(
             request_id=str(approval_request.id),
             tool_name=approval_request.tool_name,
             priority=priority_str,
             expires_at=approval_request.expires_at,
             agent_reasoning=approval_request.agent_reasoning,
-            tool_args=approval_request.tool_args,
+            tool_args=redact_dict(approval_request.tool_args or {}),
         )
 
         apns_priority = 10 if priority_str in ["urgent", "high"] else 5
@@ -1959,14 +1972,16 @@ class ApprovalService:
                 "push_sent": 0,
             }
 
-        # Build escalation notification payload
+        # Build escalation notification payload (redact tool_args for display)
+        from preloop.utils.redaction import redact_dict
+
         payload = NotificationPayloadBuilder.new_approval_request(
             request_id=request_id,
             tool_name=tool_name,
             priority="high",  # Escalations are always high priority
             expires_at=approval_request.expires_at,
             agent_reasoning=f"ESCALATED: {approval_request.agent_reasoning or 'Original approvers did not respond'}",
-            tool_args=approval_request.tool_args,
+            tool_args=redact_dict(approval_request.tool_args or {}),
         )
 
         sent_count = 0
