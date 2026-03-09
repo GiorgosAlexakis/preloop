@@ -203,6 +203,9 @@ describe('ConsoleShell', () => {
       ) as HTMLAnchorElement;
 
       expect(sidebar?.classList.contains('open')).to.be.true;
+      toolsLink.addEventListener('click', (e) => e.preventDefault(), {
+        once: true,
+      });
       toolsLink.click();
       await el.updateComplete;
 
@@ -246,6 +249,9 @@ describe('ConsoleShell', () => {
       await el.updateComplete;
       expect(sidebar?.classList.contains('open')).to.be.true;
 
+      toolsLink.addEventListener('click', (e) => e.preventDefault(), {
+        once: true,
+      });
       toolsLink.click();
       await el.updateComplete;
 

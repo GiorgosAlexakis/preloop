@@ -1,6 +1,6 @@
 """Unit tests for push notification proxy service."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 

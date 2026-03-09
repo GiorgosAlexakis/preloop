@@ -59,8 +59,9 @@ describe('TrackersView', () => {
   it('renders Add New Tracker button', async () => {
     await element.updateComplete;
 
-    // Button is in slot content, use host querySelector for composed tree
-    const addButton = element.querySelector('sl-button[variant="primary"]');
+    const addButton = element.shadowRoot?.querySelector(
+      'sl-button[variant="primary"]'
+    );
     expect(addButton).to.exist;
     expect(addButton?.textContent?.trim()).to.include('Add New Tracker');
   });
@@ -75,8 +76,11 @@ describe('TrackersView', () => {
   it('opens add tracker modal when Add New Tracker button is clicked', async () => {
     await element.updateComplete;
 
-    const addButton = element.querySelector('sl-button[variant="primary"]');
-    addButton?.click();
+    const addButton = element.shadowRoot?.querySelector(
+      'sl-button[variant="primary"]'
+    );
+    expect(addButton).to.exist;
+    addButton!.click();
     await element.updateComplete;
 
     const addModal = element.shadowRoot?.querySelector('add-tracker-modal');

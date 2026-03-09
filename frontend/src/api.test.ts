@@ -53,9 +53,14 @@ describe('api', () => {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
 
-      await expect(fetchWithAuth('/api/v1/test')).to.be.rejectedWith(
-        'Not authenticated'
-      );
+      let threw = false;
+      try {
+        await fetchWithAuth('/api/v1/test');
+      } catch (e: unknown) {
+        threw = true;
+        expect((e as Error).message).to.include('Not authenticated');
+      }
+      expect(threw).to.be.true;
       expect(routerGoStub).to.have.been.calledWith('/login');
     });
 
@@ -65,32 +70,31 @@ describe('api', () => {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      fetchStub
-        .onFirstCall()
-        .resolves(
-          new Response(JSON.stringify({}), {
+      let callCount = 0;
+      fetchStub.callsFake(async (input: RequestInfo | URL) => {
+        callCount++;
+        const url = typeof input === 'string' ? input : input.toString();
+        if (callCount === 1) {
+          return new Response(JSON.stringify({}), {
             status: 401,
             headers: { 'Content-Type': 'application/json' },
-          })
-        )
-        .onSecondCall()
-        .callsFake(async (input: RequestInfo | URL, init?: RequestInit) => {
-          const url = typeof input === 'string' ? input : input.toString();
-          if (url === '/api/v1/auth/refresh') {
-            return new Response(
-              JSON.stringify({
-                access_token: 'new-access-token',
-                refresh_token: 'new-refresh-token',
-              }),
-              { status: 200, headers: { 'Content-Type': 'application/json' } }
-            );
-          }
-          return successResponse;
-        });
+          });
+        }
+        if (url.includes('/api/v1/auth/refresh')) {
+          return new Response(
+            JSON.stringify({
+              access_token: 'new-access-token',
+              refresh_token: 'new-refresh-token',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return successResponse;
+      });
 
       const response = await fetchWithAuth('/api/v1/test');
 
-      expect(response.status).to.equal(200);
+      expect(response?.status).to.equal(200);
       expect(fetchStub).to.have.been.calledThrice; // initial 401, refresh, retry
       const refreshCall = fetchStub
         .getCalls()
@@ -113,7 +117,7 @@ describe('api', () => {
     it('redirects to login when refresh fails on 401', async () => {
       fetchStub.callsFake(async (input: RequestInfo | URL) => {
         const url = typeof input === 'string' ? input : input.toString();
-        if (url === '/api/v1/auth/refresh') {
+        if (url.includes('/api/v1/auth/refresh')) {
           return new Response(
             JSON.stringify({ detail: 'Invalid refresh token' }),
             { status: 401, headers: { 'Content-Type': 'application/json' } }
@@ -125,9 +129,16 @@ describe('api', () => {
         });
       });
 
-      await expect(fetchWithAuth('/api/v1/test')).to.be.rejectedWith(
-        'Failed to refresh token, redirecting to login.'
-      );
+      let threw = false;
+      try {
+        await fetchWithAuth('/api/v1/test');
+      } catch (e: unknown) {
+        threw = true;
+        expect((e as Error).message).to.include(
+          'Failed to refresh token, redirecting to login.'
+        );
+      }
+      expect(threw).to.be.true;
       expect(routerGoStub).to.have.been.calledWith('/login');
     });
   });
