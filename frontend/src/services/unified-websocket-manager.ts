@@ -34,8 +34,21 @@ export class UnifiedWebSocketManager {
   private heartbeatInterval: number | null = null;
   private sessionId: string | null = null;
 
+  private authChangeHandler = (): void => {
+    if (this.state === ConnectionState.CONNECTED) {
+      const token = localStorage.getItem('accessToken');
+      if (token) {
+        this.send({ type: 'authenticate', token });
+        console.log('Sent authentication message (auth-change)');
+      }
+    }
+  };
+
   constructor() {
     this.router = new MessageRouter();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('auth-change', this.authChangeHandler);
+    }
   }
 
   /**
@@ -113,6 +126,17 @@ export class UnifiedWebSocketManager {
       console.error('Failed to create WebSocket connection:', error);
       this.scheduleReconnect();
     }
+  }
+
+  /**
+   * Clean up global event listeners. Call when the manager is no longer needed
+   * (e.g., during testing or when the class is instantiated multiple times).
+   */
+  destroy(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('auth-change', this.authChangeHandler);
+    }
+    this.disconnect();
   }
 
   /**

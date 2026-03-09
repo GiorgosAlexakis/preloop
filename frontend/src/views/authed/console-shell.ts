@@ -3,6 +3,7 @@ import { customElement, query, state } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/details/details.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -11,6 +12,8 @@ import '../../components/global-notice';
 import '../../components/console-header';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import { getFeatures, type FeaturesResponse } from '../../api';
+
+const SIDEBAR_BREAKPOINT = 768;
 
 // static styles = [formStyles, css`
 //     h2 {}
@@ -30,6 +33,15 @@ export class ConsoleShell extends LitElement {
 
   @state()
   private hasTrackers = false;
+
+  @state()
+  private _sidebarOpen = false;
+
+  @state()
+  private _isMobile = false;
+
+  private _mediaQuery?: MediaQueryList;
+  private _mediaQueryHandler?: (e: MediaQueryListEvent) => void;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -54,6 +66,62 @@ export class ConsoleShell extends LitElement {
         flex-shrink: 0;
         display: flex;
         flex-direction: column;
+        transition:
+          width 0.2s ease,
+          transform 0.25s ease;
+        background-color: var(--sl-color-neutral-100);
+        z-index: 100;
+      }
+
+      /* Desktop: when closed, sidebar is fully hidden (hamburger only) */
+      .sidebar.closed {
+        width: 0;
+        min-width: 0;
+        overflow: hidden;
+        padding: 0;
+      }
+
+      .sidebar-wrapper {
+        position: relative;
+        display: flex;
+        flex-shrink: 0;
+      }
+
+      .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        z-index: 99;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+      }
+
+      @media (max-width: 768px) {
+        .sidebar {
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          width: 260px;
+          max-width: 85vw;
+          transform: translateX(-100%);
+          box-shadow: var(--sl-shadow-large);
+        }
+
+        .sidebar.open {
+          transform: translateX(0);
+        }
+
+        .sidebar.closed {
+          width: 260px;
+          min-width: 260px;
+        }
+
+        .sidebar-backdrop.visible {
+          display: block;
+          opacity: 1;
+        }
       }
 
       .sign-out-menu {
@@ -82,14 +150,26 @@ export class ConsoleShell extends LitElement {
         padding: 1rem 2rem 2rem 2rem;
       }
 
+      @media (max-width: 768px) {
+        .main-content {
+          padding: 1rem;
+        }
+      }
+
       .logo {
         margin-left: 2px;
         padding: 1rem;
         background-color: var(--sl-color-neutral-100);
+        display: flex;
+        align-items: center;
       }
 
       .logo img {
         max-width: 150px;
+      }
+
+      .sidebar-label {
+        margin-left: 0.5rem;
       }
 
       sl-menu {
@@ -97,7 +177,7 @@ export class ConsoleShell extends LitElement {
         border-width: 0;
         background-color: var(--sl-color-neutral-100);
         padding: 0;
-        margin-left: 5px;
+        margin-left: -2px;
       }
 
       sl-details::part(base) {
@@ -126,6 +206,20 @@ export class ConsoleShell extends LitElement {
     window.addEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
     });
+    this._mediaQuery = window.matchMedia(
+      `(max-width: ${SIDEBAR_BREAKPOINT}px)`
+    );
+    this._isMobile = this._mediaQuery.matches;
+    this._sidebarOpen = !this._mediaQuery.matches; // desktop: visible, mobile: hidden
+    this._mediaQueryHandler = (e: MediaQueryListEvent) => {
+      this._isMobile = e.matches;
+      if (!e.matches) {
+        this._sidebarOpen = true;
+      } else {
+        this._sidebarOpen = false;
+      }
+    };
+    this._mediaQuery.addEventListener('change', this._mediaQueryHandler);
 
     // Fetch enabled features
     try {
@@ -174,10 +268,33 @@ export class ConsoleShell extends LitElement {
     );
   }
 
+  private _handleSidebarToggle = () => {
+    this._sidebarOpen = !this._sidebarOpen;
+  };
+
+  private _closeSidebar = () => {
+    if (this._isMobile) {
+      this._sidebarOpen = false;
+    }
+  };
+
+  updated(changedProperties: Map<string, unknown>) {
+    super.updated?.(changedProperties);
+    if (
+      changedProperties.has('_sidebarOpen') ||
+      changedProperties.has('_isMobile')
+    ) {
+      document.body.style.overflow =
+        this._sidebarOpen && this._isMobile ? 'hidden' : '';
+    }
+  }
+
   disconnectedCallback() {
+    document.body.style.overflow = '';
     window.removeEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
     });
+    this._mediaQuery?.removeEventListener('change', this._mediaQueryHandler!);
     if (this._trackerCheckInterval) {
       clearInterval(this._trackerCheckInterval);
     }
@@ -197,122 +314,170 @@ export class ConsoleShell extends LitElement {
       <global-notice></global-notice>
 
       <div class="console-container">
-        <div class="sidebar">
-          <div class="logo">
-            <a href="/console"><logo-component></logo-component></a>
-          </div>
-          <sl-menu style="font-size: 16px;">
-            <a href="/console">
-              <sl-menu-item>
-                <sl-icon name="house" slot="prefix"></sl-icon>
-                Overview
-              </sl-menu-item>
-            </a>
-            <a href="/console/tools">
-              <sl-menu-item>
-                <sl-icon name="tools" slot="prefix"></sl-icon>
-                Tools
-              </sl-menu-item>
-            </a>
-            ${this._featuresLoaded
-              ? this.features['audit_logs']
-                ? html`
-                    <a href="/console/audit">
-                      <sl-menu-item>
-                        <sl-icon name="journal-text" slot="prefix"></sl-icon>
-                        Audit
-                      </sl-menu-item>
-                    </a>
-                  `
-                : html`
-                    <a href="/console/approvals">
-                      <sl-menu-item>
-                        <sl-icon name="shield-check" slot="prefix"></sl-icon>
-                        Approvals
-                      </sl-menu-item>
-                    </a>
-                  `
-              : ''}
-            <!-- Governance is now integrated into the Tools page -->
-            <a href="/console/flows">
-              <sl-menu-item>
-                <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
-                Flows
-              </sl-menu-item>
-            </a>
-            <a href="/console/trackers">
-              <sl-menu-item>
-                <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
-                Trackers
-              </sl-menu-item>
-            </a>
-            ${this.hasTrackers && this._hasAnyAnalyticsFeature()
-              ? html`<sl-details>
-                  <span slot="summary">
-                    <sl-icon
-                      name="kanban"
-                      style="padding-right: 6px;"
-                    ></sl-icon>
-                    Issues
-                  </span>
-                  <sl-menu>
-                    ${this.features.issue_duplicates
-                      ? html`<a href="/console/issues">
-                          <sl-menu-item>Similarity</sl-menu-item>
-                        </a>`
-                      : ''}
-                    ${this.features.issue_compliance
-                      ? html`<a href="/console/issues/compliance">
-                          <sl-menu-item>Compliance</sl-menu-item>
-                        </a>`
-                      : ''}
-                    ${this.features.issue_dependencies
-                      ? html`<a href="/console/issues/dependencies">
-                          <sl-menu-item>Dependencies</sl-menu-item>
-                        </a>`
-                      : ''}
-                  </sl-menu>
-                </sl-details>`
-              : ''}
-
-            <sl-details>
-              <span slot="summary">
-                <sl-icon name="gear" style="padding-right: 6px;"></sl-icon>
-                Settings
-              </span>
-              <sl-menu>
-                ${this.features.user_management
-                  ? html`<a href="/console/settings/account">
-                        <sl-menu-item>Account</sl-menu-item>
+        <div class="sidebar-wrapper">
+          <div
+            class="sidebar-backdrop ${this._sidebarOpen ? 'visible' : ''}"
+            @click=${this._closeSidebar}
+            aria-hidden="true"
+          ></div>
+          <div
+            class="sidebar ${this._sidebarOpen ? 'open' : 'closed'}"
+            role="navigation"
+            aria-label="Console navigation"
+          >
+            <div class="logo">
+              <a href="/console" @click=${this._closeSidebar}
+                ><logo-component></logo-component
+              ></a>
+            </div>
+            <sl-menu style="font-size: 16px;">
+              <a href="/console" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="house" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Overview</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/tools" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="tools" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Tools</span>
+                </sl-menu-item>
+              </a>
+              ${this._featuresLoaded
+                ? this.features['audit_logs']
+                  ? html`
+                      <a href="/console/audit" @click=${this._closeSidebar}>
+                        <sl-menu-item>
+                          <sl-icon name="journal-text" slot="prefix"></sl-icon>
+                          <span class="sidebar-label">Audit</span>
+                        </sl-menu-item>
                       </a>
-                      <a href="/console/settings/users">
-                        <sl-menu-item>Users</sl-menu-item>
-                      </a>`
-                  : ''}
-                ${this.features.team_management
-                  ? html`<a href="/console/settings/teams">
-                      <sl-menu-item>Teams</sl-menu-item>
-                    </a>`
-                  : ''}
-                ${this.features.user_management || this.features.team_management
-                  ? html`<a href="/console/settings/invitations">
-                      <sl-menu-item>Invitations</sl-menu-item>
-                    </a>`
-                  : ''}
-                <a href="/console/settings/ai-models">
-                  <sl-menu-item>AI Models</sl-menu-item>
-                </a>
+                    `
+                  : html`
+                      <a href="/console/approvals" @click=${this._closeSidebar}>
+                        <sl-menu-item>
+                          <sl-icon name="shield-check" slot="prefix"></sl-icon>
+                          <span class="sidebar-label">Approvals</span>
+                        </sl-menu-item>
+                      </a>
+                    `
+                : ''}
+              <!-- Governance is now integrated into the Tools page -->
+              <a href="/console/flows" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Flows</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/trackers" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Trackers</span>
+                </sl-menu-item>
+              </a>
+              ${this.hasTrackers && this._hasAnyAnalyticsFeature()
+                ? html`<sl-details>
+                    <span slot="summary">
+                      <sl-icon
+                        name="kanban"
+                        style="padding-right: 6px;"
+                      ></sl-icon>
+                      <span class="sidebar-label">Issues</span>
+                    </span>
+                    <sl-menu>
+                      ${this.features.issue_duplicates
+                        ? html`<a
+                            href="/console/issues"
+                            @click=${this._closeSidebar}
+                          >
+                            <sl-menu-item>Similarity</sl-menu-item>
+                          </a>`
+                        : ''}
+                      ${this.features.issue_compliance
+                        ? html`<a
+                            href="/console/issues/compliance"
+                            @click=${this._closeSidebar}
+                          >
+                            <sl-menu-item>Compliance</sl-menu-item>
+                          </a>`
+                        : ''}
+                      ${this.features.issue_dependencies
+                        ? html`<a
+                            href="/console/issues/dependencies"
+                            @click=${this._closeSidebar}
+                          >
+                            <sl-menu-item>Dependencies</sl-menu-item>
+                          </a>`
+                        : ''}
+                    </sl-menu>
+                  </sl-details>`
+                : ''}
 
-                <a href="/console/settings/api-keys">
-                  <sl-menu-item>API Keys</sl-menu-item>
-                </a>
-              </sl-menu>
-            </sl-details>
-          </sl-menu>
+              <sl-details>
+                <span slot="summary">
+                  <sl-icon name="gear" style="padding-right: 6px;"></sl-icon>
+                  <span class="sidebar-label">Settings</span>
+                </span>
+                <sl-menu>
+                  ${this.features.user_management
+                    ? html`<a
+                          href="/console/settings/account"
+                          @click=${this._closeSidebar}
+                        >
+                          <sl-menu-item>Account</sl-menu-item>
+                        </a>
+                        <a
+                          href="/console/settings/users"
+                          @click=${this._closeSidebar}
+                        >
+                          <sl-menu-item>Users</sl-menu-item>
+                        </a>`
+                    : ''}
+                  ${this.features.team_management
+                    ? html`<a
+                        href="/console/settings/teams"
+                        @click=${this._closeSidebar}
+                      >
+                        <sl-menu-item>Teams</sl-menu-item>
+                      </a>`
+                    : ''}
+                  ${this.features.user_management ||
+                  this.features.team_management
+                    ? html`<a
+                        href="/console/settings/invitations"
+                        @click=${this._closeSidebar}
+                      >
+                        <sl-menu-item>Invitations</sl-menu-item>
+                      </a>`
+                    : ''}
+                  <a
+                    href="/console/settings/ai-models"
+                    @click=${this._closeSidebar}
+                  >
+                    <sl-menu-item>AI Models</sl-menu-item>
+                  </a>
+
+                  <a
+                    href="/console/settings/api-keys"
+                    @click=${this._closeSidebar}
+                  >
+                    <sl-menu-item>API Keys</sl-menu-item>
+                  </a>
+                </sl-menu>
+              </sl-details>
+            </sl-menu>
+          </div>
         </div>
 
         <div class="main-view">
-          <console-header></console-header>
+          <console-header>
+            <sl-icon-button
+              slot="nav-toggle"
+              name="list"
+              label="Open menu"
+              @click=${this._handleSidebarToggle}
+            ></sl-icon-button>
+          </console-header>
           <div class="main-content">
             <slot></slot>
           </div>

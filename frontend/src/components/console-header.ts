@@ -92,6 +92,14 @@ export class ConsoleHeader extends LitElement {
       padding: 0.4rem;
       border-bottom: 1px solid var(--sl-color-neutral-200);
     }
+    .nav-toggle {
+      display: flex;
+      align-items: center;
+      margin-right: auto;
+    }
+    .nav-toggle sl-icon-button {
+      font-size: 1.5rem;
+    }
     .user-menu {
       display: flex;
       align-items: center;
@@ -262,7 +270,8 @@ export class ConsoleHeader extends LitElement {
     this.loadRunningExecutions();
     this.loadPendingApprovals();
     this.loadUserNotifications();
-    // Request desktop notification permission
+    // Request desktop notification permission when console loads.
+    // Browsers may require a user gesture; if so, user can click the bell icon.
     this.requestNotificationPermission();
   }
 
@@ -958,6 +967,9 @@ export class ConsoleHeader extends LitElement {
 
     return html`
       <div class="header-container">
+        <div class="nav-toggle">
+          <slot name="nav-toggle"></slot>
+        </div>
         <div class="user-menu">
           <!-- Notification Center -->
           <sl-dropdown distance="8" placement="bottom-end">
