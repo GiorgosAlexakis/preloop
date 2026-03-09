@@ -104,7 +104,7 @@ jobs:
       - name: Run tests
         run: |
           pytest -v \
-            --ignore=backend/tests/integration \
+            -m "not integration" \
             --cov=backend/preloop \
             --cov-report=xml \
             --junitxml=test-results.xml

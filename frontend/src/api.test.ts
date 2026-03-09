@@ -1,0 +1,193 @@
+import { expect } from '@open-wc/testing';
+import sinon from 'sinon';
+import { Router } from '@vaadin/router';
+import { fetchWithAuth, AuthedElement } from './api.js';
+import { customElement } from 'lit/decorators.js';
+
+// Minimal test element that exposes fetchData for testing
+@customElement('test-authed-element')
+class TestAuthedElement extends AuthedElement {
+  async fetchDataForTest(url: string, options?: RequestInit) {
+    return this.fetchData(url, options);
+  }
+}
+
+describe('api', () => {
+  let fetchStub: sinon.SinonStub;
+  let routerGoStub: sinon.SinonStub;
+
+  beforeEach(() => {
+    localStorage.setItem('accessToken', 'test-access-token');
+    localStorage.setItem('refreshToken', 'test-refresh-token');
+    fetchStub = sinon.stub(window, 'fetch');
+    routerGoStub = sinon.stub(Router, 'go');
+  });
+
+  afterEach(() => {
+    fetchStub.restore();
+    routerGoStub.restore();
+    localStorage.clear();
+  });
+
+  describe('fetchWithAuth', () => {
+    it('includes Authorization header with access token', async () => {
+      fetchStub.resolves(
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      await fetchWithAuth('/api/v1/test');
+
+      expect(fetchStub).to.have.been.calledOnce;
+      const [url, options] = fetchStub.firstCall.args;
+      expect(url).to.equal('/api/v1/test');
+      expect(options?.headers).to.be.instanceOf(Headers);
+      expect((options?.headers as Headers).get('Authorization')).to.equal(
+        'Bearer test-access-token'
+      );
+    });
+
+    it('redirects to login when no access token', async () => {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+
+      await expect(fetchWithAuth('/api/v1/test')).to.be.rejectedWith(
+        'Not authenticated'
+      );
+      expect(routerGoStub).to.have.been.calledWith('/login');
+    });
+
+    it('refreshes token and retries on 401', async () => {
+      const successResponse = new Response(JSON.stringify({ data: 'ok' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      fetchStub
+        .onFirstCall()
+        .resolves(
+          new Response(JSON.stringify({}), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+        .onSecondCall()
+        .callsFake(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input.toString();
+          if (url === '/api/v1/auth/refresh') {
+            return new Response(
+              JSON.stringify({
+                access_token: 'new-access-token',
+                refresh_token: 'new-refresh-token',
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          return successResponse;
+        });
+
+      const response = await fetchWithAuth('/api/v1/test');
+
+      expect(response.status).to.equal(200);
+      expect(fetchStub).to.have.been.calledThrice; // initial 401, refresh, retry
+      const refreshCall = fetchStub
+        .getCalls()
+        .find((c) => String(c.args[0]).includes('/api/v1/auth/refresh'));
+      expect(refreshCall).to.exist;
+      const retryCall = fetchStub
+        .getCalls()
+        .find(
+          (c) =>
+            String(c.args[0]) === '/api/v1/test' &&
+            (c.args[1] as RequestInit)?.headers &&
+            (c.args[1] as RequestInit).headers instanceof Headers &&
+            ((c.args[1] as RequestInit).headers as Headers).get(
+              'Authorization'
+            ) === 'Bearer new-access-token'
+        );
+      expect(retryCall).to.exist;
+    });
+
+    it('redirects to login when refresh fails on 401', async () => {
+      fetchStub.callsFake(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url === '/api/v1/auth/refresh') {
+          return new Response(
+            JSON.stringify({ detail: 'Invalid refresh token' }),
+            { status: 401, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(JSON.stringify({}), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      });
+
+      await expect(fetchWithAuth('/api/v1/test')).to.be.rejectedWith(
+        'Failed to refresh token, redirecting to login.'
+      );
+      expect(routerGoStub).to.have.been.calledWith('/login');
+    });
+  });
+
+  describe('AuthedElement.fetchData', () => {
+    it('returns parsed JSON on success', async () => {
+      const testData = { id: '1', name: 'Test' };
+      fetchStub.resolves(
+        new Response(JSON.stringify(testData), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      const el = document.createElement(
+        'test-authed-element'
+      ) as TestAuthedElement;
+      document.body.appendChild(el);
+      await el.updateComplete;
+
+      const result = await el.fetchDataForTest('/api/v1/test');
+
+      expect(result).to.deep.equal(testData);
+      document.body.removeChild(el);
+    });
+
+    it('returns null on HTTP error', async () => {
+      fetchStub.resolves(
+        new Response(JSON.stringify({ detail: 'Not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      const el = document.createElement(
+        'test-authed-element'
+      ) as TestAuthedElement;
+      document.body.appendChild(el);
+      await el.updateComplete;
+
+      const result = await el.fetchDataForTest('/api/v1/test');
+
+      expect(result).to.be.null;
+      document.body.removeChild(el);
+    });
+
+    it('returns null when fetchWithAuth throws (e.g. auth failure)', async () => {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+
+      const el = document.createElement(
+        'test-authed-element'
+      ) as TestAuthedElement;
+      document.body.appendChild(el);
+      await el.updateComplete;
+
+      const result = await el.fetchDataForTest('/api/v1/test');
+
+      expect(result).to.be.null;
+      document.body.removeChild(el);
+    });
+  });
+});

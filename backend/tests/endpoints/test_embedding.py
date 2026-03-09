@@ -260,3 +260,25 @@ class TestGetRawEmbeddings:
 def mock_db_session():
     """Create a mock database session."""
     return MagicMock()
+
+
+class TestEmbeddingHTTP:
+    """HTTP integration tests for embedding endpoint."""
+
+    def test_get_embeddings_success(self, client):
+        """Test GET /api/v1/embeddings returns 200 and valid structure."""
+        response = client.get("/api/v1/embeddings")
+        assert response.status_code == 200
+        data = response.json()
+        assert "data" in data
+        assert isinstance(data["data"], list)
+
+    def test_get_embeddings_with_query_params(self, client):
+        """Test GET /api/v1/embeddings with optional query parameters (skip, limit)."""
+        response = client.get(
+            "/api/v1/embeddings",
+            params={"skip": 10, "limit": 50},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "data" in data

@@ -606,6 +606,46 @@ class TestCreateAndNotify:
 
             assert result == mock_approval_request
 
+    async def test_create_and_notify_stores_raw_tool_args_for_execution(
+        self, approval_service, sample_approval_workflow
+    ):
+        """Tool args with sensitive keys must be stored raw for execution after approval.
+
+        Redaction is applied only for logging/notifications, not for storage.
+        See ARCHITECTURE.md Redaction Policy.
+        """
+        tool_args_with_secret = {
+            "command": "deploy to production",
+            "api_key": "sk-secret-123",
+            "environment": "prod",
+        }
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                AsyncMock(return_value=MagicMock(spec=ApprovalRequest)),
+            ) as mock_create,
+            patch.object(
+                approval_service,
+                "send_notifications",
+                AsyncMock(return_value={}),
+            ),
+        ):
+            sample_approval_workflow.approval_mode = "manual"
+            await approval_service.create_and_notify(
+                account_id="test_account",
+                tool_configuration_id=uuid.uuid4(),
+                approval_workflow=sample_approval_workflow,
+                tool_name="bash",
+                tool_args=tool_args_with_secret,
+            )
+
+            # create_approval_request must receive raw args (not redacted)
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["tool_args"]["api_key"] == "sk-secret-123"
+            assert call_kwargs["tool_args"]["command"] == "deploy to production"
+
 
 class TestWaitForApproval:
     """Test wait_for_approval method."""

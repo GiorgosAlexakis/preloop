@@ -191,6 +191,31 @@ test:unit:preloop-endpoints-embedding:
   variables:
     TEST_PATHS: "backend/tests/endpoints/test_embedding.py"
 
+test:unit:preloop-endpoints-roles:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_roles.py"
+
+test:unit:preloop-endpoints-version:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_version.py"
+
+test:unit:preloop-endpoints-account:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_account.py"
+
+test:unit:preloop-endpoints-public-approval:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_public_approval.py"
+
+test:unit:preloop-integration-e2e:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/integration/test_api_e2e_flows.py"
+
 test:unit:preloop-endpoints-flows:
   extends: .test:unit:template
   variables:
@@ -381,10 +406,15 @@ test:coverage:
     # - test:unit:mcp
     - test:unit:preloop-sync
     - test:unit:preloop-other
+    - test:unit:preloop-integration-e2e
     - test:unit:preloop-endpoints-ai-models
     - test:unit:preloop-endpoints-auth
     - test:unit:preloop-endpoints-comments
     - test:unit:preloop-endpoints-embedding
+    - test:unit:preloop-endpoints-roles
+    - test:unit:preloop-endpoints-version
+    - test:unit:preloop-endpoints-account
+    - test:unit:preloop-endpoints-public-approval
     - test:unit:preloop-endpoints-flows
     - test:unit:preloop-endpoints-health
     # - test:unit:preloop-endpoints-issue-compliance
@@ -395,7 +425,6 @@ test:coverage:
     - test:unit:preloop-endpoints-projects
     - test:unit:preloop-endpoints-search
     - test:unit:preloop-endpoints-trackers
-    # - test:unit:preloop-endpoints-version
     - test:unit:preloop-endpoints-webhooks
     - test:unit:preloop-endpoints-mcp
     - test:unit:preloop-endpoints-mcp-servers

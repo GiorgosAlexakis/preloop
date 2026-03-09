@@ -11,6 +11,8 @@ PASSWORD = os.environ.get("PRELOOP_TEST_PASSWORD")
 # Directory for screenshots on failure
 SCREENSHOTS_DIR = Path(__file__).parent / "screenshots"
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture(autouse=True)
 def capture_screenshot_on_failure(request, page: Page):

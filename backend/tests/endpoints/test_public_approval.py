@@ -1,0 +1,219 @@
+"""Tests for public approval API endpoints (token-based, no auth required)."""
+
+import uuid
+from datetime import datetime, UTC
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from fastapi.testclient import TestClient
+
+from preloop.models.crud import crud_approval_workflow
+from preloop.models.models.approval_request import ApprovalRequest
+from preloop.models.models.tool_configuration import ToolConfiguration
+from preloop.models.schemas.tool_configuration import ApprovalWorkflowCreate
+
+
+class TestPublicApprovalGetData:
+    """Test GET /approval/{request_id}/data endpoint."""
+
+    def test_get_approval_data_success(self, client: TestClient, db_session, test_user):
+        """Test GET approval data with valid token returns request details."""
+        # Create approval workflow
+        workflow = crud_approval_workflow.create(
+            db_session,
+            obj_in=ApprovalWorkflowCreate(name="Test Workflow", approval_type="manual"),
+            account_id=str(test_user.account_id),
+        )
+        db_session.flush()
+
+        # Create tool configuration
+        tool_config = ToolConfiguration(
+            tool_name="test_tool",
+            tool_source="builtin",
+            account_id=test_user.account_id,
+            approval_workflow_id=workflow.id,
+        )
+        db_session.add(tool_config)
+        db_session.flush()
+
+        # Create approval request with known token
+        approval_token = "test-token-12345"
+        approval_request = ApprovalRequest(
+            account_id=test_user.account_id,
+            tool_configuration_id=tool_config.id,
+            approval_workflow_id=workflow.id,
+            execution_id="exec-1",
+            tool_name="test_tool",
+            tool_args={"arg1": "value1"},
+            agent_reasoning="Test reasoning",
+            status="pending",
+            requested_at=datetime.now(UTC),
+            approval_token=approval_token,
+        )
+        db_session.add(approval_request)
+        db_session.flush()
+
+        response = client.get(
+            f"/approval/{approval_request.id}/data",
+            params={"token": approval_token},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == str(approval_request.id)
+        assert data["tool_name"] == "test_tool"
+        assert data["tool_args"] == {"arg1": "value1"}
+        assert data["agent_reasoning"] == "Test reasoning"
+        assert data["status"] == "pending"
+        assert "requested_at" in data
+
+    def test_get_approval_data_invalid_token(
+        self, client: TestClient, db_session, test_user
+    ):
+        """Test GET approval data with invalid token returns 404."""
+        request_id = uuid.uuid4()
+        response = client.get(
+            f"/approval/{request_id}/data",
+            params={"token": "invalid-token"},
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+    def test_get_approval_data_missing_token(self, client: TestClient):
+        """Test GET approval data without token returns 422."""
+        request_id = uuid.uuid4()
+        response = client.get(f"/approval/{request_id}/data")
+        assert response.status_code == 422
+
+
+class TestPublicApprovalDecide:
+    """Test POST /approval/{request_id}/decide endpoint."""
+
+    def test_decide_approval_invalid_token(self, client: TestClient):
+        """Test POST decide with invalid token returns 404."""
+        request_id = uuid.uuid4()
+        response = client.post(
+            f"/approval/{request_id}/decide",
+            params={"token": "invalid-token"},
+            json={"action": "approve", "comment": None},
+        )
+        assert response.status_code == 404
+
+    def test_decide_approval_invalid_action(
+        self, client: TestClient, db_session, test_user
+    ):
+        """Test POST decide with invalid action returns 400."""
+        # Create minimal approval request
+        workflow = crud_approval_workflow.create(
+            db_session,
+            obj_in=ApprovalWorkflowCreate(name="Test WF", approval_type="manual"),
+            account_id=str(test_user.account_id),
+        )
+        db_session.flush()
+
+        tool_config = ToolConfiguration(
+            tool_name="test_tool",
+            tool_source="builtin",
+            account_id=test_user.account_id,
+            approval_workflow_id=workflow.id,
+        )
+        db_session.add(tool_config)
+        db_session.flush()
+
+        approval_token = "decide-test-token"
+        approval_request = ApprovalRequest(
+            account_id=test_user.account_id,
+            tool_configuration_id=tool_config.id,
+            approval_workflow_id=workflow.id,
+            execution_id="exec-1",
+            tool_name="test_tool",
+            tool_args={},
+            status="pending",
+            requested_at=datetime.now(UTC),
+            approval_token=approval_token,
+        )
+        db_session.add(approval_request)
+        db_session.flush()
+
+        with patch(
+            "preloop.api.endpoints.public_approval.get_async_db_session"
+        ) as mock_get_session:
+            mock_session = AsyncMock()
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+
+            with patch(
+                "preloop.api.endpoints.public_approval.ApprovalService"
+            ) as mock_service_cls:
+                mock_service = AsyncMock()
+                mock_service_cls.return_value = mock_service
+
+                response = client.post(
+                    f"/approval/{approval_request.id}/decide",
+                    params={"token": approval_token},
+                    json={"action": "invalid_action", "comment": None},
+                )
+                assert response.status_code == 400
+                assert "invalid" in response.json()["detail"].lower()
+
+    def test_decide_approval_success(self, client: TestClient, db_session, test_user):
+        """Test POST decide with approve action succeeds."""
+        workflow = crud_approval_workflow.create(
+            db_session,
+            obj_in=ApprovalWorkflowCreate(name="Test WF", approval_type="manual"),
+            account_id=str(test_user.account_id),
+        )
+        db_session.flush()
+
+        tool_config = ToolConfiguration(
+            tool_name="test_tool",
+            tool_source="builtin",
+            account_id=test_user.account_id,
+            approval_workflow_id=workflow.id,
+        )
+        db_session.add(tool_config)
+        db_session.flush()
+
+        approval_token = "decide-approve-token"
+        approval_request = ApprovalRequest(
+            account_id=test_user.account_id,
+            tool_configuration_id=tool_config.id,
+            approval_workflow_id=workflow.id,
+            execution_id="exec-1",
+            tool_name="test_tool",
+            tool_args={},
+            status="pending",
+            requested_at=datetime.now(UTC),
+            approval_token=approval_token,
+        )
+        db_session.add(approval_request)
+        db_session.flush()
+
+        updated_request = MagicMock()
+        updated_request.id = approval_request.id
+        updated_request.tool_name = "test_tool"
+        updated_request.tool_args = {}
+        updated_request.agent_reasoning = None
+        updated_request.status = "approved"
+        updated_request.requested_at = approval_request.requested_at
+        updated_request.expires_at = None
+
+        with patch(
+            "preloop.api.endpoints.public_approval.get_async_db_session"
+        ) as mock_get_session:
+            mock_session = AsyncMock()
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+
+            with patch(
+                "preloop.api.endpoints.public_approval.ApprovalService"
+            ) as mock_service_cls:
+                mock_service = AsyncMock()
+                mock_service.approve_request = AsyncMock(return_value=updated_request)
+                mock_service_cls.return_value = mock_service
+
+                response = client.post(
+                    f"/approval/{approval_request.id}/decide",
+                    params={"token": approval_token},
+                    json={"action": "approve", "comment": "Looks good"},
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data["status"] == "approved"
+                assert data["id"] == str(approval_request.id)
