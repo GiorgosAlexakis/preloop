@@ -516,9 +516,11 @@ async def mcp_http_streaming_endpoint(
                     media_type="application/json",
                 )
 
+            from preloop.utils.redaction import redact_for_log
+
             logger.info(
                 f"Executing tool {tool_name} for user {user_context['username']} "
-                f"with args: {tool_args}"
+                f"with args: {redact_for_log(tool_args)}"
             )
 
             # Call handler

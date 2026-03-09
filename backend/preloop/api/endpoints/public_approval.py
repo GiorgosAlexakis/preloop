@@ -67,11 +67,13 @@ def get_approval_request_public(
             status_code=404, detail="Approval request not found or invalid token"
         )
 
-    # Return public data only
+    # Return public data only (redact tool_args for display)
+    from preloop.utils.redaction import redact_dict
+
     return ApprovalRequestPublic(
         id=str(approval_request.id),
         tool_name=approval_request.tool_name,
-        tool_args=approval_request.tool_args,
+        tool_args=redact_dict(approval_request.tool_args or {}),
         agent_reasoning=approval_request.agent_reasoning,
         status=approval_request.status,
         requested_at=approval_request.requested_at.isoformat(),

@@ -60,6 +60,8 @@ def _log_tool_execution_async(
 ) -> None:
     """Log a tool execution asynchronously (fire-and-forget)."""
     try:
+        from preloop.utils.redaction import redact_dict
+
         audit_service = _get_audit_service()
         if not audit_service:
             return
@@ -67,6 +69,9 @@ def _log_tool_execution_async(
         db_factory = _get_db_factory()
         if not db_factory:
             return
+
+        # Redact sensitive fields before audit
+        tool_args = redact_dict(tool_args)
 
         # Convert string IDs to UUIDs where needed
         user_uuid = None
@@ -313,9 +318,11 @@ class DynamicMCPServer:
                         )
                     ]
 
+                from preloop.utils.redaction import redact_for_log
+
                 logger.info(
                     f"Executing tool {name} for user {user_context.username} "
-                    f"with args: {arguments}"
+                    f"with args: {redact_for_log(arguments or {})}"
                 )
 
                 # Track execution time

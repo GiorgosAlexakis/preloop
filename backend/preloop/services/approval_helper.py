@@ -269,17 +269,19 @@ async def require_approval(
                 )
                 channels_display = ", ".join(notification_channels)
 
+                from preloop.utils.redaction import redact_for_log
+
                 logger.warning(
                     f"\n{'=' * 60}\n"
                     f"🚨 APPROVAL REQUIRED ({tool_source.upper()} Tool) 🚨\n"
                     f"{'=' * 60}\n"
                     f"Tool: {tool_name}\n"
-                    f"Arguments: {arguments}\n"
+                    f"Arguments: {redact_for_log(arguments)}\n"
                     f"Request ID: {approval_request.id}\n"
                     f"Notification sent via: {channels_display}\n"
                     f"Approval type: {workflow.approval_type}\n"
                     f"Timeout: {workflow.timeout_seconds or 300}s\n"
-                    f"Approval URL: {approval_url}\n"
+                    f"Approval URL: [sent via notification]\n"
                     f"{'=' * 60}\n"
                     f"⏳ Waiting for approval (polling every 2s)..."
                 )
@@ -373,13 +375,12 @@ async def require_approval(
                 # Send initial notification via Context (FastMCP streaming)
                 if ctx:
                     try:
-                        logger.info(f"Context object: {ctx}, type: {type(ctx)}")
-                        logger.info(
-                            f"Has report_progress: {hasattr(ctx, 'report_progress')}"
+                        logger.debug(
+                            f"Context: has report_progress={hasattr(ctx, 'report_progress')}"
                         )
                         # Report progress at 0% with status message
                         status_message = f"Approval request sent via {channels_display}"
-                        # Check if progressToken is available
+                        # Check if progressToken is available (do not log - sensitive)
                         progress_token = None
                         try:
                             progress_token = (
@@ -389,11 +390,6 @@ async def require_approval(
                             )
                         except Exception as e:
                             logger.error(f"Error getting progressToken: {e}")
-
-                        logger.info(f"   progressToken: {progress_token}")
-                        logger.info(
-                            f"   request_context.meta: {ctx.request_context.meta if hasattr(ctx, 'request_context') else 'N/A'}"
-                        )
 
                         # Only send progress notification if we have a valid progressToken
                         if progress_token is not None:

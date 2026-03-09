@@ -57,14 +57,16 @@ def log_config_change(
         return
 
     try:
+        from preloop.utils.redaction import redact_dict
+
         audit_service.log_configuration_change(
             db,
             account_id=user.account_id,
             user=user,
             config_type=config_type,
             action=action,
-            old_value=old_value,
-            new_value=new_value,
+            old_value=redact_dict(old_value) if old_value is not None else None,
+            new_value=redact_dict(new_value) if new_value is not None else None,
             request=request,
         )
     except Exception:

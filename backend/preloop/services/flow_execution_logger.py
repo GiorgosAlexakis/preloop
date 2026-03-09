@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from preloop.utils.redaction import redact_dict
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,7 +50,7 @@ class FlowExecutionLogger:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_name": server_name,
             "tool_name": tool_name,
-            "arguments": arguments,
+            "arguments": redact_dict(arguments),
             "status": status,
             "result_summary": result_summary,
             "error": error,

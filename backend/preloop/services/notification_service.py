@@ -667,11 +667,13 @@ class NotificationService:
         token = approval_request.approval_token
         approval_url = f"{PRELOOP_URL}/approval/{approval_request.id}?token={token}"
 
+        from preloop.utils.redaction import redact_dict
+
         message = {
             "type": "approval_request",
             "request_id": str(approval_request.id),
             "tool_name": approval_request.tool_name,
-            "tool_args": approval_request.tool_args,
+            "tool_args": redact_dict(approval_request.tool_args or {}),
             "agent_reasoning": approval_request.agent_reasoning,
             "status": approval_request.status,
             "requested_at": approval_request.requested_at.isoformat(),
@@ -723,10 +725,13 @@ class NotificationService:
             Dict payload suitable for Slack or Mattermost incoming webhooks.
         """
         from preloop.utils.email import PRELOOP_URL
+        from preloop.utils.redaction import redact_dict
 
         token = approval_request.approval_token
         approval_url = f"{PRELOOP_URL}/approval/{approval_request.id}?token={token}"
-        tool_args_formatted = json.dumps(approval_request.tool_args, indent=2)
+        tool_args_formatted = json.dumps(
+            redact_dict(approval_request.tool_args or {}), indent=2
+        )
 
         message_text = f"⚠️ **Approval Required: {approval_request.tool_name}**\n\n"
         message_text += f"**Tool:** `{approval_request.tool_name}`\n"
