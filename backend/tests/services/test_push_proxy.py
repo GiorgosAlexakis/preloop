@@ -115,7 +115,6 @@ class TestSendPushViaProxy:
     @patch("preloop.services.push_proxy.PUSH_PROXY_URL", "https://proxy.example.com")
     @patch("preloop.services.push_proxy.PUSH_PROXY_API_KEY", "test-key")
     async def test_timeout_returns_error(self, mock_configured):
-        """Returns error on httpx timeout."""
         import httpx
 
         with patch("httpx.AsyncClient") as mock_client_class:
