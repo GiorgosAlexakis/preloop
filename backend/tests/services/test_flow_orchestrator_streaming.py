@@ -148,6 +148,27 @@ class TestLogStreaming:
         ]
         assert len(error_messages) > 0
 
+    @pytest.mark.asyncio
+    async def test_stream_logs_persists_live_tool_call_metrics(self, orchestrator):
+        """Tool call updates should persist live counters for page reloads."""
+        mock_agent_executor = AsyncMock()
+
+        async def mock_stream(session_reference):
+            yield "Tool call line"
+
+        mock_agent_executor.stream_logs = mock_stream
+        orchestrator._persist_live_metrics = AsyncMock()
+        orchestrator.execution_logger.parse_agent_logs = MagicMock(
+            side_effect=lambda lines: orchestrator.execution_logger.mcp_usage_logs.append(
+                {"tool_name": "search"}
+            )
+        )
+
+        await orchestrator._stream_logs_to_nats(mock_agent_executor, "session-123")
+
+        assert orchestrator.tool_calls_count == 1
+        orchestrator._persist_live_metrics.assert_awaited()
+
 
 class TestCommandListener:
     """Test command listener for user intervention."""

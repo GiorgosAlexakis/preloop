@@ -121,6 +121,7 @@ export class MessageRouter {
       messageType === 'agent_log_line' ||
       messageType === 'execution_completed' ||
       messageType === 'execution_failed' ||
+      messageType === 'model_gateway_call' ||
       messageType === 'tool_call' ||
       messageType === 'mcp_call' ||
       messageType === 'tool_calls_update' ||

@@ -37,11 +37,17 @@ def create_ai_model(
     current_user: User = Depends(get_current_active_user),
 ) -> AIModel:
     """Create a new AI Model for the authenticated user's account."""
-    created_model = crud_ai_model.create_with_account(
-        db=db,
-        obj_in=ai_model_in.dict(),
-        account_id=current_user.account_id,
-    )
+    try:
+        created_model = crud_ai_model.create_with_account(
+            db=db,
+            obj_in=ai_model_in.dict(),
+            account_id=current_user.account_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     return created_model
 
 
@@ -104,11 +110,17 @@ def update_ai_model(
             status_code=status.HTTP_404_NOT_FOUND, detail="AI Model not found"
         )
 
-    updated_model = crud_ai_model.update(
-        db=db,
-        db_obj=db_model,
-        obj_in=ai_model_in.dict(exclude_unset=True),
-    )
+    try:
+        updated_model = crud_ai_model.update(
+            db=db,
+            db_obj=db_model,
+            obj_in=ai_model_in.dict(exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     return updated_model
 
 

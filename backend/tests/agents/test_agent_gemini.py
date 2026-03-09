@@ -61,6 +61,22 @@ class TestGeminiModelResolution:
     """Test model resolution logic in start()."""
 
     @pytest.mark.asyncio
+    async def test_gateway_enabled_fails_closed(self):
+        """Gemini should refuse gateway-enabled execution until transport exists."""
+        agent = GeminiAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_model_alias": "gemini/gemini-2.5-pro",
+            "execution_id": "test-123",
+            "flow_id": "flow-1",
+        }
+
+        with pytest.raises(
+            RuntimeError, match="Gemini gateway transport is not supported yet"
+        ):
+            await agent.start(context)
+
+    @pytest.mark.asyncio
     async def test_model_identifier_takes_priority(self):
         """model_identifier from AIModel takes priority over agent_config."""
         agent = GeminiAgent({})
@@ -187,6 +203,17 @@ class TestGeminiBuildScript:
 
 class TestGeminiPrepareEnvironment:
     """Test _prepare_environment method."""
+
+    @pytest.mark.asyncio
+    async def test_gateway_enabled_prepare_environment_fails_closed(self):
+        """Gemini env prep should also refuse gateway-enabled execution."""
+        agent = GeminiAgent({})
+        context = {"model_gateway_enabled": True}
+
+        with pytest.raises(
+            RuntimeError, match="Gemini gateway transport is not supported yet"
+        ):
+            await agent._prepare_environment(context)
 
     @pytest.mark.asyncio
     async def test_gemini_api_key(self):

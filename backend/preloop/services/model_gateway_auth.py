@@ -1,0 +1,55 @@
+"""Bearer authentication helpers for the model gateway."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import time
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from preloop.api.auth.jwt import get_user_from_token_if_valid
+from preloop.models.crud import crud_api_key, crud_user
+from preloop.models.crud.oauth_mcp_token import crud_oauth_mcp_access_token
+from preloop.models.models.api_key import ApiKey
+from preloop.models.models.oauth_mcp_token import OAuthMCPAccessToken
+from preloop.models.models.user import User
+
+
+@dataclass
+class ModelGatewayAuthContext:
+    """Authenticated model gateway request context."""
+
+    token: str
+    user: User
+    api_key: Optional[ApiKey] = None
+    oauth_access_token: Optional[OAuthMCPAccessToken] = None
+
+
+async def authenticate_bearer_token(
+    token: str, db: Session
+) -> Optional[ModelGatewayAuthContext]:
+    """Authenticate a bearer token while preserving ApiKey context."""
+    if not token:
+        return None
+
+    user = await get_user_from_token_if_valid(token, db)
+    if user:
+        api_key = crud_api_key.get_by_key(db, key=token)
+        return ModelGatewayAuthContext(token=token, user=user, api_key=api_key)
+
+    oauth_token = crud_oauth_mcp_access_token.get_by_token(db, token=token)
+    if not oauth_token or oauth_token.is_revoked:
+        return None
+    if oauth_token.expires_at and oauth_token.expires_at < int(time.time()):
+        return None
+
+    oauth_user = crud_user.get(db, id=str(oauth_token.user_id))
+    if not oauth_user or not oauth_user.is_active:
+        return None
+
+    return ModelGatewayAuthContext(
+        token=token,
+        user=oauth_user,
+        oauth_access_token=oauth_token,
+    )

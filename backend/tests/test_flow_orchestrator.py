@@ -11,7 +11,12 @@ from preloop.agents.base import AgentStatus, AgentExecutionResult
 from preloop.models.models import Flow, Account
 from preloop.models.models.user import User
 from preloop.models.schemas.flow import FlowCreate
-from preloop.models.crud import crud_account, crud_user
+from preloop.models.crud import (
+    crud_account,
+    crud_api_key,
+    crud_runtime_session,
+    crud_user,
+)
 
 
 @pytest.fixture
@@ -41,6 +46,10 @@ def test_user(db_session: Session, test_account: Account) -> User:
     user = crud_user.create(db_session, obj_in=user_data)
     db_session.flush()
     db_session.refresh(user)
+    test_account.primary_user_id = user.id
+    db_session.add(test_account)
+    db_session.commit()
+    db_session.refresh(test_account)
     return user
 
 
@@ -171,6 +180,14 @@ class TestFlowExecutionOrchestrator:
             assert (
                 "mock-openhands-session"
                 in orchestrator.execution_log.agent_session_reference
+            )
+            assert orchestrator.runtime_session is not None
+            assert orchestrator.runtime_session.session_source_type == "flow_execution"
+            assert orchestrator.runtime_session.session_source_id == str(
+                orchestrator.execution_log.id
+            )
+            assert orchestrator.runtime_session.session_reference == (
+                "mock-openhands-session-123"
             )
 
             # Verify NATS updates were published
@@ -767,6 +784,52 @@ class TestFlowExecutionOrchestrator:
             # The actual exception will be caught in _create_temporary_api_token
             # but let's test the flow continues
             await orchestrator.run()
+
+    def test_create_temporary_api_token_uses_primary_user_and_runtime_context(
+        self,
+        db_session: Session,
+        test_flow: Flow,
+        test_user: User,
+        mock_nats_client,
+    ):
+        """Temporary flow credentials should use the primary account user and runtime context."""
+        orchestrator = FlowExecutionOrchestrator(
+            db=db_session,
+            flow_id=test_flow.id,
+            trigger_event_data={"source": "test"},
+            nats_client=mock_nats_client,
+        )
+        orchestrator.flow = test_flow
+        execution_id = uuid4()
+        orchestrator.execution_log = type(
+            "ExecutionLogStub", (), {"id": execution_id}
+        )()
+
+        token_value, token_id = orchestrator._create_temporary_api_token()
+
+        assert token_value is not None
+        assert token_id is not None
+
+        stored_key = crud_api_key.get(db_session, id=token_id)
+        assert stored_key is not None
+        assert stored_key.user_id == test_user.id
+        assert stored_key.key is None
+        assert stored_key.key_hash is not None
+        assert orchestrator.runtime_session is not None
+        runtime_session = crud_runtime_session.get_by_source(
+            db_session,
+            session_source_type="flow_execution",
+            session_source_id=str(execution_id),
+        )
+        assert runtime_session is not None
+        assert stored_key.context_data["flow_execution_id"] == str(execution_id)
+        assert stored_key.context_data["runtime_session_id"] == str(runtime_session.id)
+        assert stored_key.context_data["runtime_principal"]["type"] == "flow_execution"
+        assert stored_key.context_data["runtime_principal"]["id"] == str(execution_id)
+        assert (
+            stored_key.context_data["runtime_principal"]["username"]
+            == test_user.username
+        )
 
     @pytest.mark.asyncio
     async def test_temporary_api_token_cleanup_token_not_found(

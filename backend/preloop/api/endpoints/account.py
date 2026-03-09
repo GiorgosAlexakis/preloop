@@ -2,9 +2,10 @@
 
 import html
 import logging
+from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,8 @@ from preloop.api.common import get_account_for_user
 from preloop.models.crud import crud_account
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
+from preloop.schemas.gateway_usage import AccountGatewayUsageSummaryResponse
+from preloop.services.model_gateway_usage import ModelGatewayUsageService
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +91,24 @@ async def update_account_details(
         organization_name=updated_account.organization_name,
         created_at=updated_account.created_at.isoformat(),
         updated_at=updated_account.updated_at.isoformat(),
+    )
+
+
+@router.get(
+    "/account/gateway-usage/summary",
+    response_model=AccountGatewayUsageSummaryResponse,
+)
+async def get_account_gateway_usage_summary(
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+):
+    """Get account-scoped model gateway usage summary."""
+    return ModelGatewayUsageService(db).get_account_summary(
+        account=account,
+        start_date=start_date,
+        end_date=end_date,
     )
 
 

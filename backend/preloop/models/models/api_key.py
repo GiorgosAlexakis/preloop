@@ -25,7 +25,9 @@ class ApiKey(Base):
     Attributes:
         id: The unique identifier for the key.
         name: A user-friendly name for the key.
-        key: The actual key value.
+        key: The plaintext key value for legacy/user-managed keys.
+        key_hash: Deterministic hash used for validating runtime-only keys.
+        key_prefix: Non-sensitive prefix used to narrow hashed lookups.
         created_at: When the key was created.
         expires_at: When the key expires (optional).
         last_used_at: When the key was last used (optional).
@@ -41,8 +43,14 @@ class ApiKey(Base):
 
     # Key details
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    key: Mapped[str] = mapped_column(
-        String(100), nullable=False, unique=True, index=True
+    key: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, unique=True, index=True
+    )
+    key_hash: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+    key_prefix: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True, index=True
     )
 
     # Timestamp fields

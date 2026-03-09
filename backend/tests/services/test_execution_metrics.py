@@ -5,6 +5,9 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from preloop.models.crud import crud_api_usage, crud_flow, crud_flow_execution
+from preloop.models.schemas.flow import FlowCreate
+from preloop.models.schemas.flow_execution import FlowExecutionCreate
 from preloop.services.execution_metrics import ExecutionMetricsService
 
 
@@ -370,3 +373,112 @@ class TestCalculateCost:
 
         assert has_pricing is True
         assert abs(cost - 0.01) < 0.0001
+
+
+def test_get_execution_metrics_prefers_gateway_usage(db_session, test_user):
+    """Execution metrics should prefer explicit gateway attribution over log parsing."""
+    flow = crud_flow.create(
+        db=db_session,
+        flow_in=FlowCreate(
+            name="Gateway Metrics Flow",
+            prompt_template="Test",
+            trigger_event_source="github",
+            trigger_event_types=["test"],
+            agent_type="codex",
+            agent_config={},
+            allowed_mcp_servers=[],
+            allowed_mcp_tools=[],
+            account_id=test_user.account_id,
+        ),
+        account_id=test_user.account_id,
+    )
+    execution = crud_flow_execution.create(
+        db_session,
+        FlowExecutionCreate(
+            flow_id=flow.id,
+            status="SUCCEEDED",
+            mcp_usage_logs=[{"tool_name": "search"}],
+            execution_logs=[
+                {
+                    "type": "agent_log_line",
+                    "payload": {"line": "tokens used\n999"},
+                }
+            ],
+        ),
+    )
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        flow_id=str(flow.id),
+        flow_execution_id=str(execution.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=120,
+        completion_tokens=30,
+        total_tokens=150,
+        estimated_cost=0.42,
+    )
+
+    metrics = ExecutionMetricsService(db_session).get_execution_metrics(
+        str(execution.id)
+    )
+
+    assert metrics["tool_calls"] == 1
+    assert metrics["api_requests"] == 1
+    assert metrics["token_usage"]["total_tokens"] == 150
+    assert metrics["token_usage"]["input_tokens"] == 120
+    assert metrics["token_usage"]["output_tokens"] == 30
+    assert metrics["estimated_cost"] == 0.42
+    assert metrics["has_pricing"] is True
+
+
+def test_get_execution_metrics_falls_back_to_log_parsing_without_gateway_usage(
+    db_session, test_user
+):
+    """Execution metrics should keep legacy parsing for non-gateway executions."""
+    flow = crud_flow.create(
+        db=db_session,
+        flow_in=FlowCreate(
+            name="Legacy Metrics Flow",
+            prompt_template="Test",
+            trigger_event_source="github",
+            trigger_event_types=["test"],
+            agent_type="codex",
+            agent_config={},
+            allowed_mcp_servers=[],
+            allowed_mcp_tools=[],
+            account_id=test_user.account_id,
+        ),
+        account_id=test_user.account_id,
+    )
+    execution = crud_flow_execution.create(
+        db_session,
+        FlowExecutionCreate(
+            flow_id=flow.id,
+            status="SUCCEEDED",
+            mcp_usage_logs=[{"tool_name": "search"}, {"tool_name": "read"}],
+        ),
+    )
+    execution.execution_logs = [
+        {
+            "type": "agent_log_line",
+            "payload": {"line": "tokens used\n1,234"},
+        }
+    ]
+    db_session.add(execution)
+    db_session.commit()
+
+    metrics = ExecutionMetricsService(db_session).get_execution_metrics(
+        str(execution.id)
+    )
+
+    assert metrics["tool_calls"] == 2
+    assert metrics["api_requests"] == 0
+    assert metrics["token_usage"]["total_tokens"] == 1234
+    assert metrics["estimated_cost"] == 0.0
+    assert metrics["has_pricing"] is False

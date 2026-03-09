@@ -133,6 +133,27 @@ class GitLabOAuthSettings(BaseModel):
     )
 
 
+class VaultKVV2Settings(BaseModel):
+    """Vault/OpenBao-compatible KV v2 secret backend settings."""
+
+    enabled: bool = Field(
+        False, description="Enable the vault-compatible secret backend"
+    )
+    url: str = Field("", description="Base URL for Vault/OpenBao")
+    token: str = Field("", description="Access token for the secret backend")
+    namespace: str = Field("", description="Optional Vault/OpenBao namespace")
+    mount: str = Field("secret", description="KV v2 mount name")
+    path_prefix: str = Field("", description="Optional path prefix under the mount")
+    verify_tls: bool = Field(True, description="Verify TLS certificates")
+    ca_cert_path: str = Field("", description="Optional CA certificate path")
+    timeout_seconds: int = Field(5, description="HTTP timeout when resolving secrets")
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if the vault-compatible backend is usable."""
+        return bool(self.enabled and self.url and self.token and self.mount)
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -170,6 +191,32 @@ class Settings(BaseSettings):
     gitlab_oauth: GitLabOAuthSettings = Field(
         default_factory=GitLabOAuthSettings,
         description="GitLab OAuth settings for sign-in/sign-up",
+    )
+    vault_kv_v2: VaultKVV2Settings = Field(
+        default_factory=VaultKVV2Settings,
+        description="Optional Vault/OpenBao-compatible secret backend settings",
+    )
+    model_gateway_capture_content: bool = Field(
+        False,
+        description="Whether model gateway events may include redacted content previews",
+    )
+    model_gateway_auto_index_interactions: bool = Field(
+        False,
+        description=(
+            "Whether completed model gateway interactions may be automatically indexed "
+            "into the gateway semantic-search corpus"
+        ),
+    )
+    model_gateway_auto_index_failed_interactions: bool = Field(
+        False,
+        description=(
+            "Whether failed model gateway interactions may be automatically indexed "
+            "when automatic gateway indexing is enabled"
+        ),
+    )
+    model_gateway_max_preview_chars: int = Field(
+        512,
+        description="Maximum number of characters to retain in model gateway content previews",
     )
 
     model_config = SettingsConfigDict(
@@ -281,6 +328,19 @@ class Settings(BaseSettings):
             client_secret=os.getenv("GITLAB_OAUTH_CLIENT_SECRET", ""),
             base_url=os.getenv("GITLAB_OAUTH_BASE_URL", "https://gitlab.com"),
         )
+        vault_kv_v2 = VaultKVV2Settings(
+            enabled=os.getenv("VAULT_KV_V2_ENABLED", "false").lower()
+            in ("true", "1", "t", "yes"),
+            url=os.getenv("VAULT_KV_V2_URL", ""),
+            token=os.getenv("VAULT_KV_V2_TOKEN", ""),
+            namespace=os.getenv("VAULT_KV_V2_NAMESPACE", ""),
+            mount=os.getenv("VAULT_KV_V2_MOUNT", "secret"),
+            path_prefix=os.getenv("VAULT_KV_V2_PATH_PREFIX", ""),
+            verify_tls=os.getenv("VAULT_KV_V2_VERIFY_TLS", "true").lower()
+            in ("true", "1", "t", "yes"),
+            ca_cert_path=os.getenv("VAULT_KV_V2_CA_CERT_PATH", ""),
+            timeout_seconds=int(os.getenv("VAULT_KV_V2_TIMEOUT_SECONDS", "5")),
+        )
 
         return cls(
             app_name=os.getenv("APP_NAME", "Preloop"),
@@ -296,6 +356,22 @@ class Settings(BaseSettings):
             github_app=github_app,
             google_oauth=google_oauth,
             gitlab_oauth=gitlab_oauth,
+            vault_kv_v2=vault_kv_v2,
+            model_gateway_capture_content=os.getenv(
+                "MODEL_GATEWAY_CAPTURE_CONTENT", "false"
+            ).lower()
+            in ("true", "1", "t", "yes"),
+            model_gateway_auto_index_interactions=os.getenv(
+                "MODEL_GATEWAY_AUTO_INDEX_INTERACTIONS", "false"
+            ).lower()
+            in ("true", "1", "t", "yes"),
+            model_gateway_auto_index_failed_interactions=os.getenv(
+                "MODEL_GATEWAY_AUTO_INDEX_FAILED_INTERACTIONS", "false"
+            ).lower()
+            in ("true", "1", "t", "yes"),
+            model_gateway_max_preview_chars=int(
+                os.getenv("MODEL_GATEWAY_MAX_PREVIEW_CHARS", "512")
+            ),
             stripe_secret_key=stripe_secret_key,
             stripe_webhook_secret=stripe_webhook_secret,
             installer_audit_account_id=os.getenv("INSTALLER_AUDIT_ACCOUNT_ID", ""),

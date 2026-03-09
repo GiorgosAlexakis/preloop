@@ -114,7 +114,11 @@ class UserContext:
         enabled_proxied_tools: Optional[List[str]] = None,
         tracker_types: Optional[List[str]] = None,
         flow_execution_id: Optional[str] = None,
+        runtime_session_id: Optional[str] = None,
         allowed_flow_tools: Optional[List[str]] = None,
+        runtime_principal_type: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
+        runtime_principal_name: Optional[str] = None,
     ):
         self.user_id = user_id
         self.account_id = account_id
@@ -125,7 +129,11 @@ class UserContext:
         self.tracker_types = tracker_types or []
         # Flow execution context for tool restrictions
         self.flow_execution_id = flow_execution_id
+        self.runtime_session_id = runtime_session_id
         self.allowed_flow_tools = allowed_flow_tools
+        self.runtime_principal_type = runtime_principal_type
+        self.runtime_principal_id = runtime_principal_id
+        self.runtime_principal_name = runtime_principal_name
 
 
 class DynamicMCPServer:

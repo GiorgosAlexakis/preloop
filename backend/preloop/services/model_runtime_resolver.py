@@ -1,0 +1,113 @@
+"""Resolve model runtime settings for agents and gateway routing."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+from typing import Any, Dict, Optional
+
+from preloop.models.models.ai_model import AIModel
+from preloop.services.secret_service import get_secret_service
+
+
+DEFAULT_GATEWAY_PROVIDER = "preloop"
+DEFAULT_GATEWAY_TRANSPORT_MODE = "preloop_gateway"
+DEFAULT_GATEWAY_URL = "http://host.docker.internal:8000/openai/v1"
+
+
+@dataclass
+class ResolvedModelRuntime:
+    """Resolved runtime configuration for model access."""
+
+    model_identifier: Optional[str]
+    model_provider: Optional[str]
+    model_endpoint: Optional[str]
+    model_api_key: Optional[str]
+    model_api_key_backend: Optional[str]
+    model_parameters: Optional[Dict[str, Any]]
+    model_transport_mode: str
+    model_gateway_enabled: bool
+    model_gateway_url: Optional[str]
+    model_gateway_model_alias: Optional[str]
+    model_gateway_provider: Optional[str]
+
+    def to_execution_context(
+        self, gateway_token: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Convert the resolved runtime to execution-context fields."""
+        return {
+            "model_identifier": self.model_identifier,
+            "model_provider": self.model_provider,
+            "model_endpoint": self.model_endpoint,
+            "model_api_key": self.model_api_key,
+            "model_api_key_backend": self.model_api_key_backend,
+            "model_parameters": self.model_parameters,
+            "model_transport_mode": self.model_transport_mode,
+            "model_gateway_enabled": self.model_gateway_enabled,
+            "model_gateway_url": self.model_gateway_url,
+            "model_gateway_token": gateway_token,
+            "model_gateway_model_alias": self.model_gateway_model_alias,
+            "model_gateway_provider": self.model_gateway_provider,
+        }
+
+
+def _build_default_gateway_alias(ai_model: AIModel) -> str:
+    provider = (ai_model.provider_name or "openai").strip().lower()
+    model_identifier = (ai_model.model_identifier or "").strip()
+    return f"{provider}/{model_identifier}" if model_identifier else provider
+
+
+def _get_gateway_config(ai_model: AIModel) -> Dict[str, Any]:
+    meta_data = ai_model.meta_data or {}
+    gateway_config = meta_data.get("gateway") if isinstance(meta_data, dict) else None
+    return gateway_config if isinstance(gateway_config, dict) else {}
+
+
+def resolve_ai_model_runtime(ai_model: AIModel) -> ResolvedModelRuntime:
+    """Resolve the runtime configuration for an AI model."""
+    gateway_config = _get_gateway_config(ai_model)
+    gateway_enabled = bool(gateway_config.get("enabled"))
+    model_parameters = ai_model.model_parameters
+
+    if gateway_enabled:
+        gateway_url = gateway_config.get("url") or os.getenv(
+            "PRELOOP_MODEL_GATEWAY_URL", DEFAULT_GATEWAY_URL
+        )
+        gateway_model_alias = gateway_config.get(
+            "model_alias"
+        ) or _build_default_gateway_alias(ai_model)
+        gateway_provider = (
+            gateway_config.get("provider_adapter") or DEFAULT_GATEWAY_PROVIDER
+        )
+
+        return ResolvedModelRuntime(
+            model_identifier=gateway_model_alias,
+            model_provider=gateway_provider,
+            model_endpoint=gateway_url,
+            model_api_key=None,
+            model_api_key_backend=None,
+            model_parameters=model_parameters,
+            model_transport_mode=gateway_config.get("transport_mode")
+            or DEFAULT_GATEWAY_TRANSPORT_MODE,
+            model_gateway_enabled=True,
+            model_gateway_url=gateway_url,
+            model_gateway_model_alias=gateway_model_alias,
+            model_gateway_provider=gateway_provider,
+        )
+
+    resolved_model_secret = get_secret_service().resolve_ai_model_api_key(ai_model)
+    return ResolvedModelRuntime(
+        model_identifier=ai_model.model_identifier,
+        model_provider=ai_model.provider_name,
+        model_endpoint=ai_model.api_endpoint,
+        model_api_key=resolved_model_secret.value if resolved_model_secret else None,
+        model_api_key_backend=(
+            resolved_model_secret.backend_type if resolved_model_secret else None
+        ),
+        model_parameters=model_parameters,
+        model_transport_mode="direct_provider",
+        model_gateway_enabled=False,
+        model_gateway_url=None,
+        model_gateway_model_alias=None,
+        model_gateway_provider=None,
+    )

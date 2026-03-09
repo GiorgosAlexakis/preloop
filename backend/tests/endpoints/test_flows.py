@@ -227,6 +227,77 @@ async def test_read_flow_not_found(mock_account: Account, mocker: MockerFixture)
 
 
 @pytest.mark.asyncio
+async def test_get_flow_execution_gateway_events(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Gateway event endpoint should return normalized model gateway log rows."""
+    execution_id = uuid.uuid4()
+    mock_execution = MagicMock()
+    mock_execution.id = execution_id
+
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = mock_execution
+
+    row = MagicMock()
+    row.execution_id = execution_id
+    row.timestamp = datetime.now(ZoneInfo("UTC"))
+    row.log_type = "model_gateway_call"
+    row.message = None
+    row.metadata_ = {
+        "outcome": "success",
+        "model_alias": "openai/gpt-5",
+        "estimated_cost": 0.1,
+    }
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [row]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value = mock_scalars
+    mock_db = MagicMock()
+    mock_db.execute.return_value = mock_result
+
+    result = await maybe_await(
+        flows.get_flow_execution_gateway_events(
+            db=mock_db,
+            execution_id=execution_id,
+            current_user=mock_account,
+        )
+    )
+
+    assert result["source"] == "database"
+    assert result["logs"][0]["type"] == "model_gateway_call"
+    assert result["logs"][0]["payload"]["outcome"] == "success"
+    assert result["logs"][0]["payload"]["model_alias"] == "openai/gpt-5"
+
+
+@pytest.mark.asyncio
+async def test_get_flow_execution_gateway_events_not_found(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Gateway event endpoint should raise 404 when execution is missing."""
+    execution_id = uuid.uuid4()
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get.return_value = None
+
+    with pytest.raises(HTTPException) as exc_info:
+        await maybe_await(
+            flows.get_flow_execution_gateway_events(
+                db=MagicMock(),
+                execution_id=execution_id,
+                current_user=mock_account,
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+    assert "not found" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.asyncio
 async def test_update_flow_not_found(mock_account: Account, mocker: MockerFixture):
     """Tests that updating a non-existent flow raises HTTPException."""
     # Arrange

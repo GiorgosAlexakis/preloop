@@ -1,0 +1,99 @@
+"""Tests for secret service."""
+
+from uuid import uuid4
+
+from sqlalchemy.orm import Session
+
+from preloop.models.crud import crud_account
+from preloop.models.crud import crud_ai_model
+from preloop.models.models import Account
+from preloop.models.models.secret_reference import SecretReference
+from preloop.services import secret_service as secret_service_module
+from preloop.services.secret_service import (
+    LOCAL_ENCRYPTED_BACKEND,
+    OPENBAO_KV_V2_BACKEND,
+    SecretService,
+    get_secret_service,
+)
+
+
+def test_resolve_ai_model_api_key_from_secret_reference(
+    db_session: Session,
+):
+    """New AI model credentials should be resolved from secret references."""
+    account: Account = crud_account.create(
+        db_session,
+        obj_in={
+            "organization_name": "Secret Service Test Org",
+            "is_active": True,
+        },
+    )
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Secret-backed Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4o",
+            "api_key": "super-secret-key",
+            "is_default": False,
+        },
+        account_id=account.id,
+    )
+
+    resolved = get_secret_service().resolve_ai_model_api_key(ai_model)
+
+    assert resolved is not None
+    assert resolved.value == "super-secret-key"
+    assert resolved.backend_type == LOCAL_ENCRYPTED_BACKEND
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.api_key is None
+
+
+def test_resolve_external_secret_reference_with_openbao_backend(monkeypatch):
+    """External backend references should resolve through the vault-compatible path."""
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "enabled", True)
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2,
+        "url",
+        "https://openbao.example.test",
+    )
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2, "token", "test-token"
+    )
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "mount", "kv")
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2,
+        "path_prefix",
+        "preloop/providers",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_read_secret(self, path: str, meta_data: dict) -> dict:
+        captured["path"] = path
+        captured["meta_data"] = meta_data
+        return {"data": {"data": {"api_key": "resolved-from-openbao"}}}
+
+    monkeypatch.setattr(
+        secret_service_module.VaultKVV2SecretBackend,
+        "_read_secret",
+        fake_read_secret,
+    )
+
+    service = SecretService()
+    secret_ref = SecretReference(
+        account_id=uuid4(),
+        name="OpenAI API key",
+        backend_type=OPENBAO_KV_V2_BACKEND,
+        secret_kind="ai_model_api_key",
+        external_ref="team-a/openai",
+        status="active",
+        meta_data={"field": "api_key", "version": 2},
+    )
+
+    resolved = service.resolve_secret_reference(secret_ref)
+
+    assert resolved.value == "resolved-from-openbao"
+    assert resolved.backend_type == OPENBAO_KV_V2_BACKEND
+    assert captured["path"] == "kv/data/preloop/providers/team-a/openai"
+    assert captured["meta_data"] == {"field": "api_key", "version": 2}

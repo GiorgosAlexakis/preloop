@@ -1,0 +1,410 @@
+"""Tests for model gateway event emission helpers."""
+
+from uuid import uuid4
+from unittest.mock import MagicMock, patch
+
+from preloop.config import settings
+from preloop.models.models.api_usage import ApiUsage
+from preloop.services.model_gateway_events import ModelGatewayEventEmitter
+
+
+def _build_usage(**overrides) -> ApiUsage:
+    usage = ApiUsage(
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.125,
+        user_id=uuid4(),
+        account_id=uuid4(),
+        api_key_id=uuid4(),
+        auth_subject_type="api_key",
+        ai_model_id=uuid4(),
+        flow_id=uuid4(),
+        flow_execution_id=uuid4(),
+        runtime_session_id=uuid4(),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        upstream_request_id="req_123",
+        prompt_tokens=11,
+        completion_tokens=7,
+        total_tokens=18,
+        estimated_cost=0.00025,
+        runtime_principal_type="flow_execution",
+        runtime_principal_id="exec-123",
+        runtime_principal_name="Gateway Flow",
+        meta_data={
+            "endpoint_kind": "responses",
+            "requested_model": "openai/gpt-5",
+            "gateway_provider": "preloop",
+            "finish_reason": "stop",
+            "budget": {
+                "soft_limit_exceeded": False,
+                "hard_limit_exceeded": False,
+                "estimated_request_cost_usd": 0.00025,
+            },
+            "error_detail": None,
+        },
+    )
+    usage.id = uuid4()
+    for key, value in overrides.items():
+        setattr(usage, key, value)
+    return usage
+
+
+def test_build_event_includes_budget_runtime_principal_and_redacted_payloads():
+    """Captured payload previews should keep structure while redacting secrets."""
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    usage = _build_usage()
+
+    with (
+        patch.object(settings, "model_gateway_capture_content", True),
+        patch.object(settings, "model_gateway_max_preview_chars", 10),
+    ):
+        event = emitter._build_event(
+            usage=usage,
+            request_payload={
+                "model": "openai/gpt-5",
+                "instructions": "12345678901",
+                "input": "abcdefghijk",
+                "messages": [{"role": "user", "content": "hello world"}],
+                "api_key": "sk-secret",
+                "nested": {
+                    "authorization": "Bearer secret",
+                    "session_token": "tok-123",
+                    "text": "qrstuvwxyz123",
+                },
+            },
+            response_payload={
+                "output_text": "ABCDEFGHIJK",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "LMNOPQRSTUV"}],
+                    }
+                ],
+                "tool_token": "secret-tool-token",
+            },
+        )
+
+    payload = event["payload"]
+    assert event["type"] == "model_gateway_call"
+    assert payload["outcome"] == "success"
+    assert payload["budget"] == usage.meta_data["budget"]
+    assert event["runtime_session_id"] == str(usage.runtime_session_id)
+    assert payload["runtime_session_id"] == str(usage.runtime_session_id)
+    assert payload["runtime_principal"] == {
+        "type": "flow_execution",
+        "id": "exec-123",
+        "name": "Gateway Flow",
+    }
+    assert payload["request"]["api_key"] == "***REDACTED***"
+    assert payload["request"]["nested"]["authorization"] == "***REDACTED***"
+    assert payload["request"]["nested"]["session_token"] == "***REDACTED***"
+    assert payload["response"]["tool_token"] == "***REDACTED***"
+    assert payload["request"]["instructions"] == "1234567890... [truncated]"
+    assert payload["request"]["messages"][0]["content"] == "hello worl... [truncated]"
+    assert payload["request"]["nested"]["text"] == "qrstuvwxyz... [truncated]"
+    assert payload["response"]["output_text"] == "ABCDEFGHIJ... [truncated]"
+    assert payload["response"]["output"][0]["content"][0]["text"] == (
+        "LMNOPQRSTU... [truncated]"
+    )
+    assert payload["capture_policy"] == {
+        "content_capture_enabled": True,
+        "max_preview_chars": 10,
+        "sensitive_fields_redacted": True,
+        "content_redacted": False,
+        "content_truncated": True,
+        "conversation_preview_available": True,
+    }
+    assert payload["conversation_preview"]["metadata"] == {
+        "message_count": 4,
+        "request_message_count": 3,
+        "response_message_count": 1,
+        "has_redacted_content": False,
+        "has_truncated_content": True,
+    }
+    assert payload["conversation_preview"]["messages"] == [
+        {
+            "source": "request",
+            "role": "system",
+            "text": "1234567890... [truncated]",
+            "redacted": False,
+            "truncated": True,
+            "original_length": 11,
+        },
+        {
+            "source": "request",
+            "role": "user",
+            "text": "abcdefghij... [truncated]",
+            "redacted": False,
+            "truncated": True,
+            "original_length": 11,
+        },
+        {
+            "source": "request",
+            "role": "user",
+            "text": "hello worl... [truncated]",
+            "redacted": False,
+            "truncated": True,
+            "original_length": 11,
+        },
+        {
+            "source": "response",
+            "role": "assistant",
+            "text": "LMNOPQRSTU... [truncated]",
+            "redacted": False,
+            "truncated": True,
+            "original_length": 11,
+        },
+    ]
+
+
+def test_build_event_redacts_content_by_default():
+    """Content-bearing fields should be redacted when capture is disabled."""
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    usage = _build_usage()
+
+    with patch.object(settings, "model_gateway_capture_content", False):
+        event = emitter._build_event(
+            usage=usage,
+            request_payload={
+                "input": "prompt",
+                "messages": [{"role": "user", "content": "hey"}],
+            },
+            response_payload={
+                "output_text": "answer",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "nested"}],
+                    }
+                ],
+            },
+        )
+
+    payload = event["payload"]
+    assert payload["request"]["input"] == {"redacted": True, "length": 6}
+    assert payload["request"]["messages"][0]["content"] == {
+        "redacted": True,
+        "length": 3,
+    }
+    assert payload["response"]["output_text"] == {"redacted": True, "length": 6}
+    assert payload["response"]["output"][0]["content"][0]["text"] == {
+        "redacted": True,
+        "length": 6,
+    }
+    assert payload["capture_policy"] == {
+        "content_capture_enabled": False,
+        "max_preview_chars": settings.model_gateway_max_preview_chars,
+        "sensitive_fields_redacted": True,
+        "content_redacted": True,
+        "content_truncated": False,
+        "conversation_preview_available": True,
+    }
+    assert payload["conversation_preview"]["metadata"] == {
+        "message_count": 3,
+        "request_message_count": 2,
+        "response_message_count": 1,
+        "has_redacted_content": True,
+        "has_truncated_content": False,
+    }
+    assert payload["conversation_preview"]["messages"] == [
+        {
+            "source": "request",
+            "role": "user",
+            "text": None,
+            "redacted": True,
+            "truncated": False,
+            "original_length": 6,
+        },
+        {
+            "source": "request",
+            "role": "user",
+            "text": None,
+            "redacted": True,
+            "truncated": False,
+            "original_length": 3,
+        },
+        {
+            "source": "response",
+            "role": "assistant",
+            "text": None,
+            "redacted": True,
+            "truncated": False,
+            "original_length": 6,
+        },
+    ]
+
+
+def test_build_event_extracts_conversation_preview_for_openai_responses_payloads():
+    """Responses-style payloads should normalize into a neutral conversation preview."""
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    usage = _build_usage()
+
+    with (
+        patch.object(settings, "model_gateway_capture_content", True),
+        patch.object(settings, "model_gateway_max_preview_chars", 50),
+    ):
+        event = emitter._build_event(
+            usage=usage,
+            request_payload={
+                "model": "openai/gpt-5",
+                "instructions": "Be concise",
+                "input": [
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": "Summarize issue #12"}
+                        ],
+                    }
+                ],
+            },
+            response_payload={
+                "id": "resp_123",
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "Issue #12 is ready to ship.",
+                            }
+                        ],
+                    }
+                ],
+                "output_text": "Issue #12 is ready to ship.",
+            },
+        )
+
+    assert event["payload"]["conversation_preview"]["messages"] == [
+        {
+            "source": "request",
+            "role": "system",
+            "text": "Be concise",
+            "redacted": False,
+            "truncated": False,
+            "original_length": 10,
+        },
+        {
+            "source": "request",
+            "role": "user",
+            "text": "Summarize issue #12",
+            "redacted": False,
+            "truncated": False,
+            "original_length": 19,
+        },
+        {
+            "source": "response",
+            "role": "assistant",
+            "text": "Issue #12 is ready to ship.",
+            "redacted": False,
+            "truncated": False,
+            "original_length": 27,
+        },
+    ]
+
+
+def test_build_event_extracts_conversation_preview_for_anthropic_messages():
+    """Anthropic messages payloads should preserve roles while honoring redaction policy."""
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    usage = _build_usage()
+
+    with (
+        patch.object(settings, "model_gateway_capture_content", False),
+        patch.object(settings, "model_gateway_max_preview_chars", 50),
+    ):
+        event = emitter._build_event(
+            usage=usage,
+            request_payload={
+                "model": "anthropic/claude-sonnet-4-5",
+                "system": [{"type": "text", "text": "You are a careful reviewer"}],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Review this diff"}],
+                    }
+                ],
+            },
+            response_payload={
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Looks good overall"}],
+            },
+        )
+
+    assert event["payload"]["conversation_preview"]["messages"] == [
+        {
+            "source": "request",
+            "role": "system",
+            "text": None,
+            "redacted": True,
+            "truncated": False,
+            "original_length": 26,
+        },
+        {
+            "source": "request",
+            "role": "user",
+            "text": None,
+            "redacted": True,
+            "truncated": False,
+            "original_length": 16,
+        },
+        {
+            "source": "response",
+            "role": "assistant",
+            "text": None,
+            "redacted": True,
+            "truncated": False,
+            "original_length": 18,
+        },
+    ]
+    assert event["payload"]["capture_policy"]["content_redacted"] is True
+
+
+def test_build_event_marks_budget_denied_outcome():
+    """Budget-enforcement failures should emit the budget_denied outcome."""
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    usage = _build_usage(
+        status_code=403,
+        meta_data={
+            "endpoint_kind": "responses",
+            "requested_model": "openai/gpt-5",
+            "gateway_provider": "preloop",
+            "budget": {"hard_limit_exceeded": True},
+            "error_detail": "Model gateway budget exceeded: flow monthly limit reached",
+        },
+    )
+
+    event = emitter._build_event(
+        usage=usage,
+        request_payload={"input": "prompt"},
+        response_payload=None,
+    )
+
+    assert event["payload"]["outcome"] == "budget_denied"
+
+
+def test_emit_for_usage_does_not_require_running_event_loop():
+    """Emission should still append logs when called outside an event loop."""
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    usage = _build_usage()
+
+    with (
+        patch(
+            "preloop.services.model_gateway_events.crud_flow_execution.append_log"
+        ) as mock_append_log,
+        patch(
+            "preloop.services.model_gateway_events.asyncio.get_running_loop",
+            side_effect=RuntimeError,
+        ),
+    ):
+        emitter.emit_for_usage(
+            usage=usage,
+            request_payload={"input": "prompt"},
+            response_payload={"output_text": "answer"},
+        )
+
+    mock_append_log.assert_called_once()
+    assert mock_append_log.call_args.args[1] == str(usage.flow_execution_id)
+    assert mock_append_log.call_args.args[2]["type"] == "model_gateway_call"

@@ -3,6 +3,7 @@
 # Open source core endpoints
 __all__ = [
     "account",
+    "anthropic_gateway",
     "approval_requests",
     "comments",
     "features",
@@ -10,6 +11,7 @@ __all__ = [
     "issues",
     "mcp_servers",
     "notification_preferences",
+    "openai_gateway",
     "organizations",
     "policies",
     "projects",

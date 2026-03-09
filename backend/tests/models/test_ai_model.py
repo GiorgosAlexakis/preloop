@@ -2,8 +2,12 @@
 
 from sqlalchemy.orm import Session
 
+from preloop.models.crud import ai_model as ai_model_crud_module
 from preloop.models.models import Account
 from preloop.models.crud import crud_ai_model
+from preloop.schemas.ai_model import AIModelRead
+from preloop.services import secret_service as secret_service_module
+from preloop.services.secret_service import SecretService, VAULT_KV_V2_BACKEND
 
 
 def test_create_ai_model(db_session: Session, create_account):
@@ -27,9 +31,64 @@ def test_create_ai_model(db_session: Session, create_account):
     assert ai_model.provider_name == "openai"
     assert ai_model.model_identifier == "gpt-4"
     assert ai_model.api_endpoint == "https://api.openai.com/v1"
-    assert ai_model.api_key == "test_key_123"
+    assert ai_model.api_key is None
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.has_api_key is True
+    assert ai_model.credentials_backend_type == "local_encrypted"
     assert ai_model.is_default is True
     assert ai_model.account_id == account.id
+
+
+def test_create_ai_model_with_external_secret_reference(
+    db_session: Session, create_account, monkeypatch
+):
+    """External secret references should be stored and exposed on the model."""
+    account: Account = create_account()
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "enabled", True)
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2,
+        "url",
+        "https://vault.example.test",
+    )
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2, "token", "test-token"
+    )
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "mount", "kv")
+
+    monkeypatch.setattr(
+        ai_model_crud_module,
+        "get_secret_service",
+        lambda: SecretService(),
+    )
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "External Secret Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+            "credentials_backend_type": VAULT_KV_V2_BACKEND,
+            "credentials_external_ref": "providers/openai/team-a",
+            "credentials_meta_data": {"field": "api_key", "version": 4},
+            "is_default": False,
+        },
+        account_id=account.id,
+    )
+
+    assert ai_model.api_key is None
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.has_api_key is True
+    assert ai_model.credentials_backend_type == VAULT_KV_V2_BACKEND
+    assert ai_model.credentials_external_ref == "providers/openai/team-a"
+    assert ai_model.credentials_secret is not None
+    assert ai_model.credentials_secret.backend_type == VAULT_KV_V2_BACKEND
+    assert ai_model.credentials_secret.external_ref == "providers/openai/team-a"
+    assert ai_model.credentials_secret.encrypted_value is None
+
+    response_model = AIModelRead.model_validate(ai_model)
+    assert response_model.credentials_backend_type == VAULT_KV_V2_BACKEND
+    assert response_model.credentials_external_ref == "providers/openai/team-a"
+    assert response_model.has_api_key is True
 
 
 def test_get_ai_models_by_account(db_session: Session, create_account):
@@ -111,6 +170,7 @@ def test_update_ai_model_and_default_logic(db_session: Session, create_account):
 
     assert model1.is_default is True
     assert model2.is_default is False
+    assert model2.credentials_secret_id is not None
 
     # Update m2 to be default, m1 should become non-default
     updated_m2 = crud_ai_model.update(
@@ -119,7 +179,8 @@ def test_update_ai_model_and_default_logic(db_session: Session, create_account):
     db_session.refresh(model1)  # Refresh m1 to get its updated state from the DB
 
     assert updated_m2.is_default is True
-    assert updated_m2.api_key == "test_key_456"
+    assert updated_m2.api_key is None
+    assert updated_m2.has_api_key is True
     assert model1.is_default is False
 
     # Update m1 to be default again

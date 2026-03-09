@@ -1,16 +1,20 @@
 import uuid
 import secrets
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from preloop.models import schemas
+from preloop.models.models.account import Account
 from preloop.models.crud.flow import CRUDFlow
 from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.db.session import get_db_session as get_db
 from preloop.api.auth import get_current_active_user
 from preloop.models.models.user import User
+from preloop.schemas.gateway_usage import FlowGatewayUsageSummaryResponse
+from preloop.services.model_gateway_usage import ModelGatewayUsageService
 from preloop.utils.hashing import compute_content_hash
 from preloop.utils.audit import log_config_change
 from preloop.utils.permissions import require_permission
@@ -393,6 +397,56 @@ async def get_flow_execution_logs(
         return {"logs": [], "source": "database"}
 
 
+@router.get("/flows/executions/{execution_id}/gateway-events")
+@require_permission("view_flows")
+def get_flow_execution_gateway_events(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    tail: int | None = None,
+) -> Dict[str, Any]:
+    """Get normalized model gateway events for a flow execution."""
+    from preloop.models.models.flow_execution_log import FlowExecutionLog
+    from sqlalchemy import select
+
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    query = (
+        select(FlowExecutionLog)
+        .filter(
+            FlowExecutionLog.execution_id == execution_id,
+            FlowExecutionLog.log_type == "model_gateway_call",
+        )
+        .order_by(
+            FlowExecutionLog.timestamp.desc()
+            if tail
+            else FlowExecutionLog.timestamp.asc()
+        )
+    )
+    if tail:
+        query = query.limit(tail)
+
+    rows = db.execute(query).scalars().all()
+    if tail:
+        rows = list(reversed(rows))
+
+    events = [
+        {
+            "execution_id": str(row.execution_id),
+            "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+            "type": row.log_type or "log",
+            "payload": {**(row.metadata_ or {}), "message": row.message},
+        }
+        for row in rows
+    ]
+    return {"logs": events, "source": "database"}
+
+
 @router.get("/flows/executions/{execution_id}/metrics")
 @require_permission("view_flows")
 def get_flow_execution_metrics(
@@ -438,6 +492,36 @@ def get_flow_execution_metrics(
             "estimated_cost": 0.0,
             "has_pricing": False,
         }
+
+
+@router.get(
+    "/flows/{flow_id}/gateway-usage/summary",
+    response_model=FlowGatewayUsageSummaryResponse,
+)
+@require_permission("view_flows")
+def get_flow_gateway_usage_summary(
+    *,
+    db: Session = Depends(get_db),
+    flow_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+):
+    """Get model gateway usage summary for a flow."""
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    account = db.query(Account).filter(Account.id == current_user.account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    return ModelGatewayUsageService(db).get_flow_summary(
+        account=account,
+        flow=flow,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 @router.post("/flows/executions/{execution_id}/command")

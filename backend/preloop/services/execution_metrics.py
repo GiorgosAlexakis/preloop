@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Dict
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from preloop.models import models
@@ -43,14 +44,19 @@ class ExecutionMetricsService:
         # Parse logs for tool calls
         tool_calls = self._count_tool_calls(execution)
 
-        # Parse codex logs for token usage
-        token_usage = self._parse_token_usage(execution)
-
         # Query API usage for this execution
-        api_requests = self._count_api_requests(execution)
+        gateway_usage = self._get_gateway_usage(execution)
+        api_requests = gateway_usage["api_requests"]
 
-        # Calculate estimated cost
-        estimated_cost, has_pricing = self._calculate_cost(execution, token_usage)
+        if api_requests > 0:
+            token_usage = gateway_usage["token_usage"]
+            estimated_cost = gateway_usage["estimated_cost"]
+            has_pricing = gateway_usage["has_pricing"]
+        else:
+            # Fall back to legacy log parsing when the execution did not use
+            # explicit gateway attribution.
+            token_usage = self._parse_token_usage(execution)
+            estimated_cost, has_pricing = self._calculate_cost(execution, token_usage)
 
         return {
             "tool_calls": tool_calls,
@@ -58,6 +64,43 @@ class ExecutionMetricsService:
             "token_usage": token_usage,
             "estimated_cost": estimated_cost,
             "has_pricing": has_pricing,
+        }
+
+    def _get_gateway_usage(self, execution: models.FlowExecution) -> Dict:
+        """Return explicit gateway usage totals for an execution when available."""
+        row = (
+            self.db.query(
+                func.count(models.ApiUsage.id).label("api_requests"),
+                func.coalesce(func.sum(models.ApiUsage.prompt_tokens), 0).label(
+                    "prompt_tokens"
+                ),
+                func.coalesce(func.sum(models.ApiUsage.completion_tokens), 0).label(
+                    "completion_tokens"
+                ),
+                func.coalesce(func.sum(models.ApiUsage.total_tokens), 0).label(
+                    "total_tokens"
+                ),
+                func.coalesce(func.sum(models.ApiUsage.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+                func.count(models.ApiUsage.estimated_cost).label("priced_requests"),
+            )
+            .filter(
+                models.ApiUsage.action_type == "model_gateway",
+                models.ApiUsage.flow_execution_id == execution.id,
+            )
+            .one()
+        )
+
+        return {
+            "api_requests": int(row.api_requests or 0),
+            "token_usage": {
+                "total_tokens": int(row.total_tokens or 0),
+                "input_tokens": int(row.prompt_tokens or 0),
+                "output_tokens": int(row.completion_tokens or 0),
+            },
+            "estimated_cost": round(float(row.estimated_cost or 0.0), 6),
+            "has_pricing": int(row.priced_requests or 0) > 0,
         }
 
     def _count_tool_calls(self, execution: models.FlowExecution) -> int:
@@ -150,7 +193,8 @@ class ExecutionMetricsService:
         """Count API requests made during execution timeframe.
 
         Uses the execution's start_time and end_time to filter ApiUsage records
-        by the user who owns the flow.
+        by the user who owns the flow. Prefer explicit flow_execution_id
+        attribution when gateway request records are available.
 
         Args:
             execution: FlowExecution model
@@ -158,6 +202,17 @@ class ExecutionMetricsService:
         Returns:
             Number of API requests
         """
+        explicit_count = (
+            self.db.query(models.ApiUsage)
+            .filter(models.ApiUsage.flow_execution_id == execution.id)
+            .count()
+        )
+        if explicit_count:
+            logger.info(
+                f"Found {explicit_count} explicitly attributed API requests for execution {execution.id}"
+            )
+            return explicit_count
+
         if not execution.start_time:
             return 0
 

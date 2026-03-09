@@ -98,6 +98,8 @@ class GeminiAgent(ContainerAgentExecutor):
         Returns:
             Container ID or pod name
         """
+        self._ensure_gateway_transport_supported(execution_context)
+
         # Enhance execution context with Gemini-specific settings
         gemini_context = execution_context.copy()
 
@@ -485,6 +487,8 @@ exit $GEMINI_EXIT_CODE
         Returns:
             Environment variables dict
         """
+        self._ensure_gateway_transport_supported(execution_context)
+
         env = {}
 
         # Add Gemini API key
@@ -550,3 +554,12 @@ exit $GEMINI_EXIT_CODE
         self.logger.info(f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s")
 
         return env
+
+    @staticmethod
+    def _ensure_gateway_transport_supported(execution_context: Dict[str, Any]) -> None:
+        """Fail closed for gateway-enabled Gemini flows until transport is supported."""
+        if execution_context.get("model_gateway_enabled"):
+            raise RuntimeError(
+                "Gemini gateway transport is not supported yet. "
+                "Refusing to bypass the Preloop gateway with direct provider traffic."
+            )

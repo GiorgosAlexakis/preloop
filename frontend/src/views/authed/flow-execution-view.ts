@@ -8,8 +8,14 @@ import {
   sendCommandToExecution,
   getFlowExecutionMetrics,
   getFlowExecutionLogs,
+  getFlowExecutionGatewayEvents,
   retryFlowExecution,
 } from '../../api';
+import type {
+  FlowGatewayConversationPreviewMessage,
+  FlowGatewayEvent,
+  FlowGatewayEventPayload,
+} from '../../types';
 import {
   parseUTCDate,
   formatLocalTime,
@@ -30,6 +36,7 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import '@shoelace-style/shoelace/dist/components/details/details.js';
 
 interface FlowExecutionUpdate {
   execution_id: string;
@@ -51,6 +58,10 @@ interface FlowExecution {
   trigger_event_id?: string;
   agent_session_reference?: string;
   error_message?: string;
+  mcp_usage_logs?: any[];
+  tool_calls_count?: number;
+  total_tokens?: number;
+  estimated_cost?: number;
   execution_logs?: FlowExecutionUpdate[];
 }
 
@@ -80,6 +91,9 @@ export class FlowExecutionView extends LitElement {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 16px;
+        margin-bottom: 16px;
+      }
+      .execution-tabs {
         margin-bottom: 16px;
       }
       .log-container {
@@ -216,6 +230,152 @@ export class FlowExecutionView extends LitElement {
         color: #858585;
         gap: 12px;
       }
+      .gateway-events-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .gateway-panel-intro {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.875rem;
+        line-height: 1.5;
+      }
+      .gateway-events-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .gateway-event-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 240px;
+        gap: 12px;
+        color: var(--sl-color-neutral-600);
+        border: 1px dashed var(--sl-color-neutral-300);
+        border-radius: var(--sl-border-radius-medium);
+        background: var(--sl-color-neutral-50);
+      }
+      .gateway-event {
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        background: var(--sl-color-neutral-0);
+      }
+      .gateway-event::part(summary) {
+        padding: 16px;
+      }
+      .gateway-event::part(content) {
+        border-top: 1px solid var(--sl-color-neutral-200);
+        padding: 16px;
+        background: var(--sl-color-neutral-50);
+      }
+      .gateway-event-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 12px;
+        align-items: center;
+        width: 100%;
+        padding-right: 12px;
+      }
+      .gateway-event-field {
+        min-width: 0;
+      }
+      .gateway-event-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--sl-color-neutral-600);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 4px;
+      }
+      .gateway-event-value {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: var(--sl-color-neutral-900);
+        overflow-wrap: anywhere;
+      }
+      .gateway-event-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .payload-section-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--sl-color-neutral-700);
+        margin-bottom: 8px;
+      }
+      .payload-block {
+        background: var(--sl-color-neutral-100);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: 12px;
+        max-height: 360px;
+        overflow: auto;
+      }
+      .payload-block pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .gateway-capture-policy {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .gateway-capture-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+      }
+      .gateway-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .conversation-preview-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .conversation-preview-message {
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        background: var(--sl-color-neutral-100);
+        padding: 12px;
+      }
+      .conversation-preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .conversation-preview-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--sl-color-neutral-800);
+      }
+      .conversation-preview-text {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--sl-color-neutral-900);
+      }
+      .conversation-preview-redacted {
+        color: var(--sl-color-neutral-600);
+      }
     `,
   ];
 
@@ -230,6 +390,18 @@ export class FlowExecutionView extends LitElement {
 
   @state()
   private logs: FlowExecutionUpdate[] = [];
+
+  @state()
+  private gatewayEvents: FlowGatewayEvent[] = [];
+
+  @state()
+  private gatewayEventsSource: 'container' | 'database' | null = null;
+
+  @state()
+  private gatewayEventsError: string | null = null;
+
+  @state()
+  private isLoadingGatewayEvents = false;
 
   @state()
   private toolCalls = 0;
@@ -408,6 +580,11 @@ export class FlowExecutionView extends LitElement {
 
     // Handle NATS forwarded messages
     if (message.execution_id === this.executionId) {
+      if (message.type === 'model_gateway_call') {
+        this.appendGatewayEvent(message as FlowGatewayEvent);
+        return;
+      }
+
       // For agent log lines, add to buffer for controlled rendering
       // For other message types (status updates, etc.), add directly
       if (message.type === 'agent_log_line') {
@@ -480,12 +657,19 @@ export class FlowExecutionView extends LitElement {
       }
 
       // Handle real-time token usage update
-      if (message.type === 'token_usage_update') {
+      if (
+        message.type === 'token_usage_update' &&
+        !this.hasGatewayUsageEvents()
+      ) {
         this.totalTokens = message.payload.total_tokens || 0;
+        if (typeof message.payload.estimated_cost === 'number') {
+          this.budgetUsed = message.payload.estimated_cost;
+          this.hasPricing = true;
+        }
       }
 
       // Track budget usage
-      if (message.type === 'budget_update') {
+      if (message.type === 'budget_update' && !this.hasGatewayUsageEvents()) {
         this.budgetUsed = message.payload.budget_used || 0;
       }
 
@@ -609,15 +793,29 @@ export class FlowExecutionView extends LitElement {
 
     try {
       this.isLoading = true;
+      this.isLoadingGatewayEvents = true;
       this.loadingError = null;
+      this.gatewayEventsError = null;
+      this.gatewayEvents = [];
+      this.gatewayEventsSource = null;
 
       // Fetch execution details
       this.execution = await getFlowExecution(this.executionId);
+      this.hydrateMetricsFromExecution();
+
+      // Fetch logs and normalized gateway events in parallel.
+      const [logsResult, gatewayEventsResult] = await Promise.allSettled([
+        getFlowExecutionLogs(this.executionId),
+        getFlowExecutionGatewayEvents(this.executionId),
+      ]);
 
       // Fetch logs from container (if running) or database (if finished)
       // This ensures we get all historical logs, even for running executions
       try {
-        const logsResponse = await getFlowExecutionLogs(this.executionId);
+        if (logsResult.status !== 'fulfilled') {
+          throw logsResult.reason;
+        }
+        const logsResponse = logsResult.value;
         if (logsResponse.logs && Array.isArray(logsResponse.logs)) {
           console.log(
             `Loaded ${logsResponse.logs.length} logs from ${logsResponse.source}`
@@ -641,6 +839,23 @@ export class FlowExecutionView extends LitElement {
         } else {
           console.log('No fallback logs available');
         }
+      }
+
+      try {
+        if (gatewayEventsResult.status !== 'fulfilled') {
+          throw gatewayEventsResult.reason;
+        }
+        this.gatewayEvents = gatewayEventsResult.value.logs || [];
+        this.gatewayEventsSource = gatewayEventsResult.value.source;
+        this.applyGatewayMetricsFromEvents();
+      } catch (error) {
+        console.error('Failed to fetch gateway events:', error);
+        this.gatewayEventsError =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load execution gateway events';
+      } finally {
+        this.isLoadingGatewayEvents = false;
       }
 
       // Fetch flow details
@@ -681,6 +896,7 @@ export class FlowExecutionView extends LitElement {
           ? error.message
           : 'Failed to load execution details';
       this.isLoading = false;
+      this.isLoadingGatewayEvents = false;
     }
   }
 
@@ -722,6 +938,480 @@ export class FlowExecutionView extends LitElement {
     }
 
     return 'lightning';
+  }
+
+  private appendGatewayEvent(event: FlowGatewayEvent) {
+    const nextEventKey = this.getGatewayEventKey(event);
+    const exists = this.gatewayEvents.some(
+      (existingEvent) => this.getGatewayEventKey(existingEvent) === nextEventKey
+    );
+    if (!exists) {
+      this.gatewayEvents = [...this.gatewayEvents, event];
+      this.gatewayEventsSource = 'container';
+      this.applyGatewayMetricsFromEvents();
+    }
+  }
+
+  private hasGatewayUsageEvents(): boolean {
+    return this.gatewayEvents.some((event) =>
+      this.gatewayEventHasUsageMetrics(event)
+    );
+  }
+
+  private gatewayEventHasUsageMetrics(event: FlowGatewayEvent): boolean {
+    return (
+      typeof event.payload.total_tokens === 'number' ||
+      typeof event.payload.estimated_cost === 'number'
+    );
+  }
+
+  private applyGatewayMetricsFromEvents() {
+    const summary = this.gatewayEvents.reduce(
+      (totals, event) => {
+        totals.totalTokens += this.getGatewayMetricNumber(
+          event.payload.total_tokens
+        );
+        totals.estimatedCost += this.getGatewayMetricNumber(
+          event.payload.estimated_cost
+        );
+        if (
+          typeof event.payload.estimated_cost === 'number' ||
+          (event.payload.budget as { pricing_available?: unknown } | null)
+            ?.pricing_available === true
+        ) {
+          totals.hasPricing = true;
+        }
+        return totals;
+      },
+      { totalTokens: 0, estimatedCost: 0, hasPricing: false }
+    );
+
+    if (
+      summary.totalTokens > 0 ||
+      summary.estimatedCost > 0 ||
+      summary.hasPricing
+    ) {
+      this.totalTokens = summary.totalTokens;
+      this.budgetUsed = summary.estimatedCost;
+      this.hasPricing = summary.hasPricing;
+    }
+  }
+
+  private getGatewayMetricNumber(value: number | null | undefined): number {
+    return typeof value === 'number' && !Number.isNaN(value) ? value : 0;
+  }
+
+  private hydrateMetricsFromExecution() {
+    if (!this.execution) {
+      return;
+    }
+
+    const executionToolCalls =
+      typeof this.execution.tool_calls_count === 'number'
+        ? this.execution.tool_calls_count
+        : Array.isArray(this.execution.mcp_usage_logs)
+          ? this.execution.mcp_usage_logs.length
+          : 0;
+    this.toolCalls = executionToolCalls;
+
+    if (!this.hasGatewayUsageEvents()) {
+      if (typeof this.execution.total_tokens === 'number') {
+        this.totalTokens = this.execution.total_tokens;
+      }
+      if (typeof this.execution.estimated_cost === 'number') {
+        this.budgetUsed = this.execution.estimated_cost;
+        if (this.execution.estimated_cost > 0) {
+          this.hasPricing = true;
+        }
+      }
+    }
+  }
+
+  private getGatewayEventKey(event: FlowGatewayEvent): string {
+    const apiUsageId = event.payload?.api_usage_id;
+    if (typeof apiUsageId === 'string' && apiUsageId) {
+      return apiUsageId;
+    }
+    return [
+      event.execution_id,
+      event.timestamp ?? 'no-timestamp',
+      event.payload?.upstream_request_id ?? 'no-request-id',
+      event.payload?.model_alias ??
+        event.payload?.requested_model ??
+        'no-model',
+    ].join(':');
+  }
+
+  private renderGatewayField(label: string, value: unknown) {
+    return html`
+      <div class="gateway-event-field">
+        <div class="gateway-event-label">${label}</div>
+        <div class="gateway-event-value">${value ?? 'n/a'}</div>
+      </div>
+    `;
+  }
+
+  private getGatewayModelLabel(event: FlowGatewayEvent): string {
+    return (
+      event.payload.model_alias ||
+      event.payload.requested_model ||
+      'Unknown model'
+    );
+  }
+
+  private getGatewayProviderLabel(event: FlowGatewayEvent): string {
+    return (
+      event.payload.provider_name ||
+      event.payload.gateway_provider ||
+      'Unknown provider'
+    );
+  }
+
+  private getGatewayOutcomeVariant(outcome?: string | null) {
+    switch (outcome) {
+      case 'success':
+        return 'success';
+      case 'budget_denied':
+        return 'warning';
+      case 'error':
+        return 'danger';
+      default:
+        return 'neutral';
+    }
+  }
+
+  private formatGatewayOutcome(outcome?: string | null): string {
+    if (!outcome) {
+      return 'Unknown';
+    }
+    return outcome
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  private formatGatewayCost(cost?: number | null): string {
+    if (typeof cost !== 'number' || Number.isNaN(cost)) {
+      return 'n/a';
+    }
+    if (cost === 0) {
+      return '$0.00';
+    }
+    return cost >= 0.01 ? `$${cost.toFixed(2)}` : `$${cost.toFixed(4)}`;
+  }
+
+  private formatGatewayTokens(tokens?: number | null): string {
+    if (typeof tokens !== 'number' || Number.isNaN(tokens)) {
+      return 'n/a';
+    }
+    return tokens.toLocaleString();
+  }
+
+  private formatGatewayPayload(payload: unknown): string {
+    return JSON.stringify(payload, null, 2);
+  }
+
+  private formatGatewayLabel(value?: string | null): string {
+    if (!value) {
+      return 'Unknown';
+    }
+    return value
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  private getGatewayPreviewMessages(
+    payload: FlowGatewayEventPayload
+  ): FlowGatewayConversationPreviewMessage[] {
+    return Array.isArray(payload.conversation_preview?.messages)
+      ? payload.conversation_preview?.messages
+      : [];
+  }
+
+  private renderGatewayCapturePolicy(payload: FlowGatewayEventPayload) {
+    const policy = payload.capture_policy;
+    if (!policy) {
+      return '';
+    }
+
+    return html`
+      <div class="payload-section-title">Capture Policy</div>
+      <div class="gateway-capture-policy">
+        <div class="gateway-capture-grid">
+          ${this.renderGatewayField(
+            'Content',
+            policy.content_capture_enabled
+              ? 'Preview captured'
+              : 'Preview redacted'
+          )}
+          ${this.renderGatewayField(
+            'Max Preview',
+            typeof policy.max_preview_chars === 'number'
+              ? `${policy.max_preview_chars} chars`
+              : 'n/a'
+          )}
+          ${this.renderGatewayField(
+            'Conversation',
+            policy.conversation_preview_available
+              ? 'Available'
+              : 'Not available'
+          )}
+        </div>
+        <div class="gateway-badges">
+          ${policy.sensitive_fields_redacted
+            ? html`<sl-badge pill>Sensitive fields redacted</sl-badge>`
+            : ''}
+          ${policy.content_redacted
+            ? html`<sl-badge pill variant="warning">Content redacted</sl-badge>`
+            : ''}
+          ${policy.content_truncated
+            ? html`<sl-badge pill variant="warning"
+                >Content truncated</sl-badge
+              >`
+            : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderGatewayPreviewMessage(
+    message: FlowGatewayConversationPreviewMessage
+  ) {
+    const previewText = message.text
+      ? message.text
+      : message.redacted
+        ? 'Content redacted by capture policy.'
+        : 'No text content captured.';
+
+    return html`
+      <div class="conversation-preview-message">
+        <div class="conversation-preview-header">
+          <div class="conversation-preview-title">
+            ${this.formatGatewayLabel(message.source)}
+            ${this.formatGatewayLabel(message.role)}
+          </div>
+          <div class="gateway-badges">
+            ${message.redacted
+              ? html`<sl-badge pill variant="warning">Redacted</sl-badge>`
+              : ''}
+            ${message.truncated
+              ? html`<sl-badge pill variant="warning">Truncated</sl-badge>`
+              : ''}
+            ${typeof message.original_length === 'number'
+              ? html`
+                  <sl-badge pill variant="neutral">
+                    ${message.original_length.toLocaleString()} chars
+                  </sl-badge>
+                `
+              : ''}
+          </div>
+        </div>
+        <pre
+          class="conversation-preview-text ${message.redacted
+            ? 'conversation-preview-redacted'
+            : ''}"
+        >
+${previewText}</pre
+        >
+      </div>
+    `;
+  }
+
+  private renderGatewayConversationPreview(payload: FlowGatewayEventPayload) {
+    const messages = this.getGatewayPreviewMessages(payload);
+    const metadata = payload.conversation_preview?.metadata;
+
+    return html`
+      <div class="payload-section-title">Conversation Preview</div>
+      <div class="gateway-badges" style="margin-bottom: 12px;">
+        <sl-badge pill>${messages.length} messages</sl-badge>
+        ${metadata?.has_redacted_content
+          ? html`<sl-badge pill variant="warning"
+              >Contains redactions</sl-badge
+            >`
+          : ''}
+        ${metadata?.has_truncated_content
+          ? html`<sl-badge pill variant="warning"
+              >Contains truncation</sl-badge
+            >`
+          : ''}
+      </div>
+      ${messages.length > 0
+        ? html`
+            <div class="conversation-preview-list">
+              ${messages.map((message) =>
+                this.renderGatewayPreviewMessage(message)
+              )}
+            </div>
+          `
+        : html`
+            <div class="payload-block" style="margin-bottom: 16px;">
+              <pre>No conversation preview captured for this event.</pre>
+            </div>
+          `}
+    `;
+  }
+
+  private renderGatewayEventsPanel() {
+    return html`
+      <sl-card>
+        <div
+          slot="header"
+          style="display: flex; justify-content: space-between; align-items: center; gap: 12px;"
+        >
+          <span>
+            <sl-icon name="cpu"></sl-icon>
+            Gateway Events
+          </span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${this.gatewayEventsSource
+              ? html`
+                  <span class="gateway-panel-intro">
+                    ${this.gatewayEventsSource === 'database'
+                      ? 'Stored execution events'
+                      : 'Live execution events'}
+                  </span>
+                `
+              : ''}
+            <sl-badge pill>${this.gatewayEvents.length}</sl-badge>
+          </div>
+        </div>
+
+        <div class="gateway-events-panel">
+          <div class="gateway-panel-intro">
+            Inspect normalized model gateway calls for this execution, including
+            sanitized request and response payload previews when available.
+          </div>
+
+          ${this.gatewayEventsError
+            ? html`
+                <sl-alert variant="warning" open>
+                  <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+                  ${this.gatewayEventsError}
+                </sl-alert>
+              `
+            : ''}
+          ${this.isLoadingGatewayEvents && this.gatewayEvents.length === 0
+            ? html`
+                <div class="gateway-event-empty">
+                  <sl-spinner style="font-size: 2rem;"></sl-spinner>
+                  <p>Loading gateway events...</p>
+                </div>
+              `
+            : this.gatewayEvents.length === 0
+              ? html`
+                  <div class="gateway-event-empty">
+                    <sl-icon
+                      name="diagram-3"
+                      style="font-size: 2rem;"
+                    ></sl-icon>
+                    <p>No gateway events recorded for this execution.</p>
+                  </div>
+                `
+              : html`
+                  <div class="gateway-events-list">
+                    ${this.gatewayEvents.map((event) =>
+                      this.renderGatewayEvent(event)
+                    )}
+                  </div>
+                `}
+        </div>
+      </sl-card>
+    `;
+  }
+
+  private renderGatewayEvent(event: FlowGatewayEvent) {
+    const payload = event.payload;
+    const timestamp = event.timestamp
+      ? html`
+          <sl-tooltip content=${formatUTCDateTime(event.timestamp)}>
+            <span>${formatLocalTime(event.timestamp)}</span>
+          </sl-tooltip>
+        `
+      : 'Unknown';
+
+    return html`
+      <sl-details class="gateway-event">
+        <div slot="summary" class="gateway-event-summary">
+          ${this.renderGatewayField('Timestamp', timestamp)}
+          ${this.renderGatewayField('Model', this.getGatewayModelLabel(event))}
+          ${this.renderGatewayField(
+            'Provider',
+            this.getGatewayProviderLabel(event)
+          )}
+          ${this.renderGatewayField(
+            'Outcome',
+            html`
+              <sl-badge
+                variant=${this.getGatewayOutcomeVariant(payload.outcome)}
+              >
+                ${this.formatGatewayOutcome(payload.outcome)}
+              </sl-badge>
+            `
+          )}
+          ${this.renderGatewayField(
+            'Cost',
+            this.formatGatewayCost(payload.estimated_cost)
+          )}
+          ${this.renderGatewayField(
+            'Tokens',
+            this.formatGatewayTokens(payload.total_tokens)
+          )}
+        </div>
+
+        <div class="gateway-event-meta">
+          ${this.renderGatewayField(
+            'HTTP',
+            payload.status_code
+              ? `${payload.method || 'POST'} ${payload.status_code}`
+              : payload.method || 'n/a'
+          )}
+          ${this.renderGatewayField(
+            'Endpoint',
+            payload.endpoint_kind || payload.endpoint || 'n/a'
+          )}
+          ${this.renderGatewayField(
+            'Duration',
+            typeof payload.duration_ms === 'number'
+              ? `${payload.duration_ms} ms`
+              : 'n/a'
+          )}
+          ${this.renderGatewayField(
+            'Prompt Tokens',
+            this.formatGatewayTokens(payload.prompt_tokens)
+          )}
+          ${this.renderGatewayField(
+            'Completion Tokens',
+            this.formatGatewayTokens(payload.completion_tokens)
+          )}
+          ${this.renderGatewayField(
+            'Finish Reason',
+            payload.finish_reason || 'n/a'
+          )}
+          ${this.renderGatewayField(
+            'Request ID',
+            payload.upstream_request_id || 'n/a'
+          )}
+        </div>
+
+        ${payload.error_detail
+          ? html`
+              <sl-alert variant="danger" open style="margin-bottom: 16px;">
+                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                ${payload.error_detail}
+              </sl-alert>
+            `
+          : ''}
+        ${this.renderGatewayCapturePolicy(payload)}
+        ${this.renderGatewayConversationPreview(payload)}
+
+        <div class="payload-section-title">Event Payload</div>
+        <div class="payload-block">
+          <pre>${this.formatGatewayPayload(payload)}</pre>
+        </div>
+      </sl-details>
+    `;
   }
 
   render() {
@@ -961,88 +1651,105 @@ ${this.execution.resolved_input_prompt}</pre
               `
             : ''}
 
-          <sl-card>
-            <div
-              slot="header"
-              style="display: flex; justify-content: space-between; align-items: center;"
-            >
-              <span>
-                <sl-icon name="terminal"></sl-icon>
-                Output
-              </span>
-              ${isRunning
-                ? html`
-                    <div class="controls">
-                      <sl-button-group>
-                        <sl-button
-                          size="small"
-                          variant=${this.isAutoScroll ? 'primary' : 'default'}
-                          @click=${() =>
-                            (this.isAutoScroll = !this.isAutoScroll)}
-                        >
-                          <sl-icon name="arrow-down"></sl-icon>
-                          Auto-scroll
-                        </sl-button>
-                        <sl-button
-                          size="small"
-                          variant="danger"
-                          @click=${this.stopExecution}
-                        >
-                          <sl-icon name="stop-circle"></sl-icon>
-                          Stop
-                        </sl-button>
-                      </sl-button-group>
-                    </div>
-                  `
-                : ''}
-            </div>
+          <sl-tab-group class="execution-tabs">
+            <sl-tab slot="nav" panel="output">Output</sl-tab>
+            <sl-tab slot="nav" panel="gateway-events">Gateway Events</sl-tab>
 
-            <div class="log-container">
-              ${this.logs.length === 0
-                ? html`
-                    <div class="empty-logs">
-                      <sl-icon name="inbox" style="font-size: 3rem;"></sl-icon>
-                      <p>Waiting for logs...</p>
-                    </div>
-                  `
-                : this.logs.map((log) => this.renderLogEntry(log))}
-              ${isRunning
-                ? html`
-                    <div class="loading-indicator">
-                      <div class="loading-dots">
-                        <span></span>
-                        <span></span>
-                        <span></span>
+            <sl-tab-panel name="output">
+              <sl-card>
+                <div
+                  slot="header"
+                  style="display: flex; justify-content: space-between; align-items: center;"
+                >
+                  <span>
+                    <sl-icon name="terminal"></sl-icon>
+                    Output
+                  </span>
+                  ${isRunning
+                    ? html`
+                        <div class="controls">
+                          <sl-button-group>
+                            <sl-button
+                              size="small"
+                              variant=${this.isAutoScroll
+                                ? 'primary'
+                                : 'default'}
+                              @click=${() =>
+                                (this.isAutoScroll = !this.isAutoScroll)}
+                            >
+                              <sl-icon name="arrow-down"></sl-icon>
+                              Auto-scroll
+                            </sl-button>
+                            <sl-button
+                              size="small"
+                              variant="danger"
+                              @click=${this.stopExecution}
+                            >
+                              <sl-icon name="stop-circle"></sl-icon>
+                              Stop
+                            </sl-button>
+                          </sl-button-group>
+                        </div>
+                      `
+                    : ''}
+                </div>
+
+                <div class="log-container">
+                  ${this.logs.length === 0
+                    ? html`
+                        <div class="empty-logs">
+                          <sl-icon
+                            name="inbox"
+                            style="font-size: 3rem;"
+                          ></sl-icon>
+                          <p>Waiting for logs...</p>
+                        </div>
+                      `
+                    : this.logs.map((log) => this.renderLogEntry(log))}
+                  ${isRunning
+                    ? html`
+                        <div class="loading-indicator">
+                          <div class="loading-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                          </div>
+                        </div>
+                      `
+                    : ''}
+                </div>
+
+                ${isRunning
+                  ? html`
+                      <div class="terminal-input">
+                        <sl-input
+                          placeholder="Enter command (e.g., 'pause', 'message: Hello')"
+                          .value=${this.commandInput}
+                          @input=${(e: any) =>
+                            (this.commandInput = e.target.value)}
+                          @keydown=${this.handleInputKeydown}
+                          style="flex: 1;"
+                        >
+                          <sl-icon name="terminal" slot="prefix"></sl-icon>
+                        </sl-input>
+                        <sl-button
+                          variant="primary"
+                          ?loading=${this.isSendingCommand}
+                          @click=${this.sendCommand}
+                        >
+                          <sl-icon name="send"></sl-icon>
+                          Send
+                        </sl-button>
                       </div>
-                    </div>
-                  `
-                : ''}
-            </div>
+                    `
+                  : ''}
+              </sl-card>
+            </sl-tab-panel>
 
-            ${isRunning
-              ? html`
-                  <div class="terminal-input">
-                    <sl-input
-                      placeholder="Enter command (e.g., 'pause', 'message: Hello')"
-                      .value=${this.commandInput}
-                      @input=${(e: any) => (this.commandInput = e.target.value)}
-                      @keydown=${this.handleInputKeydown}
-                      style="flex: 1;"
-                    >
-                      <sl-icon name="terminal" slot="prefix"></sl-icon>
-                    </sl-input>
-                    <sl-button
-                      variant="primary"
-                      ?loading=${this.isSendingCommand}
-                      @click=${this.sendCommand}
-                    >
-                      <sl-icon name="send"></sl-icon>
-                      Send
-                    </sl-button>
-                  </div>
-                `
-              : ''}
-          </sl-card>
+            <sl-tab-panel name="gateway-events">
+              ${this.renderGatewayEventsPanel()}
+            </sl-tab-panel>
+          </sl-tab-group>
 
           ${this.execution.error_message
             ? html`

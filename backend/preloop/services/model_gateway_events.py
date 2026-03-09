@@ -1,0 +1,402 @@
+"""Emission helpers for normalized model gateway runtime events."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from sqlalchemy.orm import Session
+
+from preloop.config import settings
+from preloop.models.crud.flow_execution import CRUDFlowExecution
+from preloop.models.models.api_usage import ApiUsage
+from preloop.sync.services.event_bus import get_nats_client
+
+logger = logging.getLogger(__name__)
+
+
+crud_flow_execution = CRUDFlowExecution()
+_TEXT_CONTENT_TYPES = {"input_text", "output_text", "text"}
+
+
+class ModelGatewayEventEmitter:
+    """Emit one normalized runtime event per completed gateway request."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def emit_for_usage(
+        self,
+        *,
+        usage: ApiUsage,
+        request_payload: Optional[dict],
+        response_payload: Optional[dict],
+    ) -> None:
+        """Persist and publish a normalized model-call event when possible."""
+        event = self._build_event(
+            usage=usage,
+            request_payload=request_payload,
+            response_payload=response_payload,
+        )
+        execution_id = str(usage.flow_execution_id) if usage.flow_execution_id else None
+        if execution_id:
+            crud_flow_execution.append_log(
+                self.db,
+                execution_id,
+                event,
+                commit=True,
+            )
+
+        if execution_id and usage.account_id:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            loop.create_task(self._publish_to_nats(event))
+
+    async def _publish_to_nats(self, event: dict) -> None:
+        execution_id = event.get("execution_id")
+        if not execution_id:
+            return
+        nats_client = await get_nats_client()
+        if not nats_client or not nats_client.is_connected:
+            return
+        await nats_client.publish(
+            f"flow-updates.{execution_id}",
+            json.dumps(event).encode(),
+        )
+
+    def _build_event(
+        self,
+        *,
+        usage: ApiUsage,
+        request_payload: Optional[dict],
+        response_payload: Optional[dict],
+    ) -> dict[str, Any]:
+        meta_data = usage.meta_data or {}
+        error_detail = meta_data.get("error_detail")
+        conversation_preview = self._build_conversation_preview(
+            request_payload=request_payload,
+            response_payload=response_payload,
+        )
+        return {
+            "execution_id": str(usage.flow_execution_id)
+            if usage.flow_execution_id
+            else None,
+            "runtime_session_id": str(usage.runtime_session_id)
+            if usage.runtime_session_id
+            else None,
+            "flow_id": str(usage.flow_id) if usage.flow_id else None,
+            "account_id": str(usage.account_id) if usage.account_id else None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "model_gateway_call",
+            "payload": {
+                "api_usage_id": str(usage.id),
+                "endpoint": usage.endpoint,
+                "endpoint_kind": meta_data.get("endpoint_kind"),
+                "method": usage.method,
+                "status_code": usage.status_code,
+                "outcome": self._derive_outcome(usage.status_code, error_detail),
+                "duration_ms": int((usage.duration or 0) * 1000),
+                "user_id": str(usage.user_id) if usage.user_id else None,
+                "auth_subject_type": usage.auth_subject_type,
+                "api_key_id": str(usage.api_key_id) if usage.api_key_id else None,
+                "ai_model_id": str(usage.ai_model_id) if usage.ai_model_id else None,
+                "model_alias": usage.model_alias,
+                "provider_name": usage.provider_name,
+                "gateway_provider": meta_data.get("gateway_provider"),
+                "requested_model": meta_data.get("requested_model"),
+                "upstream_request_id": usage.upstream_request_id,
+                "finish_reason": meta_data.get("finish_reason"),
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "estimated_cost": usage.estimated_cost,
+                "runtime_session_id": str(usage.runtime_session_id)
+                if usage.runtime_session_id
+                else None,
+                "runtime_principal": {
+                    "type": usage.runtime_principal_type,
+                    "id": usage.runtime_principal_id,
+                    "name": usage.runtime_principal_name,
+                },
+                "budget": meta_data.get("budget"),
+                "error_detail": error_detail,
+                "capture_policy": self._build_capture_policy(conversation_preview),
+                "conversation_preview": conversation_preview,
+                "request": self._sanitize_payload(request_payload),
+                "response": self._sanitize_payload(response_payload),
+            },
+        }
+
+    @staticmethod
+    def _derive_outcome(status_code: int, error_detail: Optional[str]) -> str:
+        if (
+            status_code == 403
+            and error_detail
+            and "budget exceeded" in error_detail.lower()
+        ):
+            return "budget_denied"
+        if status_code >= 400:
+            return "error"
+        return "success"
+
+    def _sanitize_payload(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            sanitized = {}
+            for key, item in value.items():
+                lowered = key.lower()
+                if any(
+                    token in lowered for token in ("api_key", "authorization", "token")
+                ):
+                    sanitized[key] = "***REDACTED***"
+                    continue
+                if lowered in {
+                    "content",
+                    "input",
+                    "instructions",
+                    "output_text",
+                    "text",
+                    "system",
+                }:
+                    sanitized[key] = self._sanitize_text(item)
+                    continue
+                sanitized[key] = self._sanitize_payload(item)
+            return sanitized
+        if isinstance(value, list):
+            return [self._sanitize_payload(item) for item in value]
+        if isinstance(value, str):
+            return self._truncate_text(value)
+        return value
+
+    def _sanitize_text(self, value: Any) -> Any:
+        if isinstance(value, list):
+            return [self._sanitize_payload(item) for item in value]
+        text = str(value)
+        sanitized_text, _ = self._sanitize_text_with_meta(text)
+        return sanitized_text
+
+    def _build_capture_policy(
+        self, conversation_preview: dict[str, Any]
+    ) -> dict[str, Any]:
+        metadata = conversation_preview.get("metadata", {})
+        return {
+            "content_capture_enabled": settings.model_gateway_capture_content,
+            "max_preview_chars": settings.model_gateway_max_preview_chars,
+            "sensitive_fields_redacted": True,
+            "content_redacted": bool(metadata.get("has_redacted_content")),
+            "content_truncated": bool(metadata.get("has_truncated_content")),
+            "conversation_preview_available": bool(
+                conversation_preview.get("messages")
+            ),
+        }
+
+    def _build_conversation_preview(
+        self,
+        *,
+        request_payload: Optional[dict],
+        response_payload: Optional[dict],
+    ) -> dict[str, Any]:
+        request_messages = self._extract_request_preview_messages(request_payload)
+        response_messages = self._extract_response_preview_messages(response_payload)
+        messages = [*request_messages, *response_messages]
+        return {
+            "messages": messages,
+            "metadata": {
+                "message_count": len(messages),
+                "request_message_count": len(request_messages),
+                "response_message_count": len(response_messages),
+                "has_redacted_content": any(
+                    bool(message.get("redacted")) for message in messages
+                ),
+                "has_truncated_content": any(
+                    bool(message.get("truncated")) for message in messages
+                ),
+            },
+        }
+
+    def _extract_request_preview_messages(
+        self, payload: Optional[dict]
+    ) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+
+        messages: list[dict[str, Any]] = []
+        if payload.get("instructions") is not None:
+            preview_message = self._build_preview_message(
+                source="request",
+                role="system",
+                content=payload.get("instructions"),
+            )
+            if preview_message:
+                messages.append(preview_message)
+
+        if payload.get("system") is not None:
+            preview_message = self._build_preview_message(
+                source="request",
+                role="system",
+                content=payload.get("system"),
+            )
+            if preview_message:
+                messages.append(preview_message)
+
+        raw_input = payload.get("input")
+        if isinstance(raw_input, str):
+            preview_message = self._build_preview_message(
+                source="request",
+                role="user",
+                content=raw_input,
+            )
+            if preview_message:
+                messages.append(preview_message)
+        elif isinstance(raw_input, list):
+            messages.extend(
+                self._extract_preview_messages_from_items(raw_input, "request")
+            )
+
+        raw_messages = payload.get("messages")
+        if isinstance(raw_messages, list):
+            messages.extend(
+                self._extract_preview_messages_from_items(raw_messages, "request")
+            )
+
+        return messages
+
+    def _extract_response_preview_messages(
+        self, payload: Optional[dict]
+    ) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+
+        messages: list[dict[str, Any]] = []
+        raw_output = payload.get("output")
+        if isinstance(raw_output, list):
+            messages.extend(
+                self._extract_preview_messages_from_items(raw_output, "response")
+            )
+
+        choices = payload.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if not isinstance(choice, dict):
+                    continue
+                message = choice.get("message")
+                if not isinstance(message, dict):
+                    continue
+                preview_message = self._build_preview_message(
+                    source="response",
+                    role=str(message.get("role") or "assistant"),
+                    content=message.get("content"),
+                )
+                if preview_message:
+                    messages.append(preview_message)
+
+        if isinstance(payload.get("content"), list):
+            preview_message = self._build_preview_message(
+                source="response",
+                role=str(payload.get("role") or "assistant"),
+                content=payload.get("content"),
+            )
+            if preview_message:
+                messages.append(preview_message)
+
+        if not messages and payload.get("output_text") is not None:
+            preview_message = self._build_preview_message(
+                source="response",
+                role="assistant",
+                content=payload.get("output_text"),
+            )
+            if preview_message:
+                messages.append(preview_message)
+
+        return messages
+
+    def _extract_preview_messages_from_items(
+        self, items: list[Any], source: str
+    ) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            preview_message = self._build_preview_message(
+                source=source,
+                role=str(
+                    item.get("role")
+                    or ("assistant" if source == "response" else "user")
+                ),
+                content=item.get("content", item),
+            )
+            if preview_message:
+                messages.append(preview_message)
+        return messages
+
+    def _build_preview_message(
+        self, *, source: str, role: str, content: Any
+    ) -> Optional[dict[str, Any]]:
+        text = self._content_to_preview_text(content).strip()
+        if not text:
+            return None
+
+        sanitized_text, metadata = self._sanitize_text_with_meta(text)
+        return {
+            "source": source,
+            "role": role,
+            "text": sanitized_text if isinstance(sanitized_text, str) else None,
+            "redacted": metadata["redacted"],
+            "truncated": metadata["truncated"],
+            "original_length": metadata["length"],
+        }
+
+    def _content_to_preview_text(self, content: Any) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            fragments = [
+                self._content_to_preview_text(item)
+                for item in content
+                if self._content_to_preview_text(item)
+            ]
+            return "\n".join(fragments)
+        if isinstance(content, dict):
+            content_type = str(content.get("type") or "")
+            if content_type in _TEXT_CONTENT_TYPES and content.get("text") is not None:
+                return str(content.get("text"))
+            if content.get("content") is not None:
+                return self._content_to_preview_text(content.get("content"))
+            if content.get("text") is not None:
+                return str(content.get("text"))
+            return ""
+        return str(content)
+
+    def _sanitize_text_with_meta(self, text: str) -> tuple[Any, dict[str, Any]]:
+        if settings.model_gateway_capture_content:
+            truncated_text, truncated = self._truncate_text_with_meta(text)
+            return truncated_text, {
+                "redacted": False,
+                "truncated": truncated,
+                "length": len(text),
+            }
+        return {"redacted": True, "length": len(text)}, {
+            "redacted": True,
+            "truncated": False,
+            "length": len(text),
+        }
+
+    @staticmethod
+    def _truncate_text(value: str) -> str:
+        return ModelGatewayEventEmitter._truncate_text_with_meta(value)[0]
+
+    @staticmethod
+    def _truncate_text_with_meta(value: str) -> tuple[str, bool]:
+        if len(value) <= settings.model_gateway_max_preview_chars:
+            return value, False
+        return value[
+            : settings.model_gateway_max_preview_chars
+        ] + "... [truncated]", True

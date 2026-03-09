@@ -630,6 +630,11 @@ class TestHelperFunctions:
         mock_api_key.context_data = {
             "flow_execution_id": "flow-exec-1",
             "allowed_mcp_tools": [],
+            "runtime_principal": {
+                "type": "flow_execution",
+                "id": "flow-exec-1",
+                "name": "Test Flow",
+            },
         }
 
         # Use spec to make isinstance() work
@@ -654,3 +659,6 @@ class TestHelperFunctions:
         assert result is not None
         assert result.flow_execution_id == "flow-exec-1"
         assert result.allowed_flow_tools == []
+        assert result.runtime_principal_type == "flow_execution"
+        assert result.runtime_principal_id == "flow-exec-1"
+        assert result.runtime_principal_name == "Test Flow"

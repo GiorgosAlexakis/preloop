@@ -331,6 +331,34 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
+  /api/v1/auth/runtime-sessions/token:
+    post:
+      tags:
+      - Auth
+      summary: Create Runtime Session Token
+      description: Create a short-lived runtime token bound to a shared runtime session.
+      operationId: create_runtime_session_token_api_v1_auth_runtime_sessions_token_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSessionTokenCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionTokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
   /api/v1/auth/api-keys/debug:
     get:
       tags:
@@ -520,6 +548,47 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/account/gateway-usage/summary:
+    get:
+      tags:
+      - Account
+      summary: Get Account Gateway Usage Summary
+      description: Get account-scoped model gateway usage summary.
+      operationId: get_account_gateway_usage_summary_api_v1_account_gateway_usage_summary_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGatewayUsageSummaryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/account/deletion-request:
     post:
       tags:
@@ -3928,6 +3997,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/gateway-events:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Execution Gateway Events
+      description: Get normalized model gateway events for a flow execution.
+      operationId: get_flow_execution_gateway_events_api_v1_flows_executions__execution_id__gateway_events_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      - name: tail
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Flow Execution Gateway Events Api V1 Flows Executions  Execution
+                  Id  Gateway Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/flows/executions/{execution_id}/metrics:
     get:
       tags:
@@ -3960,6 +4070,54 @@ paths:
                 additionalProperties: true
                 title: Response Get Flow Execution Metrics Api V1 Flows Executions  Execution
                   Id  Metrics Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/{flow_id}/gateway-usage/summary:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Gateway Usage Summary
+      description: Get model gateway usage summary for a flow.
+      operationId: get_flow_gateway_usage_summary_api_v1_flows__flow_id__gateway_usage_summary_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowGatewayUsageSummaryResponse'
         '422':
           description: Validation Error
           content:
@@ -4812,6 +4970,25 @@ components:
           - type: 'null'
           title: Api Key
           description: API key for the model provider
+        credentials_backend_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials Backend Type
+          description: Optional external credential backend type, e.g. 'vault_kv_v2'
+        credentials_external_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials External Ref
+          description: Optional external secret reference for provider credentials
+        credentials_meta_data:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credentials Meta Data
+          description: Optional metadata for external secret backends, e.g. field/version
         is_default:
           type: boolean
           title: Is Default
@@ -4840,40 +5017,33 @@ components:
       description: Schema for creating a new AIModel entry.
     AIModelRead:
       properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Primary key
         name:
           type: string
           title: Name
-          description: User-defined name for this model configuration
         description:
           anyOf:
           - type: string
           - type: 'null'
           title: Description
-          description: Optional description
         provider_name:
           type: string
           title: Provider Name
-          description: e.g., 'openai', 'anthropic'
         model_identifier:
           type: string
           title: Model Identifier
-          description: Standardized identifier, e.g., 'gpt-4-turbo'
         api_endpoint:
           anyOf:
           - type: string
           - type: 'null'
           title: Api Endpoint
-          description: URL for the model's API, if not standard
-        api_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Api Key
-          description: API key for the model provider
         is_default:
           type: boolean
           title: Is Default
-          description: Indicates if this is the default model for the account
           default: false
         model_parameters:
           anyOf:
@@ -4881,31 +5051,48 @@ components:
             type: object
           - type: 'null'
           title: Model Parameters
-          description: Optional, for model-specific parameters like temperature, max_tokens
         meta_data:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
           title: Meta Data
-          description: Optional, for custom fields, labels, etc.
-        id:
-          type: string
-          format: uuid
-          title: Id
-          description: Primary key
         account_id:
           anyOf:
           - type: string
           - type: 'null'
           title: Account Id
           description: Account this model belongs to
+        credentials_secret_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Credentials Secret Id
+          description: Secret reference ID for model credentials
+        credentials_backend_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials Backend Type
+          description: Backend type used for credential storage
+        credentials_external_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials External Ref
+          description: External secret reference when using a non-local backend
+        has_api_key:
+          type: boolean
+          title: Has Api Key
+          description: Whether this model has credentials configured
+          default: false
       type: object
       required:
+      - id
       - name
       - provider_name
       - model_identifier
-      - id
       title: AIModelRead
       description: Schema for reading AIModel entries, including timestamps.
     AIModelUpdate:
@@ -4940,6 +5127,22 @@ components:
           - type: string
           - type: 'null'
           title: Api Key
+        credentials_backend_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials Backend Type
+        credentials_external_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials External Ref
+        credentials_meta_data:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credentials Meta Data
         is_default:
           anyOf:
           - type: boolean
@@ -5157,6 +5360,64 @@ components:
       type: object
       title: AccountDetailsUpdate
       description: Account details update request.
+    AccountGatewayUsageSummaryResponse:
+      properties:
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        budget:
+          $ref: '#/components/schemas/GatewayBudgetSummary'
+        requests_by_day:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByDay'
+          type: array
+          title: Requests By Day
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+        usage_by_flow:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByFlow'
+          type: array
+          title: Usage By Flow
+        usage_by_session:
+          items:
+            $ref: '#/components/schemas/GatewayUsageBySession'
+          type: array
+          title: Usage By Session
+      type: object
+      required:
+      - period_start
+      - period_end
+      - token_usage
+      - budget
+      title: AccountGatewayUsageSummaryResponse
+      description: Account-scoped gateway usage summary.
     ApiKeyCreate:
       properties:
         name:
@@ -6685,6 +6946,63 @@ components:
       - created_at
       - updated_at
       title: FlowExecutionResponse
+    FlowGatewayUsageSummaryResponse:
+      properties:
+        flow_id:
+          type: string
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        budget:
+          $ref: '#/components/schemas/GatewayBudgetSummary'
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+        usage_by_execution:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByExecution'
+          type: array
+          title: Usage By Execution
+      type: object
+      required:
+      - flow_id
+      - period_start
+      - period_end
+      - token_usage
+      - budget
+      title: FlowGatewayUsageSummaryResponse
+      description: Flow-scoped gateway usage summary.
     FlowResponse:
       properties:
         name:
@@ -6997,6 +7315,227 @@ components:
           default: false
       type: object
       title: FlowUpdate
+    GatewayBudgetSummary:
+      properties:
+        monthly_limit_usd:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Monthly Limit Usd
+        soft_limit_usd:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Soft Limit Usd
+        current_spend_usd:
+          type: number
+          title: Current Spend Usd
+          default: 0.0
+        soft_limit_exceeded:
+          type: boolean
+          title: Soft Limit Exceeded
+          default: false
+        hard_limit_exceeded:
+          type: boolean
+          title: Hard Limit Exceeded
+          default: false
+      type: object
+      title: GatewayBudgetSummary
+      description: Budget snapshot for gateway usage.
+    GatewayTokenUsage:
+      properties:
+        prompt_tokens:
+          type: integer
+          title: Prompt Tokens
+          default: 0
+        completion_tokens:
+          type: integer
+          title: Completion Tokens
+          default: 0
+        total_tokens:
+          type: integer
+          title: Total Tokens
+          default: 0
+      type: object
+      title: GatewayTokenUsage
+      description: Token usage totals.
+    GatewayUsageByDay:
+      properties:
+        date:
+          type: string
+          title: Date
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        total_tokens:
+          type: integer
+          title: Total Tokens
+          default: 0
+      type: object
+      required:
+      - date
+      title: GatewayUsageByDay
+      description: Daily usage aggregate.
+    GatewayUsageByExecution:
+      properties:
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageByExecution
+      description: Usage aggregate grouped by flow execution.
+    GatewayUsageByFlow:
+      properties:
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageByFlow
+      description: Usage aggregate grouped by flow.
+    GatewayUsageByModel:
+      properties:
+        ai_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Id
+        model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageByModel
+      description: Usage aggregate grouped by model.
+    GatewayUsageBySession:
+      properties:
+        runtime_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+        session_source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+        session_source_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Id
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageBySession
+      description: Recent usage aggregate grouped by execution-backed session slices.
     GeneratePolicyFromAuditRequest:
       properties:
         start_date:
@@ -8608,6 +9147,89 @@ components:
       - EXCLUDE
       title: RuleType
       description: Enum for rule types.
+    RuntimeSessionTokenCreate:
+      properties:
+        session_source_type:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Session Source Type
+        session_source_id:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Session Reference
+        runtime_principal_name:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Runtime Principal Name
+        expires_in_minutes:
+          type: integer
+          maximum: 1440.0
+          minimum: 1.0
+          title: Expires In Minutes
+          default: 120
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+        allowed_mcp_tools:
+          items: {}
+          type: array
+          title: Allowed Mcp Tools
+        allowed_mcp_servers:
+          items:
+            type: string
+          type: array
+          title: Allowed Mcp Servers
+      type: object
+      required:
+      - session_source_type
+      - session_source_id
+      title: RuntimeSessionTokenCreate
+      description: Request model for minting a runtime-scoped session token.
+    RuntimeSessionTokenResponse:
+      properties:
+        runtime_session_id:
+          type: string
+          format: uuid
+          title: Runtime Session Id
+        token:
+          type: string
+          title: Token
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        session_source_type:
+          type: string
+          title: Session Source Type
+        session_source_id:
+          type: string
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+      type: object
+      required:
+      - runtime_session_id
+      - token
+      - expires_at
+      - session_source_type
+      - session_source_id
+      title: RuntimeSessionTokenResponse
+      description: Response model for a minted runtime-scoped session token.
     ScopeType:
       type: string
       enum:

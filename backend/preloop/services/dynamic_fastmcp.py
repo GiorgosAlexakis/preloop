@@ -871,9 +871,18 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
 
         # Extract flow execution context from API key if present
         flow_execution_id = None
+        runtime_session_id = None
         allowed_flow_tools = None
+        runtime_principal_type = None
+        runtime_principal_id = None
+        runtime_principal_name = None
         if api_key and api_key.context_data:
             flow_execution_id = api_key.context_data.get("flow_execution_id")
+            runtime_session_id = api_key.context_data.get("runtime_session_id")
+            runtime_principal = api_key.context_data.get("runtime_principal") or {}
+            runtime_principal_type = runtime_principal.get("type")
+            runtime_principal_id = runtime_principal.get("id")
+            runtime_principal_name = runtime_principal.get("name")
             # Combine allowed_mcp_tools with tool names from allowed_mcp_servers
             allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools")
             if allowed_mcp_tools is not None:
@@ -903,14 +912,20 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             enabled_proxied_tools=[],
             tracker_types=user_tracker_types,
             flow_execution_id=flow_execution_id,
+            runtime_session_id=runtime_session_id,
             allowed_flow_tools=allowed_flow_tools,
+            runtime_principal_type=runtime_principal_type,
+            runtime_principal_id=runtime_principal_id,
+            runtime_principal_name=runtime_principal_name,
         )
 
         logger.info(
             f"Created user context for {user.username} "
             f"(account: {user.account_id}), has_tracker={user_has_tracker}, "
             f"tracker_types={user_tracker_types}, "
-            f"flow_execution_id={flow_execution_id}"
+            f"flow_execution_id={flow_execution_id}, "
+            f"runtime_session_id={runtime_session_id}, "
+            f"runtime_principal={runtime_principal_type}:{runtime_principal_id}"
         )
 
         return user_context

@@ -40,6 +40,8 @@ from preloop.schemas.auth import (
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     RefreshRequest,
+    RuntimeSessionTokenCreate,
+    RuntimeSessionTokenResponse,
     Token,
     User,
     AuthUserCreate,
@@ -59,6 +61,7 @@ from preloop.models.crud import (
     crud_api_key,
     crud_api_usage,
     crud_role,
+    crud_runtime_session,
     crud_user_role,
 )
 from preloop.models.db.session import get_db_session
@@ -74,6 +77,14 @@ from preloop.services.account_setup_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+RUNTIME_SESSION_SOURCE_TYPES = {
+    "claude_code",
+    "claude_desktop",
+    "openclaw",
+    "codex",
+    "desktop_agent",
+    "custom",
+}
 
 
 class OnboardingRequest(BaseModel):
@@ -666,6 +677,8 @@ async def create_api_key(
         new_key = ApiKey(
             name=key_data.name,
             key=key_value,
+            key_hash=crud_api_key.build_key_hash(key_value),
+            key_prefix=crud_api_key.build_key_prefix(key_value),
             scopes=key_data.scopes,
             account_id=current_user.account_id,
             user_id=current_user.id,
@@ -713,6 +726,81 @@ async def create_api_key(
             next(session_generator, None)
         except StopIteration:
             pass
+
+
+@router.post(
+    "/runtime-sessions/token",
+    response_model=RuntimeSessionTokenResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_runtime_session_token(
+    session_data: RuntimeSessionTokenCreate,
+    current_user: UserModel = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> RuntimeSessionTokenResponse:
+    """Create a short-lived runtime token bound to a shared runtime session."""
+    if session_data.session_source_type not in RUNTIME_SESSION_SOURCE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Unsupported session_source_type. Expected one of: "
+                + ", ".join(sorted(RUNTIME_SESSION_SOURCE_TYPES))
+            ),
+        )
+
+    expires_at = datetime.now(UTC) + timedelta(minutes=session_data.expires_in_minutes)
+    runtime_principal_name = (
+        session_data.runtime_principal_name
+        or session_data.session_reference
+        or session_data.session_source_id
+    )
+
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db,
+        account_id=current_user.account_id,
+        session_source_type=session_data.session_source_type,
+        session_source_id=session_data.session_source_id,
+        session_reference=session_data.session_reference,
+        runtime_principal_type=session_data.session_source_type,
+        runtime_principal_id=session_data.session_source_id,
+        runtime_principal_name=runtime_principal_name,
+        last_activity_at=datetime.now(UTC),
+    )
+    db.commit()
+    db.refresh(runtime_session)
+
+    _, token_value = crud_api_key.create_runtime_key(
+        db,
+        name=(
+            f"Runtime Session {session_data.session_source_type}:"
+            f"{session_data.session_source_id}"
+        ),
+        account_id=current_user.account_id,
+        user_id=current_user.id,
+        scopes=session_data.scopes,
+        expires_at=expires_at,
+        context_data={
+            "runtime_session_id": str(runtime_session.id),
+            "allowed_mcp_tools": session_data.allowed_mcp_tools,
+            "allowed_mcp_servers": session_data.allowed_mcp_servers,
+            "runtime_principal": {
+                "type": session_data.session_source_type,
+                "id": session_data.session_source_id,
+                "name": runtime_principal_name,
+                "user_id": str(current_user.id),
+                "username": current_user.username,
+            },
+        },
+    )
+
+    return RuntimeSessionTokenResponse(
+        runtime_session_id=runtime_session.id,
+        token=token_value,
+        expires_at=expires_at,
+        session_source_type=runtime_session.session_source_type,
+        session_source_id=runtime_session.session_source_id,
+        session_reference=runtime_session.session_reference,
+    )
 
 
 @router.get("/api-keys", response_model=List[ApiKeySummary])

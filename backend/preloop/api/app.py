@@ -26,6 +26,7 @@ from fastapi.encoders import jsonable_encoder
 from preloop.api.auth import auth_router, get_current_active_user
 from preloop.api.endpoints import (
     account,
+    anthropic_gateway,
     approval_requests,
     comments,
     features,
@@ -46,6 +47,7 @@ from preloop.api.endpoints import (
     webhooks,
     flows,
     ai_models,
+    openai_gateway,
     websockets,
 )
 
@@ -53,6 +55,7 @@ from preloop.api.endpoints import (
 # are now loaded exclusively via the plugin system - see plugins/admin and plugins/analytics
 
 from preloop.services.mcp_http import setup_mcp_routes
+from preloop.services.model_gateway_errors import ModelGatewayAPIError
 from preloop.models.sentry import init_sentry
 from preloop.models.db.session import get_db_session, get_session_factory
 from preloop.models.db.setup import setup_database
@@ -463,6 +466,19 @@ def create_app() -> FastAPI:
     )
 
     # Add global exception handler to ensure all errors are logged
+    @app.exception_handler(ModelGatewayAPIError)
+    async def model_gateway_exception_handler(
+        request: Request, exc: ModelGatewayAPIError
+    ):
+        """Render provider-native gateway error bodies."""
+        logger.warning(
+            "Model gateway error in %s %s: %s",
+            request.method,
+            request.url.path,
+            exc.message,
+        )
+        return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         """Log all exceptions with full traceback."""
@@ -778,6 +794,18 @@ def create_app() -> FastAPI:
         ai_models.public_router,
         prefix="/api/v1",
         tags=["AI Models"],
+    )
+    app.include_router(
+        openai_gateway.router,
+        prefix="/openai/v1",
+        tags=["OpenAI Gateway"],
+        include_in_schema=False,
+    )
+    app.include_router(
+        anthropic_gateway.router,
+        prefix="/anthropic/v1",
+        tags=["Anthropic Gateway"],
+        include_in_schema=False,
     )
     # Note: Issue duplicates endpoint is now loaded via plugins/analytics
     app.include_router(

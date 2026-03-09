@@ -16,10 +16,12 @@ from preloop.models.crud import (
     crud_api_key,
     crud_flow,
     crud_flow_execution,
+    crud_runtime_session,
     crud_user,
 )
 from preloop.models.models.flow import Flow
 from preloop.models.models.ai_model import AIModel
+from preloop.models.models.runtime_session import RuntimeSession
 from preloop.agents import create_agent_executor, AgentStatus
 from preloop.services.prompt_resolvers import (
     resolver_registry,
@@ -29,6 +31,7 @@ from preloop.services.prompt_resolvers import (
     AccountResolver,
 )
 from preloop.services.flow_execution_logger import FlowExecutionLogger
+from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +84,7 @@ class FlowExecutionOrchestrator:
         self.flow: Optional[Flow] = None
         self.ai_model: Optional[AIModel] = None
         self.execution_log = None
+        self.runtime_session: Optional[RuntimeSession] = None
         self.nats_client: Client = nats_client
         self.execution_logger = FlowExecutionLogger()
         self.temporary_api_key_id: Optional[uuid.UUID] = None
@@ -621,6 +625,35 @@ class FlowExecutionOrchestrator:
         if not resolver_registry.get("account"):
             resolver_registry.register(AccountResolver())
 
+    def _sync_runtime_session(
+        self,
+        *,
+        session_reference: Optional[str] = None,
+        ended_at: Optional[datetime] = None,
+    ) -> Optional[RuntimeSession]:
+        """Create or update the shared runtime session for this flow execution."""
+        if not self.flow or not self.execution_log or not self.flow.account_id:
+            return None
+
+        now = datetime.now(timezone.utc)
+        execution_started_at = getattr(self.execution_log, "start_time", None) or now
+        self.runtime_session = crud_runtime_session.upsert_by_source(
+            self.db,
+            account_id=self.flow.account_id,
+            session_source_type="flow_execution",
+            session_source_id=str(self.execution_log.id),
+            session_reference=session_reference,
+            runtime_principal_type="flow_execution",
+            runtime_principal_id=str(self.execution_log.id),
+            runtime_principal_name=self.flow.name,
+            started_at=execution_started_at,
+            last_activity_at=ended_at or now,
+            ended_at=ended_at,
+        )
+        self.db.commit()
+        self.db.refresh(self.runtime_session)
+        return self.runtime_session
+
     def _create_temporary_api_token(self) -> tuple[Optional[str], Optional[uuid.UUID]]:
         """
         Create a temporary API token for this flow execution.
@@ -628,9 +661,7 @@ class FlowExecutionOrchestrator:
         Returns:
             Tuple of (token_key, token_id) or (None, None) if creation failed
         """
-        import secrets
         from datetime import timedelta
-        from preloop.models.models import ApiKey
         from preloop.models.crud import crud_user
 
         try:
@@ -640,51 +671,67 @@ class FlowExecutionOrchestrator:
                 logger.warning(f"Account {self.flow.account_id} not found")
                 return None, None
 
-            # Get the first user from the account to associate with the API key
-            # For flow executions, we use the first available user in the organization
-            users = crud_user.get_by_account(self.db, account_id=self.flow.account_id)
-            if not users:
+            principal_user = None
+            if account.primary_user_id:
+                principal_user = crud_user.get(self.db, id=account.primary_user_id)
+
+            if not principal_user:
+                # Fall back to the first available user for older accounts that
+                # do not have `primary_user_id` populated yet.
+                users = crud_user.get_by_account(
+                    self.db, account_id=self.flow.account_id
+                )
+                if users:
+                    principal_user = users[0]
+
+            if not principal_user:
                 logger.warning(
                     f"No users found for account {self.flow.account_id}, "
                     f"cannot create API token"
                 )
                 return None, None
 
-            first_user = users[0]
-
-            # Generate a secure random token
-            token_key = f"flow_{secrets.token_urlsafe(32)}"
-
             # Create API key that expires in 2 hours
             expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+            runtime_session = self._sync_runtime_session()
 
             # Store flow execution context in the token for tool filtering
             context_data = {
                 "flow_execution_id": str(self.execution_log.id)
                 if self.execution_log
                 else None,
+                "runtime_session_id": (
+                    str(runtime_session.id) if runtime_session is not None else None
+                ),
                 "flow_id": str(self.flow_id),
                 "allowed_mcp_tools": self.flow.allowed_mcp_tools or [],
                 "allowed_mcp_servers": self.flow.allowed_mcp_servers or [],
+                "runtime_principal": {
+                    "type": "flow_execution",
+                    "id": str(self.execution_log.id) if self.execution_log else None,
+                    "name": self.flow.name,
+                    "user_id": str(principal_user.id),
+                    "username": principal_user.username,
+                },
             }
 
-            api_key = ApiKey(
+            api_key, token_key = crud_api_key.create_runtime_key(
+                self.db,
                 name=f"Flow Execution {self.execution_log.id if self.execution_log else 'temp'}",
-                key=token_key,
                 account_id=self.flow.account_id,
-                user_id=first_user.id,
+                user_id=principal_user.id,
                 expires_at=expires_at,
-                is_active=True,
-                scopes=["mcp:read", "mcp:write"],  # Limited scopes for MCP access
-                context_data=context_data,  # Store flow context for tool restrictions
+                scopes=["mcp:read", "mcp:write"],
+                context_data=context_data,
             )
 
-            self.db.add(api_key)
-            self.db.commit()
-            self.db.refresh(api_key)
-
             logger.info(
-                f"Created temporary API token {api_key.id} for flow execution, expires at {expires_at}"
+                "Created temporary runtime API token %s for flow execution %s "
+                "(principal_user=%s), expires at %s",
+                api_key.id,
+                self.execution_log.id if self.execution_log else None,
+                principal_user.username,
+                expires_at,
             )
 
             return token_key, api_key.id
@@ -695,17 +742,17 @@ class FlowExecutionOrchestrator:
             return None, None
 
     def _cleanup_temporary_api_token(self):
-        """Delete the temporary API token created for this flow execution."""
+        """Deactivate the temporary API token created for this flow execution."""
         if not self.temporary_api_key_id:
             return
 
         try:
-            api_key = crud_api_key.get(self.db, id=self.temporary_api_key_id)
+            api_key = crud_api_key.deactivate(self.db, key_id=self.temporary_api_key_id)
 
             if api_key:
-                self.db.delete(api_key)
-                self.db.commit()
-                logger.info(f"Deleted temporary API token {self.temporary_api_key_id}")
+                logger.info(
+                    "Deactivated temporary API token %s", self.temporary_api_key_id
+                )
             else:
                 logger.warning(
                     f"Temporary API token {self.temporary_api_key_id} not found for cleanup"
@@ -1157,14 +1204,13 @@ class FlowExecutionOrchestrator:
                 f"identifier={self.ai_model.model_identifier}, "
                 f"provider={self.ai_model.provider_name}"
             )
+            resolved_model_runtime = resolve_ai_model_runtime(self.ai_model)
             execution_context.update(
-                {
-                    "model_identifier": self.ai_model.model_identifier,
-                    "model_provider": self.ai_model.provider_name,
-                    "model_endpoint": self.ai_model.api_endpoint,
-                    "model_api_key": self.ai_model.api_key,  # TODO: Decrypt in Task 5.1
-                    "model_parameters": self.ai_model.model_parameters,
-                }
+                resolved_model_runtime.to_execution_context(
+                    gateway_token=account_api_token
+                    if resolved_model_runtime.model_gateway_enabled
+                    else None
+                )
             )
         else:
             logger.warning(
@@ -1267,6 +1313,7 @@ class FlowExecutionOrchestrator:
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             },
                         )
+                        await self._persist_live_metrics()
 
                 # Check if this log line indicates a tool call was detected
                 previous_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
@@ -1282,6 +1329,7 @@ class FlowExecutionOrchestrator:
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         },
                     )
+                    await self._persist_live_metrics()
 
                 # Publish log line to NATS
                 await self._publish_update(
@@ -1308,6 +1356,18 @@ class FlowExecutionOrchestrator:
             await self._publish_update(
                 "agent_log_error", {"error": f"Log streaming error: {str(e)}"}
             )
+
+    async def _persist_live_metrics(self):
+        """Persist live execution counters so reloads can rehydrate them."""
+        if not self.execution_log:
+            return
+
+        self.execution_log.tool_calls_count = self.tool_calls_count
+        self.execution_log.total_tokens = self.total_tokens
+        self.execution_log.estimated_cost = self.estimated_cost
+        self.db.add(self.execution_log)
+        self.db.commit()
+        self.db.refresh(self.execution_log)
 
     async def _listen_for_commands(self):
         """
@@ -1684,6 +1744,7 @@ class FlowExecutionOrchestrator:
         self.db.commit()
         self.db.refresh(db_execution_log)
         self.execution_log = db_execution_log
+        self._sync_runtime_session()
 
         logger.info(f"Execution log created with ID: {self.execution_log.id}")
 
@@ -1799,6 +1860,7 @@ class FlowExecutionOrchestrator:
                 status="RUNNING",
                 agent_session_reference=session_reference,
             )
+            self._sync_runtime_session(session_reference=session_reference)
 
             # Stage 5: Monitor agent execution and collect results
             # Pass the executor so we don't create a duplicate instance
@@ -1832,6 +1894,7 @@ class FlowExecutionOrchestrator:
                 total_tokens=self.total_tokens,
                 estimated_cost=self.estimated_cost,
             )
+            self._sync_runtime_session(ended_at=datetime.now(timezone.utc))
 
             # Update commit status to success/failure
             status_state = "success" if final_status == "SUCCEEDED" else "failure"
@@ -1873,6 +1936,7 @@ class FlowExecutionOrchestrator:
                         total_tokens=self.total_tokens,
                         estimated_cost=self.estimated_cost,
                     )
+                    self._sync_runtime_session(ended_at=datetime.now(timezone.utc))
                 except Exception as update_error:
                     logger.error(
                         f"Failed to update execution log with error status: {update_error}",

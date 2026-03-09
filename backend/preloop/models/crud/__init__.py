@@ -16,6 +16,8 @@ from ..models import (
     Webhook,
     IssueRelationship,
     IssueSet,
+    GatewayUsageSearchDocument,
+    RuntimeSession,
 )
 from .account import CRUDAccount
 from .api_key import CRUDApiKey
@@ -45,6 +47,7 @@ from .mcp_tool import CRUDMCPTool
 from .approval_workflow import CRUDApprovalWorkflow
 from .approval_request import CRUDApprovalRequest, crud_approval_request
 from .tool_access_rule import CRUDToolAccessRule
+from .gateway_usage_search_document import CRUDGatewayUsageSearchDocument
 from .plan import (
     CRUDPlan,
     CRUDSubscription,
@@ -77,6 +80,8 @@ from .oauth_token import CRUDOAuthToken, crud_oauth_token
 from . import tool_approval_condition
 from . import notification_preferences
 from .policy_snapshot import CRUDPolicySnapshot, crud_policy_snapshot
+from .runtime_session import CRUDRuntimeSession
+from .secret_reference import CRUDSecretReference, crud_secret_reference
 
 crud_account = CRUDAccount(Account)
 # crud_tracker is already instantiated in tracker.py
@@ -96,6 +101,10 @@ crud_flow_execution = CRUDFlowExecution()  # Instantiate CRUDFlowExecution
 crud_tracker_scope_rule = CRUDTrackerScopeRule(TrackerScopeRule)
 crud_issue_relationship = CRUDIssueRelationship(IssueRelationship)
 crud_issue_set = CRUDIssueSet(IssueSet)
+crud_gateway_usage_search_document = CRUDGatewayUsageSearchDocument(
+    GatewayUsageSearchDocument
+)
+crud_runtime_session = CRUDRuntimeSession(RuntimeSession)
 crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
 crud_mcp_server = CRUDMCPServer()  # Instantiate CRUDMCPServer
 crud_mcp_tool = CRUDMCPTool()  # Instantiate CRUDMCPTool
@@ -118,10 +127,12 @@ __all__ = [
     "CRUDAuditLog",
     "CRUDComment",
     "CRUDAIModel",
+    "CRUDSecretReference",
     "CRUDFlow",
     "CRUDFlowExecution",
     "CRUDIssueComplianceResult",
     "CRUDIssueSet",
+    "CRUDGatewayUsageSearchDocument",
     "CRUDToolConfiguration",
     "CRUDMCPServer",
     "CRUDMCPTool",
@@ -153,12 +164,14 @@ __all__ = [
     "crud_audit_log",
     "crud_comment",
     "crud_ai_model",
+    "crud_secret_reference",
     "crud_webhook",
     "crud_flow",
     "crud_flow_execution",
     "crud_issue_relationship",
     "issue_compliance_result",
     "crud_issue_set",
+    "crud_gateway_usage_search_document",
     "crud_tool_configuration",
     "crud_mcp_server",
     "crud_mcp_tool",
@@ -186,5 +199,7 @@ __all__ = [
     "tool_approval_condition",
     "notification_preferences",
     "CRUDPolicySnapshot",
+    "CRUDRuntimeSession",
     "crud_policy_snapshot",
+    "crud_runtime_session",
 ]

@@ -16,6 +16,9 @@ import type {
   ComplianceSuggestion,
   DependencyPair,
   DependencyResponse,
+  FlowGatewayEventsResponse,
+  AccountGatewayUsageSummaryResponse,
+  FlowGatewayUsageSummaryResponse,
 } from './types';
 
 // Global refresh promise to prevent concurrent refresh requests
@@ -159,6 +162,53 @@ export async function getApiUsageStats() {
   const response = await fetchWithAuth('/api/v1/auth/api-usage');
   if (!response.ok) {
     throw new Error('Failed to fetch API usage stats');
+  }
+  return response.json();
+}
+
+export interface GatewayUsageSummaryParams {
+  startDate?: string;
+  endDate?: string;
+}
+
+function buildGatewayUsageQuery(
+  params: GatewayUsageSummaryParams = {}
+): string {
+  const queryParams = new URLSearchParams();
+
+  if (params.startDate) {
+    queryParams.set('start_date', params.startDate);
+  }
+
+  if (params.endDate) {
+    queryParams.set('end_date', params.endDate);
+  }
+
+  const queryString = queryParams.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
+export async function getAccountGatewayUsageSummary(
+  params: GatewayUsageSummaryParams = {}
+): Promise<AccountGatewayUsageSummaryResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/account/gateway-usage/summary${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch account gateway usage summary');
+  }
+  return response.json();
+}
+
+export async function getFlowGatewayUsageSummary(
+  flowId: string,
+  params: GatewayUsageSummaryParams = {}
+): Promise<FlowGatewayUsageSummaryResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/${flowId}/gateway-usage/summary${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow gateway usage summary');
   }
   return response.json();
 }
@@ -692,6 +742,20 @@ export async function getFlowExecutionLogs(
   );
   if (!response.ok) {
     throw new Error('Failed to fetch execution logs');
+  }
+  return response.json();
+}
+
+export async function getFlowExecutionGatewayEvents(
+  executionId: string,
+  tail?: number
+): Promise<FlowGatewayEventsResponse> {
+  const params = tail !== undefined ? `?tail=${tail}` : '';
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/gateway-events${params}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch execution gateway events');
   }
   return response.json();
 }

@@ -110,7 +110,15 @@ class OpenCodeAgent(ContainerAgentExecutor):
             f"agent_config.model={agent_model}"
         )
 
-        model = model_identifier or agent_model
+        model = (
+            (
+                execution_context.get("model_gateway_model_alias")
+                if execution_context.get("model_gateway_enabled")
+                else None
+            )
+            or model_identifier
+            or agent_model
+        )
         if not model:
             raise ValueError(
                 "No model specified for OpenCode agent. "
@@ -437,7 +445,14 @@ exit $OPENCODE_EXIT_CODE
         Returns:
             Configuration dict to be serialized as opencode.json
         """
-        model_endpoint = execution_context.get("model_endpoint") or ""
+        gateway_enabled = bool(execution_context.get("model_gateway_enabled"))
+        if gateway_enabled:
+            model_endpoint = execution_context.get("model_gateway_url") or ""
+            model_provider = (
+                execution_context.get("model_gateway_provider") or "preloop"
+            )
+        else:
+            model_endpoint = execution_context.get("model_endpoint") or ""
 
         # Fallback: resolve endpoint from environment if not set in the AI model.
         if not model_endpoint and model_provider and model_provider != "openai":
@@ -570,7 +585,19 @@ exit $OPENCODE_EXIT_CODE
 
         # Add API key for the configured provider
         model_provider = execution_context.get("model_provider", "anthropic").lower()
-        if "model_api_key" in execution_context:
+        if execution_context.get("model_gateway_enabled"):
+            gateway_provider = (
+                execution_context.get("model_gateway_provider") or "preloop"
+            ).lower()
+            gateway_token = execution_context.get("model_gateway_token")
+            if gateway_token:
+                provider_env_key = (
+                    f"{gateway_provider.upper().replace('-', '_')}_API_KEY"
+                )
+                env[provider_env_key] = gateway_token
+                env["OPENAI_API_KEY"] = gateway_token
+                env["PRELOOP_MODEL_GATEWAY_TOKEN"] = gateway_token
+        elif "model_api_key" in execution_context:
             # Set the provider-specific env var
             provider_env_key = f"{model_provider.upper().replace('-', '_')}_API_KEY"
             env[provider_env_key] = execution_context["model_api_key"]
