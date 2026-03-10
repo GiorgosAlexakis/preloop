@@ -368,6 +368,12 @@ export class ConsoleShell extends LitElement {
                   <span class="sidebar-label">Flows</span>
                 </sl-menu-item>
               </a>
+              <a href="/console/agents" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="cpu" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Agents</span>
+                </sl-menu-item>
+              </a>
               <a href="/console/runtime-sessions" @click=${this._closeSidebar}>
                 <sl-menu-item>
                   <sl-icon name="collection" slot="prefix"></sl-icon>

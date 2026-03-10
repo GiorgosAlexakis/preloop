@@ -21,6 +21,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         self,
         db: Session,
         *,
+        account_id: Any,
         session_source_type: str,
         session_source_id: str,
     ) -> Optional[RuntimeSession]:
@@ -28,6 +29,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         return (
             db.query(self.model)
             .filter(
+                self.model.account_id == account_id,
                 self.model.session_source_type == session_source_type,
                 self.model.session_source_id == session_source_id,
             )
@@ -52,6 +54,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         """Create or update a runtime session keyed by source identity."""
         db_obj = self.get_by_source(
             db,
+            account_id=account_id,
             session_source_type=session_source_type,
             session_source_id=session_source_id,
         )
@@ -101,6 +104,8 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         query: Optional[str] = None,
         ai_model_id: Optional[str] = None,
         session_source_type: Optional[str] = None,
+        runtime_principal_type: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
         status: str = "all",
         limit: int = 20,
         offset: int = 0,
@@ -138,6 +143,14 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         if session_source_type:
             session_query = session_query.filter(
                 self.model.session_source_type == session_source_type
+            )
+        if runtime_principal_type:
+            session_query = session_query.filter(
+                self.model.runtime_principal_type == runtime_principal_type
+            )
+        if runtime_principal_id:
+            session_query = session_query.filter(
+                self.model.runtime_principal_id == runtime_principal_id
             )
         if status == "active":
             session_query = session_query.filter(self.model.ended_at.is_(None))

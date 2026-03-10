@@ -639,6 +639,7 @@ class FlowExecutionOrchestrator:
         execution_started_at = getattr(self.execution_log, "start_time", None) or now
         previous_runtime_session = crud_runtime_session.get_by_source(
             self.db,
+            account_id=self.flow.account_id,
             session_source_type="flow_execution",
             session_source_id=str(self.execution_log.id),
         )

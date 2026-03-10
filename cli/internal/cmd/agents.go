@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -129,6 +130,7 @@ type runtimeSessionTokenRequest struct {
 	SessionSourceType    string   `json:"session_source_type"`
 	SessionSourceID      string   `json:"session_source_id"`
 	SessionReference     string   `json:"session_reference,omitempty"`
+	RuntimePrincipalID   string   `json:"runtime_principal_id,omitempty"`
 	RuntimePrincipalName string   `json:"runtime_principal_name,omitempty"`
 	ExpiresInMinutes     int      `json:"expires_in_minutes,omitempty"`
 	Scopes               []string `json:"scopes,omitempty"`
@@ -357,8 +359,9 @@ func issueRuntimeSessionToken(client *api.Client, agent AgentConfig, allowedServ
 
 	request := runtimeSessionTokenRequest{
 		SessionSourceType:    runtimeSessionSourceTypeForAgent(agent.Name),
-		SessionSourceID:      runtimeSessionSourceIDForAgent(agent),
+		SessionSourceID:      runtimeSessionInstanceIDForAgent(agent),
 		SessionReference:     filepath.Clean(agent.ConfigPath),
+		RuntimePrincipalID:   runtimePrincipalIDForAgent(agent),
 		RuntimePrincipalName: runtimePrincipalNameForAgent(agent),
 		ExpiresInMinutes:     120,
 		Scopes:               []string{"mcp:read", "mcp:write"},
@@ -388,7 +391,7 @@ func runtimeSessionSourceTypeForAgent(agentName string) string {
 	}
 }
 
-func runtimeSessionSourceIDForAgent(agent AgentConfig) string {
+func runtimePrincipalIDForAgent(agent AgentConfig) string {
 	sum := sha1.Sum([]byte(strings.ToLower(agent.Name) + "\x00" + filepath.Clean(agent.ConfigPath)))
 	prefix := strings.ToLower(agent.Name)
 	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", ":", "-", ".", "-")
@@ -397,6 +400,10 @@ func runtimeSessionSourceIDForAgent(agent AgentConfig) string {
 		prefix = "agent"
 	}
 	return fmt.Sprintf("%s-%s", prefix, hex.EncodeToString(sum[:6]))
+}
+
+func runtimeSessionInstanceIDForAgent(agent AgentConfig) string {
+	return fmt.Sprintf("%s-%d", runtimePrincipalIDForAgent(agent), time.Now().UnixNano())
 }
 
 func runtimePrincipalNameForAgent(agent AgentConfig) string {

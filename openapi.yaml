@@ -696,6 +696,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/agents:
+    get:
+      tags:
+      - Account
+      summary: List Account Managed Agents
+      description: List enrolled external agents for the current account.
+      operationId: list_account_managed_agents_api_v1_account_agents_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|ended)$
+          default: all
+          title: Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountManagedAgentListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/agents/{agent_id}:
+    get:
+      tags:
+      - Account
+      summary: Get Account Managed Agent
+      description: Return one enrolled external agent for the current account.
+      operationId: get_account_managed_agent_api_v1_account_agents__agent_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/account/runtime-sessions:
     get:
       tags:
@@ -6011,6 +6105,42 @@ components:
       - budget
       title: AccountGatewayUsageSummaryResponse
       description: Account-scoped gateway usage summary.
+    AccountManagedAgentListResponse:
+      properties:
+        query:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Query
+        session_source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+        status:
+          type: string
+          title: Status
+          default: all
+        total:
+          type: integer
+          title: Total
+          default: 0
+        limit:
+          type: integer
+          title: Limit
+          default: 20
+        offset:
+          type: integer
+          title: Offset
+          default: 0
+        items:
+          items:
+            $ref: '#/components/schemas/ManagedAgentSummary'
+          type: array
+          title: Items
+      type: object
+      title: AccountManagedAgentListResponse
+      description: Account-scoped managed-agent registry response.
     AccountRuntimeSessionDetailResponse:
       properties:
         period_start:
@@ -9098,6 +9228,108 @@ components:
       - updated_at
       title: MCPToolResponse
       description: Schema for MCP tool response.
+    ManagedAgentDetailResponse:
+      properties:
+        agent:
+          $ref: '#/components/schemas/ManagedAgentSummary'
+        sessions:
+          items:
+            $ref: '#/components/schemas/RuntimeSessionSummary'
+          type: array
+          title: Sessions
+      type: object
+      required:
+      - agent
+      title: ManagedAgentDetailResponse
+      description: One managed agent plus its recent runtime session history.
+    ManagedAgentSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        runtime_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+        display_name:
+          type: string
+          title: Display Name
+        session_source_type:
+          type: string
+          title: Session Source Type
+        session_source_id:
+          type: string
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        enrolled_via:
+          type: string
+          title: Enrolled Via
+        managed_mcp_servers:
+          items:
+            type: string
+          type: array
+          title: Managed Mcp Servers
+        last_seen_at:
+          type: string
+          format: date-time
+          title: Last Seen At
+        started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Started At
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        latest_model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Model Alias
+        latest_provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Provider Name
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - id
+      - display_name
+      - session_source_type
+      - session_source_id
+      - enrolled_via
+      - last_seen_at
+      title: ManagedAgentSummary
+      description: Read-only summary for one enrolled external agent.
     MobileDeviceRegistration:
       properties:
         platform:
@@ -10142,6 +10374,12 @@ components:
             maxLength: 255
           - type: 'null'
           title: Session Reference
+        runtime_principal_id:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Runtime Principal Id
         runtime_principal_name:
           anyOf:
           - type: string

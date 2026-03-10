@@ -17,6 +17,7 @@ from ..models import (
     IssueRelationship,
     IssueSet,
     GatewayUsageSearchDocument,
+    ManagedAgent,
     RuntimeSession,
 )
 from .account import CRUDAccount
@@ -41,6 +42,7 @@ from .issue_compliance_result import (
 )
 from .issue_relationship import CRUDIssueRelationship
 from .issue_set import CRUDIssueSet
+from .managed_agent import CRUDManagedAgent
 from .tool_configuration import CRUDToolConfiguration
 from .mcp_server import CRUDMCPServer
 from .mcp_tool import CRUDMCPTool
@@ -104,6 +106,7 @@ crud_issue_set = CRUDIssueSet(IssueSet)
 crud_gateway_usage_search_document = CRUDGatewayUsageSearchDocument(
     GatewayUsageSearchDocument
 )
+crud_managed_agent = CRUDManagedAgent(ManagedAgent)
 crud_runtime_session = CRUDRuntimeSession(RuntimeSession)
 crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
 crud_mcp_server = CRUDMCPServer()  # Instantiate CRUDMCPServer
@@ -133,6 +136,7 @@ __all__ = [
     "CRUDIssueComplianceResult",
     "CRUDIssueSet",
     "CRUDGatewayUsageSearchDocument",
+    "CRUDManagedAgent",
     "CRUDToolConfiguration",
     "CRUDMCPServer",
     "CRUDMCPTool",
@@ -172,6 +176,7 @@ __all__ = [
     "issue_compliance_result",
     "crud_issue_set",
     "crud_gateway_usage_search_document",
+    "crud_managed_agent",
     "crud_tool_configuration",
     "crud_mcp_server",
     "crud_mcp_tool",

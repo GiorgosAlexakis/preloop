@@ -2,7 +2,7 @@
 
 from datetime import datetime, UTC
 
-from preloop.models.crud import crud_api_key, crud_runtime_session
+from preloop.models.crud import crud_account, crud_api_key, crud_runtime_session
 from preloop.models.models.mcp_server import MCPServer
 from preloop.models.models.mcp_tool import MCPTool
 
@@ -62,6 +62,7 @@ def test_create_runtime_session_token(client, db_session, test_user):
 
     runtime_session = crud_runtime_session.get_by_source(
         db_session,
+        account_id=test_user.account_id,
         session_source_type="claude_code",
         session_source_id="workspace-123",
     )
@@ -122,3 +123,54 @@ def test_create_runtime_session_token_rejects_unknown_allowed_servers(client):
 
     assert response.status_code == 400
     assert "allowed_mcp_servers" in response.json()["detail"]
+
+
+def test_runtime_session_identity_is_account_scoped(db_session):
+    """Runtime session source identity should be isolated per account."""
+    first_account = crud_account.create(
+        db_session,
+        obj_in={"organization_name": "Account One", "is_active": True},
+    )
+    second_account = crud_account.create(
+        db_session,
+        obj_in={"organization_name": "Account Two", "is_active": True},
+    )
+    now = datetime.now(UTC)
+
+    first_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=first_account.id,
+        session_source_type="claude_code",
+        session_source_id="workspace-123",
+        runtime_principal_name="Account One Agent",
+        last_activity_at=now,
+    )
+    second_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=second_account.id,
+        session_source_type="claude_code",
+        session_source_id="workspace-123",
+        runtime_principal_name="Account Two Agent",
+        last_activity_at=now,
+    )
+    db_session.commit()
+
+    assert first_session.id != second_session.id
+    assert (
+        crud_runtime_session.get_by_source(
+            db_session,
+            account_id=first_account.id,
+            session_source_type="claude_code",
+            session_source_id="workspace-123",
+        ).id
+        == first_session.id
+    )
+    assert (
+        crud_runtime_session.get_by_source(
+            db_session,
+            account_id=second_account.id,
+            session_source_type="claude_code",
+            session_source_id="workspace-123",
+        ).id
+        == second_session.id
+    )

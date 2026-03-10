@@ -23,6 +23,7 @@ from .issue_compliance_result import IssueComplianceResult
 from .plan import Plan, Subscription, MonthlyUsage
 from .issue_relationship import IssueRelationship
 from .issue_set import IssueSet
+from .managed_agent import ManagedAgent
 from .tool_configuration import ToolConfiguration, ApprovalWorkflow
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
@@ -72,6 +73,7 @@ __all__ = [
     "MonthlyUsage",
     "IssueRelationship",
     "IssueSet",
+    "ManagedAgent",
     "ToolConfiguration",
     "ApprovalWorkflow",
     "MCPServer",

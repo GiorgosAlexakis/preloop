@@ -13,6 +13,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .account import Account
     from .api_usage import ApiUsage
+    from .managed_agent import ManagedAgent
 
 
 class RuntimeSession(Base):
@@ -21,9 +22,10 @@ class RuntimeSession(Base):
     __tablename__ = "runtime_session"
     __table_args__ = (
         UniqueConstraint(
+            "account_id",
             "session_source_type",
             "session_source_id",
-            name="uq_runtime_session_source",
+            name="uq_runtime_session_account_source",
         ),
     )
 
@@ -54,6 +56,9 @@ class RuntimeSession(Base):
     )
     api_usages: Mapped[List["ApiUsage"]] = relationship(
         "ApiUsage", back_populates="runtime_session"
+    )
+    managed_agent: Mapped[Optional["ManagedAgent"]] = relationship(
+        "ManagedAgent", back_populates="runtime_session", uselist=False
     )
 
     def __repr__(self) -> str:

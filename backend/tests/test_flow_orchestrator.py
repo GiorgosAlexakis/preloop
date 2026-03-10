@@ -818,6 +818,7 @@ class TestFlowExecutionOrchestrator:
         assert orchestrator.runtime_session is not None
         runtime_session = crud_runtime_session.get_by_source(
             db_session,
+            account_id=test_user.account_id,
             session_source_type="flow_execution",
             session_source_id=str(execution_id),
         )

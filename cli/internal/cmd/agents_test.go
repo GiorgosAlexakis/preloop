@@ -123,19 +123,32 @@ func TestRuntimeSessionSourceTypeForAgent(t *testing.T) {
 	}
 }
 
-func TestRuntimeSessionSourceIDForAgent_IsStable(t *testing.T) {
+func TestRuntimePrincipalIDForAgent_IsStable(t *testing.T) {
 	agent := AgentConfig{
 		Name:       "Claude Code",
 		ConfigPath: filepath.Join("/tmp", "workspace", "claude_desktop_config.json"),
 	}
 
-	got1 := runtimeSessionSourceIDForAgent(agent)
-	got2 := runtimeSessionSourceIDForAgent(agent)
+	got1 := runtimePrincipalIDForAgent(agent)
+	got2 := runtimePrincipalIDForAgent(agent)
 	if got1 != got2 {
 		t.Fatalf("expected stable source id, got %q and %q", got1, got2)
 	}
 	if !strings.HasPrefix(got1, "claude-code-") {
 		t.Fatalf("expected slugged prefix, got %q", got1)
+	}
+}
+
+func TestRuntimeSessionInstanceIDForAgent_UsesPrincipalPrefix(t *testing.T) {
+	agent := AgentConfig{
+		Name:       "Claude Code",
+		ConfigPath: filepath.Join("/tmp", "workspace", "claude_desktop_config.json"),
+	}
+
+	principalID := runtimePrincipalIDForAgent(agent)
+	sessionID := runtimeSessionInstanceIDForAgent(agent)
+	if !strings.HasPrefix(sessionID, principalID+"-") {
+		t.Fatalf("expected session id %q to use principal prefix %q", sessionID, principalID)
 	}
 }
 
@@ -179,6 +192,12 @@ func TestIssueRuntimeSessionToken(t *testing.T) {
 	}
 	if capturedBody.RuntimePrincipalName != "Claude Code (claude_desktop_config.json)" {
 		t.Fatalf("unexpected principal name: %q", capturedBody.RuntimePrincipalName)
+	}
+	if capturedBody.RuntimePrincipalID == "" {
+		t.Fatal("expected runtime principal id to be set")
+	}
+	if !strings.HasPrefix(capturedBody.SessionSourceID, capturedBody.RuntimePrincipalID+"-") {
+		t.Fatalf("expected session source id %q to use principal id prefix %q", capturedBody.SessionSourceID, capturedBody.RuntimePrincipalID)
 	}
 	if len(capturedBody.AllowedMCPServers) != 2 || capturedBody.AllowedMCPServers[0] != "github" || capturedBody.AllowedMCPServers[1] != "jira" {
 		t.Fatalf("unexpected allowed servers: %+v", capturedBody.AllowedMCPServers)

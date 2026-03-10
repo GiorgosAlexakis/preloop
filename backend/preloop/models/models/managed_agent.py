@@ -1,0 +1,66 @@
+"""Durable registry entry for an onboarded external agent."""
+
+import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING, List, Optional
+
+from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import Base
+
+if TYPE_CHECKING:
+    from .account import Account
+    from .runtime_session import RuntimeSession
+
+
+class ManagedAgent(Base):
+    """Account-scoped durable record for an onboarded external agent."""
+
+    __tablename__ = "managed_agent"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "session_source_type",
+            "session_source_id",
+            name="uq_managed_agent_account_source",
+        ),
+    )
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("account.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    runtime_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("runtime_session.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    session_source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_source_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    session_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    enrolled_via: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="runtime_session_token"
+    )
+    managed_mcp_servers: Mapped[List[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(nullable=False)
+
+    account: Mapped["Account"] = relationship(
+        "Account", back_populates="managed_agents"
+    )
+    runtime_session: Mapped[Optional["RuntimeSession"]] = relationship(
+        "RuntimeSession", back_populates="managed_agent"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ManagedAgent(id={self.id}, source={self.session_source_type}:"
+            f"{self.session_source_id})>"
+        )

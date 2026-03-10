@@ -62,6 +62,7 @@ from preloop.models.crud import (
     crud_user,
     crud_api_key,
     crud_api_usage,
+    crud_managed_agent,
     crud_mcp_server,
     crud_role,
     crud_runtime_session,
@@ -931,14 +932,19 @@ async def create_runtime_session_token(
         requested_tools=session_data.allowed_mcp_tools,
     )
 
-    expires_at = datetime.now(UTC) + timedelta(minutes=session_data.expires_in_minutes)
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(minutes=session_data.expires_in_minutes)
+    runtime_principal_id = (
+        session_data.runtime_principal_id or session_data.session_source_id
+    )
     runtime_principal_name = (
         session_data.runtime_principal_name
         or session_data.session_reference
-        or session_data.session_source_id
+        or runtime_principal_id
     )
     existing_runtime_session = crud_runtime_session.get_by_source(
         db,
+        account_id=current_user.account_id,
         session_source_type=session_data.session_source_type,
         session_source_id=session_data.session_source_id,
     )
@@ -950,9 +956,20 @@ async def create_runtime_session_token(
         session_source_id=session_data.session_source_id,
         session_reference=session_data.session_reference,
         runtime_principal_type=session_data.session_source_type,
-        runtime_principal_id=session_data.session_source_id,
+        runtime_principal_id=runtime_principal_id,
         runtime_principal_name=runtime_principal_name,
-        last_activity_at=datetime.now(UTC),
+        last_activity_at=now,
+    )
+    crud_managed_agent.upsert_from_runtime_session(
+        db,
+        account_id=current_user.account_id,
+        runtime_session_id=runtime_session.id,
+        session_source_type=session_data.session_source_type,
+        session_source_id=runtime_principal_id,
+        display_name=runtime_principal_name,
+        session_reference=session_data.session_reference,
+        managed_mcp_servers=allowed_mcp_servers,
+        last_seen_at=now,
     )
     db.commit()
     db.refresh(runtime_session)
@@ -973,7 +990,7 @@ async def create_runtime_session_token(
             "allowed_mcp_servers": allowed_mcp_servers,
             "runtime_principal": {
                 "type": session_data.session_source_type,
-                "id": session_data.session_source_id,
+                "id": runtime_principal_id,
                 "name": runtime_principal_name,
                 "user_id": str(current_user.id),
                 "username": current_user.username,

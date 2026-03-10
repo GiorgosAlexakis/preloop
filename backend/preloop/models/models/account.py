@@ -17,6 +17,7 @@ from .base import Base
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from .audit_log import AuditLog
+    from .managed_agent import ManagedAgent
     from .organization import Organization
     from .tracker import Tracker
     from .client_version_log import ClientVersionLog
@@ -163,6 +164,9 @@ class Account(Base):
     )
     runtime_sessions: Mapped[List["RuntimeSession"]] = relationship(
         "RuntimeSession", back_populates="account", cascade="all, delete-orphan"
+    )
+    managed_agents: Mapped[List["ManagedAgent"]] = relationship(
+        "ManagedAgent", back_populates="account", cascade="all, delete-orphan"
     )
 
     # Many-to-many relationship helper for organizational roles

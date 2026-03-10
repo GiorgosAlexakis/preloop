@@ -244,6 +244,41 @@ export interface AccountRuntimeSessionDetailResponse {
   activity_timeline: RuntimeSessionActivityItem[];
 }
 
+export interface ManagedAgentSummary {
+  id: string;
+  runtime_session_id: string | null;
+  display_name: string;
+  session_source_type: string;
+  session_source_id: string;
+  session_reference: string | null;
+  enrolled_via: string;
+  managed_mcp_servers: string[];
+  last_seen_at: string;
+  started_at: string | null;
+  last_activity_at: string | null;
+  ended_at: string | null;
+  total_requests: number;
+  estimated_cost: number;
+  latest_model_alias: string | null;
+  latest_provider_name: string | null;
+  last_request_at: string | null;
+}
+
+export interface AccountManagedAgentListResponse {
+  query: string | null;
+  session_source_type: string | null;
+  status: 'all' | 'active' | 'ended';
+  total: number;
+  limit: number;
+  offset: number;
+  items: ManagedAgentSummary[];
+}
+
+export interface ManagedAgentDetailResponse {
+  agent: ManagedAgentSummary;
+  sessions: RuntimeSessionSummary[];
+}
+
 export interface RuntimeSessionActivityItem {
   activity_type: 'model_interaction' | 'tool_call' | string;
   timestamp: string;

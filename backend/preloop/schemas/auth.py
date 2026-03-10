@@ -156,6 +156,7 @@ class RuntimeSessionTokenCreate(BaseModel):
     session_source_type: str = Field(..., min_length=1, max_length=64)
     session_source_id: str = Field(..., min_length=1, max_length=255)
     session_reference: Optional[str] = Field(None, max_length=255)
+    runtime_principal_id: Optional[str] = Field(None, max_length=255)
     runtime_principal_name: Optional[str] = Field(None, max_length=255)
     expires_in_minutes: int = Field(default=120, ge=1, le=1440)
     scopes: List[str] = Field(default_factory=lambda: ["mcp:read", "mcp:write"])

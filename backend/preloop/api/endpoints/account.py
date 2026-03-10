@@ -5,19 +5,22 @@ import logging
 from datetime import datetime
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from preloop.api.common import get_account_for_user
-from preloop.models.crud import crud_account
+from preloop.models.crud import crud_account, crud_managed_agent, crud_runtime_session
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
 from preloop.schemas.gateway_usage import (
+    ManagedAgentDetailResponse,
+    AccountManagedAgentListResponse,
     AccountRuntimeSessionDetailResponse,
     AccountRuntimeSessionListResponse,
     AccountGatewayUsageSearchResponse,
     AccountGatewayUsageSummaryResponse,
+    ManagedAgentSummary,
 )
 from preloop.services.model_gateway_usage import ModelGatewayUsageService
 from preloop.services.runtime_session_explorer import RuntimeSessionExplorerService
@@ -149,6 +152,75 @@ async def search_account_gateway_usage(
         session_source_type=session_source_type,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/account/agents",
+    response_model=AccountManagedAgentListResponse,
+)
+async def list_account_managed_agents(
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+    query: Optional[str] = Query(None, min_length=1),
+    session_source_type: Optional[str] = Query(None),
+    status: str = Query("all", pattern="^(all|active|ended)$"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """List enrolled external agents for the current account."""
+    result = crud_managed_agent.list_for_account(
+        db,
+        account_id=str(account.id),
+        query=query,
+        session_source_type=session_source_type,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
+    return AccountManagedAgentListResponse(
+        query=query,
+        session_source_type=session_source_type,
+        status=status,
+        total=result["total"],
+        limit=limit,
+        offset=offset,
+        items=result["items"],
+    )
+
+
+@router.get(
+    "/account/agents/{agent_id}",
+    response_model=ManagedAgentDetailResponse,
+)
+async def get_account_managed_agent(
+    agent_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Return one enrolled external agent for the current account."""
+    summary = crud_managed_agent.get_summary_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    sessions = crud_runtime_session.list_account_sessions(
+        db,
+        account_id=str(account.id),
+        runtime_principal_type=summary["session_source_type"],
+        runtime_principal_id=summary["session_source_id"],
+        status="all",
+        limit=20,
+        offset=0,
+    )
+    return ManagedAgentDetailResponse(
+        agent=ManagedAgentSummary(**summary),
+        sessions=[
+            RuntimeSessionExplorerService._summary_row_to_schema(item)
+            for item in sessions["items"]
+        ],
     )
 
 

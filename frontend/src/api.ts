@@ -17,6 +17,9 @@ import type {
   DependencyPair,
   DependencyResponse,
   FlowGatewayEventsResponse,
+  AccountManagedAgentListResponse,
+  ManagedAgentDetailResponse,
+  ManagedAgentSummary,
   AccountGatewayUsageSearchResponse,
   AccountRuntimeSessionDetailResponse,
   AccountRuntimeSessionListResponse,
@@ -203,6 +206,14 @@ export interface RuntimeSessionDetailParams extends GatewayUsageSummaryParams {
   interactionOffset?: number;
 }
 
+export interface ManagedAgentListParams {
+  query?: string;
+  sessionSourceType?: string;
+  status?: 'all' | 'active' | 'ended';
+  limit?: number;
+  offset?: number;
+}
+
 function buildGatewayUsageQuery(params: GatewayUsageSearchParams = {}): string {
   const queryParams = new URLSearchParams();
 
@@ -281,6 +292,31 @@ function buildRuntimeSessionListQuery(
   return queryString ? `?${queryString}` : '';
 }
 
+function buildManagedAgentListQuery(
+  params: ManagedAgentListParams = {}
+): string {
+  const queryParams = new URLSearchParams();
+
+  if (params.query) {
+    queryParams.set('query', params.query);
+  }
+  if (params.sessionSourceType) {
+    queryParams.set('session_source_type', params.sessionSourceType);
+  }
+  if (params.status) {
+    queryParams.set('status', params.status);
+  }
+  if (typeof params.limit === 'number') {
+    queryParams.set('limit', String(params.limit));
+  }
+  if (typeof params.offset === 'number') {
+    queryParams.set('offset', String(params.offset));
+  }
+
+  const queryString = queryParams.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
 export async function getAccountGatewayUsageSummary(
   params: GatewayUsageSummaryParams = {}
 ): Promise<AccountGatewayUsageSummaryResponse> {
@@ -326,6 +362,28 @@ export async function getAccountRuntimeSessions(
   );
   if (!response.ok) {
     throw new Error('Failed to fetch runtime sessions');
+  }
+  return response.json();
+}
+
+export async function getAccountAgents(
+  params: ManagedAgentListParams = {}
+): Promise<AccountManagedAgentListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/account/agents${buildManagedAgentListQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch managed agents');
+  }
+  return response.json();
+}
+
+export async function getAccountAgent(
+  agentId: string
+): Promise<ManagedAgentDetailResponse> {
+  const response = await fetchWithAuth(`/api/v1/account/agents/${agentId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch managed agent');
   }
   return response.json();
 }

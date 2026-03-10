@@ -168,6 +168,47 @@ class AccountRuntimeSessionListResponse(BaseModel):
     items: List[RuntimeSessionSummary] = Field(default_factory=list)
 
 
+class ManagedAgentSummary(BaseModel):
+    """Read-only summary for one enrolled external agent."""
+
+    id: str
+    runtime_session_id: Optional[str] = None
+    display_name: str
+    session_source_type: str
+    session_source_id: str
+    session_reference: Optional[str] = None
+    enrolled_via: str
+    managed_mcp_servers: List[str] = Field(default_factory=list)
+    last_seen_at: datetime
+    started_at: Optional[datetime] = None
+    last_activity_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    total_requests: int = 0
+    estimated_cost: float = 0.0
+    latest_model_alias: Optional[str] = None
+    latest_provider_name: Optional[str] = None
+    last_request_at: Optional[datetime] = None
+
+
+class AccountManagedAgentListResponse(BaseModel):
+    """Account-scoped managed-agent registry response."""
+
+    query: Optional[str] = None
+    session_source_type: Optional[str] = None
+    status: str = "all"
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+    items: List[ManagedAgentSummary] = Field(default_factory=list)
+
+
+class ManagedAgentDetailResponse(BaseModel):
+    """One managed agent plus its recent runtime session history."""
+
+    agent: ManagedAgentSummary
+    sessions: List[RuntimeSessionSummary] = Field(default_factory=list)
+
+
 class RuntimeSessionActivityItem(BaseModel):
     """One activity item in a runtime session timeline."""
 
