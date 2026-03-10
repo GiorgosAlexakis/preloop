@@ -8,16 +8,40 @@ Unit tests are designed to test individual components in isolation. They are wri
 
 ### Coverage
 
-Code coverage is measured for all components and is enforced in the CI/CD pipeline. The goal is to maintain a high level of coverage, with a target of at least 80% for most components and 90% for critical components.
+Code coverage is measured for all components and is enforced in the CI/CD pipeline. The goal is to maintain a high level of coverage, with a target of at least 75% overall (CI `--fail-under=60`) and 80% for most components.
+
+### Running Tests
+
+```bash
+# Backend (requires DATABASE_URL and PostgreSQL)
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/preloop"
+pytest -m "not integration" -v
+
+# With coverage
+pytest -m "not integration" --cov=preloop --cov-report=term-missing --cov-report=html
+
+# Quick unit tests (no database; use mocks)
+pytest backend/tests/utils backend/tests/schemas backend/tests/models/test_db_session.py backend/tests/test_tokens_util.py -v
+
+# Frontend
+cd frontend && npm run test
+```
 
 ### Current Status & Progress
 
 Significant progress has been made in increasing unit test coverage for the backend.
-- **`backend/preloop/models/crud`**: Coverage has been substantially improved for key modules, with `issue.py`, `issue_duplicate.py`, `organization.py`, `project.py`, and `account.py` now meeting or exceeding the 80% coverage target.
-- **`backend/preloop/sync/scanner`**: Coverage has been substantially improved for the core scanning logic, with `core.py` now exceeding the 80% coverage target.
-- **`backend/preloop/sync/services`**: Coverage has been substantially improved for key modules, with `event_bus.py`, `base.py`, and `manager.py` now meeting or exceeding the 80% coverage target.
-- **`backend/preloop/sync/trackers`**: Work has begun on improving coverage for the core tracker logic, with initial tests added for `base.py`, `github.py`, `gitlab.py`, and `jira.py`.
-- **`backend/preloop/api/endpoints`**: Comprehensive unit tests have been added for the new `/api/v1/mcp/` endpoints in `tests/endpoints/test_mcp.py`, covering all new MCP tools.
+
+**Models & CRUD:** `issue.py`, `issue_duplicate.py`, `organization.py`, `project.py`, `account.py`, `policy_snapshot.py`, `registration_token.py`, `instance.py`, `tool_access_rule.py` meet or exceed 80%.
+
+**Sync:** `core.py` (scanner), `event_bus.py`, `base.py`, `manager.py` exceed 80%. `sync/utils.py` (retry, safe_exit) at 100%.
+
+**API Endpoints:** `issues.py` (70%), `issue_duplicates.py` (70%), `issue_compliance.py` (100%), `embedding.py`, `roles.py`, `version.py`, `account.py`, `public_approval.py`, `policies.py` have comprehensive tests.
+
+**Services:** `approval_service.py` (63%), `policy_evaluator.py`, `approval_wrapper.py`, `execution_metrics.py`, `push_proxy.py` have substantial coverage.
+
+**Schemas:** `invitation`, `team`, `user`, `installers` at 100%.
+
+**Utils:** `tokens`, `hashing`, `audit`, `permissions`, `redaction`, `encryption`, `request` at 100%.
 
 ### CI/CD Integration
 
@@ -26,6 +50,10 @@ All backend unit tests are organized into separate jobs in the `.gitlab-ci.yml` 
 ### Mutation Testing
 
 To ensure the quality of our tests, we use mutation testing to identify and improve weak tests that are not effectively testing the code.
+
+### Detailed Coverage Plan
+
+See [docs/TEST_COVERAGE_PLAN.md](docs/TEST_COVERAGE_PLAN.md) for the full coverage plan, measuring instructions, and phase-by-phase implementation history.
 
 ## Integration and Functional Tests
 

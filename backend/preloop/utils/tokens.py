@@ -81,6 +81,29 @@ def verify_token(token: str, token_type: str) -> str:
         raise TokenError("Invalid or expired token")
 
 
+def create_token(
+    email: str,
+    token_type: str,
+    *,
+    expires_delta: timedelta | None = None,
+) -> str:
+    """Create a JWT token with optional custom expiry.
+
+    Args:
+        email: The email address to encode.
+        token_type: Token type (e.g. "onboarding", "email_verification").
+        expires_delta: Time until expiry. Defaults to 24 hours.
+
+    Returns:
+        A JWT token.
+    """
+    expire = datetime.now(UTC) + (
+        expires_delta or timedelta(minutes=EMAIL_TOKEN_EXPIRE_MINUTES)
+    )
+    to_encode = {"sub": email, "exp": expire, "type": token_type}
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
 def create_onboarding_token(email: str) -> str:
     """Creates a short-lived token for the onboarding process."""
     return create_token(email, "onboarding", expires_delta=timedelta(hours=1))

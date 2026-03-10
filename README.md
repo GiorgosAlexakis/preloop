@@ -5,12 +5,16 @@
 
 Preloop is a comprehensive MCP firewall that gives you complete control over what AI agents can do. Define access policies, approval workflows, and audit trails. Allow, deny, or require approval based on conditions.
 
+Preloop is also evolving into an AI workforce control plane for managed runtimes. Flows can now route model traffic through a Preloop-owned OpenAI-compatible gateway so usage, spend, runtime identity, and budgets can be enforced centrally.
 
-  <a href="https://youtu.be/yTtXn8WibTY" target="_blank">
+
+  <a href="https://youtu.be/yTtXn8WibTY" target="_blank" title="Watch the video">
     <img alt="Preloop Logo" src="frontend/public/assets/mcp-firewall.svg" alt="Watch the video" style="width: 100%; max-width: 1135px;" />
   </a>
 
 **Works with OpenClaw, Claude Code, Cursor, Codex, and any MCP-compatible agent.**
+
+> **Read the official documentation:** Full guides and tutorials are available at [docs.preloop.ai](https://docs.preloop.ai).
 
 ## Why Preloop?
 
@@ -46,6 +50,12 @@ When AI attempts a protected operation, Preloop pauses and notifies you:
 - **Per-tool justification** — require or optionally request agents to explain *why* a tool is being called before approval (Enterprise)
 - **Team-based approvals** with quorum requirements (Enterprise)
 - **Escalation policies** for time-sensitive operations (Enterprise)
+
+<div align="center">
+  <video src="https://docs.preloop.ai/assets/animations/quickstart/access_rules.mp4" controls autoplay loop muted style="max-height: 480px; width: auto; max-width: 100%; border-radius: 8px; margin-right:10px;"></video>
+  <video src="https://docs.preloop.ai/assets/animations/quickstart/mobile_approval.mp4" controls autoplay loop muted style="max-height: 480px; width: auto; max-width: 100%; border-radius: 8px; margin-left:10px;"></video>
+</div>
+
 
 ### Policy-as-Code
 
@@ -92,6 +102,30 @@ Every AI action is logged with full context:
 
 Essential for security reviews, compliance, and debugging.
 
+### AI Model Gateway
+
+Preloop can terminate model traffic on behalf of managed runtimes instead of handing provider credentials directly to agent containers:
+
+- OpenAI-compatible gateway endpoints: `GET /openai/v1/models`, `POST /openai/v1/chat/completions`, `POST /openai/v1/responses`
+- Anthropic-compatible gateway endpoint: `POST /anthropic/v1/messages`
+- SSE streaming support for chat completions and responses
+- Per-request attribution to account, flow, flow execution, API key, and runtime principal
+- Token and estimated-cost accounting persisted to the gateway usage ledger
+- Account-level and flow-level budget enforcement with soft-limit annotations and hard stops
+- Product-facing usage summary endpoints for account and flow monitoring
+- Account-scoped runtime session explorer endpoints for browsing managed sessions beyond flows
+- Execution-scoped gateway event inspection via `GET /api/v1/flows/executions/{execution_id}/gateway-events`
+- Console surfaces for browsing recent runtime sessions and searching captured gateway interactions
+
+### Secret Custody
+
+Preloop now stores AI model credentials behind a provider-agnostic secret abstraction:
+
+- Built-in `local_encrypted` backend for simple self-hosted deployments
+- Hash-only runtime API tokens for flow executions
+- Optional external secret backend path for Vault/OpenBao-compatible KV v2 stores
+- Agent runtimes can receive short-lived Preloop gateway tokens instead of provider secrets
+
 ## Comparison with AWS Agent Core
 
 | Feature | Preloop | AWS Agent Core |
@@ -121,6 +155,7 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 4. Actions are allowed, denied, or paused for approval based on your policies
 5. Full audit trail of every action and decision
 
+
 ## Key Features
 
 ### Safety & Control
@@ -132,8 +167,8 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 - **Instant Notifications.** Get alerts on mobile, email, Slack, or Mattermost.
 - **One-Tap Approvals.** Approve or reject from your phone, watch, or desktop.
 - **Full Audit Trail.** Complete log of every AI action and policy decision.
-- **Async Approval Mode (Enterprise).** Non-blocking approval: tool returns immediately, agent polls `get_approval_status` until the human decides.
-- **Per-Tool Justification (Enterprise).** Require agents to provide a reason for each tool call. Mode: `required` (blocks without it) or `optional` (agent may provide one).
+- **Async Approval Mode.** Non-blocking approval: tool returns immediately, agent polls `get_approval_status` until the human decides.
+- **Per-Tool Justification.** Require agents to provide a reason for each tool call. Mode: `required` (blocks without it) or `optional` (agent may provide one).
 - **Flexible Conditions.** Use CEL expressions for context-aware rules (Enterprise).
 - **AI Approval (Enterprise).** AI-driven approval with configurable model, prompt, confidence threshold, and fallback behavior.
 - **Team Approvals.** Require quorum from multiple team members for critical ops (Enterprise).
@@ -149,6 +184,7 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 ### Automation Platform
 
 - **Agentic Flows.** Build event-driven workflows triggered by webhooks, schedules, or tracker events.
+- **Gateway-Routed Model Access.** Managed flows can use a Preloop-owned model gateway for centralized cost controls, telemetry, and key custody.
 - **Vector Search.** Intelligent similarity search using embeddings.
 - **Duplicate Detection.** Automatically identify overlapping issues.
 - **Compliance Metrics.** Evaluate and improve issue quality.
@@ -171,22 +207,14 @@ AI Agent -> Preloop -> [Policy check] -> Allow / Deny / Require Approval -> Exec
 
 ## Architecture
 
-Preloop is designed with a modular architecture:
+Preloop features a modular architecture designed to provide a secure control plane for AI agents, separating the core API server, database models, backend synchronization services, and the web frontend console.
 
-1.  **Preloop** (`./backend/preloop`): The main RESTful HTTP API server that provides access to issue tracking systems and vector search capabilities.
-2.  **Preloop Models** (`./backend/preloop/models`): Contains the database models (using SQLAlchemy and Pydantic) and CRUD operations for interacting with the PostgreSQL database, including vector embeddings via PGVector.
-3.  **Preloop Sync** (`./backend/preloop/sync`): A service responsible for polling configured issue trackers, indexing issues, projects, and organizations in the database, and updating issue embeddings.
-4.  **Preloop Console** (`./frontend`): A web application built using Lit, Vite, TypeScript, and Shoelace Web Components.
+For a complete conceptual overview of the system components, data flows, and infrastructure, please see the [Architecture Document](ARCHITECTURE.md).
 
-This structure allows:
-- Clear separation of concerns between the API layer, data models, and synchronization logic.
-- Independent development and versioning of the core components.
+## Frontend & CLI
 
-## Preloop Console
-
-The Preloop Console is in the `frontend` directory. It is built using modern web technologies to provide a fast, responsive, and feature-rich user experience.
-
-- **Technology Stack**: Lit, Vite, TypeScript, and Shoelace Web Components.
+- **Preloop Console (Frontend):** Located in the `frontend` directory, the web interface gives you governance controls, tool management, and dashboard visibility. See [frontend/README.md](frontend/README.md) for details.
+- **Preloop CLI:** Manage policies and system state from the command line. See [cli/README.md](cli/README.md) for usage.
 
 ## Installation
 
@@ -232,6 +260,20 @@ Preloop is configured via environment variables. Copy `.env.example` to `.env` a
 | `ENVIRONMENT` | `development` | Environment (development, production) |
 | `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
 | `ROOT_LOG_LEVEL` | `WARNING` | Root logger verbosity level |
+
+#### Model Gateway & Secrets
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRELOOP_MODEL_GATEWAY_URL` | `http://host.docker.internal:8000/openai/v1` | Default gateway URL injected into gateway-enabled runtimes |
+| `MODEL_GATEWAY_CAPTURE_CONTENT` | `false` | Include truncated content previews in emitted model-call events |
+| `MODEL_GATEWAY_MAX_PREVIEW_CHARS` | `512` | Max characters retained when content capture is enabled |
+| `VAULT_KV_V2_ENABLED` | `false` | Enable the optional Vault/OpenBao-compatible KV v2 secret backend |
+| `VAULT_KV_V2_URL` | unset | Base URL for the external secret backend |
+| `VAULT_KV_V2_TOKEN` | unset | Access token for the external secret backend |
+| `VAULT_KV_V2_NAMESPACE` | unset | Optional namespace header for Vault/OpenBao |
+| `VAULT_KV_V2_MOUNT` | `secret` | KV v2 mount name |
+| `VAULT_KV_V2_PATH_PREFIX` | unset | Optional path prefix applied to external secret references |
 
 #### Feature Flags
 
@@ -485,137 +527,9 @@ print(json.dumps(issue.json(), indent=2))
 
 ## API Endpoints
 
-Preloop provides a RESTful API with the following key endpoints:
+Preloop provides a comprehensive REST API for authentication, tool management, approval workflows, policy generation, and integrations.
 
-### Authentication
-- `POST /api/v1/auth/token` - Get authentication token
-- `POST /api/v1/auth/refresh` - Refresh authentication token
-
-### MCP Server Management
-- `GET /api/v1/mcp-servers` - List configured MCP servers
-- `POST /api/v1/mcp-servers` - Add new MCP server
-- `PUT /api/v1/mcp-servers/{id}` - Update MCP server configuration
-- `DELETE /api/v1/mcp-servers/{id}` - Remove MCP server
-- `POST /api/v1/mcp-servers/{id}/scan` - Trigger tool discovery scan
-- `GET /api/v1/mcp-servers/{id}/tools` - List tools available on server
-
-### Tool Configuration
-- `GET /api/v1/tool-configurations` - List tool configurations
-- `POST /api/v1/tool-configurations` - Create tool configuration
-- `PUT /api/v1/tool-configurations/{id}` - Update tool configuration
-- `DELETE /api/v1/tool-configurations/{id}` - Delete tool configuration
-
-### Access Rules
-- `POST /api/v1/tool-configurations/{config_id}/access-rules` - Create access rule
-- `PUT /api/v1/access-rules/{rule_id}` - Update access rule
-- `DELETE /api/v1/access-rules/{rule_id}` - Delete access rule
-
-### Approval Management
-- `GET /api/v1/approval-workflows` - List approval workflows
-- `POST /api/v1/approval-workflows` - Create approval workflow
-- `PUT /api/v1/approval-workflows/{id}` - Update approval workflow
-- `DELETE /api/v1/approval-workflows/{id}` - Delete approval workflow
-- `GET /api/v1/approval-requests` - List approval requests (authenticated)
-- `GET /api/v1/approval-requests/{request_id}` - Get approval request details (authenticated)
-- `POST /api/v1/approval-requests/{request_id}/approve` - Approve request (authenticated)
-- `POST /api/v1/approval-requests/{request_id}/decline` - Decline request (authenticated)
-- `POST /api/v1/approval-requests/{request_id}/decide` - Approve or decline request (authenticated)
-- `GET /approval/{request_id}/data?token={token}` - Get approval request details (public, token-based)
-- `POST /approval/{request_id}/decide?token={token}` - Approve or decline approval request (public, token-based)
-
-### Flows
-- `GET /api/v1/flows` - List flows
-- `POST /api/v1/flows` - Create flow
-- `GET /api/v1/flows/{id}` - Get flow details
-- `PUT /api/v1/flows/{id}` - Update flow
-- `DELETE /api/v1/flows/{id}` - Delete flow
-- `POST /api/v1/flows/{id}/trigger` - Trigger a test execution for a flow
-- `GET /api/v1/flows/{id}/executions` - List flow executions
-- `GET /api/v1/flows/executions/{id}` - Get execution details
-- `GET /api/v1/flows/executions/{id}/logs` - Get execution logs (from container or database)
-- `GET /api/v1/flows/executions/{id}/metrics` - Get execution metrics (tool calls, tokens, cost)
-- `POST /api/v1/flows/executions/{id}/command` - Send command to execution (e.g., stop)
-- `POST /api/v1/flows/executions/{id}/retry` - Retry a failed/stopped/cancelled execution
-
-### Policy Generation
-- `POST /api/v1/policies/generate` - Generate policy YAML from a natural-language prompt
-- `POST /api/v1/policies/generate-from-audit` - Generate policy YAML from audit-log tool-call patterns
-
-**Prerequisites:** At least one AI model must be configured in Settings → AI Models.
-
-**Generate from Prompt:**
-
-```bash
-curl -X POST "https://YOUR_PRELOOP_URL/api/v1/policies/generate" \
--H "Authorization: Bearer YOUR_API_KEY" \
--H "Content-Type: application/json" \
--d '{
-  "prompt": "require approval for any bash command that modifies production",
-  "include_current_config": true
-}'
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `prompt` | string | Yes | Natural-language description of the desired policy |
-| `include_current_config` | boolean | No | Include current account config as LLM context (default: `true`) |
-
-**Generate from Audit Logs:**
-
-```bash
-curl -X POST "https://YOUR_PRELOOP_URL/api/v1/policies/generate-from-audit" \
--H "Authorization: Bearer YOUR_API_KEY" \
--H "Content-Type: application/json" \
--d '{
-  "start_date": "2026-01-01",
-  "end_date": "2026-02-01"
-}'
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `start_date` | string | No | ISO date to filter audit logs from (e.g. `2026-01-01`) |
-| `end_date` | string | No | ISO date to filter audit logs until |
-| `audit_logs_json` | string | No | Raw JSON array of external audit logs (bypasses DB lookup) |
-
-**Response (both endpoints):**
-
-```json
-{
-  "yaml": "version: \"1.0\"\nmetadata:\n  name: ...",
-  "warnings": ["Optional validation warnings"]
-}
-```
-
-## Trackers
-- `GET /api/v1/trackers` - List trackers
-- `GET /api/v1/trackers/{tracker_id}` - Get tracker details
-- `POST /api/v1/trackers` - Create tracker
-- `PUT /api/v1/trackers/{tracker_id}` - Update tracker
-- `DELETE /api/v1/trackers/{tracker_id}` - Delete tracker
-
-### Organizations
-- `GET /api/v1/organizations` - List organizations
-- `GET /api/v1/organizations/{org_id}` - Get organization details
-- `POST /api/v1/organizations` - Create organization
-- `PUT /api/v1/organizations/{org_id}` - Update organization
-- `DELETE /api/v1/organizations/{org_id}` - Delete organization
-
-### Projects
-- `GET /api/v1/organizations/{org_id}/projects` - List projects
-- `GET /api/v1/projects/{project_id}` - Get project details
-- `POST /api/v1/projects` - Create project
-- `PUT /api/v1/projects/{project_id}` - Update project
-- `DELETE /api/v1/projects/{project_id}` - Delete project
-- `POST /api/v1/projects/test-connection` - Test project connection
-
-### Issues
-- `GET /api/v1/issues/search` - Search issues
-- `POST /api/v1/issues` - Create issue
-- `GET /api/v1/issues/{issue_id}` - Get issue details
-- `PUT /api/v1/issues/{issue_id}` - Update issue
-- `DELETE /api/v1/issues/{issue_id}` - Delete issue
-- `POST /api/v1/issues/{issue_id}/comments` - Add comment to issue
+For the complete REST API reference, including interactive Swagger endpoints, please see the [official API documentation](https://docs.preloop.ai/api/).
 
 ### Unified WebSocket
 
@@ -653,133 +567,9 @@ unsubscribe();
 
 ### Using MCP Tools via API
 
-The Preloop API now includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly. This is the recommended way to automate issue management workflows.
+The Preloop API includes integrated MCP tool endpoints with dynamic tool filtering, allowing any HTTP-based MCP client to connect directly.
 
-**Authentication:** All MCP endpoints use the same Bearer Token authentication as the rest of the API.
-
-**Dynamic Tool Visibility:** MCP tools are only visible when your account has one or more trackers configured. This ensures tools have the necessary context to operate effectively. If you connect with an account that has no trackers, you will see an empty tool list.
-
-**Connecting with Claude Code:**
-
-You can connect Claude Code directly to your Preloop instance using the `claude mcp add` command.
-
-1.  **Get your Preloop API Key:** You can find or create an API key in your Preloop user settings.
-2.  **Add the MCP Server:** Run the following command, replacing `YOUR_PRELOOP_URL` and `YOUR_API_KEY` with your details.
-
-    ```bash
-    claude mcp add \
-      --transport http \
-      --header "Authorization: Bearer YOUR_API_KEY" \
-      preloop \
-      https://YOUR_PRELOOP_URL/mcp/v1
-    ```
-
-    - `--transport http`: Specifies that the server uses the HTTP transport.
-    - `--header "Authorization: Bearer YOUR_API_KEY"`: Provides the necessary authentication header for all requests.
-    - `preloop`: This is the name you will use to refer to the server (e.g., `@preloop get_issue ...`).
-    - `https://YOUR_PRELOOP_URL/mcp/v1`: This is the base URL for the Preloop MCP endpoints.
-
-**Example Workflow (using `curl`):**
-
-If you are not using an MCP client and want to interact with the tool endpoints directly, you can use any HTTP client like `curl`.
-
-1.  **Create an Issue:**
-    ```bash
-    curl -X POST "https://YOUR_PRELOOP_URL/api/v1/mcp/create_issue" \
-    -H "Authorization: Bearer YOUR_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{
-      "project": "your-org/your-project",
-      "title": "New Feature Request",
-      "description": "Add a dark mode to the dashboard."
-    }'
-    ```
-
-### Tool Approval Workflows
-
-Preloop provides approval workflows for tool execution. Control which operations require approval before execution.
-
-**Key Concepts:**
-- **Tool Configuration**: Enable/disable tools and assign approval workflows
-- **Approval Workflows**: Define approval requirements, approvers, timeouts, and notification channels
-- **Email Notifications**: Receive approval requests via email with one-click approve/decline
-
-**Example: Create an Approval Workflow**
-
-```bash
-curl -X POST "https://YOUR_PRELOOP_URL/api/v1/approval-workflows" \
--H "Authorization: Bearer YOUR_API_KEY" \
--H "Content-Type: application/json" \
--d '{
-  "name": "Critical Operations",
-  "description": "Require approval for critical issue operations",
-  "is_default": false,
-  "approver_user_ids": ["user-id-1", "user-id-2"],
-  "approvals_required": 1,
-  "timeout_seconds": 600,
-  "notification_channels": ["email"]
-}'
-```
-
-**Configure a tool to require approval:**
-
-```bash
-curl -X POST "https://YOUR_PRELOOP_URL/api/v1/tool-configurations" \
--H "Authorization: Bearer YOUR_API_KEY" \
--H "Content-Type: application/json" \
--d '{
-  "tool_name": "update_issue",
-  "tool_source": "preloop_builtin",
-  "is_enabled": true,
-  "approval_workflow_id": "<workflow_id_from_above>"
-}'
-```
-
-> **Enterprise Features**: Preloop Enterprise Edition adds CEL-based conditional approvals, team-based approvals with quorum, and escalation policies. Contact sales@preloop.ai for more information.
-
-### Configuring Timeouts for Approval Workflows
-
-When using approval workflows, tool calls may take several minutes while waiting for human approval. Most MCP clients have default timeouts that are too short for approval workflows. Configure your client's timeout accordingly:
-
-**Claude Code** (`~/.claude.json` or project `.mcp.json`):
-```json
-{
-  "mcpServers": {
-    "preloop": {
-      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
-      "timeout": 600000
-    }
-  }
-}
-```
-
-**Cursor / VS Code** (`.cursor/mcp.json` or VS Code settings):
-```json
-{
-  "mcpServers": {
-    "preloop": {
-      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
-      "timeout": 600000
-    }
-  }
-}
-```
-
-**Claude Desktop** (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "preloop": {
-      "url": "https://YOUR_PRELOOP_URL/mcp/v1",
-      "timeout": 600000
-    }
-  }
-}
-```
-
-The timeout value is in milliseconds. 600000ms = 10 minutes, which should be sufficient for most approval workflows. Adjust based on your approval workflow's `timeout_seconds` setting.
-
-> **Tip**: If your approval workflow has **async mode** enabled (`async_approval: true`), the tool returns immediately with a `pending_approval` status and a `request_id`. The agent automatically polls `get_approval_status(request_id)` until the human approves, at which point the tool executes and the result is returned in the poll response. No client timeout increase is needed in this mode.
+[Read the MCP Integration Guide in docs.preloop.ai](https://docs.preloop.ai) for details on authenticating clients like Claude Code, Cursor, and Windsurf, and setting up workflows or timeouts.
 
 ### Mobile Push Notifications (iOS/Android)
 
@@ -885,8 +675,8 @@ Preloop Enterprise Edition extends the open-source core with additional features
 | **Access rules with CEL conditions** | Basic (single condition) | Advanced (multiple conditions, AND/OR, CEL editor) |
 | **AI-driven approval workflows** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
-| **Async approval mode** | ❌ | ✅ |
-| **Per-tool justification settings** | ❌ | ✅ |
+| **Async approval mode** | ✅ | ✅ |
+| **Per-tool justification settings** | ✅ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
 | Slack notifications | ✅ | ✅ |
 | Mattermost notifications | ✅ | ✅ |

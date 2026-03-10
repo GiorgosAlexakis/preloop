@@ -105,8 +105,9 @@ jobs:
         run: |
           pytest -v \
             -m "not integration" \
-            --cov=backend/preloop \
+            --cov=preloop \
             --cov-report=xml \
+            --cov-fail-under=60 \
             --junitxml=test-results.xml
 
       - name: Upload coverage

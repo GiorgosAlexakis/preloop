@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from typing import Any, Dict, List, Literal, Optional, Tuple
+import gc
 import logging
 import openai
 import os

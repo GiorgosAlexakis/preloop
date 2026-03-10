@@ -568,6 +568,16 @@ def create_app() -> FastAPI:
             swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui.css",
         )
 
+    @app.get("/api/v1/openapi.yaml", include_in_schema=False)
+    @app.get("/api/v1/spec", include_in_schema=False)
+    async def get_openapi_yaml():
+        import yaml
+        from fastapi.responses import PlainTextResponse
+
+        schema = app.openapi()
+        yaml_str = yaml.dump(schema, sort_keys=False)
+        return PlainTextResponse(yaml_str, media_type="application/x-yaml")
+
     @app.get("/docs/redoc", include_in_schema=False)  # Changed path
     async def custom_redoc_html():
         return get_redoc_html(

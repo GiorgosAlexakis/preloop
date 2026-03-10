@@ -1,5 +1,6 @@
 """CRUD operations for Issue model."""
 
+import uuid as uuid_module
 from datetime import datetime, timezone  # Import timezone
 from typing import Dict, List, Optional
 
@@ -271,8 +272,13 @@ class CRUDIssue(CRUDBase[Issue]):
         conditions = [
             Issue.external_id == identifier,
             Issue.key == identifier,
-            Issue.id == identifier,
         ]
+        # Only add id condition for valid UUIDs to avoid PostgreSQL cast errors
+        try:
+            uuid_module.UUID(identifier)
+            conditions.append(Issue.id == identifier)
+        except (ValueError, TypeError):
+            pass
 
         # Add alternative key formats if provided
         if alternative_keys:

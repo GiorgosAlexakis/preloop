@@ -11,7 +11,9 @@ from preloop.utils.tokens import (
     SECRET_KEY,
     TokenError,
     create_email_verification_token,
+    create_onboarding_token,
     create_password_reset_token,
+    create_token,
     verify_token,
 )
 
@@ -167,6 +169,39 @@ class TestTokenVerification:
             verify_token(malformed_token, "email_verification")
 
         assert "Invalid or expired token" in str(exc_info.value)
+
+
+class TestCreateToken:
+    """Test generic create_token and create_onboarding_token."""
+
+    def test_create_token_basic(self):
+        """Test create_token with custom type and expiry."""
+        email = "onboard@example.com"
+        token = create_token(email, "onboarding", expires_delta=timedelta(hours=1))
+        assert isinstance(token, str)
+        assert len(token) > 0
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        assert payload["sub"] == email
+        assert payload["type"] == "onboarding"
+        assert "exp" in payload
+
+    def test_create_onboarding_token(self):
+        """Test create_onboarding_token returns valid token."""
+        email = "newuser@example.com"
+        token = create_onboarding_token(email)
+        assert isinstance(token, str)
+        verified = verify_token(token, "onboarding")
+        assert verified == email
+
+    def test_create_token_default_expiry(self):
+        """Test create_token uses default expiry when not specified."""
+        email = "test@example.com"
+        token = create_token(email, "custom_type")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        exp_time = datetime.fromtimestamp(payload["exp"], UTC)
+        now = datetime.now(UTC)
+        # Should be ~24 hours (EMAIL_TOKEN_EXPIRE_MINUTES)
+        assert (exp_time - now).total_seconds() > 3600
 
 
 class TestTokenError:

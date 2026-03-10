@@ -169,7 +169,7 @@ test:unit:preloop-sync:
 test:unit:preloop-other:
   extends: .test:unit:template
   variables:
-    TEST_PATHS: "backend/tests/test_*.py backend/tests/tools backend/tests/services backend/tests/utils backend/tests/middleware backend/tests/test_plugin_system"
+    TEST_PATHS: "backend/tests/test_*.py backend/tests/tools backend/tests/services backend/tests/utils backend/tests/schemas backend/tests/middleware backend/tests/test_plugin_system"
 
 test:unit:preloop-endpoints-ai-models:
   extends: .test:unit:template
@@ -226,10 +226,10 @@ test:unit:preloop-endpoints-health:
   variables:
     TEST_PATHS: "backend/tests/endpoints/test_health.py"
 
-# test:unit:preloop-endpoints-issue-compliance:
-#   extends: .test:unit:template
-#   variables:
-#     TEST_PATHS: "tests/endpoints/test_issue_compliance.py"
+test:unit:preloop-endpoints-issue-compliance:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_issue_compliance.py"
 
 test:unit:preloop-endpoints-issue-dependencies:
   extends: .test:unit:template
@@ -417,7 +417,7 @@ test:coverage:
     - test:unit:preloop-endpoints-public-approval
     - test:unit:preloop-endpoints-flows
     - test:unit:preloop-endpoints-health
-    # - test:unit:preloop-endpoints-issue-compliance
+    - test:unit:preloop-endpoints-issue-compliance
     - test:unit:preloop-endpoints-issue-dependencies
     - test:unit:preloop-endpoints-issue-duplicates
     - test:unit:preloop-endpoints-issues

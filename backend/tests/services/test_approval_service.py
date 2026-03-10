@@ -1,5 +1,6 @@
 """Tests for approval service."""
 
+import json
 import uuid
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,6 +24,15 @@ def mock_db():
 def approval_service(mock_db):
     """Create ApprovalService instance with mocked database."""
     return ApprovalService(mock_db, "https://app.test.com")
+
+
+@pytest.fixture
+def mock_task_publisher():
+    """Mock NATS task publisher for approval broadcasts."""
+    publisher = AsyncMock()
+    publisher.nc = MagicMock()
+    publisher.nc.publish = AsyncMock()
+    return publisher
 
 
 @pytest.fixture
@@ -73,10 +83,17 @@ class TestCreateApprovalRequest:
         mock_result.scalar_one_or_none.return_value = sample_approval_workflow
         mock_db.execute.return_value = mock_result
 
+    @patch("preloop.services.approval_service.get_task_publisher")
     async def test_create_approval_request_success(
-        self, approval_service, mock_db, sample_approval_workflow
+        self,
+        mock_get_publisher,
+        approval_service,
+        mock_db,
+        sample_approval_workflow,
+        mock_task_publisher,
     ):
         """Test creating a new approval request."""
+        mock_get_publisher.return_value = mock_task_publisher
         account_id = "test_account"
         tool_config_id = uuid.uuid4()
 
@@ -95,10 +112,17 @@ class TestCreateApprovalRequest:
         assert mock_db.commit.called
         assert mock_db.refresh.called
 
+    @patch("preloop.services.approval_service.get_task_publisher")
     async def test_create_approval_request_with_execution_id(
-        self, approval_service, mock_db, sample_approval_workflow
+        self,
+        mock_get_publisher,
+        approval_service,
+        mock_db,
+        sample_approval_workflow,
+        mock_task_publisher,
     ):
         """Test creating approval request with execution ID."""
+        mock_get_publisher.return_value = mock_task_publisher
         execution_id = "exec_123"
 
         self._setup_mock_db_for_create(mock_db, sample_approval_workflow)
@@ -114,10 +138,17 @@ class TestCreateApprovalRequest:
 
         assert mock_db.add.called
 
+    @patch("preloop.services.approval_service.get_task_publisher")
     async def test_create_approval_request_custom_timeout(
-        self, approval_service, mock_db, sample_approval_workflow
+        self,
+        mock_get_publisher,
+        approval_service,
+        mock_db,
+        sample_approval_workflow,
+        mock_task_publisher,
     ):
         """Test creating approval request with custom timeout."""
+        mock_get_publisher.return_value = mock_task_publisher
         self._setup_mock_db_for_create(mock_db, sample_approval_workflow)
 
         result = await approval_service.create_approval_request(
@@ -131,10 +162,17 @@ class TestCreateApprovalRequest:
 
         assert mock_db.add.called
 
+    @patch("preloop.services.approval_service.get_task_publisher")
     async def test_create_approval_request_default_timeout(
-        self, approval_service, mock_db, sample_approval_workflow
+        self,
+        mock_get_publisher,
+        approval_service,
+        mock_db,
+        sample_approval_workflow,
+        mock_task_publisher,
     ):
         """Test creating approval request with default timeout."""
+        mock_get_publisher.return_value = mock_task_publisher
         self._setup_mock_db_for_create(mock_db, sample_approval_workflow)
 
         result = await approval_service.create_approval_request(
@@ -180,6 +218,222 @@ class TestGetApprovalRequest:
         result = await approval_service.get_approval_request(request_id)
 
         assert result is None
+
+
+class TestGetApprovalRequestForUpdate:
+    """Test get_approval_request_for_update method."""
+
+    @patch("preloop.services.approval_service.get_approval_request_for_update_async")
+    async def test_get_approval_request_for_update_found(
+        self, mock_get_for_update, approval_service, sample_approval_request
+    ):
+        """Test getting approval request for update with row lock."""
+        mock_get_for_update.return_value = sample_approval_request
+
+        result = await approval_service.get_approval_request_for_update(
+            sample_approval_request.id
+        )
+
+        assert result == sample_approval_request
+        mock_get_for_update.assert_called_once()
+
+    @patch("preloop.services.approval_service.get_approval_request_for_update_async")
+    async def test_get_approval_request_for_update_not_found(
+        self, mock_get_for_update, approval_service
+    ):
+        """Test getting non-existent approval request for update."""
+        mock_get_for_update.return_value = None
+
+        result = await approval_service.get_approval_request_for_update(uuid.uuid4())
+
+        assert result is None
+
+
+class TestBroadcastApprovalUpdate:
+    """Test _broadcast_approval_update method."""
+
+    def _make_serializable_approval_request(self):
+        """Create approval request with all JSON-serializable attributes."""
+        req = MagicMock(spec=ApprovalRequest)
+        req.id = uuid.uuid4()
+        req.account_id = uuid.uuid4()
+        req.tool_configuration_id = uuid.uuid4()
+        req.approval_workflow_id = uuid.uuid4()
+        req.execution_id = None
+        req.tool_name = "test_tool"
+        req.tool_args = {"arg1": "value1"}
+        req.agent_reasoning = "Test reasoning"
+        req.status = "pending"
+        req.requested_at = datetime.utcnow()
+        req.resolved_at = None
+        req.expires_at = datetime.utcnow() + timedelta(minutes=5)
+        return req
+
+    @patch("preloop.services.approval_service.get_task_publisher")
+    async def test_broadcast_approval_update_success(
+        self, mock_get_publisher, approval_service, mock_task_publisher
+    ):
+        """Test broadcasting approval update via NATS."""
+        mock_get_publisher.return_value = mock_task_publisher
+        approval_request = self._make_serializable_approval_request()
+
+        await approval_service._broadcast_approval_update(approval_request, "created")
+
+        mock_task_publisher.nc.publish.assert_called_once()
+        call_args = mock_task_publisher.nc.publish.call_args
+        assert call_args[0][0] == "approval-updates"
+        data = json.loads(call_args[0][1].decode())
+        assert data["type"] == "approval_created"
+        assert data["approval_request_id"] == str(approval_request.id)
+        assert data["status"] == "pending"
+
+    @patch("preloop.services.approval_service.get_task_publisher")
+    async def test_broadcast_approval_update_nats_unavailable(
+        self, mock_get_publisher, approval_service, sample_approval_request
+    ):
+        """Test broadcast when NATS is not available."""
+        mock_get_publisher.return_value = None
+
+        await approval_service._broadcast_approval_update(
+            sample_approval_request, "approved"
+        )
+
+        # Should not raise - gracefully handles missing NATS
+
+    @patch("preloop.services.approval_service.get_task_publisher")
+    async def test_broadcast_approval_update_nc_none(
+        self, mock_get_publisher, approval_service, sample_approval_request
+    ):
+        """Test broadcast when task_publisher exists but nc is None."""
+        publisher = AsyncMock()
+        publisher.nc = None
+        mock_get_publisher.return_value = publisher
+
+        await approval_service._broadcast_approval_update(
+            sample_approval_request, "approved"
+        )
+
+        # Should not raise - gracefully handles missing nc
+
+    @patch("preloop.services.approval_service.get_task_publisher")
+    async def test_broadcast_approval_update_with_extra_data(
+        self, mock_get_publisher, approval_service, mock_task_publisher
+    ):
+        """Test broadcast with extra_data (e.g. quorum progress)."""
+        mock_get_publisher.return_value = mock_task_publisher
+        approval_request = self._make_serializable_approval_request()
+
+        await approval_service._broadcast_approval_update(
+            approval_request,
+            "vote_received",
+            extra_data={"approval_count": 1, "approvals_required": 2},
+        )
+
+        data = json.loads(mock_task_publisher.nc.publish.call_args[0][1].decode())
+        assert data["approval_count"] == 1
+        assert data["approvals_required"] == 2
+
+    @patch("preloop.services.approval_service.get_task_publisher")
+    async def test_broadcast_approval_update_exception_handled(
+        self, mock_get_publisher, approval_service, mock_task_publisher
+    ):
+        """Test broadcast gracefully handles publish exception."""
+        mock_get_publisher.return_value = mock_task_publisher
+        mock_task_publisher.nc.publish = AsyncMock(
+            side_effect=Exception("NATS connection lost")
+        )
+        approval_request = self._make_serializable_approval_request()
+
+        # Should not raise - exception is caught and logged
+        await approval_service._broadcast_approval_update(approval_request, "created")
+
+
+class TestCountTotalApprovers:
+    """Test _count_total_approvers method."""
+
+    async def test_count_total_approvers_none_workflow(self, approval_service):
+        """Test with no approval workflow returns (1, True)."""
+        count, is_exact = approval_service._count_total_approvers(None)
+        assert count == 1
+        assert is_exact is True
+
+    async def test_count_total_approvers_direct_users(
+        self, approval_service, sample_approval_workflow
+    ):
+        """Test with direct user approvers only."""
+        user_id_1 = uuid.uuid4()
+        user_id_2 = uuid.uuid4()
+        sample_approval_workflow.approver_user_ids = [user_id_1, user_id_2]
+        sample_approval_workflow.approver_team_ids = None
+
+        count, is_exact = approval_service._count_total_approvers(
+            sample_approval_workflow
+        )
+        assert count == 2
+        assert is_exact is True
+
+    async def test_count_total_approvers_with_teams(
+        self, approval_service, sample_approval_workflow
+    ):
+        """Test with team approvers makes count inexact."""
+        sample_approval_workflow.approver_user_ids = [uuid.uuid4()]
+        sample_approval_workflow.approver_team_ids = [uuid.uuid4()]
+
+        count, is_exact = approval_service._count_total_approvers(
+            sample_approval_workflow
+        )
+        assert count == 1
+        assert is_exact is False
+
+    async def test_count_total_approvers_empty_teams(
+        self, approval_service, sample_approval_workflow
+    ):
+        """Test with empty team list."""
+        sample_approval_workflow.approver_user_ids = []
+        sample_approval_workflow.approver_team_ids = []
+
+        count, is_exact = approval_service._count_total_approvers(
+            sample_approval_workflow
+        )
+        assert count == 1
+        assert is_exact is True
+
+
+class TestRecordEvent:
+    """Test _record_event method."""
+
+    async def test_record_event_success(
+        self, approval_service, mock_db, sample_approval_request
+    ):
+        """Test recording an approval event."""
+        sample_approval_request.account_id = uuid.uuid4()
+
+        await approval_service._record_event(
+            approval_request_id=sample_approval_request.id,
+            account_id=sample_approval_request.account_id,
+            event_type="vote_received",
+            detail="Test vote",
+            comment="LGTM",
+            actor_id=uuid.uuid4(),
+        )
+
+        mock_db.add.assert_called_once()
+        mock_db.flush.assert_called_once()
+
+    async def test_record_event_exception_handled(
+        self, approval_service, mock_db, sample_approval_request
+    ):
+        """Test _record_event handles exception gracefully."""
+        sample_approval_request.account_id = uuid.uuid4()
+        mock_db.flush = AsyncMock(side_effect=Exception("DB flush failed"))
+
+        # Should not raise - exception is caught and logged
+        await approval_service._record_event(
+            approval_request_id=sample_approval_request.id,
+            account_id=sample_approval_request.account_id,
+            event_type="vote_received",
+            detail="Test vote",
+        )
 
 
 class TestUpdateApprovalRequest:
@@ -299,6 +553,94 @@ class TestApproveRequest:
 
                 assert result == sample_approval_request
 
+    async def test_approve_request_not_found(
+        self, approval_service, sample_approval_request
+    ):
+        """Test approving a non-existent request."""
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            result = await approval_service.approve_request(
+                sample_approval_request.id, "Approved"
+            )
+            assert result is None
+
+    async def test_approve_request_anonymous_quorum_one_resolves(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test anonymous approval with quorum=1 resolves immediately."""
+        request_id = sample_approval_request.id
+        sample_approval_request.approval_workflow = sample_approval_workflow
+        sample_approval_request.responses = []
+        sample_approval_request.account_id = uuid.uuid4()
+        sample_approval_workflow.approvals_required = 1
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    result = await approval_service.approve_request(
+                        request_id, "LGTM", user_id=None
+                    )
+
+                    assert result == sample_approval_request
+                    mock_update.assert_called_once()
+                    assert mock_update.call_args[0][1].status == "approved"
+
+    async def test_approve_request_with_user_id_quorum_one_resolves(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test approve with user_id and quorum=1 resolves immediately."""
+        request_id = sample_approval_request.id
+        user_id = uuid.uuid4()
+
+        sample_approval_request.approval_workflow = sample_approval_workflow
+        sample_approval_request.responses = []
+        sample_approval_request.account_id = uuid.uuid4()
+        sample_approval_workflow.approvals_required = 1
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    result = await approval_service.approve_request(
+                        request_id, "LGTM", user_id=user_id
+                    )
+
+                    assert result == sample_approval_request
+                    mock_update.assert_called_once()
+                    update_arg = mock_update.call_args[0][1]
+                    assert update_arg.status == "approved"
+
 
 class TestDeclineRequest:
     """Test decline_request method."""
@@ -362,6 +704,207 @@ class TestDeclineRequest:
                 result = await approval_service.decline_request(request_id)
 
                 assert result == sample_approval_request
+
+    async def test_decline_request_not_found(
+        self, approval_service, sample_approval_request
+    ):
+        """Test declining a non-existent request."""
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            result = await approval_service.decline_request(
+                sample_approval_request.id, "No way"
+            )
+            assert result is None
+
+    async def test_decline_request_quorum_decline_count_blocks(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test that enough declines block quorum and resolve as declined."""
+        request_id = sample_approval_request.id
+        user_id_1 = uuid.uuid4()
+        user_id_2 = uuid.uuid4()
+
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_workflow.approver_user_ids = [user_id_1, user_id_2]
+        sample_approval_workflow.approver_team_ids = None
+        sample_approval_request.approval_workflow = sample_approval_workflow
+        sample_approval_request.responses = [
+            {
+                "user_id": str(user_id_1),
+                "decision": "declined",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+        sample_approval_request.account_id = uuid.uuid4()
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    result = await approval_service.decline_request(
+                        request_id, "Security risk", user_id=user_id_2
+                    )
+
+                    assert mock_update.called
+                    update_arg = mock_update.call_args[0][1]
+                    assert update_arg.status == "declined"
+
+    async def test_decline_request_duplicate_user_vote_rejected(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test that duplicate decline votes from same user are rejected."""
+        request_id = sample_approval_request.id
+        user_id = uuid.uuid4()
+
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_request.approval_workflow = sample_approval_workflow
+        sample_approval_request.responses = [
+            {
+                "user_id": str(user_id),
+                "decision": "declined",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            result = await approval_service.decline_request(
+                request_id, "Duplicate", user_id=user_id
+            )
+
+            assert len(result.responses) == 1
+
+    async def test_decline_request_with_user_id_quorum_one_resolves(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test decline with user_id and quorum=1 resolves immediately."""
+        request_id = sample_approval_request.id
+        user_id = uuid.uuid4()
+
+        sample_approval_request.approval_workflow = sample_approval_workflow
+        sample_approval_request.responses = []
+        sample_approval_request.account_id = uuid.uuid4()
+        sample_approval_workflow.approvals_required = 1
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    result = await approval_service.decline_request(
+                        request_id, "No", user_id=user_id
+                    )
+
+                    assert result == sample_approval_request
+                    mock_update.assert_called_once()
+                    update_arg = mock_update.call_args[0][1]
+                    assert update_arg.status == "declined"
+
+    async def test_decline_request_anonymous_duplicate_rejected(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test duplicate anonymous decline vote is rejected."""
+        request_id = sample_approval_request.id
+
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_request.approval_workflow = sample_approval_workflow
+        sample_approval_request.responses = [
+            {
+                "user_id": "anonymous",
+                "decision": "declined",
+                "timestamp": "2026-01-01T00:00:00",
+            }
+        ]
+        sample_approval_request.account_id = uuid.uuid4()
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            result = await approval_service.decline_request(
+                request_id, "Duplicate decline", user_id=None
+            )
+
+            assert len(result.responses) == 1
+            assert result.responses[0]["decision"] == "declined"
+
+    async def test_decline_request_quorum_impossible_resolves(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test decline when quorum cannot be reached (exact count, all voted)."""
+        request_id = sample_approval_request.id
+        user_id_1 = uuid.uuid4()
+        user_id_2 = uuid.uuid4()
+
+        sample_approval_workflow.approvals_required = 2
+        sample_approval_workflow.approver_user_ids = [user_id_1, user_id_2]
+        sample_approval_workflow.approver_team_ids = None
+        sample_approval_request.approval_workflow = sample_approval_workflow
+        sample_approval_request.responses = [
+            {"user_id": str(user_id_1), "decision": "declined", "timestamp": "x"},
+        ]
+        sample_approval_request.account_id = uuid.uuid4()
+
+        with patch.object(
+            approval_service,
+            "get_approval_request_for_update",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=sample_approval_request,
+            ) as mock_update:
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ):
+                    result = await approval_service.decline_request(
+                        request_id, "Second decline", user_id=user_id_2
+                    )
+
+                    # Two declines, quorum impossible - resolve as declined
+                    assert mock_update.called
+                    update_arg = mock_update.call_args[0][1]
+                    assert update_arg.status == "declined"
 
 
 class TestPostWebhookNotification:
@@ -535,31 +1078,439 @@ class TestPostWebhookNotification:
             assert len(reasoning_fields) > 0
 
 
+class TestSendNotifications:
+    """Test send_notifications method."""
+
+    async def test_send_notifications_request_too_old_skipped(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test that notifications are skipped when request is older than 30 seconds."""
+        sample_approval_request.requested_at = datetime.utcnow() - timedelta(seconds=60)
+        sample_approval_request.approval_workflow = sample_approval_workflow
+
+        result = await approval_service.send_notifications(
+            sample_approval_request, sample_approval_workflow
+        )
+
+        assert result.get("skipped") is True
+        assert result.get("reason") == "request_too_old"
+
+    async def test_send_notifications_success(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test send_notifications calls email, push, and webhook channels."""
+        sample_approval_request.requested_at = datetime.utcnow()
+        sample_approval_workflow.approval_type = "slack"
+        sample_approval_workflow.approval_config = {"webhook_url": "https://hooks.test"}
+
+        with patch.object(
+            approval_service,
+            "_send_email_notification",
+            new_callable=AsyncMock,
+            return_value={"success": True, "sent": 0, "failed": 0, "skipped": 0},
+        ) as mock_email:
+            with patch.object(
+                approval_service,
+                "_send_push_notification",
+                new_callable=AsyncMock,
+                return_value={"success": True, "sent": 0, "failed": 0},
+            ) as mock_push:
+                with patch.object(
+                    approval_service,
+                    "post_webhook_notification",
+                    new_callable=AsyncMock,
+                    return_value=True,
+                ) as mock_webhook:
+                    result = await approval_service.send_notifications(
+                        sample_approval_request, sample_approval_workflow
+                    )
+
+                    mock_email.assert_called_once()
+                    mock_push.assert_called_once()
+                    mock_webhook.assert_called_once()
+                    assert "email" in result
+                    assert "mobile_push" in result
+                    assert "slack" in result
+
+    async def test_send_notifications_handles_email_error(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test that email notification errors are caught and reported."""
+        sample_approval_request.requested_at = datetime.utcnow()
+        sample_approval_workflow.approval_type = None
+
+        with patch.object(
+            approval_service,
+            "_send_email_notification",
+            new_callable=AsyncMock,
+            side_effect=Exception("SMTP failed"),
+        ):
+            with patch.object(
+                approval_service,
+                "_send_push_notification",
+                new_callable=AsyncMock,
+                return_value={"success": False, "error": "Not configured"},
+            ):
+                result = await approval_service.send_notifications(
+                    sample_approval_request, sample_approval_workflow
+                )
+
+                assert result["email"]["success"] is False
+                assert "error" in result["email"]
+
+    async def test_send_notifications_handles_push_error(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test that push notification errors are caught and reported."""
+        sample_approval_request.requested_at = datetime.utcnow()
+        sample_approval_workflow.approval_type = None
+
+        with patch.object(
+            approval_service,
+            "_send_email_notification",
+            new_callable=AsyncMock,
+            return_value={"success": True, "sent": 0, "failed": 0, "skipped": 0},
+        ):
+            with patch.object(
+                approval_service,
+                "_send_push_notification",
+                new_callable=AsyncMock,
+                side_effect=Exception("Push service unavailable"),
+            ):
+                result = await approval_service.send_notifications(
+                    sample_approval_request, sample_approval_workflow
+                )
+
+                assert result["mobile_push"]["success"] is False
+                assert "error" in result["mobile_push"]
+
+    async def test_send_notifications_webhook_channel(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test send_notifications calls webhook for slack/mattermost/webhook type."""
+        sample_approval_request.requested_at = datetime.utcnow()
+        sample_approval_workflow.approval_type = "webhook"
+        sample_approval_workflow.approval_config = {"webhook_url": "https://hooks.test"}
+
+        with patch.object(
+            approval_service,
+            "_send_email_notification",
+            new_callable=AsyncMock,
+            return_value={"success": True, "sent": 0, "failed": 0, "skipped": 0},
+        ):
+            with patch.object(
+                approval_service,
+                "_send_push_notification",
+                new_callable=AsyncMock,
+                return_value={"success": True, "sent": 0, "failed": 0},
+            ):
+                with patch.object(
+                    approval_service,
+                    "post_webhook_notification",
+                    new_callable=AsyncMock,
+                    return_value=True,
+                ) as mock_webhook:
+                    result = await approval_service.send_notifications(
+                        sample_approval_request, sample_approval_workflow
+                    )
+
+                    mock_webhook.assert_called_once()
+                    assert "webhook" in result
+
+    async def test_send_notifications_webhook_exception_handled(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test webhook exception is caught and reported."""
+        sample_approval_request.requested_at = datetime.utcnow()
+        sample_approval_workflow.approval_type = "slack"
+        sample_approval_workflow.approval_config = {"webhook_url": "https://hooks.test"}
+
+        with patch.object(
+            approval_service,
+            "_send_email_notification",
+            new_callable=AsyncMock,
+            return_value={"success": True, "sent": 0, "failed": 0, "skipped": 0},
+        ):
+            with patch.object(
+                approval_service,
+                "_send_push_notification",
+                new_callable=AsyncMock,
+                return_value={"success": True, "sent": 0, "failed": 0},
+            ):
+                with patch.object(
+                    approval_service,
+                    "post_webhook_notification",
+                    new_callable=AsyncMock,
+                    side_effect=Exception("Webhook failed"),
+                ):
+                    result = await approval_service.send_notifications(
+                        sample_approval_request, sample_approval_workflow
+                    )
+
+                    assert result["slack"]["success"] is False
+                    assert "error" in result["slack"]
+
+
+class TestGetAllApproverUserIds:
+    """Test _get_all_approver_user_ids method."""
+
+    async def test_get_all_approver_user_ids_direct_only(
+        self, approval_service, mock_db, sample_approval_workflow
+    ):
+        """Test with direct user approvers only."""
+        user_id_1 = uuid.uuid4()
+        user_id_2 = uuid.uuid4()
+        sample_approval_workflow.approver_user_ids = [user_id_1, user_id_2]
+        sample_approval_workflow.approver_team_ids = None
+
+        result = await approval_service._get_all_approver_user_ids(
+            sample_approval_workflow
+        )
+
+        assert set(result) == {user_id_1, user_id_2}
+
+    async def test_get_all_approver_user_ids_with_teams(
+        self, approval_service, mock_db, sample_approval_workflow
+    ):
+        """Test with team approvers expanded to user IDs."""
+        user_id = uuid.uuid4()
+        team_id = uuid.uuid4()
+        team_member_id = uuid.uuid4()
+
+        sample_approval_workflow.approver_user_ids = [user_id]
+        sample_approval_workflow.approver_team_ids = [team_id]
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [team_member_id]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        result = await approval_service._get_all_approver_user_ids(
+            sample_approval_workflow
+        )
+
+        assert user_id in result
+        assert team_member_id in result
+        assert len(result) == 2
+
+    async def test_get_all_approver_user_ids_empty(
+        self, approval_service, sample_approval_workflow
+    ):
+        """Test with no approvers returns empty list."""
+        sample_approval_workflow.approver_user_ids = None
+        sample_approval_workflow.approver_team_ids = None
+
+        result = await approval_service._get_all_approver_user_ids(
+            sample_approval_workflow
+        )
+
+        assert result == []
+
+
+class TestSendEmailNotification:
+    """Test _send_email_notification method."""
+
+    @patch("preloop.models.db.session.get_db_session")
+    async def test_send_email_no_approvers(
+        self,
+        mock_get_db,
+        approval_service,
+        mock_db,
+        sample_approval_request,
+        sample_approval_workflow,
+    ):
+        """Test _send_email_notification with no approvers configured."""
+        sample_approval_workflow.approver_user_ids = None
+        sample_approval_workflow.approver_team_ids = None
+
+        with patch.object(
+            approval_service,
+            "_get_all_approver_user_ids",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            result = await approval_service._send_email_notification(
+                sample_approval_request, sample_approval_workflow
+            )
+
+            assert result["success"] is False
+            assert "No approvers" in result["error"]
+
+    @patch("preloop.utils.email.send_approval_request_email")
+    @patch("preloop.models.crud.notification_preferences")
+    @patch("preloop.models.db.session.get_db_session")
+    async def test_send_email_success(
+        self,
+        mock_get_db,
+        mock_prefs,
+        mock_send_email,
+        approval_service,
+        mock_db,
+        sample_approval_request,
+        sample_approval_workflow,
+    ):
+        """Test _send_email_notification sends to approvers with email enabled."""
+        user_id = uuid.uuid4()
+        sample_approval_workflow.approver_user_ids = [user_id]
+        sample_approval_workflow.approver_team_ids = None
+        sample_approval_request.approval_token = "token123"
+
+        mock_user = MagicMock()
+        mock_user.email = "approver@test.com"
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_user
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        mock_sync_db = MagicMock()
+        mock_get_db.return_value = iter([mock_sync_db])
+        mock_prefs.get_by_user.return_value = MagicMock(enable_email=True)
+
+        with patch.object(
+            approval_service,
+            "_get_all_approver_user_ids",
+            new_callable=AsyncMock,
+            return_value=[user_id],
+        ):
+            with patch(
+                "preloop.services.approval_service._sync_db_executor"
+            ) as mock_executor:
+                mock_executor.submit = lambda fn, *args: None
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = AsyncMock(return_value=set())
+                with patch(
+                    "preloop.services.approval_service.asyncio.get_running_loop",
+                    return_value=mock_loop,
+                ):
+                    result = await approval_service._send_email_notification(
+                        sample_approval_request, sample_approval_workflow
+                    )
+
+                    assert result["success"] is True
+                    assert result["sent"] == 1
+                    mock_send_email.assert_called_once()
+
+
+class TestSendPushNotification:
+    """Test _send_push_notification method."""
+
+    @patch("preloop.services.push_proxy.is_push_proxy_configured")
+    @patch("preloop.services.push_notifications.is_fcm_configured")
+    @patch("preloop.services.push_notifications.get_apns_service")
+    async def test_send_push_not_configured(
+        self,
+        mock_get_apns,
+        mock_is_fcm,
+        mock_is_proxy,
+        approval_service,
+        sample_approval_request,
+        sample_approval_workflow,
+    ):
+        """Test _send_push_notification when no push service is configured."""
+        mock_get_apns.return_value = None
+        mock_is_fcm.return_value = False
+        mock_is_proxy.return_value = False
+
+        with patch.object(
+            approval_service,
+            "_get_all_approver_user_ids",
+            new_callable=AsyncMock,
+            return_value=[uuid.uuid4()],
+        ):
+            with patch(
+                "preloop.services.approval_service._sync_db_executor"
+            ) as mock_executor:
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = AsyncMock(
+                    return_value=([uuid.uuid4()], [], [])  # no devices
+                )
+                with patch(
+                    "preloop.services.approval_service.asyncio.get_event_loop",
+                    return_value=mock_loop,
+                ):
+                    result = await approval_service._send_push_notification(
+                        sample_approval_request, sample_approval_workflow
+                    )
+
+                    assert result["success"] is False
+                    assert "not configured" in result["error"]
+
+    @patch("preloop.services.push_proxy.is_push_proxy_configured")
+    @patch("preloop.services.push_notifications.is_fcm_configured")
+    @patch("preloop.services.push_notifications.get_apns_service")
+    async def test_send_push_no_devices(
+        self,
+        mock_get_apns,
+        mock_is_fcm,
+        mock_is_proxy,
+        approval_service,
+        sample_approval_request,
+        sample_approval_workflow,
+    ):
+        """Test _send_push_notification when approvers have no devices."""
+        mock_get_apns.return_value = None
+        mock_is_fcm.return_value = False
+        mock_is_proxy.return_value = True
+
+        with patch.object(
+            approval_service,
+            "_get_all_approver_user_ids",
+            new_callable=AsyncMock,
+            return_value=[uuid.uuid4()],
+        ):
+            with patch(
+                "preloop.services.approval_service._sync_db_executor"
+            ) as mock_executor:
+                mock_loop = MagicMock()
+                mock_loop.run_in_executor = AsyncMock(
+                    return_value=([uuid.uuid4()], [], [])  # no ios/android tokens
+                )
+                with patch(
+                    "preloop.services.approval_service.asyncio.get_event_loop",
+                    return_value=mock_loop,
+                ):
+                    result = await approval_service._send_push_notification(
+                        sample_approval_request, sample_approval_workflow
+                    )
+
+                    assert result["success"] is True
+                    assert result["sent"] == 0
+                    assert result.get("no_devices") is True
+
+
 class TestCreateAndNotify:
     """Test create_and_notify method."""
 
+    @patch("preloop.services.approval_service.get_task_publisher")
     async def test_create_and_notify_success(
-        self, approval_service, mock_db, sample_approval_workflow
+        self,
+        mock_get_publisher,
+        approval_service,
+        mock_db,
+        sample_approval_workflow,
+        mock_task_publisher,
     ):
         """Test creating and notifying approval request."""
+        mock_get_publisher.return_value = mock_task_publisher
         account_id = "test_account"
         tool_config_id = uuid.uuid4()
 
         # Mock create_approval_request
         mock_approval_request = MagicMock(spec=ApprovalRequest)
         mock_approval_request.id = uuid.uuid4()
+        mock_approval_request.requested_at = datetime.utcnow()
 
         with (
             patch.object(
                 approval_service,
                 "create_approval_request",
+                new_callable=AsyncMock,
                 return_value=mock_approval_request,
             ) as mock_create,
             patch.object(
                 approval_service,
-                "post_webhook_notification",
-                return_value=True,
-            ) as mock_webhook,
+                "send_notifications",
+                new_callable=AsyncMock,
+                return_value={"email": {}, "slack": {"success": True}},
+            ) as mock_send_notifications,
         ):
             result = await approval_service.create_and_notify(
                 account_id=account_id,
@@ -572,13 +1523,18 @@ class TestCreateAndNotify:
 
             assert result == mock_approval_request
             assert mock_create.called
-            # Verify webhook notification was sent (not scheduled as background task)
-            assert mock_webhook.called
+            mock_send_notifications.assert_called_once()
 
+    @patch("preloop.services.approval_service.get_task_publisher")
     async def test_create_and_notify_with_execution_id(
-        self, approval_service, sample_approval_workflow
+        self,
+        mock_get_publisher,
+        approval_service,
+        sample_approval_workflow,
+        mock_task_publisher,
     ):
         """Test creating and notifying with execution ID."""
+        mock_get_publisher.return_value = mock_task_publisher
         execution_id = "exec_456"
 
         mock_approval_request = MagicMock(spec=ApprovalRequest)
@@ -587,12 +1543,14 @@ class TestCreateAndNotify:
             patch.object(
                 approval_service,
                 "create_approval_request",
+                new_callable=AsyncMock,
                 return_value=mock_approval_request,
             ),
             patch.object(
                 approval_service,
-                "post_webhook_notification",
-                return_value=True,
+                "send_notifications",
+                new_callable=AsyncMock,
+                return_value={},
             ),
         ):
             result = await approval_service.create_and_notify(
@@ -645,6 +1603,46 @@ class TestCreateAndNotify:
             call_kwargs = mock_create.call_args.kwargs
             assert call_kwargs["tool_args"]["api_key"] == "sk-secret-123"
             assert call_kwargs["tool_args"]["command"] == "deploy to production"
+
+    @patch("preloop.services.approval_service.get_task_publisher")
+    async def test_create_and_notify_with_user_id(
+        self,
+        mock_get_publisher,
+        approval_service,
+        sample_approval_workflow,
+        mock_task_publisher,
+    ):
+        """Test create_and_notify passes user_id to AI context when provided."""
+        mock_get_publisher.return_value = mock_task_publisher
+        user_id = uuid.uuid4()
+        mock_request = MagicMock(spec=ApprovalRequest)
+        mock_request.id = uuid.uuid4()
+        mock_request.requested_at = datetime.utcnow()
+
+        with (
+            patch.object(
+                approval_service,
+                "create_approval_request",
+                new_callable=AsyncMock,
+                return_value=mock_request,
+            ),
+            patch.object(
+                approval_service,
+                "send_notifications",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+        ):
+            result = await approval_service.create_and_notify(
+                account_id="test_account",
+                tool_configuration_id=uuid.uuid4(),
+                approval_workflow=sample_approval_workflow,
+                tool_name="test_tool",
+                tool_args={},
+                user_id=user_id,
+            )
+
+            assert result == mock_request
 
 
 class TestWaitForApproval:
@@ -1139,6 +2137,47 @@ class TestEscalationBehavior:
                         )
 
                     assert "expired without response" in str(exc_info.value)
+
+    async def test_wait_for_approval_expires_broadcasts_and_logs(
+        self, approval_service, sample_approval_request, sample_approval_workflow
+    ):
+        """Test expiration broadcasts event and logs to audit."""
+        sample_approval_request.status = "pending"
+        sample_approval_request.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        sample_approval_request.escalation_triggered_at = None
+        sample_approval_workflow.escalation_user_ids = None
+        sample_approval_workflow.escalation_team_ids = None
+        sample_approval_request.approval_workflow = sample_approval_workflow
+
+        expired_request = MagicMock(spec=ApprovalRequest)
+        expired_request.id = sample_approval_request.id
+        expired_request.account_id = sample_approval_request.account_id
+        expired_request.tool_name = sample_approval_request.tool_name
+        expired_request.execution_id = None
+
+        with patch.object(
+            approval_service,
+            "get_approval_request",
+            new_callable=AsyncMock,
+            return_value=sample_approval_request,
+        ):
+            with patch.object(
+                approval_service,
+                "update_approval_request",
+                new_callable=AsyncMock,
+                return_value=expired_request,
+            ):
+                with patch.object(
+                    approval_service,
+                    "_broadcast_approval_update",
+                    new_callable=AsyncMock,
+                ) as mock_broadcast:
+                    with pytest.raises(TimeoutError):
+                        await approval_service.wait_for_approval(
+                            sample_approval_request.id, poll_interval=0.1
+                        )
+
+                    mock_broadcast.assert_called_once_with(expired_request, "expired")
 
 
 class TestAutoApproveRequest:
@@ -1708,3 +2747,81 @@ class TestAIDrivenApprovalFlow:
             assert result == mock_request
             mock_get_ai.assert_not_called()
             mock_notify.assert_called_once_with(mock_request, ai_driven_policy)
+
+
+class TestSendEscalationNotifications:
+    """Test _send_escalation_notifications method."""
+
+    @patch("preloop.services.push_proxy.is_push_proxy_configured")
+    @patch("preloop.services.push_notifications.is_fcm_configured")
+    @patch("preloop.services.push_notifications.get_apns_service")
+    async def test_send_escalation_no_targets(
+        self,
+        mock_get_apns,
+        mock_is_fcm,
+        mock_is_proxy,
+        approval_service,
+        mock_db,
+        sample_approval_request,
+        sample_approval_workflow,
+    ):
+        """Test _send_escalation_notifications with no escalation targets."""
+        mock_get_apns.return_value = None
+        mock_is_fcm.return_value = False
+        mock_is_proxy.return_value = True
+
+        sample_approval_workflow.escalation_user_ids = None
+        sample_approval_workflow.escalation_team_ids = None
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=(set(), [], [])  # no users, no tokens
+        )
+        with patch(
+            "preloop.services.approval_service.asyncio.get_event_loop",
+            return_value=mock_loop,
+        ):
+            result = await approval_service._send_escalation_notifications(
+                sample_approval_request, sample_approval_workflow
+            )
+
+            assert result["success"] is False
+            assert "No escalation targets" in result["error"]
+
+    @patch("preloop.services.push_proxy.is_push_proxy_configured")
+    @patch("preloop.services.push_notifications.is_fcm_configured")
+    @patch("preloop.services.push_notifications.get_apns_service")
+    async def test_send_escalation_no_devices(
+        self,
+        mock_get_apns,
+        mock_is_fcm,
+        mock_is_proxy,
+        approval_service,
+        mock_db,
+        sample_approval_request,
+        sample_approval_workflow,
+    ):
+        """Test _send_escalation_notifications when no push devices."""
+        mock_get_apns.return_value = None
+        mock_is_fcm.return_value = False
+        mock_is_proxy.return_value = True
+
+        user_id = uuid.uuid4()
+        sample_approval_workflow.escalation_user_ids = [user_id]
+        sample_approval_workflow.escalation_team_ids = None
+
+        mock_loop = MagicMock()
+        mock_loop.run_in_executor = AsyncMock(
+            return_value=({user_id}, [], [])  # users but no ios/android tokens
+        )
+        with patch(
+            "preloop.services.approval_service.asyncio.get_event_loop",
+            return_value=mock_loop,
+        ):
+            result = await approval_service._send_escalation_notifications(
+                sample_approval_request, sample_approval_workflow
+            )
+
+            assert result["success"] is True
+            assert result["escalation_users"] == 1
+            assert result["push_sent"] == 0
