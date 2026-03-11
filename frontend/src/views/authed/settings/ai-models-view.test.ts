@@ -35,6 +35,54 @@ describe('AIModelsView', () => {
         );
       }
 
+      if (url.startsWith('/api/v1/ai-models/model-1/summary')) {
+        return new Response(
+          JSON.stringify({
+            ai_model_id: 'model-1',
+            model_name: 'Claude Sonnet Primary',
+            provider_name: 'Anthropic',
+            model_identifier: 'claude-sonnet-4',
+            period_start: '2026-02-09T00:00:00Z',
+            period_end: '2026-03-09T23:59:59Z',
+            total_requests: 42,
+            successful_requests: 40,
+            failed_requests: 2,
+            token_usage: {
+              prompt_tokens: 1200,
+              completion_tokens: 800,
+              total_tokens: 2000,
+            },
+            estimated_cost: 12.34,
+            requests_by_day: [],
+            usage_by_session: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      if (url.startsWith('/api/v1/ai-models/model-1/runtime-sessions')) {
+        return new Response(
+          JSON.stringify({
+            period_start: '2026-02-09T00:00:00Z',
+            period_end: '2026-03-09T23:59:59Z',
+            query: null,
+            session_source_type: null,
+            status: 'active',
+            total: 3,
+            limit: 100,
+            offset: 0,
+            items: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       return new Response(
         JSON.stringify({ detail: `Unhandled request: ${url}` }),
         {
@@ -64,6 +112,11 @@ describe('AIModelsView', () => {
     const content = element.shadowRoot?.textContent || '';
     expect(content).to.contain('Claude Sonnet Primary');
     expect(content).to.contain('View');
+    expect(content).to.contain('Fleet spend');
+    expect(content).to.contain('$12.34');
+    expect(content).to.contain('42 requests');
+    expect(content).to.contain('3 active sessions');
+    expect(content).to.contain('Attention');
 
     const nameLink = element.shadowRoot?.querySelector(
       'a.model-link[href="/console/settings/ai-models/model-1"]'
