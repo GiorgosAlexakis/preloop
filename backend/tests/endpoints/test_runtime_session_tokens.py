@@ -10,6 +10,7 @@ from preloop.models.crud import (
     crud_account,
     crud_api_key,
     crud_managed_agent,
+    crud_managed_agent_enrollment,
     crud_runtime_session,
 )
 from preloop.models.models.mcp_server import MCPServer
@@ -89,6 +90,20 @@ def test_create_runtime_session_token(client, db_session, test_user):
     assert api_key.context_data["runtime_principal"]["id"] == "workspace-123"
     assert api_key.context_data["allowed_mcp_servers"] == ["github"]
     assert api_key.context_data["allowed_mcp_tools"] == [{"tool_name": "search_issues"}]
+    managed_agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="claude_code",
+        session_source_id="workspace-123",
+    )
+    assert managed_agent is not None
+    enrollments = crud_managed_agent_enrollment.list_for_agent(
+        db_session, account_id=str(test_user.account_id), agent_id=str(managed_agent.id)
+    )
+    assert len(enrollments) == 1
+    assert enrollments[0]["enrollment_type"] == "runtime_session_bootstrap"
+    assert enrollments[0]["adapter_key"] == "claude_code"
+    assert enrollments[0]["managed_config"]["managed_mcp_servers"] == ["github"]
 
 
 def test_create_runtime_session_token_rejects_unknown_source_type(client):
@@ -325,3 +340,52 @@ def test_runtime_session_token_issuance_rejects_non_active_agents(
     assert managed_agent.lifecycle_state == (
         "suspended" if lifecycle_action == "suspend" else "decommissioned"
     )
+
+
+@pytest.mark.asyncio
+async def test_durable_managed_agent_credential_respects_agent_lifecycle(
+    client, db_session, test_user
+):
+    """Durable agent credentials should be rejected when the agent is suspended."""
+    initial_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-durable-auth",
+            "runtime_principal_name": "Durable Credential Workspace",
+        },
+    )
+    assert initial_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    agent_id = list_response.json()["items"][0]["id"]
+
+    credential_response = client.post(
+        f"/api/v1/agents/{agent_id}/credentials",
+        json={
+            "name": "Primary Durable Credential",
+            "scopes": ["mcp:read", "mcp:write"],
+        },
+    )
+    assert credential_response.status_code == 201
+    durable_token = credential_response.json()["token"]
+
+    with patch(
+        "preloop.api.auth.jwt.get_db_session",
+        side_effect=lambda: iter([db_session]),
+    ):
+        assert await get_user_from_token_if_valid(durable_token, db_session) is not None
+        assert await authenticate_bearer_token(durable_token, db_session) is not None
+
+    suspend_response = client.patch(
+        f"/api/v1/agents/{agent_id}",
+        json={"lifecycle_action": "suspend", "reason": "operator suspension"},
+    )
+    assert suspend_response.status_code == 200
+
+    with patch(
+        "preloop.api.auth.jwt.get_db_session",
+        side_effect=lambda: iter([db_session]),
+    ):
+        assert await get_user_from_token_if_valid(durable_token, db_session) is None
+        assert await authenticate_bearer_token(durable_token, db_session) is None

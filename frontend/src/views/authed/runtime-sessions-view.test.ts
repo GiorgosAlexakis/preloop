@@ -295,6 +295,159 @@ describe('RuntimeSessionsView', () => {
         );
       }
 
+      if (url.startsWith('/api/v1/runtime-sessions/runtime-session-2')) {
+        return new Response(
+          JSON.stringify({
+            period_start: '2026-02-08T00:00:00Z',
+            period_end: '2026-03-09T23:59:59Z',
+            session: {
+              id: 'runtime-session-2',
+              session_source_type: 'flow_execution',
+              session_source_id: 'execution-1',
+              session_reference: 'session-abc123',
+              runtime_principal_type: 'flow_execution',
+              runtime_principal_id: 'execution-1',
+              runtime_principal_name: 'Triage Assistant',
+              started_at: '2026-03-09T19:00:00Z',
+              last_activity_at: '2026-03-09T19:15:00Z',
+              ended_at: '2026-03-09T19:20:00Z',
+              flow_id: 'flow-1',
+              flow_name: 'Triage Assistant',
+              flow_execution_id: 'execution-1',
+              latest_model_alias: 'openai/gpt-5',
+              latest_provider_name: 'OpenAI',
+              is_active_now: false,
+              activity_status: 'ended',
+              total_requests: 2,
+              successful_requests: 2,
+              failed_requests: 0,
+              token_usage: {
+                prompt_tokens: 500,
+                completion_tokens: 200,
+                total_tokens: 700,
+              },
+              estimated_cost: 0.11,
+              last_request_at: '2026-03-09T19:15:00Z',
+            },
+            usage_by_model: [
+              {
+                ai_model_id: 'model-2',
+                model_alias: 'openai/gpt-5',
+                provider_name: 'OpenAI',
+                request_count: 2,
+                token_usage: {
+                  prompt_tokens: 500,
+                  completion_tokens: 200,
+                  total_tokens: 700,
+                },
+                estimated_cost: 0.11,
+              },
+            ],
+            interactions: {
+              period_start: '2026-02-08T00:00:00Z',
+              period_end: '2026-03-09T23:59:59Z',
+              query: null,
+              total: 0,
+              limit: 50,
+              offset: 0,
+              items: [],
+            },
+            activity_timeline: [
+              {
+                activity_type: 'session_started',
+                timestamp: '2026-03-09T19:00:00Z',
+                title: 'Session started',
+                summary: 'session-abc123',
+                status: 'info',
+                api_usage_id: null,
+                tool_name: null,
+                server_name: null,
+                auth_subject_type: null,
+                api_key_id: null,
+                api_key_name: null,
+                estimated_cost: null,
+                total_tokens: null,
+              },
+              {
+                activity_type: 'tool_call',
+                timestamp: '2026-03-09T19:10:00Z',
+                title: 'search_issues',
+                summary: 'Found similar issues',
+                status: 'success',
+                api_usage_id: null,
+                tool_name: 'search_issues',
+                server_name: 'preloop-mcp',
+                auth_subject_type: null,
+                api_key_id: null,
+                api_key_name: null,
+                estimated_cost: null,
+                total_tokens: null,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      if (
+        url.startsWith('/api/v1/flows/executions/execution-1/gateway-events')
+      ) {
+        return new Response(
+          JSON.stringify({
+            source: 'database',
+            logs: [
+              {
+                execution_id: 'execution-1',
+                timestamp: '2026-03-09T19:15:00Z',
+                type: 'model_gateway_call',
+                payload: {
+                  api_usage_id: 'usage-flow-1',
+                  model_alias: 'openai/gpt-5',
+                  provider_name: 'OpenAI',
+                  outcome: 'success',
+                  estimated_cost: 0.11,
+                  total_tokens: 700,
+                  prompt_tokens: 500,
+                  completion_tokens: 200,
+                  status_code: 200,
+                  method: 'POST',
+                  endpoint: '/openai/v1/responses',
+                  endpoint_kind: 'responses',
+                  conversation_preview: {
+                    messages: [
+                      {
+                        source: 'request',
+                        role: 'user',
+                        text: 'Review the rollout plan',
+                        redacted: false,
+                        truncated: false,
+                      },
+                      {
+                        source: 'response',
+                        role: 'assistant',
+                        text: 'Rollout plan reviewed.',
+                        redacted: false,
+                        truncated: false,
+                      },
+                    ],
+                    metadata: {
+                      message_count: 2,
+                    },
+                  },
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       return new Response(
         JSON.stringify({ detail: `Unhandled request: ${url}` }),
         {
@@ -322,8 +475,10 @@ describe('RuntimeSessionsView', () => {
     );
     await element.updateComplete;
 
-    const content = element.shadowRoot?.textContent || '';
-    expect(content).to.contain('Runtime Sessions');
+    const content = (element.shadowRoot?.textContent || '').replace(
+      /\s+/g,
+      ' '
+    );
     expect(content).to.contain('Claude Workspace');
     expect(content).to.contain('Activity Timeline');
     expect(content).to.contain('search_issues');
@@ -349,5 +504,46 @@ describe('RuntimeSessionsView', () => {
 
     expect(listCall).to.not.equal(undefined);
     expect(detailCall).to.not.equal(undefined);
+  });
+
+  it('shows flow-backed session content from execution gateway events', async () => {
+    const element = (await fixture(
+      html`<runtime-sessions-view></runtime-sessions-view>`
+    )) as RuntimeSessionsView;
+
+    await waitUntil(
+      () => !(element as any).loading && !(element as any).detailLoading,
+      'Runtime sessions view did not finish loading'
+    );
+
+    const sessionButtons =
+      element.shadowRoot?.querySelectorAll('.session-item');
+    (sessionButtons?.[1] as HTMLButtonElement).click();
+
+    await waitUntil(
+      () =>
+        (element as any).detail?.session?.id === 'runtime-session-2' &&
+        !(element as any).gatewayEventsLoading,
+      'Flow-backed session detail did not finish loading'
+    );
+    await element.updateComplete;
+
+    const content = (element.shadowRoot?.textContent || '').replace(
+      /\s+/g,
+      ' '
+    );
+    expect(content).to.contain('Session Content');
+    expect(content).to.contain('Review the rollout plan');
+    expect(content).to.contain('Rollout plan reviewed.');
+    expect(content).to.contain('openai/gpt-5');
+
+    const gatewayEventsCall = fetchStub
+      .getCalls()
+      .find((call) =>
+        String(call.args[0]).startsWith(
+          '/api/v1/flows/executions/execution-1/gateway-events'
+        )
+      );
+    expect(gatewayEventsCall).to.not.equal(undefined);
   });
 });

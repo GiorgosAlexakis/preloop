@@ -16,6 +16,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .account import Account
+    from .managed_agent_credential import ManagedAgentCredential
     from .user import User
 
 
@@ -83,6 +84,9 @@ class ApiKey(Base):
     # Relationships
     account: Mapped["Account"] = relationship("Account")
     creator: Mapped["User"] = relationship("User", back_populates="api_keys")
+    managed_agent_credential: Mapped[Optional["ManagedAgentCredential"]] = relationship(
+        "ManagedAgentCredential", back_populates="api_key", uselist=False
+    )
 
     def __repr__(self) -> str:
         """Return a string representation of the key.

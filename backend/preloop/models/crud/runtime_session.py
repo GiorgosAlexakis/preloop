@@ -381,9 +381,18 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         end_date: Optional[datetime],
         ai_model_id: Optional[str] = None,
     ):
+        legacy_flow_execution_match = and_(
+            RuntimeSession.session_source_type == "flow_execution",
+            ApiUsage.flow_execution_id.isnot(None),
+            cast(ApiUsage.flow_execution_id, String)
+            == RuntimeSession.session_source_id,
+        )
         conditions = [
-            ApiUsage.runtime_session_id == RuntimeSession.id,
             ApiUsage.action_type == "model_gateway",
+            or_(
+                ApiUsage.runtime_session_id == RuntimeSession.id,
+                legacy_flow_execution_match,
+            ),
         ]
         if start_date is not None:
             conditions.append(ApiUsage.timestamp >= start_date)

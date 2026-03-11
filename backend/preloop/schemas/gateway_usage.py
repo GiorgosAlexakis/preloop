@@ -235,6 +235,81 @@ class ManagedAgentToolActivitySummary(BaseModel):
     last_activity_at: Optional[datetime] = None
 
 
+class ManagedAgentCredentialSummary(BaseModel):
+    """Durable credential metadata for one managed agent."""
+
+    id: str
+    api_key_id: str
+    created_by_user_id: Optional[str] = None
+    name: str
+    description: Optional[str] = None
+    credential_type: str
+    status: str
+    scopes: List[str] = Field(default_factory=list)
+    key_prefix: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    last_issued_at: datetime
+    last_used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    revoked_reason: Optional[str] = None
+
+
+class ManagedAgentCredentialCreateRequest(BaseModel):
+    """Request to create a durable credential for one managed agent."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    expires_in_days: Optional[int] = Field(default=365, ge=1, le=3650)
+    scopes: List[str] = Field(default_factory=lambda: ["mcp:read", "mcp:write"])
+
+
+class ManagedAgentCredentialCreateResponse(BaseModel):
+    """One-time response payload for a newly created agent credential."""
+
+    credential: ManagedAgentCredentialSummary
+    token: str
+
+
+class ManagedAgentEnrollmentSummary(BaseModel):
+    """Durable enrollment state for one managed agent."""
+
+    id: str
+    created_by_user_id: Optional[str] = None
+    enrollment_type: str
+    adapter_key: Optional[str] = None
+    status: str
+    target_config_path: Optional[str] = None
+    discovered_config: dict = Field(default_factory=dict)
+    managed_config: dict = Field(default_factory=dict)
+    backup_metadata: dict = Field(default_factory=dict)
+    validation_result: dict = Field(default_factory=dict)
+    restore_available: bool = False
+    last_applied_at: Optional[datetime] = None
+    last_validated_at: Optional[datetime] = None
+    last_restored_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ManagedAgentEnrollmentCreateRequest(BaseModel):
+    """Request to persist an enrollment record for one managed agent."""
+
+    enrollment_type: str = Field(..., min_length=1, max_length=64)
+    adapter_key: Optional[str] = Field(default=None, max_length=64)
+    status: str = Field(default="pending", min_length=1, max_length=32)
+    target_config_path: Optional[str] = Field(default=None, max_length=512)
+    discovered_config: dict = Field(default_factory=dict)
+    managed_config: dict = Field(default_factory=dict)
+    backup_metadata: dict = Field(default_factory=dict)
+    validation_result: dict = Field(default_factory=dict)
+    restore_available: bool = False
+    last_applied_at: Optional[datetime] = None
+    last_validated_at: Optional[datetime] = None
+    last_restored_at: Optional[datetime] = None
+
+
 class AccountManagedAgentListResponse(BaseModel):
     """Account-scoped managed-agent registry response."""
 
@@ -260,6 +335,8 @@ class ManagedAgentDetailResponse(BaseModel):
         default_factory=list
     )
     sessions: List[RuntimeSessionSummary] = Field(default_factory=list)
+    credentials: List[ManagedAgentCredentialSummary] = Field(default_factory=list)
+    enrollments: List[ManagedAgentEnrollmentSummary] = Field(default_factory=list)
 
 
 class ManagedAgentUpdateRequest(BaseModel):

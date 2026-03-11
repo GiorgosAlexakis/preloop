@@ -119,7 +119,10 @@ describe('AIModelsView', () => {
     );
     await element.updateComplete;
 
-    const content = element.shadowRoot?.textContent || '';
+    const content = (element.shadowRoot?.textContent || '').replace(
+      /\s+/g,
+      ' '
+    );
     expect(content).to.contain('Claude Sonnet Primary');
     expect(content).to.contain('View');
     expect(content).to.contain('Fleet spend');

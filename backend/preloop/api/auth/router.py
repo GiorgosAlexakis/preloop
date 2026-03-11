@@ -63,6 +63,7 @@ from preloop.models.crud import (
     crud_api_key,
     crud_api_usage,
     crud_managed_agent,
+    crud_managed_agent_enrollment,
     crud_mcp_server,
     crud_role,
     crud_runtime_session,
@@ -999,6 +1000,19 @@ async def create_runtime_session_token(
     db.commit()
     db.refresh(runtime_session)
     db.refresh(managed_agent)
+    crud_managed_agent_enrollment.upsert_runtime_bootstrap(
+        db,
+        account_id=current_user.account_id,
+        agent_id=managed_agent.id,
+        created_by_user_id=current_user.id,
+        session_source_type=session_data.session_source_type,
+        session_source_id=session_data.session_source_id,
+        session_reference=session_data.session_reference,
+        display_name=runtime_principal_name,
+        managed_mcp_servers=allowed_mcp_servers,
+        runtime_session_id=runtime_session.id,
+        commit=False,
+    )
 
     api_key, token_value = crud_api_key.create_runtime_key(
         db,

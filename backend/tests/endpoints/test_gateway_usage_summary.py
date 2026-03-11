@@ -603,6 +603,97 @@ def test_runtime_session_detail_includes_flow_activity_timeline(
     )
 
 
+def test_runtime_session_detail_falls_back_to_flow_execution_gateway_usage(
+    client, db_session, test_user
+):
+    """Flow-backed sessions should inherit execution-scoped gateway usage."""
+    flow = crud_flow.create(
+        db=db_session,
+        flow_in=FlowCreate(
+            name="Legacy Attribution Flow",
+            prompt_template="Test",
+            trigger_event_source="github",
+            trigger_event_types=["test"],
+            agent_type="codex",
+            agent_config={},
+            allowed_mcp_servers=[],
+            allowed_mcp_tools=[],
+            account_id=test_user.account_id,
+        ),
+        account_id=test_user.account_id,
+    )
+    execution = crud_flow_execution.create(
+        db_session,
+        FlowExecutionCreate(
+            flow_id=flow.id,
+            status="SUCCEEDED",
+            agent_session_reference="legacy-runtime-session",
+        ),
+    )
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="flow_execution",
+        session_source_id=str(execution.id),
+        session_reference="legacy-runtime-session",
+        runtime_principal_type="flow_execution",
+        runtime_principal_id=str(execution.id),
+        runtime_principal_name=flow.name,
+        started_at=execution.start_time,
+        last_activity_at=execution.start_time,
+    )
+    db_session.commit()
+    api_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        flow_id=str(flow.id),
+        flow_execution_id=str(execution.id),
+        runtime_session_id=None,
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=30,
+        completion_tokens=20,
+        total_tokens=50,
+        estimated_cost=0.15,
+        auth_subject_type="api_key",
+    )
+    GatewayUsageSearchService(db_session).index_interaction(
+        usage=api_usage,
+        request_payload={"input": "Summarize the migration plan"},
+        response_payload={"output_text": "Migration plan summarized"},
+    )
+
+    list_response = client.get("/api/v1/runtime-sessions")
+    detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
+
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    listed_session = next(
+        item for item in list_body["items"] if item["id"] == str(runtime_session.id)
+    )
+    assert listed_session["total_requests"] == 1
+    assert listed_session["token_usage"]["total_tokens"] == 50
+    assert listed_session["estimated_cost"] == 0.15
+
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert detail_body["session"]["total_requests"] == 1
+    assert detail_body["session"]["token_usage"]["total_tokens"] == 50
+    assert detail_body["session"]["estimated_cost"] == 0.15
+    assert detail_body["usage_by_model"][0]["model_alias"] == "openai/gpt-5"
+    assert detail_body["usage_by_model"][0]["request_count"] == 1
+    assert detail_body["interactions"]["total"] == 1
+    assert detail_body["interactions"]["items"][0]["flow_execution_id"] == str(
+        execution.id
+    )
+    assert detail_body["interactions"]["items"][0]["runtime_session_id"] is None
+
+
 def test_runtime_session_detail_includes_normalized_tool_activity_for_non_flow_session(
     client, db_session, test_user
 ):

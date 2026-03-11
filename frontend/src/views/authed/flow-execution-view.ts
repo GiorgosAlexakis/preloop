@@ -376,6 +376,34 @@ export class FlowExecutionView extends LitElement {
       .conversation-preview-redacted {
         color: var(--sl-color-neutral-600);
       }
+      .tool-activity-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .tool-activity-item {
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        background: var(--sl-color-neutral-50);
+        padding: 12px;
+      }
+      .tool-activity-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .tool-activity-title {
+        font-weight: 600;
+        color: var(--sl-color-neutral-900);
+      }
+      .tool-activity-meta {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.875rem;
+        overflow-wrap: anywhere;
+      }
     `,
   ];
 
@@ -1097,6 +1125,80 @@ export class FlowExecutionView extends LitElement {
     ].join(':');
   }
 
+  private getToolActivityEntries(): FlowExecutionUpdate[] {
+    return [...this.logs]
+      .filter((log) => log.type === 'tool_call' || log.type === 'mcp_call')
+      .sort(
+        (left, right) =>
+          new Date(right.timestamp).getTime() -
+          new Date(left.timestamp).getTime()
+      );
+  }
+
+  private renderToolActivityPanel() {
+    const toolEntries = this.getToolActivityEntries();
+    if (toolEntries.length === 0) {
+      return '';
+    }
+
+    return html`
+      <sl-details summary="Tool Activity" style="margin-bottom: 16px;">
+        <sl-card>
+          <div
+            slot="header"
+            style="display: flex; justify-content: space-between; align-items: center; gap: 12px;"
+          >
+            <span>
+              <sl-icon name="tools"></sl-icon>
+              Tool Activity
+            </span>
+            <sl-badge pill>${toolEntries.length}</sl-badge>
+          </div>
+          <div class="tool-activity-list">
+            ${toolEntries.map((entry) => {
+              const payload = entry.payload || {};
+              return html`
+                <div class="tool-activity-item">
+                  <div class="tool-activity-header">
+                    <div>
+                      <div class="tool-activity-title">
+                        ${payload.tool_name || 'Unknown tool'}
+                      </div>
+                      <div class="tool-activity-meta">
+                        ${payload.server_name || 'Unknown server'} ·
+                        ${formatLocalTime(entry.timestamp)}
+                      </div>
+                    </div>
+                    ${payload.status
+                      ? html`
+                          <sl-badge
+                            variant=${payload.status === 'error'
+                              ? 'danger'
+                              : 'success'}
+                          >
+                            ${payload.status}
+                          </sl-badge>
+                        `
+                      : ''}
+                  </div>
+                  ${payload.result_summary || payload.error || payload.message
+                    ? html`
+                        <div class="tool-activity-meta">
+                          ${payload.result_summary ||
+                          payload.error ||
+                          payload.message}
+                        </div>
+                      `
+                    : ''}
+                </div>
+              `;
+            })}
+          </div>
+        </sl-card>
+      </sl-details>
+    `;
+  }
+
   private renderGatewayField(label: string, value: unknown) {
     return html`
       <div class="gateway-event-field">
@@ -1705,6 +1807,7 @@ ${this.execution.resolved_input_prompt}</pre
                 </sl-details>
               `
             : ''}
+          ${this.renderToolActivityPanel()}
 
           <sl-tab-group class="execution-tabs">
             <sl-tab slot="nav" panel="output">Output</sl-tab>

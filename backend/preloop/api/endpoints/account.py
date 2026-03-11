@@ -2,24 +2,29 @@
 
 import html
 import logging
-from datetime import UTC, datetime
+import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
+from preloop.api.auth.jwt import get_current_active_user
 from preloop.api.common import get_account_for_user
 from preloop.models.crud import (
     crud_account,
     crud_api_key,
     crud_managed_agent,
+    crud_managed_agent_credential,
+    crud_managed_agent_enrollment,
     crud_runtime_session,
     crud_runtime_session_activity,
     crud_user,
 )
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
+from preloop.models.models.user import User as UserModel
 from preloop.schemas.gateway_usage import (
     ManagedAgentDetailResponse,
     AccountManagedAgentListResponse,
@@ -31,6 +36,11 @@ from preloop.schemas.gateway_usage import (
     ManagedAgentUsageAggregate,
     ManagedAgentServerActivitySummary,
     ManagedAgentSummary,
+    ManagedAgentCredentialCreateRequest,
+    ManagedAgentCredentialCreateResponse,
+    ManagedAgentCredentialSummary,
+    ManagedAgentEnrollmentCreateRequest,
+    ManagedAgentEnrollmentSummary,
     ManagedAgentToolActivitySummary,
     ManagedAgentUpdateRequest,
     RuntimeSessionSummary,
@@ -118,6 +128,18 @@ def _build_managed_agent_detail_response(
         sessions=[
             RuntimeSessionExplorerService._summary_row_to_schema(item)
             for item in sessions["items"]
+        ],
+        credentials=[
+            ManagedAgentCredentialSummary(**item)
+            for item in crud_managed_agent_credential.list_for_agent(
+                db, account_id=account_id, agent_id=agent_id
+            )
+        ],
+        enrollments=[
+            ManagedAgentEnrollmentSummary(**item)
+            for item in crud_managed_agent_enrollment.list_for_agent(
+                db, account_id=account_id, agent_id=agent_id
+            )
         ],
     )
 
@@ -292,6 +314,257 @@ async def get_account_managed_agent(
             status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
         )
     return response
+
+
+@router.get(
+    "/agents/{agent_id}/credentials",
+    response_model=list[ManagedAgentCredentialSummary],
+)
+async def list_account_managed_agent_credentials(
+    agent_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """List durable credentials for one managed agent."""
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    return [
+        ManagedAgentCredentialSummary(**item)
+        for item in crud_managed_agent_credential.list_for_agent(
+            db, account_id=str(account.id), agent_id=agent_id
+        )
+    ]
+
+
+@router.post(
+    "/agents/{agent_id}/credentials",
+    response_model=ManagedAgentCredentialCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_account_managed_agent_credential(
+    agent_id: str,
+    payload: ManagedAgentCredentialCreateRequest,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    current_user: UserModel = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+):
+    """Create a durable credential for one managed agent."""
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    if agent.lifecycle_state != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Durable credentials can only be created for active agents",
+        )
+    existing_names = {
+        item["name"]
+        for item in crud_managed_agent_credential.list_for_agent(
+            db, account_id=str(account.id), agent_id=agent_id
+        )
+    }
+    if payload.name in existing_names:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Managed agent credential with this name already exists",
+        )
+
+    expires_at = None
+    if payload.expires_in_days is not None:
+        expires_at = datetime.now(UTC) + timedelta(days=payload.expires_in_days)
+    token_value = f"agt_{secrets.token_urlsafe(32)}"
+    api_key, presented_token = crud_api_key.create_runtime_key(
+        db,
+        name=f"Managed Agent Credential: {agent.display_name} / {payload.name}",
+        account_id=current_user.account_id,
+        user_id=current_user.id,
+        scopes=payload.scopes,
+        expires_at=expires_at,
+        key_value=token_value,
+        commit=False,
+        context_data={
+            "managed_agent_id": str(agent.id),
+            "credential_kind": "managed_agent_durable",
+            "allowed_mcp_servers": agent.managed_mcp_servers,
+            "runtime_principal": {
+                "type": agent.session_source_type,
+                "id": agent.session_source_id,
+                "name": agent.display_name,
+                "user_id": str(current_user.id),
+                "username": current_user.username,
+            },
+        },
+    )
+    credential = crud_managed_agent_credential.create_for_agent(
+        db,
+        account_id=account.id,
+        agent_id=agent.id,
+        api_key_id=api_key.id,
+        created_by_user_id=current_user.id,
+        name=payload.name,
+        description=payload.description,
+        scopes=payload.scopes,
+        key_prefix=api_key.key_prefix,
+        commit=True,
+    )
+    emit_account_event(
+        build_account_event(
+            account_id=str(account.id),
+            topic=ACCOUNT_TOPIC_AUDIT,
+            event_type="audit_event",
+            payload={
+                "action": "managed_agent_credential_created",
+                "agent_id": str(agent.id),
+                "credential_id": str(credential.id),
+                "credential_name": credential.name,
+            },
+            runtime_session_id=str(agent.runtime_session_id)
+            if agent.runtime_session_id
+            else None,
+        )
+    )
+    return ManagedAgentCredentialCreateResponse(
+        credential=ManagedAgentCredentialSummary(
+            **crud_managed_agent_credential._row_to_summary(credential, api_key)
+        ),
+        token=presented_token,
+    )
+
+
+@router.delete(
+    "/agents/{agent_id}/credentials/{credential_id}",
+    response_model=ManagedAgentCredentialSummary,
+)
+async def revoke_account_managed_agent_credential(
+    agent_id: str,
+    credential_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Revoke one durable credential for a managed agent."""
+    credential = crud_managed_agent_credential.revoke_for_agent(
+        db,
+        account_id=str(account.id),
+        agent_id=agent_id,
+        credential_id=credential_id,
+        reason="revoked by operator",
+        commit=True,
+    )
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Managed agent credential not found",
+        )
+    emit_account_event(
+        build_account_event(
+            account_id=str(account.id),
+            topic=ACCOUNT_TOPIC_AUDIT,
+            event_type="audit_event",
+            payload={
+                "action": "managed_agent_credential_revoked",
+                "agent_id": agent_id,
+                "credential_id": credential_id,
+            },
+        )
+    )
+    return ManagedAgentCredentialSummary(
+        **crud_managed_agent_credential._row_to_summary(credential, credential.api_key)
+    )
+
+
+@router.get(
+    "/agents/{agent_id}/enrollments",
+    response_model=list[ManagedAgentEnrollmentSummary],
+)
+async def list_account_managed_agent_enrollments(
+    agent_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """List durable enrollment records for one managed agent."""
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    return [
+        ManagedAgentEnrollmentSummary(**item)
+        for item in crud_managed_agent_enrollment.list_for_agent(
+            db, account_id=str(account.id), agent_id=agent_id
+        )
+    ]
+
+
+@router.post(
+    "/agents/{agent_id}/enrollments",
+    response_model=ManagedAgentEnrollmentSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_account_managed_agent_enrollment(
+    agent_id: str,
+    payload: ManagedAgentEnrollmentCreateRequest,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    current_user: UserModel = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+):
+    """Persist one enrollment record for a managed agent."""
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    enrollment = crud_managed_agent_enrollment.create_for_agent(
+        db,
+        account_id=account.id,
+        agent_id=agent.id,
+        created_by_user_id=current_user.id,
+        enrollment_type=payload.enrollment_type,
+        adapter_key=payload.adapter_key,
+        status=payload.status,
+        target_config_path=payload.target_config_path,
+        discovered_config=payload.discovered_config,
+        managed_config=payload.managed_config,
+        backup_metadata=payload.backup_metadata,
+        validation_result=payload.validation_result,
+        restore_available=payload.restore_available,
+        last_applied_at=payload.last_applied_at,
+        last_validated_at=payload.last_validated_at,
+        last_restored_at=payload.last_restored_at,
+        commit=True,
+    )
+    emit_account_event(
+        build_account_event(
+            account_id=str(account.id),
+            topic=ACCOUNT_TOPIC_AUDIT,
+            event_type="audit_event",
+            payload={
+                "action": "managed_agent_enrollment_created",
+                "agent_id": str(agent.id),
+                "enrollment_id": str(enrollment.id),
+                "enrollment_type": enrollment.enrollment_type,
+                "status": enrollment.status,
+            },
+            runtime_session_id=str(agent.runtime_session_id)
+            if agent.runtime_session_id
+            else None,
+        )
+    )
+    return ManagedAgentEnrollmentSummary(
+        **crud_managed_agent_enrollment._to_summary(enrollment)
+    )
 
 
 @router.patch("/agents/{agent_id}", response_model=ManagedAgentSummary)

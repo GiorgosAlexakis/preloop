@@ -287,7 +287,10 @@ describe('FlowExecutionView', () => {
     );
     await element.updateComplete;
 
-    const content = element.shadowRoot?.textContent || '';
+    const content = (element.shadowRoot?.textContent || '').replace(
+      /\s+/g,
+      ' '
+    );
 
     expect(content).to.contain('Gateway Events');
     expect(content).to.contain('openai/gpt-5');
@@ -369,8 +372,12 @@ describe('FlowExecutionView', () => {
     expect(
       (element as any).logs.some((log: any) => log.type === 'mcp_call')
     ).to.equal(true);
-    expect(element.shadowRoot?.textContent || '').to.contain(
-      'Called tool: search_issues'
+    const content = (element.shadowRoot?.textContent || '').replace(
+      /\s+/g,
+      ' '
     );
+    expect(content).to.contain('Tool Activity');
+    expect(content).to.contain('search_issues');
+    expect(content).to.contain('get_issue');
   });
 });

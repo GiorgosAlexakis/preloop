@@ -333,3 +333,91 @@ def test_account_agent_update_endpoint_controls_lifecycle_and_owner(
     )
     assert reenroll_response.status_code == 200
     assert reenroll_response.json()["lifecycle_state"] == "active"
+
+
+def test_account_agent_detail_includes_credentials_and_enrollments(
+    client, db_session, test_user
+):
+    """Managed agent detail should expose durable credentials and enrollment state."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "openclaw",
+            "session_source_id": "openclaw-workspace",
+            "session_reference": "/Users/test/.openclaw/openclaw.json",
+            "runtime_principal_name": "OpenClaw Workspace",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    credential_response = client.post(
+        f"/api/v1/agents/{agent_id}/credentials",
+        json={
+            "name": "OpenClaw Durable Credential",
+            "description": "Primary managed credential",
+            "scopes": ["mcp:read", "mcp:write"],
+        },
+    )
+    assert credential_response.status_code == 201
+    credential_body = credential_response.json()
+    assert credential_body["token"].startswith("agt_")
+    assert credential_body["credential"]["name"] == "OpenClaw Durable Credential"
+
+    enrollment_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments",
+        json={
+            "enrollment_type": "cli_managed_config",
+            "adapter_key": "openclaw",
+            "status": "pending",
+            "target_config_path": "/Users/test/.openclaw/openclaw.json",
+            "discovered_config": {
+                "mcpServers": {"github": {"url": "https://example.com"}}
+            },
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.test/mcp"}}
+            },
+            "backup_metadata": {"path": "/tmp/openclaw.backup.json"},
+            "validation_result": {"dry_run": True},
+            "restore_available": True,
+        },
+    )
+    assert enrollment_response.status_code == 201
+
+    detail_response = client.get(f"/api/v1/agents/{agent_id}")
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert len(body["credentials"]) == 1
+    assert body["credentials"][0]["name"] == "OpenClaw Durable Credential"
+    assert body["credentials"][0]["status"] == "active"
+    assert len(body["enrollments"]) == 2
+    enrollment_types = {item["enrollment_type"] for item in body["enrollments"]}
+    assert enrollment_types == {"cli_managed_config", "runtime_session_bootstrap"}
+    cli_enrollment = next(
+        item
+        for item in body["enrollments"]
+        if item["enrollment_type"] == "cli_managed_config"
+    )
+    bootstrap_enrollment = next(
+        item
+        for item in body["enrollments"]
+        if item["enrollment_type"] == "runtime_session_bootstrap"
+    )
+    assert cli_enrollment["adapter_key"] == "openclaw"
+    assert (
+        bootstrap_enrollment["managed_config"]["runtime_session_id"]
+        == (token_response.json()["runtime_session_id"])
+    )
+
+    revoke_response = client.delete(
+        f"/api/v1/agents/{agent_id}/credentials/{credential_body['credential']['id']}"
+    )
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["status"] == "revoked"
+
+    credentials_response = client.get(f"/api/v1/agents/{agent_id}/credentials")
+    assert credentials_response.status_code == 200
+    assert credentials_response.json()[0]["status"] == "revoked"

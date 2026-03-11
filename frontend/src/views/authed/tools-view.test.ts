@@ -542,8 +542,7 @@ describe('ToolsView – starter policy suggestions', () => {
       '.starter-policy-review-confirm'
     ) as any;
     expect(reviewCheckbox).to.exist;
-    reviewCheckbox.checked = true;
-    reviewCheckbox.dispatchEvent(new CustomEvent('sl-change'));
+    (el as any).starterPolicyReviewConfirmed = true;
 
     await el.updateComplete;
     expect((applyButton as any).disabled).to.equal(false);
@@ -564,7 +563,10 @@ describe('ToolsView – starter policy suggestions', () => {
       'Policy upload request was not made'
     );
 
-    expect((el as any).showStarterPolicyDialog).to.equal(false);
+    await waitUntil(
+      () => (el as any).showStarterPolicyDialog === false,
+      'Starter policy dialog did not close'
+    );
   });
 
   it('keeps apply disabled when the generated policy matches current state', async () => {

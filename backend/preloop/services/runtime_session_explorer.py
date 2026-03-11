@@ -94,10 +94,12 @@ class RuntimeSessionExplorerService:
         if summary_row is None:
             raise HTTPException(status_code=404, detail="Runtime session not found")
 
+        flow_execution_id = summary_row.get("flow_execution_id")
         usage_by_model = crud_api_usage.get_gateway_usage_by_model(
             self.db,
             account_id=str(account.id),
             runtime_session_id=runtime_session_id,
+            flow_execution_id=flow_execution_id,
             start_date=start_date,
             end_date=end_date,
             limit=20,
@@ -108,6 +110,7 @@ class RuntimeSessionExplorerService:
             start_date=start_date,
             end_date=end_date,
             runtime_session_id=runtime_session_id,
+            flow_execution_id=flow_execution_id,
             query=interaction_query,
             limit=interaction_limit,
             offset=interaction_offset,

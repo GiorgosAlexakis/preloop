@@ -13,6 +13,7 @@ from passlib.context import CryptContext
 
 from preloop.schemas.auth import TokenData
 from preloop.models.db.session import get_db_session
+from preloop.models.models.managed_agent import ManagedAgent
 from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.user import User
 from preloop.models.crud import crud_api_key
@@ -96,6 +97,32 @@ def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Runtime session has ended",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    context_data = (
+        api_key.context_data if isinstance(api_key.context_data, dict) else {}
+    )
+    managed_agent_id = context_data.get("managed_agent_id")
+    if managed_agent_id:
+        managed_agent = (
+            session.query(ManagedAgent)
+            .filter(
+                ManagedAgent.id == managed_agent_id,
+                ManagedAgent.account_id == api_key.account_id,
+            )
+            .first()
+        )
+        if managed_agent is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Managed agent credential is invalid",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if managed_agent.lifecycle_state != "active":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Managed agent is not active",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 

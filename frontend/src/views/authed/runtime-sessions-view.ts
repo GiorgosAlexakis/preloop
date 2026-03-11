@@ -5,6 +5,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/details/details.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
@@ -14,12 +15,16 @@ import '../../components/view-header.ts';
 import {
   getAccountRuntimeSessionDetail,
   getAccountRuntimeSessions,
+  getFlowExecutionGatewayEvents,
   updateAccountRuntimeSession,
   type RuntimeSessionDetailParams,
   type RuntimeSessionListParams,
 } from '../../api';
 import type {
   AccountRuntimeSessionDetailResponse,
+  FlowGatewayConversationPreviewMessage,
+  FlowGatewayEvent,
+  FlowGatewayEventPayload,
   AccountRuntimeSessionListResponse,
   GatewayUsageByModel,
   GatewayUsageSearchResultItem,
@@ -74,6 +79,15 @@ export class RuntimeSessionsView extends LitElement {
 
   @state()
   private actionLoading = false;
+
+  @state()
+  private gatewayEvents: FlowGatewayEvent[] = [];
+
+  @state()
+  private gatewayEventsLoading = false;
+
+  @state()
+  private gatewayEventsError: string | null = null;
 
   private initialized = false;
   private unsubscribeRealtime?: () => void;
@@ -262,6 +276,122 @@ export class RuntimeSessionsView extends LitElement {
         color: var(--sl-color-neutral-800);
       }
 
+      .gateway-events-panel {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-medium);
+      }
+
+      .gateway-event {
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        background: var(--sl-color-neutral-0);
+      }
+
+      .gateway-event::part(summary) {
+        padding: var(--sl-spacing-medium);
+      }
+
+      .gateway-event::part(content) {
+        border-top: 1px solid var(--sl-color-neutral-200);
+        padding: var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-50);
+      }
+
+      .gateway-event-summary,
+      .gateway-event-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: var(--sl-spacing-small);
+      }
+
+      .gateway-event-meta {
+        margin-bottom: var(--sl-spacing-medium);
+      }
+
+      .gateway-event-label {
+        color: var(--sl-color-neutral-600);
+        font-size: var(--sl-font-size-x-small);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 600;
+        margin-bottom: var(--sl-spacing-2x-small);
+      }
+
+      .gateway-event-value {
+        color: var(--sl-color-neutral-900);
+        font-size: var(--sl-font-size-small);
+        overflow-wrap: anywhere;
+      }
+
+      .gateway-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sl-spacing-2x-small);
+      }
+
+      .payload-section-title {
+        font-size: var(--sl-font-size-small);
+        font-weight: 600;
+        color: var(--sl-color-neutral-700);
+        margin-bottom: var(--sl-spacing-small);
+      }
+
+      .payload-block {
+        background: var(--sl-color-neutral-100);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        max-height: 320px;
+        overflow: auto;
+      }
+
+      .payload-block pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .conversation-preview-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-small);
+        margin-bottom: var(--sl-spacing-medium);
+      }
+
+      .conversation-preview-message {
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        background: var(--sl-color-neutral-100);
+        padding: var(--sl-spacing-medium);
+      }
+
+      .conversation-preview-header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--sl-spacing-small);
+        flex-wrap: wrap;
+        margin-bottom: var(--sl-spacing-small);
+      }
+
+      .conversation-preview-title {
+        font-weight: 600;
+        color: var(--sl-color-neutral-800);
+      }
+
+      .conversation-preview-text {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--sl-color-neutral-900);
+      }
+
       .empty-state,
       .loading-state {
         text-align: center;
@@ -444,6 +574,8 @@ export class RuntimeSessionsView extends LitElement {
   private async loadDetail() {
     if (!this.selectedSessionId) {
       this.detail = null;
+      this.gatewayEvents = [];
+      this.gatewayEventsError = null;
       return;
     }
 
@@ -453,6 +585,7 @@ export class RuntimeSessionsView extends LitElement {
         this.selectedSessionId,
         this.buildDetailParams()
       );
+      await this.loadGatewayEvents(this.detail.session.flow_execution_id);
     } catch (error) {
       console.error('Failed to load runtime session detail:', error);
       this.error =
@@ -460,8 +593,39 @@ export class RuntimeSessionsView extends LitElement {
           ? error.message
           : 'Failed to load runtime session detail';
       this.detail = null;
+      this.gatewayEvents = [];
+      this.gatewayEventsError = null;
     } finally {
       this.detailLoading = false;
+    }
+  }
+
+  private async loadGatewayEvents(
+    flowExecutionId: string | null | undefined
+  ): Promise<void> {
+    if (!flowExecutionId) {
+      this.gatewayEvents = [];
+      this.gatewayEventsError = null;
+      this.gatewayEventsLoading = false;
+      return;
+    }
+
+    this.gatewayEventsLoading = true;
+    this.gatewayEventsError = null;
+    try {
+      const result = await getFlowExecutionGatewayEvents(flowExecutionId);
+      this.gatewayEvents = (result.logs || []).filter(
+        (event) => event?.type === 'model_gateway_call'
+      );
+    } catch (error) {
+      console.error('Failed to load flow gateway events:', error);
+      this.gatewayEvents = [];
+      this.gatewayEventsError =
+        error instanceof Error
+          ? error.message
+          : 'Failed to load flow gateway events';
+    } finally {
+      this.gatewayEventsLoading = false;
     }
   }
 
@@ -897,6 +1061,253 @@ export class RuntimeSessionsView extends LitElement {
     `;
   }
 
+  private renderGatewayField(label: string, value: unknown) {
+    return html`
+      <div>
+        <div class="gateway-event-label">${label}</div>
+        <div class="gateway-event-value">${value ?? 'n/a'}</div>
+      </div>
+    `;
+  }
+
+  private formatGatewayPayload(payload: unknown): string {
+    return JSON.stringify(payload, null, 2);
+  }
+
+  private formatGatewayLabel(value?: string | null): string {
+    if (!value) {
+      return 'Unknown';
+    }
+    return value
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  private formatGatewayCost(cost?: number | null): string {
+    if (typeof cost !== 'number' || Number.isNaN(cost)) {
+      return '$0.00';
+    }
+    return cost >= 0.01 ? `$${cost.toFixed(2)}` : `$${cost.toFixed(4)}`;
+  }
+
+  private formatGatewayTokens(tokens?: number | null): string {
+    if (typeof tokens !== 'number' || Number.isNaN(tokens)) {
+      return '0';
+    }
+    return tokens.toLocaleString();
+  }
+
+  private getGatewayOutcomeVariant(outcome?: string | null) {
+    if (outcome === 'error') {
+      return 'danger';
+    }
+    if (outcome === 'budget_denied') {
+      return 'warning';
+    }
+    if (outcome === 'success') {
+      return 'success';
+    }
+    return 'neutral';
+  }
+
+  private getGatewayPreviewMessages(
+    payload: FlowGatewayEventPayload
+  ): FlowGatewayConversationPreviewMessage[] {
+    return Array.isArray(payload.conversation_preview?.messages)
+      ? payload.conversation_preview.messages
+      : [];
+  }
+
+  private renderGatewayPreviewMessage(
+    message: FlowGatewayConversationPreviewMessage
+  ) {
+    const previewText = message.text
+      ? message.text
+      : message.redacted
+        ? 'Content redacted by capture policy.'
+        : 'No text content captured.';
+
+    return html`
+      <div class="conversation-preview-message">
+        <div class="conversation-preview-header">
+          <div class="conversation-preview-title">
+            ${this.formatGatewayLabel(message.source)}
+            ${this.formatGatewayLabel(message.role)}
+          </div>
+          <div class="gateway-badges">
+            ${message.redacted
+              ? html`<sl-badge pill variant="warning">Redacted</sl-badge>`
+              : ''}
+            ${message.truncated
+              ? html`<sl-badge pill variant="warning">Truncated</sl-badge>`
+              : ''}
+          </div>
+        </div>
+        <pre class="conversation-preview-text">${previewText}</pre>
+      </div>
+    `;
+  }
+
+  private renderGatewayConversationPreview(payload: FlowGatewayEventPayload) {
+    const messages = this.getGatewayPreviewMessages(payload);
+    if (messages.length === 0) {
+      return html`
+        <div class="payload-section-title">Conversation Preview</div>
+        <div class="payload-block">
+          <pre>No conversation preview captured for this event.</pre>
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="payload-section-title">Conversation Preview</div>
+      <div
+        class="gateway-badges"
+        style="margin-bottom: var(--sl-spacing-small);"
+      >
+        <sl-badge pill>${messages.length} messages</sl-badge>
+      </div>
+      <div class="conversation-preview-list">
+        ${messages.map((message) => this.renderGatewayPreviewMessage(message))}
+      </div>
+    `;
+  }
+
+  private renderGatewayEvent(event: FlowGatewayEvent) {
+    const payload = event.payload;
+
+    return html`
+      <sl-details class="gateway-event">
+        <div slot="summary" class="gateway-event-summary">
+          ${this.renderGatewayField(
+            'Time',
+            this.formatDateTime(event.timestamp || null)
+          )}
+          ${this.renderGatewayField(
+            'Model',
+            payload.model_alias || payload.requested_model || 'Unknown model'
+          )}
+          ${this.renderGatewayField(
+            'Provider',
+            payload.provider_name ||
+              payload.gateway_provider ||
+              'Unknown provider'
+          )}
+          ${this.renderGatewayField(
+            'Outcome',
+            html`
+              <sl-badge
+                variant=${this.getGatewayOutcomeVariant(payload.outcome)}
+              >
+                ${this.formatGatewayLabel(payload.outcome)}
+              </sl-badge>
+            `
+          )}
+          ${this.renderGatewayField(
+            'Cost',
+            this.formatGatewayCost(payload.estimated_cost)
+          )}
+          ${this.renderGatewayField(
+            'Tokens',
+            this.formatGatewayTokens(payload.total_tokens)
+          )}
+        </div>
+
+        <div class="gateway-event-meta">
+          ${this.renderGatewayField(
+            'HTTP',
+            payload.status_code
+              ? `${payload.method || 'POST'} ${payload.status_code}`
+              : payload.method || 'n/a'
+          )}
+          ${this.renderGatewayField(
+            'Endpoint',
+            payload.endpoint_kind || payload.endpoint || 'n/a'
+          )}
+          ${this.renderGatewayField(
+            'Prompt Tokens',
+            this.formatGatewayTokens(payload.prompt_tokens)
+          )}
+          ${this.renderGatewayField(
+            'Completion Tokens',
+            this.formatGatewayTokens(payload.completion_tokens)
+          )}
+        </div>
+
+        ${payload.error_detail
+          ? html`
+              <sl-alert
+                variant="danger"
+                open
+                style="margin-bottom: var(--sl-spacing-medium);"
+              >
+                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                ${payload.error_detail}
+              </sl-alert>
+            `
+          : ''}
+        ${this.renderGatewayConversationPreview(payload)}
+        <div class="payload-section-title">Event Payload</div>
+        <div class="payload-block">
+          <pre>${this.formatGatewayPayload(payload)}</pre>
+        </div>
+      </sl-details>
+    `;
+  }
+
+  private renderGatewayEventsPanel() {
+    if (!this.detail?.session.flow_execution_id) {
+      return '';
+    }
+
+    return html`
+      <sl-card>
+        <div
+          slot="header"
+          class="session-item-title"
+          style="display: flex; justify-content: space-between; gap: var(--sl-spacing-small); align-items: center;"
+        >
+          <span>Session Content</span>
+          <sl-badge pill>${this.gatewayEvents.length}</sl-badge>
+        </div>
+        <div class="gateway-events-panel">
+          <div class="detail-meta">
+            Flow-backed sessions can reuse normalized gateway events to show
+            captured conversation previews and payload details.
+          </div>
+          ${this.gatewayEventsError
+            ? html`
+                <sl-alert variant="warning" open>
+                  <sl-icon slot="icon" name="exclamation-triangle"></sl-icon>
+                  ${this.gatewayEventsError}
+                </sl-alert>
+              `
+            : ''}
+          ${this.gatewayEventsLoading && this.gatewayEvents.length === 0
+            ? html`
+                <div class="loading-state">
+                  <sl-spinner></sl-spinner>
+                  <div>Loading captured session content...</div>
+                </div>
+              `
+            : this.gatewayEvents.length === 0
+              ? html`
+                  <div class="empty-state">
+                    <sl-icon name="diagram-3"></sl-icon>
+                    <div>
+                      No flow gateway events were recorded for this session.
+                    </div>
+                  </div>
+                `
+              : this.gatewayEvents.map((event) =>
+                  this.renderGatewayEvent(event)
+                )}
+        </div>
+      </sl-card>
+    `;
+  }
+
   private renderDetail() {
     if (this.detailLoading) {
       return html`
@@ -1033,6 +1444,8 @@ export class RuntimeSessionsView extends LitElement {
           </div>
           ${this.renderInteractions(this.detail.interactions.items)}
         </sl-card>
+
+        ${this.renderGatewayEventsPanel()}
       </div>
     `;
   }

@@ -18,6 +18,8 @@ from ..models import (
     IssueSet,
     GatewayUsageSearchDocument,
     ManagedAgent,
+    ManagedAgentCredential,
+    ManagedAgentEnrollment,
     RuntimeSession,
     RuntimeSessionActivity,
 )
@@ -44,6 +46,8 @@ from .issue_compliance_result import (
 from .issue_relationship import CRUDIssueRelationship
 from .issue_set import CRUDIssueSet
 from .managed_agent import CRUDManagedAgent
+from .managed_agent_credential import CRUDManagedAgentCredential
+from .managed_agent_enrollment import CRUDManagedAgentEnrollment
 from .tool_configuration import CRUDToolConfiguration
 from .mcp_server import CRUDMCPServer
 from .mcp_tool import CRUDMCPTool
@@ -109,6 +113,8 @@ crud_gateway_usage_search_document = CRUDGatewayUsageSearchDocument(
     GatewayUsageSearchDocument
 )
 crud_managed_agent = CRUDManagedAgent(ManagedAgent)
+crud_managed_agent_credential = CRUDManagedAgentCredential(ManagedAgentCredential)
+crud_managed_agent_enrollment = CRUDManagedAgentEnrollment(ManagedAgentEnrollment)
 crud_runtime_session = CRUDRuntimeSession(RuntimeSession)
 crud_runtime_session_activity = CRUDRuntimeSessionActivity(RuntimeSessionActivity)
 crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
@@ -140,6 +146,8 @@ __all__ = [
     "CRUDIssueSet",
     "CRUDGatewayUsageSearchDocument",
     "CRUDManagedAgent",
+    "CRUDManagedAgentCredential",
+    "CRUDManagedAgentEnrollment",
     "CRUDToolConfiguration",
     "CRUDMCPServer",
     "CRUDMCPTool",
@@ -180,6 +188,8 @@ __all__ = [
     "crud_issue_set",
     "crud_gateway_usage_search_document",
     "crud_managed_agent",
+    "crud_managed_agent_credential",
+    "crud_managed_agent_enrollment",
     "crud_tool_configuration",
     "crud_mcp_server",
     "crud_mcp_tool",

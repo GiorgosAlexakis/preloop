@@ -75,6 +75,7 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         expires_at: Optional[datetime] = None,
         context_data: Optional[Dict[str, Any]] = None,
         key_value: Optional[str] = None,
+        commit: bool = True,
     ) -> tuple[ApiKey, str]:
         """Create a runtime-scoped API key stored without plaintext value."""
         token_value = key_value or f"flow_{secrets.token_urlsafe(32)}"
@@ -92,8 +93,11 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         )
 
         db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
         return db_obj, token_value
 
     def get_by_key(

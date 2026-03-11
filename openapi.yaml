@@ -824,6 +824,175 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/credentials:
+    get:
+      tags:
+      - Account
+      summary: List Account Managed Agent Credentials
+      description: List durable credentials for one managed agent.
+      operationId: list_account_managed_agent_credentials_api_v1_agents__agent_id__credentials_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+                title: Response List Account Managed Agent Credentials Api V1 Agents  Agent
+                  Id  Credentials Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Account
+      summary: Create Account Managed Agent Credential
+      description: Create a durable credential for one managed agent.
+      operationId: create_account_managed_agent_credential_api_v1_agents__agent_id__credentials_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentCredentialCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentCredentialCreateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/credentials/{credential_id}:
+    delete:
+      tags:
+      - Account
+      summary: Revoke Account Managed Agent Credential
+      description: Revoke one durable credential for a managed agent.
+      operationId: revoke_account_managed_agent_credential_api_v1_agents__agent_id__credentials__credential_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Credential Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/enrollments:
+    get:
+      tags:
+      - Account
+      summary: List Account Managed Agent Enrollments
+      description: List durable enrollment records for one managed agent.
+      operationId: list_account_managed_agent_enrollments_api_v1_agents__agent_id__enrollments_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+                title: Response List Account Managed Agent Enrollments Api V1 Agents  Agent
+                  Id  Enrollments Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Account
+      summary: Create Account Managed Agent Enrollment
+      description: Persist one enrollment record for a managed agent.
+      operationId: create_account_managed_agent_enrollment_api_v1_agents__agent_id__enrollments_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentEnrollmentCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/runtime-sessions:
     get:
       tags:
@@ -9296,6 +9465,133 @@ components:
       - updated_at
       title: MCPToolResponse
       description: Schema for MCP tool response.
+    ManagedAgentCredentialCreateRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        expires_in_days:
+          anyOf:
+          - type: integer
+            maximum: 3650.0
+            minimum: 1.0
+          - type: 'null'
+          title: Expires In Days
+          default: 365
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+      type: object
+      required:
+      - name
+      title: ManagedAgentCredentialCreateRequest
+      description: Request to create a durable credential for one managed agent.
+    ManagedAgentCredentialCreateResponse:
+      properties:
+        credential:
+          $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+        token:
+          type: string
+          title: Token
+      type: object
+      required:
+      - credential
+      - token
+      title: ManagedAgentCredentialCreateResponse
+      description: One-time response payload for a newly created agent credential.
+    ManagedAgentCredentialSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        api_key_id:
+          type: string
+          title: Api Key Id
+        created_by_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created By User Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        credential_type:
+          type: string
+          title: Credential Type
+        status:
+          type: string
+          title: Status
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+        key_prefix:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Key Prefix
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        last_issued_at:
+          type: string
+          format: date-time
+          title: Last Issued At
+        last_used_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Used At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+        revoked_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Revoked Reason
+      type: object
+      required:
+      - id
+      - api_key_id
+      - name
+      - credential_type
+      - status
+      - created_at
+      - updated_at
+      - last_issued_at
+      title: ManagedAgentCredentialSummary
+      description: Durable credential metadata for one managed agent.
     ManagedAgentDetailResponse:
       properties:
         agent:
@@ -9322,12 +9618,171 @@ components:
             $ref: '#/components/schemas/RuntimeSessionSummary'
           type: array
           title: Sessions
+        credentials:
+          items:
+            $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+          type: array
+          title: Credentials
+        enrollments:
+          items:
+            $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+          type: array
+          title: Enrollments
       type: object
       required:
       - agent
       - aggregate
       title: ManagedAgentDetailResponse
       description: One managed agent plus its recent runtime session history.
+    ManagedAgentEnrollmentCreateRequest:
+      properties:
+        enrollment_type:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Enrollment Type
+        adapter_key:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Adapter Key
+        status:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Status
+          default: pending
+        target_config_path:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Target Config Path
+        discovered_config:
+          additionalProperties: true
+          type: object
+          title: Discovered Config
+        managed_config:
+          additionalProperties: true
+          type: object
+          title: Managed Config
+        backup_metadata:
+          additionalProperties: true
+          type: object
+          title: Backup Metadata
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+        restore_available:
+          type: boolean
+          title: Restore Available
+          default: false
+        last_applied_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Applied At
+        last_validated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Validated At
+        last_restored_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Restored At
+      type: object
+      required:
+      - enrollment_type
+      title: ManagedAgentEnrollmentCreateRequest
+      description: Request to persist an enrollment record for one managed agent.
+    ManagedAgentEnrollmentSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        created_by_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created By User Id
+        enrollment_type:
+          type: string
+          title: Enrollment Type
+        adapter_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Adapter Key
+        status:
+          type: string
+          title: Status
+        target_config_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Config Path
+        discovered_config:
+          additionalProperties: true
+          type: object
+          title: Discovered Config
+        managed_config:
+          additionalProperties: true
+          type: object
+          title: Managed Config
+        backup_metadata:
+          additionalProperties: true
+          type: object
+          title: Backup Metadata
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+        restore_available:
+          type: boolean
+          title: Restore Available
+          default: false
+        last_applied_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Applied At
+        last_validated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Validated At
+        last_restored_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Restored At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - enrollment_type
+      - status
+      - created_at
+      - updated_at
+      title: ManagedAgentEnrollmentSummary
+      description: Durable enrollment state for one managed agent.
     ManagedAgentServerActivitySummary:
       properties:
         server_name:

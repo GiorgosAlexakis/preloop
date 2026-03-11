@@ -12,6 +12,8 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .account import Account
+    from .managed_agent_credential import ManagedAgentCredential
+    from .managed_agent_enrollment import ManagedAgentEnrollment
     from .runtime_session import RuntimeSession
     from .user import User
 
@@ -70,6 +72,16 @@ class ManagedAgent(Base):
     owner_user: Mapped[Optional["User"]] = relationship("User")
     runtime_session: Mapped[Optional["RuntimeSession"]] = relationship(
         "RuntimeSession", back_populates="managed_agent"
+    )
+    credentials: Mapped[List["ManagedAgentCredential"]] = relationship(
+        "ManagedAgentCredential",
+        back_populates="managed_agent",
+        cascade="all, delete-orphan",
+    )
+    enrollments: Mapped[List["ManagedAgentEnrollment"]] = relationship(
+        "ManagedAgentEnrollment",
+        back_populates="managed_agent",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from .audit_log import AuditLog
     from .managed_agent import ManagedAgent
+    from .managed_agent_credential import ManagedAgentCredential
+    from .managed_agent_enrollment import ManagedAgentEnrollment
     from .organization import Organization
     from .tracker import Tracker
     from .client_version_log import ClientVersionLog
@@ -167,6 +169,16 @@ class Account(Base):
     )
     managed_agents: Mapped[List["ManagedAgent"]] = relationship(
         "ManagedAgent", back_populates="account", cascade="all, delete-orphan"
+    )
+    managed_agent_credentials: Mapped[List["ManagedAgentCredential"]] = relationship(
+        "ManagedAgentCredential",
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
+    managed_agent_enrollments: Mapped[List["ManagedAgentEnrollment"]] = relationship(
+        "ManagedAgentEnrollment",
+        back_populates="account",
+        cascade="all, delete-orphan",
     )
 
     # Many-to-many relationship helper for organizational roles

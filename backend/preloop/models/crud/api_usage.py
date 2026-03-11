@@ -322,6 +322,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         end_date: datetime,
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
+        flow_execution_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by model."""
@@ -346,8 +347,17 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         )
         if flow_id:
             query = query.filter(ApiUsage.flow_id == flow_id)
-        if runtime_session_id:
+        if runtime_session_id and flow_execution_id:
+            query = query.filter(
+                or_(
+                    ApiUsage.runtime_session_id == runtime_session_id,
+                    ApiUsage.flow_execution_id == flow_execution_id,
+                )
+            )
+        elif runtime_session_id:
             query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
+        elif flow_execution_id:
+            query = query.filter(ApiUsage.flow_execution_id == flow_execution_id)
 
         rows = (
             query.group_by(

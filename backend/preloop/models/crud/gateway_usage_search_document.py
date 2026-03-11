@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import String, case, cast, func
+from sqlalchemy import String, case, cast, func, or_
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
@@ -77,6 +77,7 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
         model_alias: Optional[str] = None,
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
+        flow_execution_id: Optional[str] = None,
         session_source_type: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
@@ -136,9 +137,20 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             base_query = base_query.filter(ApiUsage.model_alias == model_alias)
         if flow_id:
             base_query = base_query.filter(ApiUsage.flow_id == flow_id)
-        if runtime_session_id:
+        if runtime_session_id and flow_execution_id:
+            base_query = base_query.filter(
+                or_(
+                    ApiUsage.runtime_session_id == runtime_session_id,
+                    ApiUsage.flow_execution_id == flow_execution_id,
+                )
+            )
+        elif runtime_session_id:
             base_query = base_query.filter(
                 ApiUsage.runtime_session_id == runtime_session_id
+            )
+        elif flow_execution_id:
+            base_query = base_query.filter(
+                ApiUsage.flow_execution_id == flow_execution_id
             )
         if session_source_type:
             base_query = base_query.filter(
