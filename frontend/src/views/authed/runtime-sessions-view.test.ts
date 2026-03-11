@@ -15,7 +15,7 @@ describe('RuntimeSessionsView', () => {
     fetchStub.callsFake(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
 
-      if (url.startsWith('/api/v1/account/runtime-sessions?')) {
+      if (url.startsWith('/api/v1/runtime-sessions?')) {
         return new Response(
           JSON.stringify({
             period_start: '2026-02-08T00:00:00Z',
@@ -43,6 +43,8 @@ describe('RuntimeSessionsView', () => {
                 flow_execution_id: null,
                 latest_model_alias: 'anthropic/claude-sonnet-4',
                 latest_provider_name: 'Anthropic',
+                is_active_now: true,
+                activity_status: 'active_now',
                 total_requests: 4,
                 successful_requests: 3,
                 failed_requests: 1,
@@ -70,6 +72,8 @@ describe('RuntimeSessionsView', () => {
                 flow_execution_id: 'execution-1',
                 latest_model_alias: 'openai/gpt-5',
                 latest_provider_name: 'OpenAI',
+                is_active_now: false,
+                activity_status: 'ended',
                 total_requests: 2,
                 successful_requests: 2,
                 failed_requests: 0,
@@ -90,9 +94,46 @@ describe('RuntimeSessionsView', () => {
         );
       }
 
-      if (
-        url.startsWith('/api/v1/account/runtime-sessions/runtime-session-1')
-      ) {
+      if (url.startsWith('/api/v1/runtime-sessions/runtime-session-1')) {
+        if (
+          String((input as Request).method || 'GET').toUpperCase() === 'PATCH'
+        ) {
+          return new Response(
+            JSON.stringify({
+              id: 'runtime-session-1',
+              session_source_type: 'claude_code',
+              session_source_id: 'workspace-42',
+              session_reference: 'claude-session-42',
+              runtime_principal_type: 'claude_code',
+              runtime_principal_id: 'workspace-42',
+              runtime_principal_name: 'Claude Workspace',
+              started_at: '2026-03-09T18:00:00Z',
+              last_activity_at: '2026-03-09T20:30:00Z',
+              ended_at: '2026-03-09T20:30:00Z',
+              flow_id: null,
+              flow_name: null,
+              flow_execution_id: null,
+              latest_model_alias: 'anthropic/claude-sonnet-4',
+              latest_provider_name: 'Anthropic',
+              is_active_now: false,
+              activity_status: 'ended',
+              total_requests: 4,
+              successful_requests: 3,
+              failed_requests: 1,
+              token_usage: {
+                prompt_tokens: 1200,
+                completion_tokens: 450,
+                total_tokens: 1650,
+              },
+              estimated_cost: 0.42,
+              last_request_at: '2026-03-09T20:00:00Z',
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
         return new Response(
           JSON.stringify({
             period_start: '2026-02-08T00:00:00Z',
@@ -113,6 +154,8 @@ describe('RuntimeSessionsView', () => {
               flow_execution_id: null,
               latest_model_alias: 'anthropic/claude-sonnet-4',
               latest_provider_name: 'Anthropic',
+              is_active_now: true,
+              activity_status: 'active_now',
               total_requests: 4,
               successful_requests: 3,
               failed_requests: 1,
@@ -294,13 +337,13 @@ describe('RuntimeSessionsView', () => {
     const listCall = fetchStub
       .getCalls()
       .find((call) =>
-        String(call.args[0]).startsWith('/api/v1/account/runtime-sessions?')
+        String(call.args[0]).startsWith('/api/v1/runtime-sessions?')
       );
     const detailCall = fetchStub
       .getCalls()
       .find((call) =>
         String(call.args[0]).startsWith(
-          '/api/v1/account/runtime-sessions/runtime-session-1'
+          '/api/v1/runtime-sessions/runtime-session-1'
         )
       );
 

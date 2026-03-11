@@ -14,6 +14,7 @@ import '../../components/view-header.ts';
 import {
   getAccountRuntimeSessionDetail,
   getAccountRuntimeSessions,
+  updateAccountRuntimeSession,
   type RuntimeSessionDetailParams,
   type RuntimeSessionListParams,
 } from '../../api';
@@ -26,6 +27,7 @@ import type {
   RuntimeSessionSummary,
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 
 type DateRangePreset = 'last-7' | 'last-30' | 'last-90' | 'all' | 'custom';
 
@@ -70,7 +72,12 @@ export class RuntimeSessionsView extends LitElement {
   @state()
   private interactionQuery = '';
 
+  @state()
+  private actionLoading = false;
+
   private initialized = false;
+  private unsubscribeRealtime?: () => void;
+  private refreshTimer: number | null = null;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -306,7 +313,43 @@ export class RuntimeSessionsView extends LitElement {
       }
       this.initialized = true;
       void this.loadSessions();
+      this.connectRealtime();
     }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unsubscribeRealtime?.();
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  private connectRealtime(): void {
+    const scheduleRefresh = () => this.scheduleRefresh();
+    const unsubscribers = [
+      unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('gateway_activity', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('audit', scheduleRefresh),
+    ];
+    this.unsubscribeRealtime = () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+    void unifiedWebSocketManager.connect();
+  }
+
+  private scheduleRefresh(): void {
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      void this.loadSessions();
+    }, 250);
   }
 
   private getLocalDateString(date: Date): string {
@@ -568,6 +611,28 @@ export class RuntimeSessionsView extends LitElement {
     );
   }
 
+  private getSessionVariant(
+    session: RuntimeSessionSummary
+  ): 'success' | 'primary' | 'neutral' {
+    if (session.activity_status === 'active_now') {
+      return 'success';
+    }
+    if (session.activity_status === 'ended') {
+      return 'neutral';
+    }
+    return 'primary';
+  }
+
+  private getSessionLabel(session: RuntimeSessionSummary): string {
+    if (session.activity_status === 'active_now') {
+      return 'Active now';
+    }
+    if (session.activity_status === 'ended') {
+      return 'Ended';
+    }
+    return 'Idle';
+  }
+
   private getSourceLabel(sourceType: string | null | undefined): string {
     if (!sourceType) {
       return 'Runtime session';
@@ -580,6 +645,32 @@ export class RuntimeSessionsView extends LitElement {
       .filter(Boolean)
       .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
       .join(' ');
+  }
+
+  private async endSelectedSession(): Promise<void> {
+    if (!this.detail?.session || this.detail.session.ended_at) {
+      return;
+    }
+    const session = this.detail.session;
+    const confirmed = window.confirm(
+      `End runtime session "${this.getSessionDisplayName(session)}"?`
+    );
+    if (!confirmed) {
+      return;
+    }
+    this.actionLoading = true;
+    try {
+      await updateAccountRuntimeSession(session.id, { action: 'end' });
+      await this.loadSessions();
+    } catch (error) {
+      console.error('Failed to end runtime session:', error);
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to update runtime session';
+    } finally {
+      this.actionLoading = false;
+    }
   }
 
   private renderSessionList() {
@@ -602,8 +693,15 @@ export class RuntimeSessionsView extends LitElement {
                 : ''}"
               @click=${() => this.selectSession(session.id)}
             >
-              <div class="session-item-title">
-                ${this.getSessionDisplayName(session)}
+              <div
+                style="display: flex; justify-content: space-between; gap: var(--sl-spacing-small); align-items: start;"
+              >
+                <div class="session-item-title">
+                  ${this.getSessionDisplayName(session)}
+                </div>
+                <sl-badge variant=${this.getSessionVariant(session)}>
+                  ${this.getSessionLabel(session)}
+                </sl-badge>
               </div>
               <div class="session-item-meta">
                 ${this.getSourceLabel(session.session_source_type)} ·
@@ -617,7 +715,9 @@ export class RuntimeSessionsView extends LitElement {
               <div class="session-item-meta">
                 Last activity
                 ${this.formatDateTime(
-                  session.last_request_at || session.last_activity_at
+                  session.last_request_at ||
+                    session.last_activity_at ||
+                    session.started_at
                 )}
               </div>
             </button>
@@ -826,7 +926,14 @@ export class RuntimeSessionsView extends LitElement {
       <div class="detail-stack">
         <sl-card>
           <div slot="header" class="session-item-title">
-            ${this.getSessionDisplayName(session)}
+            <div
+              style="display: flex; justify-content: space-between; gap: var(--sl-spacing-small); align-items: center; flex-wrap: wrap;"
+            >
+              <span>${this.getSessionDisplayName(session)}</span>
+              <sl-badge variant=${this.getSessionVariant(session)}>
+                ${this.getSessionLabel(session)}
+              </sl-badge>
+            </div>
           </div>
           <div class="detail-meta">
             ${this.getSourceLabel(session.session_source_type)} · Source ID
@@ -850,6 +957,18 @@ export class RuntimeSessionsView extends LitElement {
                 </div>
               `
             : ''}
+          <div
+            style="display: flex; justify-content: flex-end; margin-top: var(--sl-spacing-medium);"
+          >
+            <sl-button
+              variant="warning"
+              ?disabled=${Boolean(session.ended_at)}
+              ?loading=${this.actionLoading}
+              @click=${() => this.endSelectedSession()}
+            >
+              ${session.ended_at ? 'Session ended' : 'End session'}
+            </sl-button>
+          </div>
           <div
             class="summary-grid"
             style="margin-top: var(--sl-spacing-medium);"

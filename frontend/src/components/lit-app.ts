@@ -18,7 +18,7 @@ import '../views/public/pricing-view.ts';
 import '../views/public/welcome-view.ts';
 import '../views/public/static-view.ts';
 import '../views/authed/console-shell.ts';
-import '../views/authed/dashboard-view.ts';
+import '../views/authed/dashboard-control-plane-view.ts';
 import '../views/authed/trackers-view.ts';
 import '../views/authed/tools-view.ts';
 import '../views/authed/issues-view.ts';

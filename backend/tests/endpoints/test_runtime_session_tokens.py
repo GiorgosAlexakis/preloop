@@ -2,7 +2,12 @@
 
 from datetime import datetime, UTC
 
-from preloop.models.crud import crud_account, crud_api_key, crud_runtime_session
+from preloop.models.crud import (
+    crud_account,
+    crud_api_key,
+    crud_managed_agent,
+    crud_runtime_session,
+)
 from preloop.models.models.mcp_server import MCPServer
 from preloop.models.models.mcp_tool import MCPTool
 
@@ -174,3 +179,52 @@ def test_runtime_session_identity_is_account_scoped(db_session):
         ).id
         == second_session.id
     )
+
+
+def test_account_runtime_session_update_endpoint_ends_session_and_clears_agent_binding(
+    client, db_session, test_user
+):
+    """Runtime session operators should be able to end a session cleanly."""
+    response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-terminate",
+            "runtime_principal_name": "Claude Workspace",
+        },
+    )
+    assert response.status_code == 201
+    runtime_session_id = response.json()["runtime_session_id"]
+
+    runtime_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-terminate",
+    )
+    assert runtime_session is not None
+
+    managed_agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="claude_code",
+        session_source_id="workspace-terminate",
+    )
+    assert managed_agent is not None
+    assert str(managed_agent.runtime_session_id) == str(runtime_session.id)
+
+    end_response = client.patch(
+        f"/api/v1/runtime-sessions/{runtime_session_id}",
+        json={"action": "end", "reason": "operator ended stale session"},
+    )
+    assert end_response.status_code == 200
+    body = end_response.json()
+    assert body["id"] == runtime_session_id
+    assert body["ended_at"] is not None
+    assert body["activity_status"] == "ended"
+    assert body["is_active_now"] is False
+
+    db_session.refresh(runtime_session)
+    db_session.refresh(managed_agent)
+    assert runtime_session.ended_at is not None
+    assert managed_agent.runtime_session_id is None

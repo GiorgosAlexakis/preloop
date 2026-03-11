@@ -103,6 +103,10 @@ export class MessageRouter {
    * @returns Topic string or null if unable to determine
    */
   private extractTopic(message: any): string | null {
+    if (typeof message.topic === 'string' && message.topic.length > 0) {
+      return message.topic;
+    }
+
     const messageType = message.type;
 
     if (!messageType) {
@@ -112,6 +116,32 @@ export class MessageRouter {
     // Approval-related messages
     if (messageType.startsWith('approval_')) {
       return 'approvals';
+    }
+
+    if (
+      messageType === 'runtime_session_created' ||
+      messageType === 'runtime_session_updated' ||
+      messageType === 'runtime_session_ended'
+    ) {
+      return 'runtime_sessions';
+    }
+
+    if (
+      messageType === 'managed_agent_created' ||
+      messageType === 'managed_agent_updated' ||
+      messageType === 'managed_agent_suspended' ||
+      messageType === 'managed_agent_resumed' ||
+      messageType === 'managed_agent_decommissioned'
+    ) {
+      return 'managed_agents';
+    }
+
+    if (messageType === 'budget_health_updated') {
+      return 'budget_health';
+    }
+
+    if (messageType === 'audit_event') {
+      return 'audit';
     }
 
     // Flow execution messages
@@ -162,6 +192,15 @@ export class MessageRouter {
    */
   getSubscriptionCount(topic: string): number {
     return this.subscriptions.get(topic)?.size || 0;
+  }
+
+  /**
+   * List topics with at least one active subscription.
+   */
+  listTopics(): string[] {
+    return [...this.subscriptions.entries()]
+      .filter(([, subscriptions]) => subscriptions.size > 0)
+      .map(([topic]) => topic);
   }
 
   /**

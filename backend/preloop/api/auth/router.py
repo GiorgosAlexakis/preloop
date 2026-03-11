@@ -74,6 +74,13 @@ from preloop.models.models.tool_configuration import ToolConfiguration
 from preloop.models.models.user import User as UserModel
 from preloop.models.models.api_key import ApiKey
 from pydantic import BaseModel
+from preloop.services.account_realtime import (
+    ACCOUNT_TOPIC_AUDIT,
+    ACCOUNT_TOPIC_MANAGED_AGENTS,
+    ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+    build_account_event,
+    emit_account_event,
+)
 from preloop.services.account_setup_service import (
     complete_new_account_setup_background,
     notify_admins_user_login_after_inactivity,
@@ -960,7 +967,7 @@ async def create_runtime_session_token(
         runtime_principal_name=runtime_principal_name,
         last_activity_at=now,
     )
-    crud_managed_agent.upsert_from_runtime_session(
+    managed_agent = crud_managed_agent.upsert_from_runtime_session(
         db,
         account_id=current_user.account_id,
         runtime_session_id=runtime_session.id,
@@ -973,6 +980,7 @@ async def create_runtime_session_token(
     )
     db.commit()
     db.refresh(runtime_session)
+    db.refresh(managed_agent)
 
     api_key, token_value = crud_api_key.create_runtime_key(
         db,
@@ -1004,11 +1012,12 @@ async def create_runtime_session_token(
         plugin_manager = get_plugin_manager()
         audit_service = plugin_manager.get_service("audit_service")
         if audit_service:
+            event_name = "created" if existing_runtime_session is None else "updated"
             audit_service.log_runtime_session_event(
                 db=db,
                 account_id=current_user.account_id,
                 runtime_session_id=runtime_session.id,
-                event="created" if existing_runtime_session is None else "updated",
+                event=event_name,
                 session_source_type=runtime_session.session_source_type,
                 session_source_id=runtime_session.session_source_id,
                 session_reference=runtime_session.session_reference,
@@ -1022,8 +1031,81 @@ async def create_runtime_session_token(
                 ),
                 user_id=current_user.id,
             )
+            emit_account_event(
+                build_account_event(
+                    account_id=str(current_user.account_id),
+                    topic=ACCOUNT_TOPIC_AUDIT,
+                    event_type="audit_event",
+                    payload={
+                        "action": f"runtime_session_{event_name}",
+                        "runtime_session_id": str(runtime_session.id),
+                        "session_source_type": runtime_session.session_source_type,
+                        "session_source_id": runtime_session.session_source_id,
+                        "session_reference": runtime_session.session_reference,
+                        "runtime_principal_type": runtime_session.runtime_principal_type,
+                        "runtime_principal_id": runtime_session.runtime_principal_id,
+                        "runtime_principal_name": runtime_session.runtime_principal_name,
+                        "api_key_id": str(api_key.id),
+                        "api_key_name": api_key.name,
+                    },
+                    runtime_session_id=str(runtime_session.id),
+                )
+            )
     except Exception:
         logger.debug("Failed to audit runtime session token creation", exc_info=True)
+
+    session_event_type = (
+        "runtime_session_created"
+        if existing_runtime_session is None
+        else "runtime_session_updated"
+    )
+    emit_account_event(
+        build_account_event(
+            account_id=str(current_user.account_id),
+            topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+            event_type=session_event_type,
+            payload={
+                "runtime_session_id": str(runtime_session.id),
+                "session_source_type": runtime_session.session_source_type,
+                "session_source_id": runtime_session.session_source_id,
+                "session_reference": runtime_session.session_reference,
+                "runtime_principal_type": runtime_session.runtime_principal_type,
+                "runtime_principal_id": runtime_session.runtime_principal_id,
+                "runtime_principal_name": runtime_session.runtime_principal_name,
+                "started_at": runtime_session.started_at.isoformat()
+                if runtime_session.started_at
+                else None,
+                "last_activity_at": runtime_session.last_activity_at.isoformat()
+                if runtime_session.last_activity_at
+                else None,
+            },
+            runtime_session_id=str(runtime_session.id),
+        )
+    )
+    emit_account_event(
+        build_account_event(
+            account_id=str(current_user.account_id),
+            topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
+            event_type=(
+                "managed_agent_created"
+                if existing_runtime_session is None
+                else "managed_agent_updated"
+            ),
+            payload={
+                "agent_id": str(managed_agent.id),
+                "runtime_session_id": str(managed_agent.runtime_session_id)
+                if managed_agent.runtime_session_id
+                else None,
+                "display_name": managed_agent.display_name,
+                "session_source_type": managed_agent.session_source_type,
+                "session_source_id": managed_agent.session_source_id,
+                "session_reference": managed_agent.session_reference,
+                "managed_mcp_servers": managed_agent.managed_mcp_servers,
+                "last_seen_at": managed_agent.last_seen_at.isoformat(),
+            },
+            runtime_session_id=str(runtime_session.id),
+        )
+    )
 
     return RuntimeSessionTokenResponse(
         runtime_session_id=runtime_session.id,

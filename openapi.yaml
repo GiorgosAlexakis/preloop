@@ -696,13 +696,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/account/agents:
+  /api/v1/agents:
     get:
       tags:
       - Account
       summary: List Account Managed Agents
       description: List enrolled external agents for the current account.
-      operationId: list_account_managed_agents_api_v1_account_agents_get
+      operationId: list_account_managed_agents_api_v1_agents_get
       security:
       - bearerAuth: []
       parameters:
@@ -761,13 +761,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/account/agents/{agent_id}:
+  /api/v1/agents/{agent_id}:
     get:
       tags:
       - Account
       summary: Get Account Managed Agent
       description: Return one enrolled external agent for the current account.
-      operationId: get_account_managed_agent_api_v1_account_agents__agent_id__get
+      operationId: get_account_managed_agent_api_v1_agents__agent_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -790,13 +790,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/account/runtime-sessions:
+    patch:
+      tags:
+      - Account
+      summary: Update Account Managed Agent
+      description: Update managed-agent ownership or lifecycle controls.
+      operationId: update_account_managed_agent_api_v1_agents__agent_id__patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions:
     get:
       tags:
       - Account
       summary: List Account Runtime Sessions
       description: List runtime sessions for the current account.
-      operationId: list_account_runtime_sessions_api_v1_account_runtime_sessions_get
+      operationId: list_account_runtime_sessions_api_v1_runtime_sessions_get
       security:
       - bearerAuth: []
       parameters:
@@ -873,13 +907,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/account/runtime-sessions/{runtime_session_id}:
+  /api/v1/runtime-sessions/{runtime_session_id}:
     get:
       tags:
       - Account
       summary: Get Account Runtime Session Detail
       description: Return one runtime session with captured interaction details.
-      operationId: get_account_runtime_session_detail_api_v1_account_runtime_sessions__runtime_session_id__get
+      operationId: get_account_runtime_session_detail_api_v1_runtime_sessions__runtime_session_id__get
       security:
       - bearerAuth: []
       parameters:
@@ -940,6 +974,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AccountRuntimeSessionDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Account
+      summary: Update Account Runtime Session
+      description: Update runtime-session lifecycle controls for the current account.
+      operationId: update_account_runtime_session_api_v1_runtime_sessions__runtime_session_id__patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSessionUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionSummary'
         '422':
           description: Validation Error
           content:
@@ -9299,6 +9367,21 @@ components:
           - type: string
           - type: 'null'
           title: Runtime Session Id
+        owner_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner User Id
+        owner_username:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Username
+        owner_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Email
         display_name:
           type: string
           title: Display Name
@@ -9321,6 +9404,29 @@ components:
             type: string
           type: array
           title: Managed Mcp Servers
+        lifecycle_state:
+          type: string
+          title: Lifecycle State
+          default: active
+        lifecycle_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lifecycle Reason
+        lifecycle_updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lifecycle Updated At
+        is_active_now:
+          type: boolean
+          title: Is Active Now
+          default: false
+        activity_status:
+          type: string
+          title: Activity Status
+          default: idle
         last_seen_at:
           type: string
           format: date-time
@@ -9410,6 +9516,27 @@ components:
       type: object
       title: ManagedAgentToolActivitySummary
       description: Historical tool activity grouped by MCP server and tool name.
+    ManagedAgentUpdateRequest:
+      properties:
+        owner_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner User Id
+        lifecycle_action:
+          anyOf:
+          - type: string
+            pattern: ^(suspend|resume|decommission|reenroll)$
+          - type: 'null'
+          title: Lifecycle Action
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      title: ManagedAgentUpdateRequest
+      description: Operator-driven updates for one managed agent.
     ManagedAgentUsageAggregate:
       properties:
         session_count:
@@ -10449,6 +10576,14 @@ components:
           - type: string
           - type: 'null'
           title: Latest Provider Name
+        is_active_now:
+          type: boolean
+          title: Is Active Now
+          default: false
+        activity_status:
+          type: string
+          title: Activity Status
+          default: idle
         total_requests:
           type: integer
           title: Total Requests
@@ -10571,6 +10706,22 @@ components:
       - session_source_id
       title: RuntimeSessionTokenResponse
       description: Response model for a minted runtime-scoped session token.
+    RuntimeSessionUpdateRequest:
+      properties:
+        action:
+          type: string
+          pattern: ^(end)$
+          title: Action
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - action
+      title: RuntimeSessionUpdateRequest
+      description: Operator-driven updates for one runtime session.
     ScopeType:
       type: string
       enum:

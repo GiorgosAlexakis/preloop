@@ -85,7 +85,7 @@ def test_account_agents_endpoint_lists_onboarded_agents(client, db_session, test
         runtime_principal_name="Claude Code Workspace",
     )
 
-    response = client.get("/api/v1/account/agents")
+    response = client.get("/api/v1/agents")
 
     assert response.status_code == 200
     body = response.json()
@@ -124,11 +124,11 @@ def test_account_agent_detail_endpoint_returns_one_agent(client, db_session, tes
 
     assert token_response.status_code == 201
 
-    list_response = client.get("/api/v1/account/agents")
+    list_response = client.get("/api/v1/agents")
     assert list_response.status_code == 200
     agent_id = list_response.json()["items"][0]["id"]
 
-    detail_response = client.get(f"/api/v1/account/agents/{agent_id}")
+    detail_response = client.get(f"/api/v1/agents/{agent_id}")
 
     assert detail_response.status_code == 200
     body = detail_response.json()
@@ -250,13 +250,13 @@ def test_account_agent_detail_endpoint_includes_session_history(
         runtime_principal_name="Claude Code Workspace",
     )
 
-    list_response = client.get("/api/v1/account/agents")
+    list_response = client.get("/api/v1/agents")
     assert list_response.status_code == 200
     body = list_response.json()
     assert body["total"] == 1
 
     agent_id = body["items"][0]["id"]
-    detail_response = client.get(f"/api/v1/account/agents/{agent_id}")
+    detail_response = client.get(f"/api/v1/agents/{agent_id}")
 
     assert detail_response.status_code == 200
     detail_body = detail_response.json()
@@ -290,3 +290,46 @@ def test_account_agent_detail_endpoint_includes_session_history(
         "workspace-2",
         "workspace-1",
     ]
+
+
+def test_account_agent_update_endpoint_controls_lifecycle_and_owner(
+    client, db_session, test_user
+):
+    """Managed agent update endpoint should support ownership and lifecycle controls."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-lifecycle",
+            "runtime_principal_name": "Lifecycle Agent",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    update_response = client.patch(
+        f"/api/v1/agents/{agent_id}",
+        json={
+            "owner_user_id": str(test_user.id),
+            "lifecycle_action": "suspend",
+            "reason": "maintenance window",
+        },
+    )
+
+    assert update_response.status_code == 200
+    body = update_response.json()
+    assert body["owner_user_id"] == str(test_user.id)
+    assert body["owner_username"] == test_user.username
+    assert body["lifecycle_state"] == "suspended"
+    assert body["lifecycle_reason"] == "maintenance window"
+    assert body["activity_status"] == "suspended"
+
+    reenroll_response = client.patch(
+        f"/api/v1/agents/{agent_id}",
+        json={"lifecycle_action": "reenroll"},
+    )
+    assert reenroll_response.status_code == 200
+    assert reenroll_response.json()["lifecycle_state"] == "active"

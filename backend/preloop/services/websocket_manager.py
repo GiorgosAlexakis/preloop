@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Dict
+from typing import Dict, Optional, Set
 
 from fastapi import WebSocket
 from nats.aio.client import Client
@@ -10,6 +10,7 @@ from nats.aio.msg import Msg
 
 from preloop.sync.services.event_bus import get_task_publisher
 from preloop.models.db.session import get_db_session as get_db
+from preloop.services.account_realtime import ACCOUNT_REALTIME_TOPICS
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class WebSocketManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.connection_accounts: Dict[str, str] = {}  # connection_id -> account_id
+        self.connection_topics: Dict[str, Set[str]] = {}  # connection_id -> topics
 
     async def connect(self, websocket: WebSocket) -> str:
         """
@@ -80,6 +82,81 @@ class WebSocketManager:
         logger.info(f"Total active connections: {len(self.active_connections)}")
         return connection_id
 
+    def subscribe(self, connection_id: str, topic: str) -> bool:
+        """Subscribe one connection to a supported topic."""
+        normalized_topic = self.normalize_topic(topic)
+        if connection_id not in self.active_connections or normalized_topic is None:
+            return False
+        self.connection_topics.setdefault(connection_id, set()).add(normalized_topic)
+        return True
+
+    def unsubscribe(self, connection_id: str, topic: str) -> bool:
+        """Unsubscribe one connection from a topic."""
+        normalized_topic = self.normalize_topic(topic)
+        if connection_id not in self.active_connections or normalized_topic is None:
+            return False
+        topics = self.connection_topics.get(connection_id)
+        if not topics or normalized_topic not in topics:
+            return False
+        topics.remove(normalized_topic)
+        if not topics:
+            self.connection_topics.pop(connection_id, None)
+        return True
+
+    def get_subscriptions(self, connection_id: str) -> Set[str]:
+        """Return the active subscriptions for one connection."""
+        return set(self.connection_topics.get(connection_id, set()))
+
+    @staticmethod
+    def normalize_topic(topic: Optional[str]) -> Optional[str]:
+        """Normalize and validate one subscription topic."""
+        if not topic:
+            return None
+        normalized_topic = topic.strip()
+        if normalized_topic in ACCOUNT_REALTIME_TOPICS:
+            return normalized_topic
+        return None
+
+    @classmethod
+    def resolve_topic(cls, data: dict) -> Optional[str]:
+        """Resolve a routing topic from one outgoing message."""
+        explicit_topic = cls.normalize_topic(data.get("topic"))
+        if explicit_topic:
+            return explicit_topic
+
+        message_type = data.get("type")
+        if not message_type:
+            return None
+        if message_type.startswith("approval_"):
+            return "approvals"
+        if message_type == "activity_update":
+            return "activity"
+        if message_type in {
+            "execution_started",
+            "status_update",
+            "agent_log_line",
+            "execution_completed",
+            "execution_failed",
+            "model_gateway_call",
+            "tool_call",
+            "mcp_call",
+            "tool_calls_update",
+            "token_usage_update",
+            "budget_update",
+            "model_output",
+            "agent_started",
+            "agent_stopped",
+            "connected",
+        }:
+            return "flow_executions"
+        return None
+
+    def _accepts_topic(self, connection_id: str, topic: Optional[str]) -> bool:
+        topics = self.connection_topics.get(connection_id)
+        if not topics or topic is None:
+            return True
+        return topic in topics
+
     def disconnect(self, connection_id: str):
         """
         Disconnects a WebSocket and removes account association.
@@ -90,6 +167,7 @@ class WebSocketManager:
 
         if connection_id in self.connection_accounts:
             del self.connection_accounts[connection_id]
+        self.connection_topics.pop(connection_id, None)
 
         logger.info(f"Total active connections: {len(self.active_connections)}")
 
@@ -160,7 +238,31 @@ class WebSocketManager:
                 f"Broadcasting {msg_type} to all {len(self.active_connections)} connections"
             )
 
-        await self.broadcast(json.dumps(data), account_id=account_id)
+        topic = self.resolve_topic(data)
+        sent_count = 0
+        encoded = json.dumps(data)
+        for connection_id, connection in list(self.active_connections.items()):
+            if account_id is not None:
+                conn_account = self.connection_accounts.get(connection_id)
+                if conn_account != account_id:
+                    continue
+            if not self._accepts_topic(connection_id, topic):
+                continue
+            try:
+                await connection.send_text(encoded)
+                sent_count += 1
+            except Exception as e:
+                logger.warning(
+                    f"Failed to send message to connection {connection_id}: {e}"
+                )
+
+        if account_id and sent_count > 0:
+            logger.debug(
+                "Broadcast complete: sent %s message(s) for account %s topic=%s",
+                sent_count,
+                account_id,
+                topic,
+            )
 
 
 async def nats_consumer(manager: "WebSocketManager"):
@@ -210,6 +312,11 @@ async def nats_consumer(manager: "WebSocketManager"):
         # Subscribe to a wildcard subject to receive all flow updates
         flow_sub = await nats_client.subscribe("flow-updates.*", cb=message_handler)
         logger.info("Subscribed to NATS subject 'flow-updates.*'")
+
+        account_sub = await nats_client.subscribe(
+            "account-updates.*", cb=message_handler
+        )
+        logger.info("Subscribed to NATS subject 'account-updates.*'")
 
         # Subscribe to approval updates
         approval_sub = await nats_client.subscribe(

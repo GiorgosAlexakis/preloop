@@ -8,6 +8,7 @@ from typing import Any, Optional
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
+from ..models.managed_agent import ManagedAgent
 from ..models.runtime_session import RuntimeSession
 from ..models.runtime_session_activity import RuntimeSessionActivity
 from .base import CRUDBase
@@ -53,6 +54,26 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
         if runtime_session is not None:
             runtime_session.last_activity_at = activity_timestamp
             db.add(runtime_session)
+
+            if (
+                runtime_session.runtime_principal_type
+                and runtime_session.runtime_principal_id
+            ):
+                managed_agent = (
+                    db.query(ManagedAgent)
+                    .filter(
+                        ManagedAgent.account_id == account_id,
+                        ManagedAgent.session_source_type
+                        == runtime_session.runtime_principal_type,
+                        ManagedAgent.session_source_id
+                        == runtime_session.runtime_principal_id,
+                    )
+                    .first()
+                )
+                if managed_agent is not None:
+                    managed_agent.runtime_session_id = runtime_session.id
+                    managed_agent.last_seen_at = activity_timestamp
+                    db.add(managed_agent)
 
         if commit:
             db.commit()

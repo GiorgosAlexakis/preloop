@@ -323,7 +323,7 @@ def test_account_runtime_sessions_endpoints(client, db_session, test_user):
     )
 
     list_response = client.get(
-        "/api/v1/account/runtime-sessions",
+        "/api/v1/runtime-sessions",
         params={"session_source_type": "claude_code"},
     )
 
@@ -335,7 +335,7 @@ def test_account_runtime_sessions_endpoints(client, db_session, test_user):
     assert list_body["items"][0]["token_usage"]["total_tokens"] == 89
 
     detail_response = client.get(
-        f"/api/v1/account/runtime-sessions/{runtime_session.id}",
+        f"/api/v1/runtime-sessions/{runtime_session.id}",
         params={"interaction_query": "deployment risk"},
     )
 
@@ -568,9 +568,7 @@ def test_runtime_session_detail_includes_flow_activity_timeline(
         response_payload={"output_text": "Issue history summarized"},
     )
 
-    detail_response = client.get(
-        f"/api/v1/account/runtime-sessions/{runtime_session.id}"
-    )
+    detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
 
     assert detail_response.status_code == 200
     detail_body = detail_response.json()
@@ -631,9 +629,7 @@ def test_runtime_session_detail_includes_normalized_tool_activity_for_non_flow_s
         status="success",
     )
 
-    detail_response = client.get(
-        f"/api/v1/account/runtime-sessions/{runtime_session.id}"
-    )
+    detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
 
     assert detail_response.status_code == 200
     detail_body = detail_response.json()

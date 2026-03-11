@@ -20,9 +20,12 @@ import type {
   AccountManagedAgentListResponse,
   ManagedAgentDetailResponse,
   ManagedAgentSummary,
+  ManagedAgentUpdateRequest,
   AccountGatewayUsageSearchResponse,
   AccountRuntimeSessionDetailResponse,
   AccountRuntimeSessionListResponse,
+  RuntimeSessionSummary,
+  RuntimeSessionUpdateRequest,
   AccountGatewayUsageSummaryResponse,
   FlowGatewayUsageSummaryResponse,
   AIModelGatewayUsageSummaryResponse,
@@ -358,7 +361,7 @@ export async function getAccountRuntimeSessions(
   params: RuntimeSessionListParams = {}
 ): Promise<AccountRuntimeSessionListResponse> {
   const response = await fetchWithAuth(
-    `/api/v1/account/runtime-sessions${buildRuntimeSessionListQuery(params)}`
+    `/api/v1/runtime-sessions${buildRuntimeSessionListQuery(params)}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch runtime sessions');
@@ -370,7 +373,7 @@ export async function getAccountAgents(
   params: ManagedAgentListParams = {}
 ): Promise<AccountManagedAgentListResponse> {
   const response = await fetchWithAuth(
-    `/api/v1/account/agents${buildManagedAgentListQuery(params)}`
+    `/api/v1/agents${buildManagedAgentListQuery(params)}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch managed agents');
@@ -381,9 +384,24 @@ export async function getAccountAgents(
 export async function getAccountAgent(
   agentId: string
 ): Promise<ManagedAgentDetailResponse> {
-  const response = await fetchWithAuth(`/api/v1/account/agents/${agentId}`);
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}`);
   if (!response.ok) {
     throw new Error('Failed to fetch managed agent');
+  }
+  return response.json();
+}
+
+export async function updateAccountAgent(
+  agentId: string,
+  payload: ManagedAgentUpdateRequest
+): Promise<ManagedAgentSummary> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update managed agent');
   }
   return response.json();
 }
@@ -412,10 +430,28 @@ export async function getAccountRuntimeSessionDetail(
 
   const queryString = queryParams.toString();
   const response = await fetchWithAuth(
-    `/api/v1/account/runtime-sessions/${runtimeSessionId}${queryString ? `?${queryString}` : ''}`
+    `/api/v1/runtime-sessions/${runtimeSessionId}${queryString ? `?${queryString}` : ''}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch runtime session detail');
+  }
+  return response.json();
+}
+
+export async function updateAccountRuntimeSession(
+  runtimeSessionId: string,
+  payload: RuntimeSessionUpdateRequest
+): Promise<RuntimeSessionSummary> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to update runtime session');
   }
   return response.json();
 }

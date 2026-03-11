@@ -8,6 +8,7 @@ import sys
 import os
 import subprocess
 import logging
+import yaml
 
 import click
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from preloop.models.crud import crud_embedding_model
 from preloop.models.crud import crud_ai_model
 
 from preloop.models.db.vector_types import TRUNCATED_VECTOR_SIZE
+from preloop.models.models.plan import Plan
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +27,52 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def seed_plan_catalog(db_session, project_root: str) -> None:
+    """Seed the local plan catalog from `plans.yaml` if needed."""
+    plans_file = os.path.join(project_root, "plans.yaml")
+    if not os.path.exists(plans_file):
+        click.echo("plans.yaml not found, skipping plan catalog initialization.")
+        return
+
+    with open(plans_file, "r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    plans = raw.get("plans") or []
+
+    for plan_data in plans:
+        if not isinstance(plan_data, dict) or not plan_data.get("id"):
+            continue
+        plan_id = str(plan_data["id"])
+        plan = db_session.query(Plan).filter(Plan.id == plan_id).first()
+        stripe_product_id = plan_data.get("stripe_product_id")
+        if stripe_product_id is None and (
+            plan_data.get("price_monthly") is not None
+            or plan_data.get("price_annually") is not None
+        ):
+            stripe_product_id = plan_id
+
+        if plan is None:
+            plan = Plan(
+                id=plan_id,
+                name=plan_data["name"],
+                price_monthly=plan_data.get("price_monthly"),
+                price_annually=plan_data.get("price_annually"),
+                is_active=True,
+                is_custom=False,
+                features=plan_data.get("features") or {},
+                stripe_product_id=stripe_product_id,
+            )
+            db_session.add(plan)
+        else:
+            plan.name = plan_data["name"]
+            plan.price_monthly = plan_data.get("price_monthly")
+            plan.price_annually = plan_data.get("price_annually")
+            plan.features = plan_data.get("features") or {}
+            if stripe_product_id is not None:
+                plan.stripe_product_id = stripe_product_id
+
+    db_session.commit()
 
 
 @click.command()
@@ -90,6 +138,10 @@ def init_db(force: bool):
 
         click.echo("Vector search index created successfully!")
         db_session = next(get_db_session())
+
+        click.echo("Initializing plan catalog from plans.yaml...")
+        seed_plan_catalog(db_session, project_root)
+        click.echo("Plan catalog initialized successfully!")
 
         # Initialize system roles and permissions
         click.echo("Initializing system roles and permissions...")

@@ -146,6 +146,8 @@ class RuntimeSessionSummary(BaseModel):
     flow_execution_id: Optional[str] = None
     latest_model_alias: Optional[str] = None
     latest_provider_name: Optional[str] = None
+    is_active_now: bool = False
+    activity_status: str = "idle"
     total_requests: int = 0
     successful_requests: int = 0
     failed_requests: int = 0
@@ -173,12 +175,20 @@ class ManagedAgentSummary(BaseModel):
 
     id: str
     runtime_session_id: Optional[str] = None
+    owner_user_id: Optional[str] = None
+    owner_username: Optional[str] = None
+    owner_email: Optional[str] = None
     display_name: str
     session_source_type: str
     session_source_id: str
     session_reference: Optional[str] = None
     enrolled_via: str
     managed_mcp_servers: List[str] = Field(default_factory=list)
+    lifecycle_state: str = "active"
+    lifecycle_reason: Optional[str] = None
+    lifecycle_updated_at: Optional[datetime] = None
+    is_active_now: bool = False
+    activity_status: str = "idle"
     last_seen_at: datetime
     started_at: Optional[datetime] = None
     last_activity_at: Optional[datetime] = None
@@ -250,6 +260,23 @@ class ManagedAgentDetailResponse(BaseModel):
         default_factory=list
     )
     sessions: List[RuntimeSessionSummary] = Field(default_factory=list)
+
+
+class ManagedAgentUpdateRequest(BaseModel):
+    """Operator-driven updates for one managed agent."""
+
+    owner_user_id: Optional[str] = None
+    lifecycle_action: Optional[str] = Field(
+        default=None, pattern="^(suspend|resume|decommission|reenroll)$"
+    )
+    reason: Optional[str] = None
+
+
+class RuntimeSessionUpdateRequest(BaseModel):
+    """Operator-driven updates for one runtime session."""
+
+    action: str = Field(pattern="^(end)$")
+    reason: Optional[str] = None
 
 
 class RuntimeSessionActivityItem(BaseModel):

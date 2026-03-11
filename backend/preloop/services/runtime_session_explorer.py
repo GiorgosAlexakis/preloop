@@ -174,6 +174,8 @@ class RuntimeSessionExplorerService:
             flow_execution_id=row["flow_execution_id"],
             latest_model_alias=row["latest_model_alias"],
             latest_provider_name=row["latest_provider_name"],
+            is_active_now=row.get("is_active_now", False),
+            activity_status=row.get("activity_status", "idle"),
             total_requests=row["total_requests"],
             successful_requests=row["successful_requests"],
             failed_requests=row["failed_requests"],

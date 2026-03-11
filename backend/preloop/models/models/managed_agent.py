@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,7 @@ from .base import Base
 if TYPE_CHECKING:
     from .account import Account
     from .runtime_session import RuntimeSession
+    from .user import User
 
 
 class ManagedAgent(Base):
@@ -40,6 +41,12 @@ class ManagedAgent(Base):
         nullable=True,
         index=True,
     )
+    owner_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     session_source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     session_source_id: Mapped[str] = mapped_column(String(255), nullable=False)
     session_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -50,11 +57,17 @@ class ManagedAgent(Base):
     managed_mcp_servers: Mapped[List[str]] = mapped_column(
         JSONB, nullable=False, default=list
     )
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active"
+    )
+    lifecycle_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lifecycle_updated_at: Mapped[datetime] = mapped_column(nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(nullable=False)
 
     account: Mapped["Account"] = relationship(
         "Account", back_populates="managed_agents"
     )
+    owner_user: Mapped[Optional["User"]] = relationship("User")
     runtime_session: Mapped[Optional["RuntimeSession"]] = relationship(
         "RuntimeSession", back_populates="managed_agent"
     )

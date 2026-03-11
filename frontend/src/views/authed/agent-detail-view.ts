@@ -6,9 +6,16 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/view-header.ts';
-import { getAccountAgent, getAccountRuntimeSessionDetail } from '../../api';
+import {
+  fetchWithAuth,
+  getAccountAgent,
+  getAccountRuntimeSessionDetail,
+  updateAccountAgent,
+} from '../../api';
 import type {
   AccountRuntimeSessionDetailResponse,
   GatewayUsageByModel,
@@ -21,9 +28,16 @@ import type {
   RuntimeSessionSummary,
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 
 @customElement('agent-detail-view')
 export class AgentDetailView extends LitElement {
+  private static readonly UPDATEABLE_LIFECYCLE_STATES = new Set([
+    'active',
+    'suspended',
+    'decommissioned',
+  ]);
+
   @property({ type: String })
   agentId = '';
 
@@ -59,6 +73,22 @@ export class AgentDetailView extends LitElement {
 
   @state()
   private initialized = false;
+
+  @state()
+  private availableUsers: Array<{
+    id: string;
+    username: string;
+    email: string;
+  }> = [];
+
+  @state()
+  private selectedOwnerUserId = '';
+
+  @state()
+  private actionLoading = false;
+
+  private unsubscribeRealtime?: () => void;
+  private refreshTimer: number | null = null;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -164,6 +194,17 @@ export class AgentDetailView extends LitElement {
         font-size: 2rem;
         margin-bottom: var(--sl-spacing-small);
       }
+
+      .control-row {
+        display: flex;
+        gap: var(--sl-spacing-small);
+        flex-wrap: wrap;
+        align-items: end;
+      }
+
+      .control-row sl-select {
+        min-width: 220px;
+      }
     `,
   ];
 
@@ -179,12 +220,51 @@ export class AgentDetailView extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.connectRealtime();
     if (!this.initialized) {
       this.initialized = true;
       if (this.agentId) {
         void this.loadData();
       }
     }
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unsubscribeRealtime?.();
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  private connectRealtime(): void {
+    const scheduleRefresh = () => this.scheduleRefresh();
+    const unsubscribers = [
+      unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('gateway_activity', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('audit', scheduleRefresh),
+    ];
+    this.unsubscribeRealtime = () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+    void unifiedWebSocketManager.connect();
+  }
+
+  private scheduleRefresh(): void {
+    if (!this.agentId) {
+      return;
+    }
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      void this.loadData();
+    }, 250);
   }
 
   private async loadData(): Promise<void> {
@@ -202,15 +282,18 @@ export class AgentDetailView extends LitElement {
     this.activityByTool = [];
 
     try {
-      const detail: ManagedAgentDetailResponse = await getAccountAgent(
-        this.agentId
-      );
+      const [detail, users] = await Promise.all([
+        getAccountAgent(this.agentId),
+        this.fetchUsers(),
+      ]);
       this.agent = detail.agent;
       this.aggregate = detail.aggregate;
       this.usageByModel = detail.usage_by_model;
       this.activityByServer = detail.activity_by_server;
       this.activityByTool = detail.activity_by_tool;
       this.sessions = detail.sessions;
+      this.availableUsers = users;
+      this.selectedOwnerUserId = detail.agent.owner_user_id ?? '';
       this.selectedSessionId =
         detail.agent.runtime_session_id ?? detail.sessions[0]?.id ?? null;
       this.runtimeDetail = this.selectedSessionId
@@ -238,6 +321,17 @@ export class AgentDetailView extends LitElement {
     }
   }
 
+  private async fetchUsers(): Promise<
+    Array<{ id: string; username: string; email: string }>
+  > {
+    const response = await fetchWithAuth('/api/v1/users');
+    if (!response.ok) {
+      return [];
+    }
+    const data = await response.json();
+    return data.users || [];
+  }
+
   private getSourceLabel(sourceType: string | null | undefined): string {
     switch (sourceType) {
       case 'claude_code':
@@ -259,6 +353,71 @@ export class AgentDetailView extends LitElement {
 
   private formatMoney(amount: number | null | undefined): string {
     return `$${(amount || 0).toFixed(2)}`;
+  }
+
+  private getLifecycleVariant(): string {
+    if (!this.agent) return 'neutral';
+    if (this.agent.lifecycle_state === 'decommissioned') return 'danger';
+    if (this.agent.lifecycle_state === 'suspended') return 'warning';
+    if (this.agent.activity_status === 'active_now') return 'success';
+    if (this.agent.ended_at) return 'neutral';
+    return 'primary';
+  }
+
+  private getLifecycleLabel(): string {
+    if (!this.agent) return 'Unknown';
+    if (this.agent.lifecycle_state === 'decommissioned')
+      return 'Decommissioned';
+    if (this.agent.lifecycle_state === 'suspended') return 'Suspended';
+    if (this.agent.activity_status === 'active_now') return 'Active now';
+    if (this.agent.ended_at) return 'Ended';
+    return 'Idle';
+  }
+
+  private async applyLifecycleAction(
+    action: 'suspend' | 'resume' | 'decommission' | 'reenroll'
+  ): Promise<void> {
+    if (!this.agentId || !this.agent) {
+      return;
+    }
+    if (
+      action === 'decommission' &&
+      !window.confirm(`Decommission ${this.agent.display_name}?`)
+    ) {
+      return;
+    }
+    this.actionLoading = true;
+    try {
+      await updateAccountAgent(this.agentId, { lifecycle_action: action });
+      await this.loadData();
+    } catch (error) {
+      console.error('Failed to update managed agent:', error);
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to update managed agent';
+    } finally {
+      this.actionLoading = false;
+    }
+  }
+
+  private async saveOwnerAssignment(): Promise<void> {
+    if (!this.agentId) {
+      return;
+    }
+    this.actionLoading = true;
+    try {
+      await updateAccountAgent(this.agentId, {
+        owner_user_id: this.selectedOwnerUserId || null,
+      });
+      await this.loadData();
+    } catch (error) {
+      console.error('Failed to update owner:', error);
+      this.error =
+        error instanceof Error ? error.message : 'Failed to update owner';
+    } finally {
+      this.actionLoading = false;
+    }
   }
 
   private formatDateTime(value: string | null | undefined): string {
@@ -422,10 +581,8 @@ export class AgentDetailView extends LitElement {
                   : null}
               </div>
               <div class="badge-row">
-                <sl-badge
-                  variant=${this.agent.ended_at ? 'neutral' : 'success'}
-                >
-                  ${this.agent.ended_at ? 'Ended' : 'Active'}
+                <sl-badge variant=${this.getLifecycleVariant()}>
+                  ${this.getLifecycleLabel()}
                 </sl-badge>
                 <sl-badge variant="primary"
                   >${this.agent.enrolled_via}</sl-badge
@@ -433,7 +590,92 @@ export class AgentDetailView extends LitElement {
               </div>
             </div>
 
+            <div class="control-row">
+              ${AgentDetailView.UPDATEABLE_LIFECYCLE_STATES.has(
+                this.agent.lifecycle_state
+              ) && this.agent.lifecycle_state === 'active'
+                ? html`
+                    <sl-button
+                      variant="warning"
+                      ?loading=${this.actionLoading}
+                      @click=${() => this.applyLifecycleAction('suspend')}
+                    >
+                      Suspend
+                    </sl-button>
+                    <sl-button
+                      variant="danger"
+                      ?loading=${this.actionLoading}
+                      @click=${() => this.applyLifecycleAction('decommission')}
+                    >
+                      Decommission
+                    </sl-button>
+                  `
+                : null}
+              ${this.agent.lifecycle_state === 'suspended'
+                ? html`
+                    <sl-button
+                      variant="success"
+                      ?loading=${this.actionLoading}
+                      @click=${() => this.applyLifecycleAction('resume')}
+                    >
+                      Resume
+                    </sl-button>
+                    <sl-button
+                      variant="danger"
+                      ?loading=${this.actionLoading}
+                      @click=${() => this.applyLifecycleAction('decommission')}
+                    >
+                      Decommission
+                    </sl-button>
+                  `
+                : null}
+              ${this.agent.lifecycle_state === 'decommissioned'
+                ? html`
+                    <sl-button
+                      variant="success"
+                      ?loading=${this.actionLoading}
+                      @click=${() => this.applyLifecycleAction('reenroll')}
+                    >
+                      Re-enroll
+                    </sl-button>
+                  `
+                : null}
+            </div>
+
             <div class="summary-grid">
+              <div class="stat-card">
+                <div class="stat-label">Owner</div>
+                <div class="stat-value">
+                  ${this.agent.owner_username ||
+                  this.agent.owner_email ||
+                  'Unassigned'}
+                </div>
+                <div class="control-row">
+                  <sl-select
+                    hoist
+                    value=${this.selectedOwnerUserId}
+                    @sl-change=${(event: CustomEvent) => {
+                      this.selectedOwnerUserId = event.detail.value || '';
+                    }}
+                  >
+                    <sl-option value="">Unassigned</sl-option>
+                    ${this.availableUsers.map(
+                      (user) => html`
+                        <sl-option value=${user.id}>
+                          ${user.username} (${user.email})
+                        </sl-option>
+                      `
+                    )}
+                  </sl-select>
+                  <sl-button
+                    variant="default"
+                    ?loading=${this.actionLoading}
+                    @click=${this.saveOwnerAssignment}
+                  >
+                    Save owner
+                  </sl-button>
+                </div>
+              </div>
               <div class="stat-card">
                 <div class="stat-label">Managed MCP Servers</div>
                 <div class="stat-value">
@@ -458,6 +700,22 @@ export class AgentDetailView extends LitElement {
                 <div class="meta-line">
                   Last seen ${this.formatDateTime(this.agent.last_seen_at)}
                 </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Lifecycle</div>
+                <div class="stat-value">${this.getLifecycleLabel()}</div>
+                <div class="meta-line">
+                  ${this.agent.lifecycle_updated_at
+                    ? `Updated ${this.formatDateTime(this.agent.lifecycle_updated_at)}`
+                    : 'Not updated yet'}
+                </div>
+                ${this.agent.lifecycle_reason
+                  ? html`
+                      <div class="meta-line">
+                        ${this.agent.lifecycle_reason}
+                      </div>
+                    `
+                  : null}
               </div>
               <div class="stat-card">
                 <div class="stat-label">Total Requests</div>

@@ -215,6 +215,8 @@ export interface RuntimeSessionSummary {
   flow_execution_id: string | null;
   latest_model_alias: string | null;
   latest_provider_name: string | null;
+  is_active_now: boolean;
+  activity_status: 'active_now' | 'idle' | 'ended' | string;
   total_requests: number;
   successful_requests: number;
   failed_requests: number;
@@ -247,12 +249,26 @@ export interface AccountRuntimeSessionDetailResponse {
 export interface ManagedAgentSummary {
   id: string;
   runtime_session_id: string | null;
+  owner_user_id: string | null;
+  owner_username: string | null;
+  owner_email: string | null;
   display_name: string;
   session_source_type: string;
   session_source_id: string;
   session_reference: string | null;
   enrolled_via: string;
   managed_mcp_servers: string[];
+  lifecycle_state: 'active' | 'suspended' | 'decommissioned' | string;
+  lifecycle_reason: string | null;
+  lifecycle_updated_at: string | null;
+  is_active_now: boolean;
+  activity_status:
+    | 'active_now'
+    | 'idle'
+    | 'ended'
+    | 'suspended'
+    | 'decommissioned'
+    | string;
   last_seen_at: string;
   started_at: string | null;
   last_activity_at: string | null;
@@ -310,6 +326,17 @@ export interface ManagedAgentDetailResponse {
   activity_by_server: ManagedAgentServerActivitySummary[];
   activity_by_tool: ManagedAgentToolActivitySummary[];
   sessions: RuntimeSessionSummary[];
+}
+
+export interface ManagedAgentUpdateRequest {
+  owner_user_id?: string | null;
+  lifecycle_action?: 'suspend' | 'resume' | 'decommission' | 'reenroll';
+  reason?: string | null;
+}
+
+export interface RuntimeSessionUpdateRequest {
+  action: 'end';
+  reason?: string | null;
 }
 
 export interface RuntimeSessionActivityItem {

@@ -11,12 +11,17 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/view-header.ts';
-import { getAccountAgents, type ManagedAgentListParams } from '../../api';
+import {
+  getAccountAgents,
+  updateAccountAgent,
+  type ManagedAgentListParams,
+} from '../../api';
 import type {
   AccountManagedAgentListResponse,
   ManagedAgentSummary,
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 
 @customElement('agents-view')
 export class AgentsView extends LitElement {
@@ -37,6 +42,12 @@ export class AgentsView extends LitElement {
 
   @state()
   private status = 'all';
+
+  @state()
+  private actionAgentId: string | null = null;
+
+  private unsubscribeRealtime?: () => void;
+  private refreshTimer: number | null = null;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -138,6 +149,41 @@ export class AgentsView extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     void this.loadAgents();
+    this.connectRealtime();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unsubscribeRealtime?.();
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  private connectRealtime(): void {
+    const scheduleRefresh = () => this.scheduleRefresh();
+    const unsubscribers = [
+      unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('gateway_activity', scheduleRefresh),
+    ];
+    this.unsubscribeRealtime = () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+    void unifiedWebSocketManager.connect();
+  }
+
+  private scheduleRefresh(): void {
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      void this.loadAgents();
+    }, 250);
   }
 
   private async loadAgents(): Promise<void> {
@@ -228,6 +274,48 @@ export class AgentsView extends LitElement {
     return `/console/agents/${encodeURIComponent(agent.id)}`;
   }
 
+  private getLifecycleVariant(agent: ManagedAgentSummary): string {
+    if (agent.lifecycle_state === 'decommissioned') return 'danger';
+    if (agent.lifecycle_state === 'suspended') return 'warning';
+    if (agent.activity_status === 'active_now') return 'success';
+    if (agent.ended_at) return 'neutral';
+    return 'primary';
+  }
+
+  private getLifecycleLabel(agent: ManagedAgentSummary): string {
+    if (agent.lifecycle_state === 'decommissioned') return 'Decommissioned';
+    if (agent.lifecycle_state === 'suspended') return 'Suspended';
+    if (agent.activity_status === 'active_now') return 'Active now';
+    if (agent.ended_at) return 'Ended';
+    return 'Idle';
+  }
+
+  private async applyLifecycleAction(
+    agent: ManagedAgentSummary,
+    action: 'suspend' | 'resume' | 'decommission' | 'reenroll'
+  ): Promise<void> {
+    if (
+      action === 'decommission' &&
+      !window.confirm(`Decommission ${agent.display_name}?`)
+    ) {
+      return;
+    }
+
+    this.actionAgentId = agent.id;
+    try {
+      await updateAccountAgent(agent.id, { lifecycle_action: action });
+      await this.loadAgents();
+    } catch (error) {
+      console.error('Failed to update managed agent:', error);
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to update managed agent';
+    } finally {
+      this.actionAgentId = null;
+    }
+  }
+
   private renderAgentCard(agent: ManagedAgentSummary) {
     const detailUrl = this.getAgentDetailUrl(agent);
     return html`
@@ -241,13 +329,27 @@ export class AgentsView extends LitElement {
                 ${agent.session_source_id}
               </div>
             </div>
-            <sl-badge variant=${agent.ended_at ? 'neutral' : 'success'}>
-              ${agent.ended_at ? 'Ended' : 'Active'}
+            <sl-badge variant=${this.getLifecycleVariant(agent)}>
+              ${this.getLifecycleLabel(agent)}
             </sl-badge>
           </div>
 
           ${agent.session_reference
             ? html`<div class="agent-meta">${agent.session_reference}</div>`
+            : null}
+          ${agent.owner_username || agent.owner_email
+            ? html`
+                <div class="agent-meta">
+                  Owner: ${agent.owner_username || agent.owner_email}
+                </div>
+              `
+            : null}
+          ${agent.lifecycle_reason
+            ? html`
+                <div class="agent-meta">
+                  Lifecycle note: ${agent.lifecycle_reason}
+                </div>
+              `
             : null}
 
           <div class="metric-row">
@@ -285,12 +387,65 @@ export class AgentsView extends LitElement {
           </div>
 
           <div class="action-row">
-            <span class="label">
-              Inspect the enrolled agent, linked session, and recent activity
-            </span>
-            <a href=${detailUrl}>
-              <sl-button size="small" variant="default">View Agent</sl-button>
-            </a>
+            <span class="label">Inspect or control this enrolled agent</span>
+            <div class="badges">
+              ${agent.lifecycle_state === 'active'
+                ? html`
+                    <sl-button
+                      size="small"
+                      variant="warning"
+                      ?loading=${this.actionAgentId === agent.id}
+                      @click=${() =>
+                        this.applyLifecycleAction(agent, 'suspend')}
+                    >
+                      Suspend
+                    </sl-button>
+                    <sl-button
+                      size="small"
+                      variant="danger"
+                      ?loading=${this.actionAgentId === agent.id}
+                      @click=${() =>
+                        this.applyLifecycleAction(agent, 'decommission')}
+                    >
+                      Decommission
+                    </sl-button>
+                  `
+                : agent.lifecycle_state === 'suspended'
+                  ? html`
+                      <sl-button
+                        size="small"
+                        variant="success"
+                        ?loading=${this.actionAgentId === agent.id}
+                        @click=${() =>
+                          this.applyLifecycleAction(agent, 'resume')}
+                      >
+                        Resume
+                      </sl-button>
+                      <sl-button
+                        size="small"
+                        variant="danger"
+                        ?loading=${this.actionAgentId === agent.id}
+                        @click=${() =>
+                          this.applyLifecycleAction(agent, 'decommission')}
+                      >
+                        Decommission
+                      </sl-button>
+                    `
+                  : html`
+                      <sl-button
+                        size="small"
+                        variant="success"
+                        ?loading=${this.actionAgentId === agent.id}
+                        @click=${() =>
+                          this.applyLifecycleAction(agent, 'reenroll')}
+                      >
+                        Re-enroll
+                      </sl-button>
+                    `}
+              <a href=${detailUrl}>
+                <sl-button size="small" variant="default">View Agent</sl-button>
+              </a>
+            </div>
           </div>
         </div>
       </sl-card>

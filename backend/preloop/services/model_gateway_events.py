@@ -13,6 +13,12 @@ from sqlalchemy.orm import Session
 from preloop.config import settings
 from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.models.api_usage import ApiUsage
+from preloop.services.account_realtime import (
+    ACCOUNT_TOPIC_BUDGET_HEALTH,
+    ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+    build_account_event,
+    emit_account_event,
+)
 from preloop.sync.services.event_bus import get_nats_client
 
 logger = logging.getLogger(__name__)
@@ -54,8 +60,46 @@ class ModelGatewayEventEmitter:
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
-                return
-            loop.create_task(self._publish_to_nats(event))
+                loop = None
+            if loop is not None:
+                loop.create_task(self._publish_to_nats(event))
+
+        if usage.account_id:
+            emit_account_event(
+                build_account_event(
+                    account_id=str(usage.account_id),
+                    topic=ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+                    event_type=event["type"],
+                    payload=event["payload"],
+                    runtime_session_id=event.get("runtime_session_id"),
+                    execution_id=event.get("execution_id"),
+                    flow_id=event.get("flow_id"),
+                )
+            )
+
+            budget_payload = (event.get("payload") or {}).get("budget") or {}
+            if budget_payload:
+                emit_account_event(
+                    build_account_event(
+                        account_id=str(usage.account_id),
+                        topic=ACCOUNT_TOPIC_BUDGET_HEALTH,
+                        event_type="budget_health_updated",
+                        payload={
+                            "api_usage_id": str(usage.id),
+                            "ai_model_id": str(usage.ai_model_id)
+                            if usage.ai_model_id
+                            else None,
+                            "model_alias": usage.model_alias,
+                            "provider_name": usage.provider_name,
+                            "estimated_cost": usage.estimated_cost,
+                            "status_code": usage.status_code,
+                            "budget": budget_payload,
+                        },
+                        runtime_session_id=event.get("runtime_session_id"),
+                        execution_id=event.get("execution_id"),
+                        flow_id=event.get("flow_id"),
+                    )
+                )
 
     async def _publish_to_nats(self, event: dict) -> None:
         execution_id = event.get("execution_id")
@@ -83,6 +127,7 @@ class ModelGatewayEventEmitter:
             response_payload=response_payload,
         )
         return {
+            "topic": "flow_executions",
             "execution_id": str(usage.flow_execution_id)
             if usage.flow_execution_id
             else None,

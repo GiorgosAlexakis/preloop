@@ -829,6 +829,13 @@ async def {internal_name}({params_str}) -> str:
             try:
                 if user_context.runtime_session_id:
                     from preloop.models.crud import crud_runtime_session_activity
+                    from preloop.services.account_realtime import (
+                        ACCOUNT_TOPIC_AUDIT,
+                        ACCOUNT_TOPIC_MANAGED_AGENTS,
+                        ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+                        build_account_event,
+                        emit_account_event,
+                    )
                     from preloop.utils.redaction import redact_dict
 
                     activity_status = "failed" if exec_status == "failed" else "success"
@@ -837,7 +844,7 @@ async def {internal_name}({params_str}) -> str:
                     )
                     db = next(get_db())
                     try:
-                        crud_runtime_session_activity.log_tool_call(
+                        activity = crud_runtime_session_activity.log_tool_call(
                             db,
                             account_id=user_context.account_id,
                             runtime_session_id=user_context.runtime_session_id,
@@ -852,6 +859,82 @@ async def {internal_name}({params_str}) -> str:
                                 "arguments": redact_dict(arguments),
                             },
                         )
+                        activity_timestamp = (
+                            activity.timestamp.isoformat()
+                            if activity.timestamp
+                            else None
+                        )
+                        emit_account_event(
+                            build_account_event(
+                                account_id=user_context.account_id,
+                                topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+                                event_type="runtime_session_updated",
+                                payload={
+                                    "runtime_session_id": str(
+                                        user_context.runtime_session_id
+                                    ),
+                                    "session_source_type": user_context.runtime_principal_type,
+                                    "session_source_id": user_context.runtime_principal_id,
+                                    "session_reference": user_context.runtime_principal_name,
+                                    "runtime_principal_type": user_context.runtime_principal_type,
+                                    "runtime_principal_id": user_context.runtime_principal_id,
+                                    "runtime_principal_name": user_context.runtime_principal_name,
+                                    "last_activity_at": activity_timestamp,
+                                    "tool_name": name,
+                                    "server_name": server_name,
+                                    "status": activity_status,
+                                },
+                                runtime_session_id=user_context.runtime_session_id,
+                                execution_id=user_context.flow_execution_id,
+                            )
+                        )
+                        emit_account_event(
+                            build_account_event(
+                                account_id=user_context.account_id,
+                                topic=ACCOUNT_TOPIC_AUDIT,
+                                event_type="audit_event",
+                                payload={
+                                    "action": "tool_call",
+                                    "runtime_session_id": str(
+                                        user_context.runtime_session_id
+                                    ),
+                                    "runtime_principal_type": user_context.runtime_principal_type,
+                                    "runtime_principal_id": user_context.runtime_principal_id,
+                                    "runtime_principal_name": user_context.runtime_principal_name,
+                                    "tool_name": name,
+                                    "server_name": server_name,
+                                    "status": activity_status,
+                                    "correlation_id": correlation_id,
+                                },
+                                runtime_session_id=user_context.runtime_session_id,
+                                execution_id=user_context.flow_execution_id,
+                            )
+                        )
+                        if (
+                            user_context.runtime_principal_type
+                            and user_context.runtime_principal_id
+                        ):
+                            emit_account_event(
+                                build_account_event(
+                                    account_id=user_context.account_id,
+                                    topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
+                                    event_type="managed_agent_updated",
+                                    payload={
+                                        "runtime_session_id": str(
+                                            user_context.runtime_session_id
+                                        ),
+                                        "display_name": user_context.runtime_principal_name,
+                                        "session_source_type": user_context.runtime_principal_type,
+                                        "session_source_id": user_context.runtime_principal_id,
+                                        "last_seen_at": activity_timestamp,
+                                        "tool_name": name,
+                                        "server_name": server_name,
+                                        "status": activity_status,
+                                    },
+                                    runtime_session_id=user_context.runtime_session_id,
+                                    execution_id=user_context.flow_execution_id,
+                                )
+                            )
                     finally:
                         db.close()
             except Exception as activity_err:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import String, and_, case, cast, func, or_
@@ -16,6 +16,8 @@ from .base import CRUDBase
 
 class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
     """CRUD helpers for shared runtime session identities."""
+
+    ACTIVE_WINDOW = timedelta(minutes=10)
 
     def get_by_source(
         self,
@@ -35,6 +37,61 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             )
             .first()
         )
+
+    def touch_activity(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        observed_at: datetime,
+        commit: bool = False,
+    ) -> Optional[RuntimeSession]:
+        """Update last activity for one runtime session."""
+        db_obj = (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.id == runtime_session_id,
+            )
+            .first()
+        )
+        if db_obj is None:
+            return None
+        db_obj.last_activity_at = observed_at
+        db.add(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
+        return db_obj
+
+    def update_operator_state(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        runtime_session_id: str,
+        ended_at: Optional[datetime] = None,
+        commit: bool = True,
+    ) -> Optional[RuntimeSession]:
+        """Update operator-managed lifecycle state for one runtime session."""
+        db_obj = self.get_account_session(
+            db, account_id=account_id, runtime_session_id=runtime_session_id
+        )
+        if db_obj is None:
+            return None
+        if ended_at is not None:
+            db_obj.ended_at = ended_at
+            db_obj.last_activity_at = ended_at
+        db.add(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
+        return db_obj
 
     def upsert_by_source(
         self,
@@ -338,6 +395,26 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
 
     @staticmethod
     def _row_to_summary(row) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        last_observed_at = row.last_request_at or row.last_activity_at or row.started_at
+        if last_observed_at is not None and last_observed_at.tzinfo is None:
+            last_observed_at = last_observed_at.replace(tzinfo=UTC)
+        elif last_observed_at is not None:
+            last_observed_at = last_observed_at.astimezone(UTC)
+
+        if row.ended_at is not None:
+            activity_status = "ended"
+            is_active_now = False
+        elif (
+            last_observed_at is not None
+            and (now - last_observed_at) <= CRUDRuntimeSession.ACTIVE_WINDOW
+        ):
+            activity_status = "active_now"
+            is_active_now = True
+        else:
+            activity_status = "idle"
+            is_active_now = False
+
         return {
             "account_id": str(row.account_id),
             "id": str(row.id),
@@ -355,6 +432,8 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             "flow_execution_id": row.flow_execution_id,
             "latest_model_alias": row.latest_model_alias,
             "latest_provider_name": row.latest_provider_name,
+            "is_active_now": is_active_now,
+            "activity_status": activity_status,
             "total_requests": int(row.request_count or 0),
             "successful_requests": int(row.success_count or 0),
             "failed_requests": int(row.error_count or 0),

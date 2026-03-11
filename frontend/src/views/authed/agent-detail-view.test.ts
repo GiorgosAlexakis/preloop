@@ -15,7 +15,7 @@ describe('AgentDetailView', () => {
     fetchStub.callsFake(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
 
-      if (url.endsWith('/api/v1/account/agents/agent-1')) {
+      if (url.endsWith('/api/v1/agents/agent-1')) {
         return new Response(
           JSON.stringify({
             agent: {
@@ -176,7 +176,7 @@ describe('AgentDetailView', () => {
         );
       }
 
-      if (url.endsWith('/api/v1/account/runtime-sessions/runtime-session-1')) {
+      if (url.endsWith('/api/v1/runtime-sessions/runtime-session-1')) {
         return new Response(
           JSON.stringify({
             period_start: '2026-03-01T00:00:00Z',
@@ -243,7 +243,7 @@ describe('AgentDetailView', () => {
         );
       }
 
-      if (url.endsWith('/api/v1/account/runtime-sessions/runtime-session-2')) {
+      if (url.endsWith('/api/v1/runtime-sessions/runtime-session-2')) {
         return new Response(
           JSON.stringify({
             period_start: '2026-03-01T00:00:00Z',
@@ -366,7 +366,7 @@ describe('AgentDetailView', () => {
       .getCalls()
       .find((call) =>
         String(call.args[0]).endsWith(
-          '/api/v1/account/runtime-sessions/runtime-session-2'
+          '/api/v1/runtime-sessions/runtime-session-2'
         )
       );
     expect(sessionTwoCall).to.not.equal(undefined);
@@ -389,7 +389,7 @@ describe('AgentDetailView', () => {
     fetchStub.callsFake(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
 
-      if (url === '/api/v1/account/agents/agent-1') {
+      if (url === '/api/v1/agents/agent-1') {
         return new Response(
           JSON.stringify({
             agent: {
@@ -550,7 +550,7 @@ describe('AgentDetailView', () => {
         );
       }
 
-      if (url === '/api/v1/account/runtime-sessions/runtime-session-2') {
+      if (url === '/api/v1/runtime-sessions/runtime-session-2') {
         return new Response(
           JSON.stringify({
             period_start: '2026-02-09T10:00:00Z',

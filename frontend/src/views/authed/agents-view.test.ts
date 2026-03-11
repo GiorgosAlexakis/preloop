@@ -15,7 +15,7 @@ describe('AgentsView', () => {
     fetchStub.callsFake(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
 
-      if (url.startsWith('/api/v1/account/agents')) {
+      if (url.startsWith('/api/v1/agents')) {
         return new Response(
           JSON.stringify({
             query: null,

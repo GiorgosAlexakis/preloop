@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import and_, case, func, or_
@@ -11,7 +11,24 @@ from sqlalchemy.orm import Session
 from ..models.api_usage import ApiUsage
 from ..models.managed_agent import ManagedAgent
 from ..models.runtime_session import RuntimeSession
+from ..models.user import User
 from .base import CRUDBase
+
+MANAGED_AGENT_ACTIVE_WINDOW = timedelta(minutes=10)
+
+
+def _utc_now() -> datetime:
+    """Return the current UTC time as a timezone-aware timestamp."""
+    return datetime.now(UTC)
+
+
+def _coerce_utc(timestamp: Optional[datetime]) -> Optional[datetime]:
+    """Normalize stored timestamps so freshness checks can compare safely."""
+    if timestamp is None:
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=UTC)
+    return timestamp.astimezone(UTC)
 
 
 class CRUDManagedAgent(CRUDBase[ManagedAgent]):
@@ -46,6 +63,102 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .first()
         )
 
+    def touch_last_seen_for_principal(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        session_source_type: str,
+        session_source_id: str,
+        runtime_session_id: Optional[Any] = None,
+        observed_at: datetime,
+        commit: bool = False,
+    ) -> Optional[ManagedAgent]:
+        """Update last-seen timestamp for one durable managed agent."""
+        db_obj = self.get_by_source(
+            db,
+            account_id=str(account_id),
+            session_source_type=session_source_type,
+            session_source_id=session_source_id,
+        )
+        if db_obj is None:
+            return None
+        db_obj.last_seen_at = observed_at
+        if runtime_session_id is not None:
+            db_obj.runtime_session_id = runtime_session_id
+        db.add(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
+        return db_obj
+
+    def update_operator_state(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        agent_id: str,
+        owner_user_id: Any = None,
+        set_owner: bool = False,
+        lifecycle_state: Optional[str] = None,
+        lifecycle_reason: Optional[str] = None,
+        commit: bool = True,
+    ) -> Optional[ManagedAgent]:
+        """Update ownership and lifecycle controls for one managed agent."""
+        db_obj = self.get_for_account(db, account_id=account_id, agent_id=agent_id)
+        if db_obj is None:
+            return None
+        now = _utc_now()
+        if set_owner:
+            db_obj.owner_user_id = owner_user_id
+        if lifecycle_state is not None:
+            db_obj.lifecycle_state = lifecycle_state
+            db_obj.lifecycle_reason = lifecycle_reason
+            db_obj.lifecycle_updated_at = now
+            if lifecycle_state == "decommissioned":
+                db_obj.runtime_session_id = None
+        db.add(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
+        return db_obj
+
+    def clear_runtime_session_binding(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        session_source_type: str,
+        session_source_id: str,
+        runtime_session_id: Optional[Any] = None,
+        commit: bool = False,
+    ) -> Optional[ManagedAgent]:
+        """Clear the active runtime-session binding for one managed agent."""
+        db_obj = self.get_by_source(
+            db,
+            account_id=account_id,
+            session_source_type=session_source_type,
+            session_source_id=session_source_id,
+        )
+        if db_obj is None:
+            return None
+        if runtime_session_id is not None and str(db_obj.runtime_session_id) != str(
+            runtime_session_id
+        ):
+            return db_obj
+        db_obj.runtime_session_id = None
+        db.add(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
+        return db_obj
+
     def upsert_from_runtime_session(
         self,
         db: Session,
@@ -68,7 +181,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             session_source_id=session_source_id,
         )
         normalized_servers = list(dict.fromkeys(managed_mcp_servers or []))
-        observed_at = last_seen_at or datetime.utcnow()
+        observed_at = last_seen_at or _utc_now()
 
         if db_obj is None:
             db_obj = ManagedAgent(
@@ -80,6 +193,9 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 display_name=display_name,
                 enrolled_via=enrolled_via,
                 managed_mcp_servers=normalized_servers,
+                lifecycle_state="active",
+                lifecycle_reason=None,
+                lifecycle_updated_at=observed_at,
                 last_seen_at=observed_at,
             )
             db.add(db_obj)
@@ -90,6 +206,10 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         db_obj.display_name = display_name
         db_obj.enrolled_via = enrolled_via
         db_obj.last_seen_at = observed_at
+        if db_obj.lifecycle_state in {"suspended", "decommissioned"}:
+            db_obj.lifecycle_state = "active"
+            db_obj.lifecycle_reason = None
+            db_obj.lifecycle_updated_at = observed_at
         if session_reference is not None:
             db_obj.session_reference = session_reference
         db_obj.managed_mcp_servers = normalized_servers
@@ -109,8 +229,12 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         offset: int = 0,
     ) -> dict[str, Any]:
         """List managed agents with runtime-session and gateway usage summary."""
-        base_query = db.query(self.model).outerjoin(
-            RuntimeSession, self.model.runtime_session_id == RuntimeSession.id
+        base_query = (
+            db.query(self.model)
+            .outerjoin(
+                RuntimeSession, self.model.runtime_session_id == RuntimeSession.id
+            )
+            .outerjoin(User, self.model.owner_user_id == User.id)
         )
         base_query = base_query.filter(self.model.account_id == account_id)
 
@@ -130,11 +254,16 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             )
         if status == "active":
             base_query = base_query.filter(
-                RuntimeSession.id.isnot(None), RuntimeSession.ended_at.is_(None)
+                self.model.lifecycle_state == "active",
+                RuntimeSession.id.isnot(None),
+                RuntimeSession.ended_at.is_(None),
             )
         elif status == "ended":
             base_query = base_query.filter(
-                RuntimeSession.id.isnot(None), RuntimeSession.ended_at.isnot(None)
+                or_(
+                    RuntimeSession.ended_at.isnot(None),
+                    self.model.lifecycle_state.in_(["suspended", "decommissioned"]),
+                )
             )
 
         total = base_query.count()
@@ -150,13 +279,19 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .with_entities(
                 self.model.id,
                 self.model.runtime_session_id,
+                self.model.owner_user_id,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
                 self.model.session_reference,
                 self.model.enrolled_via,
                 self.model.managed_mcp_servers,
+                self.model.lifecycle_state,
+                self.model.lifecycle_reason,
+                self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                User.username.label("owner_username"),
+                User.email.label("owner_email"),
                 RuntimeSession.started_at,
                 RuntimeSession.last_activity_at,
                 RuntimeSession.ended_at,
@@ -171,13 +306,19 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .group_by(
                 self.model.id,
                 self.model.runtime_session_id,
+                self.model.owner_user_id,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
                 self.model.session_reference,
                 self.model.enrolled_via,
                 self.model.managed_mcp_servers,
+                self.model.lifecycle_state,
+                self.model.lifecycle_reason,
+                self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                User.username,
+                User.email,
                 RuntimeSession.started_at,
                 RuntimeSession.last_activity_at,
                 RuntimeSession.ended_at,
@@ -206,6 +347,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .outerjoin(
                 RuntimeSession, self.model.runtime_session_id == RuntimeSession.id
             )
+            .outerjoin(User, self.model.owner_user_id == User.id)
             .outerjoin(
                 ApiUsage,
                 and_(
@@ -217,13 +359,19 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .with_entities(
                 self.model.id,
                 self.model.runtime_session_id,
+                self.model.owner_user_id,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
                 self.model.session_reference,
                 self.model.enrolled_via,
                 self.model.managed_mcp_servers,
+                self.model.lifecycle_state,
+                self.model.lifecycle_reason,
+                self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                User.username.label("owner_username"),
+                User.email.label("owner_email"),
                 RuntimeSession.started_at,
                 RuntimeSession.last_activity_at,
                 RuntimeSession.ended_at,
@@ -238,13 +386,19 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .group_by(
                 self.model.id,
                 self.model.runtime_session_id,
+                self.model.owner_user_id,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
                 self.model.session_reference,
                 self.model.enrolled_via,
                 self.model.managed_mcp_servers,
+                self.model.lifecycle_state,
+                self.model.lifecycle_reason,
+                self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                User.username,
+                User.email,
                 RuntimeSession.started_at,
                 RuntimeSession.last_activity_at,
                 RuntimeSession.ended_at,
@@ -378,17 +532,47 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
     @staticmethod
     def _row_to_summary(row: Any) -> dict[str, Any]:
         """Normalize one list row into API response data."""
+        now = _utc_now()
+        last_activity = _coerce_utc(
+            row.last_activity_at or row.last_request_at or row.last_seen_at
+        )
+        if row.lifecycle_state == "decommissioned":
+            activity_status = "decommissioned"
+            is_active_now = False
+        elif row.lifecycle_state == "suspended":
+            activity_status = "suspended"
+            is_active_now = False
+        elif row.ended_at is not None:
+            activity_status = "ended"
+            is_active_now = False
+        elif (
+            last_activity is not None
+            and (now - last_activity) <= MANAGED_AGENT_ACTIVE_WINDOW
+        ):
+            activity_status = "active_now"
+            is_active_now = True
+        else:
+            activity_status = "idle"
+            is_active_now = False
         return {
             "id": str(row.id),
             "runtime_session_id": (
                 str(row.runtime_session_id) if row.runtime_session_id else None
             ),
+            "owner_user_id": str(row.owner_user_id) if row.owner_user_id else None,
+            "owner_username": row.owner_username,
+            "owner_email": row.owner_email,
             "display_name": row.display_name,
             "session_source_type": row.session_source_type,
             "session_source_id": row.session_source_id,
             "session_reference": row.session_reference,
             "enrolled_via": row.enrolled_via,
             "managed_mcp_servers": row.managed_mcp_servers or [],
+            "lifecycle_state": row.lifecycle_state,
+            "lifecycle_reason": row.lifecycle_reason,
+            "lifecycle_updated_at": row.lifecycle_updated_at,
+            "is_active_now": is_active_now,
+            "activity_status": activity_status,
             "last_seen_at": row.last_seen_at,
             "started_at": row.started_at,
             "last_activity_at": row.last_activity_at,

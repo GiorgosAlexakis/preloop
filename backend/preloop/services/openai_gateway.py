@@ -11,8 +11,14 @@ import litellm
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from preloop.models.crud import crud_api_usage
+from preloop.models.crud import crud_api_usage, crud_managed_agent, crud_runtime_session
 from preloop.models.models.ai_model import AIModel
+from preloop.services.account_realtime import (
+    ACCOUNT_TOPIC_MANAGED_AGENTS,
+    ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+    build_account_event,
+    emit_account_event,
+)
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
 from preloop.services.model_gateway_budget import (
     BudgetCheckResult,
@@ -1253,48 +1259,129 @@ class OpenAIGatewayService:
                 else None,
             },
         )
-        if status_code >= 400:
-            log_model_gateway_request(
+        observed_at = usage_row.timestamp
+        runtime_session = None
+        if usage_row.runtime_session_id:
+            runtime_session = crud_runtime_session.touch_activity(
                 self.db,
                 account_id=self.auth_context.user.account_id,
-                user_id=self.auth_context.user.id,
-                api_usage_id=str(usage_row.id),
-                endpoint=endpoint,
-                endpoint_kind=endpoint_kind,
-                status_code=status_code,
-                outcome=self._audit_outcome(status_code, error_detail),
-                requested_model=requested_model,
-                model_alias=runtime.model_gateway_model_alias or requested_model,
-                provider_name=ai_model.provider_name,
-                gateway_provider=runtime.model_gateway_provider,
-                auth_subject_type=usage_row.auth_subject_type,
-                runtime_session_id=(
-                    str(usage_row.runtime_session_id)
-                    if usage_row.runtime_session_id
-                    else None
-                ),
-                runtime_principal_type=usage_row.runtime_principal_type,
-                runtime_principal_id=usage_row.runtime_principal_id,
-                runtime_principal_name=usage_row.runtime_principal_name,
-                api_key_id=(
-                    str(self.auth_context.api_key.id)
-                    if self.auth_context.api_key
-                    else None
-                ),
-                api_key_name=self.auth_context.api_key.name
-                if self.auth_context.api_key
-                else None,
-                flow_id=str(usage_row.flow_id) if usage_row.flow_id else None,
-                flow_execution_id=(
-                    str(usage_row.flow_execution_id)
-                    if usage_row.flow_execution_id
-                    else None
-                ),
-                upstream_request_id=usage_row.upstream_request_id,
-                error_detail=error_detail,
-                error_type=self._audit_error_type(status_code, error_detail),
-                budget=self._budget_meta_data(budget_result),
+                runtime_session_id=usage_row.runtime_session_id,
+                observed_at=observed_at,
             )
+            if runtime_session is not None:
+                emit_account_event(
+                    build_account_event(
+                        account_id=str(self.auth_context.user.account_id),
+                        topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+                        event_type="runtime_session_updated",
+                        payload={
+                            "runtime_session_id": str(runtime_session.id),
+                            "session_source_type": runtime_session.session_source_type,
+                            "session_source_id": runtime_session.session_source_id,
+                            "session_reference": runtime_session.session_reference,
+                            "runtime_principal_type": runtime_session.runtime_principal_type,
+                            "runtime_principal_id": runtime_session.runtime_principal_id,
+                            "runtime_principal_name": runtime_session.runtime_principal_name,
+                            "last_activity_at": runtime_session.last_activity_at.isoformat()
+                            if runtime_session.last_activity_at
+                            else None,
+                            "last_request_at": observed_at.isoformat(),
+                            "ended_at": runtime_session.ended_at.isoformat()
+                            if runtime_session.ended_at
+                            else None,
+                        },
+                        runtime_session_id=str(runtime_session.id),
+                        execution_id=str(usage_row.flow_execution_id)
+                        if usage_row.flow_execution_id
+                        else None,
+                        flow_id=str(usage_row.flow_id) if usage_row.flow_id else None,
+                    )
+                )
+
+        managed_agent = None
+        if usage_row.runtime_principal_type and usage_row.runtime_principal_id:
+            managed_agent = crud_managed_agent.touch_last_seen_for_principal(
+                self.db,
+                account_id=self.auth_context.user.account_id,
+                session_source_type=usage_row.runtime_principal_type,
+                session_source_id=usage_row.runtime_principal_id,
+                runtime_session_id=usage_row.runtime_session_id,
+                observed_at=observed_at,
+            )
+            if managed_agent is not None:
+                emit_account_event(
+                    build_account_event(
+                        account_id=str(self.auth_context.user.account_id),
+                        topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
+                        event_type="managed_agent_updated",
+                        payload={
+                            "agent_id": str(managed_agent.id),
+                            "runtime_session_id": str(managed_agent.runtime_session_id)
+                            if managed_agent.runtime_session_id
+                            else None,
+                            "display_name": managed_agent.display_name,
+                            "session_source_type": managed_agent.session_source_type,
+                            "session_source_id": managed_agent.session_source_id,
+                            "session_reference": managed_agent.session_reference,
+                            "last_seen_at": managed_agent.last_seen_at.isoformat(),
+                        },
+                        runtime_session_id=str(usage_row.runtime_session_id)
+                        if usage_row.runtime_session_id
+                        else None,
+                        execution_id=str(usage_row.flow_execution_id)
+                        if usage_row.flow_execution_id
+                        else None,
+                        flow_id=str(usage_row.flow_id) if usage_row.flow_id else None,
+                    )
+                )
+
+        log_model_gateway_request(
+            self.db,
+            account_id=self.auth_context.user.account_id,
+            user_id=self.auth_context.user.id,
+            api_usage_id=str(usage_row.id),
+            endpoint=endpoint,
+            endpoint_kind=endpoint_kind,
+            status_code=status_code,
+            outcome=(
+                "success"
+                if status_code < 400
+                else self._audit_outcome(status_code, error_detail)
+            ),
+            requested_model=requested_model,
+            model_alias=runtime.model_gateway_model_alias or requested_model,
+            provider_name=ai_model.provider_name,
+            gateway_provider=runtime.model_gateway_provider,
+            auth_subject_type=usage_row.auth_subject_type,
+            runtime_session_id=(
+                str(usage_row.runtime_session_id)
+                if usage_row.runtime_session_id
+                else None
+            ),
+            runtime_principal_type=usage_row.runtime_principal_type,
+            runtime_principal_id=usage_row.runtime_principal_id,
+            runtime_principal_name=usage_row.runtime_principal_name,
+            api_key_id=(
+                str(self.auth_context.api_key.id) if self.auth_context.api_key else None
+            ),
+            api_key_name=self.auth_context.api_key.name
+            if self.auth_context.api_key
+            else None,
+            flow_id=str(usage_row.flow_id) if usage_row.flow_id else None,
+            flow_execution_id=(
+                str(usage_row.flow_execution_id)
+                if usage_row.flow_execution_id
+                else None
+            ),
+            upstream_request_id=usage_row.upstream_request_id,
+            error_detail=error_detail,
+            error_type=(
+                self._audit_error_type(status_code, error_detail)
+                if status_code >= 400
+                else None
+            ),
+            budget=self._budget_meta_data(budget_result),
+        )
         ModelGatewayEventEmitter(self.db).emit_for_usage(
             usage=usage_row,
             request_payload=request_payload,

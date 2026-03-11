@@ -32,6 +32,12 @@ from preloop.services.prompt_resolvers import (
 )
 from preloop.services.flow_execution_logger import FlowExecutionLogger
 from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
+from preloop.services.account_realtime import (
+    ACCOUNT_TOPIC_AUDIT,
+    ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+    build_account_event,
+    emit_account_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -692,6 +698,56 @@ class FlowExecutionOrchestrator:
                     )
             except Exception:
                 logger.debug("Failed to audit runtime session lifecycle", exc_info=True)
+            emit_account_event(
+                build_account_event(
+                    account_id=str(self.flow.account_id),
+                    topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+                    event_type=f"runtime_session_{event_type}",
+                    payload={
+                        "runtime_session_id": str(self.runtime_session.id),
+                        "session_source_type": self.runtime_session.session_source_type,
+                        "session_source_id": self.runtime_session.session_source_id,
+                        "session_reference": self.runtime_session.session_reference,
+                        "runtime_principal_type": self.runtime_session.runtime_principal_type,
+                        "runtime_principal_id": self.runtime_session.runtime_principal_id,
+                        "runtime_principal_name": self.runtime_session.runtime_principal_name,
+                        "started_at": self.runtime_session.started_at.isoformat()
+                        if self.runtime_session.started_at
+                        else None,
+                        "last_activity_at": self.runtime_session.last_activity_at.isoformat()
+                        if self.runtime_session.last_activity_at
+                        else None,
+                        "ended_at": self.runtime_session.ended_at.isoformat()
+                        if self.runtime_session.ended_at
+                        else None,
+                    },
+                    runtime_session_id=str(self.runtime_session.id),
+                    flow_id=str(self.flow.id),
+                    execution_id=str(self.execution_log.id),
+                )
+            )
+            emit_account_event(
+                build_account_event(
+                    account_id=str(self.flow.account_id),
+                    topic=ACCOUNT_TOPIC_AUDIT,
+                    event_type="audit_event",
+                    payload={
+                        "action": f"runtime_session_{event_type}",
+                        "runtime_session_id": str(self.runtime_session.id),
+                        "session_source_type": self.runtime_session.session_source_type,
+                        "session_source_id": self.runtime_session.session_source_id,
+                        "session_reference": self.runtime_session.session_reference,
+                        "runtime_principal_type": self.runtime_session.runtime_principal_type,
+                        "runtime_principal_id": self.runtime_session.runtime_principal_id,
+                        "runtime_principal_name": self.runtime_session.runtime_principal_name,
+                        "flow_execution_id": str(self.execution_log.id),
+                        "flow_id": str(self.flow.id),
+                    },
+                    runtime_session_id=str(self.runtime_session.id),
+                    flow_id=str(self.flow.id),
+                    execution_id=str(self.execution_log.id),
+                )
+            )
         return self.runtime_session
 
     def _create_temporary_api_token(self) -> tuple[Optional[str], Optional[uuid.UUID]]:

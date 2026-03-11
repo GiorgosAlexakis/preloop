@@ -82,7 +82,19 @@ export class UnifiedWebSocketManager {
     callback: (message: any) => void,
     filter?: (message: any) => boolean
   ): () => void {
-    return this.router.subscribe(topic, callback, filter);
+    const previousCount = this.router.getSubscriptionCount(topic);
+    const unsubscribe = this.router.subscribe(topic, callback, filter);
+
+    if (previousCount === 0) {
+      this.sendServerSubscription(topic, 'subscribe');
+    }
+
+    return () => {
+      unsubscribe();
+      if (this.router.getSubscriptionCount(topic) === 0) {
+        this.sendServerSubscription(topic, 'unsubscribe');
+      }
+    };
   }
 
   /**
@@ -197,6 +209,8 @@ export class UnifiedWebSocketManager {
       console.log('Sent authentication message');
     }
 
+    this.syncServerSubscriptions();
+
     // Start heartbeat
     this.startHeartbeat();
   }
@@ -220,6 +234,7 @@ export class UnifiedWebSocketManager {
       // Handle authentication response
       if (message.type === 'authenticated') {
         console.log(`Authenticated as: ${message.user?.username}`);
+        this.syncServerSubscriptions();
         // Route to subscribers so they can react (e.g., refresh data)
         this.router.route(message);
         return;
@@ -341,6 +356,22 @@ export class UnifiedWebSocketManager {
           console.error('Error in state change listener:', error);
         }
       });
+    }
+  }
+
+  private sendServerSubscription(
+    topic: string,
+    action: 'subscribe' | 'unsubscribe'
+  ): void {
+    if (topic === '*' || topic === 'system') {
+      return;
+    }
+    this.send({ type: action, topic });
+  }
+
+  private syncServerSubscriptions(): void {
+    for (const topic of this.router.listTopics()) {
+      this.sendServerSubscription(topic, 'subscribe');
     }
   }
 
