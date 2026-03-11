@@ -167,6 +167,43 @@ class CRUDApiKey(CRUDBase[ApiKey]):
             db.refresh(key_obj)
         return key_obj
 
+    def deactivate_runtime_keys_for_session(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        commit: bool = True,
+    ) -> List[ApiKey]:
+        """Deactivate runtime-scoped API keys bound to one runtime session."""
+        key_objs = (
+            db.query(ApiKey)
+            .filter(ApiKey.account_id == account_id, ApiKey.is_active.is_(True))
+            .all()
+        )
+
+        deactivated: List[ApiKey] = []
+        for key_obj in key_objs:
+            context_data = (
+                key_obj.context_data if isinstance(key_obj.context_data, dict) else {}
+            )
+            if str(context_data.get("runtime_session_id")) != str(runtime_session_id):
+                continue
+            key_obj.is_active = False
+            db.add(key_obj)
+            deactivated.append(key_obj)
+
+        if not deactivated:
+            return deactivated
+
+        if commit:
+            db.commit()
+            for key_obj in deactivated:
+                db.refresh(key_obj)
+        else:
+            db.flush()
+        return deactivated
+
     def validate_key(
         self, db: Session, *, key: str, required_scopes: Optional[List[str]] = None
     ) -> Optional[ApiKey]:

@@ -206,10 +206,6 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         db_obj.display_name = display_name
         db_obj.enrolled_via = enrolled_via
         db_obj.last_seen_at = observed_at
-        if db_obj.lifecycle_state in {"suspended", "decommissioned"}:
-            db_obj.lifecycle_state = "active"
-            db_obj.lifecycle_reason = None
-            db_obj.lifecycle_updated_at = observed_at
         if session_reference is not None:
             db_obj.session_reference = session_reference
         db_obj.managed_mcp_servers = normalized_servers

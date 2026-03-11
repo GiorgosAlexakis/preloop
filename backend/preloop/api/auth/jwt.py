@@ -13,6 +13,7 @@ from passlib.context import CryptContext
 
 from preloop.schemas.auth import TokenData
 from preloop.models.db.session import get_db_session
+from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.user import User
 from preloop.models.crud import crud_api_key
 
@@ -32,6 +33,91 @@ oauth2_scheme_optional = OAuth2PasswordBearer(
 
 # Logger
 logger = logging.getLogger(__name__)
+
+
+def _runtime_session_id_from_api_key(api_key: Any) -> Optional[uuid.UUID]:
+    """Return the runtime session UUID bound to an API key, if any."""
+    context_data = (
+        api_key.context_data if isinstance(api_key.context_data, dict) else {}
+    )
+    runtime_session_id = context_data.get("runtime_session_id")
+    if not runtime_session_id:
+        return None
+    try:
+        return uuid.UUID(str(runtime_session_id))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid runtime session token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+
+def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
+    """Validate an API key and return its active owner."""
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not api_key.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key is inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if api_key.is_expired:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    runtime_session_id = _runtime_session_id_from_api_key(api_key)
+    if runtime_session_id is not None:
+        runtime_session = (
+            session.query(RuntimeSession)
+            .filter(
+                RuntimeSession.id == runtime_session_id,
+                RuntimeSession.account_id == api_key.account_id,
+            )
+            .first()
+        )
+        if runtime_session is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid runtime session token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if runtime_session.ended_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Runtime session has ended",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    user = session.query(User).filter(User.id == api_key.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User associated with API key not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Inactive user",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    api_key.last_used_at = datetime.now(UTC)
+    session.add(api_key)
+    session.commit()
+    return user
 
 
 def get_password_hash(password: str) -> str:
@@ -157,40 +243,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
                         f"API key found: {api_key.name}, user_id: {api_key.user_id}"
                     )
 
-                    # Check if the API key has expired
-                    if api_key.is_expired:
-                        logger.warning(f"API key expired: {api_key.expires_at}")
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="API key has expired",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Get the user associated with this API key
-                    user = (
-                        session.query(User).filter(User.id == api_key.user_id).first()
-                    )
-
-                    if not user:
-                        logger.warning(f"User not found for API key: {api_key.user_id}")
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="User associated with API key not found",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    if not user.is_active:
-                        logger.warning(f"Inactive user for API key: {api_key.user_id}")
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Inactive user",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Update the last_used_at timestamp
-                    api_key.last_used_at = datetime.now(UTC)
-                    session.add(api_key)
-                    session.commit()
+                    user = _authenticate_with_api_key(session, api_key)
 
                     logger.info(
                         f"API key authentication successful for user: {user.username}"
@@ -312,37 +365,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
                         f"API key found: {api_key.name}, user_id: {api_key.user_id}"
                     )
 
-                    # Check if the API key has expired
-                    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="API key has expired",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Get the user associated with this API key
-                    user = (
-                        session.query(User).filter(User.id == api_key.user_id).first()
-                    )
-
-                    if not user:
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="User associated with API key not found",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    if not user.is_active:
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Inactive user",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Update the last_used_at timestamp
-                    api_key.last_used_at = datetime.now(UTC)
-                    session.add(api_key)
-                    session.commit()
+                    user = _authenticate_with_api_key(session, api_key)
 
                     logger.info(
                         f"API key authentication successful for user: {user.username}"

@@ -2,6 +2,10 @@
 
 from datetime import datetime, UTC
 
+import pytest
+from unittest.mock import patch
+
+from preloop.api.auth.jwt import get_user_from_token_if_valid
 from preloop.models.crud import (
     crud_account,
     crud_api_key,
@@ -10,6 +14,7 @@ from preloop.models.crud import (
 )
 from preloop.models.models.mcp_server import MCPServer
 from preloop.models.models.mcp_tool import MCPTool
+from preloop.services.model_gateway_auth import authenticate_bearer_token
 
 
 def _create_active_mcp_server(db_session, account_id, *, name: str) -> MCPServer:
@@ -228,3 +233,95 @@ def test_account_runtime_session_update_endpoint_ends_session_and_clears_agent_b
     db_session.refresh(managed_agent)
     assert runtime_session.ended_at is not None
     assert managed_agent.runtime_session_id is None
+
+
+@pytest.mark.asyncio
+async def test_ending_runtime_session_deactivates_token_and_blocks_mcp_and_gateway_auth(
+    client, db_session, test_user
+):
+    """Ended runtime sessions should revoke runtime tokens across auth paths."""
+    response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-revoked",
+            "runtime_principal_name": "Revoked Workspace",
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    token = body["token"]
+    runtime_session_id = body["runtime_session_id"]
+
+    with patch(
+        "preloop.api.auth.jwt.get_db_session",
+        side_effect=lambda: iter([db_session]),
+    ):
+        assert await get_user_from_token_if_valid(token, db_session) is not None
+        assert await authenticate_bearer_token(token, db_session) is not None
+
+    end_response = client.patch(
+        f"/api/v1/runtime-sessions/{runtime_session_id}",
+        json={"action": "end", "reason": "operator revoked session"},
+    )
+    assert end_response.status_code == 200
+
+    api_key = crud_api_key.get_by_key(db_session, key=token)
+    assert api_key is not None
+    assert api_key.is_active is False
+    with patch(
+        "preloop.api.auth.jwt.get_db_session",
+        side_effect=lambda: iter([db_session]),
+    ):
+        assert await get_user_from_token_if_valid(token, db_session) is None
+        assert await authenticate_bearer_token(token, db_session) is None
+
+
+@pytest.mark.parametrize("lifecycle_action", ["suspend", "decommission"])
+def test_runtime_session_token_issuance_rejects_non_active_agents(
+    client, db_session, test_user, lifecycle_action
+):
+    """Suspended or decommissioned agents should not be re-onboarded by minting a token."""
+    initial_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-blocked",
+            "runtime_principal_name": "Blocked Workspace",
+        },
+    )
+    assert initial_response.status_code == 201
+
+    managed_agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="claude_code",
+        session_source_id="workspace-blocked",
+    )
+    assert managed_agent is not None
+
+    update_response = client.patch(
+        f"/api/v1/agents/{managed_agent.id}",
+        json={
+            "lifecycle_action": lifecycle_action,
+            "reason": f"{lifecycle_action} for operator control",
+        },
+    )
+    assert update_response.status_code == 200
+
+    blocked_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-blocked",
+            "runtime_principal_name": "Blocked Workspace",
+        },
+    )
+
+    assert blocked_response.status_code == 403
+    assert lifecycle_action in blocked_response.json()["detail"]
+
+    db_session.refresh(managed_agent)
+    assert managed_agent.lifecycle_state == (
+        "suspended" if lifecycle_action == "suspend" else "decommissioned"
+    )

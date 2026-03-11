@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from preloop.api.common import get_account_for_user
 from preloop.models.crud import (
     crud_account,
+    crud_api_key,
     crud_managed_agent,
     crud_runtime_session,
     crud_runtime_session_activity,
@@ -474,6 +475,13 @@ async def update_account_runtime_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Runtime session not found"
         )
+
+    crud_api_key.deactivate_runtime_keys_for_session(
+        db,
+        account_id=str(account.id),
+        runtime_session_id=runtime_session_id,
+        commit=True,
+    )
 
     managed_agent_summary = None
     if updated.runtime_principal_type and updated.runtime_principal_id:

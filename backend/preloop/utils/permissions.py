@@ -1,26 +1,49 @@
 """Permission utilities with OSS fallback.
 
-When the proprietary RBAC plugin is not available, provides a no-op decorator
-that preserves the original function signature (sync vs async) so FastAPI
-continues to dispatch sync handlers through its threadpool.
+When the proprietary RBAC plugin is unavailable, this module exposes a no-op
+decorator. When it is available, the exported decorator preserves the wrapped
+function's sync/async nature so FastAPI can keep dispatching sync handlers via
+its threadpool.
 """
 
+from __future__ import annotations
+
+import asyncio
+import functools
+
 try:
-    from preloop.plugins.proprietary.rbac.permissions import require_permission
+    from preloop.plugins.proprietary.rbac.permissions import (
+        require_permission as _plugin_require_permission,
+    )
 except ModuleNotFoundError:
+    _plugin_require_permission = None
 
-    def require_permission(permission_name: str):
-        """No-op permission decorator for OSS builds.
 
-        Returns the original function unchanged to preserve FastAPI's
-        sync/async dispatch behavior. Sync functions will continue to
-        run in the threadpool; async functions run on the event loop.
-        """
+def require_permission(permission_name: str):
+    """Return a decorator that preserves sync/async behavior."""
 
-        def decorator(func):
-            # Return the original function unchanged - no wrapper needed
-            # This preserves FastAPI's ability to detect sync vs async
-            # and dispatch sync handlers to the threadpool
+    def decorator(func):
+        if _plugin_require_permission is None:
             return func
 
-        return decorator
+        plugin_wrapped = _plugin_require_permission(permission_name)(func)
+
+        if asyncio.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                if "current_user" not in kwargs or "db" not in kwargs:
+                    return await func(*args, **kwargs)
+                return await plugin_wrapped(*args, **kwargs)
+
+            return async_wrapper
+
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            if "current_user" not in kwargs or "db" not in kwargs:
+                return func(*args, **kwargs)
+            return asyncio.run(plugin_wrapped(*args, **kwargs))
+
+        return sync_wrapper
+
+    return decorator

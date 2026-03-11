@@ -13,6 +13,7 @@ from preloop.models.crud import crud_api_key, crud_user
 from preloop.models.crud.oauth_mcp_token import crud_oauth_mcp_access_token
 from preloop.models.models.api_key import ApiKey
 from preloop.models.models.oauth_mcp_token import OAuthMCPAccessToken
+from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.user import User
 
 
@@ -36,6 +37,24 @@ async def authenticate_bearer_token(
     user = await get_user_from_token_if_valid(token, db)
     if user:
         api_key = crud_api_key.get_by_key(db, key=token)
+        if api_key is not None:
+            if not api_key.is_active or api_key.is_expired:
+                return None
+            context_data = (
+                api_key.context_data if isinstance(api_key.context_data, dict) else {}
+            )
+            runtime_session_id = context_data.get("runtime_session_id")
+            if runtime_session_id:
+                runtime_session = (
+                    db.query(RuntimeSession)
+                    .filter(
+                        RuntimeSession.id == runtime_session_id,
+                        RuntimeSession.account_id == api_key.account_id,
+                    )
+                    .first()
+                )
+                if runtime_session is None or runtime_session.ended_at is not None:
+                    return None
         return ModelGatewayAuthContext(token=token, user=user, api_key=api_key)
 
     oauth_token = crud_oauth_mcp_access_token.get_by_token(db, token=token)

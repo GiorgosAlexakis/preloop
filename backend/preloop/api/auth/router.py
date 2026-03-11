@@ -949,6 +949,24 @@ async def create_runtime_session_token(
         or session_data.session_reference
         or runtime_principal_id
     )
+    existing_managed_agent = crud_managed_agent.get_by_source(
+        db,
+        account_id=str(current_user.account_id),
+        session_source_type=session_data.session_source_type,
+        session_source_id=runtime_principal_id,
+    )
+    if (
+        existing_managed_agent is not None
+        and existing_managed_agent.lifecycle_state in {"suspended", "decommissioned"}
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Runtime token issuance is blocked for "
+                f"{existing_managed_agent.lifecycle_state} agents. "
+                "Resume or reenroll the agent first."
+            ),
+        )
     existing_runtime_session = crud_runtime_session.get_by_source(
         db,
         account_id=current_user.account_id,
