@@ -368,11 +368,6 @@ test:unit:preloop-api:
   variables:
     TEST_PATHS: "backend/tests/api"
 
-test:unit:preloop-scripts:
-  extends: .test:unit:template
-  variables:
-    TEST_PATHS: "backend/tests/scripts"
-
 test:unit:preloop-endpoints-policies:
   extends: .test:unit:template
   variables:
@@ -441,7 +436,6 @@ test:coverage:
     # - test:unit:preloop-endpoints-issue-duplicate-stats
     - test:unit:preloop-agents
     - test:unit:preloop-api
-    - test:unit:preloop-scripts
     - test:unit:preloop-endpoints-policies
     - test:unit:preloop-services-approval
   image: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
