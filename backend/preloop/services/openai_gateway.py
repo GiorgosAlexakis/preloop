@@ -928,15 +928,15 @@ class OpenAIGatewayService:
     ) -> AIModel:
         models = self._get_account_models()
         gateway_enabled_models: List[tuple[AIModel, str]] = []
-        default_model: Optional[AIModel] = None
+        default_gateway_model: Optional[AIModel] = None
         for ai_model in models:
             runtime = resolve_ai_model_runtime(ai_model)
             if runtime.model_gateway_enabled and runtime.model_gateway_model_alias:
                 gateway_enabled_models.append(
                     (ai_model, runtime.model_gateway_model_alias)
                 )
-            if ai_model.is_default:
-                default_model = ai_model
+                if ai_model.is_default:
+                    default_gateway_model = ai_model
 
         if requested_model:
             for ai_model, alias in gateway_enabled_models:
@@ -948,15 +948,13 @@ class OpenAIGatewayService:
                 message="Requested model not found",
             )
 
-        if default_model:
-            return default_model
-        if gateway_enabled_models:
-            return gateway_enabled_models[0][0]
+        if default_gateway_model:
+            return default_gateway_model
 
         raise ModelGatewayAPIError(
             provider=provider,
             status_code=404,
-            message="No gateway-enabled models configured",
+            message="No gateway-enabled default model configured",
         )
 
     def _call_litellm(
@@ -1469,6 +1467,14 @@ class OpenAIGatewayService:
             return "Model gateway budget exceeded: account monthly limit reached"
         if budget_result.enforcement_reason == "flow_budget_exceeded":
             return "Model gateway budget exceeded: flow monthly limit reached"
+        if (
+            budget_result.enforcement_reason
+            == "pricing_required_for_budget_enforcement"
+        ):
+            return (
+                "Model gateway budget enforcement requires pricing metadata for "
+                "the selected gateway model"
+            )
         return "Model gateway budget exceeded"
 
     @staticmethod
@@ -1476,7 +1482,11 @@ class OpenAIGatewayService:
         if (
             status_code == 403
             and error_detail
-            and "budget exceeded" in error_detail.lower()
+            and (
+                "budget exceeded" in error_detail.lower()
+                or "budget enforcement requires pricing metadata"
+                in error_detail.lower()
+            )
         ):
             return "budget_denied"
         return "failed"
@@ -1486,7 +1496,11 @@ class OpenAIGatewayService:
         if (
             status_code == 403
             and error_detail
-            and "budget exceeded" in error_detail.lower()
+            and (
+                "budget exceeded" in error_detail.lower()
+                or "budget enforcement requires pricing metadata"
+                in error_detail.lower()
+            )
         ):
             return "budget_limit_exceeded"
         if status_code == 400:

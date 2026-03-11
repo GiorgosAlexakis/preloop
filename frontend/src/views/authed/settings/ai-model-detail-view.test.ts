@@ -1,11 +1,14 @@
 import { expect, waitUntil } from '@open-wc/testing';
 import sinon from 'sinon';
 
+import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
 import './ai-model-detail-view';
 import type { AIModelDetailView } from './ai-model-detail-view';
 
 describe('AIModelDetailView', () => {
   let fetchStub: sinon.SinonStub;
+  let connectStub: sinon.SinonStub;
+  let subscribeStub: sinon.SinonStub;
 
   beforeEach(() => {
     localStorage.setItem('accessToken', 'test-access-token');
@@ -180,10 +183,17 @@ describe('AIModelDetailView', () => {
         }
       );
     });
+
+    connectStub = sinon.stub(unifiedWebSocketManager, 'connect').resolves();
+    subscribeStub = sinon
+      .stub(unifiedWebSocketManager, 'subscribe')
+      .callsFake(() => () => undefined);
   });
 
   afterEach(() => {
     fetchStub.restore();
+    connectStub.restore();
+    subscribeStub.restore();
     localStorage.clear();
   });
 
@@ -251,6 +261,8 @@ describe('AIModelDetailView', () => {
     expect(String(sessionsCall?.args[0])).to.contain('limit=10');
     expect(interactionsCall).to.not.equal(undefined);
     expect(String(interactionsCall?.args[0])).to.contain('limit=10');
+    expect(connectStub).to.have.been.calledOnce;
+    expect(subscribeStub.callCount).to.equal(4);
 
     document.body.removeChild(element);
   });

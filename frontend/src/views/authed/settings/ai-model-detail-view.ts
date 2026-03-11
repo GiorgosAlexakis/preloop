@@ -27,6 +27,7 @@ import type {
   GatewayUsageSearchResultItem,
   RuntimeSessionSummary,
 } from '../../../types';
+import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 
 type DateRangePreset = 'last-7' | 'last-30' | 'last-90' | 'all' | 'custom';
@@ -67,6 +68,9 @@ export class AIModelDetailView extends LitElement {
   private interactionQuery = '';
 
   private initialized = false;
+  private unsubscribeRealtime?: () => void;
+  private refreshTimer: number | null = null;
+  private refreshInFlight = false;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -298,6 +302,7 @@ export class AIModelDetailView extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.connectRealtime();
 
     if (!this.initialized) {
       this.applyPresetDates(this.selectedRange);
@@ -308,14 +313,89 @@ export class AIModelDetailView extends LitElement {
     }
   }
 
-  private async loadData() {
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unsubscribeRealtime?.();
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  private connectRealtime(): void {
+    const scheduleRefresh = () => this.scheduleRefresh();
+    const unsubscribers = [
+      unifiedWebSocketManager.subscribe(
+        'gateway_activity',
+        scheduleRefresh,
+        (message) => message?.payload?.ai_model_id === this.modelId
+      ),
+      unifiedWebSocketManager.subscribe(
+        'budget_health',
+        scheduleRefresh,
+        (message) => message?.payload?.ai_model_id === this.modelId
+      ),
+      unifiedWebSocketManager.subscribe(
+        'runtime_sessions',
+        scheduleRefresh,
+        (message) => this.shouldRefreshForRuntimeSession(message)
+      ),
+      unifiedWebSocketManager.subscribe(
+        'system',
+        scheduleRefresh,
+        (message) => message?.type === 'authenticated'
+      ),
+    ];
+    this.unsubscribeRealtime = () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+    void unifiedWebSocketManager.connect();
+  }
+
+  private shouldRefreshForRuntimeSession(message: any): boolean {
+    const runtimeSessionId = message?.payload?.runtime_session_id;
+    if (!runtimeSessionId) {
+      return false;
+    }
+    if (this.selectedSessionId === runtimeSessionId) {
+      return true;
+    }
+    return (
+      this.sessions?.items?.some(
+        (session) => session.id === runtimeSessionId
+      ) ?? false
+    );
+  }
+
+  private scheduleRefresh(): void {
+    if (!this.modelId) {
+      return;
+    }
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      void this.loadData({ preserveLoadingState: true });
+    }, 250);
+  }
+
+  private async loadData(options: { preserveLoadingState?: boolean } = {}) {
     if (!this.modelId) {
       this.error = 'Missing AI model id.';
       this.loading = false;
       return;
     }
 
-    this.loading = true;
+    if (this.refreshInFlight) {
+      return;
+    }
+    this.refreshInFlight = true;
+    if (!options.preserveLoadingState) {
+      this.loading = true;
+    }
     this.error = null;
 
     try {
@@ -359,6 +439,7 @@ export class AIModelDetailView extends LitElement {
       this.interactions = null;
     } finally {
       this.loading = false;
+      this.refreshInFlight = false;
     }
   }
 

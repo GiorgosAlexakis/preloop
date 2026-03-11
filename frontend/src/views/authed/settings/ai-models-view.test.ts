@@ -1,11 +1,14 @@
 import { fixture, html, expect, waitUntil } from '@open-wc/testing';
 import sinon from 'sinon';
 
+import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
 import './ai-models-view';
 import type { AIModelsView } from './ai-models-view';
 
 describe('AIModelsView', () => {
   let fetchStub: sinon.SinonStub;
+  let connectStub: sinon.SinonStub;
+  let subscribeStub: sinon.SinonStub;
 
   beforeEach(() => {
     localStorage.setItem('accessToken', 'test-access-token');
@@ -91,10 +94,17 @@ describe('AIModelsView', () => {
         }
       );
     });
+
+    connectStub = sinon.stub(unifiedWebSocketManager, 'connect').resolves();
+    subscribeStub = sinon
+      .stub(unifiedWebSocketManager, 'subscribe')
+      .callsFake(() => () => undefined);
   });
 
   afterEach(() => {
     fetchStub.restore();
+    connectStub.restore();
+    subscribeStub.restore();
     localStorage.clear();
   });
 
@@ -127,5 +137,7 @@ describe('AIModelsView', () => {
 
     expect(nameLink).to.not.equal(null);
     expect(viewButton).to.not.equal(null);
+    expect(connectStub).to.have.been.calledOnce;
+    expect(subscribeStub.callCount).to.equal(5);
   });
 });

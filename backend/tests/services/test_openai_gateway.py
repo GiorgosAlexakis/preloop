@@ -62,6 +62,53 @@ def test_list_models_returns_gateway_enabled_aliases(db_session, test_user):
     assert [item["id"] for item in payload["data"]] == ["openai/gpt-5"]
 
 
+def test_create_response_requires_gateway_enabled_default_when_model_omitted(
+    db_session, test_user
+):
+    """Omitted model should not fall back to a non-gateway default."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Direct Default Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+            "api_key": "provider-secret",
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+        },
+        account_id=test_user.account_id,
+    )
+
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
+        with pytest.raises(
+            ModelGatewayAPIError, match="No gateway-enabled default model configured"
+        ) as exc:
+            service.create_response({"instructions": "Be brief", "input": "Hello"})
+
+    assert exc.value.status_code == 404
+    mock_completion.assert_not_called()
+
+
 def test_create_response_normalizes_and_calls_litellm(db_session, test_user):
     """Responses API should normalize input and return OpenAI-style response output."""
     ai_model = crud_ai_model.create_with_account(
@@ -429,6 +476,57 @@ def test_create_response_denies_when_flow_budget_exceeded(db_session, test_user)
     assert gateway_logs[0].status == "budget_denied"
     assert gateway_logs[0].details["requested_model"] == "openai/gpt-5"
     assert gateway_logs[0].details["api_key_name"] == "Gateway Runtime Token"
+    assert gateway_logs[0].details["error_type"] == "budget_limit_exceeded"
+
+
+def test_create_response_denies_budgeted_request_when_pricing_metadata_missing(
+    db_session, test_user
+):
+    """Budgeted accounts should fail closed when request cost cannot be estimated."""
+    account = crud_account.get(db_session, id=test_user.account_id)
+    crud_account.update(
+        db_session,
+        db_obj=account,
+        obj_in={"meta_data": {"model_gateway_budget": {"monthly_usd_limit": 1.0}}},
+    )
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
+        with pytest.raises(
+            ModelGatewayAPIError,
+            match="pricing metadata for the selected gateway model",
+        ) as exc:
+            service.create_response({"model": "openai/gpt-5", "input": "Hello"})
+
+    assert exc.value.status_code == 403
+    mock_completion.assert_not_called()
+
+    audit_logs = crud_audit_log.get_by_account(
+        db_session, account_id=test_user.account_id
+    )
+    gateway_logs = [log for log in audit_logs if log.action == "model_gateway_request"]
+    assert len(gateway_logs) == 1
+    assert gateway_logs[0].status == "budget_denied"
     assert gateway_logs[0].details["error_type"] == "budget_limit_exceeded"
 
 

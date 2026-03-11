@@ -106,6 +106,56 @@ def test_chat_completions_endpoint_returns_openai_shape(
     assert body["usage"]["total_tokens"] == 7
 
 
+def test_chat_completions_endpoint_rejects_omitted_model_without_gateway_default(
+    app, client, db_session, test_user
+):
+    """Omitted model should not silently use a non-gateway default."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Direct Default Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+            "api_key": "provider-secret",
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+        },
+        account_id=test_user.account_id,
+    )
+    app.dependency_overrides[get_model_gateway_auth_context] = (
+        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    )
+
+    with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
+        response = client.post(
+            "/openai/v1/chat/completions",
+            headers={"Authorization": "Bearer ignored"},
+            json={"messages": [{"role": "user", "content": "Hello"}]},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["message"] == (
+        "No gateway-enabled default model configured"
+    )
+    mock_completion.assert_not_called()
+
+
 def test_chat_completions_endpoint_denies_when_account_budget_exceeded(
     app, client, db_session, test_user
 ):

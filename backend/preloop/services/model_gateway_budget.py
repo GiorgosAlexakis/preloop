@@ -101,12 +101,24 @@ class ModelGatewayBudgetService:
         account_soft_limit = account_budget.get("soft_limit_usd")
         flow_limit = flow_budget.get("monthly_usd_limit")
         flow_soft_limit = flow_budget.get("soft_limit_usd")
+        budget_configured = any(
+            limit is not None
+            for limit in (
+                account_limit,
+                account_soft_limit,
+                flow_limit,
+                flow_soft_limit,
+            )
+        )
 
         hard_limit_exceeded = False
         soft_limit_exceeded = False
         enforcement_reason = None
 
-        if pricing_available:
+        if budget_configured and not pricing_available:
+            hard_limit_exceeded = True
+            enforcement_reason = "pricing_required_for_budget_enforcement"
+        elif pricing_available:
             if (
                 account_limit is not None
                 and account_estimated_total is not None
@@ -163,6 +175,11 @@ class ModelGatewayBudgetService:
                 detail = "Model gateway budget exceeded: account monthly limit reached"
             elif result.enforcement_reason == "flow_budget_exceeded":
                 detail = "Model gateway budget exceeded: flow monthly limit reached"
+            elif result.enforcement_reason == "pricing_required_for_budget_enforcement":
+                detail = (
+                    "Model gateway budget enforcement requires pricing metadata for "
+                    "the selected gateway model"
+                )
             raise HTTPException(status_code=403, detail=detail)
         return result
 

@@ -22,6 +22,7 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '../../../components/add-ai-model-modal';
+import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 
 @customElement('ai-models-view')
@@ -63,6 +64,10 @@ export class AIModelsView extends LitElement {
       activeSessions: number;
     }
   >();
+
+  private unsubscribeRealtime?: () => void;
+  private refreshTimer: number | null = null;
+  private refreshInFlight = false;
 
   static styles = [
     unsafeCSS(consoleStyles),
@@ -172,11 +177,58 @@ export class AIModelsView extends LitElement {
     super.connectedCallback();
     const isDismissed = localStorage.getItem(this.INFO_ALERT_DISMISSED_KEY);
     this._isInfoAlertOpen = isDismissed !== 'true';
-    await this.fetchModels();
+    void this.fetchModels();
+    this.connectRealtime();
   }
 
-  async fetchModels() {
-    this.isLoading = true;
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unsubscribeRealtime?.();
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  private connectRealtime(): void {
+    const scheduleRefresh = () => this.scheduleRefresh();
+    const unsubscribers = [
+      unifiedWebSocketManager.subscribe('gateway_activity', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('budget_health', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
+      unifiedWebSocketManager.subscribe(
+        'system',
+        scheduleRefresh,
+        (message) => message?.type === 'authenticated'
+      ),
+    ];
+    this.unsubscribeRealtime = () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+    void unifiedWebSocketManager.connect();
+  }
+
+  private scheduleRefresh(): void {
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = null;
+      void this.fetchModels({ preserveLoadingState: true });
+    }, 250);
+  }
+
+  async fetchModels(options: { preserveLoadingState?: boolean } = {}) {
+    if (this.refreshInFlight) {
+      return;
+    }
+    this.refreshInFlight = true;
+    if (!options.preserveLoadingState) {
+      this.isLoading = true;
+    }
     this.error = null;
     try {
       this.models = await getAIModels();
@@ -206,6 +258,7 @@ export class AIModelsView extends LitElement {
       this.modelOverview = new Map();
     } finally {
       this.isLoading = false;
+      this.refreshInFlight = false;
     }
   }
 

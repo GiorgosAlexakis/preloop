@@ -2,6 +2,12 @@
 
 This directory contains manual testing scripts for verifying MCP functionality.
 
+## AI Control Plane Review Guides
+
+- `ai-control-plane-realistic-data.md`: Docker-host recipe for generating realistic control-plane data with managed/containerized flows, the example MCP server, and optional runtime-session token onboarding.
+- `claude-code-anthropic-gateway-smoke-test.md`: Manual host-based smoke test for Claude Code style traffic through the Anthropic-compatible gateway.
+- `ai-control-plane-ux-integration-review.md`: Current prioritized UX and integration findings for the delivered AI workforce/control-plane surfaces.
+
 ## Progress Reporting Tests
 
 ### Basic Progress Test (FastMCP Docs Example)
