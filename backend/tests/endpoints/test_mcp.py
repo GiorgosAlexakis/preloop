@@ -65,6 +65,14 @@ async def test_mcp_get_issue_success(db_session: Session, test_user: User):
         tracker_id=tracker.id,
         external_id="123",
         key="TP-1",
+        meta_data={
+            "labels": [
+                {"id": 1, "title": "feature"},
+                {"id": 2, "name": "gitlab"},
+                "plain-label",
+            ],
+            "assignee": {"username": "alice"},
+        },
     )
     db_session.add(issue)
     db_session.commit()
@@ -89,6 +97,8 @@ async def test_mcp_get_issue_success(db_session: Session, test_user: User):
     assert response.title == "Test Issue"
     assert response.project == "test-proj"
     assert response.organization == "test-org"
+    assert response.labels == ["feature", "gitlab", "plain-label"]
+    assert response.assignee == "alice"
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,7 @@ from preloop.api.common import (
 
 from preloop.api.endpoints.issues import (
     create_issue as api_create_issue,
+    extract_label_strings,
 )
 from preloop.api.endpoints.search import (
     perform_search,
@@ -62,6 +63,22 @@ from fastmcp.server.dependencies import get_http_request
 
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_assignee_name(assignee_data: Any) -> Optional[str]:
+    """Normalize tracker assignee metadata to a display name string."""
+    if assignee_data is None:
+        return None
+    if isinstance(assignee_data, str):
+        return assignee_data
+    if isinstance(assignee_data, dict):
+        return (
+            assignee_data.get("name")
+            or assignee_data.get("username")
+            or assignee_data.get("title")
+            or str(assignee_data)
+        )
+    return str(assignee_data)
 
 
 def _detect_platform_from_url(url: str) -> Literal["github", "gitlab"]:
@@ -488,6 +505,10 @@ async def get_issue(
         db, issue_id=issue_obj.id, account_id=str(current_user.account_id)
     )
     settings = get_settings()
+    meta_data = issue_obj.meta_data or {}
+    labels_list = extract_label_strings(meta_data.get("labels", []))
+    assignee = _extract_assignee_name(meta_data.get("assignee"))
+
     return GetIssueResponse(
         id=str(issue_obj.id),
         external_id=issue_obj.external_id,
@@ -504,9 +525,9 @@ async def get_issue(
         or f"https://{settings.preloop_url}/issues/{issue_obj.id}",
         created_at=issue_obj.created_at,
         updated_at=issue_obj.updated_at,
-        meta_data=issue_obj.meta_data,
-        labels=issue_obj.meta_data.get("labels", []),
-        assignee=issue_obj.meta_data.get("assignee", None),
+        meta_data=meta_data,
+        labels=labels_list,
+        assignee=assignee,
         compliance_results=_enrich_compliance_results(compliance_results),
     )
 
@@ -763,8 +784,16 @@ async def update_issue(
             project_slug = project.slug
 
         meta_data = issue_obj.meta_data or {}
-        labels_list = meta_data.get("labels", []) if isinstance(meta_data, dict) else []
-        assignee = meta_data.get("assignee") if isinstance(meta_data, dict) else None
+        labels_list = (
+            extract_label_strings(meta_data.get("labels", []))
+            if isinstance(meta_data, dict)
+            else []
+        )
+        assignee = (
+            _extract_assignee_name(meta_data.get("assignee"))
+            if isinstance(meta_data, dict)
+            else None
+        )
         external_url = (
             meta_data.get("url") or issue_obj.external_url or f"/issues/{issue_obj.id}"
         )  # Fallback URL
@@ -800,9 +829,9 @@ async def update_issue(
         or f"https://{settings.preloop_url}/issues/{issue_obj.id}",
         created_at=issue_obj.created_at,
         updated_at=issue_obj.updated_at,
-        meta_data=issue_obj.meta_data,
-        labels=issue_obj.meta_data.get("labels", []),
-        assignee=issue_obj.meta_data.get("assignee", None),
+        meta_data=meta_data,
+        labels=labels_list,
+        assignee=assignee,
         compliance_results=_enrich_compliance_results(compliance_results),
     )
 
