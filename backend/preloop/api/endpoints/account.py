@@ -10,7 +10,12 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from preloop.api.common import get_account_for_user
-from preloop.models.crud import crud_account, crud_managed_agent, crud_runtime_session
+from preloop.models.crud import (
+    crud_account,
+    crud_managed_agent,
+    crud_runtime_session,
+    crud_runtime_session_activity,
+)
 from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
 from preloop.schemas.gateway_usage import (
@@ -20,7 +25,11 @@ from preloop.schemas.gateway_usage import (
     AccountRuntimeSessionListResponse,
     AccountGatewayUsageSearchResponse,
     AccountGatewayUsageSummaryResponse,
+    GatewayTokenUsage,
+    ManagedAgentUsageAggregate,
+    ManagedAgentServerActivitySummary,
     ManagedAgentSummary,
+    ManagedAgentToolActivitySummary,
 )
 from preloop.services.model_gateway_usage import ModelGatewayUsageService
 from preloop.services.runtime_session_explorer import RuntimeSessionExplorerService
@@ -206,6 +215,24 @@ async def get_account_managed_agent(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
         )
+    aggregate = crud_managed_agent.get_usage_aggregate_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    usage_by_model = crud_managed_agent.get_usage_by_model_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    activity_by_server = crud_runtime_session_activity.get_server_summary_for_principal(
+        db,
+        account_id=str(account.id),
+        runtime_principal_type=summary["session_source_type"],
+        runtime_principal_id=summary["session_source_id"],
+    )
+    activity_by_tool = crud_runtime_session_activity.get_tool_summary_for_principal(
+        db,
+        account_id=str(account.id),
+        runtime_principal_type=summary["session_source_type"],
+        runtime_principal_id=summary["session_source_id"],
+    )
     sessions = crud_runtime_session.list_account_sessions(
         db,
         account_id=str(account.id),
@@ -217,6 +244,32 @@ async def get_account_managed_agent(
     )
     return ManagedAgentDetailResponse(
         agent=ManagedAgentSummary(**summary),
+        aggregate=ManagedAgentUsageAggregate(
+            session_count=aggregate["session_count"] if aggregate else 0,
+            total_requests=aggregate["total_requests"] if aggregate else 0,
+            successful_requests=aggregate["successful_requests"] if aggregate else 0,
+            failed_requests=aggregate["failed_requests"] if aggregate else 0,
+            token_usage=GatewayTokenUsage(
+                prompt_tokens=aggregate["prompt_tokens"] if aggregate else 0,
+                completion_tokens=aggregate["completion_tokens"] if aggregate else 0,
+                total_tokens=aggregate["total_tokens"] if aggregate else 0,
+            ),
+            estimated_cost=aggregate["estimated_cost"] if aggregate else 0.0,
+            latest_model_alias=aggregate["latest_model_alias"] if aggregate else None,
+            latest_provider_name=(
+                aggregate["latest_provider_name"] if aggregate else None
+            ),
+            last_request_at=aggregate["last_request_at"] if aggregate else None,
+        ),
+        usage_by_model=[
+            ModelGatewayUsageService._model_row_to_schema(row) for row in usage_by_model
+        ],
+        activity_by_server=[
+            ManagedAgentServerActivitySummary(**row) for row in activity_by_server
+        ],
+        activity_by_tool=[
+            ManagedAgentToolActivitySummary(**row) for row in activity_by_tool
+        ],
         sessions=[
             RuntimeSessionExplorerService._summary_row_to_schema(item)
             for item in sessions["items"]

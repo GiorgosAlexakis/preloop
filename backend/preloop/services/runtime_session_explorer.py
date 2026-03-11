@@ -13,6 +13,7 @@ from preloop.models.crud import (
     crud_api_usage,
     crud_gateway_usage_search_document,
     crud_runtime_session,
+    crud_runtime_session_activity,
 )
 from preloop.models.models.account import Account
 from preloop.models.models.flow_execution import FlowExecution
@@ -224,8 +225,31 @@ class RuntimeSessionExplorerService:
             for interaction in interactions
         )
 
+        activity_rows = crud_runtime_session_activity.list_for_runtime_session(
+            self.db,
+            account_id=summary_row["account_id"],
+            runtime_session_id=summary_row["id"],
+            limit=100,
+        )
+        if activity_rows:
+            items.extend(
+                RuntimeSessionActivityItem(
+                    activity_type=activity.activity_type,
+                    timestamp=self._normalize_timestamp(activity.timestamp),
+                    title=activity.tool_name or "Tool call",
+                    summary=activity.summary or activity.server_name,
+                    status=activity.status,
+                    tool_name=activity.tool_name,
+                    server_name=activity.server_name,
+                    api_key_id=str(activity.api_key_id)
+                    if activity.api_key_id
+                    else None,
+                )
+                for activity in activity_rows
+            )
+
         flow_execution_id = summary_row.get("flow_execution_id")
-        if flow_execution_id:
+        if flow_execution_id and not activity_rows:
             execution = (
                 self.db.query(FlowExecution)
                 .filter(FlowExecution.id == UUID(flow_execution_id))

@@ -11,8 +11,12 @@ import '../../components/view-header.ts';
 import { getAccountAgent, getAccountRuntimeSessionDetail } from '../../api';
 import type {
   AccountRuntimeSessionDetailResponse,
+  GatewayUsageByModel,
   ManagedAgentDetailResponse,
+  ManagedAgentServerActivitySummary,
   ManagedAgentSummary,
+  ManagedAgentToolActivitySummary,
+  ManagedAgentUsageAggregate,
   RuntimeSessionActivityItem,
   RuntimeSessionSummary,
 } from '../../types';
@@ -28,6 +32,18 @@ export class AgentDetailView extends LitElement {
 
   @state()
   private runtimeDetail: AccountRuntimeSessionDetailResponse | null = null;
+
+  @state()
+  private aggregate: ManagedAgentUsageAggregate | null = null;
+
+  @state()
+  private usageByModel: GatewayUsageByModel[] = [];
+
+  @state()
+  private activityByServer: ManagedAgentServerActivitySummary[] = [];
+
+  @state()
+  private activityByTool: ManagedAgentToolActivitySummary[] = [];
 
   @state()
   private sessions: RuntimeSessionSummary[] = [];
@@ -180,12 +196,20 @@ export class AgentDetailView extends LitElement {
 
     this.loading = true;
     this.error = null;
+    this.aggregate = null;
+    this.usageByModel = [];
+    this.activityByServer = [];
+    this.activityByTool = [];
 
     try {
       const detail: ManagedAgentDetailResponse = await getAccountAgent(
         this.agentId
       );
       this.agent = detail.agent;
+      this.aggregate = detail.aggregate;
+      this.usageByModel = detail.usage_by_model;
+      this.activityByServer = detail.activity_by_server;
+      this.activityByTool = detail.activity_by_tool;
       this.sessions = detail.sessions;
       this.selectedSessionId =
         detail.agent.runtime_session_id ?? detail.sessions[0]?.id ?? null;
@@ -261,6 +285,95 @@ export class AgentDetailView extends LitElement {
     `;
   }
 
+  private renderHistoricalModelBreakdown() {
+    if (!this.usageByModel.length) {
+      return html`
+        <div class="empty-state">
+          No model usage has been recorded for this agent yet.
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="timeline">
+        ${this.usageByModel.map(
+          (item) => html`
+            <div class="timeline-item">
+              <div class="timeline-title">
+                ${item.model_alias || 'Unknown model'}
+              </div>
+              <div class="timeline-meta">
+                ${item.provider_name || 'Unknown provider'} ·
+                ${item.request_count} request(s) ·
+                ${item.token_usage.total_tokens} tokens ·
+                ${this.formatMoney(item.estimated_cost)}
+              </div>
+            </div>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderServerActivityBreakdown() {
+    if (!this.activityByServer.length) {
+      return html`
+        <div class="empty-state">
+          No MCP server activity has been recorded for this agent yet.
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="timeline">
+        ${this.activityByServer.map(
+          (item) => html`
+            <div class="timeline-item">
+              <div class="timeline-title">
+                ${item.server_name || 'Unknown server'}
+              </div>
+              <div class="timeline-meta">
+                ${item.call_count} call(s) · ${item.successful_calls} success ·
+                ${item.failed_calls} failed · Last activity
+                ${this.formatDateTime(item.last_activity_at)}
+              </div>
+            </div>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderToolActivityBreakdown() {
+    if (!this.activityByTool.length) {
+      return html`
+        <div class="empty-state">
+          No tool activity has been recorded for this agent yet.
+        </div>
+      `;
+    }
+
+    return html`
+      <div class="timeline">
+        ${this.activityByTool.map(
+          (item) => html`
+            <div class="timeline-item">
+              <div class="timeline-title">
+                ${item.tool_name || 'Unknown tool'}
+              </div>
+              <div class="timeline-meta">
+                ${item.server_name || 'Unknown server'} · ${item.call_count}
+                call(s) · ${item.successful_calls} success ·
+                ${item.failed_calls} failed · Last activity
+                ${this.formatDateTime(item.last_activity_at)}
+              </div>
+            </div>
+          `
+        )}
+      </div>
+    `;
+  }
+
   render() {
     if (this.loading) {
       return html`
@@ -282,6 +395,7 @@ export class AgentDetailView extends LitElement {
     const runtimeSessionUrl = this.agent.runtime_session_id
       ? `/console/runtime-sessions?sessionId=${encodeURIComponent(this.agent.runtime_session_id)}`
       : null;
+    const aggregate = this.aggregate;
 
     return html`
       <div class="page">
@@ -339,19 +453,38 @@ export class AgentDetailView extends LitElement {
                 </div>
               </div>
               <div class="stat-card">
-                <div class="stat-label">Total Requests</div>
-                <div class="stat-value">${this.agent.total_requests}</div>
+                <div class="stat-label">Historical Sessions</div>
+                <div class="stat-value">${aggregate?.session_count ?? 0}</div>
                 <div class="meta-line">
                   Last seen ${this.formatDateTime(this.agent.last_seen_at)}
                 </div>
               </div>
               <div class="stat-card">
+                <div class="stat-label">Total Requests</div>
+                <div class="stat-value">${aggregate?.total_requests ?? 0}</div>
+                <div class="meta-line">
+                  ${aggregate
+                    ? `${aggregate.successful_requests} success · ${aggregate.failed_requests} failed`
+                    : 'No historical usage yet'}
+                </div>
+              </div>
+              <div class="stat-card">
                 <div class="stat-label">Estimated Cost</div>
                 <div class="stat-value">
-                  ${this.formatMoney(this.agent.estimated_cost)}
+                  ${this.formatMoney(aggregate?.estimated_cost)}
                 </div>
                 <div class="meta-line">
-                  Latest model ${this.agent.latest_model_alias || 'None yet'}
+                  Latest model ${aggregate?.latest_model_alias || 'None yet'}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Historical Tokens</div>
+                <div class="stat-value">
+                  ${aggregate?.token_usage.total_tokens ?? 0}
+                </div>
+                <div class="meta-line">
+                  Last request
+                  ${this.formatDateTime(aggregate?.last_request_at)}
                 </div>
               </div>
               <div class="stat-card">
@@ -370,6 +503,27 @@ export class AgentDetailView extends LitElement {
                     </div>`}
               </div>
             </div>
+          </div>
+        </sl-card>
+
+        <sl-card>
+          <div class="stack">
+            <div class="hero-title">Historical Model Usage</div>
+            ${this.renderHistoricalModelBreakdown()}
+          </div>
+        </sl-card>
+
+        <sl-card>
+          <div class="stack">
+            <div class="hero-title">Historical MCP Server Activity</div>
+            ${this.renderServerActivityBreakdown()}
+          </div>
+        </sl-card>
+
+        <sl-card>
+          <div class="stack">
+            <div class="hero-title">Historical Tool Activity</div>
+            ${this.renderToolActivityBreakdown()}
           </div>
         </sl-card>
 

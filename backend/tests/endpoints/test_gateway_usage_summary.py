@@ -6,6 +6,7 @@ from preloop.models.crud import (
     crud_flow,
     crud_flow_execution,
     crud_runtime_session,
+    crud_runtime_session_activity,
 )
 from preloop.models.schemas.flow import FlowCreate
 from preloop.models.schemas.flow_execution import FlowExecutionCreate
@@ -600,5 +601,46 @@ def test_runtime_session_detail_includes_flow_activity_timeline(
     )
     assert any(
         item["activity_type"] == "session_ended" and item["title"] == "Session ended"
+        for item in detail_body["activity_timeline"]
+    )
+
+
+def test_runtime_session_detail_includes_normalized_tool_activity_for_non_flow_session(
+    client, db_session, test_user
+):
+    """Non-flow runtime sessions should surface normalized tool activity."""
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-tools-1",
+        session_reference="claude-tools-1",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-tools-1",
+        runtime_principal_name="Claude Tools Workspace",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
+    )
+    db_session.commit()
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=runtime_session.id,
+        server_name="github",
+        tool_name="search_issues",
+        status="success",
+    )
+
+    detail_response = client.get(
+        f"/api/v1/account/runtime-sessions/{runtime_session.id}"
+    )
+
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert any(
+        item["activity_type"] == "tool_call"
+        and item["title"] == "search_issues"
+        and item["server_name"] == "github"
+        and item["status"] == "success"
         for item in detail_body["activity_timeline"]
     )

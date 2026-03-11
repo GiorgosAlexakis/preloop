@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
@@ -254,6 +254,126 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         if row is None:
             return None
         return self._row_to_summary(row)
+
+    def get_usage_aggregate_for_account(
+        self, db: Session, *, account_id: str, agent_id: str
+    ) -> Optional[dict[str, Any]]:
+        """Return historical usage totals across all sessions for one agent."""
+        agent = self.get_for_account(db, account_id=account_id, agent_id=agent_id)
+        if agent is None:
+            return None
+
+        session_count = (
+            db.query(func.count(RuntimeSession.id))
+            .filter(
+                RuntimeSession.account_id == account_id,
+                RuntimeSession.runtime_principal_type == agent.session_source_type,
+                RuntimeSession.runtime_principal_id == agent.session_source_id,
+            )
+            .scalar()
+            or 0
+        )
+
+        usage_row = (
+            db.query(
+                func.count(ApiUsage.id).label("request_count"),
+                func.coalesce(
+                    func.sum(case((ApiUsage.status_code < 400, 1), else_=0)), 0
+                ).label("success_count"),
+                func.coalesce(
+                    func.sum(case((ApiUsage.status_code >= 400, 1), else_=0)), 0
+                ).label("error_count"),
+                func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label(
+                    "prompt_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+                    "completion_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+                func.max(ApiUsage.model_alias).label("latest_model_alias"),
+                func.max(ApiUsage.provider_name).label("latest_provider_name"),
+                func.max(ApiUsage.timestamp).label("last_request_at"),
+            )
+            .filter(
+                ApiUsage.account_id == account_id,
+                ApiUsage.action_type == "model_gateway",
+                ApiUsage.runtime_principal_type == agent.session_source_type,
+                ApiUsage.runtime_principal_id == agent.session_source_id,
+            )
+            .one()
+        )
+
+        return {
+            "session_count": int(session_count or 0),
+            "total_requests": int(usage_row.request_count or 0),
+            "successful_requests": int(usage_row.success_count or 0),
+            "failed_requests": int(usage_row.error_count or 0),
+            "prompt_tokens": int(usage_row.prompt_tokens or 0),
+            "completion_tokens": int(usage_row.completion_tokens or 0),
+            "total_tokens": int(usage_row.total_tokens or 0),
+            "estimated_cost": float(usage_row.estimated_cost or 0.0),
+            "latest_model_alias": usage_row.latest_model_alias,
+            "latest_provider_name": usage_row.latest_provider_name,
+            "last_request_at": usage_row.last_request_at,
+        }
+
+    def get_usage_by_model_for_account(
+        self, db: Session, *, account_id: str, agent_id: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Return historical model usage grouped across all sessions for one agent."""
+        agent = self.get_for_account(db, account_id=account_id, agent_id=agent_id)
+        if agent is None:
+            return []
+
+        rows = (
+            db.query(
+                ApiUsage.ai_model_id,
+                ApiUsage.model_alias,
+                ApiUsage.provider_name,
+                func.count(ApiUsage.id).label("request_count"),
+                func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label(
+                    "prompt_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+                    "completion_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+            )
+            .filter(
+                ApiUsage.account_id == account_id,
+                ApiUsage.action_type == "model_gateway",
+                ApiUsage.runtime_principal_type == agent.session_source_type,
+                ApiUsage.runtime_principal_id == agent.session_source_id,
+            )
+            .group_by(
+                ApiUsage.ai_model_id, ApiUsage.model_alias, ApiUsage.provider_name
+            )
+            .order_by(
+                func.count(ApiUsage.id).desc(), func.sum(ApiUsage.total_tokens).desc()
+            )
+            .limit(limit)
+            .all()
+        )
+
+        return [
+            {
+                "ai_model_id": str(row.ai_model_id) if row.ai_model_id else None,
+                "model_alias": row.model_alias,
+                "provider_name": row.provider_name,
+                "request_count": int(row.request_count or 0),
+                "prompt_tokens": int(row.prompt_tokens or 0),
+                "completion_tokens": int(row.completion_tokens or 0),
+                "total_tokens": int(row.total_tokens or 0),
+                "estimated_cost": float(row.estimated_cost or 0.0),
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def _row_to_summary(row: Any) -> dict[str, Any]:

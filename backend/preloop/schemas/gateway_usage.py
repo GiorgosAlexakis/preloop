@@ -190,6 +190,41 @@ class ManagedAgentSummary(BaseModel):
     last_request_at: Optional[datetime] = None
 
 
+class ManagedAgentUsageAggregate(BaseModel):
+    """Historical usage aggregate across all sessions for one managed agent."""
+
+    session_count: int = 0
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    token_usage: GatewayTokenUsage
+    estimated_cost: float = 0.0
+    latest_model_alias: Optional[str] = None
+    latest_provider_name: Optional[str] = None
+    last_request_at: Optional[datetime] = None
+
+
+class ManagedAgentServerActivitySummary(BaseModel):
+    """Historical tool activity grouped by MCP server for one managed agent."""
+
+    server_name: Optional[str] = None
+    call_count: int = 0
+    successful_calls: int = 0
+    failed_calls: int = 0
+    last_activity_at: Optional[datetime] = None
+
+
+class ManagedAgentToolActivitySummary(BaseModel):
+    """Historical tool activity grouped by MCP server and tool name."""
+
+    server_name: Optional[str] = None
+    tool_name: Optional[str] = None
+    call_count: int = 0
+    successful_calls: int = 0
+    failed_calls: int = 0
+    last_activity_at: Optional[datetime] = None
+
+
 class AccountManagedAgentListResponse(BaseModel):
     """Account-scoped managed-agent registry response."""
 
@@ -206,6 +241,14 @@ class ManagedAgentDetailResponse(BaseModel):
     """One managed agent plus its recent runtime session history."""
 
     agent: ManagedAgentSummary
+    aggregate: ManagedAgentUsageAggregate
+    usage_by_model: List[GatewayUsageByModel] = Field(default_factory=list)
+    activity_by_server: List[ManagedAgentServerActivitySummary] = Field(
+        default_factory=list
+    )
+    activity_by_tool: List[ManagedAgentToolActivitySummary] = Field(
+        default_factory=list
+    )
     sessions: List[RuntimeSessionSummary] = Field(default_factory=list)
 
 

@@ -264,6 +264,35 @@ export interface ManagedAgentSummary {
   last_request_at: string | null;
 }
 
+export interface ManagedAgentUsageAggregate {
+  session_count: number;
+  total_requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  token_usage: GatewayTokenUsage;
+  estimated_cost: number;
+  latest_model_alias: string | null;
+  latest_provider_name: string | null;
+  last_request_at: string | null;
+}
+
+export interface ManagedAgentServerActivitySummary {
+  server_name: string | null;
+  call_count: number;
+  successful_calls: number;
+  failed_calls: number;
+  last_activity_at: string | null;
+}
+
+export interface ManagedAgentToolActivitySummary {
+  server_name: string | null;
+  tool_name: string | null;
+  call_count: number;
+  successful_calls: number;
+  failed_calls: number;
+  last_activity_at: string | null;
+}
+
 export interface AccountManagedAgentListResponse {
   query: string | null;
   session_source_type: string | null;
@@ -276,6 +305,10 @@ export interface AccountManagedAgentListResponse {
 
 export interface ManagedAgentDetailResponse {
   agent: ManagedAgentSummary;
+  aggregate: ManagedAgentUsageAggregate;
+  usage_by_model: GatewayUsageByModel[];
+  activity_by_server: ManagedAgentServerActivitySummary[];
+  activity_by_tool: ManagedAgentToolActivitySummary[];
   sessions: RuntimeSessionSummary[];
 }
 

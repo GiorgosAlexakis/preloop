@@ -42,6 +42,7 @@ from .github_app_installation import OAuthAppInstallation, GitHubAppInstallation
 from .github_oauth_token import OAuthToken, GitHubOAuthToken
 from .policy_snapshot import PolicySnapshot
 from .runtime_session import RuntimeSession
+from .runtime_session_activity import RuntimeSessionActivity
 from .secret_reference import SecretReference
 
 __all__ = [
@@ -103,5 +104,6 @@ __all__ = [
     "GitHubOAuthToken",  # Backward compatibility alias
     "PolicySnapshot",
     "RuntimeSession",
+    "RuntimeSessionActivity",
     "SecretReference",
 ]

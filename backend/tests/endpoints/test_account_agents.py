@@ -2,7 +2,11 @@
 
 from datetime import UTC, datetime
 
-from preloop.models.crud import crud_api_usage, crud_runtime_session
+from preloop.models.crud import (
+    crud_api_usage,
+    crud_runtime_session,
+    crud_runtime_session_activity,
+)
 from preloop.models.models.mcp_server import MCPServer
 from preloop.models.models.mcp_tool import MCPTool
 
@@ -165,6 +169,87 @@ def test_account_agent_detail_endpoint_includes_session_history(
     assert first_response.status_code == 201
     assert second_response.status_code == 201
 
+    first_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-1",
+    )
+    second_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-2",
+    )
+    assert first_session is not None
+    assert second_session is not None
+
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(first_session.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+        estimated_cost=0.25,
+        runtime_principal_type="claude_code",
+        runtime_principal_id=principal_id,
+        runtime_principal_name="Claude Code Workspace",
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=first_session.id,
+        server_name="github",
+        tool_name="search_issues",
+        status="success",
+        commit=False,
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=second_session.id,
+        server_name="github",
+        tool_name="search_issues",
+        status="failed",
+        summary="rate limited",
+        commit=False,
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=second_session.id,
+        server_name="jira",
+        tool_name="get_issue",
+        status="success",
+    )
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=429,
+        duration=0.2,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(second_session.id),
+        model_alias="openai/gpt-5-mini",
+        provider_name="openai",
+        prompt_tokens=50,
+        completion_tokens=10,
+        total_tokens=60,
+        estimated_cost=0.05,
+        runtime_principal_type="claude_code",
+        runtime_principal_id=principal_id,
+        runtime_principal_name="Claude Code Workspace",
+    )
+
     list_response = client.get("/api/v1/account/agents")
     assert list_response.status_code == 200
     body = list_response.json()
@@ -176,6 +261,30 @@ def test_account_agent_detail_endpoint_includes_session_history(
     assert detail_response.status_code == 200
     detail_body = detail_response.json()
     assert detail_body["agent"]["session_source_id"] == principal_id
+    assert detail_body["aggregate"]["session_count"] == 2
+    assert detail_body["aggregate"]["total_requests"] == 2
+    assert detail_body["aggregate"]["successful_requests"] == 1
+    assert detail_body["aggregate"]["failed_requests"] == 1
+    assert detail_body["aggregate"]["token_usage"]["prompt_tokens"] == 150
+    assert detail_body["aggregate"]["token_usage"]["completion_tokens"] == 30
+    assert detail_body["aggregate"]["token_usage"]["total_tokens"] == 180
+    assert detail_body["aggregate"]["estimated_cost"] == 0.3
+    assert len(detail_body["usage_by_model"]) == 2
+    assert detail_body["usage_by_model"][0]["model_alias"] == "openai/gpt-5"
+    assert detail_body["usage_by_model"][0]["provider_name"] == "openai"
+    assert detail_body["usage_by_model"][0]["request_count"] == 1
+    assert detail_body["usage_by_model"][0]["token_usage"]["total_tokens"] == 120
+    assert detail_body["usage_by_model"][1]["model_alias"] == "openai/gpt-5-mini"
+    assert detail_body["usage_by_model"][1]["request_count"] == 1
+    assert len(detail_body["activity_by_server"]) == 2
+    assert detail_body["activity_by_server"][0]["server_name"] == "github"
+    assert detail_body["activity_by_server"][0]["call_count"] == 2
+    assert detail_body["activity_by_server"][0]["successful_calls"] == 1
+    assert detail_body["activity_by_server"][0]["failed_calls"] == 1
+    assert detail_body["activity_by_tool"][0]["tool_name"] == "search_issues"
+    assert detail_body["activity_by_tool"][0]["server_name"] == "github"
+    assert detail_body["activity_by_tool"][0]["call_count"] == 2
+    assert detail_body["activity_by_tool"][1]["tool_name"] == "get_issue"
     assert len(detail_body["sessions"]) == 2
     assert [session["session_source_id"] for session in detail_body["sessions"]] == [
         "workspace-2",

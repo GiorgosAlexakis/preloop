@@ -19,6 +19,7 @@ from ..models import (
     GatewayUsageSearchDocument,
     ManagedAgent,
     RuntimeSession,
+    RuntimeSessionActivity,
 )
 from .account import CRUDAccount
 from .api_key import CRUDApiKey
@@ -83,6 +84,7 @@ from . import tool_approval_condition
 from . import notification_preferences
 from .policy_snapshot import CRUDPolicySnapshot, crud_policy_snapshot
 from .runtime_session import CRUDRuntimeSession
+from .runtime_session_activity import CRUDRuntimeSessionActivity
 from .secret_reference import CRUDSecretReference, crud_secret_reference
 
 crud_account = CRUDAccount(Account)
@@ -108,6 +110,7 @@ crud_gateway_usage_search_document = CRUDGatewayUsageSearchDocument(
 )
 crud_managed_agent = CRUDManagedAgent(ManagedAgent)
 crud_runtime_session = CRUDRuntimeSession(RuntimeSession)
+crud_runtime_session_activity = CRUDRuntimeSessionActivity(RuntimeSessionActivity)
 crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
 crud_mcp_server = CRUDMCPServer()  # Instantiate CRUDMCPServer
 crud_mcp_tool = CRUDMCPTool()  # Instantiate CRUDMCPTool
@@ -205,6 +208,8 @@ __all__ = [
     "notification_preferences",
     "CRUDPolicySnapshot",
     "CRUDRuntimeSession",
+    "CRUDRuntimeSessionActivity",
     "crud_policy_snapshot",
     "crud_runtime_session",
+    "crud_runtime_session_activity",
 ]

@@ -76,6 +76,7 @@ class DynamicFastMCP(FastMCP):
         )
         # Track proxied tool -> server mapping for routing
         self._proxied_tool_servers: Dict[str, str] = {}
+        self._proxied_tool_server_names: Dict[str, str] = {}
         # Track registered proxied tools to avoid re-registration
         self._registered_proxied_tools: set = set()
         logger.info("DynamicFastMCP initialized")
@@ -222,6 +223,7 @@ class DynamicFastMCP(FastMCP):
 
                     # Always track the mapping for name translation
                 self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
+                self._proxied_tool_server_names[mcp_tool.name] = mcp_server.name
 
                 # Now get all registered tools and map back to original names
             all_registered = await super()._list_tools(context)
@@ -780,10 +782,12 @@ async def {internal_name}({params_str}) -> str:
 
         start_time = time.monotonic()
         exec_status = "executed"
+        exec_error: Optional[str] = None
         try:
             result = await super()._call_tool(context)
         except Exception as e:
             exec_status = "failed"
+            exec_error = str(e)
             raise
         finally:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -820,6 +824,40 @@ async def {internal_name}({params_str}) -> str:
                     )
             except Exception as audit_err:
                 logger.debug(f"Failed to audit tool execution: {audit_err}")
+
+            # ── Runtime session activity persistence ──────────────────────
+            try:
+                if user_context.runtime_session_id:
+                    from preloop.models.crud import crud_runtime_session_activity
+                    from preloop.utils.redaction import redact_dict
+
+                    activity_status = "failed" if exec_status == "failed" else "success"
+                    server_name = self._proxied_tool_server_names.get(
+                        name, "preloop-mcp"
+                    )
+                    db = next(get_db())
+                    try:
+                        crud_runtime_session_activity.log_tool_call(
+                            db,
+                            account_id=user_context.account_id,
+                            runtime_session_id=user_context.runtime_session_id,
+                            flow_execution_id=user_context.flow_execution_id,
+                            api_key_id=user_context.api_key_id,
+                            server_name=server_name,
+                            tool_name=name,
+                            status=activity_status,
+                            summary=exec_error,
+                            metadata={
+                                "correlation_id": correlation_id,
+                                "arguments": redact_dict(arguments),
+                            },
+                        )
+                    finally:
+                        db.close()
+            except Exception as activity_err:
+                logger.debug(
+                    f"Failed to persist runtime session activity: {activity_err}"
+                )
 
         return result
 

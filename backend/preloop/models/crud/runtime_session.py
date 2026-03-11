@@ -166,6 +166,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             session_query.outerjoin(ApiUsage, usage_join)
             .outerjoin(Flow, ApiUsage.flow_id == Flow.id)
             .with_entities(
+                self.model.account_id,
                 self.model.id,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -203,6 +204,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 func.max(ApiUsage.timestamp).label("last_request_at"),
             )
             .group_by(
+                self.model.account_id,
                 self.model.id,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -256,6 +258,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         )
         row = (
             db.query(
+                self.model.account_id,
                 self.model.id,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -298,6 +301,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 self.model.account_id == account_id, self.model.id == runtime_session_id
             )
             .group_by(
+                self.model.account_id,
                 self.model.id,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -335,6 +339,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
     @staticmethod
     def _row_to_summary(row) -> dict[str, Any]:
         return {
+            "account_id": str(row.account_id),
             "id": str(row.id),
             "session_source_type": row.session_source_type,
             "session_source_id": row.session_source_id,

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .account import Account
     from .api_usage import ApiUsage
     from .managed_agent import ManagedAgent
+    from .runtime_session_activity import RuntimeSessionActivity
 
 
 class RuntimeSession(Base):
@@ -56,6 +57,11 @@ class RuntimeSession(Base):
     )
     api_usages: Mapped[List["ApiUsage"]] = relationship(
         "ApiUsage", back_populates="runtime_session"
+    )
+    activities: Mapped[List["RuntimeSessionActivity"]] = relationship(
+        "RuntimeSessionActivity",
+        back_populates="runtime_session",
+        cascade="all, delete-orphan",
     )
     managed_agent: Mapped[Optional["ManagedAgent"]] = relationship(
         "ManagedAgent", back_populates="runtime_session", uselist=False
