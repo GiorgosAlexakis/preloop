@@ -310,6 +310,21 @@ class ManagedAgentEnrollmentCreateRequest(BaseModel):
     last_restored_at: Optional[datetime] = None
 
 
+class ManagedAgentEnrollmentValidateRequest(BaseModel):
+    """Request to update validation state for one enrollment."""
+
+    status: str = Field(default="validated", min_length=1, max_length=32)
+    validation_result: dict = Field(default_factory=dict)
+
+
+class ManagedAgentEnrollmentRestoreRequest(BaseModel):
+    """Request to mark one enrollment as restored."""
+
+    status: str = Field(default="restored", min_length=1, max_length=32)
+    backup_metadata: dict = Field(default_factory=dict)
+    validation_result: dict = Field(default_factory=dict)
+
+
 class AccountManagedAgentListResponse(BaseModel):
     """Account-scoped managed-agent registry response."""
 

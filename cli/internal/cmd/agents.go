@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/preloop/preloop/cli/internal/api"
+	"github.com/preloop/preloop/cli/internal/config"
 )
 
 // AgentConfig describes a discovered AI agent MCP configuration.
@@ -26,10 +28,13 @@ type AgentConfig struct {
 
 // MCPDef is a minimal MCP server definition read from an agent config.
 type MCPDef struct {
-	Command string            `json:"command,omitempty"`
-	Args    []string          `json:"args,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
+	Command   string                 `json:"command,omitempty"`
+	Args      []string               `json:"args,omitempty"`
+	URL       string                 `json:"url,omitempty"`
+	Transport string                 `json:"transport,omitempty"`
+	Env       map[string]string      `json:"env,omitempty"`
+	Headers   map[string]string      `json:"headers,omitempty"`
+	Auth      map[string]interface{} `json:"auth,omitempty"`
 }
 
 // agentSpec defines where to look for a particular AI agent.
@@ -42,7 +47,7 @@ type agentSpec struct {
 var agentSpecs = []agentSpec{
 	{
 		Name:        "Claude Code",
-		ConfigPaths: []string{".claude/claude_desktop_config.json", ".config/claude/claude_desktop_config.json"},
+		ConfigPaths: []string{".claude/mcp-servers.json", ".claude/claude_desktop_config.json", ".config/claude/claude_desktop_config.json"},
 		Parser:      parseClaudeConfig,
 	},
 	{
@@ -93,18 +98,43 @@ var agentsCmd = &cobra.Command{
 var agentsDiscoverCmd = &cobra.Command{
 	Use:   "discover",
 	Short: "Discover AI agents on this machine",
-	Long: `Scan standard configuration paths for known AI agents, display their
-MCP server configurations, and optionally add their MCP servers to your
-Preloop account and issue runtime-scoped session tokens.
+	Long: `Scan standard configuration paths for known AI agents and display their
+MCP server configurations without mutating local files or your Preloop account.
 
 Supported agents: Claude Code, Cursor, Windsurf, VSCode/Copilot,
                   Gemini CLI, OpenCode, Codex CLI, OpenClaw.
 
 Examples:
   preloop agents discover
-  preloop agents discover --add
   preloop agents discover --json`,
 	RunE: runAgentsDiscover,
+}
+
+var agentsEnrollCmd = &cobra.Command{
+	Use:   "enroll <agent>",
+	Short: "Enroll a discovered agent into managed MCP access",
+	Long: `Create or locate the managed agent identity in Preloop, create a durable
+credential for it, back up the local config, and add a managed Preloop MCP server
+entry to the selected agent configuration.
+
+This is the mutating companion to 'preloop agents discover'. Use --dry-run to
+preview the planned config and account changes without writing anything.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runAgentsEnroll,
+}
+
+var agentsStatusCmd = &cobra.Command{
+	Use:   "status <agent>",
+	Short: "Show managed enrollment status for an agent",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAgentsStatus,
+}
+
+var agentsRestoreCmd = &cobra.Command{
+	Use:   "restore <agent>",
+	Short: "Restore the most recent local backup for an enrolled agent",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAgentsRestore,
 }
 
 type starterPolicyTool struct {
@@ -146,6 +176,120 @@ type runtimeSessionTokenResponse struct {
 	SessionReference  string `json:"session_reference,omitempty"`
 }
 
+type mcpServerResponse struct {
+	ID         string                 `json:"id"`
+	Name       string                 `json:"name"`
+	URL        string                 `json:"url"`
+	Transport  string                 `json:"transport,omitempty"`
+	AuthType   string                 `json:"auth_type,omitempty"`
+	AuthConfig map[string]interface{} `json:"auth_config,omitempty"`
+}
+
+type managedAgentSummary struct {
+	ID                string   `json:"id"`
+	DisplayName       string   `json:"display_name"`
+	SessionSourceType string   `json:"session_source_type"`
+	SessionSourceID   string   `json:"session_source_id"`
+	SessionReference  string   `json:"session_reference,omitempty"`
+	LifecycleState    string   `json:"lifecycle_state"`
+	ManagedMCPServers []string `json:"managed_mcp_servers"`
+}
+
+type managedAgentListResponse struct {
+	Items []managedAgentSummary `json:"items"`
+}
+
+type managedAgentCredentialSummary struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Status        string `json:"status"`
+	KeyPrefix     string `json:"key_prefix,omitempty"`
+	CreatedAt     string `json:"created_at"`
+	RevokedAt     string `json:"revoked_at,omitempty"`
+	RevokedReason string `json:"revoked_reason,omitempty"`
+}
+
+type managedAgentCredentialCreateRequest struct {
+	Name          string   `json:"name"`
+	Description   string   `json:"description,omitempty"`
+	ExpiresInDays int      `json:"expires_in_days,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+}
+
+type managedAgentCredentialCreateResponse struct {
+	Credential managedAgentCredentialSummary `json:"credential"`
+	Token      string                        `json:"token"`
+}
+
+type managedAgentEnrollmentSummary struct {
+	ID               string                 `json:"id"`
+	EnrollmentType   string                 `json:"enrollment_type"`
+	AdapterKey       string                 `json:"adapter_key,omitempty"`
+	Status           string                 `json:"status"`
+	TargetConfigPath string                 `json:"target_config_path,omitempty"`
+	DiscoveredConfig map[string]interface{} `json:"discovered_config,omitempty"`
+	ManagedConfig    map[string]interface{} `json:"managed_config,omitempty"`
+	BackupMetadata   map[string]interface{} `json:"backup_metadata,omitempty"`
+	ValidationResult map[string]interface{} `json:"validation_result,omitempty"`
+	RestoreAvailable bool                   `json:"restore_available"`
+	CreatedAt        string                 `json:"created_at"`
+	UpdatedAt        string                 `json:"updated_at"`
+	LastAppliedAt    string                 `json:"last_applied_at,omitempty"`
+	LastValidatedAt  string                 `json:"last_validated_at,omitempty"`
+	LastRestoredAt   string                 `json:"last_restored_at,omitempty"`
+}
+
+type managedAgentEnrollmentCreateRequest struct {
+	EnrollmentType   string                 `json:"enrollment_type"`
+	AdapterKey       string                 `json:"adapter_key,omitempty"`
+	Status           string                 `json:"status"`
+	TargetConfigPath string                 `json:"target_config_path,omitempty"`
+	DiscoveredConfig map[string]interface{} `json:"discovered_config,omitempty"`
+	ManagedConfig    map[string]interface{} `json:"managed_config,omitempty"`
+	BackupMetadata   map[string]interface{} `json:"backup_metadata,omitempty"`
+	ValidationResult map[string]interface{} `json:"validation_result,omitempty"`
+	RestoreAvailable bool                   `json:"restore_available"`
+	LastAppliedAt    *time.Time             `json:"last_applied_at,omitempty"`
+	LastValidatedAt  *time.Time             `json:"last_validated_at,omitempty"`
+	LastRestoredAt   *time.Time             `json:"last_restored_at,omitempty"`
+}
+
+type managedAgentDetailResponse struct {
+	Agent       managedAgentSummary             `json:"agent"`
+	Credentials []managedAgentCredentialSummary `json:"credentials"`
+	Enrollments []managedAgentEnrollmentSummary `json:"enrollments"`
+}
+
+type managedMCPEnrollmentPlan struct {
+	Agent               AgentConfig
+	DiscoveredDocument  map[string]interface{}
+	ManagedDocument     map[string]interface{}
+	SanitizedDiscovered map[string]interface{}
+	SanitizedManaged    map[string]interface{}
+	ManagedServerName   string
+	ManagedServerURL    string
+}
+
+type remoteServerSyncResult struct {
+	Added   []string
+	Reused  []string
+	Skipped []string
+}
+
+type localEnrollmentState struct {
+	AgentName          string                 `json:"agent_name"`
+	RuntimePrincipalID string                 `json:"runtime_principal_id"`
+	EnrollmentID       string                 `json:"enrollment_id,omitempty"`
+	ConfigPath         string                 `json:"config_path"`
+	BackupPath         string                 `json:"backup_path"`
+	ManagedServerName  string                 `json:"managed_server_name"`
+	ManagedServerURL   string                 `json:"managed_server_url"`
+	AppliedAt          time.Time              `json:"applied_at"`
+	RestoredAt         *time.Time             `json:"restored_at,omitempty"`
+	DiscoveredConfig   map[string]interface{} `json:"discovered_config,omitempty"`
+	ManagedConfig      map[string]interface{} `json:"managed_config,omitempty"`
+}
+
 // agentsStarterPolicyCmd generates a starter policy suggestion for an MCP server.
 var agentsStarterPolicyCmd = &cobra.Command{
 	Use:   "starter-policy <mcp-server>",
@@ -169,10 +313,18 @@ Examples:
 
 func init() {
 	agentsCmd.AddCommand(agentsDiscoverCmd)
+	agentsCmd.AddCommand(agentsEnrollCmd)
+	agentsCmd.AddCommand(agentsStatusCmd)
+	agentsCmd.AddCommand(agentsRestoreCmd)
 	agentsCmd.AddCommand(agentsStarterPolicyCmd)
 
-	agentsDiscoverCmd.Flags().Bool("add", false, "interactively add discovered MCP servers to your Preloop account")
+	agentsDiscoverCmd.Flags().Bool("add", false, "deprecated: use 'preloop agents enroll <agent>' instead")
 	agentsDiscoverCmd.Flags().Bool("json", false, "output discovered agents as JSON")
+	_ = agentsDiscoverCmd.Flags().MarkDeprecated("add", "use 'preloop agents enroll <agent>'")
+	agentsEnrollCmd.Flags().Bool("dry-run", false, "preview account and config changes without writing")
+	agentsEnrollCmd.Flags().Bool("yes", false, "skip the enrollment confirmation prompt")
+	agentsStatusCmd.Flags().Bool("json", false, "output managed status as JSON")
+	agentsRestoreCmd.Flags().Bool("yes", false, "skip the restore confirmation prompt")
 	agentsStarterPolicyCmd.Flags().StringP("output", "o", "", "write generated policy YAML to a file")
 	agentsStarterPolicyCmd.Flags().Bool("apply", false, "apply the generated policy immediately")
 	agentsStarterPolicyCmd.Flags().Bool("dry-run", false, "when used with --apply, validate without applying changes")
@@ -185,35 +337,13 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 	asJSON, _ := cmd.Flags().GetBool("json")
 	addServers, _ := cmd.Flags().GetBool("add")
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("could not determine home directory: %w", err)
+	if addServers {
+		return fmt.Errorf("discover is now read-only; use 'preloop agents enroll <agent>'")
 	}
 
-	var discovered []AgentConfig
-
-	for _, spec := range agentSpecs {
-		for _, relPath := range spec.ConfigPaths {
-			fullPath := filepath.Join(home, relPath)
-			if _, err := os.Stat(fullPath); err != nil {
-				continue
-			}
-
-			servers, err := spec.Parser(fullPath)
-			if err != nil {
-				if !asJSON {
-					fmt.Printf("  ⚠ Could not parse %s config at %s: %v\n", spec.Name, fullPath, err)
-				}
-				continue
-			}
-
-			discovered = append(discovered, AgentConfig{
-				Name:       spec.Name,
-				ConfigPath: fullPath,
-				MCPServers: servers,
-			})
-			break // first match wins per agent
-		}
+	discovered, err := discoverAgents(os.Stdout, !asJSON)
+	if err != nil {
+		return err
 	}
 
 	if asJSON {
@@ -247,14 +377,288 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	if addServers && totalServers > 0 {
-		return addDiscoveredServers(discovered)
+	if totalServers > 0 {
+		fmt.Println("Tip: Use 'preloop agents enroll <agent>' to create a managed Preloop MCP entry with backup and restore support.")
 	}
 
-	if totalServers > 0 && !addServers {
-		fmt.Println("Tip: Use --add to interactively add these servers to your Preloop account.")
+	return nil
+}
+
+func runAgentsEnroll(cmd *cobra.Command, args []string) error {
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	autoApprove, _ := cmd.Flags().GetBool("yes")
+
+	discovered, err := discoverAgents(os.Stdout, true)
+	if err != nil {
+		return err
+	}
+	agent, err := findDiscoveredAgent(discovered, args[0])
+	if err != nil {
+		return err
 	}
 
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+	if !client.IsAuthenticated() {
+		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+	}
+
+	plan, err := buildManagedMCPEnrollmentPlan(agent, client.BaseURL(), "<token created at apply time>")
+	if err != nil {
+		return err
+	}
+
+	printEnrollmentPlan(plan, dryRun)
+	if dryRun {
+		fmt.Println("Dry run only: no local files or Preloop account state were changed.")
+		return nil
+	}
+
+	if !autoApprove {
+		confirmed, err := confirmAction(
+			os.Stdin,
+			os.Stdout,
+			fmt.Sprintf("Apply managed Preloop MCP enrollment for %s? (y/N): ", agent.Name),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to read confirmation: %w", err)
+		}
+		if !confirmed {
+			fmt.Println("Aborted without applying enrollment.")
+			return nil
+		}
+	}
+
+	serverSync, err := ensureDiscoveredRemoteServers(client, agent)
+	if err != nil {
+		return err
+	}
+
+	allowedServers := append([]string{}, serverSync.Added...)
+	allowedServers = append(allowedServers, serverSync.Reused...)
+	_, err = issueRuntimeSessionToken(client, agent, allowedServers)
+	if err != nil {
+		return fmt.Errorf("failed to bootstrap managed agent identity: %w", err)
+	}
+
+	managedAgent, err := getManagedAgentForDiscovered(client, agent)
+	if err != nil {
+		return err
+	}
+
+	credentialResp, err := createDurableManagedCredential(client, managedAgent)
+	if err != nil {
+		return err
+	}
+
+	plan, err = buildManagedMCPEnrollmentPlan(agent, client.BaseURL(), credentialResp.Token)
+	if err != nil {
+		return err
+	}
+
+	originalBytes, err := os.ReadFile(agent.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to read agent config: %w", err)
+	}
+	backupState, err := createLocalEnrollmentBackup(agent, originalBytes, plan)
+	if err != nil {
+		return err
+	}
+	if err := writeJSONDocument(agent.ConfigPath, plan.ManagedDocument); err != nil {
+		return err
+	}
+	if err := saveLocalEnrollmentState(backupState); err != nil {
+		return err
+	}
+
+	appliedAt := time.Now().UTC()
+	enrollment, err := createManagedEnrollmentRecord(client, managedAgent.ID, managedAgentEnrollmentCreateRequest{
+		EnrollmentType:   "cli_managed_config",
+		AdapterKey:       runtimeSessionSourceTypeForAgent(agent.Name),
+		Status:           "applied",
+		TargetConfigPath: agent.ConfigPath,
+		DiscoveredConfig: plan.SanitizedDiscovered,
+		ManagedConfig:    plan.SanitizedManaged,
+		BackupMetadata: map[string]interface{}{
+			"backup_path":          backupState.BackupPath,
+			"runtime_principal_id": backupState.RuntimePrincipalID,
+		},
+		ValidationResult: map[string]interface{}{
+			"mode": "local_mcp_additive",
+		},
+		RestoreAvailable: true,
+		LastAppliedAt:    &appliedAt,
+	})
+	if err != nil {
+		return err
+	}
+	backupState.EnrollmentID = enrollment.ID
+	if err := saveLocalEnrollmentState(backupState); err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Enrolled %s\n", agent.Name)
+	fmt.Printf("  Managed agent: %s\n", managedAgent.ID)
+	if len(serverSync.Added) > 0 {
+		fmt.Printf("  Added remote MCP servers: %s\n", strings.Join(serverSync.Added, ", "))
+	}
+	if len(serverSync.Reused) > 0 {
+		fmt.Printf("  Reused remote MCP servers: %s\n", strings.Join(serverSync.Reused, ", "))
+	}
+	if len(serverSync.Skipped) > 0 {
+		fmt.Printf("  Skipped unsupported local MCP servers: %s\n", strings.Join(serverSync.Skipped, ", "))
+	}
+	fmt.Printf("  Durable credential: %s\n", credentialResp.Credential.Name)
+	fmt.Printf("  Config updated: %s\n", agent.ConfigPath)
+	fmt.Printf("  Backup saved: %s\n", backupState.BackupPath)
+	return nil
+}
+
+func runAgentsStatus(cmd *cobra.Command, args []string) error {
+	asJSON, _ := cmd.Flags().GetBool("json")
+
+	discovered, err := discoverAgents(io.Discard, false)
+	if err != nil {
+		return err
+	}
+	agent, err := findDiscoveredAgent(discovered, args[0])
+	if err != nil {
+		return err
+	}
+
+	localState, _ := loadLocalEnrollmentState(agent)
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	var detail *managedAgentDetailResponse
+	if client.IsAuthenticated() {
+		managedAgent, err := getManagedAgentForDiscovered(client, agent)
+		if err == nil {
+			resp, err := getManagedAgentDetail(client, managedAgent.ID)
+			if err != nil {
+				return err
+			}
+			detail = resp
+		}
+	}
+
+	if asJSON {
+		payload := map[string]interface{}{
+			"agent":        agent,
+			"local_state":  localState,
+			"remote_state": detail,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(payload)
+	}
+
+	fmt.Printf("Agent: %s\n", agent.Name)
+	fmt.Printf("Config: %s\n", agent.ConfigPath)
+	fmt.Printf("Runtime principal: %s\n", runtimePrincipalIDForAgent(agent))
+	if localState != nil {
+		fmt.Printf("Local backup: %s\n", localState.BackupPath)
+		fmt.Printf("Managed MCP URL: %s\n", localState.ManagedServerURL)
+	}
+	if detail == nil {
+		if client.IsAuthenticated() {
+			fmt.Println("Remote status: managed agent not found yet")
+		} else {
+			fmt.Println("Remote status: unavailable (not authenticated)")
+		}
+		return nil
+	}
+
+	fmt.Printf("Managed agent ID: %s\n", detail.Agent.ID)
+	fmt.Printf("Lifecycle: %s\n", detail.Agent.LifecycleState)
+	if len(detail.Agent.ManagedMCPServers) > 0 {
+		fmt.Printf("Managed MCP servers: %s\n", strings.Join(detail.Agent.ManagedMCPServers, ", "))
+	}
+	fmt.Printf("Durable credentials: %d\n", len(detail.Credentials))
+	if len(detail.Enrollments) > 0 {
+		latest := detail.Enrollments[0]
+		fmt.Printf("Latest enrollment: %s (%s)\n", latest.EnrollmentType, latest.Status)
+		if latest.TargetConfigPath != "" {
+			fmt.Printf("Target config: %s\n", latest.TargetConfigPath)
+		}
+	}
+	return nil
+}
+
+func runAgentsRestore(cmd *cobra.Command, args []string) error {
+	autoApprove, _ := cmd.Flags().GetBool("yes")
+
+	discovered, err := discoverAgents(io.Discard, false)
+	if err != nil {
+		return err
+	}
+	agent, err := findDiscoveredAgent(discovered, args[0])
+	if err != nil {
+		return err
+	}
+
+	state, err := loadLocalEnrollmentState(agent)
+	if err != nil {
+		return err
+	}
+	if !autoApprove {
+		confirmed, err := confirmAction(
+			os.Stdin,
+			os.Stdout,
+			fmt.Sprintf("Restore %s from local backup %s? (y/N): ", agent.Name, state.BackupPath),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to read confirmation: %w", err)
+		}
+		if !confirmed {
+			fmt.Println("Aborted without restoring config.")
+			return nil
+		}
+	}
+	backupBytes, err := os.ReadFile(state.BackupPath)
+	if err != nil {
+		return fmt.Errorf("failed to read backup: %w", err)
+	}
+	if err := os.WriteFile(agent.ConfigPath, backupBytes, 0644); err != nil {
+		return fmt.Errorf("failed to restore config: %w", err)
+	}
+	now := time.Now().UTC()
+	state.RestoredAt = &now
+	if err := saveLocalEnrollmentState(state); err != nil {
+		return err
+	}
+
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err == nil && client.IsAuthenticated() {
+		if state.EnrollmentID != "" {
+			_, _ = restoreManagedEnrollmentRecord(
+				client,
+				agent,
+				state.EnrollmentID,
+				map[string]interface{}{
+					"backup_path": state.BackupPath,
+				},
+			)
+		} else if managedAgent, err := getManagedAgentForDiscovered(client, agent); err == nil {
+			_, _ = createManagedEnrollmentRecord(client, managedAgent.ID, managedAgentEnrollmentCreateRequest{
+				EnrollmentType:   "cli_managed_config_restore",
+				AdapterKey:       runtimeSessionSourceTypeForAgent(agent.Name),
+				Status:           "restored",
+				TargetConfigPath: agent.ConfigPath,
+				BackupMetadata: map[string]interface{}{
+					"backup_path": state.BackupPath,
+				},
+				RestoreAvailable: false,
+				LastRestoredAt:   &now,
+			})
+		}
+	}
+
+	fmt.Printf("✓ Restored %s config from %s\n", agent.Name, state.BackupPath)
 	return nil
 }
 
@@ -672,6 +1076,459 @@ func summarizeAccessRules(rules []starterPolicyAccessRule) string {
 	return strings.Join(summaries, ", ")
 }
 
+func discoverAgents(w io.Writer, printWarnings bool) ([]AgentConfig, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("could not determine home directory: %w", err)
+	}
+
+	var discovered []AgentConfig
+	for _, spec := range agentSpecs {
+		for _, relPath := range spec.ConfigPaths {
+			fullPath := filepath.Join(home, relPath)
+			if _, err := os.Stat(fullPath); err != nil {
+				continue
+			}
+			servers, err := spec.Parser(fullPath)
+			if err != nil {
+				if printWarnings {
+					fmt.Fprintf(w, "  Warning: could not parse %s config at %s: %v\n", spec.Name, fullPath, err)
+				}
+				continue
+			}
+			discovered = append(discovered, AgentConfig{
+				Name:       spec.Name,
+				ConfigPath: fullPath,
+				MCPServers: servers,
+			})
+			break
+		}
+	}
+	return discovered, nil
+}
+
+func findDiscoveredAgent(discovered []AgentConfig, value string) (AgentConfig, error) {
+	for _, agent := range discovered {
+		if strings.EqualFold(agent.Name, value) {
+			return agent, nil
+		}
+	}
+	available := make([]string, 0, len(discovered))
+	for _, agent := range discovered {
+		available = append(available, agent.Name)
+	}
+	sort.Strings(available)
+	return AgentConfig{}, fmt.Errorf("agent %q not found. Available agents: %s", value, strings.Join(available, ", "))
+}
+
+func printEnrollmentPlan(plan managedMCPEnrollmentPlan, dryRun bool) {
+	mode := "Apply"
+	if dryRun {
+		mode = "Preview"
+	}
+	fmt.Printf("%s managed MCP enrollment for %s\n", mode, plan.Agent.Name)
+	fmt.Printf("  Config: %s\n", plan.Agent.ConfigPath)
+	fmt.Printf("  Managed server: %s -> %s\n", plan.ManagedServerName, plan.ManagedServerURL)
+	discoveredNames := sortedServerNames(plan.Agent.MCPServers)
+	if len(discoveredNames) > 0 {
+		fmt.Printf("  Existing MCP servers: %s\n", strings.Join(discoveredNames, ", "))
+	}
+	fmt.Printf("  Runtime principal: %s\n", runtimePrincipalIDForAgent(plan.Agent))
+}
+
+func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (managedMCPEnrollmentPlan, error) {
+	discoveredDoc, err := loadJSONDocument(agent.ConfigPath)
+	if err != nil {
+		return managedMCPEnrollmentPlan{}, fmt.Errorf("failed to load config document: %w", err)
+	}
+	managedDoc, err := deepCopyMap(discoveredDoc)
+	if err != nil {
+		return managedMCPEnrollmentPlan{}, err
+	}
+	container, layout, err := ensureMCPServerContainer(managedDoc, agent)
+	if err != nil {
+		return managedMCPEnrollmentPlan{}, err
+	}
+	container["preloop"] = buildManagedServerDefinition(agent, baseURL, token, layout)
+
+	sanitizedDiscovered, err := deepCopyMap(discoveredDoc)
+	if err != nil {
+		return managedMCPEnrollmentPlan{}, err
+	}
+	sanitizeConfigSnapshot(sanitizedDiscovered)
+	sanitizedManaged, err := deepCopyMap(managedDoc)
+	if err != nil {
+		return managedMCPEnrollmentPlan{}, err
+	}
+	sanitizeConfigSnapshot(sanitizedManaged)
+
+	return managedMCPEnrollmentPlan{
+		Agent:               agent,
+		DiscoveredDocument:  discoveredDoc,
+		ManagedDocument:     managedDoc,
+		SanitizedDiscovered: sanitizedDiscovered,
+		SanitizedManaged:    sanitizedManaged,
+		ManagedServerName:   "preloop",
+		ManagedServerURL:    strings.TrimRight(baseURL, "/") + "/mcp/v1",
+	}, nil
+}
+
+func buildManagedServerDefinition(agent AgentConfig, baseURL, token, layout string) map[string]interface{} {
+	url := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "codex cli":
+		return map[string]interface{}{
+			"url":       url,
+			"transport": "http",
+			"auth": map[string]interface{}{
+				"type":  "bearer",
+				"token": token,
+			},
+		}
+	default:
+		transport := "http-streaming"
+		if layout == "mcp.servers" {
+			transport = "http"
+		}
+		entry := map[string]interface{}{
+			"url": url,
+			"headers": map[string]interface{}{
+				"Authorization": "Bearer " + token,
+			},
+		}
+		if transport != "" {
+			entry["transport"] = transport
+		}
+		return entry
+	}
+}
+
+func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig) (*remoteServerSyncResult, error) {
+	var existing []mcpServerResponse
+	if err := client.Get("/api/v1/mcp-servers", &existing); err != nil {
+		return nil, fmt.Errorf("failed to list MCP servers: %w", err)
+	}
+	existingByName := make(map[string]mcpServerResponse, len(existing))
+	for _, item := range existing {
+		existingByName[item.Name] = item
+	}
+
+	result := &remoteServerSyncResult{}
+	for _, name := range sortedServerNames(agent.MCPServers) {
+		server := agent.MCPServers[name]
+		if server.URL == "" {
+			result.Skipped = append(result.Skipped, name)
+			continue
+		}
+		if _, ok := existingByName[name]; ok {
+			result.Reused = append(result.Reused, name)
+			continue
+		}
+		request := map[string]interface{}{
+			"name":      name,
+			"url":       server.URL,
+			"transport": normalizeDiscoveredTransport(server),
+		}
+		authType, authConfig := authConfigForDiscoveredServer(server)
+		if authType != "" {
+			request["auth_type"] = authType
+		}
+		if len(authConfig) > 0 {
+			request["auth_config"] = authConfig
+		}
+		var created mcpServerResponse
+		if err := client.Post("/api/v1/mcp-servers", request, &created); err != nil {
+			return nil, fmt.Errorf("failed to add discovered MCP server %q: %w", name, err)
+		}
+		result.Added = append(result.Added, name)
+	}
+	sort.Strings(result.Added)
+	sort.Strings(result.Reused)
+	sort.Strings(result.Skipped)
+	return result, nil
+}
+
+func normalizeDiscoveredTransport(server MCPDef) string {
+	if strings.TrimSpace(server.Transport) != "" {
+		return server.Transport
+	}
+	return "http-streaming"
+}
+
+func authConfigForDiscoveredServer(server MCPDef) (string, map[string]interface{}) {
+	if token := extractBearerToken(server); token != "" {
+		return "bearer", map[string]interface{}{"token": token}
+	}
+	return "", nil
+}
+
+func extractBearerToken(server MCPDef) string {
+	if authType, _ := server.Auth["type"].(string); strings.EqualFold(authType, "bearer") {
+		if token, _ := server.Auth["token"].(string); token != "" {
+			return token
+		}
+	}
+	for key, value := range server.Headers {
+		if !strings.EqualFold(key, "authorization") {
+			continue
+		}
+		trimmed := strings.TrimSpace(value)
+		if strings.HasPrefix(strings.ToLower(trimmed), "bearer ") {
+			return strings.TrimSpace(trimmed[7:])
+		}
+	}
+	return ""
+}
+
+func getManagedAgentForDiscovered(client *api.Client, agent AgentConfig) (*managedAgentSummary, error) {
+	var response managedAgentListResponse
+	if err := client.Get("/api/v1/agents?limit=100", &response); err != nil {
+		return nil, fmt.Errorf("failed to list managed agents: %w", err)
+	}
+	sourceType := runtimeSessionSourceTypeForAgent(agent.Name)
+	sourceID := runtimePrincipalIDForAgent(agent)
+	for _, item := range response.Items {
+		if item.SessionSourceType == sourceType && item.SessionSourceID == sourceID {
+			return &item, nil
+		}
+	}
+	return nil, fmt.Errorf("managed agent not found after bootstrap for %s", agent.Name)
+}
+
+func createDurableManagedCredential(client *api.Client, agent *managedAgentSummary) (*managedAgentCredentialCreateResponse, error) {
+	request := managedAgentCredentialCreateRequest{
+		Name:          fmt.Sprintf("cli-managed-mcp-%s", time.Now().UTC().Format("20060102150405")),
+		Description:   "Created by preloop agents enroll for managed local MCP access",
+		ExpiresInDays: 365,
+		Scopes:        []string{"mcp:read", "mcp:write"},
+	}
+	var response managedAgentCredentialCreateResponse
+	if err := client.Post("/api/v1/agents/"+agent.ID+"/credentials", request, &response); err != nil {
+		return nil, fmt.Errorf("failed to create durable managed-agent credential: %w", err)
+	}
+	return &response, nil
+}
+
+func createManagedEnrollmentRecord(client *api.Client, agentID string, request managedAgentEnrollmentCreateRequest) (*managedAgentEnrollmentSummary, error) {
+	var response managedAgentEnrollmentSummary
+	if err := client.Post("/api/v1/agents/"+agentID+"/enrollments", request, &response); err != nil {
+		return nil, fmt.Errorf("failed to persist managed enrollment: %w", err)
+	}
+	return &response, nil
+}
+
+func getManagedAgentDetail(client *api.Client, agentID string) (*managedAgentDetailResponse, error) {
+	var response managedAgentDetailResponse
+	if err := client.Get("/api/v1/agents/"+agentID, &response); err != nil {
+		return nil, fmt.Errorf("failed to fetch managed agent detail: %w", err)
+	}
+	return &response, nil
+}
+
+func restoreManagedEnrollmentRecord(
+	client *api.Client,
+	agent AgentConfig,
+	enrollmentID string,
+	backupMetadata map[string]interface{},
+) (*managedAgentEnrollmentSummary, error) {
+	managedAgent, err := getManagedAgentForDiscovered(client, agent)
+	if err != nil {
+		return nil, err
+	}
+	request := map[string]interface{}{
+		"status": "restored",
+		"backup_metadata": map[string]interface{}{
+			"backup_path": backupMetadata["backup_path"],
+		},
+		"validation_result": map[string]interface{}{
+			"restored_by": "preloop agents restore",
+		},
+	}
+	var response managedAgentEnrollmentSummary
+	if err := client.Post(
+		"/api/v1/agents/"+managedAgent.ID+"/enrollments/"+enrollmentID+"/restore",
+		request,
+		&response,
+	); err != nil {
+		return nil, fmt.Errorf("failed to mark managed enrollment restored: %w", err)
+	}
+	return &response, nil
+}
+
+func createLocalEnrollmentBackup(agent AgentConfig, originalBytes []byte, plan managedMCPEnrollmentPlan) (*localEnrollmentState, error) {
+	baseDir, err := config.GetConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	runtimePrincipalID := runtimePrincipalIDForAgent(agent)
+	backupDir := filepath.Join(baseDir, "agents", "backups", runtimePrincipalID)
+	if err := os.MkdirAll(backupDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create backup directory: %w", err)
+	}
+	backupPath := filepath.Join(
+		backupDir,
+		fmt.Sprintf("%s-%s", time.Now().UTC().Format("20060102T150405Z"), filepath.Base(agent.ConfigPath)),
+	)
+	if err := os.WriteFile(backupPath, originalBytes, 0600); err != nil {
+		return nil, fmt.Errorf("failed to write backup: %w", err)
+	}
+	return &localEnrollmentState{
+		AgentName:          agent.Name,
+		RuntimePrincipalID: runtimePrincipalID,
+		ConfigPath:         agent.ConfigPath,
+		BackupPath:         backupPath,
+		ManagedServerName:  plan.ManagedServerName,
+		ManagedServerURL:   plan.ManagedServerURL,
+		AppliedAt:          time.Now().UTC(),
+		DiscoveredConfig:   plan.SanitizedDiscovered,
+		ManagedConfig:      plan.SanitizedManaged,
+	}, nil
+}
+
+func saveLocalEnrollmentState(state *localEnrollmentState) error {
+	statePath, err := localEnrollmentStatePath(state.RuntimePrincipalID)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(statePath), 0700); err != nil {
+		return fmt.Errorf("failed to create local enrollment directory: %w", err)
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode local enrollment state: %w", err)
+	}
+	if err := os.WriteFile(statePath, data, 0600); err != nil {
+		return fmt.Errorf("failed to persist local enrollment state: %w", err)
+	}
+	return nil
+}
+
+func loadLocalEnrollmentState(agent AgentConfig) (*localEnrollmentState, error) {
+	statePath, err := localEnrollmentStatePath(runtimePrincipalIDForAgent(agent))
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read local enrollment state: %w", err)
+	}
+	var state localEnrollmentState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("failed to parse local enrollment state: %w", err)
+	}
+	return &state, nil
+}
+
+func localEnrollmentStatePath(runtimePrincipalID string) (string, error) {
+	baseDir, err := config.GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, "agents", "state", runtimePrincipalID+".json"), nil
+}
+
+func loadJSONDocument(path string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func writeJSONDocument(path string, doc map[string]interface{}) error {
+	data, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode managed config: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write managed config: %w", err)
+	}
+	return nil
+}
+
+func deepCopyMap(value map[string]interface{}) (map[string]interface{}, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone config document: %w", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, fmt.Errorf("failed to clone config document: %w", err)
+	}
+	return out, nil
+}
+
+func ensureMCPServerContainer(doc map[string]interface{}, agent AgentConfig) (map[string]interface{}, string, error) {
+	if servers, ok := asObjectMap(doc["mcpServers"]); ok {
+		return servers, "mcpServers", nil
+	}
+	if servers, ok := asObjectMap(doc["servers"]); ok {
+		return servers, "servers", nil
+	}
+	if mcp, ok := asObjectMap(doc["mcp"]); ok {
+		if servers, ok := asObjectMap(mcp["servers"]); ok {
+			return servers, "mcp.servers", nil
+		}
+		created := make(map[string]interface{})
+		mcp["servers"] = created
+		return created, "mcp.servers", nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "claude code":
+		created := make(map[string]interface{})
+		doc["servers"] = created
+		return created, "servers", nil
+	case "codex cli", "openclaw":
+		created := make(map[string]interface{})
+		doc["mcp"] = map[string]interface{}{"servers": created}
+		return created, "mcp.servers", nil
+	default:
+		created := make(map[string]interface{})
+		doc["mcpServers"] = created
+		return created, "mcpServers", nil
+	}
+}
+
+func asObjectMap(value interface{}) (map[string]interface{}, bool) {
+	if value == nil {
+		return nil, false
+	}
+	obj, ok := value.(map[string]interface{})
+	return obj, ok
+}
+
+func sanitizeConfigSnapshot(value interface{}) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, child := range typed {
+			if isSensitiveKey(key) {
+				typed[key] = "<redacted>"
+				continue
+			}
+			sanitizeConfigSnapshot(child)
+		}
+	case []interface{}:
+		for _, child := range typed {
+			sanitizeConfigSnapshot(child)
+		}
+	}
+}
+
+func isSensitiveKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "authorization", "token", "api_key", "apikey", "password", "secret":
+		return true
+	default:
+		return false
+	}
+}
+
 func defaultStarterPolicyFileName(serverName string) string {
 	safe := strings.ToLower(serverName)
 	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", ":", "-", ".", "-")
@@ -700,23 +1557,7 @@ func parseClaudeConfig(path string) (map[string]MCPDef, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var config struct {
-		MCPServers map[string]json.RawMessage `json:"mcpServers"`
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]MCPDef)
-	for name, raw := range config.MCPServers {
-		var def MCPDef
-		if err := json.Unmarshal(raw, &def); err != nil {
-			continue
-		}
-		result[name] = def
-	}
-	return result, nil
+	return parseServerMapFromJSON(data)
 }
 
 // parseGenericMCP reads configs with a top-level "mcpServers" key.
@@ -725,30 +1566,7 @@ func parseGenericMCP(path string) (map[string]MCPDef, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Try mcpServers key first (Cursor, Windsurf, Codex, OpenClaw)
-	var config struct {
-		MCPServers map[string]json.RawMessage `json:"mcpServers"`
-		Servers    map[string]json.RawMessage `json:"servers"`
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, err
-	}
-
-	servers := config.MCPServers
-	if servers == nil {
-		servers = config.Servers
-	}
-
-	result := make(map[string]MCPDef)
-	for name, raw := range servers {
-		var def MCPDef
-		if err := json.Unmarshal(raw, &def); err != nil {
-			continue
-		}
-		result[name] = def
-	}
-	return result, nil
+	return parseServerMapFromJSON(data)
 }
 
 // parseGeminiConfig reads Gemini CLI's settings.json format.
@@ -757,16 +1575,37 @@ func parseGeminiConfig(path string) (map[string]MCPDef, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseServerMapFromJSON(data)
+}
 
-	var config struct {
-		MCPServers map[string]json.RawMessage `json:"mcpServers"`
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
+func parseServerMapFromJSON(data []byte) (map[string]MCPDef, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, err
 	}
 
+	var rawServers map[string]json.RawMessage
+	switch {
+	case root["mcpServers"] != nil:
+		if err := json.Unmarshal(root["mcpServers"], &rawServers); err != nil {
+			return nil, err
+		}
+	case root["servers"] != nil:
+		if err := json.Unmarshal(root["servers"], &rawServers); err != nil {
+			return nil, err
+		}
+	case root["mcp"] != nil:
+		var nested struct {
+			Servers map[string]json.RawMessage `json:"servers"`
+		}
+		if err := json.Unmarshal(root["mcp"], &nested); err != nil {
+			return nil, err
+		}
+		rawServers = nested.Servers
+	}
+
 	result := make(map[string]MCPDef)
-	for name, raw := range config.MCPServers {
+	for name, raw := range rawServers {
 		var def MCPDef
 		if err := json.Unmarshal(raw, &def); err != nil {
 			continue

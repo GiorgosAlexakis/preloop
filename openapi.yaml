@@ -993,6 +993,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/enrollments/{enrollment_id}/validate:
+    post:
+      tags:
+      - Account
+      summary: Validate Account Managed Agent Enrollment
+      description: Persist validation state for one managed-agent enrollment.
+      operationId: validate_account_managed_agent_enrollment_api_v1_agents__agent_id__enrollments__enrollment_id__validate_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      - name: enrollment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Enrollment Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentEnrollmentValidateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/enrollments/{enrollment_id}/restore:
+    post:
+      tags:
+      - Account
+      summary: Restore Account Managed Agent Enrollment
+      description: Persist restore state for one managed-agent enrollment.
+      operationId: restore_account_managed_agent_enrollment_api_v1_agents__agent_id__enrollments__enrollment_id__restore_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      - name: enrollment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Enrollment Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentEnrollmentRestoreRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/runtime-sessions:
     get:
       tags:
@@ -9702,6 +9784,25 @@ components:
       - enrollment_type
       title: ManagedAgentEnrollmentCreateRequest
       description: Request to persist an enrollment record for one managed agent.
+    ManagedAgentEnrollmentRestoreRequest:
+      properties:
+        status:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Status
+          default: restored
+        backup_metadata:
+          additionalProperties: true
+          type: object
+          title: Backup Metadata
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+      type: object
+      title: ManagedAgentEnrollmentRestoreRequest
+      description: Request to mark one enrollment as restored.
     ManagedAgentEnrollmentSummary:
       properties:
         id:
@@ -9783,6 +9884,21 @@ components:
       - updated_at
       title: ManagedAgentEnrollmentSummary
       description: Durable enrollment state for one managed agent.
+    ManagedAgentEnrollmentValidateRequest:
+      properties:
+        status:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Status
+          default: validated
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+      type: object
+      title: ManagedAgentEnrollmentValidateRequest
+      description: Request to update validation state for one enrollment.
     ManagedAgentServerActivitySummary:
       properties:
         server_name:

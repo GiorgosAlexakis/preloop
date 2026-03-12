@@ -421,3 +421,76 @@ def test_account_agent_detail_includes_credentials_and_enrollments(
     credentials_response = client.get(f"/api/v1/agents/{agent_id}/credentials")
     assert credentials_response.status_code == 200
     assert credentials_response.json()[0]["status"] == "revoked"
+
+
+def test_account_agent_enrollment_validate_and_restore(client, db_session, test_user):
+    """Managed agent enrollments should support validation and restore actions."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-validate-restore",
+            "session_reference": "/Users/test/.claude/mcp-servers.json",
+            "runtime_principal_name": "Claude Code Workspace",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    enrollment_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments",
+        json={
+            "enrollment_type": "cli_managed_config",
+            "adapter_key": "claude_code",
+            "status": "applied",
+            "target_config_path": "/Users/test/.claude/mcp-servers.json",
+            "discovered_config": {
+                "servers": {"github": {"url": "https://example.com"}}
+            },
+            "managed_config": {
+                "servers": {"preloop": {"url": "https://preloop.test/mcp/v1"}}
+            },
+            "backup_metadata": {"backup_path": "/tmp/claude.backup.json"},
+            "restore_available": True,
+        },
+    )
+    assert enrollment_response.status_code == 201
+    enrollment_id = enrollment_response.json()["id"]
+
+    validate_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments/{enrollment_id}/validate",
+        json={
+            "status": "validated",
+            "validation_result": {
+                "ok": True,
+                "checked": ["config_parse", "preloop_server_present"],
+            },
+        },
+    )
+    assert validate_response.status_code == 200
+    validate_body = validate_response.json()
+    assert validate_body["status"] == "validated"
+    assert validate_body["validation_result"]["ok"] is True
+    assert validate_body["last_validated_at"] is not None
+    assert validate_body["restore_available"] is True
+
+    restore_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments/{enrollment_id}/restore",
+        json={
+            "backup_metadata": {
+                "backup_path": "/tmp/claude.backup.json",
+                "restored_by": "test",
+            },
+            "validation_result": {"restored": True},
+        },
+    )
+    assert restore_response.status_code == 200
+    restore_body = restore_response.json()
+    assert restore_body["status"] == "restored"
+    assert restore_body["restore_available"] is False
+    assert restore_body["backup_metadata"]["restored_by"] == "test"
+    assert restore_body["validation_result"]["restored"] is True
+    assert restore_body["last_restored_at"] is not None

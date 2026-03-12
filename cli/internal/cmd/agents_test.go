@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/preloop/preloop/cli/internal/api"
 )
@@ -204,5 +206,125 @@ func TestIssueRuntimeSessionToken(t *testing.T) {
 	}
 	if result.Token != "token-123" {
 		t.Fatalf("unexpected token result: %+v", result)
+	}
+}
+
+func TestParseGenericMCP_NestedMCPServers(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "openclaw.json")
+	if err := os.WriteFile(configPath, []byte(`{
+  "mcp": {
+    "servers": {
+      "preloop": {
+        "url": "https://preloop.ai/mcp/v1",
+        "transport": "http",
+        "headers": {
+          "Authorization": "Bearer test-token"
+        }
+      }
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	servers, err := parseGenericMCP(configPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	preloop, ok := servers["preloop"]
+	if !ok {
+		t.Fatalf("expected preloop server, got %+v", servers)
+	}
+	if preloop.Transport != "http" {
+		t.Fatalf("expected transport http, got %q", preloop.Transport)
+	}
+	if preloop.Headers["Authorization"] != "Bearer test-token" {
+		t.Fatalf("unexpected headers: %+v", preloop.Headers)
+	}
+}
+
+func TestBuildManagedMCPEnrollmentPlan_AddsPreloopAndRedactsSecrets(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(configPath, []byte(`{
+  "mcpServers": {
+    "github": {
+      "url": "https://github.example/mcp",
+      "headers": {
+        "Authorization": "Bearer upstream-secret"
+      }
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	plan, err := buildManagedMCPEnrollmentPlan(AgentConfig{
+		Name:       "Gemini CLI",
+		ConfigPath: configPath,
+		MCPServers: map[string]MCPDef{},
+	}, "https://preloop.example", "durable-secret-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	managedServers := plan.ManagedDocument["mcpServers"].(map[string]interface{})
+	preloop := managedServers["preloop"].(map[string]interface{})
+	headers := preloop["headers"].(map[string]interface{})
+	if headers["Authorization"] != "Bearer durable-secret-token" {
+		t.Fatalf("expected durable token in managed config, got %+v", headers)
+	}
+
+	sanitizedServers := plan.SanitizedManaged["mcpServers"].(map[string]interface{})
+	sanitizedPreloop := sanitizedServers["preloop"].(map[string]interface{})
+	sanitizedHeaders := sanitizedPreloop["headers"].(map[string]interface{})
+	if sanitizedHeaders["Authorization"] != "<redacted>" {
+		t.Fatalf("expected redacted managed auth header, got %+v", sanitizedHeaders)
+	}
+
+	sanitizedExisting := sanitizedServers["github"].(map[string]interface{})
+	existingHeaders := sanitizedExisting["headers"].(map[string]interface{})
+	if existingHeaders["Authorization"] != "<redacted>" {
+		t.Fatalf("expected redacted upstream auth header, got %+v", existingHeaders)
+	}
+}
+
+func TestLocalEnrollmentStateRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	agent := AgentConfig{
+		Name:       "Claude Code",
+		ConfigPath: filepath.Join(home, ".claude", "mcp-servers.json"),
+	}
+	state := &localEnrollmentState{
+		AgentName:          "Claude Code",
+		RuntimePrincipalID: runtimePrincipalIDForAgent(agent),
+		ConfigPath:         agent.ConfigPath,
+		BackupPath:         filepath.Join(home, ".preloop", "agents", "backups", "claude-code-abc123", "backup.json"),
+		ManagedServerName:  "preloop",
+		ManagedServerURL:   "https://preloop.ai/mcp/v1",
+		AppliedAt:          time.Now().UTC().Round(time.Second),
+	}
+	if err := saveLocalEnrollmentState(state); err != nil {
+		t.Fatalf("failed to save local enrollment state: %v", err)
+	}
+
+	loaded, err := loadLocalEnrollmentState(agent)
+	if err != nil {
+		t.Fatalf("failed to load local enrollment state: %v", err)
+	}
+	if loaded.BackupPath != state.BackupPath {
+		t.Fatalf("expected backup path %q, got %q", state.BackupPath, loaded.BackupPath)
+	}
+	if loaded.ManagedServerURL != state.ManagedServerURL {
+		t.Fatalf("expected managed server URL %q, got %q", state.ManagedServerURL, loaded.ManagedServerURL)
 	}
 }

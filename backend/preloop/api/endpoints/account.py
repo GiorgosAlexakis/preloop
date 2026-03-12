@@ -26,23 +26,25 @@ from preloop.models.db.session import get_db_session
 from preloop.models.models.account import Account
 from preloop.models.models.user import User as UserModel
 from preloop.schemas.gateway_usage import (
-    ManagedAgentDetailResponse,
     AccountManagedAgentListResponse,
-    AccountRuntimeSessionDetailResponse,
-    AccountRuntimeSessionListResponse,
     AccountGatewayUsageSearchResponse,
     AccountGatewayUsageSummaryResponse,
+    AccountRuntimeSessionDetailResponse,
+    AccountRuntimeSessionListResponse,
     GatewayTokenUsage,
-    ManagedAgentUsageAggregate,
-    ManagedAgentServerActivitySummary,
-    ManagedAgentSummary,
     ManagedAgentCredentialCreateRequest,
     ManagedAgentCredentialCreateResponse,
     ManagedAgentCredentialSummary,
+    ManagedAgentDetailResponse,
     ManagedAgentEnrollmentCreateRequest,
+    ManagedAgentEnrollmentRestoreRequest,
     ManagedAgentEnrollmentSummary,
+    ManagedAgentEnrollmentValidateRequest,
+    ManagedAgentServerActivitySummary,
+    ManagedAgentSummary,
     ManagedAgentToolActivitySummary,
     ManagedAgentUpdateRequest,
+    ManagedAgentUsageAggregate,
     RuntimeSessionSummary,
     RuntimeSessionUpdateRequest,
 )
@@ -560,6 +562,95 @@ async def create_account_managed_agent_enrollment(
             runtime_session_id=str(agent.runtime_session_id)
             if agent.runtime_session_id
             else None,
+        )
+    )
+    return ManagedAgentEnrollmentSummary(
+        **crud_managed_agent_enrollment._to_summary(enrollment)
+    )
+
+
+@router.post(
+    "/agents/{agent_id}/enrollments/{enrollment_id}/validate",
+    response_model=ManagedAgentEnrollmentSummary,
+)
+async def validate_account_managed_agent_enrollment(
+    agent_id: str,
+    enrollment_id: str,
+    payload: ManagedAgentEnrollmentValidateRequest,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Persist validation state for one managed-agent enrollment."""
+    enrollment = crud_managed_agent_enrollment.mark_validated(
+        db,
+        account_id=str(account.id),
+        agent_id=agent_id,
+        enrollment_id=enrollment_id,
+        validation_result=payload.validation_result,
+        status=payload.status,
+        commit=True,
+    )
+    if enrollment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Managed agent enrollment not found",
+        )
+    emit_account_event(
+        build_account_event(
+            account_id=str(account.id),
+            topic=ACCOUNT_TOPIC_AUDIT,
+            event_type="audit_event",
+            payload={
+                "action": "managed_agent_enrollment_validated",
+                "agent_id": agent_id,
+                "enrollment_id": enrollment_id,
+                "status": enrollment.status,
+            },
+        )
+    )
+    return ManagedAgentEnrollmentSummary(
+        **crud_managed_agent_enrollment._to_summary(enrollment)
+    )
+
+
+@router.post(
+    "/agents/{agent_id}/enrollments/{enrollment_id}/restore",
+    response_model=ManagedAgentEnrollmentSummary,
+)
+async def restore_account_managed_agent_enrollment(
+    agent_id: str,
+    enrollment_id: str,
+    payload: ManagedAgentEnrollmentRestoreRequest,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Persist restore state for one managed-agent enrollment."""
+    enrollment = crud_managed_agent_enrollment.mark_restored(
+        db,
+        account_id=str(account.id),
+        agent_id=agent_id,
+        enrollment_id=enrollment_id,
+        backup_metadata=payload.backup_metadata,
+        validation_result=payload.validation_result,
+        status=payload.status,
+        commit=True,
+    )
+    if enrollment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Managed agent enrollment not found",
+        )
+    emit_account_event(
+        build_account_event(
+            account_id=str(account.id),
+            topic=ACCOUNT_TOPIC_AUDIT,
+            event_type="audit_event",
+            payload={
+                "action": "managed_agent_enrollment_restored",
+                "agent_id": agent_id,
+                "enrollment_id": enrollment_id,
+                "status": enrollment.status,
+            },
         )
     )
     return ManagedAgentEnrollmentSummary(

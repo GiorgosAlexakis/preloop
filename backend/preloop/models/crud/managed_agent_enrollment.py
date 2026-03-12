@@ -97,6 +97,24 @@ class CRUDManagedAgentEnrollment(CRUDBase[ManagedAgentEnrollment]):
             .first()
         )
 
+    def get_for_agent(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        agent_id: str,
+        enrollment_id: str,
+    ) -> Optional[ManagedAgentEnrollment]:
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.managed_agent_id == agent_id,
+                self.model.id == enrollment_id,
+            )
+            .first()
+        )
+
     def upsert_runtime_bootstrap(
         self,
         db: Session,
@@ -157,6 +175,77 @@ class CRUDManagedAgentEnrollment(CRUDBase[ManagedAgentEnrollment]):
         db_obj.validation_result = {"bootstrap": True}
         db_obj.last_applied_at = now
         db_obj.last_validated_at = now
+        db.add(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
+        return db_obj
+
+    def mark_validated(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        agent_id: str,
+        enrollment_id: str,
+        validation_result: Optional[dict[str, Any]] = None,
+        status: str = "validated",
+        commit: bool = True,
+    ) -> Optional[ManagedAgentEnrollment]:
+        db_obj = self.get_for_agent(
+            db,
+            account_id=account_id,
+            agent_id=agent_id,
+            enrollment_id=enrollment_id,
+        )
+        if db_obj is None:
+            return None
+        db_obj.status = status
+        db_obj.validation_result = validation_result or {}
+        db_obj.last_validated_at = _utc_now()
+        db.add(db_obj)
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        else:
+            db.flush()
+        return db_obj
+
+    def mark_restored(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        agent_id: str,
+        enrollment_id: str,
+        backup_metadata: Optional[dict[str, Any]] = None,
+        validation_result: Optional[dict[str, Any]] = None,
+        status: str = "restored",
+        commit: bool = True,
+    ) -> Optional[ManagedAgentEnrollment]:
+        db_obj = self.get_for_agent(
+            db,
+            account_id=account_id,
+            agent_id=agent_id,
+            enrollment_id=enrollment_id,
+        )
+        if db_obj is None:
+            return None
+        if backup_metadata:
+            db_obj.backup_metadata = {
+                **(db_obj.backup_metadata or {}),
+                **backup_metadata,
+            }
+        if validation_result:
+            db_obj.validation_result = {
+                **(db_obj.validation_result or {}),
+                **validation_result,
+            }
+        db_obj.status = status
+        db_obj.restore_available = False
+        db_obj.last_restored_at = _utc_now()
         db.add(db_obj)
         if commit:
             db.commit()
