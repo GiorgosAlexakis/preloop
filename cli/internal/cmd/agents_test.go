@@ -290,6 +290,45 @@ func TestBuildManagedMCPEnrollmentPlan_AddsPreloopAndRedactsSecrets(t *testing.T
 	}
 }
 
+func TestBuildManagedMCPEnrollmentPlan_OpenClawUsesNestedHTTPServer(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "openclaw.json")
+	if err := os.WriteFile(configPath, []byte(`{
+  "mcp": {
+    "servers": {
+      "github": {
+        "url": "https://github.example/mcp",
+        "transport": "http"
+      }
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	plan, err := buildManagedMCPEnrollmentPlan(AgentConfig{
+		Name:       "OpenClaw",
+		ConfigPath: configPath,
+	}, "https://preloop.example", "openclaw-durable-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	mcp := plan.ManagedDocument["mcp"].(map[string]interface{})
+	servers := mcp["servers"].(map[string]interface{})
+	preloop := servers["preloop"].(map[string]interface{})
+	if preloop["transport"] != "http" {
+		t.Fatalf("expected OpenClaw transport http, got %+v", preloop)
+	}
+	if preloop["url"] != "https://preloop.example/mcp/v1" {
+		t.Fatalf("unexpected OpenClaw managed URL: %+v", preloop)
+	}
+	headers := preloop["headers"].(map[string]interface{})
+	if headers["Authorization"] != "Bearer openclaw-durable-token" {
+		t.Fatalf("unexpected OpenClaw auth header: %+v", headers)
+	}
+}
+
 func TestLocalEnrollmentStateRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	oldHome := os.Getenv("HOME")
@@ -326,5 +365,55 @@ func TestLocalEnrollmentStateRoundTrip(t *testing.T) {
 	}
 	if loaded.ManagedServerURL != state.ManagedServerURL {
 		t.Fatalf("expected managed server URL %q, got %q", state.ManagedServerURL, loaded.ManagedServerURL)
+	}
+}
+
+func TestLookupMCPServerContainerSupportsNestedConfig(t *testing.T) {
+	container := lookupMCPServerContainer(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"servers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url": "https://preloop.ai/mcp/v1",
+				},
+			},
+		},
+	})
+
+	preloop, ok := container["preloop"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected nested preloop server, got %+v", container)
+	}
+	if preloop["url"] != "https://preloop.ai/mcp/v1" {
+		t.Fatalf("unexpected preloop server: %+v", preloop)
+	}
+}
+
+func TestOpenClawAdapterValidateManagedConfig(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "OpenClaw"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"servers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"transport": "http",
+					"url":       "https://preloop.example/mcp/v1",
+					"headers": map[string]interface{}{
+						"Authorization": "Bearer durable-token",
+					},
+				},
+			},
+		},
+	}, "https://preloop.example")
+
+	if result["adapter_key"] != "openclaw" {
+		t.Fatalf("expected OpenClaw adapter key, got %+v", result)
+	}
+	if result["nested_mcp_servers_ok"] != true {
+		t.Fatalf("expected nested mcp.servers validation, got %+v", result)
+	}
+	if result["transport_ok"] != true || result["authorization_header_ok"] != true {
+		t.Fatalf("expected OpenClaw validation to pass, got %+v", result)
+	}
+	if result["validation_passed"] != true {
+		t.Fatalf("expected OpenClaw validation to pass, got %+v", result)
 	}
 }

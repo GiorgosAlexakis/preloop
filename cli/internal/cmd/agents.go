@@ -130,6 +130,13 @@ var agentsStatusCmd = &cobra.Command{
 	RunE:  runAgentsStatus,
 }
 
+var agentsValidateCmd = &cobra.Command{
+	Use:   "validate <agent>",
+	Short: "Validate managed enrollment for an agent",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAgentsValidate,
+}
+
 var agentsRestoreCmd = &cobra.Command{
 	Use:   "restore <agent>",
 	Short: "Restore the most recent local backup for an enrolled agent",
@@ -290,6 +297,13 @@ type localEnrollmentState struct {
 	ManagedConfig      map[string]interface{} `json:"managed_config,omitempty"`
 }
 
+type managedMCPAdapter interface {
+	Key() string
+	EnsureServerContainer(doc map[string]interface{}) (map[string]interface{}, error)
+	BuildManagedServer(baseURL, token string) map[string]interface{}
+	ValidateManagedConfig(doc map[string]interface{}, baseURL string) map[string]interface{}
+}
+
 // agentsStarterPolicyCmd generates a starter policy suggestion for an MCP server.
 var agentsStarterPolicyCmd = &cobra.Command{
 	Use:   "starter-policy <mcp-server>",
@@ -315,6 +329,7 @@ func init() {
 	agentsCmd.AddCommand(agentsDiscoverCmd)
 	agentsCmd.AddCommand(agentsEnrollCmd)
 	agentsCmd.AddCommand(agentsStatusCmd)
+	agentsCmd.AddCommand(agentsValidateCmd)
 	agentsCmd.AddCommand(agentsRestoreCmd)
 	agentsCmd.AddCommand(agentsStarterPolicyCmd)
 
@@ -585,6 +600,72 @@ func runAgentsStatus(cmd *cobra.Command, args []string) error {
 		if latest.TargetConfigPath != "" {
 			fmt.Printf("Target config: %s\n", latest.TargetConfigPath)
 		}
+	}
+	return nil
+}
+
+func runAgentsValidate(cmd *cobra.Command, args []string) error {
+	discovered, err := discoverAgents(io.Discard, false)
+	if err != nil {
+		return err
+	}
+	agent, err := findDiscoveredAgent(discovered, args[0])
+	if err != nil {
+		return err
+	}
+
+	result := map[string]interface{}{
+		"config_path": agent.ConfigPath,
+	}
+	status := "validated"
+	adapter := managedMCPAdapterForAgent(agent)
+	document, err := loadJSONDocument(agent.ConfigPath)
+	if err != nil {
+		status = "validation_failed"
+		result["config_parse_ok"] = false
+		result["error"] = err.Error()
+	} else {
+		result["config_parse_ok"] = true
+		for key, value := range adapter.ValidateManagedConfig(document, clientBaseURLForFlags()) {
+			result[key] = value
+		}
+		if passed, _ := result["validation_passed"].(bool); !passed {
+			status = "validation_failed"
+		}
+	}
+
+	fmt.Printf("Validation status for %s: %s\n", agent.Name, status)
+	for _, key := range []string{"config_path", "config_parse_ok", "preloop_server_present", "error"} {
+		if value, ok := result[key]; ok {
+			fmt.Printf("  %s: %v\n", key, value)
+		}
+	}
+
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err == nil && client.IsAuthenticated() {
+		enrollmentID := ""
+		if state, err := loadLocalEnrollmentState(agent); err == nil {
+			enrollmentID = state.EnrollmentID
+		}
+		if enrollmentID == "" {
+			if detail, err := getManagedAgentDetailForDiscovered(client, agent); err == nil {
+				for _, enrollment := range detail.Enrollments {
+					if enrollment.EnrollmentType == "cli_managed_config" {
+						enrollmentID = enrollment.ID
+						break
+					}
+				}
+			}
+		}
+		if enrollmentID != "" {
+			if _, err := validateManagedEnrollmentRecord(client, agent, enrollmentID, result, status); err != nil {
+				return err
+			}
+		}
+	}
+
+	if status != "validated" {
+		return fmt.Errorf("managed enrollment validation failed")
 	}
 	return nil
 }
@@ -1137,6 +1218,7 @@ func printEnrollmentPlan(plan managedMCPEnrollmentPlan, dryRun bool) {
 }
 
 func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (managedMCPEnrollmentPlan, error) {
+	adapter := managedMCPAdapterForAgent(agent)
 	discoveredDoc, err := loadJSONDocument(agent.ConfigPath)
 	if err != nil {
 		return managedMCPEnrollmentPlan{}, fmt.Errorf("failed to load config document: %w", err)
@@ -1145,11 +1227,11 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 	if err != nil {
 		return managedMCPEnrollmentPlan{}, err
 	}
-	container, layout, err := ensureMCPServerContainer(managedDoc, agent)
+	container, err := adapter.EnsureServerContainer(managedDoc)
 	if err != nil {
 		return managedMCPEnrollmentPlan{}, err
 	}
-	container["preloop"] = buildManagedServerDefinition(agent, baseURL, token, layout)
+	container["preloop"] = adapter.BuildManagedServer(baseURL, token)
 
 	sanitizedDiscovered, err := deepCopyMap(discoveredDoc)
 	if err != nil {
@@ -1171,36 +1253,6 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 		ManagedServerName:   "preloop",
 		ManagedServerURL:    strings.TrimRight(baseURL, "/") + "/mcp/v1",
 	}, nil
-}
-
-func buildManagedServerDefinition(agent AgentConfig, baseURL, token, layout string) map[string]interface{} {
-	url := strings.TrimRight(baseURL, "/") + "/mcp/v1"
-	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
-	case "codex cli":
-		return map[string]interface{}{
-			"url":       url,
-			"transport": "http",
-			"auth": map[string]interface{}{
-				"type":  "bearer",
-				"token": token,
-			},
-		}
-	default:
-		transport := "http-streaming"
-		if layout == "mcp.servers" {
-			transport = "http"
-		}
-		entry := map[string]interface{}{
-			"url": url,
-			"headers": map[string]interface{}{
-				"Authorization": "Bearer " + token,
-			},
-		}
-		if transport != "" {
-			entry["transport"] = transport
-		}
-		return entry
-	}
 }
 
 func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig) (*remoteServerSyncResult, error) {
@@ -1321,6 +1373,40 @@ func getManagedAgentDetail(client *api.Client, agentID string) (*managedAgentDet
 	var response managedAgentDetailResponse
 	if err := client.Get("/api/v1/agents/"+agentID, &response); err != nil {
 		return nil, fmt.Errorf("failed to fetch managed agent detail: %w", err)
+	}
+	return &response, nil
+}
+
+func getManagedAgentDetailForDiscovered(client *api.Client, agent AgentConfig) (*managedAgentDetailResponse, error) {
+	managedAgent, err := getManagedAgentForDiscovered(client, agent)
+	if err != nil {
+		return nil, err
+	}
+	return getManagedAgentDetail(client, managedAgent.ID)
+}
+
+func validateManagedEnrollmentRecord(
+	client *api.Client,
+	agent AgentConfig,
+	enrollmentID string,
+	validationResult map[string]interface{},
+	status string,
+) (*managedAgentEnrollmentSummary, error) {
+	managedAgent, err := getManagedAgentForDiscovered(client, agent)
+	if err != nil {
+		return nil, err
+	}
+	request := map[string]interface{}{
+		"status":            status,
+		"validation_result": validationResult,
+	}
+	var response managedAgentEnrollmentSummary
+	if err := client.Post(
+		"/api/v1/agents/"+managedAgent.ID+"/enrollments/"+enrollmentID+"/validate",
+		request,
+		&response,
+	); err != nil {
+		return nil, fmt.Errorf("failed to persist managed enrollment validation: %w", err)
 	}
 	return &response, nil
 }
@@ -1463,36 +1549,218 @@ func deepCopyMap(value map[string]interface{}) (map[string]interface{}, error) {
 	return out, nil
 }
 
-func ensureMCPServerContainer(doc map[string]interface{}, agent AgentConfig) (map[string]interface{}, string, error) {
+type genericManagedMCPAdapter struct {
+	agent AgentConfig
+}
+
+func (a genericManagedMCPAdapter) Key() string {
+	return runtimeSessionSourceTypeForAgent(a.agent.Name)
+}
+
+func (a genericManagedMCPAdapter) EnsureServerContainer(doc map[string]interface{}) (map[string]interface{}, error) {
 	if servers, ok := asObjectMap(doc["mcpServers"]); ok {
-		return servers, "mcpServers", nil
+		return servers, nil
 	}
 	if servers, ok := asObjectMap(doc["servers"]); ok {
-		return servers, "servers", nil
+		return servers, nil
 	}
 	if mcp, ok := asObjectMap(doc["mcp"]); ok {
 		if servers, ok := asObjectMap(mcp["servers"]); ok {
-			return servers, "mcp.servers", nil
+			return servers, nil
 		}
 		created := make(map[string]interface{})
 		mcp["servers"] = created
-		return created, "mcp.servers", nil
+		return created, nil
 	}
 
-	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	switch strings.ToLower(strings.TrimSpace(a.agent.Name)) {
 	case "claude code":
 		created := make(map[string]interface{})
 		doc["servers"] = created
-		return created, "servers", nil
-	case "codex cli", "openclaw":
+		return created, nil
+	case "codex cli":
 		created := make(map[string]interface{})
 		doc["mcp"] = map[string]interface{}{"servers": created}
-		return created, "mcp.servers", nil
+		return created, nil
 	default:
 		created := make(map[string]interface{})
 		doc["mcpServers"] = created
-		return created, "mcpServers", nil
+		return created, nil
 	}
+}
+
+func (a genericManagedMCPAdapter) BuildManagedServer(baseURL, token string) map[string]interface{} {
+	url := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	switch strings.ToLower(strings.TrimSpace(a.agent.Name)) {
+	case "codex cli":
+		return map[string]interface{}{
+			"url":       url,
+			"transport": "http",
+			"auth": map[string]interface{}{
+				"type":  "bearer",
+				"token": token,
+			},
+		}
+	default:
+		transport := "http-streaming"
+		if usesNestedMCPServers(a.agent) {
+			transport = "http"
+		}
+		entry := map[string]interface{}{
+			"url": url,
+			"headers": map[string]interface{}{
+				"Authorization": "Bearer " + token,
+			},
+		}
+		if transport != "" {
+			entry["transport"] = transport
+		}
+		return entry
+	}
+}
+
+func (a genericManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface{}, baseURL string) map[string]interface{} {
+	container := lookupMCPServerContainer(doc)
+	preloop, ok := container["preloop"].(map[string]interface{})
+	expectedURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	result := map[string]interface{}{
+		"adapter_key":             a.Key(),
+		"preloop_server_present":  ok,
+		"expected_preloop_url":    expectedURL,
+		"validation_passed":       false,
+		"transport_ok":            false,
+		"authorization_header_ok": false,
+	}
+	if !ok {
+		return result
+	}
+
+	result["preloop_url_ok"] = preloop["url"] == expectedURL
+	result["transport_ok"] = preloop["transport"] != nil
+	if headers, ok := preloop["headers"].(map[string]interface{}); ok {
+		if auth, ok := headers["Authorization"].(string); ok && strings.HasPrefix(auth, "Bearer ") {
+			result["authorization_header_ok"] = true
+		}
+	}
+	result["validation_passed"] =
+		result["preloop_server_present"] == true &&
+			result["preloop_url_ok"] == true &&
+			result["transport_ok"] == true &&
+			result["authorization_header_ok"] == true
+	return result
+}
+
+type openClawManagedMCPAdapter struct{}
+
+func (a openClawManagedMCPAdapter) Key() string {
+	return "openclaw"
+}
+
+func (a openClawManagedMCPAdapter) EnsureServerContainer(doc map[string]interface{}) (map[string]interface{}, error) {
+	if mcp, ok := asObjectMap(doc["mcp"]); ok {
+		if servers, ok := asObjectMap(mcp["servers"]); ok {
+			return servers, nil
+		}
+		created := make(map[string]interface{})
+		mcp["servers"] = created
+		return created, nil
+	}
+	created := make(map[string]interface{})
+	doc["mcp"] = map[string]interface{}{"servers": created}
+	return created, nil
+}
+
+func (a openClawManagedMCPAdapter) BuildManagedServer(baseURL, token string) map[string]interface{} {
+	return map[string]interface{}{
+		"transport": "http",
+		"url":       strings.TrimRight(baseURL, "/") + "/mcp/v1",
+		"headers": map[string]interface{}{
+			"Authorization": "Bearer " + token,
+		},
+	}
+}
+
+func (a openClawManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface{}, baseURL string) map[string]interface{} {
+	expectedURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	result := map[string]interface{}{
+		"adapter_key":             a.Key(),
+		"expected_preloop_url":    expectedURL,
+		"preloop_server_present":  false,
+		"preloop_url_ok":          false,
+		"transport_ok":            false,
+		"authorization_header_ok": false,
+		"nested_mcp_servers_ok":   false,
+		"validation_passed":       false,
+	}
+	mcp, ok := asObjectMap(doc["mcp"])
+	if !ok {
+		return result
+	}
+	servers, ok := asObjectMap(mcp["servers"])
+	if !ok {
+		return result
+	}
+	result["nested_mcp_servers_ok"] = true
+	preloop, ok := servers["preloop"].(map[string]interface{})
+	if !ok {
+		return result
+	}
+	result["preloop_server_present"] = true
+	result["preloop_url_ok"] = preloop["url"] == expectedURL
+	result["transport_ok"] = preloop["transport"] == "http"
+	if headers, ok := preloop["headers"].(map[string]interface{}); ok {
+		if auth, ok := headers["Authorization"].(string); ok && strings.HasPrefix(auth, "Bearer ") {
+			result["authorization_header_ok"] = true
+		}
+	}
+	result["validation_passed"] =
+		result["nested_mcp_servers_ok"] == true &&
+			result["preloop_server_present"] == true &&
+			result["preloop_url_ok"] == true &&
+			result["transport_ok"] == true &&
+			result["authorization_header_ok"] == true
+	return result
+}
+
+func managedMCPAdapterForAgent(agent AgentConfig) managedMCPAdapter {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "openclaw":
+		return openClawManagedMCPAdapter{}
+	default:
+		return genericManagedMCPAdapter{agent: agent}
+	}
+}
+
+func usesNestedMCPServers(agent AgentConfig) bool {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "openclaw", "codex cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func lookupMCPServerContainer(doc map[string]interface{}) map[string]interface{} {
+	if servers, ok := asObjectMap(doc["mcpServers"]); ok {
+		return servers
+	}
+	if servers, ok := asObjectMap(doc["servers"]); ok {
+		return servers
+	}
+	if mcp, ok := asObjectMap(doc["mcp"]); ok {
+		if servers, ok := asObjectMap(mcp["servers"]); ok {
+			return servers
+		}
+	}
+	return map[string]interface{}{}
+}
+
+func clientBaseURLForFlags() string {
+	cfg, err := config.Resolve(FlagToken, FlagURL)
+	if err == nil && cfg.APIURL != "" {
+		return cfg.APIURL
+	}
+	return api.DefaultBaseURL
 }
 
 func asObjectMap(value interface{}) (map[string]interface{}, bool) {
