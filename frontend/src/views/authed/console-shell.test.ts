@@ -22,11 +22,28 @@ function createMatchMediaStub(matches: boolean) {
   };
 }
 
+const BRAND_CONFIG_STUB = {
+  name: 'Test Brand',
+  domain: 'test.example.com',
+  company: { legal_name: 'Test Co', address: '123 Test', city: 'Test' },
+  branding: {
+    logo_light: '/logo.svg',
+    logo_dark: '/logo-dark.svg',
+    favicon: '/favicon.ico',
+    primary_color: '#000',
+    gradient_product: '',
+    gradient_ai: '',
+  },
+  social: { twitter: '', linkedin: '', instagram: '' },
+};
+
 describe('ConsoleShell', () => {
   let fetchStub: sinon.SinonStub;
   let matchMediaStub: sinon.SinonStub;
 
   beforeEach(() => {
+    (window as unknown as { BRAND_CONFIG?: object }).BRAND_CONFIG =
+      BRAND_CONFIG_STUB;
     localStorage.setItem('accessToken', 'test-access-token');
     const mockMediaQuery = createMatchMediaStub(false); // desktop by default
     matchMediaStub = sinon
@@ -60,6 +77,18 @@ describe('ConsoleShell', () => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      if (url.startsWith('/api/v1/flows/executions')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.startsWith('/api/v1/approval-requests')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
       return new Response(JSON.stringify({}), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -71,6 +100,7 @@ describe('ConsoleShell', () => {
     fetchStub.restore();
     matchMediaStub?.restore();
     localStorage.clear();
+    delete (window as unknown as { BRAND_CONFIG?: object }).BRAND_CONFIG;
   });
 
   it('renders the component', async () => {

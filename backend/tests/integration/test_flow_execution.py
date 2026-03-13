@@ -155,10 +155,15 @@ class TestFlowExecution:
             ]
 
     @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_flow_execution_orchestrator(
         self, db_session: Session, test_flow: Flow, test_account: Account
     ):
-        """Test the flow execution orchestrator end-to-end."""
+        """Test the flow execution orchestrator end-to-end.
+
+        NOTE: Requires NATS, Docker, and agent infrastructure. Excluded from
+        unit test runs via -m 'not integration'.
+        """
         # Create trigger event data
         trigger_event_data = {
             "source": "github",
@@ -245,6 +250,7 @@ class TestFlowExecution:
             logger.info(f"  Last 50 log lines: {len(logs)} lines")
 
     @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_prompt_resolution(self, db_session: Session, test_flow: Flow):
         """Test that prompt placeholders are resolved correctly."""
         trigger_event_data = {
@@ -280,6 +286,7 @@ class TestFlowExecution:
         assert "Fix authentication bug" in resolved_prompt
 
     @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_mcp_configuration(self, test_flow: Flow):
         """Test that MCP configuration is correctly generated."""
         from preloop.services.mcp_config_service import MCPConfigService

@@ -117,9 +117,7 @@ frontend:unit-tests:
     - cd frontend && npm install
   script:
     - npm run test
-  rules:
-    - changes:
-        - frontend/**/*
+  # Run on every pipeline to match GitHub CI; catches frontend regressions from backend changes
 
 .test:unit:template:
   stage: test

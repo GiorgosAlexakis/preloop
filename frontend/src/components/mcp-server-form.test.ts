@@ -11,6 +11,14 @@ describe('MCPServerForm', () => {
     localStorage.setItem('accessToken', 'test-access-token');
     localStorage.setItem('refreshToken', 'test-refresh-token');
     fetchStub = sinon.stub(window, 'fetch');
+    // Default stub so any unexpected fetch resolves; individual tests override via stubApi()
+    fetchStub.callsFake(
+      async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+    );
   });
 
   afterEach(() => {
@@ -253,19 +261,22 @@ describe('MCPServerForm', () => {
     });
 
     it('shows error message when API fails', async () => {
-      fetchStub.callsFake(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/v1/mcp-servers') && url.includes('POST')) {
-          return new Response(
-            JSON.stringify({ detail: 'Server already exists' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
-          );
+      fetchStub.callsFake(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input.toString();
+          const method = (init?.method || 'GET').toUpperCase();
+          if (url.includes('/api/v1/mcp-servers') && method === 'POST') {
+            return new Response(
+              JSON.stringify({ detail: 'Server already exists' }),
+              { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          return new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
-        return new Response(JSON.stringify({}), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      });
+      );
 
       const el = await createForm(null);
       (el as any).serverName = 'New Server';
