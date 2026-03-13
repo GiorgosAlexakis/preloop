@@ -292,6 +292,80 @@ async def test_ending_runtime_session_deactivates_token_and_blocks_mcp_and_gatew
         assert await authenticate_bearer_token(token, db_session) is None
 
 
+@pytest.mark.asyncio
+async def test_ended_runtime_session_can_mint_fresh_token_for_same_source(
+    client, db_session, test_user
+):
+    """Minting a new token for an ended source should reopen session auth successfully."""
+    initial_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-restart",
+            "runtime_principal_name": "Restarted Workspace",
+        },
+    )
+    assert initial_response.status_code == 201
+    initial_body = initial_response.json()
+    old_token = initial_body["token"]
+    runtime_session_id = initial_body["runtime_session_id"]
+
+    end_response = client.patch(
+        f"/api/v1/runtime-sessions/{runtime_session_id}",
+        json={"action": "end", "reason": "operator ended previous workspace run"},
+    )
+    assert end_response.status_code == 200
+
+    old_runtime_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-restart",
+    )
+    assert old_runtime_session is not None
+    ended_at = old_runtime_session.ended_at
+    assert ended_at is not None
+
+    replacement_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-restart",
+            "runtime_principal_name": "Restarted Workspace",
+        },
+    )
+    assert replacement_response.status_code == 201
+    replacement_body = replacement_response.json()
+    new_token = replacement_body["token"]
+
+    reopened_runtime_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-restart",
+    )
+    assert reopened_runtime_session is not None
+    assert reopened_runtime_session.ended_at is None
+    assert reopened_runtime_session.started_at is not None
+    assert reopened_runtime_session.started_at >= ended_at
+
+    old_api_key = crud_api_key.get_by_key(db_session, key=old_token)
+    new_api_key = crud_api_key.get_by_key(db_session, key=new_token)
+    assert old_api_key is not None
+    assert new_api_key is not None
+    assert old_api_key.is_active is False
+    assert new_api_key.is_active is True
+
+    with patch(
+        "preloop.api.auth.jwt.get_db_session",
+        side_effect=lambda: iter([db_session]),
+    ):
+        assert await get_user_from_token_if_valid(old_token, db_session) is None
+        assert await authenticate_bearer_token(old_token, db_session) is None
+        assert await get_user_from_token_if_valid(new_token, db_session) is not None
+        assert await authenticate_bearer_token(new_token, db_session) is not None
+
+
 @pytest.mark.parametrize("lifecycle_action", ["suspend", "decommission"])
 def test_runtime_session_token_issuance_rejects_non_active_agents(
     client, db_session, test_user, lifecycle_action

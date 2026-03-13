@@ -985,6 +985,8 @@ async def create_runtime_session_token(
         runtime_principal_id=runtime_principal_id,
         runtime_principal_name=runtime_principal_name,
         last_activity_at=now,
+        started_at=now,
+        reopen_if_ended=True,
     )
     managed_agent = crud_managed_agent.upsert_from_runtime_session(
         db,

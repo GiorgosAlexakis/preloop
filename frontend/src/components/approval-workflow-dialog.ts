@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   getUsers,
@@ -213,7 +213,7 @@ export class ApprovalWorkflowDialog extends LitElement {
     this._loadData();
   }
 
-  updated(changedProperties: Map<string, unknown>) {
+  willUpdate(changedProperties: PropertyValues<this>) {
     if (changedProperties.has('policy')) {
       this._populateForm();
     }

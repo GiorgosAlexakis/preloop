@@ -75,18 +75,20 @@ export class MCPServerForm extends LitElement {
     }
   }
 
-  firstUpdated() {
-    this.shadowRoot?.querySelector('sl-dialog')?.show();
-    setTimeout(() => {
-      const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
-      input?.focus();
-    }, 100);
+  updated(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('opened') && this.opened) {
+      requestAnimationFrame(() => {
+        const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
+        input?.focus();
+      });
+    }
   }
 
   render() {
     return html`
       <sl-dialog
         label="${this.server ? 'Edit' : 'Add'} MCP Server"
+        ?open=${this.opened}
         @sl-request-close=${() => this.closeModal()}
       >
         <sl-input

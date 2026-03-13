@@ -107,6 +107,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         started_at: Optional[datetime] = None,
         last_activity_at: Optional[datetime] = None,
         ended_at: Optional[datetime] = None,
+        reopen_if_ended: bool = False,
     ) -> RuntimeSession:
         """Create or update a runtime session keyed by source identity."""
         db_obj = self.get_by_source(
@@ -140,7 +141,10 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             db_obj.runtime_principal_id = runtime_principal_id
         if runtime_principal_name is not None:
             db_obj.runtime_principal_name = runtime_principal_name
-        if started_at is not None and db_obj.started_at is None:
+        if reopen_if_ended and db_obj.ended_at is not None and ended_at is None:
+            db_obj.ended_at = None
+            db_obj.started_at = started_at or last_activity_at
+        elif started_at is not None and db_obj.started_at is None:
             db_obj.started_at = started_at
         if last_activity_at is not None:
             db_obj.last_activity_at = last_activity_at

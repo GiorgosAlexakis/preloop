@@ -42,10 +42,6 @@ describe('ConsoleShell', () => {
   let matchMediaStub: sinon.SinonStub;
 
   beforeEach(() => {
-<<<<<<< HEAD
-    (window as unknown as { BRAND_CONFIG?: object }).BRAND_CONFIG =
-      BRAND_CONFIG_STUB;
-=======
     (window as any).BRAND_CONFIG = {
       name: 'Preloop',
       domain: 'preloop.ai',
@@ -60,7 +56,6 @@ describe('ConsoleShell', () => {
       },
       social: { twitter: '', linkedin: '', instagram: '' },
     };
->>>>>>> 18fa9149 (feat(agents): add durable credentials and richer session detail)
     localStorage.setItem('accessToken', 'test-access-token');
     const mockMediaQuery = createMatchMediaStub(false); // desktop by default
     matchMediaStub = sinon
@@ -71,8 +66,8 @@ describe('ConsoleShell', () => {
         }
         return {
           matches: false,
-          addEventListener: () => { },
-          removeEventListener: () => { },
+          addEventListener: () => {},
+          removeEventListener: () => {},
         } as unknown as MediaQueryList;
       });
     fetchStub = sinon.stub(window, 'fetch');
@@ -270,8 +265,8 @@ describe('ConsoleShell', () => {
           }
           return {
             matches: false,
-            addEventListener: () => { },
-            removeEventListener: () => { },
+            addEventListener: () => {},
+            removeEventListener: () => {},
           } as unknown as MediaQueryList;
         });
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
+import threading
 
 try:
     from preloop.plugins.proprietary.rbac.permissions import (
@@ -17,6 +19,30 @@ try:
     )
 except ModuleNotFoundError:
     _plugin_require_permission = None
+
+
+def _run_awaitable_sync(awaitable):
+    """Run an awaitable from sync code, even if this thread already has a loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+
+    result: dict[str, object] = {}
+
+    def runner() -> None:
+        try:
+            result["value"] = asyncio.run(awaitable)
+        except BaseException as exc:  # pragma: no cover - re-raised below
+            result["error"] = exc
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
+    thread.join()
+
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
 
 
 def require_permission(permission_name: str):
@@ -42,7 +68,10 @@ def require_permission(permission_name: str):
         def sync_wrapper(*args, **kwargs):
             if "current_user" not in kwargs or "db" not in kwargs:
                 return func(*args, **kwargs)
-            return asyncio.run(plugin_wrapped(*args, **kwargs))
+            result = plugin_wrapped(*args, **kwargs)
+            if inspect.isawaitable(result):
+                return _run_awaitable_sync(result)
+            return result
 
         return sync_wrapper
 

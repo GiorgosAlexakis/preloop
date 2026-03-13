@@ -79,8 +79,16 @@ class CRUDApiKey(CRUDBase[ApiKey]):
     ) -> tuple[ApiKey, str]:
         """Create a runtime-scoped API key stored without plaintext value."""
         token_value = key_value or f"flow_{secrets.token_urlsafe(32)}"
+        runtime_key_name = name
+        if (
+            db.query(ApiKey)
+            .filter(ApiKey.account_id == account_id, ApiKey.name == runtime_key_name)
+            .first()
+            is not None
+        ):
+            runtime_key_name = f"{name} ({secrets.token_hex(4)})"
         db_obj = ApiKey(
-            name=name,
+            name=runtime_key_name,
             key=None,
             key_hash=self.build_key_hash(token_value),
             key_prefix=self.build_key_prefix(token_value),
@@ -180,19 +188,21 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         commit: bool = True,
     ) -> List[ApiKey]:
         """Deactivate runtime-scoped API keys bound to one runtime session."""
+        from sqlalchemy import cast, String
+
         key_objs = (
             db.query(ApiKey)
-            .filter(ApiKey.account_id == account_id, ApiKey.is_active.is_(True))
+            .filter(
+                ApiKey.account_id == account_id,
+                ApiKey.is_active.is_(True),
+                cast(ApiKey.context_data["runtime_session_id"], String)
+                == f'"{runtime_session_id}"',
+            )
             .all()
         )
 
         deactivated: List[ApiKey] = []
         for key_obj in key_objs:
-            context_data = (
-                key_obj.context_data if isinstance(key_obj.context_data, dict) else {}
-            )
-            if str(context_data.get("runtime_session_id")) != str(runtime_session_id):
-                continue
             key_obj.is_active = False
             db.add(key_obj)
             deactivated.append(key_obj)

@@ -384,12 +384,15 @@ async def create_account_managed_agent_credential(
     if payload.expires_in_days is not None:
         expires_at = datetime.now(UTC) + timedelta(days=payload.expires_in_days)
     token_value = f"agt_{secrets.token_urlsafe(32)}"
+    from preloop.api.auth.router import _normalize_runtime_session_scopes
+
+    normalized_scopes = _normalize_runtime_session_scopes(payload.scopes)
     api_key, presented_token = crud_api_key.create_runtime_key(
         db,
         name=f"Managed Agent Credential: {agent.display_name} / {payload.name}",
         account_id=current_user.account_id,
         user_id=current_user.id,
-        scopes=payload.scopes,
+        scopes=normalized_scopes,
         expires_at=expires_at,
         key_value=token_value,
         commit=False,
@@ -414,7 +417,7 @@ async def create_account_managed_agent_credential(
         created_by_user_id=current_user.id,
         name=payload.name,
         description=payload.description,
-        scopes=payload.scopes,
+        scopes=normalized_scopes,
         key_prefix=api_key.key_prefix,
         commit=True,
     )
