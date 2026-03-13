@@ -1026,6 +1026,7 @@ async def create_runtime_session_token(
         expires_at=expires_at,
         context_data={
             "runtime_session_id": str(runtime_session.id),
+            "managed_agent_id": str(managed_agent.id),
             "allowed_mcp_tools": allowed_mcp_tools,
             "allowed_mcp_servers": allowed_mcp_servers,
             "runtime_principal": {

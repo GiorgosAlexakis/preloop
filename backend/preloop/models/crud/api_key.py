@@ -208,6 +208,54 @@ class CRUDApiKey(CRUDBase[ApiKey]):
             db.flush()
         return deactivated
 
+    def deactivate_runtime_keys_for_principal(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_principal_type: str,
+        runtime_principal_id: str,
+        commit: bool = True,
+    ) -> List[ApiKey]:
+        """Deactivate runtime-scoped API keys bound to one durable principal."""
+        key_objs = (
+            db.query(ApiKey)
+            .filter(ApiKey.account_id == account_id, ApiKey.is_active.is_(True))
+            .all()
+        )
+
+        deactivated: List[ApiKey] = []
+        for key_obj in key_objs:
+            context_data = (
+                key_obj.context_data if isinstance(key_obj.context_data, dict) else {}
+            )
+            runtime_session_id = context_data.get("runtime_session_id")
+            runtime_principal = (
+                context_data.get("runtime_principal")
+                if isinstance(context_data.get("runtime_principal"), dict)
+                else {}
+            )
+            if not runtime_session_id:
+                continue
+            if runtime_principal.get("type") != runtime_principal_type:
+                continue
+            if str(runtime_principal.get("id")) != str(runtime_principal_id):
+                continue
+            key_obj.is_active = False
+            db.add(key_obj)
+            deactivated.append(key_obj)
+
+        if not deactivated:
+            return deactivated
+
+        if commit:
+            db.commit()
+            for key_obj in deactivated:
+                db.refresh(key_obj)
+        else:
+            db.flush()
+        return deactivated
+
     def validate_key(
         self, db: Session, *, key: str, required_scopes: Optional[List[str]] = None
     ) -> Optional[ApiKey]:

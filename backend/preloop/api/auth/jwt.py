@@ -54,6 +54,47 @@ def _runtime_session_id_from_api_key(api_key: Any) -> Optional[uuid.UUID]:
         ) from exc
 
 
+def _managed_agent_for_api_key(
+    session: Any, api_key: Any, runtime_session: Optional[RuntimeSession] = None
+) -> Optional[ManagedAgent]:
+    """Resolve the managed agent linked to an API key, if any."""
+    context_data = (
+        api_key.context_data if isinstance(api_key.context_data, dict) else {}
+    )
+    managed_agent_id = context_data.get("managed_agent_id")
+    if managed_agent_id:
+        return (
+            session.query(ManagedAgent)
+            .filter(
+                ManagedAgent.id == managed_agent_id,
+                ManagedAgent.account_id == api_key.account_id,
+            )
+            .first()
+        )
+
+    runtime_principal = (
+        context_data.get("runtime_principal")
+        if isinstance(context_data.get("runtime_principal"), dict)
+        else {}
+    )
+    principal_type = runtime_principal.get("type")
+    principal_id = runtime_principal.get("id")
+    if runtime_session is not None:
+        principal_type = runtime_session.runtime_principal_type or principal_type
+        principal_id = runtime_session.runtime_principal_id or principal_id
+    if not principal_type or not principal_id:
+        return None
+    return (
+        session.query(ManagedAgent)
+        .filter(
+            ManagedAgent.account_id == api_key.account_id,
+            ManagedAgent.session_source_type == principal_type,
+            ManagedAgent.session_source_id == principal_id,
+        )
+        .first()
+    )
+
+
 def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
     """Validate an API key and return its active owner."""
     if not api_key:
@@ -78,6 +119,7 @@ def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
         )
 
     runtime_session_id = _runtime_session_id_from_api_key(api_key)
+    runtime_session = None
     if runtime_session_id is not None:
         runtime_session = (
             session.query(RuntimeSession)
@@ -103,16 +145,10 @@ def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
     context_data = (
         api_key.context_data if isinstance(api_key.context_data, dict) else {}
     )
-    managed_agent_id = context_data.get("managed_agent_id")
-    if managed_agent_id:
-        managed_agent = (
-            session.query(ManagedAgent)
-            .filter(
-                ManagedAgent.id == managed_agent_id,
-                ManagedAgent.account_id == api_key.account_id,
-            )
-            .first()
-        )
+    managed_agent = _managed_agent_for_api_key(
+        session, api_key, runtime_session=runtime_session
+    )
+    if context_data.get("managed_agent_id"):
         if managed_agent is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -125,6 +161,12 @@ def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
                 detail="Managed agent is not active",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+    elif managed_agent is not None and managed_agent.lifecycle_state != "active":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Managed agent is not active",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user = session.query(User).filter(User.id == api_key.user_id).first()
     if not user:

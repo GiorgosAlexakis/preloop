@@ -695,6 +695,11 @@ async def update_account_managed_agent(
     elif update.lifecycle_action == "reenroll":
         lifecycle_state = "active"
 
+    bound_runtime_session_id = (
+        str(agent.runtime_session_id) if agent.runtime_session_id is not None else None
+    )
+    should_revoke_runtime_access = lifecycle_state in {"suspended", "decommissioned"}
+    revoke_timestamp = datetime.now(UTC) if should_revoke_runtime_access else None
     updated = crud_managed_agent.update_operator_state(
         db,
         account_id=str(account.id),
@@ -703,12 +708,30 @@ async def update_account_managed_agent(
         set_owner=set_owner,
         lifecycle_state=lifecycle_state,
         lifecycle_reason=update.reason,
-        commit=True,
+        commit=False,
     )
     if updated is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
         )
+    if should_revoke_runtime_access and revoke_timestamp is not None:
+        crud_api_key.deactivate_runtime_keys_for_principal(
+            db,
+            account_id=account.id,
+            runtime_principal_type=agent.session_source_type,
+            runtime_principal_id=agent.session_source_id,
+            commit=False,
+        )
+        if bound_runtime_session_id is not None:
+            crud_runtime_session.update_operator_state(
+                db,
+                account_id=str(account.id),
+                runtime_session_id=bound_runtime_session_id,
+                ended_at=revoke_timestamp,
+                commit=False,
+            )
+    db.commit()
+    db.refresh(updated)
 
     detail = _build_managed_agent_detail_response(
         db, account_id=str(account.id), agent_id=agent_id

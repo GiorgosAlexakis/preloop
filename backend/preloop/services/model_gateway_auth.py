@@ -8,11 +8,13 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from preloop.api.auth.jwt import get_user_from_token_if_valid
+from preloop.api.auth.jwt import (
+    get_user_from_token_if_valid,
+    _managed_agent_for_api_key,
+)
 from preloop.models.crud import crud_api_key, crud_user
 from preloop.models.crud.oauth_mcp_token import crud_oauth_mcp_access_token
 from preloop.models.models.api_key import ApiKey
-from preloop.models.models.managed_agent import ManagedAgent
 from preloop.models.models.oauth_mcp_token import OAuthMCPAccessToken
 from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.user import User
@@ -45,6 +47,7 @@ async def authenticate_bearer_token(
                 api_key.context_data if isinstance(api_key.context_data, dict) else {}
             )
             runtime_session_id = context_data.get("runtime_session_id")
+            runtime_session = None
             if runtime_session_id:
                 runtime_session = (
                     db.query(RuntimeSession)
@@ -56,18 +59,13 @@ async def authenticate_bearer_token(
                 )
                 if runtime_session is None or runtime_session.ended_at is not None:
                     return None
-            managed_agent_id = context_data.get("managed_agent_id")
-            if managed_agent_id:
-                managed_agent = (
-                    db.query(ManagedAgent)
-                    .filter(
-                        ManagedAgent.id == managed_agent_id,
-                        ManagedAgent.account_id == api_key.account_id,
-                    )
-                    .first()
-                )
-                if managed_agent is None or managed_agent.lifecycle_state != "active":
-                    return None
+            managed_agent = _managed_agent_for_api_key(
+                db, api_key, runtime_session=runtime_session
+            )
+            if context_data.get("managed_agent_id") and managed_agent is None:
+                return None
+            if managed_agent is not None and managed_agent.lifecycle_state != "active":
+                return None
         return ModelGatewayAuthContext(token=token, user=user, api_key=api_key)
 
     oauth_token = crud_oauth_mcp_access_token.get_by_token(db, token=token)

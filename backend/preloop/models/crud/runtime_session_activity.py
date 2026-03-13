@@ -71,9 +71,10 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
                     .first()
                 )
                 if managed_agent is not None:
-                    managed_agent.runtime_session_id = runtime_session.id
-                    managed_agent.last_seen_at = activity_timestamp
-                    db.add(managed_agent)
+                    if managed_agent.lifecycle_state == "active":
+                        managed_agent.runtime_session_id = runtime_session.id
+                        managed_agent.last_seen_at = activity_timestamp
+                        db.add(managed_agent)
 
         if commit:
             db.commit()

@@ -343,6 +343,80 @@ def test_runtime_session_token_issuance_rejects_non_active_agents(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("lifecycle_action", ["suspend", "decommission"])
+async def test_existing_runtime_session_token_is_revoked_for_non_active_agents(
+    client, db_session, test_user, lifecycle_action
+):
+    """Suspending or decommissioning an agent should revoke its existing runtime token."""
+    initial_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-lifecycle-revoke",
+            "runtime_principal_name": "Lifecycle Revoke Workspace",
+        },
+    )
+    assert initial_response.status_code == 201
+    token = initial_response.json()["token"]
+    runtime_session_id = initial_response.json()["runtime_session_id"]
+
+    managed_agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="claude_code",
+        session_source_id="workspace-lifecycle-revoke",
+    )
+    assert managed_agent is not None
+    managed_agent_id = str(managed_agent.id)
+
+    with patch(
+        "preloop.api.auth.jwt.get_db_session",
+        side_effect=lambda: iter([db_session]),
+    ):
+        assert await get_user_from_token_if_valid(token, db_session) is not None
+        assert await authenticate_bearer_token(token, db_session) is not None
+
+    update_response = client.patch(
+        f"/api/v1/agents/{managed_agent_id}",
+        json={
+            "lifecycle_action": lifecycle_action,
+            "reason": f"{lifecycle_action} for operator control",
+        },
+    )
+    assert update_response.status_code == 200
+
+    runtime_session = crud_runtime_session.get_account_session(
+        db_session,
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session_id),
+    )
+    assert runtime_session is not None
+    assert runtime_session.ended_at is not None
+
+    managed_agent = crud_managed_agent.get_for_account(
+        db_session,
+        account_id=str(test_user.account_id),
+        agent_id=managed_agent_id,
+    )
+    assert managed_agent is not None
+    assert managed_agent.runtime_session_id is None
+    assert managed_agent.lifecycle_state == (
+        "suspended" if lifecycle_action == "suspend" else "decommissioned"
+    )
+
+    api_key = crud_api_key.get_by_key(db_session, key=token)
+    assert api_key is not None
+    assert api_key.is_active is False
+
+    with patch(
+        "preloop.api.auth.jwt.get_db_session",
+        side_effect=lambda: iter([db_session]),
+    ):
+        assert await get_user_from_token_if_valid(token, db_session) is None
+        assert await authenticate_bearer_token(token, db_session) is None
+
+
+@pytest.mark.asyncio
 async def test_durable_managed_agent_credential_respects_agent_lifecycle(
     client, db_session, test_user
 ):

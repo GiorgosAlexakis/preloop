@@ -83,6 +83,8 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         )
         if db_obj is None:
             return None
+        if db_obj.lifecycle_state != "active":
+            return db_obj
         db_obj.last_seen_at = observed_at
         if runtime_session_id is not None:
             db_obj.runtime_session_id = runtime_session_id
@@ -117,7 +119,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             db_obj.lifecycle_state = lifecycle_state
             db_obj.lifecycle_reason = lifecycle_reason
             db_obj.lifecycle_updated_at = now
-            if lifecycle_state == "decommissioned":
+            if lifecycle_state in {"suspended", "decommissioned"}:
                 db_obj.runtime_session_id = None
         db.add(db_obj)
         if commit:
