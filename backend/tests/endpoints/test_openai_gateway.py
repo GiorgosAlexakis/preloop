@@ -1,10 +1,150 @@
 """Endpoint tests for the OpenAI-compatible gateway."""
 
+import json
+import os
+from pathlib import Path
 from unittest.mock import patch
 
 from preloop.api.endpoints.openai_gateway import get_model_gateway_auth_context
 from preloop.models.crud import crud_account, crud_ai_model, crud_api_key
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
+
+REPLAY_FIXTURE_ENV_VAR = "PRELOOP_OPENAI_GATEWAY_REPLAY_FIXTURE"
+DEFAULT_REPLAY_FIXTURE_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "fixtures"
+    / "openai_gateway"
+    / "codex_responses_request.json"
+)
+
+
+def _load_codex_replay_payload() -> dict:
+    """Load the default replay fixture or a caller-provided capture."""
+    fixture_path = Path(
+        os.getenv(REPLAY_FIXTURE_ENV_VAR, str(DEFAULT_REPLAY_FIXTURE_PATH))
+    )
+    with fixture_path.open() as fixture_file:
+        return json.load(fixture_file)
+
+
+def _assert_replay_tools_normalized(
+    request_tools: list[dict], normalized_tools: list[dict]
+) -> None:
+    """Assert generic tool normalization invariants for replayed Requests payloads."""
+    supported_request_tools = [
+        tool
+        for tool in request_tools
+        if tool.get("type")
+        not in {
+            "web_search",
+            "web_search_preview",
+            "file_search",
+            "code_interpreter",
+            "computer_use_preview",
+        }
+    ]
+    assert len(normalized_tools) == len(supported_request_tools)
+    for request_tool, normalized_tool in zip(
+        supported_request_tools, normalized_tools, strict=False
+    ):
+        assert normalized_tool["type"] == request_tool["type"]
+
+        if request_tool["type"] == "function":
+            assert normalized_tool["function"]["name"] == request_tool["name"]
+            assert normalized_tool["function"]["description"] == request_tool.get(
+                "description"
+            )
+            assert normalized_tool["function"]["parameters"] == request_tool.get(
+                "parameters"
+            )
+            assert "name" not in normalized_tool
+            continue
+
+        if request_tool["type"] == "custom":
+            assert normalized_tool["custom"]["name"] == request_tool["name"]
+            assert normalized_tool["custom"].get("description") == request_tool.get(
+                "description"
+            )
+            request_format = request_tool.get("format")
+            normalized_format = normalized_tool["custom"].get("format")
+            if (
+                isinstance(request_format, dict)
+                and request_format.get("type") == "grammar"
+            ):
+                expected_grammar = {}
+                if isinstance(request_format.get("grammar"), dict):
+                    if request_format["grammar"].get("syntax") is not None:
+                        expected_grammar["syntax"] = request_format["grammar"]["syntax"]
+                    if request_format["grammar"].get("definition") is not None:
+                        expected_grammar["definition"] = request_format["grammar"][
+                            "definition"
+                        ]
+                else:
+                    if request_format.get("syntax") is not None:
+                        expected_grammar["syntax"] = request_format["syntax"]
+                    if request_format.get("definition") is not None:
+                        expected_grammar["definition"] = request_format["definition"]
+                    elif isinstance(request_format.get("grammar"), str):
+                        expected_grammar["definition"] = request_format["grammar"]
+
+                assert normalized_format == {
+                    "type": "grammar",
+                    "grammar": expected_grammar,
+                }
+                assert "syntax" not in normalized_format
+                assert "definition" not in normalized_format
+            continue
+
+        assert normalized_tool == request_tool
+
+
+def test_openai_gateway_responses_codex_replay_normalizes_tools(
+    app, client, db_session, test_user
+):
+    """Replay a Codex-style request through the real endpoint using a JSON fixture."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    app.dependency_overrides[get_model_gateway_auth_context] = (
+        lambda: ModelGatewayAuthContext(token="gateway-token", user=test_user)
+    )
+    payload = _load_codex_replay_payload()
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    ) as mock_completion:
+        response = client.post(
+            "/openai/v1/responses",
+            headers={"Authorization": "Bearer ignored"},
+            json=payload,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["output_text"] == "ok"
+    _assert_replay_tools_normalized(
+        payload["tools"], mock_completion.call_args.kwargs["tools"]
+    )
 
 
 def test_list_models_endpoint_returns_gateway_models(

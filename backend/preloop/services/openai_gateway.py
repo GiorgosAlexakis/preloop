@@ -216,7 +216,8 @@ class OpenAIGatewayService:
                 provider="openai",
             )
             response_dict = self._response_to_dict(response)
-            assistant_text = self._extract_assistant_text(response_dict)
+            output_items = self._build_response_output_items(response_dict)
+            assistant_text = self._response_output_text(output_items)
             usage = self._normalize_usage(
                 response_dict.get("usage"),
                 prompt_key="prompt_tokens",
@@ -231,13 +232,7 @@ class OpenAIGatewayService:
                 "model": payload.get("model")
                 or resolve_ai_model_runtime(model).model_gateway_model_alias,
                 "status": "completed",
-                "output": [
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": assistant_text}],
-                    }
-                ],
+                "output": output_items,
                 "output_text": assistant_text,
                 "usage": {
                     "input_tokens": usage["prompt_tokens"],
@@ -803,10 +798,13 @@ class OpenAIGatewayService:
         def event_stream() -> Iterator[str]:
             response_id = f"resp_{int(time.time())}"
             created_at = int(time.time())
-            item_id = f"msg_{response_id}"
+            text_item_id = f"msg_{response_id}"
             assistant_parts: List[str] = []
             final_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             recorded = False
+            text_output_index: Optional[int] = None
+            output_items: List[Dict[str, Any]] = []
+            tool_call_states: Dict[int, Dict[str, Any]] = {}
             try:
                 yield self._sse_event(
                     {
@@ -820,44 +818,92 @@ class OpenAIGatewayService:
                         },
                     }
                 )
-                yield self._sse_event(
-                    {
-                        "type": "response.output_item.added",
-                        "response_id": response_id,
-                        "output_index": 0,
-                        "item": {
-                            "id": item_id,
-                            "type": "message",
-                            "status": "in_progress",
-                            "role": "assistant",
-                            "content": [],
-                        },
-                    }
-                )
-                yield self._sse_event(
-                    {
-                        "type": "response.content_part.added",
-                        "item_id": item_id,
-                        "output_index": 0,
-                        "content_index": 0,
-                        "part": {"type": "output_text", "text": ""},
-                    }
-                )
 
                 for chunk in upstream_stream:
                     chunk_dict = self._response_to_dict(chunk)
                     delta_text = self._extract_stream_delta_text(chunk_dict)
                     if delta_text:
+                        if text_output_index is None:
+                            text_output_index = len(output_items)
+                            output_items.append(
+                                {
+                                    "id": text_item_id,
+                                    "type": "message",
+                                    "status": "in_progress",
+                                    "role": "assistant",
+                                    "content": [],
+                                }
+                            )
+                            yield self._sse_event(
+                                {
+                                    "type": "response.output_item.added",
+                                    "response_id": response_id,
+                                    "output_index": text_output_index,
+                                    "item": output_items[text_output_index],
+                                }
+                            )
+                            yield self._sse_event(
+                                {
+                                    "type": "response.content_part.added",
+                                    "item_id": text_item_id,
+                                    "output_index": text_output_index,
+                                    "content_index": 0,
+                                    "part": {"type": "output_text", "text": ""},
+                                }
+                            )
                         assistant_parts.append(delta_text)
                         yield self._sse_event(
                             {
                                 "type": "response.output_text.delta",
-                                "item_id": item_id,
-                                "output_index": 0,
+                                "item_id": text_item_id,
+                                "output_index": text_output_index,
                                 "content_index": 0,
                                 "delta": delta_text,
                             }
                         )
+                    for tool_delta in self._extract_stream_tool_call_deltas(chunk_dict):
+                        index = int(tool_delta.get("index", 0) or 0)
+                        state = tool_call_states.get(index)
+                        if state is None:
+                            call_id = (
+                                tool_delta.get("id") or f"call_{response_id}_{index}"
+                            )
+                            item_id = f"fc_{response_id}_{index}"
+                            state = {
+                                "item": {
+                                    "id": item_id,
+                                    "type": "function_call",
+                                    "status": "in_progress",
+                                    "call_id": call_id,
+                                    "name": "",
+                                    "arguments": "",
+                                },
+                                "output_index": len(output_items),
+                            }
+                            tool_call_states[index] = state
+                            output_items.append(state["item"])
+                            yield self._sse_event(
+                                {
+                                    "type": "response.output_item.added",
+                                    "response_id": response_id,
+                                    "output_index": state["output_index"],
+                                    "item": state["item"],
+                                }
+                            )
+                        function_payload = tool_delta.get("function") or {}
+                        if function_payload.get("name"):
+                            state["item"]["name"] = function_payload["name"]
+                        arguments_delta = function_payload.get("arguments")
+                        if arguments_delta:
+                            state["item"]["arguments"] += arguments_delta
+                            yield self._sse_event(
+                                {
+                                    "type": "response.function_call_arguments.delta",
+                                    "item_id": state["item"]["id"],
+                                    "output_index": state["output_index"],
+                                    "delta": arguments_delta,
+                                }
+                            )
                     if chunk_dict.get("usage") is not None:
                         usage = self._normalize_usage(
                             chunk_dict.get("usage"),
@@ -872,45 +918,65 @@ class OpenAIGatewayService:
                         }
 
                 full_text = "".join(assistant_parts)
-                yield self._sse_event(
-                    {
-                        "type": "response.output_text.done",
-                        "item_id": item_id,
-                        "output_index": 0,
-                        "content_index": 0,
-                        "text": full_text,
+                if text_output_index is not None:
+                    output_items[text_output_index] = {
+                        "id": text_item_id,
+                        "type": "message",
+                        "status": "completed",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": full_text}],
                     }
-                )
-                yield self._sse_event(
-                    {
-                        "type": "response.content_part.done",
-                        "item_id": item_id,
-                        "output_index": 0,
-                        "content_index": 0,
-                        "part": {"type": "output_text", "text": full_text},
-                    }
-                )
-                output_item = {
-                    "id": item_id,
-                    "type": "message",
-                    "status": "completed",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": full_text}],
-                }
-                yield self._sse_event(
-                    {
-                        "type": "response.output_item.done",
-                        "output_index": 0,
-                        "item": output_item,
-                    }
-                )
+                    yield self._sse_event(
+                        {
+                            "type": "response.output_text.done",
+                            "item_id": text_item_id,
+                            "output_index": text_output_index,
+                            "content_index": 0,
+                            "text": full_text,
+                        }
+                    )
+                    yield self._sse_event(
+                        {
+                            "type": "response.content_part.done",
+                            "item_id": text_item_id,
+                            "output_index": text_output_index,
+                            "content_index": 0,
+                            "part": {"type": "output_text", "text": full_text},
+                        }
+                    )
+                    yield self._sse_event(
+                        {
+                            "type": "response.output_item.done",
+                            "output_index": text_output_index,
+                            "item": output_items[text_output_index],
+                        }
+                    )
+                for state in sorted(
+                    tool_call_states.values(), key=lambda item: item["output_index"]
+                ):
+                    state["item"]["status"] = "completed"
+                    yield self._sse_event(
+                        {
+                            "type": "response.function_call_arguments.done",
+                            "item_id": state["item"]["id"],
+                            "output_index": state["output_index"],
+                            "arguments": state["item"]["arguments"],
+                        }
+                    )
+                    yield self._sse_event(
+                        {
+                            "type": "response.output_item.done",
+                            "output_index": state["output_index"],
+                            "item": state["item"],
+                        }
+                    )
                 response_payload = {
                     "id": response_id,
                     "object": "response",
                     "created_at": created_at,
                     "model": requested_model,
                     "status": "completed",
-                    "output": [output_item],
+                    "output": output_items,
                     "output_text": full_text,
                     "usage": final_usage,
                 }
@@ -1025,6 +1091,14 @@ class OpenAIGatewayService:
                 kwargs["stream_options"] = payload["stream_options"]
         if ai_model.api_endpoint:
             kwargs["api_base"] = ai_model.api_endpoint
+        if payload.get("tools") is not None:
+            kwargs["tools"] = self._normalize_openai_tools(payload["tools"])
+        if payload.get("tool_choice") is not None:
+            kwargs["tool_choice"] = self._normalize_openai_tool_choice(
+                payload["tool_choice"]
+            )
+        if payload.get("parallel_tool_calls") is not None:
+            kwargs["parallel_tool_calls"] = payload["parallel_tool_calls"]
 
         for source_key, target_key in (
             ("temperature", "temperature"),
@@ -1174,6 +1248,16 @@ class OpenAIGatewayService:
             return self._content_to_text(content)
         return ""
 
+    def _extract_tool_calls(
+        self, response_dict: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        choices = response_dict.get("choices") or []
+        if not choices:
+            return []
+        message = choices[0].get("message") or {}
+        tool_calls = message.get("tool_calls") or []
+        return [tool_call for tool_call in tool_calls if isinstance(tool_call, dict)]
+
     def _extract_stream_delta_text(self, response_dict: Dict[str, Any]) -> str:
         """Extract text delta from a streamed chunk."""
         choices = response_dict.get("choices") or []
@@ -1182,6 +1266,158 @@ class OpenAIGatewayService:
         delta = choices[0].get("delta") or {}
         content = delta.get("content", "")
         return self._content_to_text(content)
+
+    def _extract_stream_tool_call_deltas(
+        self, response_dict: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Extract streamed tool call deltas from one chunk."""
+        choices = response_dict.get("choices") or []
+        if not choices:
+            return []
+        delta = choices[0].get("delta") or {}
+        tool_calls = delta.get("tool_calls") or []
+        return [tool_call for tool_call in tool_calls if isinstance(tool_call, dict)]
+
+    def _build_response_output_items(
+        self, response_dict: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Build Responses API output items from one chat-completions payload."""
+        output_items: List[Dict[str, Any]] = []
+        assistant_text = self._extract_assistant_text(response_dict)
+        if assistant_text:
+            output_items.append(
+                {
+                    "id": response_dict.get("id", f"msg_{int(time.time())}"),
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": assistant_text}],
+                }
+            )
+        for index, tool_call in enumerate(self._extract_tool_calls(response_dict)):
+            function_payload = tool_call.get("function") or {}
+            call_id = tool_call.get("id") or f"call_{index}"
+            output_items.append(
+                {
+                    "id": f"fc_{call_id}",
+                    "type": "function_call",
+                    "status": "completed",
+                    "call_id": call_id,
+                    "name": function_payload.get("name", ""),
+                    "arguments": function_payload.get("arguments", ""),
+                }
+            )
+        return output_items
+
+    @staticmethod
+    def _response_output_text(output_items: List[Dict[str, Any]]) -> str:
+        """Return the concatenated assistant text from response output items."""
+        text_parts: List[str] = []
+        for item in output_items:
+            if item.get("type") != "message":
+                continue
+            for content in item.get("content") or []:
+                if isinstance(content, dict) and content.get("type") == "output_text":
+                    text_parts.append(content.get("text", ""))
+        return "".join(text_parts)
+
+    @staticmethod
+    def _normalize_openai_tools(tools: Any) -> Any:
+        """Normalize Responses API tools to chat-completions tool format."""
+        if not isinstance(tools, list):
+            return tools
+        normalized_tools = []
+        for tool in tools:
+            if not isinstance(tool, dict):
+                normalized_tools.append(tool)
+                continue
+            tool_type = tool.get("type")
+            if tool_type in {
+                "web_search",
+                "web_search_preview",
+                "file_search",
+                "code_interpreter",
+                "computer_use_preview",
+            }:
+                # Hosted Responses tools are not supported by the LiteLLM
+                # compatibility path used by the gateway today.
+                continue
+            if tool_type == "custom" and not isinstance(tool.get("custom"), dict):
+                custom_payload = {
+                    key: value for key, value in tool.items() if key not in {"type"}
+                }
+                normalized_tools.append(
+                    {
+                        "type": "custom",
+                        "custom": OpenAIGatewayService._normalize_custom_tool_payload(
+                            custom_payload
+                        ),
+                    }
+                )
+                continue
+            if tool_type != "function":
+                normalized_tools.append(tool)
+                continue
+            function_name = tool.get("name")
+            if not function_name:
+                normalized_tools.append(tool)
+                continue
+            normalized_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": function_name,
+                        "description": tool.get("description"),
+                        "parameters": tool.get("parameters") or {"type": "object"},
+                    },
+                }
+            )
+        return normalized_tools
+
+    @staticmethod
+    def _normalize_custom_tool_payload(
+        custom_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Normalize flat custom tool payloads for LiteLLM/OpenAI compatibility."""
+        normalized_payload = dict(custom_payload)
+        custom_format = normalized_payload.get("format")
+        if isinstance(custom_format, dict) and custom_format.get("type") == "grammar":
+            grammar_payload = custom_format.get("grammar")
+            if isinstance(grammar_payload, dict):
+                normalized_grammar = dict(grammar_payload)
+            else:
+                normalized_grammar = {}
+
+            if normalized_grammar.get("syntax") is None and custom_format.get("syntax"):
+                normalized_grammar["syntax"] = custom_format["syntax"]
+            if (
+                normalized_grammar.get("definition") is None
+                and custom_format.get("definition") is not None
+            ):
+                normalized_grammar["definition"] = custom_format["definition"]
+            if normalized_grammar.get("definition") is None and isinstance(
+                grammar_payload, str
+            ):
+                normalized_grammar["definition"] = grammar_payload
+
+            normalized_payload["format"] = {
+                "type": "grammar",
+                "grammar": normalized_grammar,
+            }
+        return normalized_payload
+
+    @staticmethod
+    def _normalize_openai_tool_choice(tool_choice: Any) -> Any:
+        """Normalize Responses API tool_choice to chat-completions format."""
+        if not isinstance(tool_choice, dict) or tool_choice.get("type") != "function":
+            return tool_choice
+        function_name = tool_choice.get("name")
+        if not function_name:
+            return tool_choice
+        return {
+            "type": "function",
+            "function": {"name": function_name},
+        }
 
     @staticmethod
     def _extract_finish_reason(response_dict: Dict[str, Any]) -> Optional[str]:

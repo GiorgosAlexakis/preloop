@@ -284,6 +284,284 @@ def test_create_response_normalizes_and_calls_litellm(db_session, test_user):
     assert usage_row.runtime_principal_name == "Test Flow"
 
 
+def test_create_response_forwards_tools_and_returns_function_call_output(
+    db_session, test_user
+):
+    """Responses tool definitions should be forwarded and tool calls preserved."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+    tool_payload = {
+        "type": "function",
+        "name": "get_pull_request",
+        "description": "Fetch one pull request",
+        "parameters": {"type": "object", "properties": {}},
+    }
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_pull_request",
+                                    "arguments": '{"pull_request":"owner/repo#1"}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+        },
+    ) as mock_completion:
+        payload = service.create_response(
+            {
+                "model": "openai/gpt-5",
+                "input": "Review this PR",
+                "tools": [tool_payload],
+                "tool_choice": {"type": "function", "name": "get_pull_request"},
+            }
+        )
+
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_pull_request",
+                "description": "Fetch one pull request",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    assert kwargs["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "get_pull_request"},
+    }
+    assert payload["output_text"] == ""
+    assert payload["output"][0]["type"] == "function_call"
+    assert payload["output"][0]["call_id"] == "call_123"
+    assert payload["output"][0]["name"] == "get_pull_request"
+
+
+def test_create_response_wraps_flat_custom_tools_for_upstream(db_session, test_user):
+    """Flat Responses custom tools should be wrapped in the nested custom block."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    ) as mock_completion:
+        service.create_response(
+            {
+                "model": "openai/gpt-5",
+                "input": "Use the available tools",
+                "tools": [
+                    {
+                        "type": "custom",
+                        "name": "get_pull_request",
+                        "description": "Fetch one pull request",
+                        "input_schema": {"type": "object"},
+                    }
+                ],
+            }
+        )
+
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["tools"] == [
+        {
+            "type": "custom",
+            "custom": {
+                "name": "get_pull_request",
+                "description": "Fetch one pull request",
+                "input_schema": {"type": "object"},
+            },
+        }
+    ]
+
+
+def test_create_response_maps_custom_grammar_definition_for_upstream(
+    db_session, test_user
+):
+    """Grammar custom tools should nest grammar details under format.grammar."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    ) as mock_completion:
+        service.create_response(
+            {
+                "model": "openai/gpt-5",
+                "input": "Use the grammar tool",
+                "tools": [
+                    {
+                        "type": "custom",
+                        "name": "code_exec",
+                        "description": "Executes arbitrary Python code.",
+                        "format": {
+                            "type": "grammar",
+                            "syntax": "lark",
+                            "definition": 'start: "hello"',
+                        },
+                    }
+                ],
+            }
+        )
+
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["tools"][0]["type"] == "custom"
+    assert kwargs["tools"][0]["custom"]["format"]["type"] == "grammar"
+    assert kwargs["tools"][0]["custom"]["format"]["grammar"] == {
+        "syntax": "lark",
+        "definition": 'start: "hello"',
+    }
+    assert "syntax" not in kwargs["tools"][0]["custom"]["format"]
+    assert "definition" not in kwargs["tools"][0]["custom"]["format"]
+
+
+def test_create_response_drops_unsupported_hosted_tools_for_upstream(
+    db_session, test_user
+):
+    """Hosted Responses tools should be filtered out before calling LiteLLM."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    ) as mock_completion:
+        service.create_response(
+            {
+                "model": "openai/gpt-5",
+                "input": "Use tools",
+                "tools": [
+                    {"type": "web_search"},
+                    {
+                        "type": "function",
+                        "name": "get_pull_request",
+                        "description": "Fetch one pull request",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                ],
+            }
+        )
+
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_pull_request",
+                "description": "Fetch one pull request",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+
+
 def test_create_response_marks_soft_limit_exceeded_in_usage_metadata(
     db_session, test_user
 ):
@@ -735,6 +1013,108 @@ def test_stream_response_records_usage_after_completion(db_session, test_user):
     assert usage_row is not None
     assert usage_row.total_tokens == 7
     assert usage_row.estimated_cost == 0.00011
+
+
+def test_stream_response_emits_function_call_events(db_session, test_user):
+    """Streaming responses should surface tool calls in Responses API event format."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+    stream_chunks = iter(
+        [
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_123",
+                                    "type": "function",
+                                    "function": {"name": "get_pull_request"},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {
+                                        "arguments": '{"pull_request":"owner/repo#1"}'
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 4,
+                    "total_tokens": 7,
+                },
+            },
+        ]
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value=stream_chunks,
+    ):
+        events = [
+            _parse_sse_payload(event)
+            for event in service.stream_response(
+                {
+                    "model": "openai/gpt-5",
+                    "input": "Review this PR",
+                    "stream": True,
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": "get_pull_request",
+                            "parameters": {"type": "object", "properties": {}},
+                        }
+                    ],
+                }
+            )
+        ]
+
+    event_types = [event["type"] for event in events[:-1]]
+    assert "response.output_item.added" in event_types
+    assert "response.function_call_arguments.delta" in event_types
+    assert "response.function_call_arguments.done" in event_types
+    assert "response.output_item.done" in event_types
+    function_item_done = next(
+        event
+        for event in events
+        if isinstance(event, dict) and event.get("type") == "response.output_item.done"
+    )
+    assert function_item_done["item"]["type"] == "function_call"
+    assert function_item_done["item"]["name"] == "get_pull_request"
 
 
 def test_create_response_auto_indexes_usage_document_when_enabled(
