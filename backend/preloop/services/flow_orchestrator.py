@@ -49,6 +49,10 @@ FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
 # preventing false positives from the prompt echo that contains the sentinel
 # instruction text.
 AGENT_EXEC_START_MARKER = "PRELOOP_AGENT_EXEC_START"
+GEMINI_GATEWAY_DISABLED_REASON = (
+    "Gemini CLI supports the Preloop MCP proxy, but not the Preloop model "
+    "gateway transport yet. Falling back to direct provider traffic for this run."
+)
 
 # Instruction appended to prompts to have agents signal success.
 # IMPORTANT: The sentinel is kept INLINE (not on its own line) so that when
@@ -544,6 +548,27 @@ class FlowExecutionOrchestrator:
                 )
         else:
             logger.info("No AI model specified for this flow")
+
+    def _resolve_execution_model_runtime(self):
+        """Resolve model runtime, applying agent compatibility fallbacks."""
+        if not self.ai_model:
+            return None, False
+
+        gateway_requested = bool(
+            (self.ai_model.meta_data or {}).get("gateway", {}).get("enabled")
+        )
+        allow_gateway = self.flow.agent_type != "gemini"
+        if gateway_requested and not allow_gateway:
+            logger.warning(
+                "AI model %s is gateway-enabled, but Gemini only supports MCP "
+                "proxying for now. Falling back to direct provider mode.",
+                self.ai_model.id,
+            )
+
+        return (
+            resolve_ai_model_runtime(self.ai_model, allow_gateway=allow_gateway),
+            gateway_requested and not allow_gateway,
+        )
 
     async def _resolve_prompt(self) -> str:
         """
@@ -1300,7 +1325,9 @@ class FlowExecutionOrchestrator:
                 f"identifier={self.ai_model.model_identifier}, "
                 f"provider={self.ai_model.provider_name}"
             )
-            resolved_model_runtime = resolve_ai_model_runtime(self.ai_model)
+            resolved_model_runtime, gateway_downgraded_for_agent = (
+                self._resolve_execution_model_runtime()
+            )
             execution_context.update(
                 resolved_model_runtime.to_execution_context(
                     gateway_token=account_api_token
@@ -1308,6 +1335,11 @@ class FlowExecutionOrchestrator:
                     else None
                 )
             )
+            if gateway_downgraded_for_agent:
+                execution_context["model_gateway_requested"] = True
+                execution_context["model_gateway_disabled_reason"] = (
+                    GEMINI_GATEWAY_DISABLED_REASON
+                )
         else:
             logger.warning(
                 f"No AI model configured for flow {self.flow.id}, "

@@ -63,10 +63,32 @@ def _get_gateway_config(ai_model: AIModel) -> Dict[str, Any]:
     return gateway_config if isinstance(gateway_config, dict) else {}
 
 
-def resolve_ai_model_runtime(ai_model: AIModel) -> ResolvedModelRuntime:
+def _resolve_direct_ai_model_runtime(ai_model: AIModel) -> ResolvedModelRuntime:
+    """Resolve direct-provider runtime settings for an AI model."""
+    resolved_model_secret = get_secret_service().resolve_ai_model_api_key(ai_model)
+    return ResolvedModelRuntime(
+        model_identifier=ai_model.model_identifier,
+        model_provider=ai_model.provider_name,
+        model_endpoint=ai_model.api_endpoint,
+        model_api_key=resolved_model_secret.value if resolved_model_secret else None,
+        model_api_key_backend=(
+            resolved_model_secret.backend_type if resolved_model_secret else None
+        ),
+        model_parameters=ai_model.model_parameters,
+        model_transport_mode="direct_provider",
+        model_gateway_enabled=False,
+        model_gateway_url=None,
+        model_gateway_model_alias=None,
+        model_gateway_provider=None,
+    )
+
+
+def resolve_ai_model_runtime(
+    ai_model: AIModel, *, allow_gateway: bool = True
+) -> ResolvedModelRuntime:
     """Resolve the runtime configuration for an AI model."""
     gateway_config = _get_gateway_config(ai_model)
-    gateway_enabled = bool(gateway_config.get("enabled"))
+    gateway_enabled = bool(gateway_config.get("enabled")) and allow_gateway
     model_parameters = ai_model.model_parameters
 
     if gateway_enabled:
@@ -95,19 +117,4 @@ def resolve_ai_model_runtime(ai_model: AIModel) -> ResolvedModelRuntime:
             model_gateway_provider=gateway_provider,
         )
 
-    resolved_model_secret = get_secret_service().resolve_ai_model_api_key(ai_model)
-    return ResolvedModelRuntime(
-        model_identifier=ai_model.model_identifier,
-        model_provider=ai_model.provider_name,
-        model_endpoint=ai_model.api_endpoint,
-        model_api_key=resolved_model_secret.value if resolved_model_secret else None,
-        model_api_key_backend=(
-            resolved_model_secret.backend_type if resolved_model_secret else None
-        ),
-        model_parameters=model_parameters,
-        model_transport_mode="direct_provider",
-        model_gateway_enabled=False,
-        model_gateway_url=None,
-        model_gateway_model_alias=None,
-        model_gateway_provider=None,
-    )
+    return _resolve_direct_ai_model_runtime(ai_model)

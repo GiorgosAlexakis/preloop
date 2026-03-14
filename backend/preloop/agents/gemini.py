@@ -99,6 +99,7 @@ class GeminiAgent(ContainerAgentExecutor):
             Container ID or pod name
         """
         self._ensure_gateway_transport_supported(execution_context)
+        self._log_gateway_fallback(execution_context)
 
         # Enhance execution context with Gemini-specific settings
         gemini_context = execution_context.copy()
@@ -312,6 +313,17 @@ if [ "$GEMINI_EXIT_CODE" -eq "0" ]; then
 fi
 """
 
+        gateway_notice = ""
+        if execution_context.get(
+            "model_gateway_requested"
+        ) and not execution_context.get("model_gateway_enabled"):
+            gateway_notice = f"""
+echo "========================================="
+echo "Gateway compatibility notice"
+echo "{execution_context.get("model_gateway_disabled_reason", "")}"
+echo "========================================="
+"""
+
         # Get execution details for logging
         execution_id = execution_context.get("execution_id", "unknown")
         flow_name = execution_context.get("flow_name", "unknown")
@@ -352,6 +364,7 @@ echo "Model: {model}"
 echo "Start Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo "=================================================="
 echo ""
+{gateway_notice}
 
 # Run initialization commands (git clone, custom commands) if any
 {init_commands}
@@ -494,6 +507,10 @@ exit $GEMINI_EXIT_CODE
         # Add Gemini API key
         if "model_api_key" in execution_context:
             env["GEMINI_API_KEY"] = execution_context["model_api_key"]
+        if execution_context.get("model_endpoint") and not execution_context.get(
+            "model_gateway_enabled"
+        ):
+            env["GEMINI_API_BASE_URL"] = execution_context["model_endpoint"]
 
         # HOME is set by the container setup (container.py) based on the
         # configured UID. Don't hardcode it here.
@@ -562,4 +579,15 @@ exit $GEMINI_EXIT_CODE
             raise RuntimeError(
                 "Gemini gateway transport is not supported yet. "
                 "Refusing to bypass the Preloop gateway with direct provider traffic."
+            )
+
+    def _log_gateway_fallback(self, execution_context: Dict[str, Any]) -> None:
+        """Log when Gemini is intentionally running in MCP-only compatibility mode."""
+        if execution_context.get(
+            "model_gateway_requested"
+        ) and not execution_context.get("model_gateway_enabled"):
+            self.logger.warning(
+                "Running Gemini in MCP-only compatibility mode: %s",
+                execution_context.get("model_gateway_disabled_reason")
+                or "gateway transport unavailable",
             )

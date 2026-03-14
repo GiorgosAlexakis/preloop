@@ -14,6 +14,7 @@ from preloop.models.schemas.flow import FlowCreate
 from preloop.models.crud import (
     crud_account,
     crud_api_key,
+    crud_flow,
     crud_runtime_session,
     crud_user,
 )
@@ -1269,6 +1270,82 @@ class TestFlowExecutionOrchestrator:
             assert orchestrator.ai_model is not None
             assert orchestrator.ai_model.name == "Test Model"
             assert orchestrator.execution_log.status == "SUCCEEDED"
+
+    @pytest.mark.asyncio
+    async def test_gemini_flow_downgrades_gateway_enabled_model_to_mcp_only(
+        self,
+        db_session: Session,
+        mock_nats_client,
+        test_account: Account,
+    ):
+        """Gemini should keep MCP proxying but fall back to direct model traffic."""
+        from preloop.models.models import AIModel
+        from uuid import uuid4
+
+        ai_model = AIModel(
+            id=str(uuid4()),
+            name="Gemini Gateway Model",
+            model_identifier="gemini-2.5-pro",
+            provider_name="google",
+            api_endpoint="https://generativelanguage.googleapis.com/v1beta",
+            api_key="gemini-secret",
+            model_parameters={},
+            meta_data={
+                "gateway": {
+                    "enabled": True,
+                    "url": "https://review.preloop.ai/openai/v1",
+                    "model_alias": "gemini/gemini-2.5-pro",
+                }
+            },
+        )
+        db_session.add(ai_model)
+        db_session.commit()
+
+        test_flow = crud_flow.create(
+            db=db_session,
+            flow_in=FlowCreate(
+                name="Gemini MCP-only Flow",
+                description="Test Gemini fallback",
+                trigger_event_source="github",
+                trigger_event_types=["issue_created"],
+                prompt_template="Handle {{payload.issue.title}}",
+                agent_type="gemini",
+                agent_config={},
+                account_id=test_account.id,
+                ai_model_id=str(ai_model.id),
+            ),
+            account_id=test_account.id,
+        )
+
+        orchestrator = FlowExecutionOrchestrator(
+            db=db_session,
+            flow_id=test_flow.id,
+            trigger_event_data={
+                "source": "github",
+                "type": "issue_created",
+                "payload": {"issue": {"title": "Test issue"}},
+            },
+            nats_client=mock_nats_client,
+        )
+        orchestrator._get_flow_details()
+        orchestrator.execution_log = type("ExecutionLogStub", (), {"id": uuid4()})()
+
+        execution_context = await orchestrator._prepare_execution_context()
+
+        assert execution_context["model_gateway_requested"] is True
+        assert execution_context["model_gateway_enabled"] is False
+        assert execution_context["model_provider"] == "google"
+        assert execution_context["model_identifier"] == "gemini-2.5-pro"
+        assert (
+            execution_context["model_endpoint"]
+            == "https://generativelanguage.googleapis.com/v1beta"
+        )
+        assert execution_context["model_api_key"] == "gemini-secret"
+        assert "Preloop MCP proxy" in execution_context["model_gateway_disabled_reason"]
+        assert (
+            "Falling back to direct provider traffic"
+            in execution_context["model_gateway_disabled_reason"]
+        )
 
     @pytest.mark.skip(
         reason="FK constraint prevents creating flow with non-existent AI model. "
