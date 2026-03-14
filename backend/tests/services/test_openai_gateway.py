@@ -1,8 +1,9 @@
 """Tests for the OpenAI-compatible gateway service."""
 
-from unittest.mock import patch
-
 import pytest
+import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from preloop.config import settings
 from preloop.models.models.api_usage import ApiUsage
@@ -21,6 +22,74 @@ from preloop.models.schemas.flow_execution import FlowExecutionCreate
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
 from preloop.services.model_gateway_errors import ModelGatewayAPIError
 from preloop.services.openai_gateway import OpenAIGatewayService
+
+
+def _parse_sse_payload(event: str):
+    data_line = next(line for line in event.splitlines() if line.startswith("data: "))
+    payload = data_line.removeprefix("data: ")
+    if payload == "[DONE]":
+        return payload
+    return json.loads(payload)
+
+
+def test_stream_response_emits_output_item_before_text_deltas():
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    ai_model = SimpleNamespace(id="model-1", provider_name="openai")
+    upstream_stream = iter(
+        [
+            {
+                "choices": [{"delta": {"content": "Hello"}}],
+            },
+            {
+                "choices": [{"delta": {"content": " world"}}],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 2,
+                    "total_tokens": 5,
+                },
+            },
+        ]
+    )
+
+    with (
+        patch.object(service, "_resolve_requested_model", return_value=ai_model),
+        patch.object(service, "_check_budget", return_value=None),
+        patch.object(service, "_call_litellm", return_value=upstream_stream),
+        patch.object(service, "_record_gateway_request"),
+    ):
+        events = [
+            _parse_sse_payload(event)
+            for event in service.stream_response(
+                {"model": "openai/gpt-5", "input": "Hi"}
+            )
+        ]
+
+    event_types = [event["type"] for event in events[:-1]]
+    assert event_types[:3] == [
+        "response.created",
+        "response.output_item.added",
+        "response.content_part.added",
+    ]
+    assert event_types[3:5] == [
+        "response.output_text.delta",
+        "response.output_text.delta",
+    ]
+    assert event_types[5:] == [
+        "response.output_text.done",
+        "response.content_part.done",
+        "response.output_item.done",
+        "response.completed",
+    ]
+    assert events[1]["item"]["id"] == events[3]["item_id"]
+    assert events[2]["part"]["type"] == "output_text"
+    assert events[7]["item"]["content"][0]["text"] == "Hello world"
+    assert events[8]["response"]["output_text"] == "Hello world"
+    assert events[8]["response"]["usage"]["total_tokens"] == 5
+    assert events[-1] == "[DONE]"
 
 
 def test_list_models_returns_gateway_enabled_aliases(db_session, test_user):

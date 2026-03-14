@@ -820,6 +820,29 @@ class OpenAIGatewayService:
                         },
                     }
                 )
+                yield self._sse_event(
+                    {
+                        "type": "response.output_item.added",
+                        "response_id": response_id,
+                        "output_index": 0,
+                        "item": {
+                            "id": item_id,
+                            "type": "message",
+                            "status": "in_progress",
+                            "role": "assistant",
+                            "content": [],
+                        },
+                    }
+                )
+                yield self._sse_event(
+                    {
+                        "type": "response.content_part.added",
+                        "item_id": item_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "part": {"type": "output_text", "text": ""},
+                    }
+                )
 
                 for chunk in upstream_stream:
                     chunk_dict = self._response_to_dict(chunk)
@@ -858,19 +881,36 @@ class OpenAIGatewayService:
                         "text": full_text,
                     }
                 )
+                yield self._sse_event(
+                    {
+                        "type": "response.content_part.done",
+                        "item_id": item_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "part": {"type": "output_text", "text": full_text},
+                    }
+                )
+                output_item = {
+                    "id": item_id,
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": full_text}],
+                }
+                yield self._sse_event(
+                    {
+                        "type": "response.output_item.done",
+                        "output_index": 0,
+                        "item": output_item,
+                    }
+                )
                 response_payload = {
                     "id": response_id,
                     "object": "response",
                     "created_at": created_at,
                     "model": requested_model,
                     "status": "completed",
-                    "output": [
-                        {
-                            "type": "message",
-                            "role": "assistant",
-                            "content": [{"type": "output_text", "text": full_text}],
-                        }
-                    ],
+                    "output": [output_item],
                     "output_text": full_text,
                     "usage": final_usage,
                 }
