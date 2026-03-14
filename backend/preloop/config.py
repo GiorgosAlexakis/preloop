@@ -215,7 +215,7 @@ class Settings(BaseSettings):
         ),
     )
     model_gateway_max_preview_chars: int = Field(
-        512,
+        4096,
         description="Maximum number of characters to retain in model gateway content previews",
     )
     flow_execution_max_wait_seconds: int = Field(
@@ -374,7 +374,7 @@ class Settings(BaseSettings):
             ).lower()
             in ("true", "1", "t", "yes"),
             model_gateway_max_preview_chars=int(
-                os.getenv("MODEL_GATEWAY_MAX_PREVIEW_CHARS", "512")
+                os.getenv("MODEL_GATEWAY_MAX_PREVIEW_CHARS", "4096")
             ),
             flow_execution_max_wait_seconds=int(
                 os.getenv("FLOW_EXECUTION_MAX_WAIT_SECONDS", "3600")

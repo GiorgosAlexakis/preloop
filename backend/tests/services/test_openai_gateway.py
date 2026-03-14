@@ -92,6 +92,61 @@ def test_stream_response_emits_output_item_before_text_deltas():
     assert events[-1] == "[DONE]"
 
 
+def test_stream_response_ignores_null_text_deltas():
+    """Null upstream text chunks should not leak as literal 'None' output."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    ai_model = SimpleNamespace(id="model-1", provider_name="openai")
+    upstream_stream = iter(
+        [
+            {
+                "choices": [{"delta": {"content": "Hello"}}],
+            },
+            {
+                "choices": [{"delta": {"content": None}}],
+            },
+            {
+                "choices": [{"delta": {"content": " world"}}],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 2,
+                    "total_tokens": 5,
+                },
+            },
+        ]
+    )
+
+    with (
+        patch.object(service, "_resolve_requested_model", return_value=ai_model),
+        patch.object(service, "_check_budget", return_value=None),
+        patch.object(service, "_call_litellm", return_value=upstream_stream),
+        patch.object(service, "_record_gateway_request"),
+    ):
+        events = [
+            _parse_sse_payload(event)
+            for event in service.stream_response(
+                {"model": "openai/gpt-5", "input": "Hi"}
+            )
+        ]
+
+    text_deltas = [
+        event["delta"]
+        for event in events
+        if isinstance(event, dict) and event.get("type") == "response.output_text.delta"
+    ]
+    assert text_deltas == ["Hello", " world"]
+    completed = next(
+        event
+        for event in events
+        if isinstance(event, dict) and event.get("type") == "response.completed"
+    )
+    assert completed["response"]["output_text"] == "Hello world"
+    assert "None" not in completed["response"]["output_text"]
+
+
 def test_list_models_returns_gateway_enabled_aliases(db_session, test_user):
     """Only gateway-enabled models should be listed."""
     crud_ai_model.create_with_account(
@@ -284,6 +339,85 @@ def test_create_response_normalizes_and_calls_litellm(db_session, test_user):
     assert usage_row.runtime_principal_name == "Test Flow"
 
 
+def test_create_response_uses_litellm_pricing_when_metadata_missing(
+    db_session, test_user
+):
+    """Gateway request costing should fall back to LiteLLM's model pricing map."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5.4",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5.4",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+    litellm_response = {
+        "id": "chatcmpl_123",
+        "created": 1710000000,
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "Gateway says hello"},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
+    }
+
+    with (
+        patch(
+            "preloop.services.openai_gateway.litellm.completion",
+            return_value=litellm_response,
+        ) as mock_completion,
+        patch(
+            "preloop.services.model_pricing.litellm.cost_per_token",
+            return_value=(0.00123, 0.00456),
+        ) as mock_cost_per_token,
+    ):
+        payload = service.create_response(
+            {
+                "model": "openai/gpt-5.4",
+                "instructions": "Be brief",
+                "input": "Hello",
+            }
+        )
+
+    assert payload["output_text"] == "Gateway says hello"
+    mock_completion.assert_called_once()
+    assert mock_cost_per_token.call_count == 2
+    mock_cost_per_token.assert_any_call(
+        model="openai/gpt-5.4",
+        prompt_tokens=4,
+        completion_tokens=1024,
+    )
+    mock_cost_per_token.assert_any_call(
+        model="openai/gpt-5.4",
+        prompt_tokens=11,
+        completion_tokens=7,
+    )
+
+    usage_row = (
+        db_session.query(ApiUsage)
+        .filter(ApiUsage.endpoint == "/openai/v1/responses")
+        .order_by(ApiUsage.timestamp.desc())
+        .first()
+    )
+    assert usage_row is not None
+    assert usage_row.estimated_cost == 0.00579
+
+
 def test_create_response_forwards_tools_and_returns_function_call_output(
     db_session, test_user
 ):
@@ -454,6 +588,168 @@ def test_create_response_preserves_responses_tool_history_in_chat_messages(
             "content": '{"result":"reaction added"}',
         },
     ]
+
+
+def test_create_response_coalesces_multi_tool_turns_for_upstream(db_session, test_user):
+    """Contiguous Responses tool calls should become one assistant tool_calls turn."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [{"message": {"role": "assistant", "content": "continue"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    ) as mock_completion:
+        service.create_response(
+            {
+                "model": "openai/gpt-5",
+                "input": [
+                    {
+                        "role": "assistant",
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Starting review"}],
+                    },
+                    {
+                        "type": "function_call",
+                        "name": "mcp__preloop__update_pull_request",
+                        "call_id": "call_eyes",
+                        "arguments": '{"pull_request":"mr-22","add_reaction":"eyes"}',
+                    },
+                    {
+                        "type": "function_call",
+                        "name": "mcp__preloop__get_pull_request",
+                        "call_id": "call_fetch",
+                        "arguments": '{"pull_request":"mr-22","include_diff":true}',
+                    },
+                    {
+                        "type": "function_call_output",
+                        "call_id": "call_eyes",
+                        "output": '{"result":"reaction added"}',
+                    },
+                    {
+                        "type": "function_call_output",
+                        "call_id": "call_fetch",
+                        "output": '{"result":"pull request fetched"}',
+                    },
+                ],
+            }
+        )
+
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["messages"] == [
+        {"role": "assistant", "content": "Starting review"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_eyes",
+                    "type": "function",
+                    "function": {
+                        "name": "mcp__preloop__update_pull_request",
+                        "arguments": '{"pull_request":"mr-22","add_reaction":"eyes"}',
+                    },
+                },
+                {
+                    "id": "call_fetch",
+                    "type": "function",
+                    "function": {
+                        "name": "mcp__preloop__get_pull_request",
+                        "arguments": '{"pull_request":"mr-22","include_diff":true}',
+                    },
+                },
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_eyes",
+            "content": '{"result":"reaction added"}',
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_fetch",
+            "content": '{"result":"pull request fetched"}',
+        },
+    ]
+
+
+def test_create_response_rejects_incomplete_tool_history(db_session, test_user):
+    """Malformed Responses tool history should fail locally before upstream."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
+        with pytest.raises(
+            ModelGatewayAPIError,
+            match="tool_call_ids did not have response messages: call_eyes",
+        ):
+            service.create_response(
+                {
+                    "model": "openai/gpt-5",
+                    "input": [
+                        {
+                            "type": "function_call",
+                            "name": "mcp__preloop__update_pull_request",
+                            "call_id": "call_eyes",
+                            "arguments": '{"pull_request":"mr-22","add_reaction":"eyes"}',
+                        },
+                        {
+                            "role": "assistant",
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": "I should not appear before tool output",
+                                }
+                            ],
+                        },
+                    ],
+                }
+            )
+
+    mock_completion.assert_not_called()
 
 
 def test_create_response_wraps_flat_custom_tools_for_upstream(db_session, test_user):
@@ -910,7 +1206,7 @@ def test_create_response_denies_when_flow_budget_exceeded(db_session, test_user)
     assert gateway_logs[0].details["error_type"] == "budget_limit_exceeded"
 
 
-def test_create_response_denies_budgeted_request_when_pricing_metadata_missing(
+def test_create_response_denies_budgeted_request_when_pricing_unavailable(
     db_session, test_user
 ):
     """Budgeted accounts should fail closed when request cost cannot be estimated."""
@@ -925,12 +1221,12 @@ def test_create_response_denies_budgeted_request_when_pricing_metadata_missing(
         obj_in={
             "name": "Gateway Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-5",
+            "model_identifier": "unknown-unpriced-model",
             "api_key": "provider-secret",
             "meta_data": {
                 "gateway": {
                     "enabled": True,
-                    "model_alias": "openai/gpt-5",
+                    "model_alias": "openai/unknown-unpriced-model",
                     "provider_adapter": "preloop",
                 }
             },
@@ -945,9 +1241,11 @@ def test_create_response_denies_budgeted_request_when_pricing_metadata_missing(
     with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
         with pytest.raises(
             ModelGatewayAPIError,
-            match="pricing metadata for the selected gateway model",
+            match="pricing information for the selected gateway model",
         ) as exc:
-            service.create_response({"model": "openai/gpt-5", "input": "Hello"})
+            service.create_response(
+                {"model": "openai/unknown-unpriced-model", "input": "Hello"}
+            )
 
     assert exc.value.status_code == 403
     mock_completion.assert_not_called()

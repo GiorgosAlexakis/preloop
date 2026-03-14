@@ -96,6 +96,45 @@ export class FlowExecutionView extends LitElement {
       .execution-tabs {
         margin-bottom: 16px;
       }
+      .output-workspace {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .output-main {
+        min-width: 0;
+      }
+      .output-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .output-sidebar-card {
+        min-width: 0;
+      }
+      .execution-metadata-list {
+        display: grid;
+        grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+        gap: 10px 12px;
+        align-items: start;
+        font-size: 0.95rem;
+      }
+      .execution-metadata-label {
+        color: var(--sl-color-neutral-600);
+        font-weight: 600;
+      }
+      .execution-metadata-value {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .execution-metadata-value code {
+        font-size: 0.85em;
+      }
+      .output-sidebar .tool-activity-list {
+        max-height: 520px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
       .log-container {
         background-color: #1e1e1e;
         color: #d4d4d4;
@@ -239,6 +278,10 @@ export class FlowExecutionView extends LitElement {
         color: var(--sl-color-neutral-600);
         font-size: 0.875rem;
         line-height: 1.5;
+      }
+      .search-summary {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.875rem;
       }
       .gateway-events-list {
         display: flex;
@@ -404,6 +447,17 @@ export class FlowExecutionView extends LitElement {
         font-size: 0.875rem;
         overflow-wrap: anywhere;
       }
+      @media (min-width: 1400px) {
+        .output-workspace {
+          display: grid;
+          grid-template-columns: minmax(0, 2fr) minmax(320px, 420px);
+          align-items: start;
+        }
+        .output-sidebar {
+          position: sticky;
+          top: 16px;
+        }
+      }
     `,
   ];
 
@@ -427,6 +481,9 @@ export class FlowExecutionView extends LitElement {
 
   @state()
   private gatewayEventsError: string | null = null;
+
+  @state()
+  private gatewaySearchQuery = '';
 
   @state()
   private isLoadingGatewayEvents = false;
@@ -1135,67 +1192,156 @@ export class FlowExecutionView extends LitElement {
       );
   }
 
-  private renderToolActivityPanel() {
+  private renderToolActivityList(toolEntries: FlowExecutionUpdate[]) {
+    return html`
+      <div class="tool-activity-list">
+        ${toolEntries.map((entry) => {
+          const payload = entry.payload || {};
+          return html`
+            <div class="tool-activity-item">
+              <div class="tool-activity-header">
+                <div>
+                  <div class="tool-activity-title">
+                    ${payload.tool_name || 'Unknown tool'}
+                  </div>
+                  <div class="tool-activity-meta">
+                    ${payload.server_name || 'Unknown server'} ·
+                    ${formatLocalTime(entry.timestamp)}
+                  </div>
+                </div>
+                ${payload.status
+                  ? html`
+                      <sl-badge
+                        variant=${payload.status === 'error'
+                          ? 'danger'
+                          : 'success'}
+                      >
+                        ${payload.status}
+                      </sl-badge>
+                    `
+                  : ''}
+              </div>
+              ${payload.result_summary || payload.error || payload.message
+                ? html`
+                    <div class="tool-activity-meta">
+                      ${payload.result_summary ||
+                      payload.error ||
+                      payload.message}
+                    </div>
+                  `
+                : ''}
+            </div>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  private renderToolActivitySidebar() {
     const toolEntries = this.getToolActivityEntries();
     if (toolEntries.length === 0) {
       return '';
     }
+    return html`
+      <sl-card class="output-sidebar-card">
+        <div
+          slot="header"
+          style="display: flex; justify-content: space-between; align-items: center; gap: 12px;"
+        >
+          <span>
+            <sl-icon name="tools"></sl-icon>
+            Tool Activity
+          </span>
+          <sl-badge pill>${toolEntries.length}</sl-badge>
+        </div>
+        ${this.renderToolActivityList(toolEntries)}
+      </sl-card>
+    `;
+  }
+
+  private renderExecutionMetadataSidebar() {
+    if (!this.execution) {
+      return '';
+    }
 
     return html`
-      <sl-details summary="Tool Activity" style="margin-bottom: 16px;">
-        <sl-card>
-          <div
-            slot="header"
-            style="display: flex; justify-content: space-between; align-items: center; gap: 12px;"
-          >
-            <span>
-              <sl-icon name="tools"></sl-icon>
-              Tool Activity
-            </span>
-            <sl-badge pill>${toolEntries.length}</sl-badge>
+      <sl-card class="output-sidebar-card">
+        <div slot="header">
+          <sl-icon name="info-circle"></sl-icon>
+          Execution Details
+        </div>
+        <div class="execution-metadata-list">
+          <div class="execution-metadata-label">Status</div>
+          <div class="execution-metadata-value">
+            <sl-badge variant=${this.getStatusVariant(this.execution.status)}
+              >${this.execution.status}</sl-badge
+            >
           </div>
-          <div class="tool-activity-list">
-            ${toolEntries.map((entry) => {
-              const payload = entry.payload || {};
-              return html`
-                <div class="tool-activity-item">
-                  <div class="tool-activity-header">
-                    <div>
-                      <div class="tool-activity-title">
-                        ${payload.tool_name || 'Unknown tool'}
-                      </div>
-                      <div class="tool-activity-meta">
-                        ${payload.server_name || 'Unknown server'} ·
-                        ${formatLocalTime(entry.timestamp)}
-                      </div>
-                    </div>
-                    ${payload.status
-                      ? html`
-                          <sl-badge
-                            variant=${payload.status === 'error'
-                              ? 'danger'
-                              : 'success'}
-                          >
-                            ${payload.status}
-                          </sl-badge>
-                        `
-                      : ''}
-                  </div>
-                  ${payload.result_summary || payload.error || payload.message
-                    ? html`
-                        <div class="tool-activity-meta">
-                          ${payload.result_summary ||
-                          payload.error ||
-                          payload.message}
-                        </div>
-                      `
-                    : ''}
+
+          ${this.flow
+            ? html`
+                <div class="execution-metadata-label">Flow</div>
+                <div class="execution-metadata-value">
+                  <a href="/console/flows/${this.flow.id}">${this.flow.name}</a>
                 </div>
-              `;
-            })}
+
+                <div class="execution-metadata-label">Agent Type</div>
+                <div class="execution-metadata-value">
+                  <sl-badge>${this.flow.agent_type}</sl-badge>
+                </div>
+              `
+            : ''}
+
+          <div class="execution-metadata-label">Triggered By</div>
+          <div class="execution-metadata-value">${this.getTriggerSource()}</div>
+
+          <div class="execution-metadata-label">Started</div>
+          <div class="execution-metadata-value">
+            <sl-tooltip content=${formatUTCDateTime(this.execution.start_time)}>
+              <sl-relative-time
+                date=${parseUTCDate(this.execution.start_time).toISOString()}
+              ></sl-relative-time>
+            </sl-tooltip>
           </div>
-        </sl-card>
-      </sl-details>
+
+          ${this.execution.end_time
+            ? html`
+                <div class="execution-metadata-label">Duration</div>
+                <div class="execution-metadata-value">
+                  ${calculateDuration(
+                    this.execution.start_time,
+                    this.execution.end_time
+                  )}
+                </div>
+              `
+            : ''}
+          ${this.execution.agent_session_reference
+            ? html`
+                <div class="execution-metadata-label">Session</div>
+                <div class="execution-metadata-value">
+                  <code>${this.execution.agent_session_reference}</code>
+                </div>
+              `
+            : ''}
+
+          <div class="execution-metadata-label">Tool Calls</div>
+          <div class="execution-metadata-value">${this.toolCalls}</div>
+
+          <div class="execution-metadata-label">
+            ${this.hasPricing ? 'Budget' : 'Tokens'}
+          </div>
+          <div class="execution-metadata-value">
+            ${this.hasPricing
+              ? html`
+                  <div>$${this.budgetUsed.toFixed(2)}</div>
+                  <div class="tool-activity-meta">
+                    ${this.totalTokens.toLocaleString()} tokens
+                  </div>
+                `
+              : html`${this.totalTokens.toLocaleString()} tokens`}
+          </div>
+        </div>
+      </sl-card>
     `;
   }
 
@@ -1266,6 +1412,50 @@ export class FlowExecutionView extends LitElement {
 
   private formatGatewayPayload(payload: unknown): string {
     return JSON.stringify(payload, null, 2);
+  }
+
+  private handleGatewaySearchQueryChange(event: Event) {
+    this.gatewaySearchQuery = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private getGatewaySearchText(event: FlowGatewayEvent): string {
+    const payload = event.payload || {};
+    const previewText = this.getGatewayPreviewMessages(payload)
+      .map(
+        (message) =>
+          `${message.source || ''} ${message.role || ''} ${message.text || ''}`
+      )
+      .join('\n');
+
+    return [
+      event.type,
+      event.timestamp || '',
+      payload.endpoint || '',
+      payload.endpoint_kind || '',
+      payload.model_alias || '',
+      payload.requested_model || '',
+      payload.provider_name || '',
+      payload.gateway_provider || '',
+      payload.error_detail || '',
+      payload.message || '',
+      previewText,
+      this.formatGatewayPayload(payload),
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .toLowerCase();
+  }
+
+  private getFilteredGatewayEvents(): FlowGatewayEvent[] {
+    const query = this.gatewaySearchQuery.trim().toLowerCase();
+    if (!query) {
+      return this.gatewayEvents;
+    }
+    return this.gatewayEvents.filter((event) =>
+      this.getGatewaySearchText(event).includes(query)
+    );
   }
 
   private formatGatewayLabel(value?: string | null): string {
@@ -1371,6 +1561,13 @@ export class FlowExecutionView extends LitElement {
         >
 ${previewText}</pre
         >
+        ${message.truncated
+          ? html`
+              <div class="search-summary">
+                This stored preview was truncated before display.
+              </div>
+            `
+          : ''}
       </div>
     `;
   }
@@ -1411,6 +1608,9 @@ ${previewText}</pre
   }
 
   private renderGatewayEventsPanel() {
+    const filteredEvents = this.getFilteredGatewayEvents();
+    const query = this.gatewaySearchQuery.trim();
+
     return html`
       <sl-card>
         <div
@@ -1431,7 +1631,11 @@ ${previewText}</pre
                   </span>
                 `
               : ''}
-            <sl-badge pill>${this.gatewayEvents.length}</sl-badge>
+            <sl-badge pill>
+              ${query
+                ? `${filteredEvents.length}/${this.gatewayEvents.length}`
+                : this.gatewayEvents.length}
+            </sl-badge>
           </div>
         </div>
 
@@ -1439,6 +1643,17 @@ ${previewText}</pre
           <div class="gateway-panel-intro">
             Inspect normalized model gateway calls for this execution, including
             sanitized request and response payload previews when available.
+          </div>
+          <sl-input
+            label="Search gateway events"
+            placeholder="Search previews, payloads, tool outputs, or errors"
+            .value=${this.gatewaySearchQuery}
+            @sl-input=${this.handleGatewaySearchQueryChange}
+          ></sl-input>
+          <div class="search-summary">
+            ${query
+              ? `Showing ${filteredEvents.length} matching event${filteredEvents.length === 1 ? '' : 's'} for "${query}".`
+              : `Showing all ${this.gatewayEvents.length} captured event${this.gatewayEvents.length === 1 ? '' : 's'}.`}
           </div>
 
           ${this.gatewayEventsError
@@ -1466,13 +1681,20 @@ ${previewText}</pre
                     <p>No gateway events recorded for this execution.</p>
                   </div>
                 `
-              : html`
-                  <div class="gateway-events-list">
-                    ${this.gatewayEvents.map((event) =>
-                      this.renderGatewayEvent(event)
-                    )}
-                  </div>
-                `}
+              : filteredEvents.length === 0
+                ? html`
+                    <div class="gateway-event-empty">
+                      <sl-icon name="search" style="font-size: 2rem;"></sl-icon>
+                      <p>No gateway events matched "${query}".</p>
+                    </div>
+                  `
+                : html`
+                    <div class="gateway-events-list">
+                      ${filteredEvents.map((event) =>
+                        this.renderGatewayEvent(event)
+                      )}
+                    </div>
+                  `}
         </div>
       </sl-card>
     `;
@@ -1807,101 +2029,108 @@ ${this.execution.resolved_input_prompt}</pre
                 </sl-details>
               `
             : ''}
-          ${this.renderToolActivityPanel()}
-
           <sl-tab-group class="execution-tabs">
             <sl-tab slot="nav" panel="output">Output</sl-tab>
             <sl-tab slot="nav" panel="gateway-events">Gateway Events</sl-tab>
 
             <sl-tab-panel name="output">
-              <sl-card>
-                <div
-                  slot="header"
-                  style="display: flex; justify-content: space-between; align-items: center;"
-                >
-                  <span>
-                    <sl-icon name="terminal"></sl-icon>
-                    Output
-                  </span>
-                  ${isRunning
-                    ? html`
-                        <div class="controls">
-                          <sl-button-group>
-                            <sl-button
-                              size="small"
-                              variant=${this.isAutoScroll
-                                ? 'primary'
-                                : 'default'}
-                              @click=${() =>
-                                (this.isAutoScroll = !this.isAutoScroll)}
-                            >
-                              <sl-icon name="arrow-down"></sl-icon>
-                              Auto-scroll
-                            </sl-button>
-                            <sl-button
-                              size="small"
-                              variant="danger"
-                              @click=${this.stopExecution}
-                            >
-                              <sl-icon name="stop-circle"></sl-icon>
-                              Stop
-                            </sl-button>
-                          </sl-button-group>
-                        </div>
-                      `
-                    : ''}
-                </div>
+              <div class="output-workspace">
+                <div class="output-main">
+                  <sl-card>
+                    <div
+                      slot="header"
+                      style="display: flex; justify-content: space-between; align-items: center;"
+                    >
+                      <span>
+                        <sl-icon name="terminal"></sl-icon>
+                        Output
+                      </span>
+                      ${isRunning
+                        ? html`
+                            <div class="controls">
+                              <sl-button-group>
+                                <sl-button
+                                  size="small"
+                                  variant=${this.isAutoScroll
+                                    ? 'primary'
+                                    : 'default'}
+                                  @click=${() =>
+                                    (this.isAutoScroll = !this.isAutoScroll)}
+                                >
+                                  <sl-icon name="arrow-down"></sl-icon>
+                                  Auto-scroll
+                                </sl-button>
+                                <sl-button
+                                  size="small"
+                                  variant="danger"
+                                  @click=${this.stopExecution}
+                                >
+                                  <sl-icon name="stop-circle"></sl-icon>
+                                  Stop
+                                </sl-button>
+                              </sl-button-group>
+                            </div>
+                          `
+                        : ''}
+                    </div>
 
-                <div class="log-container">
-                  ${this.logs.length === 0
-                    ? html`
-                        <div class="empty-logs">
-                          <sl-icon
-                            name="inbox"
-                            style="font-size: 3rem;"
-                          ></sl-icon>
-                          <p>Waiting for logs...</p>
-                        </div>
-                      `
-                    : this.logs.map((log) => this.renderLogEntry(log))}
-                  ${isRunning
-                    ? html`
-                        <div class="loading-indicator">
-                          <div class="loading-dots">
-                            <span></span>
-                            <span></span>
-                            <span></span>
+                    <div class="log-container">
+                      ${this.logs.length === 0
+                        ? html`
+                            <div class="empty-logs">
+                              <sl-icon
+                                name="inbox"
+                                style="font-size: 3rem;"
+                              ></sl-icon>
+                              <p>Waiting for logs...</p>
+                            </div>
+                          `
+                        : this.logs.map((log) => this.renderLogEntry(log))}
+                      ${isRunning
+                        ? html`
+                            <div class="loading-indicator">
+                              <div class="loading-dots">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                              </div>
+                            </div>
+                          `
+                        : ''}
+                    </div>
+
+                    ${isRunning
+                      ? html`
+                          <div class="terminal-input">
+                            <sl-input
+                              placeholder="Enter command (e.g., 'pause', 'message: Hello')"
+                              .value=${this.commandInput}
+                              @input=${(e: any) =>
+                                (this.commandInput = e.target.value)}
+                              @keydown=${this.handleInputKeydown}
+                              style="flex: 1;"
+                            >
+                              <sl-icon name="terminal" slot="prefix"></sl-icon>
+                            </sl-input>
+                            <sl-button
+                              variant="primary"
+                              ?loading=${this.isSendingCommand}
+                              @click=${this.sendCommand}
+                            >
+                              <sl-icon name="send"></sl-icon>
+                              Send
+                            </sl-button>
                           </div>
-                        </div>
-                      `
-                    : ''}
+                        `
+                      : ''}
+                  </sl-card>
                 </div>
 
-                ${isRunning
-                  ? html`
-                      <div class="terminal-input">
-                        <sl-input
-                          placeholder="Enter command (e.g., 'pause', 'message: Hello')"
-                          .value=${this.commandInput}
-                          @input=${(e: any) =>
-                            (this.commandInput = e.target.value)}
-                          @keydown=${this.handleInputKeydown}
-                          style="flex: 1;"
-                        >
-                          <sl-icon name="terminal" slot="prefix"></sl-icon>
-                        </sl-input>
-                        <sl-button
-                          variant="primary"
-                          ?loading=${this.isSendingCommand}
-                          @click=${this.sendCommand}
-                        >
-                          <sl-icon name="send"></sl-icon>
-                          Send
-                        </sl-button>
-                      </div>
-                    `
-                  : ''}
-              </sl-card>
+                <aside class="output-sidebar">
+                  ${this.renderExecutionMetadataSidebar()}
+                  ${this.renderToolActivitySidebar()}
+                </aside>
+              </div>
             </sl-tab-panel>
 
             <sl-tab-panel name="gateway-events">

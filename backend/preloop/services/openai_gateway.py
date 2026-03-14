@@ -29,6 +29,7 @@ from preloop.services.model_gateway_errors import (
     GatewayProvider,
     ModelGatewayAPIError,
 )
+from preloop.services.model_pricing import estimate_ai_model_usage_cost
 from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
 from preloop.services.gateway_usage_search import GatewayUsageSearchService
 from preloop.services.secret_service import get_secret_service
@@ -1125,12 +1126,7 @@ class OpenAIGatewayService:
         if isinstance(raw_input, str):
             messages.append({"role": "user", "content": raw_input})
         elif isinstance(raw_input, list):
-            for item in raw_input:
-                if not isinstance(item, dict):
-                    continue
-                normalized = self._normalize_responses_input_item(item)
-                if normalized:
-                    messages.extend(normalized)
+            messages.extend(self._normalize_responses_input_items(raw_input))
 
         if not messages:
             raise ModelGatewayAPIError(
@@ -1140,46 +1136,107 @@ class OpenAIGatewayService:
             )
         return messages
 
-    def _normalize_responses_input_item(
-        self, item: Dict[str, Any]
+    def _normalize_responses_input_items(
+        self, items: List[Any]
     ) -> List[Dict[str, Any]]:
-        """Convert one Responses API input item into chat-completions messages."""
-        item_type = item.get("type")
+        """Convert Responses API history into valid chat-completions messages."""
+        messages: List[Dict[str, Any]] = []
+        staged_tool_calls: List[Dict[str, Any]] = []
+        pending_tool_call_ids: set[str] = set()
 
-        if item_type == "function_call":
-            function_name = item.get("name")
-            call_id = item.get("call_id")
-            if not function_name or not call_id:
-                return []
-            return [
+        def tool_response_error() -> ModelGatewayAPIError:
+            missing_ids_set = pending_tool_call_ids or {
+                str(tool_call.get("id"))
+                for tool_call in staged_tool_calls
+                if tool_call.get("id")
+            }
+            missing_ids = ", ".join(sorted(missing_ids_set))
+            return ModelGatewayAPIError(
+                provider="openai",
+                status_code=400,
+                message=(
+                    "An assistant message with 'tool_calls' must be followed by "
+                    "tool messages responding to each 'tool_call_id'. "
+                    f"The following tool_call_ids did not have response messages: {missing_ids}"
+                ),
+            )
+
+        def flush_staged_tool_calls() -> None:
+            nonlocal staged_tool_calls, pending_tool_call_ids
+            if not staged_tool_calls:
+                return
+            messages.append(
                 {
                     "role": "assistant",
                     "content": "",
-                    "tool_calls": [
-                        {
-                            "id": call_id,
-                            "type": "function",
-                            "function": {
-                                "name": function_name,
-                                "arguments": item.get("arguments") or "",
-                            },
-                        }
-                    ],
+                    "tool_calls": staged_tool_calls,
                 }
-            ]
+            )
+            pending_tool_call_ids = {tool_call["id"] for tool_call in staged_tool_calls}
+            staged_tool_calls = []
 
-        if item_type == "function_call_output":
-            call_id = item.get("call_id")
-            if not call_id:
-                return []
-            return [
-                {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": self._content_to_text(item.get("output", "")),
-                }
-            ]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
 
+            item_type = item.get("type")
+            if item_type == "function_call":
+                if pending_tool_call_ids:
+                    raise tool_response_error()
+                normalized_tool_call = self._normalize_responses_tool_call_item(item)
+                if normalized_tool_call:
+                    staged_tool_calls.append(normalized_tool_call)
+                continue
+
+            if item_type == "function_call_output":
+                flush_staged_tool_calls()
+                call_id = item.get("call_id")
+                if not call_id or call_id not in pending_tool_call_ids:
+                    raise tool_response_error()
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": self._content_to_text(item.get("output", "")),
+                    }
+                )
+                pending_tool_call_ids.discard(call_id)
+                continue
+
+            if staged_tool_calls or pending_tool_call_ids:
+                raise tool_response_error()
+
+            messages.extend(self._normalize_responses_message_item(item))
+
+        flush_staged_tool_calls()
+        if pending_tool_call_ids:
+            raise tool_response_error()
+        if staged_tool_calls:
+            pending_tool_call_ids = {tool_call["id"] for tool_call in staged_tool_calls}
+            raise tool_response_error()
+        return messages
+
+    def _normalize_responses_tool_call_item(
+        self, item: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Convert one Responses API function call into chat tool_call format."""
+        function_name = item.get("name")
+        call_id = item.get("call_id")
+        if not function_name or not call_id:
+            return None
+        return {
+            "id": call_id,
+            "type": "function",
+            "function": {
+                "name": function_name,
+                "arguments": item.get("arguments") or "",
+            },
+        }
+
+    def _normalize_responses_message_item(
+        self, item: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Convert one non-tool Responses item into chat-completions messages."""
         role = item.get("role", "user")
         content = item.get("content", "")
         return [{"role": role, "content": self._content_to_text(content)}]
@@ -1268,6 +1325,8 @@ class OpenAIGatewayService:
 
     @staticmethod
     def _content_to_text(content: Any) -> str:
+        if content is None:
+            return ""
         if isinstance(content, str):
             return content
         if isinstance(content, list):
@@ -1278,7 +1337,9 @@ class OpenAIGatewayService:
                     "text",
                     "output_text",
                 }:
-                    texts.append(item.get("text", ""))
+                    text_value = item.get("text")
+                    if isinstance(text_value, str):
+                        texts.append(text_value)
             return "\n".join(filter(None, texts))
         return str(content)
 
@@ -1555,7 +1616,7 @@ class OpenAIGatewayService:
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
-            estimated_cost=self._estimate_cost(
+            estimated_cost=estimate_ai_model_usage_cost(
                 ai_model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
@@ -1715,40 +1776,6 @@ class OpenAIGatewayService:
                 usage_row.id,
             )
 
-    @staticmethod
-    def _estimate_cost(
-        ai_model: AIModel,
-        *,
-        prompt_tokens: int,
-        completion_tokens: int,
-        total_tokens: int,
-    ) -> Optional[float]:
-        """Estimate request cost from model pricing metadata."""
-        pricing = None
-        if ai_model.meta_data and isinstance(ai_model.meta_data, dict):
-            pricing = ai_model.meta_data.get("pricing")
-        if (
-            not pricing
-            and ai_model.model_parameters
-            and isinstance(ai_model.model_parameters, dict)
-        ):
-            pricing = ai_model.model_parameters.get("pricing")
-        if not pricing or not isinstance(pricing, dict):
-            return None
-
-        input_price_per_1k = pricing.get("input_price_per_1k")
-        output_price_per_1k = pricing.get("output_price_per_1k")
-        if input_price_per_1k is not None or output_price_per_1k is not None:
-            input_cost = (prompt_tokens / 1000.0) * float(input_price_per_1k or 0)
-            output_cost = (completion_tokens / 1000.0) * float(output_price_per_1k or 0)
-            return round(input_cost + output_cost, 6)
-
-        price_per_1k = pricing.get("price_per_1k")
-        if price_per_1k is not None:
-            return round((total_tokens / 1000.0) * float(price_per_1k), 6)
-
-        return None
-
     def _check_budget(
         self, ai_model: AIModel, payload: Dict[str, Any]
     ) -> Optional[BudgetCheckResult]:
@@ -1790,7 +1817,7 @@ class OpenAIGatewayService:
             == "pricing_required_for_budget_enforcement"
         ):
             return (
-                "Model gateway budget enforcement requires pricing metadata for "
+                "Model gateway budget enforcement requires pricing information for "
                 "the selected gateway model"
             )
         return "Model gateway budget exceeded"
@@ -1802,7 +1829,7 @@ class OpenAIGatewayService:
             and error_detail
             and (
                 "budget exceeded" in error_detail.lower()
-                or "budget enforcement requires pricing metadata"
+                or "budget enforcement requires pricing information"
                 in error_detail.lower()
             )
         ):
@@ -1816,7 +1843,7 @@ class OpenAIGatewayService:
             and error_detail
             and (
                 "budget exceeded" in error_detail.lower()
-                or "budget enforcement requires pricing metadata"
+                or "budget enforcement requires pricing information"
                 in error_detail.lower()
             )
         ):

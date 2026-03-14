@@ -16,6 +16,7 @@ from preloop.models.models.ai_model import AIModel
 from preloop.models.models.api_usage import ApiUsage
 from preloop.models.models.flow import Flow
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
+from preloop.services.model_pricing import estimate_ai_model_usage_cost
 
 
 DEFAULT_ESTIMATED_OUTPUT_TOKENS = 1024
@@ -177,7 +178,7 @@ class ModelGatewayBudgetService:
                 detail = "Model gateway budget exceeded: flow monthly limit reached"
             elif result.enforcement_reason == "pricing_required_for_budget_enforcement":
                 detail = (
-                    "Model gateway budget enforcement requires pricing metadata for "
+                    "Model gateway budget enforcement requires pricing information for "
                     "the selected gateway model"
                 )
             raise HTTPException(status_code=403, detail=detail)
@@ -231,18 +232,6 @@ class ModelGatewayBudgetService:
     def _estimate_request_cost(
         ai_model: AIModel, payload: Dict[str, Any]
     ) -> Optional[float]:
-        pricing = None
-        if ai_model.meta_data and isinstance(ai_model.meta_data, dict):
-            pricing = ai_model.meta_data.get("pricing")
-        if (
-            not pricing
-            and ai_model.model_parameters
-            and isinstance(ai_model.model_parameters, dict)
-        ):
-            pricing = ai_model.model_parameters.get("pricing")
-        if not pricing or not isinstance(pricing, dict):
-            return None
-
         estimated_input_tokens = ModelGatewayBudgetService._estimate_input_tokens(
             payload
         )
@@ -252,27 +241,12 @@ class ModelGatewayBudgetService:
             or payload.get("max_tokens")
             or DEFAULT_ESTIMATED_OUTPUT_TOKENS
         )
-
-        if (
-            pricing.get("input_price_per_1k") is not None
-            or pricing.get("output_price_per_1k") is not None
-        ):
-            input_cost = (estimated_input_tokens / 1000.0) * float(
-                pricing.get("input_price_per_1k") or 0
-            )
-            output_cost = (estimated_output_tokens / 1000.0) * float(
-                pricing.get("output_price_per_1k") or 0
-            )
-            return round(input_cost + output_cost, 6)
-
-        if pricing.get("price_per_1k") is not None:
-            return round(
-                ((estimated_input_tokens + estimated_output_tokens) / 1000.0)
-                * float(pricing["price_per_1k"]),
-                6,
-            )
-
-        return None
+        return estimate_ai_model_usage_cost(
+            ai_model,
+            prompt_tokens=estimated_input_tokens,
+            completion_tokens=estimated_output_tokens,
+            total_tokens=estimated_input_tokens + estimated_output_tokens,
+        )
 
     @staticmethod
     def _estimate_input_tokens(payload: Dict[str, Any]) -> int:

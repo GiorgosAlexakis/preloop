@@ -364,7 +364,7 @@ export async function getAccountRuntimeSessions(
     `/api/v1/runtime-sessions${buildRuntimeSessionListQuery(params)}`
   );
   if (!response.ok) {
-    throw new Error('Failed to fetch runtime sessions');
+    throw new Error('Failed to fetch sessions');
   }
   return response.json();
 }
@@ -433,7 +433,7 @@ export async function getAccountRuntimeSessionDetail(
     `/api/v1/runtime-sessions/${runtimeSessionId}${queryString ? `?${queryString}` : ''}`
   );
   if (!response.ok) {
-    throw new Error('Failed to fetch runtime session detail');
+    throw new Error('Failed to fetch session detail');
   }
   return response.json();
 }
@@ -451,7 +451,7 @@ export async function updateAccountRuntimeSession(
     }
   );
   if (!response.ok) {
-    throw new Error('Failed to update runtime session');
+    throw new Error('Failed to update session');
   }
   return response.json();
 }

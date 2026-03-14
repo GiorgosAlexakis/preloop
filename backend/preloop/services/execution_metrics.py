@@ -8,6 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from preloop.models import models
+from preloop.services.model_pricing import estimate_ai_model_usage_cost
 
 logger = logging.getLogger(__name__)
 
@@ -295,41 +296,15 @@ class ExecutionMetricsService:
         if not ai_model:
             return (0.0, False)
 
-        # Check for pricing in meta_data or model_parameters
-        pricing = None
-
-        if ai_model.meta_data and isinstance(ai_model.meta_data, dict):
-            pricing = ai_model.meta_data.get("pricing")
-
-        if (
-            not pricing
-            and ai_model.model_parameters
-            and isinstance(ai_model.model_parameters, dict)
-        ):
-            pricing = ai_model.model_parameters.get("pricing")
-
-        if pricing and isinstance(pricing, dict):
+        resolved_cost = estimate_ai_model_usage_cost(
+            ai_model,
+            prompt_tokens=token_usage.get("input_tokens", 0),
+            completion_tokens=token_usage.get("output_tokens", 0),
+            total_tokens=total_tokens,
+        )
+        if resolved_cost is not None:
             has_pricing = True
-            # Calculate based on input/output tokens if available
-            input_tokens = token_usage.get("input_tokens", 0)
-            output_tokens = token_usage.get("output_tokens", 0)
-
-            input_price_per_1k = pricing.get("input_price_per_1k", 0)
-            output_price_per_1k = pricing.get("output_price_per_1k", 0)
-
-            if (
-                input_price_per_1k
-                and output_price_per_1k
-                and (input_tokens or output_tokens)
-            ):
-                total_cost = (input_tokens / 1000.0) * input_price_per_1k + (
-                    output_tokens / 1000.0
-                ) * output_price_per_1k
-            else:
-                # Use average price per token
-                price_per_1k = pricing.get("price_per_1k", 0)
-                if price_per_1k:
-                    total_cost = (total_tokens / 1000.0) * price_per_1k
+            total_cost = float(resolved_cost)
 
         if has_pricing:
             logger.info(

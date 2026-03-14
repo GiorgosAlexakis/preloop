@@ -78,6 +78,9 @@ export class RuntimeSessionsView extends LitElement {
   private interactionQuery = '';
 
   @state()
+  private gatewaySearchQuery = '';
+
+  @state()
   private actionLoading = false;
 
   @state()
@@ -242,6 +245,12 @@ export class RuntimeSessionsView extends LitElement {
 
       .interaction-toolbar sl-input {
         min-width: 260px;
+      }
+
+      .search-summary {
+        color: var(--sl-color-neutral-600);
+        font-size: var(--sl-font-size-small);
+        margin: var(--sl-spacing-small) 0;
       }
 
       .interaction-row {
@@ -559,11 +568,9 @@ export class RuntimeSessionsView extends LitElement {
       }
       await this.loadDetail();
     } catch (error) {
-      console.error('Failed to load runtime sessions:', error);
+      console.error('Failed to load sessions:', error);
       this.error =
-        error instanceof Error
-          ? error.message
-          : 'Failed to load runtime sessions';
+        error instanceof Error ? error.message : 'Failed to load sessions';
       this.sessions = null;
       this.detail = null;
     } finally {
@@ -587,11 +594,11 @@ export class RuntimeSessionsView extends LitElement {
       );
       await this.loadGatewayEvents(this.detail.session.flow_execution_id);
     } catch (error) {
-      console.error('Failed to load runtime session detail:', error);
+      console.error('Failed to load session detail:', error);
       this.error =
         error instanceof Error
           ? error.message
-          : 'Failed to load runtime session detail';
+          : 'Failed to load session detail';
       this.detail = null;
       this.gatewayEvents = [];
       this.gatewayEventsError = null;
@@ -683,6 +690,20 @@ export class RuntimeSessionsView extends LitElement {
     ).value;
   }
 
+  private handleInteractionQueryKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter') {
+      return;
+    }
+    event.preventDefault();
+    void this.applyInteractionSearch();
+  }
+
+  private handleGatewaySearchQueryChange(event: Event) {
+    this.gatewaySearchQuery = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
   private async applyFilters() {
     await this.loadSessions();
   }
@@ -699,6 +720,44 @@ export class RuntimeSessionsView extends LitElement {
 
   private async applyInteractionSearch() {
     await this.loadDetail();
+  }
+
+  private getGatewaySearchText(event: FlowGatewayEvent): string {
+    const payload = event.payload || {};
+    const previewText = this.getGatewayPreviewMessages(payload)
+      .map(
+        (message) =>
+          `${message.source || ''} ${message.role || ''} ${message.text || ''}`
+      )
+      .join('\n');
+
+    return [
+      event.type,
+      event.timestamp || '',
+      payload.endpoint || '',
+      payload.endpoint_kind || '',
+      payload.model_alias || '',
+      payload.requested_model || '',
+      payload.provider_name || '',
+      payload.gateway_provider || '',
+      payload.error_detail || '',
+      payload.message || '',
+      previewText,
+      this.formatGatewayPayload(payload),
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .toLowerCase();
+  }
+
+  private getFilteredGatewayEvents(): FlowGatewayEvent[] {
+    const query = this.gatewaySearchQuery.trim().toLowerCase();
+    if (!query) {
+      return this.gatewayEvents;
+    }
+    return this.gatewayEvents.filter((event) =>
+      this.getGatewaySearchText(event).includes(query)
+    );
   }
 
   private selectSession(sessionId: string) {
@@ -799,7 +858,7 @@ export class RuntimeSessionsView extends LitElement {
 
   private getSourceLabel(sourceType: string | null | undefined): string {
     if (!sourceType) {
-      return 'Runtime session';
+      return 'Session';
     }
     if (sourceType === 'flow_execution') {
       return 'Flow execution';
@@ -817,7 +876,7 @@ export class RuntimeSessionsView extends LitElement {
     }
     const session = this.detail.session;
     const confirmed = window.confirm(
-      `End runtime session "${this.getSessionDisplayName(session)}"?`
+      `End session "${this.getSessionDisplayName(session)}"?`
     );
     if (!confirmed) {
       return;
@@ -827,11 +886,9 @@ export class RuntimeSessionsView extends LitElement {
       await updateAccountRuntimeSession(session.id, { action: 'end' });
       await this.loadSessions();
     } catch (error) {
-      console.error('Failed to end runtime session:', error);
+      console.error('Failed to end session:', error);
       this.error =
-        error instanceof Error
-          ? error.message
-          : 'Failed to update runtime session';
+        error instanceof Error ? error.message : 'Failed to update session';
     } finally {
       this.actionLoading = false;
     }
@@ -842,7 +899,7 @@ export class RuntimeSessionsView extends LitElement {
       return html`
         <div class="empty-state">
           <sl-icon name="collection"></sl-icon>
-          <div>No runtime sessions matched the current filters.</div>
+          <div>No sessions matched the current filters.</div>
         </div>
       `;
     }
@@ -937,17 +994,28 @@ export class RuntimeSessionsView extends LitElement {
   }
 
   private renderInteractions(items: GatewayUsageSearchResultItem[]) {
+    const query = this.interactionQuery.trim();
     if (items.length === 0) {
       return html`
         <div class="empty-state">
           <sl-icon name="search"></sl-icon>
-          <div>No captured interactions matched this session filter.</div>
+          <div>
+            ${query
+              ? `No captured interactions matched "${query}".`
+              : 'No captured interactions matched this session filter.'}
+          </div>
         </div>
       `;
     }
 
     return html`
       <div class="interaction-list">
+        <div class="search-summary">
+          Showing ${items.length} captured
+          interaction${items.length === 1 ? '' : 's'}${query
+            ? ` for "${query}"`
+            : ''}.
+        </div>
         ${items.map(
           (item) => html`
             <div class="interaction-row">
@@ -1142,15 +1210,30 @@ export class RuntimeSessionsView extends LitElement {
             ${message.truncated
               ? html`<sl-badge pill variant="warning">Truncated</sl-badge>`
               : ''}
+            ${typeof message.original_length === 'number'
+              ? html`
+                  <sl-badge pill variant="neutral">
+                    ${message.original_length.toLocaleString()} chars
+                  </sl-badge>
+                `
+              : ''}
           </div>
         </div>
         <pre class="conversation-preview-text">${previewText}</pre>
+        ${message.truncated
+          ? html`
+              <div class="search-summary">
+                This stored preview was truncated before display.
+              </div>
+            `
+          : ''}
       </div>
     `;
   }
 
   private renderGatewayConversationPreview(payload: FlowGatewayEventPayload) {
     const messages = this.getGatewayPreviewMessages(payload);
+    const metadata = payload.conversation_preview?.metadata;
     if (messages.length === 0) {
       return html`
         <div class="payload-section-title">Conversation Preview</div>
@@ -1167,6 +1250,16 @@ export class RuntimeSessionsView extends LitElement {
         style="margin-bottom: var(--sl-spacing-small);"
       >
         <sl-badge pill>${messages.length} messages</sl-badge>
+        ${metadata?.has_redacted_content
+          ? html`<sl-badge pill variant="warning"
+              >Contains redactions</sl-badge
+            >`
+          : ''}
+        ${metadata?.has_truncated_content
+          ? html`<sl-badge pill variant="warning"
+              >Contains truncation</sl-badge
+            >`
+          : ''}
       </div>
       <div class="conversation-preview-list">
         ${messages.map((message) => this.renderGatewayPreviewMessage(message))}
@@ -1261,6 +1354,9 @@ export class RuntimeSessionsView extends LitElement {
       return '';
     }
 
+    const filteredEvents = this.getFilteredGatewayEvents();
+    const query = this.gatewaySearchQuery.trim();
+
     return html`
       <sl-card>
         <div
@@ -1269,12 +1365,29 @@ export class RuntimeSessionsView extends LitElement {
           style="display: flex; justify-content: space-between; gap: var(--sl-spacing-small); align-items: center;"
         >
           <span>Session Content</span>
-          <sl-badge pill>${this.gatewayEvents.length}</sl-badge>
+          <sl-badge pill>
+            ${query
+              ? `${filteredEvents.length}/${this.gatewayEvents.length}`
+              : this.gatewayEvents.length}
+          </sl-badge>
         </div>
         <div class="gateway-events-panel">
           <div class="detail-meta">
             Flow-backed sessions can reuse normalized gateway events to show
             captured conversation previews and payload details.
+          </div>
+          <div class="interaction-toolbar">
+            <sl-input
+              label="Search captured session content"
+              placeholder="Search previews, payloads, tool outputs, or errors"
+              .value=${this.gatewaySearchQuery}
+              @sl-input=${this.handleGatewaySearchQueryChange}
+            ></sl-input>
+          </div>
+          <div class="search-summary">
+            ${query
+              ? `Showing ${filteredEvents.length} matching event${filteredEvents.length === 1 ? '' : 's'} for "${query}".`
+              : `Showing all ${this.gatewayEvents.length} captured event${this.gatewayEvents.length === 1 ? '' : 's'}.`}
           </div>
           ${this.gatewayEventsError
             ? html`
@@ -1300,9 +1413,14 @@ export class RuntimeSessionsView extends LitElement {
                     </div>
                   </div>
                 `
-              : this.gatewayEvents.map((event) =>
-                  this.renderGatewayEvent(event)
-                )}
+              : filteredEvents.length === 0
+                ? html`
+                    <div class="empty-state">
+                      <sl-icon name="search"></sl-icon>
+                      <div>No captured session content matched "${query}".</div>
+                    </div>
+                  `
+                : filteredEvents.map((event) => this.renderGatewayEvent(event))}
         </div>
       </sl-card>
     `;
@@ -1314,7 +1432,7 @@ export class RuntimeSessionsView extends LitElement {
         <sl-card>
           <div class="loading-state">
             <sl-spinner></sl-spinner>
-            <div>Loading runtime session details...</div>
+            <div>Loading session details...</div>
           </div>
         </sl-card>
       `;
@@ -1325,7 +1443,7 @@ export class RuntimeSessionsView extends LitElement {
         <sl-card>
           <div class="empty-state">
             <sl-icon name="inbox"></sl-icon>
-            <div>Select a runtime session to inspect its activity.</div>
+            <div>Select a session to inspect its activity.</div>
           </div>
         </sl-card>
       `;
@@ -1433,10 +1551,11 @@ export class RuntimeSessionsView extends LitElement {
           </div>
           <div class="interaction-toolbar">
             <sl-input
-              label="Search within this session"
+              label="Search captured interactions"
               placeholder="Search captured prompts, outputs, or metadata"
               .value=${this.interactionQuery}
               @sl-input=${this.handleInteractionQueryChange}
+              @keydown=${this.handleInteractionQueryKeydown}
             ></sl-input>
             <sl-button variant="primary" @click=${this.applyInteractionSearch}>
               Search
@@ -1452,10 +1571,7 @@ export class RuntimeSessionsView extends LitElement {
 
   render() {
     return html`
-      <view-header
-        headerText="Runtime Sessions"
-        width="extra-wide"
-      ></view-header>
+      <view-header headerText="Sessions" width="extra-wide"></view-header>
       <div class="column-layout dashboard extra-wide">
         <div class="main-column">
           <div class="page">
@@ -1540,7 +1656,7 @@ export class RuntimeSessionsView extends LitElement {
                   <sl-card>
                     <div class="loading-state">
                       <sl-spinner></sl-spinner>
-                      <div>Loading runtime sessions...</div>
+                      <div>Loading sessions...</div>
                     </div>
                   </sl-card>
                 `
