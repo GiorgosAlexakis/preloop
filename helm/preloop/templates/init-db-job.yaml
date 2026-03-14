@@ -29,3 +29,5 @@ spec:
               value: {{ include "preloop.databaseUrl" . }}
             - name: OPENAI_API_KEY
               value: {{ .Values.config.openai.apiKey }}
+            - name: PRELOOP_URL
+              value: {{ .Values.environment.preloopUrl | quote }}

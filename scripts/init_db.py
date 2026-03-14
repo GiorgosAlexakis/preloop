@@ -17,6 +17,7 @@ from sqlalchemy import text
 from preloop.models.db.session import get_engine, get_db_session
 from preloop.models.crud import crud_embedding_model
 from preloop.models.crud import crud_ai_model
+from preloop.models.models.ai_model import AIModel
 
 from preloop.models.db.vector_types import TRUNCATED_VECTOR_SIZE
 from preloop.models.models.plan import Plan
@@ -27,6 +28,75 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _default_gateway_alias(
+    provider_name: str | None, model_identifier: str | None
+) -> str:
+    """Build the default gateway alias for one AI model."""
+    provider = (provider_name or "openai").strip().lower()
+    identifier = (model_identifier or "").strip()
+    return f"{provider}/{identifier}" if identifier else provider
+
+
+def _build_gateway_url(preloop_url: str | None) -> str:
+    """Build the public model gateway URL from the configured Preloop base URL."""
+    base_url = (preloop_url or "").strip().rstrip("/")
+    if not base_url:
+        return ""
+    return f"{base_url}/openai/v1"
+
+
+def _merge_gateway_meta(
+    meta_data: dict | None,
+    *,
+    provider_name: str | None,
+    model_identifier: str | None,
+    gateway_url: str,
+    provider_adapter: str = "preloop",
+) -> dict:
+    """Return AI model metadata with gateway routing enabled."""
+    merged = dict(meta_data or {})
+    gateway_meta = (
+        dict(merged.get("gateway")) if isinstance(merged.get("gateway"), dict) else {}
+    )
+    gateway_meta["enabled"] = True
+    gateway_meta["url"] = gateway_url
+    gateway_meta["provider_adapter"] = (
+        gateway_meta.get("provider_adapter") or provider_adapter
+    )
+    gateway_meta["model_alias"] = gateway_meta.get(
+        "model_alias"
+    ) or _default_gateway_alias(provider_name, model_identifier)
+    merged["gateway"] = gateway_meta
+    return merged
+
+
+def reconcile_ai_model_gateway_settings(
+    db_session,
+    *,
+    gateway_url: str,
+    provider_adapter: str = "preloop",
+) -> int:
+    """Enable gateway routing for existing AI models that already have credentials."""
+    updated_count = 0
+    for ai_model in db_session.query(AIModel).all():
+        if not (ai_model.api_key or ai_model.credentials_secret_id):
+            continue
+        updated_meta = _merge_gateway_meta(
+            ai_model.meta_data,
+            provider_name=ai_model.provider_name,
+            model_identifier=ai_model.model_identifier,
+            gateway_url=gateway_url,
+            provider_adapter=provider_adapter,
+        )
+        if updated_meta != (ai_model.meta_data or {}):
+            ai_model.meta_data = updated_meta
+            db_session.add(ai_model)
+            updated_count += 1
+    if updated_count:
+        db_session.commit()
+    return updated_count
 
 
 def seed_plan_catalog(db_session, project_root: str) -> None:
@@ -192,6 +262,7 @@ def init_db(force: bool):
         ai_model_api_key = os.getenv("OPENAI_API_KEY")
         ai_model_api_url = os.getenv("AI_API_URL", "https://api.openai.com/v1")
         ai_model_version = os.getenv("AI_MODEL_VERSION", ai_model_name)
+        gateway_url = _build_gateway_url(os.getenv("PRELOOP_URL"))
 
         if ai_model_api_key:
             if not crud_ai_model.default_model_exists(db_session):
@@ -204,6 +275,13 @@ def init_db(force: bool):
                     "model_identifier": ai_model_version,
                     "is_default": True,
                 }
+                if gateway_url:
+                    ai_model_data["meta_data"] = _merge_gateway_meta(
+                        None,
+                        provider_name=ai_provider,
+                        model_identifier=ai_model_version,
+                        gateway_url=gateway_url,
+                    )
                 crud_ai_model.create_with_account(
                     db=db_session,
                     obj_in=ai_model_data,
@@ -214,6 +292,15 @@ def init_db(force: bool):
                 click.echo("Default AI model already exists, skipping.")
         else:
             click.echo("OPENAI_API_KEY not set, skipping AI model creation.")
+
+        if gateway_url:
+            updated_models = reconcile_ai_model_gateway_settings(
+                db_session,
+                gateway_url=gateway_url,
+            )
+            click.echo(
+                f"Ensured gateway routing metadata on {updated_models} AI model(s)."
+            )
 
     except Exception as e:
         click.echo(f"ERROR: Failed to initialize database: {str(e)}")
