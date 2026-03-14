@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -22,6 +23,37 @@ from preloop.services.account_realtime import (
 from preloop.sync.services.event_bus import get_nats_client
 
 logger = logging.getLogger(__name__)
+_REDACTED_TEXT = "***REDACTED***"
+_SENSITIVE_TEXT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"(?is)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----"
+        ),
+        _REDACTED_TEXT,
+    ),
+    (
+        re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s\"']+"),
+        rf"\1{_REDACTED_TEXT}",
+    ),
+    (
+        re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}\b"),
+        rf"\1 {_REDACTED_TEXT}",
+    ),
+    (
+        re.compile(
+            r"(?i)\b((?:api[_-]?key|token|secret|password)\s*[=:]\s*)([^\s,;]+)"
+        ),
+        rf"\1{_REDACTED_TEXT}",
+    ),
+    (
+        re.compile(r"\bsk-[A-Za-z0-9_-]{10,}\b"),
+        _REDACTED_TEXT,
+    ),
+    (
+        re.compile(r"\bgh[pousr]_[A-Za-z0-9]{10,}\b"),
+        _REDACTED_TEXT,
+    ),
+)
 
 
 crud_flow_execution = CRUDFlowExecution()
@@ -422,9 +454,10 @@ class ModelGatewayEventEmitter:
 
     def _sanitize_text_with_meta(self, text: str) -> tuple[Any, dict[str, Any]]:
         if settings.model_gateway_capture_content:
-            truncated_text, truncated = self._truncate_text_with_meta(text)
+            redacted_text, redacted = self._redact_sensitive_text(text)
+            truncated_text, truncated = self._truncate_text_with_meta(redacted_text)
             return truncated_text, {
-                "redacted": False,
+                "redacted": redacted,
                 "truncated": truncated,
                 "length": len(text),
             }
@@ -437,6 +470,17 @@ class ModelGatewayEventEmitter:
     @staticmethod
     def _truncate_text(value: str) -> str:
         return ModelGatewayEventEmitter._truncate_text_with_meta(value)[0]
+
+    @staticmethod
+    def _redact_sensitive_text(value: str) -> tuple[str, bool]:
+        redacted = value
+        changed = False
+        for pattern, replacement in _SENSITIVE_TEXT_PATTERNS:
+            updated = pattern.sub(replacement, redacted)
+            if updated != redacted:
+                changed = True
+                redacted = updated
+        return redacted, changed
 
     @staticmethod
     def _truncate_text_with_meta(value: str) -> tuple[str, bool]:

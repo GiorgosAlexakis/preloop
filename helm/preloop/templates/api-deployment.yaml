@@ -46,6 +46,8 @@ spec:
               value: "8000"
             - name: DEBUG
               value: {{ .Values.environment.debug | quote }}
+            - name: MODEL_GATEWAY_CAPTURE_CONTENT
+              value: {{ .Values.environment.modelGatewayCaptureContent | quote }}
             - name: DATABASE_URL
               value: {{ include "preloop.databaseUrl" . }}
             - name: AGENT_EXECUTION_NAMESPACE

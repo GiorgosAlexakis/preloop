@@ -1128,11 +1128,9 @@ class OpenAIGatewayService:
             for item in raw_input:
                 if not isinstance(item, dict):
                     continue
-                role = item.get("role", "user")
-                content = item.get("content", "")
-                messages.append(
-                    {"role": role, "content": self._content_to_text(content)}
-                )
+                normalized = self._normalize_responses_input_item(item)
+                if normalized:
+                    messages.extend(normalized)
 
         if not messages:
             raise ModelGatewayAPIError(
@@ -1141,6 +1139,50 @@ class OpenAIGatewayService:
                 message="input must be provided",
             )
         return messages
+
+    def _normalize_responses_input_item(
+        self, item: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Convert one Responses API input item into chat-completions messages."""
+        item_type = item.get("type")
+
+        if item_type == "function_call":
+            function_name = item.get("name")
+            call_id = item.get("call_id")
+            if not function_name or not call_id:
+                return []
+            return [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": function_name,
+                                "arguments": item.get("arguments") or "",
+                            },
+                        }
+                    ],
+                }
+            ]
+
+        if item_type == "function_call_output":
+            call_id = item.get("call_id")
+            if not call_id:
+                return []
+            return [
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": self._content_to_text(item.get("output", "")),
+                }
+            ]
+
+        role = item.get("role", "user")
+        content = item.get("content", "")
+        return [{"role": role, "content": self._content_to_text(content)}]
 
     def _normalize_anthropic_messages_input(
         self, payload: Dict[str, Any]

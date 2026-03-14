@@ -53,6 +53,9 @@ GEMINI_GATEWAY_DISABLED_REASON = (
     "Gemini CLI supports the Preloop MCP proxy, but not the Preloop model "
     "gateway transport yet. Falling back to direct provider traffic for this run."
 )
+MCP_TOOL_LOOP_PATTERN_MAX_LENGTH = 3
+MCP_TOOL_LOOP_MIN_REPETITIONS = 3
+MCP_TOOL_LOOP_SINGLE_CALL_REPETITIONS = 4
 
 # Instruction appended to prompts to have agents signal success.
 # IMPORTANT: The sentinel is kept INLINE (not on its own line) so that when
@@ -1498,6 +1501,114 @@ class FlowExecutionOrchestrator:
         self.db.commit()
         self.db.refresh(self.execution_log)
 
+    def _get_runtime_tool_activity_count(self) -> int:
+        """Return the persisted tool-call count for this execution."""
+        if not self.execution_log:
+            return self.tool_calls_count
+
+        from preloop.models.models.runtime_session_activity import (
+            RuntimeSessionActivity,
+        )
+
+        return (
+            self.db.query(RuntimeSessionActivity)
+            .filter(
+                RuntimeSessionActivity.flow_execution_id == self.execution_log.id,
+                RuntimeSessionActivity.activity_type == "tool_call",
+            )
+            .count()
+        )
+
+    def _get_recent_runtime_tool_activity_signatures(
+        self, limit: int = 12
+    ) -> list[str]:
+        """Return recent persisted tool-call signatures for loop detection."""
+        if not self.execution_log:
+            return []
+
+        from preloop.models.models.runtime_session_activity import (
+            RuntimeSessionActivity,
+        )
+
+        activities = (
+            self.db.query(RuntimeSessionActivity)
+            .filter(
+                RuntimeSessionActivity.flow_execution_id == self.execution_log.id,
+                RuntimeSessionActivity.activity_type == "tool_call",
+                RuntimeSessionActivity.status == "success",
+            )
+            .order_by(RuntimeSessionActivity.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
+        signatures: list[str] = []
+        for activity in reversed(activities):
+            metadata = activity.metadata_ or {}
+            signatures.append(
+                json.dumps(
+                    {
+                        "server_name": activity.server_name,
+                        "tool_name": activity.tool_name,
+                        "arguments": metadata.get("arguments"),
+                    },
+                    sort_keys=True,
+                    default=str,
+                )
+            )
+        return signatures
+
+    @staticmethod
+    def _detect_repeated_tool_cycle(signatures: list[str]) -> Optional[Dict[str, Any]]:
+        """Detect obviously looping tool cycles like A,A,A,A or A,B,A,B,A,B."""
+        if len(signatures) < MCP_TOOL_LOOP_MIN_REPETITIONS:
+            return None
+
+        for pattern_length in range(1, MCP_TOOL_LOOP_PATTERN_MAX_LENGTH + 1):
+            repetitions = (
+                MCP_TOOL_LOOP_SINGLE_CALL_REPETITIONS
+                if pattern_length == 1
+                else MCP_TOOL_LOOP_MIN_REPETITIONS
+            )
+            window_size = pattern_length * repetitions
+            if len(signatures) < window_size:
+                continue
+
+            tail = signatures[-window_size:]
+            pattern = tail[:pattern_length]
+            if all(
+                tail[index * pattern_length : (index + 1) * pattern_length] == pattern
+                for index in range(repetitions)
+            ):
+                decoded_pattern = [json.loads(item) for item in pattern]
+                return {
+                    "pattern_length": pattern_length,
+                    "repetitions": repetitions,
+                    "pattern": decoded_pattern,
+                }
+
+        return None
+
+    async def _sync_runtime_tool_activity_metrics(self) -> Optional[Dict[str, Any]]:
+        """Sync persisted MCP activity into live metrics and detect tight loops."""
+        persisted_tool_calls = self._get_runtime_tool_activity_count()
+        if persisted_tool_calls > self.tool_calls_count:
+            self.tool_calls_count = persisted_tool_calls
+            logger.info(
+                f"Persisted tool call count detected (total: {self.tool_calls_count})"
+            )
+            await self._publish_update(
+                "tool_calls_update",
+                {
+                    "tool_calls": self.tool_calls_count,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            await self._persist_live_metrics()
+
+        recent_signatures = self._get_recent_runtime_tool_activity_signatures()
+        return self._detect_repeated_tool_cycle(recent_signatures)
+
     async def _listen_for_commands(self):
         """
         Subscribe to NATS commands for user intervention.
@@ -1639,6 +1750,8 @@ class FlowExecutionOrchestrator:
         )
 
         try:
+            from preloop.config import settings
+
             # Start listening for user commands
             await self._listen_for_commands()
 
@@ -1648,7 +1761,7 @@ class FlowExecutionOrchestrator:
             )
 
             # Poll agent status until completion
-            max_wait_time = 3600  # 1 hour max execution time
+            max_wait_time = max(30, int(settings.flow_execution_max_wait_seconds))
             poll_interval = 5  # Check status every 5 seconds
             elapsed = 0
             consecutive_failures = 0
@@ -1724,6 +1837,37 @@ class FlowExecutionOrchestrator:
                     )
                 except Exception as publish_error:
                     logger.warning(f"Failed to publish status update: {publish_error}")
+
+                loop_detection = await self._sync_runtime_tool_activity_metrics()
+                if loop_detection:
+                    repeated_tools = ", ".join(
+                        f"{item.get('server_name')}/{item.get('tool_name')}"
+                        for item in loop_detection["pattern"]
+                    )
+                    error_message = (
+                        "Execution stopped after detecting a repeated MCP tool loop: "
+                        f"{repeated_tools} repeated {loop_detection['repetitions']} times."
+                    )
+                    logger.warning(error_message)
+                    self.execution_logger.log_milestone(
+                        "mcp_tool_loop_detected",
+                        {**loop_detection, "elapsed": elapsed},
+                    )
+                    await self._publish_update(
+                        "agent_loop_detected",
+                        {
+                            "error": error_message,
+                            "elapsed": elapsed,
+                            **loop_detection,
+                        },
+                    )
+                    await agent_executor.stop(session_reference)
+                    return {
+                        "status": "FAILED",
+                        "error_message": error_message,
+                        "actions_taken": self.execution_logger.get_actions_taken(),
+                        "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
+                    }
 
                 if status in (
                     AgentStatus.SUCCEEDED,

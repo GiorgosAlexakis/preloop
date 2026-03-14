@@ -136,6 +136,7 @@ affinity: {}
 environment:
   preloopUrl: "https://preloop.ai"
   debug: false
+  modelGatewayCaptureContent: true
   # Skip execution recovery on startup (useful for debugging startup issues)
   skipExecutionRecovery: false
   # Database settings

@@ -47,6 +47,79 @@ def orchestrator(mock_db, mock_nats_client):
 class TestLogStreaming:
     """Test real-time log streaming to NATS."""
 
+    def test_detect_repeated_tool_cycle_identifies_alternating_loop(self):
+        """Alternating identical MCP actions should be flagged as a loop."""
+        signatures = [
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "update_pull_request",
+                    "arguments": {"pull_request": "mr-22", "add_reaction": "eyes"},
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "get_pull_request",
+                    "arguments": {"pull_request": "mr-22", "include_diff": True},
+                },
+                sort_keys=True,
+            ),
+        ] * 3
+
+        detection = FlowExecutionOrchestrator._detect_repeated_tool_cycle(signatures)
+
+        assert detection is not None
+        assert detection["pattern_length"] == 2
+        assert detection["repetitions"] == 3
+        assert detection["pattern"][0]["tool_name"] == "update_pull_request"
+        assert detection["pattern"][1]["tool_name"] == "get_pull_request"
+
+    @pytest.mark.asyncio
+    async def test_sync_runtime_tool_activity_metrics_updates_count_and_detects_loop(
+        self, orchestrator
+    ):
+        """Persisted runtime activity should drive live counts and loop detection."""
+        orchestrator._get_runtime_tool_activity_count = MagicMock(return_value=6)
+        orchestrator._get_recent_runtime_tool_activity_signatures = MagicMock(
+            return_value=[
+                json.dumps(
+                    {
+                        "server_name": "preloop-mcp",
+                        "tool_name": "update_pull_request",
+                        "arguments": {
+                            "pull_request": "mr-22",
+                            "add_reaction": "eyes",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    {
+                        "server_name": "preloop-mcp",
+                        "tool_name": "get_pull_request",
+                        "arguments": {
+                            "pull_request": "mr-22",
+                            "include_diff": True,
+                        },
+                    },
+                    sort_keys=True,
+                ),
+            ]
+            * 3
+        )
+        orchestrator._publish_update = AsyncMock()
+        orchestrator._persist_live_metrics = AsyncMock()
+
+        detection = await orchestrator._sync_runtime_tool_activity_metrics()
+
+        assert orchestrator.tool_calls_count == 6
+        assert detection is not None
+        assert detection["pattern_length"] == 2
+        orchestrator._publish_update.assert_awaited()
+        orchestrator._persist_live_metrics.assert_awaited()
+
     @pytest.mark.asyncio
     async def test_stream_logs_to_nats_success(self, orchestrator, mock_nats_client):
         """Test that logs are streamed to NATS."""

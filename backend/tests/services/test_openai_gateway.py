@@ -372,6 +372,90 @@ def test_create_response_forwards_tools_and_returns_function_call_output(
     assert payload["output"][0]["name"] == "get_pull_request"
 
 
+def test_create_response_preserves_responses_tool_history_in_chat_messages(
+    db_session, test_user
+):
+    """Responses function call history should remain structured for the upstream model."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [{"message": {"role": "assistant", "content": "continue"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    ) as mock_completion:
+        service.create_response(
+            {
+                "model": "openai/gpt-5",
+                "input": [
+                    {
+                        "role": "assistant",
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "Starting review"}],
+                    },
+                    {
+                        "type": "function_call",
+                        "name": "mcp__preloop__update_pull_request",
+                        "call_id": "call_eyes",
+                        "arguments": '{"pull_request":"mr-22","add_reaction":"eyes"}',
+                    },
+                    {
+                        "type": "function_call_output",
+                        "call_id": "call_eyes",
+                        "output": '{"result":"reaction added"}',
+                    },
+                ],
+            }
+        )
+
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["messages"] == [
+        {"role": "assistant", "content": "Starting review"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_eyes",
+                    "type": "function",
+                    "function": {
+                        "name": "mcp__preloop__update_pull_request",
+                        "arguments": '{"pull_request":"mr-22","add_reaction":"eyes"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_eyes",
+            "content": '{"result":"reaction added"}',
+        },
+    ]
+
+
 def test_create_response_wraps_flat_custom_tools_for_upstream(db_session, test_user):
     """Flat Responses custom tools should be wrapped in the nested custom block."""
     crud_ai_model.create_with_account(

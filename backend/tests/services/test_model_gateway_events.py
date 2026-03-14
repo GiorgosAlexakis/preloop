@@ -1,11 +1,48 @@
-"""Tests for model gateway event emission helpers."""
+"""Tests for model gateway event capture and redaction behavior."""
 
-from uuid import uuid4
 from unittest.mock import MagicMock, patch
+
+from preloop.services.model_gateway_events import ModelGatewayEventEmitter
+from uuid import uuid4
 
 from preloop.config import settings
 from preloop.models.models.api_usage import ApiUsage
-from preloop.services.model_gateway_events import ModelGatewayEventEmitter
+
+
+def test_capture_enabled_keeps_content_but_redacts_sensitive_text():
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    text = (
+        "Authorization: Bearer super-secret-token\n"
+        "OPENAI_API_KEY=sk-testsecret1234567890\n"
+        "Normal review content stays visible."
+    )
+
+    with patch("preloop.services.model_gateway_events.settings") as mock_settings:
+        mock_settings.model_gateway_capture_content = True
+        mock_settings.model_gateway_max_preview_chars = 1000
+
+        sanitized_text, metadata = emitter._sanitize_text_with_meta(text)
+
+    assert isinstance(sanitized_text, str)
+    assert "Normal review content stays visible." in sanitized_text
+    assert "Authorization: Bearer ***REDACTED***" in sanitized_text
+    assert "OPENAI_API_KEY=***REDACTED***" in sanitized_text
+    assert metadata["redacted"] is True
+    assert metadata["truncated"] is False
+
+
+def test_capture_disabled_redacts_entire_preview_text():
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    text = "Review this merge request."
+
+    with patch("preloop.services.model_gateway_events.settings") as mock_settings:
+        mock_settings.model_gateway_capture_content = False
+        mock_settings.model_gateway_max_preview_chars = 1000
+
+        sanitized_text, metadata = emitter._sanitize_text_with_meta(text)
+
+    assert sanitized_text == {"redacted": True, "length": len(text)}
+    assert metadata == {"redacted": True, "truncated": False, "length": len(text)}
 
 
 def _build_usage(**overrides) -> ApiUsage:

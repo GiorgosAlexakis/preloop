@@ -197,7 +197,7 @@ class Settings(BaseSettings):
         description="Optional Vault/OpenBao-compatible secret backend settings",
     )
     model_gateway_capture_content: bool = Field(
-        False,
+        True,
         description="Whether model gateway events may include redacted content previews",
     )
     model_gateway_auto_index_interactions: bool = Field(
@@ -217,6 +217,10 @@ class Settings(BaseSettings):
     model_gateway_max_preview_chars: int = Field(
         512,
         description="Maximum number of characters to retain in model gateway content previews",
+    )
+    flow_execution_max_wait_seconds: int = Field(
+        3600,
+        description="Maximum wall-clock time to wait for one flow execution before failing it",
     )
 
     model_config = SettingsConfigDict(
@@ -358,7 +362,7 @@ class Settings(BaseSettings):
             gitlab_oauth=gitlab_oauth,
             vault_kv_v2=vault_kv_v2,
             model_gateway_capture_content=os.getenv(
-                "MODEL_GATEWAY_CAPTURE_CONTENT", "false"
+                "MODEL_GATEWAY_CAPTURE_CONTENT", "true"
             ).lower()
             in ("true", "1", "t", "yes"),
             model_gateway_auto_index_interactions=os.getenv(
@@ -371,6 +375,9 @@ class Settings(BaseSettings):
             in ("true", "1", "t", "yes"),
             model_gateway_max_preview_chars=int(
                 os.getenv("MODEL_GATEWAY_MAX_PREVIEW_CHARS", "512")
+            ),
+            flow_execution_max_wait_seconds=int(
+                os.getenv("FLOW_EXECUTION_MAX_WAIT_SECONDS", "3600")
             ),
             stripe_secret_key=stripe_secret_key,
             stripe_webhook_secret=stripe_webhook_secret,
