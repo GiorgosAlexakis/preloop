@@ -495,6 +495,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         account_id: str,
         start_date: datetime,
         end_date: datetime,
+        ai_model_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group recent execution-backed gateway usage into session slices."""
@@ -550,7 +551,11 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
                 ApiUsage.timestamp >= start_date,
                 ApiUsage.timestamp < end_date,
             )
-            .group_by(
+        )
+        if ai_model_id:
+            rows = rows.filter(ApiUsage.ai_model_id == ai_model_id)
+        rows = (
+            rows.group_by(
                 ApiUsage.ai_model_id,
                 RuntimeSession.id,
                 session_source_type,
@@ -602,6 +607,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         start_date: datetime,
         end_date: datetime,
         flow_id: Optional[str] = None,
+        ai_model_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by day."""
         bucket = func.date_trunc("day", ApiUsage.timestamp)
@@ -620,6 +626,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         )
         if flow_id:
             query = query.filter(ApiUsage.flow_id == flow_id)
+        if ai_model_id:
+            query = query.filter(ApiUsage.ai_model_id == ai_model_id)
 
         rows = query.group_by(bucket).order_by(bucket.asc()).all()
         return [

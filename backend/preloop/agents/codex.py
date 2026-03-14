@@ -550,13 +550,13 @@ cat > ~/.codex/config.toml << EOF
 model_provider = "{provider_key}"
 model = "{model}"
 
+rmcp_client = true
+
 [model_providers.{provider_key}]
 name = "{model_provider.title()}"
 {base_url_line}
 env_key = "{env_key}"
 wire_api = "{wire_api}"
-
-rmcp_client = true
 
 [mcp_servers.preloop]
 url = "$PRELOOP_MCP_URL"

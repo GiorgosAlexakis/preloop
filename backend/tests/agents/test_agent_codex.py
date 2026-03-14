@@ -252,6 +252,12 @@ class TestCodexAuthConfig:
         assert "ANTHROPIC_API_KEY" in auth_block
         assert "anthropic" in auth_block
         assert 'base_url = "https://api.anthropic.com/v1"' in auth_block
+        assert auth_block.index("rmcp_client = true") < auth_block.index(
+            "[model_providers.anthropic]"
+        )
+        assert auth_block.index("rmcp_client = true") < auth_block.index(
+            "[mcp_servers.preloop]"
+        )
 
     def test_custom_provider_no_endpoint(self):
         """Custom provider without endpoint omits base_url."""

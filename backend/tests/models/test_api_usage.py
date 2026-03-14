@@ -1,6 +1,8 @@
 """Tests for API usage model and CRUD operations."""
 
-from preloop.models.crud import crud_api_usage
+from datetime import datetime, timedelta, timezone
+
+from preloop.models.crud import crud_api_usage, crud_ai_model, crud_runtime_session
 
 
 def test_log_request(db_session, create_account, create_user):
@@ -289,3 +291,110 @@ def test_get_user_stats_with_account_id(db_session, create_account, create_user)
     matching_stats = [s for s in stats if s["username"] == user.username]
     assert len(matching_stats) >= 1
     assert matching_stats[0]["request_count"] >= 2
+
+
+def test_gateway_usage_filters_by_ai_model_id(db_session, create_account, create_user):
+    """Gateway usage aggregations should honor ai_model_id filters."""
+    account = create_account()
+    user = create_user(account=account)
+    ai_model_a = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Model A",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5",
+            "api_key": "secret-a",
+        },
+        account_id=account.id,
+    )
+    ai_model_b = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Model B",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+            "api_key": "secret-b",
+        },
+        account_id=account.id,
+    )
+    session_a = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=account.id,
+        session_source_type="custom",
+        session_source_id="session-a",
+        runtime_principal_type="flow_execution",
+        runtime_principal_id="flow-a",
+        runtime_principal_name="Flow A",
+        started_at=datetime.now(timezone.utc),
+        last_activity_at=datetime.now(timezone.utc),
+    )
+    session_b = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=account.id,
+        session_source_type="custom",
+        session_source_id="session-b",
+        runtime_principal_type="flow_execution",
+        runtime_principal_id="flow-b",
+        runtime_principal_name="Flow B",
+        started_at=datetime.now(timezone.utc),
+        last_activity_at=datetime.now(timezone.utc),
+    )
+
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(user.id),
+        account_id=str(account.id),
+        ai_model_id=str(ai_model_a.id),
+        runtime_session_id=str(session_a.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        estimated_cost=0.1,
+    )
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(user.id),
+        account_id=str(account.id),
+        ai_model_id=str(ai_model_b.id),
+        runtime_session_id=str(session_b.id),
+        model_alias="openai/gpt-4.1",
+        provider_name="openai",
+        prompt_tokens=20,
+        completion_tokens=10,
+        total_tokens=30,
+        estimated_cost=0.2,
+    )
+
+    start_date = datetime.now(timezone.utc) - timedelta(days=1)
+    end_date = datetime.now(timezone.utc) + timedelta(days=1)
+
+    usage_by_session = crud_api_usage.get_gateway_usage_by_session(
+        db_session,
+        account_id=str(account.id),
+        ai_model_id=str(ai_model_a.id),
+        start_date=start_date,
+        end_date=end_date,
+    )
+    timeseries = crud_api_usage.get_gateway_usage_timeseries(
+        db_session,
+        account_id=str(account.id),
+        ai_model_id=str(ai_model_a.id),
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    assert len(usage_by_session) == 1
+    assert usage_by_session[0]["ai_model_id"] == str(ai_model_a.id)
+    assert usage_by_session[0]["total_tokens"] == 15
+    assert len(timeseries) == 1
+    assert timeseries[0]["total_tokens"] == 15
