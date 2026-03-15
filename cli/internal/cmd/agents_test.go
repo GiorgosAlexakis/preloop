@@ -244,6 +244,40 @@ func TestParseGenericMCP_NestedMCPServers(t *testing.T) {
 	}
 }
 
+func TestFilterAgentsPendingEnrollmentSkipsRemoteManagedAgent(t *testing.T) {
+	managedAgent := managedAgentListResponse{
+		Items: []managedAgentSummary{
+			{
+				ID:                "agent-1",
+				DisplayName:       "OpenClaw",
+				SessionSourceType: "openclaw",
+				SessionSourceID:   runtimePrincipalIDForAgent(AgentConfig{Name: "OpenClaw", ConfigPath: "/tmp/openclaw.json"}),
+				LifecycleState:    "active",
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(managedAgent)
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	discovered := []AgentConfig{
+		{Name: "OpenClaw", ConfigPath: "/tmp/openclaw.json"},
+		{Name: "Codex CLI", ConfigPath: "/tmp/codex.json"},
+	}
+
+	candidates, err := filterAgentsPendingEnrollment(client, discovered)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Name != "Codex CLI" {
+		t.Fatalf("expected only the unenrolled agent to remain, got %#v", candidates)
+	}
+}
+
 func TestBuildManagedMCPEnrollmentPlan_AddsPreloopAndRedactsSecrets(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "settings.json")
@@ -399,6 +433,21 @@ func TestOpenClawAdapterValidateManagedConfig(t *testing.T) {
 					"headers": map[string]interface{}{
 						"Authorization": "Bearer durable-token",
 					},
+				},
+			},
+		},
+		"models": map[string]interface{}{
+			"providers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"baseUrl": "https://preloop.example/openai/v1",
+					"api":     "openai-responses",
+				},
+			},
+		},
+		"agents": map[string]interface{}{
+			"defaults": map[string]interface{}{
+				"model": map[string]interface{}{
+					"primary": "preloop/openai/gpt-5",
 				},
 			},
 		},

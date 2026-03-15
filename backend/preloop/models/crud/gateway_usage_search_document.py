@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import String, case, cast, func, or_
+from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
@@ -141,7 +141,10 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             base_query = base_query.filter(
                 or_(
                     ApiUsage.runtime_session_id == runtime_session_id,
-                    ApiUsage.flow_execution_id == flow_execution_id,
+                    and_(
+                        ApiUsage.runtime_session_id.is_(None),
+                        ApiUsage.flow_execution_id == flow_execution_id,
+                    ),
                 )
             )
         elif runtime_session_id:

@@ -382,6 +382,10 @@ def test_create_response_uses_litellm_pricing_when_metadata_missing(
             return_value=litellm_response,
         ) as mock_completion,
         patch(
+            "preloop.services.model_pricing.litellm.completion_cost",
+            return_value=0.00579,
+        ) as mock_completion_cost,
+        patch(
             "preloop.services.model_pricing.litellm.cost_per_token",
             return_value=(0.00123, 0.00456),
         ) as mock_cost_per_token,
@@ -396,16 +400,14 @@ def test_create_response_uses_litellm_pricing_when_metadata_missing(
 
     assert payload["output_text"] == "Gateway says hello"
     mock_completion.assert_called_once()
-    assert mock_cost_per_token.call_count == 2
-    mock_cost_per_token.assert_any_call(
+    mock_cost_per_token.assert_called_once_with(
         model="openai/gpt-5.4",
         prompt_tokens=4,
         completion_tokens=1024,
     )
-    mock_cost_per_token.assert_any_call(
+    mock_completion_cost.assert_called_once_with(
         model="openai/gpt-5.4",
-        prompt_tokens=11,
-        completion_tokens=7,
+        completion_response={"usage": litellm_response["usage"]},
     )
 
     usage_row = (
@@ -416,6 +418,7 @@ def test_create_response_uses_litellm_pricing_when_metadata_missing(
     )
     assert usage_row is not None
     assert usage_row.estimated_cost == 0.00579
+    assert usage_row.meta_data["usage_details"] == litellm_response["usage"]
 
 
 def test_create_response_forwards_tools_and_returns_function_call_output(
@@ -1395,6 +1398,94 @@ def test_stream_response_records_usage_after_completion(db_session, test_user):
     assert usage_row is not None
     assert usage_row.total_tokens == 7
     assert usage_row.estimated_cost == 0.00011
+
+
+def test_stream_response_uses_cached_token_details_for_costing(db_session, test_user):
+    """Streaming request cost should use provider usage details when available."""
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gateway Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5.4",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "openai/gpt-5.4",
+                    "provider_adapter": "preloop",
+                }
+            },
+            "is_default": True,
+        },
+        account_id=test_user.account_id,
+    )
+
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+    final_usage = {
+        "prompt_tokens": 1000,
+        "completion_tokens": 100,
+        "total_tokens": 1100,
+        "prompt_tokens_details": {"cached_tokens": 800},
+    }
+    stream_chunks = iter(
+        [
+            {
+                "id": "chatcmpl_123",
+                "created": 1710000000,
+                "choices": [{"index": 0, "delta": {"content": "Hello"}}],
+            },
+            {
+                "id": "chatcmpl_123",
+                "created": 1710000000,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                "usage": final_usage,
+            },
+        ]
+    )
+
+    with (
+        patch(
+            "preloop.services.openai_gateway.litellm.completion",
+            return_value=stream_chunks,
+        ),
+        patch(
+            "preloop.services.model_pricing.litellm.cost_per_token",
+            return_value=(0.25, 1.5),
+        ),
+        patch(
+            "preloop.services.model_pricing.litellm.completion_cost",
+            return_value=0.0022,
+        ) as mock_completion_cost,
+    ):
+        events = list(
+            service.stream_response(
+                {
+                    "model": "openai/gpt-5.4",
+                    "input": "Hello",
+                    "stream": True,
+                }
+            )
+        )
+
+    assert any("response.completed" in event for event in events)
+    mock_completion_cost.assert_called_once_with(
+        model="openai/gpt-5.4",
+        completion_response={"usage": final_usage},
+    )
+
+    usage_row = (
+        db_session.query(ApiUsage)
+        .filter(ApiUsage.endpoint == "/openai/v1/responses")
+        .order_by(ApiUsage.timestamp.desc())
+        .first()
+    )
+    assert usage_row is not None
+    assert usage_row.total_tokens == 1100
+    assert usage_row.estimated_cost == 0.0022
+    assert usage_row.meta_data["usage_details"] == final_usage
 
 
 def test_stream_response_emits_function_call_events(db_session, test_user):

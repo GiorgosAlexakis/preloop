@@ -27,6 +27,7 @@ def estimate_ai_model_usage_cost(
     prompt_tokens: int,
     completion_tokens: int,
     total_tokens: int,
+    usage_details: Optional[Dict[str, Any]] = None,
 ) -> Optional[float]:
     """Estimate usage cost using manual pricing overrides or LiteLLM pricing."""
     configured_pricing = _get_configured_pricing(ai_model)
@@ -36,12 +37,30 @@ def estimate_ai_model_usage_cost(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
+            usage_details=usage_details,
         )
 
     if prompt_tokens <= 0 and completion_tokens <= 0:
         return None
 
     for candidate in _iter_litellm_model_candidates(ai_model):
+        if usage_details:
+            try:
+                return round(
+                    float(
+                        litellm.completion_cost(
+                            model=candidate,
+                            completion_response={"usage": usage_details},
+                        )
+                    ),
+                    6,
+                )
+            except Exception:
+                logger.debug(
+                    "LiteLLM detailed pricing unavailable for model candidate %s",
+                    candidate,
+                    exc_info=True,
+                )
         try:
             prompt_cost, completion_cost = litellm.cost_per_token(
                 model=candidate,
@@ -79,12 +98,31 @@ def _estimate_cost_from_pricing(
     prompt_tokens: int,
     completion_tokens: int,
     total_tokens: int,
+    usage_details: Optional[Dict[str, Any]] = None,
 ) -> Optional[float]:
     """Estimate cost from a normalized pricing configuration."""
+    usage_details = usage_details or {}
+    prompt_tokens_details = usage_details.get("prompt_tokens_details") or {}
+    cached_tokens = int(prompt_tokens_details.get("cached_tokens") or 0)
+    cache_creation_tokens = int(
+        prompt_tokens_details.get("cache_creation_tokens")
+        or usage_details.get("cache_creation_input_tokens")
+        or 0
+    )
+    uncached_prompt_tokens = max(
+        prompt_tokens - cached_tokens - cache_creation_tokens, 0
+    )
+
     input_price_per_1k = pricing.get("input_price_per_1k")
     output_price_per_1k = pricing.get("output_price_per_1k")
     if input_price_per_1k is not None or output_price_per_1k is not None:
-        input_cost = (prompt_tokens / 1000.0) * float(input_price_per_1k or 0)
+        input_cost = (uncached_prompt_tokens / 1000.0) * float(input_price_per_1k or 0)
+        input_cost += (cached_tokens / 1000.0) * float(
+            pricing.get("cache_read_input_price_per_1k") or input_price_per_1k or 0
+        )
+        input_cost += (cache_creation_tokens / 1000.0) * float(
+            pricing.get("cache_creation_input_price_per_1k") or input_price_per_1k or 0
+        )
         output_cost = (completion_tokens / 1000.0) * float(output_price_per_1k or 0)
         return round(input_cost + output_cost, 6)
 

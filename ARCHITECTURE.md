@@ -149,12 +149,19 @@ The Tools page has been redesigned from a card-based layout to a tree-style list
 *   **Budget Enforcement:** Applies account-level and flow-level budget checks before upstream dispatch.
 *   **Observability:** Emits normalized model-call events with redaction-aware request/response payload capture, provider-neutral conversation previews, and optional indexing into a gateway search corpus.
 *   **Debug Surface:** Flow execution-scoped gateway events can already be queried via the flows API, and the longer-term direction is to generalize this into runtime-session observability beyond flows.
+*   **Managed Agent Onboarding:** External agents such as OpenClaw can be enrolled so local model traffic is rewritten onto this gateway while local MCP configuration is narrowed to Preloop-managed proxy access.
 
 ### Runtime Session Identity
 *   **Purpose:** Provide a shared identity layer for browsing, auditing, and searching managed runtime sessions across both flows and onboarded external agents.
 *   **Current Implementation:** A new additive `RuntimeSession` layer now uses flows as the first session source, bridged through `runtime_session_id`, `flow_execution_id`, runtime-principal metadata, and optional `agent_session_reference`.
 *   **Current Explorer Surface:** Account-scoped runtime session list/detail endpoints now expose recent managed sessions plus their captured gateway interactions so the console can drill from aggregate usage into one session timeline.
 *   **Target Direction:** Introduce a runtime-wide session abstraction that can represent flow executions, independent CLI/desktop agent sessions, and later enrolled workforce entities without making `flow_execution` the universal long-term session model.
+
+### Managed CLI/Desktop Agent Enrollment
+*   **Discovery Entry Point:** `preloop agents discover` can stay read-only (`--json`, `--no-onboard-prompt`) or hand off interactively into managed enrollment, with `--yes` available for auto-onboarding.
+*   **Shared Enrollment Engine:** `preloop agents enroll <agent>` and discovery-triggered onboarding both create or reuse a managed runtime identity, import representable MCP servers, mint a durable credential, back up the local config, and rewrite the local agent to use Preloop-managed endpoints.
+*   **OpenClaw Coverage:** The current OpenClaw adapter supports legacy and newer config locations, JSON5 parsing, gateway-backed model rewrites, and conservative import of command-backed MCP entries such as `mcporter` when an upstream URL can be inferred safely.
+*   **Credential Boundary:** OpenClaw model credentials may be declared inline under `models.providers` or indirectly through `auth.profiles`; the enrollment path imports model metadata either way, but profile-backed provider secrets may still require manual configuration inside Preloop.
 
 ### Secret Service
 *   **Purpose:** Provider-agnostic custody and resolution of model credentials.

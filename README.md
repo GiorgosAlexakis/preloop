@@ -117,6 +117,8 @@ Preloop can terminate model traffic on behalf of managed runtimes instead of han
 - Execution-scoped gateway event inspection via `GET /api/v1/flows/executions/{execution_id}/gateway-events`
 - Console surfaces for browsing recent runtime sessions and searching captured gateway interactions
 
+Managed desktop/CLI onboarding now builds on the same gateway surface. For OpenClaw, `preloop agents discover` can prompt to onboard newly discovered agents, `preloop agents enroll openclaw` can import the current model into Preloop, rewrite supported model settings to Preloop's OpenAI-compatible gateway, and reduce the local MCP config to a single managed `preloop` entry with backup/restore support.
+
 ### Secret Custody
 
 Preloop now stores AI model credentials behind a provider-agnostic secret abstraction:

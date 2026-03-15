@@ -81,9 +81,14 @@ var agentSpecs = []agentSpec{
 		Parser:      parseGenericMCP,
 	},
 	{
-		Name:        "OpenClaw",
-		ConfigPaths: []string{".openclaw/openclaw.json"},
-		Parser:      parseGenericMCP,
+		Name: "OpenClaw",
+		ConfigPaths: []string{
+			".openclaw/openclaw.json",
+			".openclaw/openclaw.json5",
+			".openclaw-dev/openclaw.json",
+			".openclaw-dev/openclaw.json5",
+		},
+		Parser: parseOpenClawMCP,
 	},
 }
 
@@ -275,12 +280,17 @@ type managedMCPEnrollmentPlan struct {
 	SanitizedManaged    map[string]interface{}
 	ManagedServerName   string
 	ManagedServerURL    string
+	ManagedModelAlias   string
+	ManagedProviderName string
+	Notes               []string
 }
 
 type remoteServerSyncResult struct {
-	Added   []string
-	Reused  []string
-	Skipped []string
+	Added               []string
+	Reused              []string
+	Skipped             []string
+	ImportedFromCommand []string
+	Warnings            []string
 }
 
 type localEnrollmentState struct {
@@ -335,6 +345,8 @@ func init() {
 
 	agentsDiscoverCmd.Flags().Bool("add", false, "deprecated: use 'preloop agents enroll <agent>' instead")
 	agentsDiscoverCmd.Flags().Bool("json", false, "output discovered agents as JSON")
+	agentsDiscoverCmd.Flags().Bool("no-onboard-prompt", false, "do not prompt to onboard discovered agents")
+	agentsDiscoverCmd.Flags().Bool("yes", false, "auto-approve interactive onboarding prompts")
 	_ = agentsDiscoverCmd.Flags().MarkDeprecated("add", "use 'preloop agents enroll <agent>'")
 	agentsEnrollCmd.Flags().Bool("dry-run", false, "preview account and config changes without writing")
 	agentsEnrollCmd.Flags().Bool("yes", false, "skip the enrollment confirmation prompt")
@@ -351,6 +363,8 @@ func init() {
 func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 	asJSON, _ := cmd.Flags().GetBool("json")
 	addServers, _ := cmd.Flags().GetBool("add")
+	noOnboardPrompt, _ := cmd.Flags().GetBool("no-onboard-prompt")
+	autoApprove, _ := cmd.Flags().GetBool("yes")
 
 	if addServers {
 		return fmt.Errorf("discover is now read-only; use 'preloop agents enroll <agent>'")
@@ -396,7 +410,82 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 		fmt.Println("Tip: Use 'preloop agents enroll <agent>' to create a managed Preloop MCP entry with backup and restore support.")
 	}
 
+	if noOnboardPrompt {
+		return nil
+	}
+
+	return promptToOnboardDiscoveredAgents(discovered, autoApprove)
+}
+
+func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool) error {
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+	if !client.IsAuthenticated() {
+		fmt.Println("Tip: Run 'preloop auth login' to onboard discovered agents.")
+		return nil
+	}
+
+	candidates, err := filterAgentsPendingEnrollment(client, discovered)
+	if err != nil {
+		return err
+	}
+	if len(candidates) == 0 {
+		fmt.Println("All discovered agents are already onboarded or have local managed enrollment state.")
+		return nil
+	}
+
+	for _, agent := range candidates {
+		if !autoApprove {
+			confirmed, err := confirmAction(
+				os.Stdin,
+				os.Stdout,
+				fmt.Sprintf("Onboard %s into managed Preloop access now? (y/N): ", agent.Name),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to read onboarding confirmation: %w", err)
+			}
+			if !confirmed {
+				continue
+			}
+		}
+		if err := executeManagedEnrollment(agent, managedEnrollmentOptions{
+			Client:           client,
+			SkipConfirmation: true,
+		}); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func filterAgentsPendingLocalEnrollment(discovered []AgentConfig) []AgentConfig {
+	candidates := make([]AgentConfig, 0, len(discovered))
+	for _, agent := range discovered {
+		if _, err := loadLocalEnrollmentState(agent); err == nil {
+			continue
+		}
+		candidates = append(candidates, agent)
+	}
+	return candidates
+}
+
+func filterAgentsPendingEnrollment(client *api.Client, discovered []AgentConfig) ([]AgentConfig, error) {
+	candidates := make([]AgentConfig, 0, len(discovered))
+	for _, agent := range discovered {
+		if _, err := loadLocalEnrollmentState(agent); err == nil {
+			continue
+		}
+		if client != nil {
+			if _, err := getManagedAgentForDiscovered(client, agent); err == nil {
+				continue
+			}
+		}
+		candidates = append(candidates, agent)
+	}
+	return candidates, nil
 }
 
 func runAgentsEnroll(cmd *cobra.Command, args []string) error {
@@ -412,123 +501,11 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := api.NewClient(FlagToken, FlagURL)
-	if err != nil {
-		return fmt.Errorf("failed to create API client: %w", err)
-	}
-	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
-	}
-
-	plan, err := buildManagedMCPEnrollmentPlan(agent, client.BaseURL(), "<token created at apply time>")
-	if err != nil {
-		return err
-	}
-
-	printEnrollmentPlan(plan, dryRun)
-	if dryRun {
-		fmt.Println("Dry run only: no local files or Preloop account state were changed.")
-		return nil
-	}
-
-	if !autoApprove {
-		confirmed, err := confirmAction(
-			os.Stdin,
-			os.Stdout,
-			fmt.Sprintf("Apply managed Preloop MCP enrollment for %s? (y/N): ", agent.Name),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to read confirmation: %w", err)
-		}
-		if !confirmed {
-			fmt.Println("Aborted without applying enrollment.")
-			return nil
-		}
-	}
-
-	serverSync, err := ensureDiscoveredRemoteServers(client, agent)
-	if err != nil {
-		return err
-	}
-
-	allowedServers := append([]string{}, serverSync.Added...)
-	allowedServers = append(allowedServers, serverSync.Reused...)
-	_, err = issueRuntimeSessionToken(client, agent, allowedServers)
-	if err != nil {
-		return fmt.Errorf("failed to bootstrap managed agent identity: %w", err)
-	}
-
-	managedAgent, err := getManagedAgentForDiscovered(client, agent)
-	if err != nil {
-		return err
-	}
-
-	credentialResp, err := createDurableManagedCredential(client, managedAgent)
-	if err != nil {
-		return err
-	}
-
-	plan, err = buildManagedMCPEnrollmentPlan(agent, client.BaseURL(), credentialResp.Token)
-	if err != nil {
-		return err
-	}
-
-	originalBytes, err := os.ReadFile(agent.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to read agent config: %w", err)
-	}
-	backupState, err := createLocalEnrollmentBackup(agent, originalBytes, plan)
-	if err != nil {
-		return err
-	}
-	if err := writeJSONDocument(agent.ConfigPath, plan.ManagedDocument); err != nil {
-		return err
-	}
-	if err := saveLocalEnrollmentState(backupState); err != nil {
-		return err
-	}
-
-	appliedAt := time.Now().UTC()
-	enrollment, err := createManagedEnrollmentRecord(client, managedAgent.ID, managedAgentEnrollmentCreateRequest{
-		EnrollmentType:   "cli_managed_config",
-		AdapterKey:       runtimeSessionSourceTypeForAgent(agent.Name),
-		Status:           "applied",
-		TargetConfigPath: agent.ConfigPath,
-		DiscoveredConfig: plan.SanitizedDiscovered,
-		ManagedConfig:    plan.SanitizedManaged,
-		BackupMetadata: map[string]interface{}{
-			"backup_path":          backupState.BackupPath,
-			"runtime_principal_id": backupState.RuntimePrincipalID,
-		},
-		ValidationResult: map[string]interface{}{
-			"mode": "local_mcp_additive",
-		},
-		RestoreAvailable: true,
-		LastAppliedAt:    &appliedAt,
+	return executeManagedEnrollment(agent, managedEnrollmentOptions{
+		DryRun:           dryRun,
+		AutoApprove:      autoApprove,
+		SkipConfirmation: false,
 	})
-	if err != nil {
-		return err
-	}
-	backupState.EnrollmentID = enrollment.ID
-	if err := saveLocalEnrollmentState(backupState); err != nil {
-		return err
-	}
-
-	fmt.Printf("✓ Enrolled %s\n", agent.Name)
-	fmt.Printf("  Managed agent: %s\n", managedAgent.ID)
-	if len(serverSync.Added) > 0 {
-		fmt.Printf("  Added remote MCP servers: %s\n", strings.Join(serverSync.Added, ", "))
-	}
-	if len(serverSync.Reused) > 0 {
-		fmt.Printf("  Reused remote MCP servers: %s\n", strings.Join(serverSync.Reused, ", "))
-	}
-	if len(serverSync.Skipped) > 0 {
-		fmt.Printf("  Skipped unsupported local MCP servers: %s\n", strings.Join(serverSync.Skipped, ", "))
-	}
-	fmt.Printf("  Durable credential: %s\n", credentialResp.Credential.Name)
-	fmt.Printf("  Config updated: %s\n", agent.ConfigPath)
-	fmt.Printf("  Backup saved: %s\n", backupState.BackupPath)
-	return nil
 }
 
 func runAgentsStatus(cmd *cobra.Command, args []string) error {
@@ -619,7 +596,7 @@ func runAgentsValidate(cmd *cobra.Command, args []string) error {
 	}
 	status := "validated"
 	adapter := managedMCPAdapterForAgent(agent)
-	document, err := loadJSONDocument(agent.ConfigPath)
+	document, err := loadAgentConfigDocument(agent)
 	if err != nil {
 		status = "validation_failed"
 		result["config_parse_ok"] = false
@@ -1165,8 +1142,7 @@ func discoverAgents(w io.Writer, printWarnings bool) ([]AgentConfig, error) {
 
 	var discovered []AgentConfig
 	for _, spec := range agentSpecs {
-		for _, relPath := range spec.ConfigPaths {
-			fullPath := filepath.Join(home, relPath)
+		for _, fullPath := range configPathsForAgentSpec(home, spec) {
 			if _, err := os.Stat(fullPath); err != nil {
 				continue
 			}
@@ -1215,11 +1191,21 @@ func printEnrollmentPlan(plan managedMCPEnrollmentPlan, dryRun bool) {
 		fmt.Printf("  Existing MCP servers: %s\n", strings.Join(discoveredNames, ", "))
 	}
 	fmt.Printf("  Runtime principal: %s\n", runtimePrincipalIDForAgent(plan.Agent))
+	if plan.ManagedProviderName != "" && plan.ManagedModelAlias != "" {
+		fmt.Printf("  Managed model: %s/%s\n", plan.ManagedProviderName, plan.ManagedModelAlias)
+	}
+	for _, note := range plan.Notes {
+		fmt.Printf("  Note: %s\n", note)
+	}
 }
 
 func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (managedMCPEnrollmentPlan, error) {
+	if strings.EqualFold(strings.TrimSpace(agent.Name), "openclaw") {
+		return buildOpenClawManagedMCPEnrollmentPlan(agent, baseURL, token)
+	}
+
 	adapter := managedMCPAdapterForAgent(agent)
-	discoveredDoc, err := loadJSONDocument(agent.ConfigPath)
+	discoveredDoc, err := loadAgentConfigDocument(agent)
 	if err != nil {
 		return managedMCPEnrollmentPlan{}, fmt.Errorf("failed to load config document: %w", err)
 	}
@@ -1268,7 +1254,11 @@ func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig) (*remo
 	result := &remoteServerSyncResult{}
 	for _, name := range sortedServerNames(agent.MCPServers) {
 		server := agent.MCPServers[name]
-		if server.URL == "" {
+		request, warning, importMode, ok := buildManagedRemoteServerRequest(name, server)
+		if warning != "" {
+			result.Warnings = append(result.Warnings, warning)
+		}
+		if !ok {
 			result.Skipped = append(result.Skipped, name)
 			continue
 		}
@@ -1276,27 +1266,20 @@ func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig) (*remo
 			result.Reused = append(result.Reused, name)
 			continue
 		}
-		request := map[string]interface{}{
-			"name":      name,
-			"url":       server.URL,
-			"transport": normalizeDiscoveredTransport(server),
-		}
-		authType, authConfig := authConfigForDiscoveredServer(server)
-		if authType != "" {
-			request["auth_type"] = authType
-		}
-		if len(authConfig) > 0 {
-			request["auth_config"] = authConfig
-		}
 		var created mcpServerResponse
 		if err := client.Post("/api/v1/mcp-servers", request, &created); err != nil {
 			return nil, fmt.Errorf("failed to add discovered MCP server %q: %w", name, err)
 		}
 		result.Added = append(result.Added, name)
+		if importMode == "command" {
+			result.ImportedFromCommand = append(result.ImportedFromCommand, name)
+		}
 	}
 	sort.Strings(result.Added)
+	sort.Strings(result.ImportedFromCommand)
 	sort.Strings(result.Reused)
 	sort.Strings(result.Skipped)
+	sort.Strings(result.Warnings)
 	return result, nil
 }
 
@@ -1322,6 +1305,16 @@ func extractBearerToken(server MCPDef) string {
 	}
 	for key, value := range server.Headers {
 		if !strings.EqualFold(key, "authorization") {
+			continue
+		}
+		trimmed := strings.TrimSpace(value)
+		if strings.HasPrefix(strings.ToLower(trimmed), "bearer ") {
+			return strings.TrimSpace(trimmed[7:])
+		}
+	}
+	for key, value := range server.Env {
+		if !strings.Contains(strings.ToLower(key), "token") &&
+			!strings.EqualFold(key, "authorization") {
 			continue
 		}
 		trimmed := strings.TrimSpace(value)
@@ -1682,15 +1675,22 @@ func (a openClawManagedMCPAdapter) BuildManagedServer(baseURL, token string) map
 
 func (a openClawManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface{}, baseURL string) map[string]interface{} {
 	expectedURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	expectedGatewayURL := strings.TrimRight(baseURL, "/") + openClawGatewayPath
 	result := map[string]interface{}{
-		"adapter_key":             a.Key(),
-		"expected_preloop_url":    expectedURL,
-		"preloop_server_present":  false,
-		"preloop_url_ok":          false,
-		"transport_ok":            false,
-		"authorization_header_ok": false,
-		"nested_mcp_servers_ok":   false,
-		"validation_passed":       false,
+		"adapter_key":              a.Key(),
+		"expected_preloop_url":     expectedURL,
+		"expected_gateway_url":     expectedGatewayURL,
+		"preloop_server_present":   false,
+		"preloop_url_ok":           false,
+		"transport_ok":             false,
+		"authorization_header_ok":  false,
+		"nested_mcp_servers_ok":    false,
+		"only_preloop_mcp_ok":      false,
+		"gateway_provider_ok":      false,
+		"gateway_base_url_ok":      false,
+		"gateway_api_ok":           false,
+		"model_provider_rewritten": false,
+		"validation_passed":        false,
 	}
 	mcp, ok := asObjectMap(doc["mcp"])
 	if !ok {
@@ -1701,6 +1701,7 @@ func (a openClawManagedMCPAdapter) ValidateManagedConfig(doc map[string]interfac
 		return result
 	}
 	result["nested_mcp_servers_ok"] = true
+	result["only_preloop_mcp_ok"] = len(servers) == 1
 	preloop, ok := servers["preloop"].(map[string]interface{})
 	if !ok {
 		return result
@@ -1713,12 +1714,29 @@ func (a openClawManagedMCPAdapter) ValidateManagedConfig(doc map[string]interfac
 			result["authorization_header_ok"] = true
 		}
 	}
+	if providers, ok := asObjectMap(lookupValue(doc, "models", "providers")); ok {
+		if gatewayProvider, ok := asObjectMap(providers[openClawManagedProviderID]); ok {
+			result["gateway_provider_ok"] = true
+			result["gateway_base_url_ok"] = gatewayProvider["baseUrl"] == expectedGatewayURL
+			if apiName, _ := gatewayProvider["api"].(string); apiName == "openai-responses" || apiName == "openai-completions" {
+				result["gateway_api_ok"] = true
+			}
+		}
+	}
+	if modelRef := extractOpenClawPrimaryModel(doc); strings.HasPrefix(modelRef, openClawManagedProviderID+"/") {
+		result["model_provider_rewritten"] = true
+	}
 	result["validation_passed"] =
 		result["nested_mcp_servers_ok"] == true &&
+			result["only_preloop_mcp_ok"] == true &&
 			result["preloop_server_present"] == true &&
 			result["preloop_url_ok"] == true &&
 			result["transport_ok"] == true &&
-			result["authorization_header_ok"] == true
+			result["authorization_header_ok"] == true &&
+			result["gateway_provider_ok"] == true &&
+			result["gateway_base_url_ok"] == true &&
+			result["gateway_api_ok"] == true &&
+			result["model_provider_rewritten"] == true
 	return result
 }
 
@@ -1851,34 +1869,9 @@ func parseServerMapFromJSON(data []byte) (map[string]MCPDef, error) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, err
 	}
-
-	var rawServers map[string]json.RawMessage
-	switch {
-	case root["mcpServers"] != nil:
-		if err := json.Unmarshal(root["mcpServers"], &rawServers); err != nil {
-			return nil, err
-		}
-	case root["servers"] != nil:
-		if err := json.Unmarshal(root["servers"], &rawServers); err != nil {
-			return nil, err
-		}
-	case root["mcp"] != nil:
-		var nested struct {
-			Servers map[string]json.RawMessage `json:"servers"`
-		}
-		if err := json.Unmarshal(root["mcp"], &nested); err != nil {
-			return nil, err
-		}
-		rawServers = nested.Servers
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
 	}
-
-	result := make(map[string]MCPDef)
-	for name, raw := range rawServers {
-		var def MCPDef
-		if err := json.Unmarshal(raw, &def); err != nil {
-			continue
-		}
-		result[name] = def
-	}
-	return result, nil
+	return parseServerMapFromDocument(doc), nil
 }

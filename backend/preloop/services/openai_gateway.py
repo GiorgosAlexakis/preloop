@@ -433,6 +433,7 @@ class OpenAIGatewayService:
                 "completion_tokens": 0,
                 "total_tokens": 0,
             }
+            final_usage_details: Dict[str, Any] = {}
             last_finish_reason: Optional[str] = None
             response_id: Optional[str] = None
             emitted_start = False
@@ -445,6 +446,7 @@ class OpenAIGatewayService:
                         "id", f"msg_{int(time.time())}"
                     )
                     if chunk_dict.get("usage") is not None:
+                        final_usage_details = chunk_dict.get("usage") or {}
                         final_usage = self._normalize_usage(
                             chunk_dict.get("usage"),
                             prompt_key="prompt_tokens",
@@ -551,6 +553,7 @@ class OpenAIGatewayService:
                     upstream_response={
                         "id": response_id,
                         "choices": [{"finish_reason": last_finish_reason}],
+                        "usage": final_usage_details,
                     },
                     endpoint_kind="anthropic_messages_stream",
                     budget_result=budget_result,
@@ -653,6 +656,7 @@ class OpenAIGatewayService:
                 "completion_tokens": 0,
                 "total_tokens": 0,
             }
+            final_usage_details: Dict[str, Any] = {}
             last_finish_reason: Optional[str] = None
             response_id: Optional[str] = None
             created_at: Optional[int] = None
@@ -679,6 +683,7 @@ class OpenAIGatewayService:
                         self._extract_finish_reason(event_payload) or last_finish_reason
                     )
                     if chunk_dict.get("usage") is not None:
+                        final_usage_details = chunk_dict.get("usage") or {}
                         final_usage = self._normalize_usage(
                             chunk_dict.get("usage"),
                             prompt_key="prompt_tokens",
@@ -711,7 +716,10 @@ class OpenAIGatewayService:
                     ai_model=model,
                     requested_model=payload.get("model"),
                     response_payload=response_payload,
-                    upstream_response=response_payload,
+                    upstream_response={
+                        **response_payload,
+                        "usage": final_usage_details or response_payload.get("usage"),
+                    },
                     endpoint_kind="chat_completions_stream",
                     budget_result=budget_result,
                     request_payload=payload,
@@ -802,6 +810,7 @@ class OpenAIGatewayService:
             text_item_id = f"msg_{response_id}"
             assistant_parts: List[str] = []
             final_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            final_usage_details: Dict[str, Any] = {}
             recorded = False
             text_output_index: Optional[int] = None
             output_items: List[Dict[str, Any]] = []
@@ -906,6 +915,7 @@ class OpenAIGatewayService:
                                 }
                             )
                     if chunk_dict.get("usage") is not None:
+                        final_usage_details = chunk_dict.get("usage") or {}
                         usage = self._normalize_usage(
                             chunk_dict.get("usage"),
                             prompt_key="prompt_tokens",
@@ -995,7 +1005,10 @@ class OpenAIGatewayService:
                     ai_model=model,
                     requested_model=payload.get("model"),
                     response_payload=response_payload,
-                    upstream_response=response_payload,
+                    upstream_response={
+                        **response_payload,
+                        "usage": final_usage_details or response_payload.get("usage"),
+                    },
                     endpoint_kind="responses_stream",
                     budget_result=budget_result,
                     request_payload=payload,
@@ -1572,6 +1585,13 @@ class OpenAIGatewayService:
         """Persist one usage fact for a gateway request."""
         runtime = resolve_ai_model_runtime(ai_model)
         usage = response_payload.get("usage") if response_payload else {}
+        usage_details = (
+            upstream_response.get("usage")
+            if upstream_response and isinstance(upstream_response.get("usage"), dict)
+            else usage
+            if isinstance(usage, dict)
+            else {}
+        )
         prompt_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
         completion_tokens = (
             usage.get("completion_tokens") or usage.get("output_tokens") or 0
@@ -1621,6 +1641,7 @@ class OpenAIGatewayService:
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens or 0,
+                usage_details=usage_details,
             ),
             runtime_principal_type=runtime_principal.get("type"),
             runtime_principal_id=runtime_principal.get("id"),
@@ -1634,6 +1655,7 @@ class OpenAIGatewayService:
                 "finish_reason": self._extract_finish_reason(upstream_response or {})
                 if upstream_response
                 else None,
+                "usage_details": usage_details or None,
             },
         )
         observed_at = usage_row.timestamp

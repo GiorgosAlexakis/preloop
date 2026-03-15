@@ -67,3 +67,6 @@ coverage.xml
 .coverage
 notes
 proprietary
+.devspace
+devspace.yaml
+cli/.cache/
