@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -436,11 +437,28 @@ func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool)
 		return nil
 	}
 
+	return promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, autoApprove, func(agent AgentConfig) error {
+		return executeManagedEnrollment(agent, managedEnrollmentOptions{
+			Client:           client,
+			SkipConfirmation: true,
+		})
+	})
+}
+
+func promptToOnboardCandidates(
+	reader io.Reader,
+	writer io.Writer,
+	candidates []AgentConfig,
+	autoApprove bool,
+	enroll func(agent AgentConfig) error,
+) error {
+	bufferedReader := bufio.NewReader(reader)
+
 	for _, agent := range candidates {
 		if !autoApprove {
 			confirmed, err := confirmAction(
-				os.Stdin,
-				os.Stdout,
+				bufferedReader,
+				writer,
 				fmt.Sprintf("Onboard %s into managed Preloop access now? (y/N): ", agent.Name),
 			)
 			if err != nil {
@@ -450,10 +468,7 @@ func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool)
 				continue
 			}
 		}
-		if err := executeManagedEnrollment(agent, managedEnrollmentOptions{
-			Client:           client,
-			SkipConfirmation: true,
-		}); err != nil {
+		if err := enroll(agent); err != nil {
 			return err
 		}
 	}

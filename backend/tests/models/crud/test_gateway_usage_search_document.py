@@ -163,3 +163,21 @@ def test_search_account_documents_isolates_runtime_session_with_legacy_fallback(
     assert str(selected_usage.id) in returned_usage_ids
     assert str(legacy_usage.id) in returned_usage_ids
     assert str(sibling_usage.id) not in returned_usage_ids
+
+    sibling_result = crud_gateway_usage_search_document.search_account_documents(
+        db_session,
+        account_id=str(test_user.account_id),
+        start_date=start_date,
+        end_date=end_date,
+        runtime_session_id=str(sibling_session.id),
+        flow_execution_id=str(execution.id),
+        limit=20,
+        offset=0,
+    )
+
+    sibling_usage_ids = {item["api_usage_id"] for item in sibling_result["items"]}
+
+    assert sibling_result["total"] == 1
+    assert str(sibling_usage.id) in sibling_usage_ids
+    assert str(selected_usage.id) not in sibling_usage_ids
+    assert str(legacy_usage.id) not in sibling_usage_ids

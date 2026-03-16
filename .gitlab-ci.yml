@@ -646,9 +646,10 @@ test:integration:ui:
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_ui.py
   artifacts:
-    when: on_failure
+    when: always
     paths:
       - backend/tests/integration/screenshots/
+      - backend/tests/integration/screenshots/*.png
     expire_in: 7 days
 
 .test:integration:api:template:

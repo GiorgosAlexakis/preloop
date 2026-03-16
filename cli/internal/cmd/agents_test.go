@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -275,6 +276,41 @@ func TestFilterAgentsPendingEnrollmentSkipsRemoteManagedAgent(t *testing.T) {
 	}
 	if len(candidates) != 1 || candidates[0].Name != "Codex CLI" {
 		t.Fatalf("expected only the unenrolled agent to remain, got %#v", candidates)
+	}
+}
+
+func TestPromptToOnboardCandidates_DeclineContinuesToNextAgent(t *testing.T) {
+	input := strings.NewReader("n\ny\n")
+	output := &bytes.Buffer{}
+	candidates := []AgentConfig{
+		{Name: "OpenClaw", ConfigPath: "/tmp/openclaw.json"},
+		{Name: "Codex CLI", ConfigPath: "/tmp/codex.json"},
+	}
+
+	var enrolled []string
+	err := promptToOnboardCandidates(
+		input,
+		output,
+		candidates,
+		false,
+		func(agent AgentConfig) error {
+			enrolled = append(enrolled, agent.Name)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(enrolled) != 1 || enrolled[0] != "Codex CLI" {
+		t.Fatalf("expected only the second agent to be enrolled, got %#v", enrolled)
+	}
+	rendered := output.String()
+	if !strings.Contains(rendered, "Onboard OpenClaw into managed Preloop access now?") {
+		t.Fatalf("expected first prompt in output, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Onboard Codex CLI into managed Preloop access now?") {
+		t.Fatalf("expected second prompt in output, got %q", rendered)
 	}
 }
 

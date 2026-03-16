@@ -542,3 +542,20 @@ def test_get_gateway_usage_by_model_isolates_runtime_session_with_legacy_fallbac
     assert result[0]["completion_tokens"] == 20
     assert result[0]["total_tokens"] == 60
     assert result[0]["estimated_cost"] == 0.4
+
+    sibling_result = crud_api_usage.get_gateway_usage_by_model(
+        db_session,
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(sibling_session.id),
+        flow_execution_id=str(execution.id),
+        start_date=start_date,
+        end_date=end_date,
+        limit=20,
+    )
+
+    assert len(sibling_result) == 1
+    assert sibling_result[0]["request_count"] == 1
+    assert sibling_result[0]["prompt_tokens"] == 20
+    assert sibling_result[0]["completion_tokens"] == 10
+    assert sibling_result[0]["total_tokens"] == 30
+    assert sibling_result[0]["estimated_cost"] == 0.2
