@@ -74,6 +74,15 @@ interface Flow {
   trigger_event_type: string;
 }
 
+interface ToolActivityEntry {
+  key: string;
+  timestamp: string;
+  toolName: string;
+  serverName: string;
+  status?: string;
+  detail?: string;
+}
+
 @customElement('flow-execution-view')
 export class FlowExecutionView extends LitElement {
   // Vaadin Router lifecycle callback
@@ -92,6 +101,17 @@ export class FlowExecutionView extends LitElement {
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 16px;
         margin-bottom: 16px;
+      }
+      .summary-value {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: var(--sl-color-neutral-900);
+        overflow-wrap: anywhere;
+      }
+      .summary-subtext {
+        margin-top: 6px;
+        color: var(--sl-color-neutral-600);
+        font-size: 0.875rem;
       }
       .execution-tabs {
         margin-bottom: 16px;
@@ -447,7 +467,17 @@ export class FlowExecutionView extends LitElement {
         font-size: 0.875rem;
         overflow-wrap: anywhere;
       }
-      @media (min-width: 1400px) {
+      .tool-activity-note {
+        margin-top: 12px;
+        color: var(--sl-color-neutral-600);
+        font-size: 0.875rem;
+      }
+      .tool-activity-empty {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+      @media (min-width: 1500px) {
         .output-workspace {
           display: grid;
           grid-template-columns: minmax(0, 2fr) minmax(320px, 420px);
@@ -490,6 +520,9 @@ export class FlowExecutionView extends LitElement {
 
   @state()
   private toolCalls = 0;
+
+  @state()
+  private liveToolActivityEvents: FlowExecutionUpdate[] = [];
 
   @state()
   private budgetUsed = 0;
@@ -670,6 +703,12 @@ export class FlowExecutionView extends LitElement {
         return;
       }
 
+      if (message.type === 'tool_call' || message.type === 'mcp_call') {
+        this.liveToolActivityEvents = [...this.liveToolActivityEvents, message];
+        this.toolCalls++;
+        return;
+      }
+
       // For agent log lines, add to buffer for controlled rendering
       // For other message types (status updates, etc.), add directly
       if (message.type === 'agent_log_line') {
@@ -730,12 +769,6 @@ export class FlowExecutionView extends LitElement {
         }
         this.requestUpdate();
       }
-
-      // Track tool calls
-      if (message.type === 'tool_call' || message.type === 'mcp_call') {
-        this.toolCalls++;
-      }
-
       // Handle real-time tool calls update
       if (message.type === 'tool_calls_update') {
         this.toolCalls = message.payload.tool_calls || 0;
@@ -883,6 +916,7 @@ export class FlowExecutionView extends LitElement {
       this.gatewayEventsError = null;
       this.gatewayEvents = [];
       this.gatewayEventsSource = null;
+      this.liveToolActivityEvents = [];
 
       // Fetch execution details
       this.execution = await getFlowExecution(this.executionId);
@@ -1117,54 +1151,9 @@ export class FlowExecutionView extends LitElement {
     if (!this.execution?.mcp_usage_logs?.length) {
       return;
     }
-
-    const existingToolEvents = new Set(
-      this.logs
-        .filter((log) => log.type === 'tool_call' || log.type === 'mcp_call')
-        .map((log) =>
-          this.getToolActivityKey(log.timestamp, log.payload?.tool_name)
-        )
-    );
-
-    const restoredToolLogs = this.execution.mcp_usage_logs
-      .filter((entry) => entry && typeof entry === 'object')
-      .map((entry) => {
-        const timestamp =
-          typeof entry.timestamp === 'string'
-            ? entry.timestamp
-            : this.execution?.start_time || new Date().toISOString();
-        const toolName =
-          typeof entry.tool_name === 'string' ? entry.tool_name : 'unknown';
-        return {
-          execution_id: this.executionId || this.execution?.id || '',
-          timestamp,
-          type: 'mcp_call',
-          payload: {
-            ...entry,
-            tool_name: toolName,
-            message: `Called tool: ${toolName}`,
-            restored: true,
-          },
-        } satisfies FlowExecutionUpdate;
-      })
-      .filter(
-        (log) =>
-          !existingToolEvents.has(
-            this.getToolActivityKey(log.timestamp, log.payload.tool_name)
-          )
-      );
-
-    if (restoredToolLogs.length > 0) {
-      this.logs = [...this.logs, ...restoredToolLogs].sort(
-        (left, right) =>
-          new Date(left.timestamp).getTime() -
-          new Date(right.timestamp).getTime()
-      );
+    if (this.execution.mcp_usage_logs.length > this.toolCalls) {
+      this.toolCalls = this.execution.mcp_usage_logs.length;
     }
-  }
-
-  private getToolActivityKey(timestamp?: string, toolName?: string): string {
-    return `${timestamp || 'no-timestamp'}:${toolName || 'unknown'}`;
   }
 
   private getGatewayEventKey(event: FlowGatewayEvent): string {
@@ -1182,53 +1171,180 @@ export class FlowExecutionView extends LitElement {
     ].join(':');
   }
 
-  private getToolActivityEntries(): FlowExecutionUpdate[] {
-    return [...this.logs]
-      .filter((log) => log.type === 'tool_call' || log.type === 'mcp_call')
+  private getTotalToolCallCount(): number {
+    const persistedCount = Array.isArray(this.execution?.mcp_usage_logs)
+      ? this.execution.mcp_usage_logs.length
+      : 0;
+    return Math.max(
+      this.toolCalls,
+      persistedCount,
+      this.getToolActivityEntries().length
+    );
+  }
+
+  private normalizeToolName(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+    if (
+      /^v\d+$/i.test(normalized) ||
+      /^(mcp|tool|tools|http|https)$/i.test(normalized) ||
+      normalized.startsWith('/') ||
+      normalized.includes('://') ||
+      normalized.split('/').length > 1
+    ) {
+      return null;
+    }
+    return normalized;
+  }
+
+  private extractToolNameFromText(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    for (const pattern of [
+      /called tool:\s*([a-zA-Z0-9._:-]+)/i,
+      /tool:\s*([a-zA-Z0-9._:-]+)/i,
+    ]) {
+      const match = value.match(pattern);
+      const toolName = this.normalizeToolName(match?.[1]);
+      if (toolName) {
+        return toolName;
+      }
+    }
+    return null;
+  }
+
+  private normalizeToolActivityEntry(
+    payload: any,
+    timestamp: string
+  ): ToolActivityEntry | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const toolName =
+      this.normalizeToolName(payload.tool_name) ||
+      this.normalizeToolName(payload.tool) ||
+      this.normalizeToolName(payload.name) ||
+      this.extractToolNameFromText(payload.message) ||
+      this.extractToolNameFromText(payload.result_summary) ||
+      this.extractToolNameFromText(payload.error);
+
+    if (!toolName) {
+      return null;
+    }
+
+    const serverName =
+      typeof payload.server_name === 'string' && payload.server_name.trim()
+        ? payload.server_name.trim()
+        : 'MCP';
+    const detail =
+      typeof payload.result_summary === 'string' &&
+      payload.result_summary.trim()
+        ? payload.result_summary.trim()
+        : typeof payload.error === 'string' && payload.error.trim()
+          ? payload.error.trim()
+          : typeof payload.message === 'string' &&
+              payload.message.trim() &&
+              !payload.message.includes(toolName)
+            ? payload.message.trim()
+            : undefined;
+
+    return {
+      key: [
+        timestamp || 'no-timestamp',
+        serverName,
+        toolName,
+        payload.status || 'unknown',
+        detail || '',
+      ].join(':'),
+      timestamp,
+      toolName,
+      serverName,
+      status: typeof payload.status === 'string' ? payload.status : undefined,
+      detail,
+    };
+  }
+
+  private getToolActivityEntries(): ToolActivityEntry[] {
+    const entries: ToolActivityEntry[] = [];
+
+    const persistedLogs = Array.isArray(this.execution?.mcp_usage_logs)
+      ? this.execution.mcp_usage_logs
+      : [];
+    for (const entry of persistedLogs) {
+      const timestamp =
+        typeof entry?.timestamp === 'string'
+          ? entry.timestamp
+          : this.execution?.start_time || new Date().toISOString();
+      const normalized = this.normalizeToolActivityEntry(entry, timestamp);
+      if (normalized) {
+        entries.push(normalized);
+      }
+    }
+
+    for (const log of this.liveToolActivityEvents) {
+      if (log.type !== 'tool_call' && log.type !== 'mcp_call') {
+        continue;
+      }
+      const normalized = this.normalizeToolActivityEntry(
+        log.payload,
+        log.timestamp
+      );
+      if (normalized) {
+        entries.push(normalized);
+      }
+    }
+
+    const seen = new Set<string>();
+    return entries
       .sort(
         (left, right) =>
           new Date(right.timestamp).getTime() -
           new Date(left.timestamp).getTime()
-      );
+      )
+      .filter((entry) => {
+        if (seen.has(entry.key)) {
+          return false;
+        }
+        seen.add(entry.key);
+        return true;
+      });
   }
 
-  private renderToolActivityList(toolEntries: FlowExecutionUpdate[]) {
+  private renderToolActivityList(toolEntries: ToolActivityEntry[]) {
     return html`
       <div class="tool-activity-list">
         ${toolEntries.map((entry) => {
-          const payload = entry.payload || {};
           return html`
             <div class="tool-activity-item">
               <div class="tool-activity-header">
                 <div>
-                  <div class="tool-activity-title">
-                    ${payload.tool_name || 'Unknown tool'}
-                  </div>
+                  <div class="tool-activity-title">${entry.toolName}</div>
                   <div class="tool-activity-meta">
-                    ${payload.server_name || 'Unknown server'} ·
-                    ${formatLocalTime(entry.timestamp)}
+                    ${entry.serverName} · ${formatLocalTime(entry.timestamp)}
                   </div>
                 </div>
-                ${payload.status
+                ${entry.status
                   ? html`
                       <sl-badge
-                        variant=${payload.status === 'error'
+                        variant=${entry.status === 'error' ||
+                        entry.status === 'failed'
                           ? 'danger'
                           : 'success'}
                       >
-                        ${payload.status}
+                        ${entry.status}
                       </sl-badge>
                     `
                   : ''}
               </div>
-              ${payload.result_summary || payload.error || payload.message
-                ? html`
-                    <div class="tool-activity-meta">
-                      ${payload.result_summary ||
-                      payload.error ||
-                      payload.message}
-                    </div>
-                  `
+              ${entry.detail
+                ? html`<div class="tool-activity-meta">${entry.detail}</div>`
                 : ''}
             </div>
           `;
@@ -1239,7 +1355,8 @@ export class FlowExecutionView extends LitElement {
 
   private renderToolActivitySidebar() {
     const toolEntries = this.getToolActivityEntries();
-    if (toolEntries.length === 0) {
+    const totalToolCalls = this.getTotalToolCallCount();
+    if (toolEntries.length === 0 && totalToolCalls === 0) {
       return '';
     }
     return html`
@@ -1254,7 +1371,24 @@ export class FlowExecutionView extends LitElement {
           </span>
           <sl-badge pill>${toolEntries.length}</sl-badge>
         </div>
-        ${this.renderToolActivityList(toolEntries)}
+        ${toolEntries.length > 0
+          ? this.renderToolActivityList(toolEntries)
+          : html`
+              <div class="tool-activity-empty">
+                Tool calls are being counted, but no structured tool names have
+                been captured yet.
+              </div>
+            `}
+        ${totalToolCalls > toolEntries.length
+          ? html`
+              <div class="tool-activity-note">
+                ${totalToolCalls.toLocaleString()} total
+                call${totalToolCalls === 1 ? '' : 's'} recorded, showing
+                ${toolEntries.length.toLocaleString()} structured
+                entr${toolEntries.length === 1 ? 'y' : 'ies'}.
+              </div>
+            `
+          : ''}
       </sl-card>
     `;
   }
@@ -1268,16 +1402,9 @@ export class FlowExecutionView extends LitElement {
       <sl-card class="output-sidebar-card">
         <div slot="header">
           <sl-icon name="info-circle"></sl-icon>
-          Execution Details
+          Live Summary
         </div>
         <div class="execution-metadata-list">
-          <div class="execution-metadata-label">Status</div>
-          <div class="execution-metadata-value">
-            <sl-badge variant=${this.getStatusVariant(this.execution.status)}
-              >${this.execution.status}</sl-badge
-            >
-          </div>
-
           ${this.flow
             ? html`
                 <div class="execution-metadata-label">Flow</div>
@@ -1294,27 +1421,6 @@ export class FlowExecutionView extends LitElement {
 
           <div class="execution-metadata-label">Triggered By</div>
           <div class="execution-metadata-value">${this.getTriggerSource()}</div>
-
-          <div class="execution-metadata-label">Started</div>
-          <div class="execution-metadata-value">
-            <sl-tooltip content=${formatUTCDateTime(this.execution.start_time)}>
-              <sl-relative-time
-                date=${parseUTCDate(this.execution.start_time).toISOString()}
-              ></sl-relative-time>
-            </sl-tooltip>
-          </div>
-
-          ${this.execution.end_time
-            ? html`
-                <div class="execution-metadata-label">Duration</div>
-                <div class="execution-metadata-value">
-                  ${calculateDuration(
-                    this.execution.start_time,
-                    this.execution.end_time
-                  )}
-                </div>
-              `
-            : ''}
           ${this.execution.agent_session_reference
             ? html`
                 <div class="execution-metadata-label">Session</div>
@@ -1324,8 +1430,15 @@ export class FlowExecutionView extends LitElement {
               `
             : ''}
 
-          <div class="execution-metadata-label">Tool Calls</div>
-          <div class="execution-metadata-value">${this.toolCalls}</div>
+          <div class="execution-metadata-label">Recorded Calls</div>
+          <div class="execution-metadata-value">
+            ${this.getTotalToolCallCount()}
+          </div>
+
+          <div class="execution-metadata-label">Detailed Activity</div>
+          <div class="execution-metadata-value">
+            ${this.getToolActivityEntries().length}
+          </div>
 
           <div class="execution-metadata-label">
             ${this.hasPricing ? 'Budget' : 'Tokens'}
@@ -1885,112 +1998,88 @@ ${previewText}</pre
               : ''}
           </div>
 
-          <!-- Execution Metadata Card -->
-          <sl-card style="margin-bottom: 16px;">
-            <div slot="header">
-              <sl-icon name="info-circle"></sl-icon>
-              Execution Details
-            </div>
-            <div
-              style="display: grid; grid-template-columns: 150px 1fr; gap: 12px;"
-            >
-              <strong>Execution ID:</strong>
-              <span>${this.execution.id}</span>
-
-              ${this.flow
-                ? html`
-                    <strong>Flow:</strong>
-                    <a href="/console/flows/${this.flow.id}"
-                      >${this.flow.name}</a
-                    >
-
-                    <strong>Agent Type:</strong>
-                    <sl-badge>${this.flow.agent_type}</sl-badge>
-                  `
-                : ''}
-
-              <strong>Triggered By:</strong>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <sl-icon name="${this.getTriggerIcon()}"></sl-icon>
-                ${this.getTriggerSource()}
-              </div>
-
-              <strong>Started:</strong>
-              <sl-tooltip
-                content=${formatUTCDateTime(this.execution.start_time)}
-              >
-                <sl-relative-time
-                  date=${parseUTCDate(this.execution.start_time).toISOString()}
-                ></sl-relative-time>
-              </sl-tooltip>
-
-              ${this.execution.end_time
-                ? html`
-                    <strong>Duration:</strong>
-                    <span>
-                      ${calculateDuration(
-                        this.execution.start_time,
-                        this.execution.end_time
-                      )}
-                    </span>
-                  `
-                : ''}
-              ${this.execution.agent_session_reference
-                ? html`
-                    <strong>Session:</strong>
-                    <code style="font-size: 0.85em;">
-                      ${this.execution.agent_session_reference.slice(0, 12)}...
-                    </code>
-                  `
-                : ''}
-            </div>
-          </sl-card>
-
-          <!-- Status Grid -->
           <div class="summary-grid">
             <sl-card>
               <div slot="header">
                 <sl-icon name="info-circle"></sl-icon> Status
               </div>
-              <sl-badge variant=${this.getStatusVariant(this.execution.status)}
-                >${this.execution.status}</sl-badge
-              >
+              <div class="summary-value">
+                <sl-badge
+                  variant=${this.getStatusVariant(this.execution.status)}
+                  >${this.execution.status}</sl-badge
+                >
+              </div>
+              <div class="summary-subtext">Execution ${this.execution.id}</div>
             </sl-card>
             <sl-card>
-              <div slot="header"><sl-icon name="clock"></sl-icon> Started</div>
+              <div slot="header"><sl-icon name="diagram-3"></sl-icon> Flow</div>
+              <div class="summary-value">
+                ${this.flow
+                  ? html`<a href="/console/flows/${this.flow.id}"
+                      >${this.flow.name}</a
+                    >`
+                  : 'Unknown flow'}
+              </div>
+              <div class="summary-subtext">
+                ${this.flow?.agent_type
+                  ? html`Agent: <sl-badge>${this.flow.agent_type}</sl-badge>`
+                  : this.getTriggerSource()}
+              </div>
+            </sl-card>
+            <sl-card>
+              <div slot="header"><sl-icon name="clock"></sl-icon> Timing</div>
               <sl-tooltip
                 content=${formatUTCDateTime(this.execution.start_time)}
               >
-                <sl-relative-time
-                  date=${parseUTCDate(this.execution.start_time).toISOString()}
-                ></sl-relative-time>
+                <div class="summary-value">
+                  <sl-relative-time
+                    date=${parseUTCDate(
+                      this.execution.start_time
+                    ).toISOString()}
+                  ></sl-relative-time>
+                </div>
               </sl-tooltip>
+              <div class="summary-subtext">
+                ${this.execution.end_time
+                  ? calculateDuration(
+                      this.execution.start_time,
+                      this.execution.end_time
+                    )
+                  : 'Running'}
+              </div>
             </sl-card>
             <sl-card>
               <div slot="header">
-                <sl-icon name="tools"></sl-icon> Tool Calls
+                <sl-icon name="${this.getTriggerIcon()}"></sl-icon> Trigger
               </div>
-              ${this.toolCalls}
+              <div class="summary-value">${this.getTriggerSource()}</div>
+              <div class="summary-subtext">
+                ${this.execution.agent_session_reference
+                  ? html`Session:
+                      <code
+                        >${this.execution.agent_session_reference.slice(
+                          0,
+                          12
+                        )}...</code
+                      >`
+                  : 'Flow-triggered run'}
+              </div>
             </sl-card>
             <sl-card>
               <div slot="header">
                 <sl-icon name="${this.hasPricing ? 'cash' : 'cpu'}"></sl-icon>
-                ${this.hasPricing ? 'Budget' : 'Tokens Used'}
+                ${this.hasPricing ? 'Cost' : 'Tokens'}
               </div>
-              ${this.hasPricing
-                ? html`
-                    <div>
-                      <div style="font-size: 1.2em; font-weight: bold;">
-                        $${this.budgetUsed.toFixed(2)}
-                      </div>
-                      <div
-                        style="font-size: 0.85em; color: var(--sl-color-neutral-600); margin-top: 4px;"
-                      >
-                        ${this.totalTokens.toLocaleString()} tokens
-                      </div>
-                    </div>
-                  `
-                : html` ${this.totalTokens.toLocaleString()} `}
+              <div class="summary-value">
+                ${this.hasPricing
+                  ? html`$${this.budgetUsed.toFixed(2)}`
+                  : this.totalTokens.toLocaleString()}
+              </div>
+              <div class="summary-subtext">
+                ${this.hasPricing
+                  ? `${this.totalTokens.toLocaleString()} tokens`
+                  : `${this.getTotalToolCallCount().toLocaleString()} tool calls recorded`}
+              </div>
             </sl-card>
           </div>
 
@@ -2274,7 +2363,10 @@ ${log.payload.content}</pre
         return 'Agent session stopped';
       case 'tool_call':
       case 'mcp_call':
-        return `Called tool: ${log.payload.tool_name || 'unknown'}`;
+        return `Called tool: ${
+          this.normalizeToolActivityEntry(log.payload, log.timestamp)
+            ?.toolName || 'structured MCP call'
+        }`;
       case 'budget_update':
         return `Budget used: $${log.payload.budget_used?.toFixed(2) || '0.00'}`;
       default:

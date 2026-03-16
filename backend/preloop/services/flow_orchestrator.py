@@ -1411,6 +1411,8 @@ class FlowExecutionOrchestrator:
                         )
                         self._success_sentinel_seen.set()
 
+                previous_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
+
                 # Parse log line for structured data (includes tool call detection)
                 self.execution_logger.parse_agent_logs([log_line])
 
@@ -1444,10 +1446,23 @@ class FlowExecutionOrchestrator:
                         await self._persist_live_metrics()
 
                 # Check if this log line indicates a tool call was detected
-                previous_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
-                if previous_tool_calls_count > self.tool_calls_count:
-                    self.tool_calls_count = previous_tool_calls_count
+                updated_tool_calls_count = len(self.execution_logger.mcp_usage_logs)
+                if updated_tool_calls_count > self.tool_calls_count:
+                    new_tool_entries = self.execution_logger.mcp_usage_logs[
+                        previous_tool_calls_count:updated_tool_calls_count
+                    ]
+                    self.tool_calls_count = updated_tool_calls_count
                     logger.info(f"Tool call detected (total: {self.tool_calls_count})")
+
+                    for tool_entry in new_tool_entries:
+                        await self._publish_update(
+                            "mcp_call",
+                            {
+                                **tool_entry,
+                                "timestamp": tool_entry.get("timestamp")
+                                or datetime.now(timezone.utc).isoformat(),
+                            },
+                        )
 
                     # Emit tool call count update
                     await self._publish_update(

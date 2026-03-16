@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import String, case, cast, func, or_
+from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -351,7 +351,10 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(
                 or_(
                     ApiUsage.runtime_session_id == runtime_session_id,
-                    ApiUsage.flow_execution_id == flow_execution_id,
+                    and_(
+                        ApiUsage.runtime_session_id.is_(None),
+                        ApiUsage.flow_execution_id == flow_execution_id,
+                    ),
                 )
             )
         elif runtime_session_id:

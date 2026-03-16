@@ -1,0 +1,421 @@
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+import { LitElement, html, css, unsafeCSS } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
+import { getApiKeys, createApiKey, deleteApiKey } from '../../../api';
+import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/menu/menu.js';
+import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import '@shoelace-style/shoelace/dist/components/card/card.js';
+import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
+import consoleStyles from '../../../styles/console-styles.css?inline';
+import { parseUTCDate } from '../../../utils/date';
+let ApiKeysView = class ApiKeysView extends LitElement {
+    constructor() {
+        super(...arguments);
+        this.apiKeys = [];
+        this.isLoading = true;
+        this.error = null;
+        this.isCreateModalOpen = false;
+        this.isShowKeyModalOpen = false;
+        this.newKeyName = '';
+        this.newKeyExpiry = 'never';
+        this.newKeyExpiryLabel = 'Never';
+        this.newlyCreatedKey = null;
+        this.isSelectOpen = false;
+        this.createError = null;
+    }
+    async connectedCallback() {
+        super.connectedCallback();
+        await this.fetchApiKeys();
+    }
+    async fetchApiKeys() {
+        this.isLoading = true;
+        this.error = null;
+        try {
+            this.apiKeys = await getApiKeys();
+        }
+        catch (error) {
+            this.error =
+                error instanceof Error ? error.message : 'Failed to fetch API keys';
+        }
+        finally {
+            this.isLoading = false;
+        }
+    }
+    async handleCreateApiKey() {
+        if (!this.newKeyName) {
+            return;
+        }
+        this.createError = null;
+        const trimmedName = this.newKeyName.trim();
+        if (!trimmedName) {
+            this.createError = 'Please enter a name for your key.';
+            return;
+        }
+        const existingNames = new Set(this.apiKeys.map((k) => k.name.trim().toLowerCase()));
+        if (existingNames.has(trimmedName.toLowerCase())) {
+            this.createError = 'API key with this name already exists.';
+            return;
+        }
+        let expires_at = null;
+        if (this.newKeyExpiry !== 'never') {
+            const now = new Date();
+            const days = parseInt(this.newKeyExpiry.replace('days', ''));
+            now.setDate(now.getDate() + days);
+            expires_at = now.toISOString();
+        }
+        try {
+            const newKey = await createApiKey(trimmedName, expires_at);
+            this.newlyCreatedKey = newKey;
+            this.isCreateModalOpen = false;
+            this.isShowKeyModalOpen = true;
+            this.newKeyName = ''; // Reset for next time
+            this.newKeyExpiry = 'never'; // Reset for next time
+            this.newKeyExpiryLabel = 'Never'; // Reset for next time
+            await this.fetchApiKeys();
+        }
+        catch (error) {
+            this.createError =
+                error instanceof Error ? error.message : 'Failed to create API key';
+        }
+    }
+    async handleDeleteApiKey(keyId) {
+        if (confirm('Are you sure you want to revoke this API key?')) {
+            try {
+                await deleteApiKey(keyId);
+                await this.fetchApiKeys();
+            }
+            catch (error) {
+                console.error('Failed to delete API key:', error);
+            }
+        }
+    }
+    _copyKey(e) {
+        const button = e.currentTarget;
+        const pre = button.previousElementSibling;
+        if (pre && pre.tagName === 'PRE') {
+            const code = pre.querySelector('code');
+            if (code) {
+                navigator.clipboard.writeText(code.innerText).then(() => {
+                    const originalHTML = button.innerHTML;
+                    button.innerHTML =
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg>';
+                    setTimeout(() => {
+                        button.innerHTML = originalHTML;
+                    }, 2000);
+                });
+            }
+        }
+    }
+    _handleExpirySelect(e) {
+        const item = e.detail.item;
+        this.newKeyExpiry = item.value;
+        this.newKeyExpiryLabel = item.textContent?.trim() ?? 'Never';
+    }
+    render() {
+        const renderContent = () => {
+            if (this.isLoading) {
+                return html `<div class="loading-indicator">
+          <sl-spinner></sl-spinner>
+        </div>`;
+            }
+            if (this.error) {
+                return html `
+          <sl-alert variant="danger" open>
+            <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+            <strong>Error:</strong> ${this.error}
+          </sl-alert>
+        `;
+            }
+            if (this.apiKeys.length === 0) {
+                return html `
+          <sl-alert variant="primary" open>
+            <sl-icon slot="icon" name="info-circle"></sl-icon>
+            No API keys created yet.
+            <a
+              href="#"
+              @click=${(e) => {
+                    e.preventDefault();
+                    this.isCreateModalOpen = true;
+                }}
+              >Add an API Key</a
+            >
+          </sl-alert>
+        `;
+            }
+            return html `
+        <sl-card class="table-card">
+          <table class="styled-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Created</th>
+                <th>Last Used</th>
+                <th>Expires</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${repeat(this.apiKeys, (key) => key.id, (key) => html `
+                  <tr>
+                    <td>${key.name}</td>
+                    <td>
+                      ${parseUTCDate(key.created_at).toLocaleDateString()}
+                    </td>
+                    <td>
+                      ${key.last_used_at
+                ? parseUTCDate(key.last_used_at).toLocaleDateString()
+                : 'Never'}
+                    </td>
+                    <td>
+                      ${key.expires_at
+                ? parseUTCDate(key.expires_at).toLocaleDateString()
+                : 'Never'}
+                    </td>
+                    <td>
+                      <sl-button
+                        variant="danger"
+                        size="small"
+                        @click=${() => this.handleDeleteApiKey(key.id)}
+                        >Revoke</sl-button
+                      >
+                    </td>
+                  </tr>
+                `)}
+            </tbody>
+          </table>
+        </sl-card>
+      `;
+        };
+        return html `
+      <view-header headerText="API Keys" width="narrow">
+        <div slot="main-column">
+          <sl-button
+            variant="primary"
+            @click=${() => {
+            this.isCreateModalOpen = true;
+        }}
+            >Create New API Key</sl-button
+          >
+        </div>
+      </view-header>
+      <div class="column-layout narrow">
+        <div class="main-column">${renderContent()}</div>
+        <div class="side-column"></div>
+      </div>
+
+      <sl-dialog label="Create API Key" .open=${this.isCreateModalOpen}>
+        ${this.createError
+            ? html `<sl-alert variant="danger" open style="margin-bottom: 1rem;">
+              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+              <strong>Error:</strong> ${this.createError}
+            </sl-alert>`
+            : null}
+        <sl-input
+          autofocus
+          style="margin-bottom: 1rem;"
+          label="Key Name"
+          placeholder="Enter a name for your key"
+          .value=${this.newKeyName}
+          @sl-input=${(e) => (this.newKeyName = e.target.value)}
+          @keydown=${(e) => {
+            if (e.key === 'Enter' && this.newKeyName) {
+                this.handleCreateApiKey();
+            }
+        }}
+        ></sl-input>
+        <label class="form-label">Key Expiry</label>
+        <sl-dropdown class="expiry-dropdown">
+          <sl-button slot="trigger" caret>${this.newKeyExpiryLabel}</sl-button>
+          <sl-menu @sl-select=${this._handleExpirySelect}>
+            <sl-menu-item value="never">Never</sl-menu-item>
+            <sl-menu-item value="7days">7 Days</sl-menu-item>
+            <sl-menu-item value="30days">30 Days</sl-menu-item>
+            <sl-menu-item value="90days">90 Days</sl-menu-item>
+          </sl-menu>
+        </sl-dropdown>
+        <sl-button
+          slot="footer"
+          @click=${() => {
+            this.isCreateModalOpen = false;
+            this.createError = null;
+        }}
+          >Cancel</sl-button
+        >
+        <sl-button
+          slot="footer"
+          variant="primary"
+          @click=${this.handleCreateApiKey}
+          .disabled=${!this.newKeyName}
+          >Create</sl-button
+        >
+      </sl-dialog>
+
+      <sl-dialog
+        label="API Key Created"
+        .open=${this.isShowKeyModalOpen && this.newlyCreatedKey}
+        @sl-hide=${() => (this.isShowKeyModalOpen = false)}
+      >
+        <p>Here is your new API key:</p>
+        <div class="code-container">
+          <pre><code>${this.newlyCreatedKey?.key}</code></pre>
+          <button class="copy-btn" @click=${this._copyKey}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-clipboard"
+              viewBox="0 0 16 16"
+            >
+              <path
+                d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
+              />
+              <path
+                d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
+              />
+            </svg>
+          </button>
+        </div>
+        <div class="warning-text">
+          <sl-icon name="exclamation-triangle"></sl-icon>
+          <span>Please copy it now. You will not be able to see it again.</span>
+        </div>
+        <sl-button
+          slot="footer"
+          variant="primary"
+          autofocus
+          @click=${() => (this.isShowKeyModalOpen = false)}
+          >I have copied my key</sl-button
+        >
+      </sl-dialog>
+    `;
+    }
+};
+ApiKeysView.styles = [
+    unsafeCSS(consoleStyles),
+    css `
+      .loading-indicator {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 200px;
+      }
+      .form-label {
+        font-size: var(--sl-input-label-font-size-medium);
+        display: inline-block;
+        color: var(--sl-input-label-color);
+        margin-bottom: var(--sl-spacing-3x-small);
+      }
+      .expiry-dropdown {
+        display: block;
+        margin-bottom: 1rem;
+      }
+      .expiry-dropdown::part(trigger) {
+        width: 100%;
+      }
+      .expiry-dropdown sl-button {
+        width: 100%;
+        text-align: left;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: var(--sl-spacing-medium);
+        text-align: left;
+        border-bottom: 1px solid var(--sl-color-neutral-200);
+      }
+      th {
+        background-color: var(--sl-color-neutral-50);
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      .code-container {
+        position: relative;
+        background-color: var(--sl-color-neutral-100);
+        border-radius: var(--sl-border-radius-medium);
+        margin: 1rem 0;
+      }
+      .code-container pre {
+        margin: 0;
+        padding: var(--sl-spacing-medium);
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .copy-btn {
+        position: absolute;
+        top: var(--sl-spacing-x-small);
+        right: var(--sl-spacing-x-small);
+        background: none;
+        border: none;
+        color: var(--sl-color-neutral-600);
+        cursor: pointer;
+        padding: var(--sl-spacing-2x-small);
+        border-radius: var(--sl-border-radius-circle);
+      }
+      .copy-btn:hover {
+        background-color: var(--sl-color-neutral-200);
+      }
+      .warning-text {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-x-small);
+        color: var(--sl-color-neutral-600);
+        margin-top: var(--sl-spacing-medium);
+        font-size: var(--sl-font-size-small);
+      }
+    `,
+];
+__decorate([
+    state()
+], ApiKeysView.prototype, "apiKeys", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "isLoading", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "error", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "isCreateModalOpen", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "isShowKeyModalOpen", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "newKeyName", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "newKeyExpiry", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "newKeyExpiryLabel", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "newlyCreatedKey", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "isSelectOpen", void 0);
+__decorate([
+    state()
+], ApiKeysView.prototype, "createError", void 0);
+ApiKeysView = __decorate([
+    customElement('api-keys-view')
+], ApiKeysView);
+export { ApiKeysView };

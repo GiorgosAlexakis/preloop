@@ -1,0 +1,226 @@
+import { html, fixture, expect, oneEvent } from '@open-wc/testing';
+import sinon from 'sinon';
+import './mcp-server-form';
+describe('MCPServerForm', () => {
+    let fetchStub;
+    beforeEach(() => {
+        localStorage.setItem('accessToken', 'test-access-token');
+        localStorage.setItem('refreshToken', 'test-refresh-token');
+        fetchStub = sinon.stub(window, 'fetch');
+        // Default stub so any unexpected fetch resolves; individual tests override via stubApi()
+        fetchStub.callsFake(async () => new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        }));
+    });
+    afterEach(() => {
+        fetchStub.restore();
+        localStorage.clear();
+    });
+    function stubApi(opts) {
+        fetchStub.callsFake(async (input, init) => {
+            const url = typeof input === 'string' ? input : input.toString();
+            const method = (init?.method || 'GET').toUpperCase();
+            if (url.includes('/api/v1/mcp-servers') && method === 'POST') {
+                return new Response(JSON.stringify({
+                    id: opts?.createId || 'new-server-1',
+                    name: 'Test Server',
+                    url: 'http://localhost:8001',
+                }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+            if (url.match(/\/api\/v1\/mcp-servers\/[^/]+$/) && method === 'PUT') {
+                return new Response(JSON.stringify({
+                    id: opts?.updateId || 'server-1',
+                    name: 'Updated Server',
+                    url: 'http://localhost:8002',
+                }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+            if (url.includes('/api/v1/auth/refresh') && method === 'POST') {
+                return new Response(JSON.stringify({
+                    access_token: 'new-access-token',
+                    refresh_token: 'new-refresh-token',
+                }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+            return new Response(JSON.stringify({}), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        });
+    }
+    async function createForm(server = null) {
+        const el = (await fixture(html `<mcp-server-form
+        .server=${server}
+        .opened=${true}
+      ></mcp-server-form>`));
+        await el.updateComplete;
+        return el;
+    }
+    describe('Form rendering', () => {
+        it('renders Add MCP Server dialog when server is null', async () => {
+            const el = await createForm(null);
+            const dialog = el.shadowRoot?.querySelector('sl-dialog');
+            expect(dialog).to.exist;
+            expect(dialog?.getAttribute('label')).to.equal('Add MCP Server');
+            const nameInput = el.shadowRoot?.querySelector('sl-input[name="name"]');
+            expect(nameInput).to.exist;
+            expect(nameInput?.value).to.equal('');
+            const urlInput = el.shadowRoot?.querySelector('sl-input[name="url"]');
+            expect(urlInput).to.exist;
+            expect(urlInput?.value).to.equal('');
+            const addButton = el.shadowRoot?.querySelector('sl-button[variant="primary"]');
+            expect(addButton?.textContent?.trim()).to.equal('Add');
+        });
+        it('renders Edit MCP Server dialog when server is provided', async () => {
+            const server = {
+                id: 'server-1',
+                name: 'My Server',
+                url: 'http://localhost:8001',
+                transport: 'http-streaming',
+                auth_type: 'none',
+            };
+            const el = await createForm(server);
+            const dialog = el.shadowRoot?.querySelector('sl-dialog');
+            expect(dialog).to.exist;
+            expect(dialog?.getAttribute('label')).to.equal('Edit MCP Server');
+            const nameInput = el.shadowRoot?.querySelector('sl-input[name="name"]');
+            expect(nameInput?.value).to.equal('My Server');
+            const urlInput = el.shadowRoot?.querySelector('sl-input[name="url"]');
+            expect(urlInput?.value).to.equal('http://localhost:8001');
+            const saveButton = el.shadowRoot?.querySelector('sl-button[variant="primary"]');
+            expect(saveButton?.textContent?.trim()).to.equal('Save');
+        });
+        it('shows bearer token input when auth_type is bearer', async () => {
+            const server = {
+                id: 'server-1',
+                name: 'My Server',
+                url: 'http://localhost:8001',
+                auth_type: 'bearer',
+                auth_config: { token: 'secret-token' },
+            };
+            const el = await createForm(server);
+            const bearerInput = el.shadowRoot?.querySelector('sl-input[name="bearer_token"]');
+            expect(bearerInput).to.exist;
+            expect(bearerInput?.value).to.equal('secret-token');
+        });
+    });
+    describe('Validation', () => {
+        it('shows error when server name is empty on submit', async () => {
+            const el = await createForm(null);
+            el.serverUrl = 'http://localhost:8001';
+            el.serverName = '';
+            await el.handleSave();
+            await el.updateComplete;
+            expect(el.errorMessage).to.equal('Server name is required');
+            expect(fetchStub).not.to.have.been.called;
+        });
+        it('shows error when server URL is empty on submit', async () => {
+            const el = await createForm(null);
+            el.serverName = 'Test Server';
+            el.serverUrl = '';
+            await el.handleSave();
+            await el.updateComplete;
+            expect(el.errorMessage).to.equal('Server URL is required');
+            expect(fetchStub).not.to.have.been.called;
+        });
+        it('shows error when bearer auth selected but token is empty', async () => {
+            const el = await createForm(null);
+            el.serverName = 'Test Server';
+            el.serverUrl = 'http://localhost:8001';
+            el.authType = 'bearer';
+            el.bearerToken = '';
+            await el.handleSave();
+            await el.updateComplete;
+            expect(el.errorMessage).to.equal('Bearer token is required when using bearer authentication');
+            expect(fetchStub).not.to.have.been.called;
+        });
+    });
+    describe('Submit', () => {
+        it('calls createMCPServer and dispatches server-added when adding', async () => {
+            stubApi({ createId: 'new-123' });
+            const el = await createForm(null);
+            el.serverName = 'New Server';
+            el.serverUrl = 'http://localhost:8001';
+            const listener = oneEvent(el, 'server-added');
+            await el.handleSave();
+            const { detail } = await listener;
+            const createCall = fetchStub
+                .getCalls()
+                .find((c) => String(c.args[0]).includes('/api/v1/mcp-servers') &&
+                c.args[1]?.method === 'POST');
+            expect(createCall).to.exist;
+            const body = JSON.parse(createCall.args[1].body);
+            expect(body.name).to.equal('New Server');
+            expect(body.url).to.equal('http://localhost:8001');
+            expect(detail.server.id).to.equal('new-123');
+        });
+        it('calls updateMCPServer and dispatches server-updated when editing', async () => {
+            stubApi({ updateId: 'server-1' });
+            const server = {
+                id: 'server-1',
+                name: 'Old Name',
+                url: 'http://localhost:8001',
+                transport: 'http-streaming',
+                auth_type: 'none',
+            };
+            const el = await createForm(server);
+            el.serverName = 'Updated Name';
+            el.serverUrl = 'http://localhost:8002';
+            const listener = oneEvent(el, 'server-updated');
+            await el.handleSave();
+            const { detail } = await listener;
+            const updateCall = fetchStub
+                .getCalls()
+                .find((c) => String(c.args[0]).includes('/api/v1/mcp-servers/server-1') &&
+                c.args[1]?.method === 'PUT');
+            expect(updateCall).to.exist;
+            const body = JSON.parse(updateCall.args[1].body);
+            expect(body.name).to.equal('Updated Name');
+            expect(detail.server.id).to.equal('server-1');
+        });
+        it('dispatches close-modal with success=true after successful save', async () => {
+            stubApi();
+            const el = await createForm(null);
+            el.serverName = 'New Server';
+            el.serverUrl = 'http://localhost:8001';
+            const listener = oneEvent(el, 'close-modal');
+            await el.handleSave();
+            const { detail } = await listener;
+            expect(detail.success).to.be.true;
+        });
+        it('shows error message when API fails', async () => {
+            fetchStub.callsFake(async (input, init) => {
+                const url = typeof input === 'string' ? input : input.toString();
+                const method = (init?.method || 'GET').toUpperCase();
+                if (url.includes('/api/v1/mcp-servers') && method === 'POST') {
+                    return new Response(JSON.stringify({ detail: 'Server already exists' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+                }
+                return new Response(JSON.stringify({}), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            });
+            const el = await createForm(null);
+            el.serverName = 'New Server';
+            el.serverUrl = 'http://localhost:8001';
+            await el.handleSave();
+            await el.updateComplete;
+            expect(el.errorMessage).to.be.a('string').and.not.be.empty;
+        });
+    });
+    describe('Close modal', () => {
+        it('dispatches close-modal event on cancel', async () => {
+            const el = await createForm(null);
+            const cancelButton = el.shadowRoot?.querySelector('sl-button:not([variant="primary"])');
+            const listener = oneEvent(el, 'close-modal');
+            cancelButton?.click();
+            await listener;
+        });
+        it('dispatches close-modal on sl-request-close', async () => {
+            const el = await createForm(null);
+            const dialog = el.shadowRoot?.querySelector('sl-dialog');
+            const listener = oneEvent(el, 'close-modal');
+            dialog?.dispatchEvent(new CustomEvent('sl-request-close'));
+            await listener;
+        });
+    });
+});

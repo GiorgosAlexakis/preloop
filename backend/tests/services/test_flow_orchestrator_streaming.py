@@ -243,6 +243,34 @@ class TestLogStreaming:
         orchestrator._persist_live_metrics.assert_awaited()
 
     @pytest.mark.asyncio
+    async def test_stream_logs_publishes_structured_mcp_call_event(self, orchestrator):
+        """Detected MCP calls should be published as structured live events."""
+        mock_agent_executor = AsyncMock()
+
+        async def mock_stream(session_reference):
+            yield "Calling github/create_issue with args"
+
+        mock_agent_executor.stream_logs = mock_stream
+        orchestrator._persist_live_metrics = AsyncMock()
+        orchestrator._publish_update = AsyncMock()
+
+        await orchestrator._stream_logs_to_nats(mock_agent_executor, "session-123")
+
+        published_types = [
+            call.args[0] for call in orchestrator._publish_update.await_args_list
+        ]
+        assert "mcp_call" in published_types
+        mcp_call_payloads = [
+            call.args[1]
+            for call in orchestrator._publish_update.await_args_list
+            if call.args[0] == "mcp_call"
+        ]
+        assert len(mcp_call_payloads) == 1
+        assert mcp_call_payloads[0]["server_name"] == "github"
+        assert mcp_call_payloads[0]["tool_name"] == "create_issue"
+        assert mcp_call_payloads[0]["status"] == "detected"
+
+    @pytest.mark.asyncio
     async def test_persist_live_metrics_stores_mcp_usage_logs(
         self, orchestrator, mock_db
     ):
