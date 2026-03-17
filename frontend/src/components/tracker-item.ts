@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { Router } from '@vaadin/router';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -37,6 +38,11 @@ export class TrackerItem extends LitElement {
       justify-content: center;
       padding: var(--sl-spacing-large);
       text-align: center;
+      cursor: pointer;
+    }
+
+    .card-content:hover {
+      background-color: var(--sl-color-neutral-50);
     }
 
     .tracker-icon {
@@ -96,6 +102,11 @@ export class TrackerItem extends LitElement {
     this.isConfirmingDelete = false;
   }
 
+  private _navigateToDetail() {
+    if (!this.tracker) return;
+    Router.go(`/console/trackers/${this.tracker.id}`);
+  }
+
   private _editTracker() {
     if (!this.tracker) return;
     const event = new CustomEvent('tracker-edit', {
@@ -144,7 +155,7 @@ export class TrackerItem extends LitElement {
       </sl-dialog>
 
       <sl-card class="tracker-card">
-        <div class="card-content">
+        <div class="card-content" @click=${this._navigateToDetail}>
           <sl-icon
             class="tracker-icon"
             name=${icon.name}

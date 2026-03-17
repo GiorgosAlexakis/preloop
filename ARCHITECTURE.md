@@ -114,6 +114,16 @@ The `Preloop Console` application is structured around a component-based archite
 *   **`vite.config.ts`**: Configuration for the Vite build tool.
 *   **`package.json`**: Defines project metadata, dependencies, and scripts for development, building, and testing.
 
+#### Tracker Detail Page (`src/views/authed/tracker-detail-view.ts`)
+
+The Tracker Detail page is the entry point for issue analytics. Clicking a tracker card in the Trackers list navigates to `/console/trackers/:trackerId`, which shows:
+
+*   **Tracker metadata:** Name, type, connection status, creation/update dates, URL, and scope rules.
+*   **Issue Analytics cards:** Conditional links to Similarity, Compliance, and Dependencies views, gated by feature flags (`issue_duplicates`, `issue_compliance`, `issue_dependencies`). Each link pre-filters to projects belonging to that tracker via `?projects=` query parameters.
+*   **Projects list:** All projects synced under this tracker.
+
+Issue analytics features are no longer accessible from the main sidebar — they are scoped to individual trackers via this detail page.
+
 #### Tools Page (`src/views/authed/tools-view.ts`)
 
 The Tools page has been redesigned from a card-based layout to a tree-style list view:

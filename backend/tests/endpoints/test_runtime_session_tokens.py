@@ -84,6 +84,7 @@ def test_create_runtime_session_token(client, db_session, test_user):
     api_key = crud_api_key.get_by_key(db_session, key=body["token"])
     assert api_key is not None
     assert api_key.user_id == test_user.id
+    assert api_key.name == "Managed Agent Claude Code Workspace [workspace-123]"
     assert api_key.scopes == ["mcp:read", "mcp:write"]
     assert api_key.context_data["runtime_session_id"] == str(runtime_session.id)
     assert api_key.context_data["runtime_principal"]["type"] == "claude_code"

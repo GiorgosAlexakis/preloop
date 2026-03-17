@@ -264,6 +264,7 @@ export interface ManagedAgentSummary {
   is_active_now: boolean;
   activity_status:
     | 'active_now'
+    | 'recently_active'
     | 'idle'
     | 'ended'
     | 'suspended'
@@ -278,6 +279,23 @@ export interface ManagedAgentSummary {
   latest_model_alias: string | null;
   latest_provider_name: string | null;
   last_request_at: string | null;
+  mcp_proxy_configured: boolean;
+  model_gateway_configured: boolean;
+  onboarding_state:
+    | 'fully_onboarded'
+    | 'mcp_proxy_only'
+    | 'gateway_only'
+    | 'incomplete'
+    | string;
+  live_validation_supported: boolean;
+  live_validation_passed: boolean | null;
+  live_validation_status:
+    | 'unsupported'
+    | 'not_run'
+    | 'passed'
+    | 'failed'
+    | string;
+  last_validated_at: string | null;
 }
 
 export interface ManagedAgentUsageAggregate {
@@ -330,8 +348,27 @@ export interface ManagedAgentDetailResponse {
 
 export interface ManagedAgentUpdateRequest {
   owner_user_id?: string | null;
+  display_name?: string | null;
   lifecycle_action?: 'suspend' | 'resume' | 'decommission' | 'reenroll';
   reason?: string | null;
+}
+
+export interface SubjectGovernanceConfig {
+  allowed_models: string[];
+  model_budgets: Record<
+    string,
+    {
+      monthly_usd_limit?: number | null;
+      soft_limit_usd?: number | null;
+    }
+  >;
+  tool_rules: Record<string, Array<Record<string, unknown>>>;
+}
+
+export interface SubjectGovernanceResponse {
+  subject_type: string;
+  subject_id: string;
+  config: SubjectGovernanceConfig;
 }
 
 export interface RuntimeSessionUpdateRequest {
@@ -444,6 +481,19 @@ export interface ApiKey {
   last_used_at: string | null;
   expires_at: string | null;
   key?: string;
+  managed_agent_id?: string | null;
+  runtime_principal_type?: string | null;
+  runtime_principal_id?: string | null;
+  runtime_principal_name?: string | null;
+  last_activity_at?: string | null;
+  activity_status?:
+    | 'active_now'
+    | 'recently_active'
+    | 'idle'
+    | 'revoked'
+    | string;
+  recent_model_calls?: number;
+  recent_tool_calls?: number;
 }
 
 export interface Project {

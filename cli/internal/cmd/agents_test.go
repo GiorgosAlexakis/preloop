@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -128,8 +129,9 @@ func TestRuntimeSessionSourceTypeForAgent(t *testing.T) {
 
 func TestRuntimePrincipalIDForAgent_IsStable(t *testing.T) {
 	agent := AgentConfig{
-		Name:       "Claude Code",
-		ConfigPath: filepath.Join("/tmp", "workspace", "claude_desktop_config.json"),
+		Name:        "Claude Code",
+		DisplayName: "Repo Assistant",
+		ConfigPath:  filepath.Join("/tmp", "workspace", "claude_desktop_config.json"),
 	}
 
 	got1 := runtimePrincipalIDForAgent(agent)
@@ -137,7 +139,7 @@ func TestRuntimePrincipalIDForAgent_IsStable(t *testing.T) {
 	if got1 != got2 {
 		t.Fatalf("expected stable source id, got %q and %q", got1, got2)
 	}
-	if !strings.HasPrefix(got1, "claude-code-") {
+	if !strings.HasPrefix(got1, "repo-assistant-") {
 		t.Fatalf("expected slugged prefix, got %q", got1)
 	}
 }
@@ -178,8 +180,9 @@ func TestIssueRuntimeSessionToken(t *testing.T) {
 
 	client := api.NewClientWithToken(server.URL, "tok")
 	agent := AgentConfig{
-		Name:       "Claude Code",
-		ConfigPath: "/tmp/workspace/claude_desktop_config.json",
+		Name:        "Claude Code",
+		DisplayName: "Workspace Assistant",
+		ConfigPath:  "/tmp/workspace/claude_desktop_config.json",
 	}
 
 	result, err := issueRuntimeSessionToken(client, agent, []string{"github", "jira"})
@@ -193,7 +196,7 @@ func TestIssueRuntimeSessionToken(t *testing.T) {
 	if capturedBody.SessionSourceType != "claude_code" {
 		t.Fatalf("unexpected session source type: %q", capturedBody.SessionSourceType)
 	}
-	if capturedBody.RuntimePrincipalName != "Claude Code (claude_desktop_config.json)" {
+	if capturedBody.RuntimePrincipalName != "Workspace Assistant" {
 		t.Fatalf("unexpected principal name: %q", capturedBody.RuntimePrincipalName)
 	}
 	if capturedBody.RuntimePrincipalID == "" {
@@ -280,21 +283,21 @@ func TestFilterAgentsPendingEnrollmentSkipsRemoteManagedAgent(t *testing.T) {
 }
 
 func TestPromptToOnboardCandidates_DeclineContinuesToNextAgent(t *testing.T) {
-	input := strings.NewReader("n\ny\n")
+	input := strings.NewReader("n\ny\n\n")
 	output := &bytes.Buffer{}
 	candidates := []AgentConfig{
 		{Name: "OpenClaw", ConfigPath: "/tmp/openclaw.json"},
 		{Name: "Codex CLI", ConfigPath: "/tmp/codex.json"},
 	}
 
-	var enrolled []string
+	var enrolled []AgentConfig
 	err := promptToOnboardCandidates(
 		input,
 		output,
 		candidates,
 		false,
 		func(agent AgentConfig) error {
-			enrolled = append(enrolled, agent.Name)
+			enrolled = append(enrolled, agent)
 			return nil
 		},
 	)
@@ -302,15 +305,115 @@ func TestPromptToOnboardCandidates_DeclineContinuesToNextAgent(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(enrolled) != 1 || enrolled[0] != "Codex CLI" {
+	if len(enrolled) != 1 || enrolled[0].Name != "Codex CLI" {
 		t.Fatalf("expected only the second agent to be enrolled, got %#v", enrolled)
 	}
+	if enrolled[0].DisplayName != "Codex CLI" {
+		t.Fatalf("expected default confirmed name for second agent, got %#v", enrolled[0])
+	}
 	rendered := output.String()
-	if !strings.Contains(rendered, "Onboard OpenClaw into managed Preloop access now?") {
+	if !strings.Contains(rendered, "Onboard OpenClaw (OpenClaw) into managed Preloop access now?") {
 		t.Fatalf("expected first prompt in output, got %q", rendered)
 	}
-	if !strings.Contains(rendered, "Onboard Codex CLI into managed Preloop access now?") {
+	if !strings.Contains(rendered, "Onboard Codex CLI (Codex CLI) into managed Preloop access now?") {
 		t.Fatalf("expected second prompt in output, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Agent name [Codex CLI]: ") {
+		t.Fatalf("expected name prompt in output, got %q", rendered)
+	}
+}
+
+func TestPrepareAgentForEnrollment_AllowsEditingAgentName(t *testing.T) {
+	agent, err := prepareAgentForEnrollment(
+		bufio.NewReader(strings.NewReader("Octavia\n")),
+		&bytes.Buffer{},
+		AgentConfig{Name: "OpenClaw", ConfigPath: "/tmp/openclaw.json"},
+		false,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if agent.DisplayName != "Octavia" {
+		t.Fatalf("expected edited display name, got %#v", agent)
+	}
+	if !strings.HasPrefix(agent.RuntimePrincipalID, "octavia-") {
+		t.Fatalf("expected name-based principal id, got %q", agent.RuntimePrincipalID)
+	}
+}
+
+func TestInferAgentDisplayNameFromIdentityFile(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, ".openclaw")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "IDENTITY.md"), []byte("# Octavia\n\nMission details"), 0644); err != nil {
+		t.Fatalf("failed to write identity file: %v", err)
+	}
+	agent := AgentConfig{
+		Name:       "OpenClaw",
+		ConfigPath: filepath.Join(configDir, "openclaw.json"),
+	}
+	if got := inferAgentDisplayName(agent); got != "Octavia" {
+		t.Fatalf("expected inferred name Octavia, got %q", got)
+	}
+}
+
+func TestPrepareAgentForRemoteServerSync_RestoresDiscoveredServersFromLocalState(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	agent := AgentConfig{
+		Name:               "OpenClaw",
+		DisplayName:        "Octavia",
+		RuntimePrincipalID: "octavia-123456789abc",
+		ConfigPath:         filepath.Join(home, ".openclaw", "openclaw.json"),
+		MCPServers: map[string]MCPDef{
+			"preloop": {
+				URL:       "https://preloop.example/mcp/v1",
+				Transport: "http",
+				Headers: map[string]string{
+					"Authorization": "Bearer durable-token",
+				},
+			},
+		},
+	}
+
+	if err := saveLocalEnrollmentState(&localEnrollmentState{
+		AgentName:          agent.Name,
+		DisplayName:        agent.DisplayName,
+		RuntimePrincipalID: runtimePrincipalIDForAgent(agent),
+		ConfigPath:         agent.ConfigPath,
+		BackupPath:         filepath.Join(home, "backup.json"),
+		ManagedServerName:  "preloop",
+		ManagedServerURL:   "https://preloop.example/mcp/v1",
+		AppliedAt:          time.Now().UTC(),
+		DiscoveredConfig: map[string]interface{}{
+			"mcp": map[string]interface{}{
+				"servers": map[string]interface{}{
+					"github": map[string]interface{}{
+						"url":       "https://github.example/mcp",
+						"transport": "http",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("failed to save local enrollment state: %v", err)
+	}
+
+	prepared := prepareAgentForRemoteServerSync(agent, "https://preloop.example")
+	if _, ok := prepared.MCPServers["github"]; !ok {
+		t.Fatalf("expected recovered github server, got %#v", prepared.MCPServers)
+	}
+	if _, ok := prepared.MCPServers["preloop"]; ok {
+		t.Fatalf("expected managed preloop proxy to be excluded from recovered servers, got %#v", prepared.MCPServers)
 	}
 }
 
@@ -410,11 +513,14 @@ func TestLocalEnrollmentStateRoundTrip(t *testing.T) {
 	}()
 
 	agent := AgentConfig{
-		Name:       "Claude Code",
-		ConfigPath: filepath.Join(home, ".claude", "mcp-servers.json"),
+		Name:               "Claude Code",
+		DisplayName:        "Repo Assistant",
+		RuntimePrincipalID: "repo-assistant-abcdef123456",
+		ConfigPath:         filepath.Join(home, ".claude", "mcp-servers.json"),
 	}
 	state := &localEnrollmentState{
 		AgentName:          "Claude Code",
+		DisplayName:        "Repo Assistant",
 		RuntimePrincipalID: runtimePrincipalIDForAgent(agent),
 		ConfigPath:         agent.ConfigPath,
 		BackupPath:         filepath.Join(home, ".preloop", "agents", "backups", "claude-code-abc123", "backup.json"),
@@ -435,6 +541,123 @@ func TestLocalEnrollmentStateRoundTrip(t *testing.T) {
 	}
 	if loaded.ManagedServerURL != state.ManagedServerURL {
 		t.Fatalf("expected managed server URL %q, got %q", state.ManagedServerURL, loaded.ManagedServerURL)
+	}
+}
+
+func TestRemoveLocalEnrollmentStateDeletesPersistedState(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	agent := AgentConfig{
+		Name:       "OpenClaw",
+		ConfigPath: filepath.Join(home, ".openclaw", "openclaw.json"),
+	}
+	state := &localEnrollmentState{
+		AgentName:          agent.Name,
+		RuntimePrincipalID: runtimePrincipalIDForAgent(agent),
+		ConfigPath:         agent.ConfigPath,
+		BackupPath:         filepath.Join(home, "backup.json"),
+		ManagedServerName:  "preloop",
+		ManagedServerURL:   "https://preloop.example/mcp/v1",
+		AppliedAt:          time.Now().UTC(),
+	}
+	if err := saveLocalEnrollmentState(state); err != nil {
+		t.Fatalf("failed to save local enrollment state: %v", err)
+	}
+
+	if err := removeLocalEnrollmentState(agent); err != nil {
+		t.Fatalf("unexpected error removing state: %v", err)
+	}
+	if _, err := loadLocalEnrollmentState(agent); err == nil {
+		t.Fatal("expected local enrollment state to be removed")
+	}
+}
+
+func TestCollectOffboardCleanupCandidatesHonorsRecentUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents":
+			_ = json.NewEncoder(w).Encode(managedAgentListResponse{
+				Items: []managedAgentSummary{
+					{
+						ID:                "agent-current",
+						DisplayName:       "OpenClaw",
+						SessionSourceType: "openclaw",
+						SessionSourceID:   "openclaw-current",
+						ManagedMCPServers: []string{"github", "jira"},
+						LatestModelAlias:  "google/gemini-3.1-pro-preview",
+					},
+					{
+						ID:                "agent-other",
+						DisplayName:       "Codex",
+						SessionSourceType: "codex",
+						SessionSourceID:   "codex-other",
+						ActivityStatus:    "recently_active",
+						ManagedMCPServers: []string{"github"},
+						LatestModelAlias:  "google/gemini-3.1-pro-preview",
+					},
+				},
+			})
+		case "/api/v1/mcp-servers":
+			_ = json.NewEncoder(w).Encode([]mcpServerResponse{
+				{ID: "srv-github", Name: "github"},
+				{ID: "srv-jira", Name: "jira"},
+			})
+		case "/api/v1/ai-models":
+			_ = json.NewEncoder(w).Encode([]aiModelResponse{
+				{
+					ID:   "model-1",
+					Name: "OpenClaw google/gemini-3.1-pro-preview",
+					MetaData: map[string]interface{}{
+						"gateway": map[string]interface{}{
+							"model_alias": "google/gemini-3.1-pro-preview",
+						},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	candidates, err := collectOffboardCleanupCandidates(client, managedAgentSummary{
+		ID:                "agent-current",
+		DisplayName:       "OpenClaw",
+		SessionSourceType: "openclaw",
+		SessionSourceID:   "openclaw-current",
+		ManagedMCPServers: []string{"github", "jira"},
+		LatestModelAlias:  "google/gemini-3.1-pro-preview",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(candidates) != 3 {
+		t.Fatalf("expected three cleanup candidates, got %#v", candidates)
+	}
+
+	byName := map[string]offboardCleanupCandidate{}
+	for _, candidate := range candidates {
+		byName[candidate.Name] = candidate
+	}
+
+	if got := byName["github"].RecentlyUsedBy; len(got) != 1 || got[0] != "Codex" {
+		t.Fatalf("expected github to be protected by recent usage, got %#v", got)
+	}
+	if got := byName["jira"].RecentlyUsedBy; len(got) != 0 {
+		t.Fatalf("expected jira to be removable, got %#v", got)
+	}
+	if got := byName["google/gemini-3.1-pro-preview"].RecentlyUsedBy; len(got) != 1 || got[0] != "Codex" {
+		t.Fatalf("expected model alias to be protected by recent usage, got %#v", got)
 	}
 }
 

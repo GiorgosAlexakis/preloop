@@ -17,6 +17,11 @@ from preloop.models.models.api_usage import ApiUsage
 from preloop.models.models.flow import Flow
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
 from preloop.services.model_pricing import estimate_ai_model_usage_cost
+from preloop.services.subject_governance import (
+    build_subject_context_from_api_key,
+    get_subject_governance,
+    subject_scope_chain,
+)
 
 
 DEFAULT_ESTIMATED_OUTPUT_TOKENS = 1024
@@ -59,6 +64,11 @@ class ModelGatewayBudgetService:
         )
         runtime_context = (
             (self.auth_context.api_key.context_data or {})
+            if self.auth_context.api_key
+            else {}
+        )
+        subject_context = (
+            build_subject_context_from_api_key(self.auth_context.api_key)
             if self.auth_context.api_key
             else {}
         )
@@ -115,11 +125,104 @@ class ModelGatewayBudgetService:
         hard_limit_exceeded = False
         soft_limit_exceeded = False
         enforcement_reason = None
+        requested_model = str(
+            payload.get("model") or ai_model.model_identifier or ""
+        ).strip()
 
-        if budget_configured and not pricing_available:
+        scoped_allowed_models: list[set[str]] = []
+        scoped_budget_checks: list[
+            tuple[str, str, dict[str, Optional[float]], float, Optional[float]]
+        ] = []
+        if account is not None:
+            for subject_type, subject_id in subject_scope_chain(subject_context):
+                config = get_subject_governance(
+                    account.meta_data or {},
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                )
+                allowed_models = config.get("allowed_models")
+                if isinstance(allowed_models, list) and allowed_models:
+                    scoped_allowed_models.append(
+                        {
+                            str(item).strip()
+                            for item in allowed_models
+                            if str(item).strip()
+                        }
+                    )
+                model_budgets = config.get("model_budgets")
+                if not isinstance(model_budgets, dict) or not requested_model:
+                    continue
+                budget_config = self._normalize_budget_config(
+                    model_budgets.get(requested_model)
+                    if isinstance(model_budgets.get(requested_model), dict)
+                    else None
+                )
+                if (
+                    budget_config["monthly_usd_limit"] is None
+                    and budget_config["soft_limit_usd"] is None
+                ):
+                    continue
+                current_spend = self._get_gateway_spend(
+                    account_id=str(self.auth_context.user.account_id),
+                    start=start,
+                    api_key_id=subject_id if subject_type == "api_keys" else None,
+                    runtime_principal_id=subject_context.get("runtime_principal_id")
+                    if subject_type == "managed_agents"
+                    else None,
+                    model_alias=requested_model or None,
+                )
+                estimated_total = (
+                    current_spend + estimated_request_cost
+                    if estimated_request_cost is not None
+                    else None
+                )
+                scoped_budget_checks.append(
+                    (
+                        subject_type,
+                        subject_id,
+                        budget_config,
+                        current_spend,
+                        estimated_total,
+                    )
+                )
+
+        if scoped_allowed_models:
+            allowed_model_set = set.intersection(*scoped_allowed_models)
+            if requested_model and requested_model not in allowed_model_set:
+                hard_limit_exceeded = True
+                enforcement_reason = "subject_model_not_allowed"
+        if not hard_limit_exceeded and budget_configured and not pricing_available:
             hard_limit_exceeded = True
             enforcement_reason = "pricing_required_for_budget_enforcement"
-        elif pricing_available:
+        elif not hard_limit_exceeded and pricing_available:
+            for (
+                subject_type,
+                _subject_id,
+                budget_config,
+                _spend,
+                estimated_total,
+            ) in scoped_budget_checks:
+                monthly_limit = budget_config.get("monthly_usd_limit")
+                soft_limit = budget_config.get("soft_limit_usd")
+                if (
+                    monthly_limit is not None
+                    and estimated_total is not None
+                    and estimated_total > monthly_limit
+                ):
+                    hard_limit_exceeded = True
+                    enforcement_reason = f"{subject_type[:-1]}_model_budget_exceeded"
+                    break
+                if (
+                    soft_limit is not None
+                    and estimated_total is not None
+                    and estimated_total > soft_limit
+                ):
+                    soft_limit_exceeded = True
+                    enforcement_reason = (
+                        f"{subject_type[:-1]}_model_soft_limit_exceeded"
+                    )
+                    break
+        if not hard_limit_exceeded and pricing_available:
             if (
                 account_limit is not None
                 and account_estimated_total is not None
@@ -176,6 +279,15 @@ class ModelGatewayBudgetService:
                 detail = "Model gateway budget exceeded: account monthly limit reached"
             elif result.enforcement_reason == "flow_budget_exceeded":
                 detail = "Model gateway budget exceeded: flow monthly limit reached"
+            elif result.enforcement_reason == "subject_model_not_allowed":
+                detail = "This model is not allowed for the current agent or API key"
+            elif result.enforcement_reason in {
+                "api_key_model_budget_exceeded",
+                "managed_agent_model_budget_exceeded",
+            }:
+                detail = (
+                    "Model gateway budget exceeded for the current agent or API key"
+                )
             elif result.enforcement_reason == "pricing_required_for_budget_enforcement":
                 detail = (
                     "Model gateway budget enforcement requires pricing information for "
@@ -185,7 +297,14 @@ class ModelGatewayBudgetService:
         return result
 
     def _get_gateway_spend(
-        self, *, account_id: str, start: datetime, flow_id: Optional[str] = None
+        self,
+        *,
+        account_id: str,
+        start: datetime,
+        flow_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
+        model_alias: Optional[str] = None,
     ) -> float:
         query = self.db.query(
             func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
@@ -196,6 +315,12 @@ class ModelGatewayBudgetService:
         )
         if flow_id:
             query = query.filter(ApiUsage.flow_id == flow_id)
+        if api_key_id:
+            query = query.filter(ApiUsage.api_key_id == api_key_id)
+        if runtime_principal_id:
+            query = query.filter(ApiUsage.runtime_principal_id == runtime_principal_id)
+        if model_alias:
+            query = query.filter(ApiUsage.model_alias == model_alias)
         return float(query.scalar() or 0.0)
 
     @staticmethod

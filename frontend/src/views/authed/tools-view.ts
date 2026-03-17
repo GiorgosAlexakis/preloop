@@ -27,7 +27,7 @@ import '../../components/mcp-setup-dialog';
 import '../../components/approval-workflow-dialog';
 import type { Tool, ApprovalWorkflow } from '../../components/tool-card';
 import type { MCPServer } from '../../components/mcp-server-card';
-import type { AccessRuleSummary } from '../../components/tool-list-item';
+import type { AccessRuleSummary } from '../../components/governance-rule-set-editor';
 import type { RuleFormData } from '../../components/tool-rule-editor';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';

@@ -148,6 +148,14 @@ class ApiKeySummary(BaseModel):
     expires_at: Optional[datetime] = None
     scopes: List[Any] = []  # Can be strings or dicts (e.g., {"device_token": "..."})
     last_used_at: Optional[datetime] = None
+    managed_agent_id: Optional[UUID] = None
+    runtime_principal_type: Optional[str] = None
+    runtime_principal_id: Optional[str] = None
+    runtime_principal_name: Optional[str] = None
+    last_activity_at: Optional[datetime] = None
+    activity_status: Optional[str] = None
+    recent_model_calls: int = 0
+    recent_tool_calls: int = 0
 
 
 class RuntimeSessionTokenCreate(BaseModel):

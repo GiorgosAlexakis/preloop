@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/preloop/preloop/cli/internal/api"
 )
 
 func TestOpenClawConfigPathsIncludesCurrentLocations(t *testing.T) {
@@ -305,5 +310,54 @@ func TestFilterAgentsPendingLocalEnrollmentSkipsSavedState(t *testing.T) {
 	}
 	if candidates[0].Name != pending.Name {
 		t.Fatalf("expected pending agent to remain, got %#v", candidates)
+	}
+}
+
+func TestDefaultManagedLiveValidationResult_ForOpenClaw(t *testing.T) {
+	result := defaultManagedLiveValidationResult(AgentConfig{Name: "OpenClaw"})
+	if supported, _ := result["live_validation_supported"].(bool); !supported {
+		t.Fatalf("expected live validation to be supported, got %#v", result)
+	}
+	if status := result["live_validation_status"]; status != "not_run" {
+		t.Fatalf("expected not_run status, got %#v", result)
+	}
+}
+
+func TestWaitForManagedValidationUsage_FindsIndexedEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.RawQuery, "runtime_principal_id=octavia-123") {
+			t.Fatalf("expected runtime principal filter in query, got %q", r.URL.RawQuery)
+		}
+		if !strings.Contains(r.URL.RawQuery, "api_key_id=key-1") {
+			t.Fatalf("expected api key filter in query, got %q", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(gatewayUsageSearchResponse{
+			Items: []gatewayUsageSearchItem{
+				{
+					APIUsageID:         "usage-1",
+					Timestamp:          "2026-03-10T10:00:00Z",
+					StatusCode:         200,
+					ModelAlias:         "openai/gpt-5",
+					RuntimePrincipalID: "octavia-123",
+					APIKeyID:           "key-1",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	item, err := waitForManagedValidationUsage(
+		client,
+		"octavia-123",
+		"key-1",
+		"openai/gpt-5",
+		"validation-token",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if item == nil || item.APIUsageID != "usage-1" {
+		t.Fatalf("expected indexed usage item, got %#v", item)
 	}
 }

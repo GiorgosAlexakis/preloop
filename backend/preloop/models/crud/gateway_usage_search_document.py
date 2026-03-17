@@ -102,6 +102,8 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
         flow_execution_id: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
         session_source_type: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
@@ -161,6 +163,12 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             base_query = base_query.filter(ApiUsage.model_alias == model_alias)
         if flow_id:
             base_query = base_query.filter(ApiUsage.flow_id == flow_id)
+        if runtime_principal_id:
+            base_query = base_query.filter(
+                ApiUsage.runtime_principal_id == runtime_principal_id
+            )
+        if api_key_id:
+            base_query = base_query.filter(ApiUsage.api_key_id == api_key_id)
         if runtime_session_id and flow_execution_id:
             if self._session_can_claim_legacy_execution_rows(
                 db,

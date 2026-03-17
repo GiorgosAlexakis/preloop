@@ -48,6 +48,10 @@ from preloop.schemas.gateway_usage import (
     RuntimeSessionSummary,
     RuntimeSessionUpdateRequest,
 )
+from preloop.schemas.subject_governance import (
+    SubjectGovernanceConfig,
+    SubjectGovernanceResponse,
+)
 from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_MANAGED_AGENTS,
     ACCOUNT_TOPIC_AUDIT,
@@ -57,11 +61,131 @@ from preloop.services.account_realtime import (
 )
 from preloop.services.model_gateway_usage import ModelGatewayUsageService
 from preloop.services.runtime_session_explorer import RuntimeSessionExplorerService
+from preloop.services.subject_governance import (
+    SUBJECT_TYPE_MANAGED_AGENTS,
+    get_subject_governance,
+    set_subject_governance,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 public_router = APIRouter()  # Public endpoints (no auth required)
+
+
+def _managed_agent_onboarding_flags(
+    latest_enrollment: Optional[dict],
+) -> tuple[bool, bool, str]:
+    if not latest_enrollment:
+        return False, False, "incomplete"
+
+    validation = (
+        latest_enrollment.get("validation_result")
+        if isinstance(latest_enrollment.get("validation_result"), dict)
+        else {}
+    )
+    managed_config = (
+        latest_enrollment.get("managed_config")
+        if isinstance(latest_enrollment.get("managed_config"), dict)
+        else {}
+    )
+
+    mcp_proxy_configured = bool(
+        validation.get("preloop_server_present")
+        or validation.get("nested_mcp_servers_ok")
+        or (
+            isinstance(managed_config.get("servers"), dict)
+            and "preloop" in managed_config["servers"]
+        )
+        or (
+            isinstance(managed_config.get("mcpServers"), dict)
+            and "preloop" in managed_config["mcpServers"]
+        )
+        or (
+            isinstance(managed_config.get("mcp"), dict)
+            and isinstance(managed_config["mcp"].get("servers"), dict)
+            and "preloop" in managed_config["mcp"]["servers"]
+        )
+    )
+    model_gateway_configured = bool(
+        validation.get("gateway_model_configured")
+        or (
+            isinstance(managed_config.get("models"), dict)
+            and isinstance(managed_config["models"].get("providers"), dict)
+            and "preloop" in managed_config["models"]["providers"]
+        )
+    )
+
+    if mcp_proxy_configured and model_gateway_configured:
+        return True, True, "fully_onboarded"
+    if mcp_proxy_configured:
+        return True, False, "mcp_proxy_only"
+    if model_gateway_configured:
+        return False, True, "gateway_only"
+    return False, False, "incomplete"
+
+
+def _managed_agent_live_validation_state(
+    latest_enrollment: Optional[dict],
+) -> tuple[bool, Optional[bool], str, Optional[datetime]]:
+    if not latest_enrollment:
+        return False, None, "unsupported", None
+
+    validation = (
+        latest_enrollment.get("validation_result")
+        if isinstance(latest_enrollment.get("validation_result"), dict)
+        else {}
+    )
+    supported = bool(validation.get("live_validation_supported"))
+    status = str(validation.get("live_validation_status") or "").strip()
+    if not supported:
+        return (
+            False,
+            None,
+            status or "unsupported",
+            latest_enrollment.get("last_validated_at"),
+        )
+
+    passed = validation.get("live_validation_passed")
+    normalized_passed = passed if isinstance(passed, bool) else None
+    if not status:
+        if normalized_passed is True:
+            status = "passed"
+        elif normalized_passed is False:
+            status = "failed"
+        else:
+            status = "not_run"
+    return True, normalized_passed, status, latest_enrollment.get("last_validated_at")
+
+
+def _enrich_managed_agent_summary(
+    db: Session, *, account_id: str, summary: dict
+) -> dict:
+    latest_enrollment = crud_managed_agent_enrollment.get_latest_for_agent_by_type(
+        db,
+        account_id=account_id,
+        agent_id=summary["id"],
+        enrollment_type="cli_managed_config",
+    ) or crud_managed_agent_enrollment.get_latest_for_agent(
+        db, account_id=account_id, agent_id=summary["id"]
+    )
+    latest_enrollment_summary = (
+        crud_managed_agent_enrollment._to_summary(latest_enrollment)
+        if latest_enrollment is not None
+        else None
+    )
+    (
+        summary["mcp_proxy_configured"],
+        summary["model_gateway_configured"],
+        summary["onboarding_state"],
+    ) = _managed_agent_onboarding_flags(latest_enrollment_summary)
+    (
+        summary["live_validation_supported"],
+        summary["live_validation_passed"],
+        summary["live_validation_status"],
+        summary["last_validated_at"],
+    ) = _managed_agent_live_validation_state(latest_enrollment_summary)
+    return summary
 
 
 def _build_managed_agent_detail_response(
@@ -72,6 +196,7 @@ def _build_managed_agent_detail_response(
     )
     if summary is None:
         return None
+    summary = _enrich_managed_agent_summary(db, account_id=account_id, summary=summary)
     aggregate = crud_managed_agent.get_usage_aggregate_for_account(
         db, account_id=account_id, agent_id=agent_id
     )
@@ -250,6 +375,8 @@ async def search_account_gateway_usage(
     model_alias: Optional[str] = Query(None),
     flow_id: Optional[str] = Query(None),
     runtime_session_id: Optional[str] = Query(None),
+    runtime_principal_id: Optional[str] = Query(None),
+    api_key_id: Optional[str] = Query(None),
     session_source_type: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -264,6 +391,8 @@ async def search_account_gateway_usage(
         model_alias=model_alias,
         flow_id=flow_id,
         runtime_session_id=runtime_session_id,
+        runtime_principal_id=runtime_principal_id,
+        api_key_id=api_key_id,
         session_source_type=session_source_type,
         limit=limit,
         offset=offset,
@@ -297,7 +426,12 @@ async def list_account_managed_agents(
         total=result["total"],
         limit=limit,
         offset=offset,
-        items=result["items"],
+        items=[
+            _enrich_managed_agent_summary(
+                db, account_id=str(account.id), summary=dict(item)
+            )
+            for item in result["items"]
+        ],
     )
 
 
@@ -316,6 +450,74 @@ async def get_account_managed_agent(
             status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
         )
     return response
+
+
+@router.get(
+    "/agents/{agent_id}/governance",
+    response_model=SubjectGovernanceResponse,
+)
+async def get_account_managed_agent_governance(
+    agent_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    return SubjectGovernanceResponse(
+        subject_type=SUBJECT_TYPE_MANAGED_AGENTS,
+        subject_id=agent_id,
+        config=SubjectGovernanceConfig.model_validate(
+            get_subject_governance(
+                account.meta_data or {},
+                subject_type=SUBJECT_TYPE_MANAGED_AGENTS,
+                subject_id=agent_id,
+            )
+        ),
+    )
+
+
+@router.put(
+    "/agents/{agent_id}/governance",
+    response_model=SubjectGovernanceResponse,
+)
+async def update_account_managed_agent_governance(
+    agent_id: str,
+    payload: SubjectGovernanceConfig,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    account.meta_data = set_subject_governance(
+        account.meta_data or {},
+        subject_type=SUBJECT_TYPE_MANAGED_AGENTS,
+        subject_id=agent_id,
+        config=payload.model_dump(),
+    )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return SubjectGovernanceResponse(
+        subject_type=SUBJECT_TYPE_MANAGED_AGENTS,
+        subject_id=agent_id,
+        config=SubjectGovernanceConfig.model_validate(
+            get_subject_governance(
+                account.meta_data or {},
+                subject_type=SUBJECT_TYPE_MANAGED_AGENTS,
+                subject_id=agent_id,
+            )
+        ),
+    )
 
 
 @router.get(
@@ -678,6 +880,7 @@ async def update_account_managed_agent(
         )
 
     set_owner = "owner_user_id" in update.model_fields_set
+    set_display_name = "display_name" in update.model_fields_set
     owner_user_id = None
     if set_owner and update.owner_user_id:
         owner = crud_user.get(db, id=update.owner_user_id)
@@ -709,6 +912,8 @@ async def update_account_managed_agent(
         agent_id=agent_id,
         owner_user_id=owner_user_id,
         set_owner=set_owner,
+        display_name=update.display_name,
+        set_display_name=set_display_name,
         lifecycle_state=lifecycle_state,
         lifecycle_reason=update.reason,
         commit=False,
@@ -775,6 +980,52 @@ async def update_account_managed_agent(
         )
     )
     return detail.agent
+
+
+@router.delete("/agents/{agent_id}", status_code=status.HTTP_200_OK)
+async def delete_account_managed_agent(
+    agent_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Remove one managed-agent registry entry without touching the actual agent."""
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+
+    crud_api_key.deactivate_runtime_keys_for_principal(
+        db,
+        account_id=account.id,
+        runtime_principal_type=agent.session_source_type,
+        runtime_principal_id=agent.session_source_id,
+        commit=False,
+    )
+    crud_api_key.deactivate_runtime_keys_for_managed_agent(
+        db,
+        account_id=account.id,
+        managed_agent_id=str(agent.id),
+        commit=False,
+    )
+    db.delete(agent)
+    db.commit()
+
+    emit_account_event(
+        build_account_event(
+            account_id=str(account.id),
+            topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
+            event_type="managed_agent_removed",
+            payload={
+                "agent_id": agent_id,
+                "session_source_type": agent.session_source_type,
+                "session_source_id": agent.session_source_id,
+            },
+        )
+    )
+    return {"message": "Managed agent removed"}
 
 
 @router.get("/runtime-sessions", response_model=AccountRuntimeSessionListResponse)

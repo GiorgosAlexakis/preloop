@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 
 from preloop.config import settings
 from preloop.models.crud.flow_execution import CRUDFlowExecution
+from preloop.models.models.api_key import ApiKey
 from preloop.models.models.api_usage import ApiUsage
+from preloop.models.models.managed_agent import ManagedAgent
 from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_BUDGET_HEALTH,
     ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
@@ -158,6 +160,8 @@ class ModelGatewayEventEmitter:
             request_payload=request_payload,
             response_payload=response_payload,
         )
+        api_key = self.db.get(ApiKey, usage.api_key_id) if usage.api_key_id else None
+        managed_agent_id = self._resolve_managed_agent_id(usage=usage, api_key=api_key)
         return {
             "topic": "flow_executions",
             "execution_id": str(usage.flow_execution_id)
@@ -181,6 +185,7 @@ class ModelGatewayEventEmitter:
                 "user_id": str(usage.user_id) if usage.user_id else None,
                 "auth_subject_type": usage.auth_subject_type,
                 "api_key_id": str(usage.api_key_id) if usage.api_key_id else None,
+                "api_key_name": api_key.name if api_key is not None else None,
                 "ai_model_id": str(usage.ai_model_id) if usage.ai_model_id else None,
                 "model_alias": usage.model_alias,
                 "provider_name": usage.provider_name,
@@ -195,6 +200,10 @@ class ModelGatewayEventEmitter:
                 "runtime_session_id": str(usage.runtime_session_id)
                 if usage.runtime_session_id
                 else None,
+                "runtime_principal_type": usage.runtime_principal_type,
+                "runtime_principal_id": usage.runtime_principal_id,
+                "runtime_principal_name": usage.runtime_principal_name,
+                "managed_agent_id": managed_agent_id,
                 "runtime_principal": {
                     "type": usage.runtime_principal_type,
                     "id": usage.runtime_principal_id,
@@ -208,6 +217,32 @@ class ModelGatewayEventEmitter:
                 "response": self._sanitize_payload(response_payload),
             },
         }
+
+    def _resolve_managed_agent_id(
+        self, *, usage: ApiUsage, api_key: Optional[ApiKey]
+    ) -> Optional[str]:
+        context_data = (
+            api_key.context_data
+            if api_key and isinstance(api_key.context_data, dict)
+            else {}
+        )
+        managed_agent_id = (
+            context_data.get("managed_agent_id") if context_data else None
+        )
+        if managed_agent_id:
+            return str(managed_agent_id)
+        if not usage.runtime_principal_type or not usage.runtime_principal_id:
+            return None
+        managed_agent = (
+            self.db.query(ManagedAgent)
+            .filter(
+                ManagedAgent.account_id == usage.account_id,
+                ManagedAgent.session_source_type == usage.runtime_principal_type,
+                ManagedAgent.session_source_id == usage.runtime_principal_id,
+            )
+            .first()
+        )
+        return str(managed_agent.id) if managed_agent is not None else None
 
     @staticmethod
     def _derive_outcome(status_code: int, error_detail: Optional[str]) -> str:

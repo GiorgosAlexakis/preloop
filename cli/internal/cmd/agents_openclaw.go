@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,7 +28,29 @@ type managedEnrollmentOptions struct {
 	Client           *api.Client
 	DryRun           bool
 	AutoApprove      bool
+	LiveValidate     bool
 	SkipConfirmation bool
+	Input            io.Reader
+	Output           io.Writer
+}
+
+type managedLiveValidationOutcome struct {
+	Attempted        bool
+	Passed           bool
+	ValidationResult map[string]interface{}
+}
+
+type gatewayUsageSearchResponse struct {
+	Items []gatewayUsageSearchItem `json:"items"`
+}
+
+type gatewayUsageSearchItem struct {
+	APIUsageID         string `json:"api_usage_id"`
+	Timestamp          string `json:"timestamp"`
+	StatusCode         int    `json:"status_code"`
+	ModelAlias         string `json:"model_alias"`
+	RuntimePrincipalID string `json:"runtime_principal_id"`
+	APIKeyID           string `json:"api_key_id"`
 }
 
 type aiModelResponse struct {
@@ -67,6 +91,14 @@ type openClawParsedConfig struct {
 func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) error {
 	client := opts.Client
 	var err error
+	input := opts.Input
+	if input == nil {
+		input = os.Stdin
+	}
+	output := opts.Output
+	if output == nil {
+		output = os.Stdout
+	}
 	if client == nil {
 		client, err = api.NewClient(FlagToken, FlagURL)
 		if err != nil {
@@ -76,6 +108,16 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	if !client.IsAuthenticated() {
 		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
 	}
+
+	agent = normalizeDiscoveredAgent(agent)
+	if !opts.SkipConfirmation && !opts.AutoApprove {
+		agent, err = prepareAgentForEnrollment(bufio.NewReader(input), output, agent, false)
+		if err != nil {
+			return err
+		}
+	}
+
+	syncAgent := prepareAgentForRemoteServerSync(agent, client.BaseURL())
 
 	plan, err := buildManagedMCPEnrollmentPlan(
 		agent,
@@ -94,11 +136,11 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 
 	if !opts.SkipConfirmation && !opts.AutoApprove {
 		confirmed, err := confirmAction(
-			os.Stdin,
-			os.Stdout,
+			input,
+			output,
 			fmt.Sprintf(
 				"Apply managed Preloop enrollment for %s? (y/N): ",
-				agent.Name,
+				resolveAgentDisplayName(agent),
 			),
 		)
 		if err != nil {
@@ -110,14 +152,14 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 	}
 
-	serverSync, err := ensureDiscoveredRemoteServers(client, agent)
+	serverSync, err := ensureDiscoveredRemoteServers(client, syncAgent)
 	if err != nil {
 		return err
 	}
 
 	allowedServers := append([]string{}, serverSync.Added...)
 	allowedServers = append(allowedServers, serverSync.Reused...)
-	_, err = issueRuntimeSessionToken(client, agent, allowedServers)
+	_, err = issueRuntimeSessionToken(client, syncAgent, allowedServers)
 	if err != nil {
 		return fmt.Errorf("failed to bootstrap managed agent identity: %w", err)
 	}
@@ -180,6 +222,10 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		validationDocument,
 		client.BaseURL(),
 	)
+	validationResult = mergeStringMaps(
+		validationResult,
+		defaultManagedLiveValidationResult(agent),
+	)
 
 	appliedAt := timeNowUTC()
 	enrollment, err := createManagedEnrollmentRecord(
@@ -209,8 +255,50 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		return err
 	}
 
-	fmt.Printf("✓ Enrolled %s\n", agent.Name)
-	fmt.Printf("  Managed agent: %s\n", managedAgent.ID)
+	requestedLiveValidation := opts.LiveValidate
+	if !requestedLiveValidation && supportsManagedLiveValidation(agent) && !opts.SkipConfirmation && !opts.AutoApprove {
+		confirmed, err := confirmActionDefaultYes(
+			input,
+			output,
+			fmt.Sprintf(
+				"Run live validation for %s now? (Y/n): ",
+				resolveAgentDisplayName(agent),
+			),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to read live validation confirmation: %w", err)
+		}
+		requestedLiveValidation = confirmed
+	}
+
+	var liveValidationErr error
+	if requestedLiveValidation {
+		liveOutcome, err := runManagedAgentLiveValidation(client, agent, validationResult)
+		if liveOutcome != nil && len(liveOutcome.ValidationResult) > 0 {
+			validationResult = liveOutcome.ValidationResult
+		}
+		if liveOutcome != nil && liveOutcome.Attempted {
+			validationStatus := "validated"
+			if !liveOutcome.Passed {
+				validationStatus = "validation_failed"
+			}
+			if _, persistErr := validateManagedEnrollmentRecord(
+				client,
+				agent,
+				enrollment.ID,
+				validationResult,
+				validationStatus,
+			); persistErr != nil {
+				return persistErr
+			}
+		}
+		if err != nil {
+			liveValidationErr = err
+		}
+	}
+
+	fmt.Printf("✓ Enrolled %s\n", resolveAgentDisplayName(agent))
+	fmt.Printf("  Managed agent: %s (%s)\n", managedAgent.ID, runtimePrincipalIDForAgent(agent))
 	if len(serverSync.Added) > 0 {
 		fmt.Printf(
 			"  Added remote MCP servers: %s\n",
@@ -249,9 +337,260 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			plan.ManagedModelAlias,
 		)
 	}
+	if validationResult["live_validation_status"] != nil {
+		fmt.Printf("  Live validation: %v\n", validationResult["live_validation_status"])
+	}
 	fmt.Printf("  Config updated: %s\n", agent.ConfigPath)
 	fmt.Printf("  Backup saved: %s\n", backupState.BackupPath)
+	if liveValidationErr != nil {
+		fmt.Printf("  Warning: live validation failed: %v\n", liveValidationErr)
+		if opts.LiveValidate {
+			return fmt.Errorf("managed enrollment applied, but live validation failed: %w", liveValidationErr)
+		}
+	}
 	return nil
+}
+
+func supportsManagedLiveValidation(agent AgentConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(agent.Name), "openclaw")
+}
+
+func defaultManagedLiveValidationResult(agent AgentConfig) map[string]interface{} {
+	if supportsManagedLiveValidation(agent) {
+		return map[string]interface{}{
+			"live_validation_supported": true,
+			"live_validation_attempted": false,
+			"live_validation_passed":    nil,
+			"live_validation_status":    "not_run",
+		}
+	}
+	return map[string]interface{}{
+		"live_validation_supported": false,
+		"live_validation_attempted": false,
+		"live_validation_passed":    nil,
+		"live_validation_status":    "unsupported",
+	}
+}
+
+func confirmActionDefaultYes(reader io.Reader, writer io.Writer, prompt string) (bool, error) {
+	input, err := promptForTextInput(bufio.NewReader(reader), writer, prompt)
+	if err != nil {
+		return false, err
+	}
+	answer := strings.ToLower(strings.TrimSpace(input))
+	return answer == "" || answer == "y" || answer == "yes", nil
+}
+
+func runManagedAgentLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	existingValidation map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	validationResult := mergeStringMaps(existingValidation, defaultManagedLiveValidationResult(agent))
+	if !supportsManagedLiveValidation(agent) {
+		return &managedLiveValidationOutcome{
+			Attempted:        false,
+			Passed:           false,
+			ValidationResult: validationResult,
+		}, nil
+	}
+	return runOpenClawLiveValidation(client, agent, validationResult)
+}
+
+func runOpenClawLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	detail, err := getManagedAgentDetailForDiscovered(client, agent)
+	if err != nil {
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
+	parsed, err := parseOpenClawConfig(agent.ConfigPath)
+	if err != nil {
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
+	token := strings.TrimSpace(parsed.ProviderAPIKey)
+	if token == "" {
+		err = fmt.Errorf("managed OpenClaw config does not contain a Preloop gateway token")
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
+	validationToken := fmt.Sprintf("preloop-validation-%d", time.Now().UTC().UnixNano())
+	prompt := fmt.Sprintf(
+		"Welcome to Preloop. Validation token: %s. Reply with ACK only.",
+		validationToken,
+	)
+	requestPayload := map[string]interface{}{
+		"model": parsed.ModelAlias,
+		"messages": []map[string]interface{}{
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": 0,
+		"max_tokens":  32,
+	}
+
+	gatewayClient := api.NewClientWithToken(client.BaseURL(), token)
+	var gatewayResponse map[string]interface{}
+	requestErr := gatewayClient.Post(
+		openClawGatewayPath+"/chat/completions",
+		requestPayload,
+		&gatewayResponse,
+	)
+	_ = gatewayResponse
+
+	apiKeyID := mostLikelyManagedAPIKeyID(detail.Credentials)
+	searchHit, searchErr := waitForManagedValidationUsage(
+		client,
+		runtimePrincipalIDForAgent(agent),
+		apiKeyID,
+		parsed.ModelAlias,
+		validationToken,
+	)
+
+	passed := requestErr == nil && searchErr == nil && searchHit != nil && searchHit.StatusCode < 400
+	result := mergeStringMaps(validationResult, map[string]interface{}{
+		"live_validation_attempted":      true,
+		"live_validation_passed":         passed,
+		"live_validation_status":         "failed",
+		"live_validation_token":          validationToken,
+		"live_validation_prompt":         prompt,
+		"live_validation_model_alias":    parsed.ModelAlias,
+		"live_validation_runtime_agent":  resolveAgentDisplayName(agent),
+		"live_validation_runtime_source": runtimePrincipalIDForAgent(agent),
+	})
+	if passed {
+		result["live_validation_status"] = "passed"
+	}
+	if apiKeyID != "" {
+		result["live_validation_api_key_id"] = apiKeyID
+	}
+	if searchHit != nil {
+		result["live_validation_request_logged"] = true
+		result["live_validation_api_usage_id"] = searchHit.APIUsageID
+		result["live_validation_logged_at"] = searchHit.Timestamp
+		result["live_validation_status_code"] = searchHit.StatusCode
+	} else {
+		result["live_validation_request_logged"] = false
+	}
+
+	var validationErr error
+	if requestErr != nil {
+		result["live_validation_error"] = requestErr.Error()
+		validationErr = requestErr
+	}
+	if searchErr != nil {
+		result["live_validation_lookup_error"] = searchErr.Error()
+		if validationErr == nil {
+			validationErr = searchErr
+		} else {
+			validationErr = fmt.Errorf("%v; %w", validationErr, searchErr)
+		}
+	}
+	if !passed && validationErr == nil {
+		validationErr = fmt.Errorf("validation request did not appear in gateway usage")
+		result["live_validation_lookup_error"] = validationErr.Error()
+	}
+
+	return &managedLiveValidationOutcome{
+		Attempted:        true,
+		Passed:           passed,
+		ValidationResult: result,
+	}, validationErr
+}
+
+func mostLikelyManagedAPIKeyID(credentials []managedAgentCredentialSummary) string {
+	for _, credential := range credentials {
+		if strings.EqualFold(strings.TrimSpace(credential.Status), "active") && credential.APIKeyID != "" {
+			return credential.APIKeyID
+		}
+	}
+	return ""
+}
+
+func waitForManagedValidationUsage(
+	client *api.Client,
+	runtimePrincipalID string,
+	apiKeyID string,
+	modelAlias string,
+	validationToken string,
+) (*gatewayUsageSearchItem, error) {
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		values := url.Values{}
+		values.Set("query", validationToken)
+		values.Set("runtime_principal_id", runtimePrincipalID)
+		values.Set("limit", "5")
+		if apiKeyID != "" {
+			values.Set("api_key_id", apiKeyID)
+		}
+		if modelAlias != "" {
+			values.Set("model_alias", modelAlias)
+		}
+		var response gatewayUsageSearchResponse
+		if err := client.Get("/api/v1/account/gateway-usage/search?"+values.Encode(), &response); err == nil {
+			for _, item := range response.Items {
+				if item.APIUsageID != "" {
+					return &item, nil
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for gateway usage search to index validation token %q", validationToken)
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func prepareAgentForRemoteServerSync(agent AgentConfig, baseURL string) AgentConfig {
+	if len(agent.MCPServers) > 0 && !hasOnlyManagedPreloopProxy(agent.MCPServers, baseURL) {
+		return agent
+	}
+
+	state, err := loadLocalEnrollmentState(agent)
+	if err != nil || len(state.DiscoveredConfig) == 0 {
+		return agent
+	}
+
+	recoveredServers := parseServerMapFromDocument(state.DiscoveredConfig)
+	if len(recoveredServers) == 0 {
+		return agent
+	}
+
+	agent.MCPServers = recoveredServers
+	return agent
 }
 
 func parseOpenClawMCP(path string) (map[string]MCPDef, error) {
@@ -690,6 +1029,26 @@ func buildManagedRemoteServerRequest(
 		request["auth_config"] = authConfig
 	}
 	return request, warning, importMode, true
+}
+
+func hasOnlyManagedPreloopProxy(servers map[string]MCPDef, baseURL string) bool {
+	if len(servers) == 0 {
+		return false
+	}
+	for name, server := range servers {
+		if !isManagedPreloopProxy(name, server, baseURL) {
+			return false
+		}
+	}
+	return true
+}
+
+func isManagedPreloopProxy(name string, server MCPDef, baseURL string) bool {
+	if !strings.EqualFold(strings.TrimSpace(name), "preloop") {
+		return false
+	}
+	expectedURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	return strings.TrimRight(strings.TrimSpace(server.URL), "/") == expectedURL
 }
 
 func extractURLFromCommandBackedServer(server MCPDef) string {

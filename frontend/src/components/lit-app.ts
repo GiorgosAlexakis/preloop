@@ -20,6 +20,7 @@ import '../views/public/static-view.ts';
 import '../views/authed/console-shell.ts';
 import '../views/authed/dashboard-control-plane-view.ts';
 import '../views/authed/trackers-view.ts';
+import '../views/authed/tracker-detail-view.ts';
 import '../views/authed/tools-view.ts';
 import '../views/authed/issues-view.ts';
 import '../views/authed/issues-compliance-view.ts';
@@ -349,7 +350,13 @@ export class LitApp extends LitElement {
         },
         children: [
           { path: '', component: 'dashboard-view' },
-          { path: 'trackers', component: 'trackers-view' },
+          {
+            path: 'trackers',
+            children: [
+              { path: '', component: 'trackers-view' },
+              { path: ':trackerId', component: 'tracker-detail-view' },
+            ],
+          },
           { path: 'tools', component: 'tools-view' },
           {
             path: 'issues',

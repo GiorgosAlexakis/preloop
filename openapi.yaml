@@ -359,6 +359,69 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
+  /api/v1/auth/api-keys/{key_id}/governance:
+    get:
+      tags:
+      - Auth
+      summary: Get Api Key Governance
+      operationId: get_api_key_governance_api_v1_auth_api_keys__key_id__governance_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Auth
+      summary: Update Api Key Governance
+      operationId: update_api_key_governance_api_v1_auth_api_keys__key_id__governance_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubjectGovernanceConfig'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/auth/api-keys/debug:
     get:
       tags:
@@ -658,6 +721,22 @@ paths:
           - type: string
           - type: 'null'
           title: Runtime Session Id
+      - name: runtime_principal_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+      - name: api_key_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Id
       - name: session_source_type
         in: query
         required: false
@@ -818,6 +897,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManagedAgentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Account
+      summary: Delete Account Managed Agent
+      description: Remove one managed-agent registry entry without touching the actual
+        agent.
+      operationId: delete_account_managed_agent_api_v1_agents__agent_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/governance:
+    get:
+      tags:
+      - Account
+      summary: Get Account Managed Agent Governance
+      operationId: get_account_managed_agent_governance_api_v1_agents__agent_id__governance_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Account
+      summary: Update Account Managed Agent Governance
+      operationId: update_account_managed_agent_governance_api_v1_agents__agent_id__governance_put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubjectGovernanceConfig'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
         '422':
           description: Validation Error
           content:
@@ -6638,6 +6806,46 @@ components:
             format: date-time
           - type: 'null'
           title: Last Used At
+        managed_agent_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Managed Agent Id
+        runtime_principal_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Type
+        runtime_principal_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Name
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+        activity_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Activity Status
+        recent_model_calls:
+          type: integer
+          title: Recent Model Calls
+          default: 0
+        recent_tool_calls:
+          type: integer
+          title: Recent Tool Calls
+          default: 0
       type: object
       required:
       - id
@@ -10044,6 +10252,37 @@ components:
             format: date-time
           - type: 'null'
           title: Last Request At
+        mcp_proxy_configured:
+          type: boolean
+          title: Mcp Proxy Configured
+          default: false
+        model_gateway_configured:
+          type: boolean
+          title: Model Gateway Configured
+          default: false
+        onboarding_state:
+          type: string
+          title: Onboarding State
+          default: incomplete
+        live_validation_supported:
+          type: boolean
+          title: Live Validation Supported
+          default: false
+        live_validation_passed:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Live Validation Passed
+        live_validation_status:
+          type: string
+          title: Live Validation Status
+          default: unsupported
+        last_validated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Validated At
       type: object
       required:
       - id
@@ -10094,6 +10333,13 @@ components:
           - type: string
           - type: 'null'
           title: Owner User Id
+        display_name:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Display Name
         lifecycle_action:
           anyOf:
           - type: string
@@ -11336,6 +11582,45 @@ components:
       - item
       - similarity
       title: SearchResultItem
+    SubjectGovernanceConfig:
+      properties:
+        allowed_models:
+          items:
+            type: string
+          type: array
+          title: Allowed Models
+        model_budgets:
+          additionalProperties:
+            additionalProperties: true
+            type: object
+          type: object
+          title: Model Budgets
+        tool_rules:
+          additionalProperties:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+          type: object
+          title: Tool Rules
+      type: object
+      title: SubjectGovernanceConfig
+    SubjectGovernanceResponse:
+      properties:
+        subject_type:
+          type: string
+          title: Subject Type
+        subject_id:
+          type: string
+          title: Subject Id
+        config:
+          $ref: '#/components/schemas/SubjectGovernanceConfig'
+      type: object
+      required:
+      - subject_type
+      - subject_id
+      - config
+      title: SubjectGovernanceResponse
     TestConnectionRequest:
       properties:
         organization:

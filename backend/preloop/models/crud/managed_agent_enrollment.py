@@ -18,6 +18,19 @@ def _utc_now() -> datetime:
 class CRUDManagedAgentEnrollment(CRUDBase[ManagedAgentEnrollment]):
     """CRUD helpers for managed-agent enrollment records."""
 
+    def get_latest_for_agent(
+        self, db: Session, *, account_id: str, agent_id: str
+    ) -> Optional[ManagedAgentEnrollment]:
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.managed_agent_id == agent_id,
+            )
+            .order_by(self.model.created_at.desc())
+            .first()
+        )
+
     def list_for_agent(
         self, db: Session, *, account_id: str, agent_id: str
     ) -> list[dict[str, Any]]:

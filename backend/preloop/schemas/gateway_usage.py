@@ -198,6 +198,13 @@ class ManagedAgentSummary(BaseModel):
     latest_model_alias: Optional[str] = None
     latest_provider_name: Optional[str] = None
     last_request_at: Optional[datetime] = None
+    mcp_proxy_configured: bool = False
+    model_gateway_configured: bool = False
+    onboarding_state: str = "incomplete"
+    live_validation_supported: bool = False
+    live_validation_passed: Optional[bool] = None
+    live_validation_status: str = "unsupported"
+    last_validated_at: Optional[datetime] = None
 
 
 class ManagedAgentUsageAggregate(BaseModel):
@@ -358,6 +365,7 @@ class ManagedAgentUpdateRequest(BaseModel):
     """Operator-driven updates for one managed agent."""
 
     owner_user_id: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     lifecycle_action: Optional[str] = Field(
         default=None, pattern="^(suspend|resume|decommission|reenroll)$"
     )

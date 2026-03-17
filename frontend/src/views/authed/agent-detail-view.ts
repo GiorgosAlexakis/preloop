@@ -6,14 +6,23 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
+import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
+import '../../components/governance-rule-set-editor.ts';
 import '../../components/view-header.ts';
 import {
   fetchWithAuth,
+  getApprovalWorkflows,
+  getAgentGovernance,
   getAccountAgent,
   getAccountRuntimeSessionDetail,
+  getFeatures,
+  getTools,
+  removeAccountAgent,
+  updateAgentGovernance,
   updateAccountAgent,
 } from '../../api';
 import type {
@@ -26,18 +35,25 @@ import type {
   ManagedAgentUsageAggregate,
   RuntimeSessionActivityItem,
   RuntimeSessionSummary,
+  SubjectGovernanceConfig,
 } from '../../types';
+import type { AccessRuleSummary } from '../../components/governance-rule-set-editor';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import {
+  normalizeScopedToolRules,
+  serializeScopedToolRules,
+  type ScopedToolRules,
+} from '../../utils/scoped-governance';
+
+interface GovernanceToolDefinition {
+  name: string;
+  description?: string;
+  schema?: Record<string, unknown>;
+}
 
 @customElement('agent-detail-view')
 export class AgentDetailView extends LitElement {
-  private static readonly UPDATEABLE_LIFECYCLE_STATES = new Set([
-    'active',
-    'suspended',
-    'decommissioned',
-  ]);
-
   @property({ type: String })
   agentId = '';
 
@@ -85,7 +101,48 @@ export class AgentDetailView extends LitElement {
   private selectedOwnerUserId = '';
 
   @state()
+  private editableDisplayName = '';
+
+  @state()
   private actionLoading = false;
+
+  @state()
+  private liveActivity = {
+    modelCalls: 0,
+    toolCalls: 0,
+    lastActivityAt: null as string | null,
+  };
+
+  @state()
+  private governance: SubjectGovernanceConfig = {
+    allowed_models: [],
+    model_budgets: {},
+    tool_rules: {},
+  };
+
+  @state()
+  private allowedModelsText = '';
+
+  @state()
+  private modelBudgetsText = '{}';
+
+  @state()
+  private scopedToolRules: ScopedToolRules = {};
+
+  @state()
+  private toolCatalog: GovernanceToolDefinition[] = [];
+
+  @state()
+  private approvalWorkflows: any[] = [];
+
+  @state()
+  private featureFlags: { [key: string]: boolean | string[] } = {};
+
+  @state()
+  private governanceToolToAdd = '';
+
+  @state()
+  private governanceCustomToolName = '';
 
   private unsubscribeRealtime?: () => void;
   private refreshTimer: number | null = null;
@@ -243,7 +300,9 @@ export class AgentDetailView extends LitElement {
     const unsubscribers = [
       unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
       unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
-      unifiedWebSocketManager.subscribe('gateway_activity', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('gateway_activity', (message) =>
+        this.handleGatewayActivity(message)
+      ),
       unifiedWebSocketManager.subscribe('audit', scheduleRefresh),
     ];
     this.unsubscribeRealtime = () => {
@@ -282,18 +341,49 @@ export class AgentDetailView extends LitElement {
     this.activityByTool = [];
 
     try {
-      const [detail, users] = await Promise.all([
-        getAccountAgent(this.agentId),
-        this.fetchUsers(),
-      ]);
+      const [detail, users, governance, tools, workflows, features] =
+        await Promise.all([
+          getAccountAgent(this.agentId),
+          this.fetchUsers(),
+          getAgentGovernance(this.agentId),
+          getTools(),
+          getApprovalWorkflows(),
+          getFeatures(),
+        ]);
       this.agent = detail.agent;
       this.aggregate = detail.aggregate;
       this.usageByModel = detail.usage_by_model;
       this.activityByServer = detail.activity_by_server;
       this.activityByTool = detail.activity_by_tool;
       this.sessions = detail.sessions;
+      this.liveActivity = {
+        modelCalls: 0,
+        toolCalls: 0,
+        lastActivityAt: null,
+      };
+      this.governance = governance.config;
+      this.scopedToolRules = normalizeScopedToolRules(
+        governance.config.tool_rules
+      );
+      this.allowedModelsText = governance.config.allowed_models.join(', ');
+      this.modelBudgetsText = JSON.stringify(
+        governance.config.model_budgets || {},
+        null,
+        2
+      );
+      this.toolCatalog = (tools || []).map((tool: any) => ({
+        name: tool.name,
+        description: tool.description,
+        schema:
+          tool.schema && typeof tool.schema === 'object'
+            ? tool.schema
+            : undefined,
+      }));
+      this.approvalWorkflows = workflows || [];
+      this.featureFlags = features?.features || {};
       this.availableUsers = users;
       this.selectedOwnerUserId = detail.agent.owner_user_id ?? '';
+      this.editableDisplayName = detail.agent.display_name;
       this.selectedSessionId =
         detail.agent.runtime_session_id ?? detail.sessions[0]?.id ?? null;
       this.runtimeDetail = this.selectedSessionId
@@ -360,6 +450,7 @@ export class AgentDetailView extends LitElement {
     if (this.agent.lifecycle_state === 'decommissioned') return 'danger';
     if (this.agent.lifecycle_state === 'suspended') return 'warning';
     if (this.agent.activity_status === 'active_now') return 'success';
+    if (this.agent.activity_status === 'recently_active') return 'primary';
     if (this.agent.ended_at) return 'neutral';
     return 'primary';
   }
@@ -370,34 +461,95 @@ export class AgentDetailView extends LitElement {
       return 'Decommissioned';
     if (this.agent.lifecycle_state === 'suspended') return 'Suspended';
     if (this.agent.activity_status === 'active_now') return 'Active now';
+    if (this.agent.activity_status === 'recently_active')
+      return 'Recently active';
     if (this.agent.ended_at) return 'Ended';
     return 'Idle';
   }
 
-  private async applyLifecycleAction(
-    action: 'suspend' | 'resume' | 'decommission' | 'reenroll'
-  ): Promise<void> {
-    if (!this.agentId || !this.agent) {
-      return;
-    }
+  private getOnboardingVariant(): string {
+    if (!this.agent) return 'neutral';
+    if (this.agent.onboarding_state === 'fully_onboarded') return 'success';
     if (
-      action === 'decommission' &&
-      !window.confirm(`Decommission ${this.agent.display_name}?`)
+      this.agent.onboarding_state === 'mcp_proxy_only' ||
+      this.agent.onboarding_state === 'gateway_only'
     ) {
+      return 'warning';
+    }
+    return 'neutral';
+  }
+
+  private getOnboardingLabel(): string {
+    if (!this.agent) return 'Unknown';
+    if (this.agent.onboarding_state === 'fully_onboarded')
+      return 'Fully onboarded';
+    if (this.agent.onboarding_state === 'mcp_proxy_only') return 'Proxy only';
+    if (this.agent.onboarding_state === 'gateway_only') return 'Gateway only';
+    return 'Incomplete';
+  }
+
+  private getLiveValidationVariant(): string {
+    if (!this.agent?.live_validation_supported) return 'neutral';
+    if (this.agent.live_validation_status === 'passed') return 'success';
+    if (this.agent.live_validation_status === 'failed') return 'danger';
+    return 'warning';
+  }
+
+  private getLiveValidationLabel(): string {
+    if (!this.agent?.live_validation_supported) return 'No live check';
+    if (this.agent.live_validation_status === 'passed') return 'Live validated';
+    if (this.agent.live_validation_status === 'failed')
+      return 'Live check failed';
+    return 'Live check pending';
+  }
+
+  private handleGatewayActivity(message: any): void {
+    const payload = message?.payload ?? {};
+    if (!this.agent || payload.managed_agent_id !== this.agent.id) {
       return;
     }
-    this.actionLoading = true;
-    try {
-      await updateAccountAgent(this.agentId, { lifecycle_action: action });
-      await this.loadData();
-    } catch (error) {
-      console.error('Failed to update managed agent:', error);
-      this.error =
-        error instanceof Error
-          ? error.message
-          : 'Failed to update managed agent';
-    } finally {
-      this.actionLoading = false;
+    const type = message?.type;
+    const nextActivityAt =
+      payload.timestamp ??
+      payload.last_activity_at ??
+      this.liveActivity.lastActivityAt ??
+      new Date().toISOString();
+    this.liveActivity = {
+      modelCalls:
+        this.liveActivity.modelCalls + (type === 'model_gateway_call' ? 1 : 0),
+      toolCalls: this.liveActivity.toolCalls + (type === 'mcp_call' ? 1 : 0),
+      lastActivityAt: nextActivityAt,
+    };
+    this.agent = {
+      ...this.agent,
+      activity_status: 'active_now',
+      last_seen_at: nextActivityAt ?? this.agent.last_seen_at,
+      last_activity_at: nextActivityAt ?? this.agent.last_activity_at,
+      last_request_at:
+        type === 'model_gateway_call'
+          ? (nextActivityAt ?? this.agent.last_request_at)
+          : this.agent.last_request_at,
+    };
+    if (type === 'model_gateway_call' && this.aggregate) {
+      this.aggregate = {
+        ...this.aggregate,
+        total_requests: this.aggregate.total_requests + 1,
+        successful_requests:
+          this.aggregate.successful_requests +
+          ((payload.status_code ?? 200) < 400 ? 1 : 0),
+        failed_requests:
+          this.aggregate.failed_requests +
+          ((payload.status_code ?? 200) >= 400 ? 1 : 0),
+        estimated_cost:
+          this.aggregate.estimated_cost + Number(payload.estimated_cost ?? 0),
+        last_request_at: nextActivityAt ?? this.aggregate.last_request_at,
+        latest_model_alias:
+          (payload.model_alias as string | null) ??
+          this.aggregate.latest_model_alias,
+        latest_provider_name:
+          (payload.provider_name as string | null) ??
+          this.aggregate.latest_provider_name,
+      };
     }
   }
 
@@ -415,6 +567,201 @@ export class AgentDetailView extends LitElement {
       console.error('Failed to update owner:', error);
       this.error =
         error instanceof Error ? error.message : 'Failed to update owner';
+    } finally {
+      this.actionLoading = false;
+    }
+  }
+
+  private async saveDisplayName(): Promise<void> {
+    if (!this.agentId || !this.editableDisplayName.trim()) {
+      return;
+    }
+    this.actionLoading = true;
+    try {
+      await updateAccountAgent(this.agentId, {
+        display_name: this.editableDisplayName.trim(),
+      });
+      await this.loadData();
+    } catch (error) {
+      console.error('Failed to update agent name:', error);
+      this.error =
+        error instanceof Error ? error.message : 'Failed to update agent name';
+    } finally {
+      this.actionLoading = false;
+    }
+  }
+
+  private async saveGovernance(): Promise<void> {
+    if (!this.agentId) {
+      return;
+    }
+    this.actionLoading = true;
+    try {
+      const config: SubjectGovernanceConfig = {
+        allowed_models: this.allowedModelsText
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        model_budgets: JSON.parse(this.modelBudgetsText || '{}'),
+        tool_rules: serializeScopedToolRules(this.scopedToolRules),
+      };
+      const response = await updateAgentGovernance(this.agentId, config);
+      this.governance = response.config;
+      this.scopedToolRules = normalizeScopedToolRules(
+        response.config.tool_rules
+      );
+      this.allowedModelsText = response.config.allowed_models.join(', ');
+      this.modelBudgetsText = JSON.stringify(
+        response.config.model_budgets || {},
+        null,
+        2
+      );
+    } catch (error) {
+      console.error('Failed to update agent governance:', error);
+      this.error =
+        error instanceof Error ? error.message : 'Failed to update governance';
+    } finally {
+      this.actionLoading = false;
+    }
+  }
+
+  private getGovernanceTool(toolName: string): GovernanceToolDefinition | null {
+    return (
+      this.toolCatalog.find((tool) => tool.name === toolName.trim()) ?? null
+    );
+  }
+
+  private getAvailableGovernanceTools(): GovernanceToolDefinition[] {
+    const configured = new Set(Object.keys(this.scopedToolRules));
+    return this.toolCatalog.filter((tool) => !configured.has(tool.name));
+  }
+
+  private addGovernanceToolScope(): void {
+    const toolName = (
+      this.governanceCustomToolName.trim() || this.governanceToolToAdd.trim()
+    ).trim();
+    if (!toolName || this.scopedToolRules[toolName]) {
+      return;
+    }
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: [],
+    };
+    this.governanceToolToAdd = '';
+    this.governanceCustomToolName = '';
+  }
+
+  private removeGovernanceToolScope(toolName: string): void {
+    const nextRules = { ...this.scopedToolRules };
+    delete nextRules[toolName];
+    this.scopedToolRules = nextRules;
+  }
+
+  private saveScopedToolRule(
+    toolName: string,
+    existingRule: AccessRuleSummary | null,
+    formData: {
+      action: 'allow' | 'deny' | 'require_approval';
+      condition_expression: string | null;
+      condition_type: 'simple' | 'cel';
+      description: string | null;
+      is_enabled: boolean;
+      approval_workflow_id: string | null;
+    }
+  ): void {
+    const currentRules = [...(this.scopedToolRules[toolName] || [])].sort(
+      (left, right) => left.priority - right.priority
+    );
+    const nextRules = existingRule
+      ? currentRules.map((rule) =>
+          rule.id === existingRule.id ? { ...rule, ...formData } : rule
+        )
+      : [
+          ...currentRules,
+          {
+            id: `scoped:${toolName}:${Date.now()}:${currentRules.length}`,
+            priority: currentRules.length,
+            ...formData,
+          },
+        ];
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: nextRules.map((rule, index) => ({
+        ...rule,
+        priority: index,
+      })),
+    };
+  }
+
+  private deleteScopedToolRule(toolName: string, ruleId: string): void {
+    const nextRules = (this.scopedToolRules[toolName] || [])
+      .filter((rule) => rule.id !== ruleId)
+      .map((rule, index) => ({
+        ...rule,
+        priority: index,
+      }));
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: nextRules,
+    };
+  }
+
+  private reorderScopedToolRules(
+    toolName: string,
+    reorderedRules: { id: string; priority: number }[]
+  ): void {
+    const priorities = new Map(
+      reorderedRules.map((rule) => [rule.id, rule.priority] as const)
+    );
+    const nextRules = [...(this.scopedToolRules[toolName] || [])]
+      .map((rule) => ({
+        ...rule,
+        priority: priorities.get(rule.id) ?? rule.priority,
+      }))
+      .sort((left, right) => left.priority - right.priority)
+      .map((rule, index) => ({
+        ...rule,
+        priority: index,
+      }));
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: nextRules,
+    };
+  }
+
+  private async refreshGovernanceWorkflows(): Promise<void> {
+    try {
+      this.approvalWorkflows = await getApprovalWorkflows();
+    } catch (error) {
+      console.error('Failed to refresh approval workflows:', error);
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to refresh approval workflows';
+    }
+  }
+
+  private async removeAgent(): Promise<void> {
+    if (!this.agentId || !this.agent) {
+      return;
+    }
+    if (
+      !window.confirm(
+        `Remove ${this.agent.display_name} from the managed agents list? This only removes the Preloop registry record.`
+      )
+    ) {
+      return;
+    }
+    this.actionLoading = true;
+    try {
+      await removeAccountAgent(this.agentId);
+      window.location.href = '/console/agents';
+    } catch (error) {
+      console.error('Failed to remove managed agent:', error);
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to remove managed agent';
     } finally {
       this.actionLoading = false;
     }
@@ -560,7 +907,7 @@ export class AgentDetailView extends LitElement {
       <div class="page">
         <view-header
           title="Agent Detail"
-          subtitle="Inspect the enrolled runtime identity and its linked session activity."
+          subtitle="Inspect this managed agent record and verify whether it is fully routed through the Preloop gateway and MCP proxy."
         ></view-header>
 
         <sl-card>
@@ -581,68 +928,61 @@ export class AgentDetailView extends LitElement {
                   : null}
               </div>
               <div class="badge-row">
+                <sl-badge variant=${this.getOnboardingVariant()}>
+                  ${this.getOnboardingLabel()}
+                </sl-badge>
                 <sl-badge variant=${this.getLifecycleVariant()}>
                   ${this.getLifecycleLabel()}
+                </sl-badge>
+                <sl-badge variant=${this.getLiveValidationVariant()}>
+                  ${this.getLiveValidationLabel()}
                 </sl-badge>
                 <sl-badge variant="primary"
                   >${this.agent.enrolled_via}</sl-badge
                 >
+                ${this.liveActivity.modelCalls || this.liveActivity.toolCalls
+                  ? html`
+                      <sl-badge variant="primary">
+                        Live
+                        ${this.liveActivity.modelCalls +
+                        this.liveActivity.toolCalls}
+                      </sl-badge>
+                    `
+                  : null}
               </div>
             </div>
 
             <div class="control-row">
-              ${AgentDetailView.UPDATEABLE_LIFECYCLE_STATES.has(
-                this.agent.lifecycle_state
-              ) && this.agent.lifecycle_state === 'active'
-                ? html`
-                    <sl-button
-                      variant="warning"
-                      ?loading=${this.actionLoading}
-                      @click=${() => this.applyLifecycleAction('suspend')}
-                    >
-                      Suspend
-                    </sl-button>
-                    <sl-button
-                      variant="danger"
-                      ?loading=${this.actionLoading}
-                      @click=${() => this.applyLifecycleAction('decommission')}
-                    >
-                      Decommission
-                    </sl-button>
-                  `
-                : null}
-              ${this.agent.lifecycle_state === 'suspended'
-                ? html`
-                    <sl-button
-                      variant="success"
-                      ?loading=${this.actionLoading}
-                      @click=${() => this.applyLifecycleAction('resume')}
-                    >
-                      Resume
-                    </sl-button>
-                    <sl-button
-                      variant="danger"
-                      ?loading=${this.actionLoading}
-                      @click=${() => this.applyLifecycleAction('decommission')}
-                    >
-                      Decommission
-                    </sl-button>
-                  `
-                : null}
-              ${this.agent.lifecycle_state === 'decommissioned'
-                ? html`
-                    <sl-button
-                      variant="success"
-                      ?loading=${this.actionLoading}
-                      @click=${() => this.applyLifecycleAction('reenroll')}
-                    >
-                      Re-enroll
-                    </sl-button>
-                  `
-                : null}
+              <sl-button
+                variant="danger"
+                ?loading=${this.actionLoading}
+                @click=${this.removeAgent}
+              >
+                Remove agent record
+              </sl-button>
             </div>
 
             <div class="summary-grid">
+              <div class="stat-card">
+                <div class="stat-label">Agent name</div>
+                <div class="stat-value">${this.agent.display_name}</div>
+                <div class="control-row">
+                  <sl-input
+                    value=${this.editableDisplayName}
+                    @sl-input=${(event: Event) => {
+                      const target = event.target as HTMLInputElement;
+                      this.editableDisplayName = target.value;
+                    }}
+                  ></sl-input>
+                  <sl-button
+                    variant="default"
+                    ?loading=${this.actionLoading}
+                    @click=${this.saveDisplayName}
+                  >
+                    Save name
+                  </sl-button>
+                </div>
+              </div>
               <div class="stat-card">
                 <div class="stat-label">Owner</div>
                 <div class="stat-value">
@@ -677,7 +1017,31 @@ export class AgentDetailView extends LitElement {
                 </div>
               </div>
               <div class="stat-card">
-                <div class="stat-label">Managed MCP Servers</div>
+                <div class="stat-label">Preloop MCP Proxy</div>
+                <div class="stat-value">
+                  ${this.agent.mcp_proxy_configured ? 'Configured' : 'Missing'}
+                </div>
+                <div class="meta-line">
+                  ${this.agent.mcp_proxy_configured
+                    ? 'The local agent config points at the Preloop MCP proxy.'
+                    : 'No validated Preloop MCP proxy configuration was found.'}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Preloop Model Gateway</div>
+                <div class="stat-value">
+                  ${this.agent.model_gateway_configured
+                    ? 'Configured'
+                    : 'Missing'}
+                </div>
+                <div class="meta-line">
+                  ${this.agent.model_gateway_configured
+                    ? 'The latest enrollment records a Preloop gateway model rewrite.'
+                    : 'The latest enrollment does not prove the agent model is routed through Preloop.'}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Imported Upstream MCP Servers</div>
                 <div class="stat-value">
                   ${this.agent.managed_mcp_servers.length}
                 </div>
@@ -690,7 +1054,7 @@ export class AgentDetailView extends LitElement {
                           >`
                       )
                     : html`<span class="meta-line"
-                        >No managed MCP servers recorded</span
+                        >No upstream MCP servers imported</span
                       >`}
                 </div>
               </div>
@@ -698,8 +1062,28 @@ export class AgentDetailView extends LitElement {
                 <div class="stat-label">Historical Sessions</div>
                 <div class="stat-value">${aggregate?.session_count ?? 0}</div>
                 <div class="meta-line">
-                  Last seen ${this.formatDateTime(this.agent.last_seen_at)}
+                  Last seen
+                  ${this.formatDateTime(
+                    this.liveActivity.lastActivityAt || this.agent.last_seen_at
+                  )}
                 </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Live Validation</div>
+                <div class="stat-value">${this.getLiveValidationLabel()}</div>
+                <div class="meta-line">
+                  ${this.agent.last_validated_at
+                    ? `Updated ${this.formatDateTime(this.agent.last_validated_at)}`
+                    : 'No validation timestamp recorded yet'}
+                </div>
+                ${this.liveActivity.modelCalls || this.liveActivity.toolCalls
+                  ? html`
+                      <div class="meta-line">
+                        ${this.liveActivity.modelCalls} messages ·
+                        ${this.liveActivity.toolCalls} tools during this session
+                      </div>
+                    `
+                  : null}
               </div>
               <div class="stat-card">
                 <div class="stat-label">Lifecycle</div>
@@ -760,6 +1144,164 @@ export class AgentDetailView extends LitElement {
                       No runtime session is linked yet.
                     </div>`}
               </div>
+            </div>
+          </div>
+        </sl-card>
+
+        <sl-card>
+          <div class="stack">
+            <div class="hero">
+              <div>
+                <div class="hero-title">Scoped Governance</div>
+                <div class="meta-line">
+                  Restrict models, set per-model budgets, and apply tool rules
+                  just to this agent.
+                </div>
+              </div>
+            </div>
+            <div class="summary-grid">
+              <div class="stat-card">
+                <div class="stat-label">Allowed models</div>
+                <sl-input
+                  value=${this.allowedModelsText}
+                  placeholder="preloop/google/gemini-3.1-pro-preview, ..."
+                  @sl-input=${(event: Event) => {
+                    this.allowedModelsText = (
+                      event.target as HTMLInputElement
+                    ).value;
+                  }}
+                ></sl-input>
+                <div class="meta-line">
+                  Leave empty to inherit the account-wide model set.
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Per-model budgets (JSON)</div>
+                <sl-textarea
+                  rows="8"
+                  value=${this.modelBudgetsText}
+                  @sl-input=${(event: Event) => {
+                    this.modelBudgetsText = (
+                      event.target as HTMLTextAreaElement
+                    ).value;
+                  }}
+                ></sl-textarea>
+                <div class="meta-line">
+                  Example:
+                  <code>
+                    ${'{"preloop/google/gemini-3.1-pro-preview":{"monthly_usd_limit":25}}'}
+                  </code>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Scoped tool rules</div>
+                <div class="control-row" style="margin-bottom: 0.75rem;">
+                  <sl-select
+                    placeholder="Choose a tool"
+                    .value=${this.governanceToolToAdd}
+                    @sl-change=${(event: Event) => {
+                      this.governanceToolToAdd =
+                        (event.target as any).value || '';
+                    }}
+                  >
+                    ${this.getAvailableGovernanceTools().map(
+                      (tool) =>
+                        html`<sl-option value=${tool.name}
+                          >${tool.name}</sl-option
+                        >`
+                    )}
+                  </sl-select>
+                  <sl-input
+                    placeholder="Or enter a tool name"
+                    .value=${this.governanceCustomToolName}
+                    @sl-input=${(event: Event) => {
+                      this.governanceCustomToolName = (
+                        event.target as HTMLInputElement
+                      ).value;
+                    }}
+                  ></sl-input>
+                  <sl-button
+                    variant="default"
+                    @click=${() => this.addGovernanceToolScope()}
+                  >
+                    Add tool scope
+                  </sl-button>
+                </div>
+                ${Object.keys(this.scopedToolRules).length === 0
+                  ? html`<div class="meta-line">
+                      No scoped tool rules configured. Leave empty to inherit
+                      account-wide tool policies.
+                    </div>`
+                  : Object.keys(this.scopedToolRules)
+                      .sort()
+                      .map((toolName) => {
+                        const tool = this.getGovernanceTool(toolName);
+                        return html`
+                          <div class="stat-card" style="margin-top: 0.75rem;">
+                            <div
+                              style="display:flex; justify-content:space-between; gap:12px; align-items:start;"
+                            >
+                              <div>
+                                <div
+                                  class="hero-title"
+                                  style="font-size: 1rem;"
+                                >
+                                  ${toolName}
+                                </div>
+                                ${tool?.description
+                                  ? html`<div class="meta-line">
+                                      ${tool.description}
+                                    </div>`
+                                  : ''}
+                              </div>
+                              <sl-button
+                                size="small"
+                                variant="text"
+                                @click=${() =>
+                                  this.removeGovernanceToolScope(toolName)}
+                              >
+                                Remove scope
+                              </sl-button>
+                            </div>
+                            <governance-rule-set-editor
+                              .toolName=${toolName}
+                              .toolSchema=${tool?.schema || null}
+                              .rules=${this.scopedToolRules[toolName] || []}
+                              .workflows=${this.approvalWorkflows}
+                              .features=${this.featureFlags}
+                              .emptyMessage=${'No scoped rules for this tool yet.'}
+                              @save-rule=${(event: CustomEvent) =>
+                                this.saveScopedToolRule(
+                                  toolName,
+                                  event.detail.existingRule,
+                                  event.detail.formData
+                                )}
+                              @delete-rule=${(event: CustomEvent) =>
+                                this.deleteScopedToolRule(
+                                  toolName,
+                                  event.detail.rule.id
+                                )}
+                              @reorder-rules=${(event: CustomEvent) =>
+                                this.reorderScopedToolRules(
+                                  toolName,
+                                  event.detail.reorderedRules
+                                )}
+                              @workflow-created=${() =>
+                                void this.refreshGovernanceWorkflows()}
+                            ></governance-rule-set-editor>
+                          </div>
+                        `;
+                      })}
+              </div>
+            </div>
+            <div class="control-row">
+              <sl-button
+                variant="primary"
+                ?loading=${this.actionLoading}
+                @click=${this.saveGovernance}
+              >
+                Save scoped governance
+              </sl-button>
             </div>
           </div>
         </sl-card>

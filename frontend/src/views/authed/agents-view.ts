@@ -13,7 +13,7 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/view-header.ts';
 import {
   getAccountAgents,
-  updateAccountAgent,
+  removeAccountAgent,
   type ManagedAgentListParams,
 } from '../../api';
 import type {
@@ -45,6 +45,12 @@ export class AgentsView extends LitElement {
 
   @state()
   private actionAgentId: string | null = null;
+
+  @state()
+  private liveActivity: Record<
+    string,
+    { modelCalls: number; toolCalls: number; lastActivityAt: string | null }
+  > = {};
 
   private unsubscribeRealtime?: () => void;
   private refreshTimer: number | null = null;
@@ -166,7 +172,9 @@ export class AgentsView extends LitElement {
     const unsubscribers = [
       unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
       unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
-      unifiedWebSocketManager.subscribe('gateway_activity', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('gateway_activity', (message) =>
+        this.handleGatewayActivity(message)
+      ),
     ];
     this.unsubscribeRealtime = () => {
       for (const unsubscribe of unsubscribers) {
@@ -278,6 +286,7 @@ export class AgentsView extends LitElement {
     if (agent.lifecycle_state === 'decommissioned') return 'danger';
     if (agent.lifecycle_state === 'suspended') return 'warning';
     if (agent.activity_status === 'active_now') return 'success';
+    if (agent.activity_status === 'recently_active') return 'primary';
     if (agent.ended_at) return 'neutral';
     return 'primary';
   }
@@ -286,31 +295,108 @@ export class AgentsView extends LitElement {
     if (agent.lifecycle_state === 'decommissioned') return 'Decommissioned';
     if (agent.lifecycle_state === 'suspended') return 'Suspended';
     if (agent.activity_status === 'active_now') return 'Active now';
+    if (agent.activity_status === 'recently_active') return 'Recently active';
     if (agent.ended_at) return 'Ended';
     return 'Idle';
   }
 
-  private async applyLifecycleAction(
-    agent: ManagedAgentSummary,
-    action: 'suspend' | 'resume' | 'decommission' | 'reenroll'
-  ): Promise<void> {
+  private getOnboardingVariant(agent: ManagedAgentSummary): string {
+    if (agent.onboarding_state === 'fully_onboarded') return 'success';
+    if (agent.onboarding_state === 'mcp_proxy_only') return 'warning';
+    if (agent.onboarding_state === 'gateway_only') return 'warning';
+    return 'neutral';
+  }
+
+  private getOnboardingLabel(agent: ManagedAgentSummary): string {
+    if (agent.onboarding_state === 'fully_onboarded') {
+      return 'Fully onboarded';
+    }
+    if (agent.onboarding_state === 'mcp_proxy_only') {
+      return 'Proxy only';
+    }
+    if (agent.onboarding_state === 'gateway_only') {
+      return 'Gateway only';
+    }
+    return 'Incomplete';
+  }
+
+  private getLiveValidationVariant(agent: ManagedAgentSummary): string {
+    if (!agent.live_validation_supported) return 'neutral';
+    if (agent.live_validation_status === 'passed') return 'success';
+    if (agent.live_validation_status === 'failed') return 'danger';
+    return 'warning';
+  }
+
+  private getLiveValidationLabel(agent: ManagedAgentSummary): string {
+    if (!agent.live_validation_supported) return 'No live check';
+    if (agent.live_validation_status === 'passed') return 'Live validated';
+    if (agent.live_validation_status === 'failed') return 'Live check failed';
+    return 'Live check pending';
+  }
+
+  private handleGatewayActivity(message: any): void {
+    const payload = message?.payload ?? {};
+    const agentId = payload.managed_agent_id;
+    if (!agentId || !this.agents) {
+      return;
+    }
+    const type = message?.type;
+    const previous = this.liveActivity[agentId] ?? {
+      modelCalls: 0,
+      toolCalls: 0,
+      lastActivityAt: null,
+    };
+    const next = {
+      modelCalls: previous.modelCalls + (type === 'model_gateway_call' ? 1 : 0),
+      toolCalls: previous.toolCalls + (type === 'mcp_call' ? 1 : 0),
+      lastActivityAt:
+        payload.timestamp ??
+        payload.last_activity_at ??
+        previous.lastActivityAt ??
+        new Date().toISOString(),
+    };
+    this.liveActivity = {
+      ...this.liveActivity,
+      [agentId]: next,
+    };
+    this.agents = {
+      ...this.agents,
+      items: this.agents.items.map((agent) =>
+        agent.id !== agentId
+          ? agent
+          : {
+              ...agent,
+              activity_status: 'active_now',
+              last_seen_at: next.lastActivityAt ?? agent.last_seen_at,
+              last_activity_at: next.lastActivityAt ?? agent.last_activity_at,
+              last_request_at:
+                type === 'model_gateway_call'
+                  ? (next.lastActivityAt ?? agent.last_request_at)
+                  : agent.last_request_at,
+            }
+      ),
+    };
+  }
+
+  private async removeAgent(agent: ManagedAgentSummary): Promise<void> {
     if (
-      action === 'decommission' &&
-      !window.confirm(`Decommission ${agent.display_name}?`)
+      !window.confirm(
+        `Remove ${agent.display_name} from the managed agents list? This only removes the Preloop registry record.`
+      )
     ) {
       return;
     }
 
     this.actionAgentId = agent.id;
     try {
-      await updateAccountAgent(agent.id, { lifecycle_action: action });
+      await removeAccountAgent(agent.id);
       await this.loadAgents();
     } catch (error) {
-      console.error('Failed to update managed agent:', error);
+      console.error('Failed to remove managed agent:', error);
       this.error =
         error instanceof Error
           ? error.message
-          : 'Failed to update managed agent';
+          : 'Failed to remove managed agent';
     } finally {
       this.actionAgentId = null;
     }
@@ -318,6 +404,9 @@ export class AgentsView extends LitElement {
 
   private renderAgentCard(agent: ManagedAgentSummary) {
     const detailUrl = this.getAgentDetailUrl(agent);
+    const liveActivity = this.liveActivity[agent.id];
+    const liveTotal =
+      (liveActivity?.modelCalls || 0) + (liveActivity?.toolCalls || 0);
     return html`
       <sl-card class="agent-card">
         <div class="card-stack">
@@ -329,9 +418,20 @@ export class AgentsView extends LitElement {
                 ${agent.session_source_id}
               </div>
             </div>
-            <sl-badge variant=${this.getLifecycleVariant(agent)}>
-              ${this.getLifecycleLabel(agent)}
-            </sl-badge>
+            <div class="badges">
+              <sl-badge variant=${this.getOnboardingVariant(agent)}>
+                ${this.getOnboardingLabel(agent)}
+              </sl-badge>
+              <sl-badge variant=${this.getLifecycleVariant(agent)}>
+                ${this.getLifecycleLabel(agent)}
+              </sl-badge>
+              <sl-badge variant=${this.getLiveValidationVariant(agent)}>
+                ${this.getLiveValidationLabel(agent)}
+              </sl-badge>
+              ${liveTotal
+                ? html`<sl-badge variant="primary">Live ${liveTotal}</sl-badge>`
+                : null}
+            </div>
           </div>
 
           ${agent.session_reference
@@ -353,8 +453,22 @@ export class AgentsView extends LitElement {
             : null}
 
           <div class="metric-row">
-            <span class="label">Managed MCP Servers</span>
-            <span class="value">${agent.managed_mcp_servers.length}</span>
+            <span class="label">Preloop MCP Proxy</span>
+            <span class="value"
+              >${agent.mcp_proxy_configured ? 'Configured' : 'Missing'}</span
+            >
+          </div>
+          <div class="metric-row">
+            <span class="label">Preloop Model Gateway</span>
+            <span class="value"
+              >${agent.model_gateway_configured
+                ? 'Configured'
+                : 'Missing'}</span
+            >
+          </div>
+          <div class="metric-row">
+            <span class="label">Latest Model</span>
+            <span class="value">${agent.latest_model_alias || 'Unknown'}</span>
           </div>
           <div class="badges">
             ${agent.managed_mcp_servers.length
@@ -363,13 +477,8 @@ export class AgentsView extends LitElement {
                     html`<sl-badge variant="primary">${serverName}</sl-badge>`
                 )
               : html`<span class="label"
-                  >No managed MCP servers recorded</span
+                  >No upstream MCP servers imported</span
                 >`}
-          </div>
-
-          <div class="metric-row">
-            <span class="label">Latest Model</span>
-            <span class="value">${agent.latest_model_alias || 'None yet'}</span>
           </div>
           <div class="metric-row">
             <span class="label">Requests</span>
@@ -382,66 +491,36 @@ export class AgentsView extends LitElement {
           <div class="metric-row">
             <span class="label">Last Seen</span>
             <span class="value"
-              >${this.formatDateTime(agent.last_seen_at)}</span
+              >${this.formatDateTime(
+                liveActivity?.lastActivityAt || agent.last_seen_at
+              )}</span
             >
           </div>
+          ${liveTotal
+            ? html`
+                <div class="metric-row">
+                  <span class="label">Live Activity</span>
+                  <span class="value">
+                    ${liveActivity?.modelCalls || 0} messages ·
+                    ${liveActivity?.toolCalls || 0} tools
+                  </span>
+                </div>
+              `
+            : null}
 
           <div class="action-row">
-            <span class="label">Inspect or control this enrolled agent</span>
+            <span class="label"
+              >Inspect, rename, or remove this agent record</span
+            >
             <div class="badges">
-              ${agent.lifecycle_state === 'active'
-                ? html`
-                    <sl-button
-                      size="small"
-                      variant="warning"
-                      ?loading=${this.actionAgentId === agent.id}
-                      @click=${() =>
-                        this.applyLifecycleAction(agent, 'suspend')}
-                    >
-                      Suspend
-                    </sl-button>
-                    <sl-button
-                      size="small"
-                      variant="danger"
-                      ?loading=${this.actionAgentId === agent.id}
-                      @click=${() =>
-                        this.applyLifecycleAction(agent, 'decommission')}
-                    >
-                      Decommission
-                    </sl-button>
-                  `
-                : agent.lifecycle_state === 'suspended'
-                  ? html`
-                      <sl-button
-                        size="small"
-                        variant="success"
-                        ?loading=${this.actionAgentId === agent.id}
-                        @click=${() =>
-                          this.applyLifecycleAction(agent, 'resume')}
-                      >
-                        Resume
-                      </sl-button>
-                      <sl-button
-                        size="small"
-                        variant="danger"
-                        ?loading=${this.actionAgentId === agent.id}
-                        @click=${() =>
-                          this.applyLifecycleAction(agent, 'decommission')}
-                      >
-                        Decommission
-                      </sl-button>
-                    `
-                  : html`
-                      <sl-button
-                        size="small"
-                        variant="success"
-                        ?loading=${this.actionAgentId === agent.id}
-                        @click=${() =>
-                          this.applyLifecycleAction(agent, 'reenroll')}
-                      >
-                        Re-enroll
-                      </sl-button>
-                    `}
+              <sl-button
+                size="small"
+                variant="danger"
+                ?loading=${this.actionAgentId === agent.id}
+                @click=${() => this.removeAgent(agent)}
+              >
+                Remove
+              </sl-button>
               <a href=${detailUrl}>
                 <sl-button size="small" variant="default">View Agent</sl-button>
               </a>
@@ -457,7 +536,7 @@ export class AgentsView extends LitElement {
       <div class="page">
         <view-header
           title="Agents"
-          subtitle="Browse enrolled external agents and jump into their linked runtime sessions."
+          subtitle="Browse managed agent records and verify whether each one is fully routed through the Preloop gateway and MCP proxy."
         ></view-header>
 
         <form class="filters" @submit=${this.handleSearchSubmit}>

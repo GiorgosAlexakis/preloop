@@ -724,6 +724,16 @@ async def {internal_name}({params_str}) -> str:
                     tool_args=arguments,
                     account_id=uuid.UUID(user_context.account_id),
                     user_id=uuid.UUID(user_context.user_id),
+                    subject_context={
+                        "api_key_id": user_context.api_key_id,
+                        "managed_agent_id": getattr(
+                            user_context, "managed_agent_id", None
+                        ),
+                        "runtime_session_id": user_context.runtime_session_id,
+                        "runtime_principal_type": user_context.runtime_principal_type,
+                        "runtime_principal_id": user_context.runtime_principal_id,
+                        "runtime_principal_name": user_context.runtime_principal_name,
+                    },
                     correlation_id=correlation_id,
                     extra_details={
                         "runtime_session_id": user_context.runtime_session_id,
@@ -831,6 +841,7 @@ async def {internal_name}({params_str}) -> str:
                     from preloop.models.crud import crud_runtime_session_activity
                     from preloop.services.account_realtime import (
                         ACCOUNT_TOPIC_AUDIT,
+                        ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
                         ACCOUNT_TOPIC_MANAGED_AGENTS,
                         ACCOUNT_TOPIC_RUNTIME_SESSIONS,
                         build_account_event,
@@ -864,6 +875,19 @@ async def {internal_name}({params_str}) -> str:
                             if activity.timestamp
                             else None
                         )
+                        managed_agent = None
+                        if (
+                            user_context.runtime_principal_type
+                            and user_context.runtime_principal_id
+                        ):
+                            from preloop.models.crud import crud_managed_agent
+
+                            managed_agent = crud_managed_agent.get_by_source(
+                                db,
+                                account_id=user_context.account_id,
+                                session_source_type=user_context.runtime_principal_type,
+                                session_source_id=user_context.runtime_principal_id,
+                            )
                         emit_account_event(
                             build_account_event(
                                 account_id=user_context.account_id,
@@ -891,6 +915,34 @@ async def {internal_name}({params_str}) -> str:
                         emit_account_event(
                             build_account_event(
                                 account_id=user_context.account_id,
+                                topic=ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+                                event_type="mcp_call",
+                                payload={
+                                    "runtime_session_id": str(
+                                        user_context.runtime_session_id
+                                    ),
+                                    "runtime_principal_type": user_context.runtime_principal_type,
+                                    "runtime_principal_id": user_context.runtime_principal_id,
+                                    "runtime_principal_name": user_context.runtime_principal_name,
+                                    "managed_agent_id": str(managed_agent.id)
+                                    if managed_agent is not None
+                                    else None,
+                                    "api_key_id": user_context.api_key_id,
+                                    "api_key_name": user_context.api_key_name,
+                                    "server_name": server_name,
+                                    "tool_name": name,
+                                    "status": activity_status,
+                                    "summary": exec_error,
+                                    "correlation_id": correlation_id,
+                                    "timestamp": activity_timestamp,
+                                },
+                                runtime_session_id=user_context.runtime_session_id,
+                                execution_id=user_context.flow_execution_id,
+                            )
+                        )
+                        emit_account_event(
+                            build_account_event(
+                                account_id=user_context.account_id,
                                 topic=ACCOUNT_TOPIC_AUDIT,
                                 event_type="audit_event",
                                 payload={
@@ -910,16 +962,14 @@ async def {internal_name}({params_str}) -> str:
                                 execution_id=user_context.flow_execution_id,
                             )
                         )
-                        if (
-                            user_context.runtime_principal_type
-                            and user_context.runtime_principal_id
-                        ):
+                        if managed_agent is not None:
                             emit_account_event(
                                 build_account_event(
                                     account_id=user_context.account_id,
                                     topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
                                     event_type="managed_agent_updated",
                                     payload={
+                                        "agent_id": str(managed_agent.id),
                                         "runtime_session_id": str(
                                             user_context.runtime_session_id
                                         ),
@@ -1012,11 +1062,13 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
         runtime_principal_type = None
         runtime_principal_id = None
         runtime_principal_name = None
+        managed_agent_id = None
         api_key_id = str(api_key.id) if api_key else None
         api_key_name = api_key.name if api_key else None
         if api_key and api_key.context_data:
             flow_execution_id = api_key.context_data.get("flow_execution_id")
             runtime_session_id = api_key.context_data.get("runtime_session_id")
+            managed_agent_id = api_key.context_data.get("managed_agent_id")
             runtime_principal = api_key.context_data.get("runtime_principal") or {}
             runtime_principal_type = runtime_principal.get("type")
             runtime_principal_id = runtime_principal.get("id")
@@ -1057,6 +1109,9 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             runtime_principal_name=runtime_principal_name,
             api_key_id=api_key_id,
             api_key_name=api_key_name,
+            managed_agent_id=(
+                str(managed_agent_id) if managed_agent_id is not None else None
+            ),
         )
 
         logger.info(

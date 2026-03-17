@@ -17,7 +17,7 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -50,6 +50,10 @@ from preloop.schemas.auth import (
     AuthUserResponse,
     AuthUserUpdate,
 )
+from preloop.schemas.subject_governance import (
+    SubjectGovernanceConfig,
+    SubjectGovernanceResponse,
+)
 from preloop.utils import get_client_ip
 from preloop.utils.email import send_password_reset_email
 from preloop.utils.tokens import (
@@ -74,6 +78,8 @@ from preloop.models.models.mcp_tool import MCPTool
 from preloop.models.models.tool_configuration import ToolConfiguration
 from preloop.models.models.user import User as UserModel
 from preloop.models.models.api_key import ApiKey
+from preloop.models.models.api_usage import ApiUsage
+from preloop.models.models.runtime_session_activity import RuntimeSessionActivity
 from pydantic import BaseModel
 from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_AUDIT,
@@ -86,6 +92,11 @@ from preloop.services.account_setup_service import (
     complete_new_account_setup_background,
     notify_admins_user_login_after_inactivity,
     should_notify_on_login,
+)
+from preloop.services.subject_governance import (
+    SUBJECT_TYPE_API_KEYS,
+    get_subject_governance,
+    set_subject_governance,
 )
 
 
@@ -100,6 +111,8 @@ RUNTIME_SESSION_SOURCE_TYPES = {
     "custom",
 }
 RUNTIME_SESSION_ALLOWED_SCOPES = ("mcp:read", "mcp:write")
+API_KEY_ACTIVE_WINDOW = timedelta(minutes=10)
+API_KEY_RECENT_WINDOW = timedelta(hours=24)
 
 
 def _normalize_runtime_session_scopes(requested_scopes: List[str]) -> List[str]:
@@ -133,6 +146,95 @@ def _normalize_runtime_session_scopes(requested_scopes: List[str]) -> List[str]:
         )
 
     return normalized_scopes or list(RUNTIME_SESSION_ALLOWED_SCOPES)
+
+
+def _api_key_activity_status(
+    last_activity_at: Optional[datetime], *, is_active: bool
+) -> str:
+    if not is_active:
+        return "revoked"
+    if last_activity_at is None:
+        return "idle"
+    observed_at = (
+        last_activity_at
+        if last_activity_at.tzinfo is not None
+        else last_activity_at.replace(tzinfo=UTC)
+    )
+    age = datetime.now(UTC) - observed_at.astimezone(UTC)
+    if age <= API_KEY_ACTIVE_WINDOW:
+        return "active_now"
+    if age <= API_KEY_RECENT_WINDOW:
+        return "recently_active"
+    return "idle"
+
+
+def _build_api_key_summary(session: Session, key: ApiKey) -> ApiKeySummary:
+    context_data = key.context_data if isinstance(key.context_data, dict) else {}
+    runtime_principal = (
+        context_data.get("runtime_principal")
+        if isinstance(context_data.get("runtime_principal"), dict)
+        else {}
+    )
+    recent_start = datetime.now(UTC) - API_KEY_RECENT_WINDOW
+    last_model_call = (
+        session.query(func.max(ApiUsage.timestamp))
+        .filter(
+            ApiUsage.api_key_id == key.id,
+            ApiUsage.action_type == "model_gateway",
+        )
+        .scalar()
+    )
+    recent_model_calls = (
+        session.query(func.count(ApiUsage.id))
+        .filter(
+            ApiUsage.api_key_id == key.id,
+            ApiUsage.action_type == "model_gateway",
+            ApiUsage.timestamp >= recent_start,
+        )
+        .scalar()
+        or 0
+    )
+    last_tool_call = (
+        session.query(func.max(RuntimeSessionActivity.timestamp))
+        .filter(
+            RuntimeSessionActivity.api_key_id == key.id,
+            RuntimeSessionActivity.activity_type == "tool_call",
+        )
+        .scalar()
+    )
+    recent_tool_calls = (
+        session.query(func.count(RuntimeSessionActivity.id))
+        .filter(
+            RuntimeSessionActivity.api_key_id == key.id,
+            RuntimeSessionActivity.activity_type == "tool_call",
+            RuntimeSessionActivity.timestamp >= recent_start,
+        )
+        .scalar()
+        or 0
+    )
+    candidate_times = [
+        value for value in (key.last_used_at, last_model_call, last_tool_call) if value
+    ]
+    last_activity_at = max(candidate_times) if candidate_times else None
+    managed_agent_id = context_data.get("managed_agent_id")
+    return ApiKeySummary(
+        id=key.id,
+        name=key.name,
+        created_at=key.created_at,
+        expires_at=key.expires_at,
+        scopes=key.scopes,
+        last_used_at=key.last_used_at,
+        managed_agent_id=UUID(str(managed_agent_id)) if managed_agent_id else None,
+        runtime_principal_type=runtime_principal.get("type"),
+        runtime_principal_id=runtime_principal.get("id"),
+        runtime_principal_name=runtime_principal.get("name"),
+        last_activity_at=last_activity_at,
+        activity_status=_api_key_activity_status(
+            last_activity_at, is_active=bool(key.is_active)
+        ),
+        recent_model_calls=int(recent_model_calls or 0),
+        recent_tool_calls=int(recent_tool_calls or 0),
+    )
 
 
 def _normalize_runtime_session_server_names(server_names: List[str]) -> List[str]:
@@ -1018,10 +1120,7 @@ async def create_runtime_session_token(
 
     api_key, token_value = crud_api_key.create_runtime_key(
         db,
-        name=(
-            f"Runtime Session {session_data.session_source_type}:"
-            f"{session_data.session_source_id}"
-        ),
+        name=f"Managed Agent {runtime_principal_name} [{runtime_principal_id}]",
         account_id=current_user.account_id,
         user_id=current_user.id,
         scopes=scopes,
@@ -1171,21 +1270,99 @@ async def list_api_keys(
         # Get API keys using CRUD layer
         keys = crud_api_key.get_by_user(session, username=current_user.username)
 
-        return [
-            ApiKeySummary(
-                id=key.id,
-                name=key.name,
-                created_at=key.created_at,
-                expires_at=key.expires_at,
-                scopes=key.scopes,
-                last_used_at=key.last_used_at,
-            )
-            for key in keys
-        ]
+        return [_build_api_key_summary(session, key) for key in keys]
     finally:
         session.close()
         try:
             # Clean up the generator
+            next(session_generator, None)
+        except StopIteration:
+            pass
+
+
+@router.get(
+    "/api-keys/{key_id}/governance",
+    response_model=SubjectGovernanceResponse,
+)
+async def get_api_key_governance(
+    key_id: UUID,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+) -> SubjectGovernanceResponse:
+    session_generator = get_db_session()
+    session = next(session_generator)
+    try:
+        key = (
+            session.query(ApiKey)
+            .filter(ApiKey.id == key_id, ApiKey.user_id == current_user.id)
+            .first()
+        )
+        if key is None:
+            raise HTTPException(status_code=404, detail="API key not found")
+        account = crud_account.get(session, id=current_user.account_id)
+        return SubjectGovernanceResponse(
+            subject_type=SUBJECT_TYPE_API_KEYS,
+            subject_id=str(key_id),
+            config=SubjectGovernanceConfig.model_validate(
+                get_subject_governance(
+                    (account.meta_data or {}) if account else {},
+                    subject_type=SUBJECT_TYPE_API_KEYS,
+                    subject_id=str(key_id),
+                )
+            ),
+        )
+    finally:
+        session.close()
+        try:
+            next(session_generator, None)
+        except StopIteration:
+            pass
+
+
+@router.put(
+    "/api-keys/{key_id}/governance",
+    response_model=SubjectGovernanceResponse,
+)
+async def update_api_key_governance(
+    key_id: UUID,
+    payload: SubjectGovernanceConfig,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+) -> SubjectGovernanceResponse:
+    session_generator = get_db_session()
+    session = next(session_generator)
+    try:
+        key = (
+            session.query(ApiKey)
+            .filter(ApiKey.id == key_id, ApiKey.user_id == current_user.id)
+            .first()
+        )
+        if key is None:
+            raise HTTPException(status_code=404, detail="API key not found")
+        account = crud_account.get(session, id=current_user.account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        account.meta_data = set_subject_governance(
+            account.meta_data or {},
+            subject_type=SUBJECT_TYPE_API_KEYS,
+            subject_id=str(key_id),
+            config=payload.model_dump(),
+        )
+        session.add(account)
+        session.commit()
+        session.refresh(account)
+        return SubjectGovernanceResponse(
+            subject_type=SUBJECT_TYPE_API_KEYS,
+            subject_id=str(key_id),
+            config=SubjectGovernanceConfig.model_validate(
+                get_subject_governance(
+                    account.meta_data or {},
+                    subject_type=SUBJECT_TYPE_API_KEYS,
+                    subject_id=str(key_id),
+                )
+            ),
+        )
+    finally:
+        session.close()
+        try:
             next(session_generator, None)
         except StopIteration:
             pass

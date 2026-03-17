@@ -135,6 +135,7 @@ class UserContext:
         runtime_principal_name: Optional[str] = None,
         api_key_id: Optional[str] = None,
         api_key_name: Optional[str] = None,
+        managed_agent_id: Optional[str] = None,
     ):
         self.user_id = user_id
         self.account_id = account_id
@@ -152,6 +153,7 @@ class UserContext:
         self.runtime_principal_name = runtime_principal_name
         self.api_key_id = api_key_id
         self.api_key_name = api_key_name
+        self.managed_agent_id = managed_agent_id
 
 
 class DynamicMCPServer:
@@ -532,6 +534,24 @@ class DynamicMCPServer:
                     tool_configuration_id=config.id if config else None,
                     user_id=getattr(user_context, "user_id", None),
                     execution_id=getattr(user_context, "execution_id", None),
+                    subject_context={
+                        "api_key_id": getattr(user_context, "api_key_id", None),
+                        "managed_agent_id": getattr(
+                            user_context, "managed_agent_id", None
+                        ),
+                        "runtime_session_id": getattr(
+                            user_context, "runtime_session_id", None
+                        ),
+                        "runtime_principal_type": getattr(
+                            user_context, "runtime_principal_type", None
+                        ),
+                        "runtime_principal_id": getattr(
+                            user_context, "runtime_principal_id", None
+                        ),
+                        "runtime_principal_name": getattr(
+                            user_context, "runtime_principal_name", None
+                        ),
+                    },
                     extra_details={
                         "runtime_session_id": getattr(
                             user_context, "runtime_session_id", None

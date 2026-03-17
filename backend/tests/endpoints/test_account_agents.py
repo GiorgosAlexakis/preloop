@@ -102,6 +102,9 @@ def test_account_agents_endpoint_lists_onboarded_agents(client, db_session, test
     assert item["estimated_cost"] == 0.12
     assert item["latest_model_alias"] == "openai/gpt-5"
     assert item["latest_provider_name"] == "openai"
+    assert item["onboarding_state"] == "incomplete"
+    assert item["mcp_proxy_configured"] is False
+    assert item["model_gateway_configured"] is False
 
 
 def test_account_agent_detail_endpoint_returns_one_agent(client, db_session, test_user):
@@ -407,6 +410,9 @@ def test_account_agent_detail_includes_credentials_and_enrollments(
         if item["enrollment_type"] == "runtime_session_bootstrap"
     )
     assert cli_enrollment["adapter_key"] == "openclaw"
+    assert body["agent"]["onboarding_state"] == "mcp_proxy_only"
+    assert body["agent"]["mcp_proxy_configured"] is True
+    assert body["agent"]["model_gateway_configured"] is False
     assert (
         bootstrap_enrollment["managed_config"]["runtime_session_id"]
         == (token_response.json()["runtime_session_id"])
@@ -421,6 +427,79 @@ def test_account_agent_detail_includes_credentials_and_enrollments(
     credentials_response = client.get(f"/api/v1/agents/{agent_id}/credentials")
     assert credentials_response.status_code == 200
     assert credentials_response.json()[0]["status"] == "revoked"
+
+
+def test_account_agent_delete_removes_registry_record(client, db_session, test_user):
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-delete-agent",
+            "runtime_principal_name": "Delete Me",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    delete_response = client.delete(f"/api/v1/agents/{agent_id}")
+    assert delete_response.status_code == 200
+
+    after_response = client.get("/api/v1/agents")
+    assert after_response.status_code == 200
+    assert after_response.json()["total"] == 0
+
+
+def test_account_agent_governance_round_trip(client, db_session, test_user):
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "openclaw",
+            "session_source_id": "openclaw-governance",
+            "runtime_principal_name": "Governed Agent",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    get_response = client.get(f"/api/v1/agents/{agent_id}/governance")
+    assert get_response.status_code == 200
+    assert get_response.json()["config"]["allowed_models"] == []
+
+    update_response = client.put(
+        f"/api/v1/agents/{agent_id}/governance",
+        json={
+            "allowed_models": ["openai/gpt-5"],
+            "model_budgets": {
+                "openai/gpt-5": {"monthly_usd_limit": 25, "soft_limit_usd": 20}
+            },
+            "tool_rules": {
+                "search_issues": [
+                    {
+                        "action": "require_approval",
+                        "condition_type": "simple",
+                        "condition_expression": "args.repo == 'private'",
+                    }
+                ]
+            },
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["config"]["allowed_models"] == ["openai/gpt-5"]
+    assert updated["config"]["model_budgets"]["openai/gpt-5"]["monthly_usd_limit"] == 25
+    assert updated["config"]["tool_rules"]["search_issues"][0]["action"] == (
+        "require_approval"
+    )
+
+    verify_response = client.get(f"/api/v1/agents/{agent_id}/governance")
+    assert verify_response.status_code == 200
+    assert verify_response.json()["config"] == updated["config"]
 
 
 def test_account_agent_enrollment_validate_and_restore(client, db_session, test_user):

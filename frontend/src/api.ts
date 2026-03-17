@@ -21,6 +21,8 @@ import type {
   ManagedAgentDetailResponse,
   ManagedAgentSummary,
   ManagedAgentUpdateRequest,
+  SubjectGovernanceConfig,
+  SubjectGovernanceResponse,
   AccountGatewayUsageSearchResponse,
   AccountRuntimeSessionDetailResponse,
   AccountRuntimeSessionListResponse,
@@ -402,6 +404,43 @@ export async function updateAccountAgent(
   });
   if (!response.ok) {
     throw new Error('Failed to update managed agent');
+  }
+  return response.json();
+}
+
+export async function removeAccountAgent(
+  agentId: string
+): Promise<{ message: string }> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to remove managed agent');
+  }
+  return response.json();
+}
+
+export async function getAgentGovernance(
+  agentId: string
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}/governance`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch agent governance');
+  }
+  return response.json();
+}
+
+export async function updateAgentGovernance(
+  agentId: string,
+  config: SubjectGovernanceConfig
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}/governance`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update agent governance');
   }
   return response.json();
 }
@@ -790,6 +829,36 @@ export async function deleteApiKey(keyId: string) {
   if (!response.ok) {
     throw new Error('Failed to delete API key');
   }
+}
+
+export async function getApiKeyGovernance(
+  keyId: string
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/auth/api-keys/${keyId}/governance`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch API key governance');
+  }
+  return response.json();
+}
+
+export async function updateApiKeyGovernance(
+  keyId: string,
+  config: SubjectGovernanceConfig
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/auth/api-keys/${keyId}/governance`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to update API key governance');
+  }
+  return response.json();
 }
 
 // AI Models

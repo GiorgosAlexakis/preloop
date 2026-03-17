@@ -15,6 +15,7 @@ from ..models.user import User
 from .base import CRUDBase
 
 MANAGED_AGENT_ACTIVE_WINDOW = timedelta(minutes=10)
+MANAGED_AGENT_RECENT_WINDOW = timedelta(hours=24)
 
 
 def _utc_now() -> datetime:
@@ -104,6 +105,8 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         agent_id: str,
         owner_user_id: Any = None,
         set_owner: bool = False,
+        display_name: Optional[str] = None,
+        set_display_name: bool = False,
         lifecycle_state: Optional[str] = None,
         lifecycle_reason: Optional[str] = None,
         commit: bool = True,
@@ -115,6 +118,8 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         now = _utc_now()
         if set_owner:
             db_obj.owner_user_id = owner_user_id
+        if set_display_name and display_name is not None:
+            db_obj.display_name = display_name.strip()
         if lifecycle_state is not None:
             db_obj.lifecycle_state = lifecycle_state
             db_obj.lifecycle_reason = lifecycle_reason
@@ -549,6 +554,12 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         ):
             activity_status = "active_now"
             is_active_now = True
+        elif (
+            last_activity is not None
+            and (now - last_activity) <= MANAGED_AGENT_RECENT_WINDOW
+        ):
+            activity_status = "recently_active"
+            is_active_now = False
         else:
             activity_status = "idle"
             is_active_now = False

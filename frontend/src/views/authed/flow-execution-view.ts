@@ -1154,6 +1154,56 @@ export class FlowExecutionView extends LitElement {
     if (this.execution.mcp_usage_logs.length > this.toolCalls) {
       this.toolCalls = this.execution.mcp_usage_logs.length;
     }
+    const existingToolLogKeys = new Set(
+      this.logs
+        .filter((log) => log.type === 'mcp_call')
+        .map((log) =>
+          [
+            log.timestamp,
+            log.payload?.server_name ?? 'MCP',
+            log.payload?.tool_name ?? '',
+          ].join(':')
+        )
+    );
+    const synthesizedLogs = this.execution.mcp_usage_logs
+      .map((entry) => {
+        const timestamp =
+          typeof entry?.timestamp === 'string'
+            ? entry.timestamp
+            : this.execution?.start_time || new Date().toISOString();
+        const toolName =
+          typeof entry?.tool_name === 'string' ? entry.tool_name.trim() : '';
+        const serverName =
+          typeof entry?.server_name === 'string' && entry.server_name.trim()
+            ? entry.server_name.trim()
+            : 'MCP';
+        if (!toolName) {
+          return null;
+        }
+        const key = [timestamp, serverName, toolName].join(':');
+        if (existingToolLogKeys.has(key)) {
+          return null;
+        }
+        existingToolLogKeys.add(key);
+        return {
+          execution_id: this.executionId!,
+          timestamp,
+          type: 'mcp_call',
+          payload: {
+            ...entry,
+            tool_name: toolName,
+            server_name: serverName,
+          },
+        } satisfies FlowExecutionUpdate;
+      })
+      .filter((entry): entry is FlowExecutionUpdate => entry !== null);
+    if (synthesizedLogs.length > 0) {
+      this.logs = [...this.logs, ...synthesizedLogs].sort(
+        (left, right) =>
+          new Date(left.timestamp).getTime() -
+          new Date(right.timestamp).getTime()
+      );
+    }
   }
 
   private getGatewayEventKey(event: FlowGatewayEvent): string {
