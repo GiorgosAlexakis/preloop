@@ -386,12 +386,16 @@ class TestEvaluatePolicyAsync:
         mock_config.approval_workflow_id = None
 
         mock_db = MagicMock()
+        account_result = MagicMock()
+        account_result.scalar_one_or_none.return_value = {}
         config_result = MagicMock()
         config_result.scalar_one_or_none.return_value = mock_config
         rules_result = MagicMock()
         rules_result.scalars.return_value.all.return_value = []
 
-        mock_db.execute = AsyncMock(side_effect=[config_result, rules_result])
+        mock_db.execute = AsyncMock(
+            side_effect=[account_result, config_result, rules_result]
+        )
 
         action, approval_id, desc = await evaluate_policy_async(
             db=mock_db,

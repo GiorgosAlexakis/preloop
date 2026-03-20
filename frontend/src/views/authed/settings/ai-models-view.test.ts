@@ -26,6 +26,13 @@ describe('AIModelsView', () => {
               name: 'Claude Sonnet Primary',
               provider_name: 'Anthropic',
               model_identifier: 'claude-sonnet-4',
+              meta_data: {
+                gateway: {
+                  enabled: true,
+                  model_alias: 'preloop/anthropic/claude-sonnet-4',
+                },
+                managed_agent_display_name: 'Mini Claw',
+              },
               is_default: true,
               created_at: '2026-03-01T10:00:00Z',
               updated_at: '2026-03-09T18:30:00Z',
@@ -130,6 +137,8 @@ describe('AIModelsView', () => {
     expect(content).to.contain('42 requests');
     expect(content).to.contain('3 active sessions');
     expect(content).to.contain('Attention');
+    expect(content).to.contain('preloop/anthropic/claude-sonnet-4');
+    expect(content).to.contain('Mini Claw');
 
     const nameLink = element.shadowRoot?.querySelector(
       'a.model-link[href="/console/settings/ai-models/model-1"]'

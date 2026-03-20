@@ -10,8 +10,11 @@ import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '../../../components/view-header.ts';
 import {
+  extractErrorMessage,
+  fetchWithAuth,
   getAIModel,
   getAIModelGatewayUsageSearch,
   getAIModelGatewayUsageSummary,
@@ -66,6 +69,19 @@ export class AIModelDetailView extends LitElement {
 
   @state()
   private interactionQuery = '';
+
+  @state()
+  private validationPrompt =
+    'Welcome to Preloop. Reply with a short acknowledgement.';
+
+  @state()
+  private validationResponse = '';
+
+  @state()
+  private validationError: string | null = null;
+
+  @state()
+  private validationInFlight = false;
 
   private initialized = false;
   private unsubscribeRealtime?: () => void;
@@ -151,6 +167,30 @@ export class AIModelDetailView extends LitElement {
         display: flex;
         gap: var(--sl-spacing-small);
         flex-wrap: wrap;
+      }
+
+      .metadata-stack,
+      .validation-stack {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-small);
+      }
+
+      .validation-toolbar {
+        display: flex;
+        gap: var(--sl-spacing-small);
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .validation-output {
+        white-space: pre-wrap;
+        font-family: var(--sl-font-mono);
+        font-size: var(--sl-font-size-small);
+        background: var(--sl-color-neutral-50);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
       }
 
       .summary-grid {
@@ -588,6 +628,105 @@ export class AIModelDetailView extends LitElement {
     );
   }
 
+  private getGatewayConfig(): {
+    enabled?: boolean;
+    model_alias?: string;
+    url?: string;
+  } | null {
+    const gateway = this.model?.meta_data?.gateway;
+    return gateway && typeof gateway === 'object'
+      ? (gateway as { enabled?: boolean; model_alias?: string; url?: string })
+      : null;
+  }
+
+  private get gatewayModelAlias(): string {
+    const gatewayAlias = this.getGatewayConfig()?.model_alias?.trim();
+    if (gatewayAlias) {
+      return gatewayAlias;
+    }
+    if (!this.model) {
+      return '';
+    }
+    return `${String(this.model.provider_name || '').toLowerCase()}/${this.model.model_identifier}`;
+  }
+
+  private get gatewayEnabled(): boolean {
+    return Boolean(this.getGatewayConfig()?.enabled);
+  }
+
+  private get managedAgentDisplayName(): string | null {
+    const value = this.model?.meta_data?.managed_agent_display_name;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private get managedAgentId(): string | null {
+    const value = this.model?.meta_data?.managed_agent_id;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private get managedAgentRuntimePrincipalId(): string | null {
+    const value = this.model?.meta_data?.managed_agent_runtime_principal_id;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private async runValidationPrompt() {
+    if (
+      !this.gatewayEnabled ||
+      !this.gatewayModelAlias ||
+      !this.validationPrompt.trim()
+    ) {
+      this.validationError =
+        'This model is not gateway-enabled or the prompt is empty.';
+      return;
+    }
+
+    this.validationInFlight = true;
+    this.validationError = null;
+    this.validationResponse = '';
+
+    try {
+      const response = await fetchWithAuth('/openai/v1/responses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: this.gatewayModelAlias,
+          input: this.validationPrompt.trim(),
+        }),
+      });
+      const responseData = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          extractErrorMessage(responseData, 'Failed to run model request')
+        );
+      }
+      const outputText = Array.isArray(responseData?.output)
+        ? responseData.output
+            .flatMap((item: any) =>
+              Array.isArray(item?.content)
+                ? item.content
+                    .map((contentItem: any) =>
+                      typeof contentItem?.text === 'string'
+                        ? contentItem.text
+                        : null
+                    )
+                    .filter(Boolean)
+                : []
+            )
+            .join('\n')
+        : '';
+      this.validationResponse =
+        outputText ||
+        responseData?.output_text ||
+        JSON.stringify(responseData, null, 2);
+      await this.loadData({ preserveLoadingState: true });
+    } catch (error) {
+      this.validationError =
+        error instanceof Error ? error.message : 'Failed to run model request';
+    } finally {
+      this.validationInFlight = false;
+    }
+  }
+
   private renderStatCard(label: string, value: string, detail: string) {
     return html`
       <div class="stat-card">
@@ -809,6 +948,68 @@ export class AIModelDetailView extends LitElement {
     `;
   }
 
+  private renderGatewayValidation() {
+    const gatewayConfig = this.getGatewayConfig();
+    return html`
+      <sl-card>
+        <div slot="header" class="model-title">Try Through Gateway</div>
+        <div class="validation-stack">
+          <div class="meta-line">
+            ${this.gatewayEnabled
+              ? html`
+                  Send a real request through Preloop using
+                  <code>${this.gatewayModelAlias}</code>.
+                `
+              : 'This model is not currently configured for the Preloop gateway.'}
+          </div>
+          ${gatewayConfig?.url
+            ? html`
+                <div class="meta-line">
+                  Gateway URL: <code>${gatewayConfig.url}</code>
+                </div>
+              `
+            : ''}
+          ${this.gatewayEnabled
+            ? html`
+                <sl-textarea
+                  label="Prompt"
+                  rows="4"
+                  value=${this.validationPrompt}
+                  @sl-input=${(event: Event) => {
+                    this.validationPrompt = (
+                      event.target as HTMLTextAreaElement & { value: string }
+                    ).value;
+                  }}
+                ></sl-textarea>
+                <div class="validation-toolbar">
+                  <sl-button
+                    variant="primary"
+                    ?loading=${this.validationInFlight}
+                    @click=${this.runValidationPrompt}
+                  >
+                    Send request
+                  </sl-button>
+                </div>
+              `
+            : null}
+          ${this.validationError
+            ? html`
+                <sl-alert variant="danger" open>
+                  <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                  ${this.validationError}
+                </sl-alert>
+              `
+            : null}
+          ${this.validationResponse
+            ? html`
+                <div class="validation-output">${this.validationResponse}</div>
+              `
+            : null}
+        </div>
+      </sl-card>
+    `;
+  }
+
   render() {
     const headerText = this.model?.name || 'AI Model';
 
@@ -842,16 +1043,63 @@ export class AIModelDetailView extends LitElement {
               </div>
               ${this.model
                 ? html`
-                    <div class="model-metadata">
-                      <span><strong>Name:</strong> ${this.model.name}</span>
-                      <span>
-                        <strong>Identifier:</strong>
-                        <code>${this.model.model_identifier}</code>
-                      </span>
-                      <span>
-                        <strong>Updated:</strong>
-                        ${this.formatDateTime(this.model.updated_at)}
-                      </span>
+                    <div class="metadata-stack">
+                      <div class="model-metadata">
+                        <span><strong>Name:</strong> ${this.model.name}</span>
+                        <span>
+                          <strong>Identifier:</strong>
+                          <code>${this.model.model_identifier}</code>
+                        </span>
+                        <span>
+                          <strong>Updated:</strong>
+                          ${this.formatDateTime(this.model.updated_at)}
+                        </span>
+                      </div>
+                      <div class="model-metadata">
+                        <span>
+                          <strong>Gateway:</strong>
+                          ${this.gatewayEnabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                        ${this.gatewayModelAlias
+                          ? html`
+                              <span>
+                                <strong>Gateway alias:</strong>
+                                <code>${this.gatewayModelAlias}</code>
+                              </span>
+                            `
+                          : ''}
+                        <span>
+                          <strong>Upstream credentials:</strong>
+                          ${this.model.has_api_key ? 'Configured' : 'Missing'}
+                        </span>
+                        ${this.managedAgentDisplayName
+                          ? html`
+                              <span>
+                                <strong>Managed agent:</strong>
+                                ${this.managedAgentId
+                                  ? html`
+                                      <a
+                                        class="session-link"
+                                        href=${`/console/agents/${encodeURIComponent(this.managedAgentId)}`}
+                                      >
+                                        ${this.managedAgentDisplayName}
+                                      </a>
+                                    `
+                                  : this.managedAgentDisplayName}
+                              </span>
+                            `
+                          : ''}
+                        ${this.managedAgentRuntimePrincipalId
+                          ? html`
+                              <span>
+                                <strong>Runtime principal:</strong>
+                                <code
+                                  >${this.managedAgentRuntimePrincipalId}</code
+                                >
+                              </span>
+                            `
+                          : ''}
+                      </div>
                     </div>
                   `
                 : html`
@@ -860,6 +1108,8 @@ export class AIModelDetailView extends LitElement {
                     </div>
                   `}
             </sl-card>
+
+            ${this.renderGatewayValidation()}
 
             <sl-card>
               <div slot="header" class="model-title">Filters</div>

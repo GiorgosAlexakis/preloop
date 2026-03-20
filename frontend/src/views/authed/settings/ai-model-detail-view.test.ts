@@ -25,6 +25,17 @@ describe('AIModelDetailView', () => {
             name: 'Claude Sonnet Primary',
             provider_name: 'Anthropic',
             model_identifier: 'claude-sonnet-4',
+            has_api_key: true,
+            meta_data: {
+              gateway: {
+                enabled: true,
+                url: 'https://gateway.example/openai/v1',
+                model_alias: 'preloop/anthropic/claude-sonnet-4',
+              },
+              managed_agent_id: 'agent-1',
+              managed_agent_display_name: 'Mini Claw',
+              managed_agent_runtime_principal_id: 'mini-claw-123',
+            },
             is_default: true,
             created_at: '2026-03-01T10:00:00Z',
             updated_at: '2026-03-09T18:30:00Z',
@@ -175,6 +186,26 @@ describe('AIModelDetailView', () => {
         );
       }
 
+      if (url === '/openai/v1/responses') {
+        return new Response(
+          JSON.stringify({
+            output: [
+              {
+                content: [
+                  {
+                    text: 'Welcome acknowledged.',
+                  },
+                ],
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       return new Response(
         JSON.stringify({ detail: `Unhandled request: ${url}` }),
         {
@@ -215,6 +246,9 @@ describe('AIModelDetailView', () => {
     expect(content).to.contain('Model Observability');
     expect(content).to.contain('Anthropic');
     expect(content).to.contain('claude-sonnet-4');
+    expect(content).to.contain('preloop/anthropic/claude-sonnet-4');
+    expect(content).to.contain('Mini Claw');
+    expect(content).to.contain('Try Through Gateway');
     expect(content).to.contain('18');
     expect(content).to.contain('$1.42');
     expect(content).to.contain('8,500');
@@ -233,6 +267,10 @@ describe('AIModelDetailView', () => {
 
     expect(runtimeSessionLink).to.not.equal(null);
     expect(flowExecutionLink).to.not.equal(null);
+    const agentLink = element.shadowRoot?.querySelector(
+      'a[href="/console/agents/agent-1"]'
+    );
+    expect(agentLink).to.not.equal(null);
 
     const summaryCall = fetchStub
       .getCalls()
@@ -263,6 +301,46 @@ describe('AIModelDetailView', () => {
     expect(String(interactionsCall?.args[0])).to.contain('limit=10');
     expect(connectStub).to.have.been.calledOnce;
     expect(subscribeStub.callCount).to.equal(4);
+
+    document.body.removeChild(element);
+  });
+
+  it('sends a test request through the gateway', async () => {
+    const element = document.createElement(
+      'ai-model-detail-view'
+    ) as AIModelDetailView;
+    element.modelId = 'model-1';
+    document.body.appendChild(element);
+
+    await waitUntil(
+      () => !(element as any).loading,
+      'AI model detail view did not finish loading'
+    );
+    await element.updateComplete;
+
+    localStorage.setItem('accessToken', 'test-access-token');
+    await (element as any).runValidationPrompt();
+
+    await waitUntil(
+      () =>
+        fetchStub
+          .getCalls()
+          .some((call) => String(call.args[0]) === '/openai/v1/responses'),
+      'Gateway request was not sent'
+    );
+    await element.updateComplete;
+
+    const requestCall = fetchStub
+      .getCalls()
+      .find((call) => String(call.args[0]) === '/openai/v1/responses');
+    expect(requestCall).to.not.equal(undefined);
+    expect(requestCall?.args[1]).to.deep.include({ method: 'POST' });
+    expect(String((requestCall?.args[1] as RequestInit)?.body)).to.contain(
+      'preloop/anthropic/claude-sonnet-4'
+    );
+    expect(element.shadowRoot?.textContent || '').to.contain(
+      'Welcome acknowledged.'
+    );
 
     document.body.removeChild(element);
   });

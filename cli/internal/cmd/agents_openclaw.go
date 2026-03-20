@@ -139,7 +139,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			input,
 			output,
 			fmt.Sprintf(
-				"Apply managed Preloop enrollment for %s? (y/N): ",
+				"Apply managed Preloop onboarding for %s? (y/N): ",
 				resolveAgentDisplayName(agent),
 			),
 		)
@@ -147,7 +147,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			return fmt.Errorf("failed to read confirmation: %w", err)
 		}
 		if !confirmed {
-			fmt.Println("Aborted without applying enrollment.")
+			fmt.Println("Aborted without applying onboarding.")
 			return nil
 		}
 	}
@@ -182,6 +182,8 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 		_, aiModelNotes, err = syncOpenClawAIModel(
 			client,
+			managedAgent,
+			agent,
 			parsed,
 			strings.TrimRight(client.BaseURL(), "/")+openClawGatewayPath,
 		)
@@ -297,7 +299,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 	}
 
-	fmt.Printf("✓ Enrolled %s\n", resolveAgentDisplayName(agent))
+	fmt.Printf("✓ Onboarded %s\n", resolveAgentDisplayName(agent))
 	fmt.Printf("  Managed agent: %s (%s)\n", managedAgent.ID, runtimePrincipalIDForAgent(agent))
 	if len(serverSync.Added) > 0 {
 		fmt.Printf(
@@ -345,7 +347,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	if liveValidationErr != nil {
 		fmt.Printf("  Warning: live validation failed: %v\n", liveValidationErr)
 		if opts.LiveValidate {
-			return fmt.Errorf("managed enrollment applied, but live validation failed: %w", liveValidationErr)
+			return fmt.Errorf("managed onboarding applied, but live validation failed: %w", liveValidationErr)
 		}
 	}
 	return nil
@@ -445,13 +447,14 @@ func runOpenClawLiveValidation(
 		}, err
 	}
 
+	managedModelAlias := openClawManagedModelAlias(parsed)
 	validationToken := fmt.Sprintf("preloop-validation-%d", time.Now().UTC().UnixNano())
 	prompt := fmt.Sprintf(
 		"Welcome to Preloop. Validation token: %s. Reply with ACK only.",
 		validationToken,
 	)
 	requestPayload := map[string]interface{}{
-		"model": parsed.ModelAlias,
+		"model": managedModelAlias,
 		"messages": []map[string]interface{}{
 			{
 				"role":    "user",
@@ -476,7 +479,7 @@ func runOpenClawLiveValidation(
 		client,
 		runtimePrincipalIDForAgent(agent),
 		apiKeyID,
-		parsed.ModelAlias,
+		managedModelAlias,
 		validationToken,
 	)
 
@@ -487,7 +490,7 @@ func runOpenClawLiveValidation(
 		"live_validation_status":         "failed",
 		"live_validation_token":          validationToken,
 		"live_validation_prompt":         prompt,
-		"live_validation_model_alias":    parsed.ModelAlias,
+		"live_validation_model_alias":    managedModelAlias,
 		"live_validation_runtime_agent":  resolveAgentDisplayName(agent),
 		"live_validation_runtime_source": runtimePrincipalIDForAgent(agent),
 	})
@@ -745,10 +748,13 @@ func buildOpenClawManagedProvider(
 
 func syncOpenClawAIModel(
 	client *api.Client,
+	managedAgent *managedAgentSummary,
+	agent AgentConfig,
 	parsed *openClawParsedConfig,
 	gatewayURL string,
 ) (*aiModelResponse, []string, error) {
-	if client == nil || parsed == nil || parsed.ModelAlias == "" {
+	managedModelAlias := openClawManagedModelAlias(parsed)
+	if client == nil || parsed == nil || managedModelAlias == "" {
 		return nil, nil, nil
 	}
 
@@ -757,8 +763,14 @@ func syncOpenClawAIModel(
 		return nil, nil, fmt.Errorf("failed to list AI models: %w", err)
 	}
 
-	target := findReusableAIModel(existing, parsed)
-	metaData := mergeGatewayMetaForAIModel(target, parsed, gatewayURL)
+	target := findReusableAIModel(existing, parsed, managedModelAlias)
+	metaData := mergeGatewayMetaForAIModel(
+		target,
+		managedAgent,
+		agent,
+		gatewayURL,
+		managedModelAlias,
+	)
 	notes := []string{}
 	if parsed.ProviderAPIKey == "" {
 		notes = append(
@@ -786,20 +798,20 @@ func syncOpenClawAIModel(
 			target = &updated
 			notes = append(
 				notes,
-				fmt.Sprintf("Updated AI model %q for gateway alias %s.", target.Name, parsed.ModelAlias),
+				fmt.Sprintf("Updated AI model %q for gateway alias %s.", target.Name, managedModelAlias),
 			)
 		} else {
 			notes = append(
 				notes,
-				fmt.Sprintf("Reused existing AI model %q for gateway alias %s.", target.Name, parsed.ModelAlias),
+				fmt.Sprintf("Reused existing AI model %q for gateway alias %s.", target.Name, managedModelAlias),
 			)
 		}
 		return target, notes, nil
 	}
 
 	create := aiModelCreateRequest{
-		Name:            fmt.Sprintf("OpenClaw %s", parsed.ModelAlias),
-		Description:     "Imported from OpenClaw managed enrollment",
+		Name:            fmt.Sprintf("OpenClaw %s", managedModelAlias),
+		Description:     "Imported from OpenClaw managed onboarding",
 		ProviderName:    parsed.ProviderName,
 		ModelIdentifier: parsed.ModelID,
 		APIEndpoint:     parsed.ProviderBaseURL,
@@ -809,18 +821,22 @@ func syncOpenClawAIModel(
 
 	var created aiModelResponse
 	if err := client.Post("/api/v1/ai-models", create, &created); err != nil {
-		return nil, nil, fmt.Errorf("failed to create AI model for %s: %w", parsed.ModelAlias, err)
+		return nil, nil, fmt.Errorf("failed to create AI model for %s: %w", managedModelAlias, err)
 	}
 	notes = append(
 		notes,
-		fmt.Sprintf("Imported AI model %q for gateway alias %s.", created.Name, parsed.ModelAlias),
+		fmt.Sprintf("Imported AI model %q for gateway alias %s.", created.Name, managedModelAlias),
 	)
 	return &created, notes, nil
 }
 
-func findReusableAIModel(models []aiModelResponse, parsed *openClawParsedConfig) *aiModelResponse {
+func findReusableAIModel(
+	models []aiModelResponse,
+	parsed *openClawParsedConfig,
+	managedModelAlias string,
+) *aiModelResponse {
 	for i := range models {
-		if gatewayAliasForAIModel(models[i]) == parsed.ModelAlias {
+		if gatewayAliasForAIModel(models[i]) == managedModelAlias {
 			return &models[i]
 		}
 	}
@@ -841,8 +857,10 @@ func findReusableAIModel(models []aiModelResponse, parsed *openClawParsedConfig)
 
 func mergeGatewayMetaForAIModel(
 	current *aiModelResponse,
-	parsed *openClawParsedConfig,
+	managedAgent *managedAgentSummary,
+	agent AgentConfig,
 	gatewayURL string,
+	managedModelAlias string,
 ) map[string]interface{} {
 	meta := map[string]interface{}{}
 	if current != nil && current.MetaData != nil {
@@ -855,12 +873,28 @@ func mergeGatewayMetaForAIModel(
 		"enabled":          true,
 		"url":              gatewayURL,
 		"provider_adapter": "preloop",
-		"model_alias":      parsed.ModelAlias,
+		"model_alias":      managedModelAlias,
 	}
 	meta["gateway"] = gateway
-	meta["managed_by"] = "preloop agents enroll openclaw"
+	meta["managed_by"] = "preloop agents onboard openclaw"
 	meta["source_agent"] = "openclaw"
+	if managedAgent != nil {
+		meta["managed_agent_id"] = managedAgent.ID
+		meta["managed_agent_session_source_type"] = managedAgent.SessionSourceType
+	}
+	meta["managed_agent_display_name"] = resolveAgentDisplayName(agent)
+	meta["managed_agent_runtime_principal_id"] = runtimePrincipalIDForAgent(agent)
 	return meta
+}
+
+func openClawManagedModelAlias(parsed *openClawParsedConfig) string {
+	if parsed == nil {
+		return ""
+	}
+	if strings.EqualFold(strings.TrimSpace(parsed.ProviderID), openClawManagedProviderID) {
+		return strings.TrimSpace(parsed.ModelRef)
+	}
+	return strings.TrimSpace(openClawManagedProviderID + "/" + parsed.ModelAlias)
 }
 
 func gatewayAliasForAIModel(model aiModelResponse) string {

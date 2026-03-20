@@ -345,6 +345,20 @@ export class AIModelsView extends LitElement {
     return 'Healthy';
   }
 
+  private getGatewayAlias(model: AIModel): string | null {
+    const gateway = model.meta_data?.gateway;
+    if (!gateway || typeof gateway !== 'object') {
+      return null;
+    }
+    const alias = (gateway as { model_alias?: string }).model_alias;
+    return typeof alias === 'string' && alias.trim() ? alias.trim() : null;
+  }
+
+  private getManagedAgentDisplayName(model: AIModel): string | null {
+    const value = model.meta_data?.managed_agent_display_name;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
   private renderFleetOverview() {
     return html`
       <div class="summary-grid">
@@ -478,6 +492,22 @@ export class AIModelsView extends LitElement {
                           ${model.name}
                         </a>
                         <div class="model-meta">${model.model_identifier}</div>
+                        ${this.getGatewayAlias(model)
+                          ? html`
+                              <div class="model-meta">
+                                Gateway alias:
+                                <code>${this.getGatewayAlias(model)}</code>
+                              </div>
+                            `
+                          : null}
+                        ${this.getManagedAgentDisplayName(model)
+                          ? html`
+                              <div class="model-meta">
+                                Managed agent:
+                                ${this.getManagedAgentDisplayName(model)}
+                              </div>
+                            `
+                          : null}
                       </td>
                       <td>${model.provider_name}</td>
                       <td>

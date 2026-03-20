@@ -1,6 +1,7 @@
 export interface AIModel {
   id: string;
   name: string;
+  description?: string | null;
   provider_name: string;
   api_key?: string;
   has_api_key?: boolean;
@@ -8,6 +9,7 @@ export interface AIModel {
   credentials_backend_type?: string | null;
   api_endpoint?: string;
   model_identifier: string;
+  meta_data?: Record<string, unknown> | null;
   is_default?: boolean;
   created_at: string;
   updated_at: string;

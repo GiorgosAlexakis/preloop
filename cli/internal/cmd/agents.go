@@ -120,8 +120,9 @@ Examples:
 }
 
 var agentsEnrollCmd = &cobra.Command{
-	Use:   "enroll <agent>",
-	Short: "Enroll a discovered agent into managed MCP access",
+	Use:     "onboard <agent>",
+	Aliases: []string{"enroll"},
+	Short:   "Onboard a discovered agent into managed MCP access",
 	Long: `Create or locate the managed agent identity in Preloop, create a durable
 credential for it, back up the local config, and add a managed Preloop MCP server
 entry to the selected agent configuration.
@@ -371,14 +372,14 @@ func init() {
 	agentsCmd.AddCommand(agentsOffboardCmd)
 	agentsCmd.AddCommand(agentsStarterPolicyCmd)
 
-	agentsDiscoverCmd.Flags().Bool("add", false, "deprecated: use 'preloop agents enroll <agent>' instead")
+	agentsDiscoverCmd.Flags().Bool("add", false, "deprecated: use 'preloop agents onboard <agent>' instead")
 	agentsDiscoverCmd.Flags().Bool("json", false, "output discovered agents as JSON")
 	agentsDiscoverCmd.Flags().Bool("no-onboard-prompt", false, "do not prompt to onboard discovered agents")
 	agentsDiscoverCmd.Flags().Bool("yes", false, "auto-approve interactive onboarding prompts")
-	_ = agentsDiscoverCmd.Flags().MarkDeprecated("add", "use 'preloop agents enroll <agent>'")
+	_ = agentsDiscoverCmd.Flags().MarkDeprecated("add", "use 'preloop agents onboard <agent>'")
 	agentsEnrollCmd.Flags().Bool("dry-run", false, "preview account and config changes without writing")
-	agentsEnrollCmd.Flags().Bool("yes", false, "skip the enrollment confirmation prompt")
-	agentsEnrollCmd.Flags().Bool("live-validate", false, "after enrollment, run a supported live validation prompt through the agent")
+	agentsEnrollCmd.Flags().Bool("yes", false, "skip the onboarding confirmation prompt")
+	agentsEnrollCmd.Flags().Bool("live-validate", false, "after onboarding, run a supported live validation prompt through the agent")
 	agentsListCmd.Flags().Bool("json", false, "output managed agents as JSON")
 	agentsStatusCmd.Flags().Bool("json", false, "output managed status as JSON")
 	agentsValidateCmd.Flags().Bool("live", false, "run a supported live validation prompt in addition to config validation")
@@ -399,7 +400,7 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 	autoApprove, _ := cmd.Flags().GetBool("yes")
 
 	if addServers {
-		return fmt.Errorf("discover is now read-only; use 'preloop agents enroll <agent>'")
+		return fmt.Errorf("discover is now read-only; use 'preloop agents onboard <agent>'")
 	}
 
 	discovered, err := discoverAgents(os.Stdout, !asJSON)
@@ -441,7 +442,7 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 	}
 
 	if totalServers > 0 {
-		fmt.Println("Tip: Use 'preloop agents enroll <agent>' to create a managed Preloop MCP entry with backup and restore support.")
+		fmt.Println("Tip: Use 'preloop agents onboard <agent>' to create a managed Preloop MCP entry with backup and restore support.")
 	}
 
 	if noOnboardPrompt {
@@ -1828,7 +1829,7 @@ func printEnrollmentPlan(plan managedMCPEnrollmentPlan, dryRun bool) {
 	if dryRun {
 		mode = "Preview"
 	}
-	fmt.Printf("%s managed MCP enrollment for %s\n", mode, resolveAgentDisplayName(plan.Agent))
+	fmt.Printf("%s managed MCP onboarding for %s\n", mode, resolveAgentDisplayName(plan.Agent))
 	fmt.Printf("  Agent type: %s\n", plan.Agent.Name)
 	fmt.Printf("  Config: %s\n", plan.Agent.ConfigPath)
 	fmt.Printf("  Managed server: %s -> %s\n", plan.ManagedServerName, plan.ManagedServerURL)
