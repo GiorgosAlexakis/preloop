@@ -361,3 +361,50 @@ func TestWaitForManagedValidationUsage_FindsIndexedEvent(t *testing.T) {
 		t.Fatalf("expected indexed usage item, got %#v", item)
 	}
 }
+
+func TestExtractOpenClawProfileAPIKeyMaterial(t *testing.T) {
+	t.Setenv("GEMINI_TEST_KEY", "from-env")
+	profile := map[string]interface{}{
+		"mode":   "api_key",
+		"apiKey": "${GEMINI_TEST_KEY}",
+	}
+	key, note := extractOpenClawProfileAPIKeyMaterial(profile)
+	if key != "from-env" {
+		t.Fatalf("expected env-expanded key, got %q (note=%q)", key, note)
+	}
+	profileInline := map[string]interface{}{
+		"mode":   "api_key",
+		"apiKey": "inline-secret",
+	}
+	key2, _ := extractOpenClawProfileAPIKeyMaterial(profileInline)
+	if key2 != "inline-secret" {
+		t.Fatalf("expected inline key, got %q", key2)
+	}
+}
+
+func TestMergeGatewayMetaForAIModelGatewayEnabledOnlyWithFlag(t *testing.T) {
+	meta := mergeGatewayMetaForAIModel(
+		nil,
+		nil,
+		AgentConfig{},
+		"https://preloop.example/openai/v1",
+		"google/gemini-2.5-pro",
+		false,
+	)
+	gw, _ := meta["gateway"].(map[string]interface{})
+	if gw["enabled"] != false {
+		t.Fatalf("expected gateway disabled, got %#v", gw)
+	}
+	metaOn := mergeGatewayMetaForAIModel(
+		nil,
+		nil,
+		AgentConfig{},
+		"https://preloop.example/openai/v1",
+		"google/gemini-2.5-pro",
+		true,
+	)
+	gwOn, _ := metaOn["gateway"].(map[string]interface{})
+	if gwOn["enabled"] != true {
+		t.Fatalf("expected gateway enabled, got %#v", gwOn)
+	}
+}

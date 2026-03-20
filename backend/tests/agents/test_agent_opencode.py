@@ -301,6 +301,23 @@ class TestOpenCodeBuildConfig:
         provider = config["provider"]["preloop"]
         assert provider["options"]["baseURL"] == "http://gateway.internal/openai/v1"
         assert "openai/gpt-5" in provider["models"]
+        assert config["model"] == "preloop/openai/gpt-5"
+
+    def test_gateway_strips_duplicate_provider_prefix_in_models_map(self):
+        """If alias already includes ``preloop/``, models keys stay provider-local."""
+        agent = OpenCodeAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_url": "http://gateway.internal/openai/v1",
+            "model_gateway_provider": "preloop",
+        }
+        config = agent._build_opencode_config(
+            "preloop/openai/gpt-5", "anthropic", context, 600000
+        )
+        assert config["model"] == "preloop/openai/gpt-5"
+        assert config["provider"]["preloop"]["models"] == {
+            "openai/gpt-5": {"name": "openai/gpt-5"}
+        }
 
     def test_non_gateway_provider_fallback_uses_effective_provider(self):
         """Direct-provider config derives provider consistently for env fallback."""

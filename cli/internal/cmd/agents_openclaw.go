@@ -764,12 +764,17 @@ func syncOpenClawAIModel(
 	}
 
 	target := findReusableAIModel(existing, parsed, managedModelAlias)
+	upstreamResolved := strings.TrimSpace(parsed.ProviderAPIKey) != ""
+	if target != nil && target.HasAPIKey {
+		upstreamResolved = true
+	}
 	metaData := mergeGatewayMetaForAIModel(
 		target,
 		managedAgent,
 		agent,
 		gatewayURL,
 		managedModelAlias,
+		upstreamResolved,
 	)
 	notes := []string{}
 	if parsed.ProviderAPIKey == "" {
@@ -861,6 +866,7 @@ func mergeGatewayMetaForAIModel(
 	agent AgentConfig,
 	gatewayURL string,
 	managedModelAlias string,
+	gatewayEnabled bool,
 ) map[string]interface{} {
 	meta := map[string]interface{}{}
 	if current != nil && current.MetaData != nil {
@@ -870,7 +876,9 @@ func mergeGatewayMetaForAIModel(
 		}
 	}
 	gateway := map[string]interface{}{
-		"enabled":          true,
+		// Only enable when upstream provider credentials are stored on the
+		// AIModel; otherwise the gateway returns "Model credentials are not configured".
+		"enabled":          gatewayEnabled,
 		"url":              gatewayURL,
 		"provider_adapter": "preloop",
 		"model_alias":      managedModelAlias,
@@ -1239,6 +1247,57 @@ func resolveOpenClawProviderAPIKey(
 	return "", "OpenClaw provider API key could not be resolved automatically."
 }
 
+// extractOpenClawProfileAPIKeyMaterial reads inline API key material from OpenClaw
+// auth.profiles when mode is "api_key" (common for Gemini / Google AI Studio keys).
+func extractOpenClawProfileAPIKeyMaterial(profile map[string]interface{}) (string, string) {
+	candidates := []string{
+		getStringField(profile, "apiKey"),
+		getStringField(profile, "api_key"),
+	}
+	if creds, ok := asObjectMap(profile["credentials"]); ok {
+		candidates = append(
+			candidates,
+			getStringField(creds, "apiKey"),
+			getStringField(creds, "api_key"),
+		)
+	}
+	for _, raw := range candidates {
+		if key, note := resolveOpenClawInlineAPIKeyString(raw); key != "" {
+			return key, note
+		}
+	}
+	return "", ""
+}
+
+func getStringField(object map[string]interface{}, key string) string {
+	if object == nil {
+		return ""
+	}
+	value, _ := object[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func resolveOpenClawInlineAPIKeyString(raw string) (string, string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ""
+	}
+	matches := openClawEnvPattern.FindStringSubmatch(raw)
+	if len(matches) == 2 {
+		if resolved := strings.TrimSpace(os.Getenv(matches[1])); resolved != "" {
+			return resolved, fmt.Sprintf(
+				"Resolved OpenClaw profile API key from environment variable %s.",
+				matches[1],
+			)
+		}
+		return "", fmt.Sprintf(
+			"OpenClaw profile API key references %s, but it is not set in this shell.",
+			matches[1],
+		)
+	}
+	return raw, ""
+}
+
 func resolveOpenClawProfileBackedAPIKey(
 	document map[string]interface{},
 	providerID string,
@@ -1255,8 +1314,11 @@ func resolveOpenClawProfileBackedAPIKey(
 			continue
 		}
 		if mode, _ := profile["mode"].(string); strings.EqualFold(strings.TrimSpace(mode), "api_key") {
+			if key, note := extractOpenClawProfileAPIKeyMaterial(profile); key != "" {
+				return key, note
+			}
 			return "", fmt.Sprintf(
-				"OpenClaw provider %s uses auth.profiles (%s) for credentials; import the model metadata now and configure the provider secret in Preloop separately.",
+				"OpenClaw provider %s uses auth.profiles (%s) for credentials; set an apiKey on the provider block or add the API key in the Preloop console for this model.",
 				providerID,
 				profileName,
 			)

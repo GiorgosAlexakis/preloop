@@ -15,6 +15,25 @@ from .container import ContainerAgentExecutor
 logger = logging.getLogger(__name__)
 
 
+def _opencode_provider_local_model_id(model: str, provider: str) -> str:
+    """
+    Return the model id used inside OpenCode's provider.models map.
+
+    Strips a single leading ``{provider}/`` prefix so registry keys stay
+    provider-local (OpenCode resolves models against the suffix of the
+    top-level ``model`` field, not a duplicated ``provider/provider/...`` path).
+    """
+    m = (model or "").strip()
+    p = (provider or "").strip().lower()
+    if not m or not p:
+        return m
+    prefix = f"{p}/"
+    if m.lower().startswith(prefix):
+        rest = m[len(prefix) :].strip()
+        return rest if rest else m
+    return m
+
+
 class OpenCodeAgent(ContainerAgentExecutor):
     """
     OpenCode CLI agent executor.
@@ -467,9 +486,14 @@ exit $OPENCODE_EXIT_CODE
             env_key = f"{effective_model_provider.upper().replace('-', '_')}_API_BASE"
             model_endpoint = os.getenv(env_key) or os.getenv("CUSTOM_API_BASE", "")
 
+        # Local model id for provider registry lookup (must match the suffix of
+        # ``model_qualified``, never a duplicated ``{provider}/{provider}/...``).
+        model_local_id = _opencode_provider_local_model_id(
+            model, effective_model_provider
+        )
         # OpenCode splits the model field on "/" to get providerID/modelID.
         # Without the slash, it treats the entire string as the provider.
-        model_qualified = f"{effective_model_provider}/{model}"
+        model_qualified = f"{effective_model_provider}/{model_local_id}"
 
         config: Dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
@@ -502,7 +526,7 @@ exit $OPENCODE_EXIT_CODE
                         "apiKey": "$OPENAI_API_KEY",
                     },
                     "models": {
-                        model: {"name": model},
+                        model_local_id: {"name": model_local_id},
                     },
                 }
             }

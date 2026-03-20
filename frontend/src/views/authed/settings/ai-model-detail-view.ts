@@ -19,6 +19,7 @@ import {
   getAIModelGatewayUsageSearch,
   getAIModelGatewayUsageSummary,
   getAIModelRuntimeSessions,
+  updateAIModel,
   type GatewayUsageSummaryParams,
 } from '../../../api';
 import type {
@@ -82,6 +83,9 @@ export class AIModelDetailView extends LitElement {
 
   @state()
   private validationInFlight = false;
+
+  @state()
+  private gatewayEnableInFlight = false;
 
   private initialized = false;
   private unsubscribeRealtime?: () => void;
@@ -654,6 +658,39 @@ export class AIModelDetailView extends LitElement {
     return Boolean(this.getGatewayConfig()?.enabled);
   }
 
+  private async enableGatewayRouting() {
+    if (!this.model?.id || !this.model.has_api_key) {
+      this.validationError =
+        'Add upstream API credentials on this model before enabling gateway routing.';
+      return;
+    }
+    this.gatewayEnableInFlight = true;
+    this.validationError = null;
+    try {
+      const meta: Record<string, unknown> = {
+        ...(this.model.meta_data && typeof this.model.meta_data === 'object'
+          ? this.model.meta_data
+          : {}),
+      };
+      const provider = String(this.model.provider_name || '').toLowerCase();
+      const mid = this.model.model_identifier;
+      meta.gateway = {
+        enabled: true,
+        provider_adapter: 'preloop',
+        model_alias: `${provider}/${mid}`,
+      };
+      this.model = await updateAIModel(this.model.id, { meta_data: meta });
+      await this.loadData({ preserveLoadingState: true });
+    } catch (error) {
+      this.validationError =
+        error instanceof Error
+          ? error.message
+          : 'Failed to enable gateway routing';
+    } finally {
+      this.gatewayEnableInFlight = false;
+    }
+  }
+
   private get managedAgentDisplayName(): string | null {
     const value = this.model?.meta_data?.managed_agent_display_name;
     return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -991,7 +1028,24 @@ export class AIModelDetailView extends LitElement {
                   </sl-button>
                 </div>
               `
-            : null}
+            : html`
+                <div class="meta-line">
+                  ${this.model?.has_api_key
+                    ? html`
+                        <sl-button
+                          variant="primary"
+                          ?loading=${this.gatewayEnableInFlight}
+                          @click=${this.enableGatewayRouting}
+                        >
+                          Enable Preloop gateway routing
+                        </sl-button>
+                      `
+                    : html`
+                        Add upstream API credentials (edit this model) before
+                        enabling gateway routing.
+                      `}
+                </div>
+              `}
           ${this.validationError
             ? html`
                 <sl-alert variant="danger" open>

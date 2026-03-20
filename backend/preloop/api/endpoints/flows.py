@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from preloop.models import schemas
-from preloop.models.models.account import Account
+from preloop.models.crud import crud_account
 from preloop.models.crud.flow import CRUDFlow
 from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.db.session import get_db_session as get_db
@@ -512,7 +512,7 @@ def get_flow_gateway_usage_summary(
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
 
-    account = db.query(Account).filter(Account.id == current_user.account_id).first()
+    account = crud_account.get(db, id=current_user.account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
