@@ -118,6 +118,7 @@ export class DashboardView extends AuthedElement {
   @state() private enabledUsersCount = 0;
   @state() private showSetupDialog = false;
   @state() private welcomeCardDismissed = false;
+  @state() private dismissedExecutions = new Set<string>();
   @state()
   private approvalStats = {
     total: 0,
@@ -130,6 +131,12 @@ export class DashboardView extends AuthedElement {
   private unsubscribeRealtime?: () => void;
   private refreshTimer: number | null = null;
   private refreshInFlight = false;
+
+  private dismissExecution(id: string) {
+    const newSet = new Set(this.dismissedExecutions);
+    newSet.add(id);
+    this.dismissedExecutions = newSet;
+  }
 
   static styles = [
     css`
