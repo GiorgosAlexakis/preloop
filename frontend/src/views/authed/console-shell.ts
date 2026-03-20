@@ -299,7 +299,7 @@ export class ConsoleShell extends LitElement {
               </a>
               <a href="/console/agents" @click=${this._closeSidebar}>
                 <sl-menu-item>
-                  <sl-icon name="cpu" slot="prefix"></sl-icon>
+                  <sl-icon name="robot" slot="prefix"></sl-icon>
                   <span class="sidebar-label">Agents</span>
                 </sl-menu-item>
               </a>
@@ -314,7 +314,7 @@ export class ConsoleShell extends LitElement {
                 @click=${this._closeSidebar}
               >
                 <sl-menu-item>
-                  <sl-icon name="brain" slot="prefix"></sl-icon>
+                  <sl-icon name="cpu" slot="prefix"></sl-icon>
                   <span class="sidebar-label">Models</span>
                 </sl-menu-item>
               </a>

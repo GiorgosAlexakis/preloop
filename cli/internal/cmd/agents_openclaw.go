@@ -180,12 +180,13 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		if err != nil {
 			return err
 		}
+		gatewayURL, _ := resolveOpenClawGateway(client.BaseURL(), parsed.ProviderName)
 		_, aiModelNotes, err = syncOpenClawAIModel(
 			client,
 			managedAgent,
 			agent,
 			parsed,
-			strings.TrimRight(client.BaseURL(), "/")+openClawGatewayPath,
+			gatewayURL,
 		)
 		if err != nil {
 			return err
@@ -468,7 +469,7 @@ func runOpenClawLiveValidation(
 	gatewayClient := api.NewClientWithToken(client.BaseURL(), token)
 	var gatewayResponse map[string]interface{}
 	requestErr := gatewayClient.Post(
-		openClawGatewayPath+"/chat/completions",
+		"/openai/v1/chat/completions",
 		requestPayload,
 		&gatewayResponse,
 	)
@@ -655,7 +656,7 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 	}
 
 	managedServerURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
-	gatewayURL := strings.TrimRight(baseURL, "/") + openClawGatewayPath
+	gatewayURL, gatewayAPI := resolveOpenClawGateway(baseURL, parsed.ProviderName)
 
 	mcp := ensureObjectPath(managedDoc, "mcp")
 	mcp["servers"] = map[string]interface{}{
@@ -670,6 +671,7 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 			openClawManagedProviderID: buildOpenClawManagedProvider(
 				parsed,
 				gatewayURL,
+				gatewayAPI,
 				token,
 			),
 		}
@@ -722,6 +724,7 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 func buildOpenClawManagedProvider(
 	parsed *openClawParsedConfig,
 	gatewayURL string,
+	gatewayAPI string,
 	token string,
 ) map[string]interface{} {
 	modelEntry := map[string]interface{}{
@@ -732,7 +735,7 @@ func buildOpenClawManagedProvider(
 		modelEntry[key] = value
 	}
 	modelEntry["id"] = parsed.ModelAlias
-	modelEntry["api"] = parsed.ProviderAPI
+	modelEntry["api"] = gatewayAPI
 	if _, ok := modelEntry["name"].(string); !ok {
 		modelEntry["name"] = parsed.ModelAlias
 	}
@@ -740,7 +743,7 @@ func buildOpenClawManagedProvider(
 	return map[string]interface{}{
 		"baseUrl":    gatewayURL,
 		"apiKey":     token,
-		"api":        parsed.ProviderAPI,
+		"api":        gatewayAPI,
 		"authHeader": true,
 		"models":     []interface{}{modelEntry},
 	}
@@ -1202,6 +1205,16 @@ func pickOpenClawGatewayAPI(sourceAPI string) string {
 	default:
 		return "openai-responses"
 	}
+}
+
+func resolveOpenClawGateway(baseURL string, providerName string) (string, string) {
+	// Native OpenAI transport handles most tool calls well, but OpenClaw's OpenAI
+	// implementation exits early on Gemini models passing through LiteLLM gateways
+	// due to divergent stop-reasons. The Anthropic transport processes it robustly.
+	if providerName == "google" || providerName == "gemini" {
+		return strings.TrimRight(baseURL, "/") + "/anthropic/v1", "anthropic"
+	}
+	return strings.TrimRight(baseURL, "/") + "/openai/v1", "openai-responses"
 }
 
 func resolveOpenClawProviderAPIKey(

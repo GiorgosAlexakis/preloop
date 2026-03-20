@@ -1403,14 +1403,14 @@ export class FlowExecutionView extends LitElement {
     `;
   }
 
-  private renderToolActivitySidebar() {
+  private renderToolActivityCard() {
     const toolEntries = this.getToolActivityEntries();
     const totalToolCalls = this.getTotalToolCallCount();
     if (toolEntries.length === 0 && totalToolCalls === 0) {
       return '';
     }
     return html`
-      <sl-card class="output-sidebar-card">
+      <sl-card style="margin-bottom: 16px;">
         <div
           slot="header"
           style="display: flex; justify-content: space-between; align-items: center; gap: 12px;"
@@ -1419,7 +1419,9 @@ export class FlowExecutionView extends LitElement {
             <sl-icon name="tools"></sl-icon>
             Tool Activity
           </span>
-          <sl-badge pill>${toolEntries.length}</sl-badge>
+          <sl-badge variant="primary" pill style="margin-left: 8px;"
+            >${toolEntries.length}</sl-badge
+          >
         </div>
         ${toolEntries.length > 0
           ? this.renderToolActivityList(toolEntries)
@@ -1439,71 +1441,6 @@ export class FlowExecutionView extends LitElement {
               </div>
             `
           : ''}
-      </sl-card>
-    `;
-  }
-
-  private renderExecutionMetadataSidebar() {
-    if (!this.execution) {
-      return '';
-    }
-
-    return html`
-      <sl-card class="output-sidebar-card">
-        <div slot="header">
-          <sl-icon name="info-circle"></sl-icon>
-          Live Summary
-        </div>
-        <div class="execution-metadata-list">
-          ${this.flow
-            ? html`
-                <div class="execution-metadata-label">Flow</div>
-                <div class="execution-metadata-value">
-                  <a href="/console/flows/${this.flow.id}">${this.flow.name}</a>
-                </div>
-
-                <div class="execution-metadata-label">Agent Type</div>
-                <div class="execution-metadata-value">
-                  <sl-badge>${this.flow.agent_type}</sl-badge>
-                </div>
-              `
-            : ''}
-
-          <div class="execution-metadata-label">Triggered By</div>
-          <div class="execution-metadata-value">${this.getTriggerSource()}</div>
-          ${this.execution.agent_session_reference
-            ? html`
-                <div class="execution-metadata-label">Session</div>
-                <div class="execution-metadata-value">
-                  <code>${this.execution.agent_session_reference}</code>
-                </div>
-              `
-            : ''}
-
-          <div class="execution-metadata-label">Recorded Calls</div>
-          <div class="execution-metadata-value">
-            ${this.getTotalToolCallCount()}
-          </div>
-
-          <div class="execution-metadata-label">Detailed Activity</div>
-          <div class="execution-metadata-value">
-            ${this.getToolActivityEntries().length}
-          </div>
-
-          <div class="execution-metadata-label">
-            ${this.hasPricing ? 'Budget' : 'Tokens'}
-          </div>
-          <div class="execution-metadata-value">
-            ${this.hasPricing
-              ? html`
-                  <div>$${this.budgetUsed.toFixed(2)}</div>
-                  <div class="tool-activity-meta">
-                    ${this.totalTokens.toLocaleString()} tokens
-                  </div>
-                `
-              : html`${this.totalTokens.toLocaleString()} tokens`}
-          </div>
-        </div>
       </sl-card>
     `;
   }
@@ -2168,6 +2105,8 @@ ${this.execution.resolved_input_prompt}</pre
                 </sl-details>
               `
             : ''}
+          ${this.renderToolActivityCard()}
+
           <sl-tab-group class="execution-tabs">
             <sl-tab slot="nav" panel="output">Output</sl-tab>
             <sl-tab slot="nav" panel="gateway-events">Gateway Events</sl-tab>
@@ -2264,11 +2203,6 @@ ${this.execution.resolved_input_prompt}</pre
                       : ''}
                   </sl-card>
                 </div>
-
-                <aside class="output-sidebar">
-                  ${this.renderExecutionMetadataSidebar()}
-                  ${this.renderToolActivitySidebar()}
-                </aside>
               </div>
             </sl-tab-panel>
 

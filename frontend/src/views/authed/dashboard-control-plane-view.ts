@@ -132,6 +132,201 @@ export class DashboardView extends AuthedElement {
   private refreshInFlight = false;
 
   static styles = [
+    css`
+      .tool-counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sl-spacing-2x-large);
+        margin-top: var(--sl-spacing-small);
+        justify-content: center;
+      }
+      .tool-count {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--sl-spacing-small);
+        font-size: var(--sl-font-size-small);
+      }
+      .tool-count sl-icon {
+        font-size: 2.5rem;
+      }
+      .tool-count-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      .tool-count-label {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+        text-align: center;
+      }
+      /* Compliance-specific styles */
+      .compliance-progress {
+        margin-top: var(--sl-spacing-medium);
+      }
+      .compliance-stats {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: var(--sl-spacing-small);
+        font-size: var(--sl-font-size-small);
+      }
+      /* MCP Server Capsule */
+      .mcp-server-capsule {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-medium);
+        padding: var(--sl-spacing-small) var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-50);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: 100px;
+        margin-top: var(--sl-spacing-2x-large);
+        margin-bottom: var(--sl-spacing-large);
+        margin-left: auto;
+        margin-right: auto;
+        max-width: 600px;
+        transition: all 0.2s ease;
+      }
+      .mcp-server-capsule:hover {
+        background: var(--sl-color-neutral-100);
+        border-color: var(--sl-color-neutral-300);
+      }
+      .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--sl-color-success-600);
+        box-shadow: 0 0 0 2px var(--sl-color-success-100);
+        flex-shrink: 0;
+      }
+      .server-details {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-small);
+        flex: 1;
+        min-width: 0;
+      }
+      .server-endpoint {
+        font-family: monospace;
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-900);
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .server-auth {
+        font-size: var(--sl-font-size-x-small);
+        color: var(--sl-color-neutral-600);
+        padding: 0.125rem 0.5rem;
+        background: var(--sl-color-neutral-0);
+        border-radius: 12px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .capsule-link {
+        color: var(--sl-color-primary-600);
+        text-decoration: none;
+        font-size: var(--sl-font-size-small);
+        font-weight: 500;
+        white-space: nowrap;
+        flex-shrink: 0;
+        float: right;
+      }
+      .capsule-link:hover {
+        text-decoration: underline;
+      }
+      @media (min-width: 1024px) {
+        .overview-layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      /* Welcome card styles */
+      .getting-started-steps {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-medium);
+        margin-top: var(--sl-spacing-large);
+      }
+      .step-item {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--sl-spacing-medium);
+        padding: var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-0);
+        border-radius: var(--sl-border-radius-medium);
+      }
+      .step-item.completed {
+        background: var(--sl-color-success-50);
+        border-color: var(--sl-color-success-200);
+      }
+      .step-icon {
+        flex-shrink: 0;
+      }
+      .step-icon sl-icon {
+        font-size: 1.5rem;
+      }
+      .step-content {
+        flex: 1;
+      }
+      .step-title {
+        font-weight: 600;
+        margin-bottom: var(--sl-spacing-2x-small);
+        color: var(--sl-color-neutral-900);
+      }
+      .step-description {
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-600);
+        margin-bottom: var(--sl-spacing-small);
+      }
+      .step-action {
+        display: inline-block;
+        margin-top: var(--sl-spacing-x-small);
+      }
+      .progress-overview {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-small);
+        margin-top: var(--sl-spacing-large);
+      }
+      .progress-overview sl-progress-bar {
+        flex: 1;
+      }
+      .progress-overview sl-progress-bar::part(base) {
+        border: 1px solid rgba(230, 130, 50, 0.35);
+      }
+      .progress-overview sl-progress-bar::part(indicator) {
+        background: var(--gradient-brand);
+        position: relative;
+        overflow: hidden;
+      }
+      .progress-overview sl-progress-bar::part(indicator)::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 200, 100, 0.15),
+          transparent
+        );
+        animation: shimmer 2.5s infinite;
+      }
+      @keyframes shimmer {
+        0% {
+          left: -100%;
+        }
+        100% {
+          left: 100%;
+        }
+      }
+      .progress-text {
+        font-size: var(--sl-font-size-small);
+        font-weight: 500;
+      }
+    `,
+
     unsafeCSS(consoleStyles),
     css`
       :host {
@@ -263,13 +458,6 @@ export class DashboardView extends AuthedElement {
         color: var(--sl-color-neutral-700);
       }
 
-      .getting-started-steps {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-medium);
-        margin-top: var(--sl-spacing-large);
-      }
-
       .step-item {
         gap: var(--sl-spacing-medium);
         align-items: flex-start;
@@ -370,48 +558,6 @@ export class DashboardView extends AuthedElement {
       .summary-item:first-child {
         border-top: none;
         padding-top: 0;
-      }
-
-      .tool-counts {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: var(--sl-spacing-medium);
-      }
-
-      .tool-count {
-        border: 1px solid var(--sl-color-neutral-200);
-        border-radius: var(--sl-border-radius-medium);
-        padding: var(--sl-spacing-medium);
-        background: var(--sl-color-neutral-50);
-      }
-
-      .tool-count-value {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: var(--sl-color-neutral-900);
-      }
-
-      .tool-count-label {
-        color: var(--sl-color-neutral-600);
-        font-size: var(--sl-font-size-small);
-      }
-
-      .mcp-server-capsule {
-        display: flex;
-        align-items: center;
-        gap: var(--sl-spacing-small);
-        padding: var(--sl-spacing-medium);
-        border-radius: var(--sl-border-radius-medium);
-        background: var(--sl-color-neutral-50);
-        border: 1px solid var(--sl-color-neutral-200);
-      }
-
-      .status-indicator {
-        width: 10px;
-        height: 10px;
-        border-radius: 999px;
-        background: var(--sl-color-success-600);
-        flex-shrink: 0;
       }
 
       .server-details {
@@ -856,120 +1002,197 @@ export class DashboardView extends AuthedElement {
       return nothing;
     }
 
-    const hasMcp = this.mcpServers.length > 0 || this.tools.length > 0;
+    const hasMCPServers = this.mcpServers.length > 0;
+    const hasFlows = this.hasFlows;
     const hasTrackersAndModels = this.trackers.length > 0 && this.hasAIModels;
-    const completedSteps = [hasMcp, this.hasFlows, hasTrackersAndModels].filter(
-      Boolean
-    ).length;
+
+    const completedSteps = [
+      hasMCPServers,
+      hasFlows,
+      hasTrackersAndModels,
+    ].filter(Boolean).length;
     const totalSteps = 3;
+    const progress = (completedSteps / totalSteps) * 100;
 
     return html`
       <sl-card class="welcome-card">
         <div class="welcome-header">
           <div class="welcome-title">
             <sl-icon name="rocket-takeoff"></sl-icon>
-            Welcome to Preloop
+            Welcome to Preloop!
           </div>
           <sl-button
             size="small"
             variant="text"
             @click=${this.dismissWelcomeCard}
           >
-            <sl-icon slot="prefix" name="x-lg"></sl-icon>
-            Dismiss
+            <sl-icon name="x-lg"></sl-icon>
           </sl-button>
         </div>
+
         <div class="welcome-content">
-          Build out your automation workspace first, then use the AI
-          control-plane cards below to monitor active agents, runtime sessions,
-          model spend, and failures.
+          Preloop helps you automate your workflow with AI-powered agents,
+          intelligent issue management, and seamless tool integration. Here's
+          how to get started:
         </div>
+
         <div class="getting-started-steps">
-          <div class="step-item">
+          <!-- Step 1: MCP Servers & Tools -->
+          <div class="step-item ${hasMCPServers ? 'completed' : ''}">
             <div class="step-icon">
-              <sl-icon
-                name=${hasMcp ? 'check-circle-fill' : '1-circle'}
-              ></sl-icon>
+              ${hasMCPServers
+                ? html`<sl-icon
+                    name="check-circle-fill"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>`
+                : html`<sl-icon
+                    name="1-circle"
+                    style="color: var(--sl-color-primary-600);"
+                  ></sl-icon>`}
             </div>
             <div class="step-content">
               <div class="step-title">
-                Add MCP servers and approval controls
+                Add MCP Servers & Configure Approvals
               </div>
               <div class="step-description">
-                Configure tools, approval workflows, and the built-in MCP
-                endpoint.
+                Set up Model Context Protocol servers to extend your
+                capabilities with custom tools. Configure approval workflows for
+                tools that need human oversight.
               </div>
-              <div class="step-actions">
-                <sl-button size="small" href="/console/tools">
-                  ${hasMcp ? 'Tools configured' : 'Configure tools'}
-                </sl-button>
-                <sl-button
-                  size="small"
-                  variant="default"
-                  @click=${() => (this.showSetupDialog = true)}
-                >
-                  Setup MCP
-                </sl-button>
-              </div>
+              ${!hasMCPServers
+                ? html`<sl-button
+                    size="small"
+                    href="/console/tools"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="tools"></sl-icon>
+                    Configure Tools
+                  </sl-button>`
+                : html`<sl-button
+                    variant="success"
+                    outline
+                    size="small"
+                    href="/console/tools"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="tools"></sl-icon>
+                    Tools Configured
+                    <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                  </sl-button>`}
             </div>
           </div>
-          <div class="step-item">
+
+          <!-- Step 2: Create Flows -->
+          <div class="step-item ${hasFlows ? 'completed' : ''}">
             <div class="step-icon">
-              <sl-icon
-                name=${this.hasFlows ? 'check-circle-fill' : '2-circle'}
-              ></sl-icon>
+              ${hasFlows
+                ? html`<sl-icon
+                    name="check-circle-fill"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>`
+                : html`<sl-icon
+                    name="2-circle"
+                    style="color: var(--sl-color-primary-600);"
+                  ></sl-icon>`}
             </div>
             <div class="step-content">
-              <div class="step-title">Create and trigger flows</div>
+              <div class="step-title">Create Event-Driven Agentic Flows</div>
               <div class="step-description">
-                Launch event-driven or manual agentic flows to generate runtime
-                and gateway activity.
+                Automate your most time-consuming tasks with AI agents that
+                respond to events. Start with a preset or build from scratch.
               </div>
-              <div class="step-actions">
-                <sl-button size="small" href="/console/flows/new">
-                  ${this.hasFlows ? 'Create another flow' : 'Create flow'}
-                </sl-button>
-                <sl-button size="small" variant="default" href="/console/flows">
-                  View flows
-                </sl-button>
-              </div>
+              ${!hasFlows
+                ? html`<sl-button
+                    size="small"
+                    href="/console/flows/new"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="diagram-3"></sl-icon>
+                    Create Flow
+                  </sl-button>`
+                : html`<sl-button
+                    variant="success"
+                    outline
+                    size="small"
+                    href="/console/flows/new"
+                    class="step-action"
+                  >
+                    <sl-icon slot="prefix" name="diagram-3"></sl-icon>
+                    Flows Created
+                    <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                  </sl-button>`}
             </div>
           </div>
-          <div class="step-item">
+
+          <!-- Step 3: Connect Trackers & AI Models -->
+          <div class="step-item ${hasTrackersAndModels ? 'completed' : ''}">
             <div class="step-icon">
-              <sl-icon
-                name=${hasTrackersAndModels ? 'check-circle-fill' : '3-circle'}
-              ></sl-icon>
+              ${hasTrackersAndModels
+                ? html`<sl-icon
+                    name="check-circle-fill"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>`
+                : html`<sl-icon
+                    name="3-circle"
+                    style="color: var(--sl-color-primary-600);"
+                  ></sl-icon>`}
             </div>
             <div class="step-content">
-              <div class="step-title">Connect trackers and AI models</div>
+              <div class="step-title">Connect Trackers & AI Models</div>
               <div class="step-description">
-                Add tracker integrations and AI model credentials so flows and
-                agents can operate end-to-end.
+                Link your issue trackers (Jira, GitHub, GitLab) and AI models to
+                power your flows, detect duplicate issues, and assess
+                compliance.
               </div>
-              <div class="step-actions">
-                <sl-button size="small" href="/console/trackers?action=add">
-                  ${this.trackers.length > 0
-                    ? 'Manage trackers'
-                    : 'Add tracker'}
-                </sl-button>
-                <sl-button
-                  size="small"
-                  variant="default"
-                  href="/console/settings/ai-models"
-                >
-                  ${this.hasAIModels ? 'Manage AI models' : 'Add AI model'}
-                </sl-button>
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center; margin-top: var(--sl-spacing-x-small);"
+              >
+                ${!this.trackers.length
+                  ? html`<sl-button
+                      size="small"
+                      href="/console/trackers?action=add"
+                    >
+                      <sl-icon slot="prefix" name="link-45deg"></sl-icon>
+                      Add Tracker
+                    </sl-button>`
+                  : html`<sl-button
+                      variant="success"
+                      outline
+                      size="small"
+                      href="/console/trackers?action=add"
+                    >
+                      <sl-icon slot="prefix" name="link-45deg"></sl-icon>
+                      Trackers Connected
+                      <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                    </sl-button>`}
+                ${!this.hasAIModels
+                  ? html`<sl-button
+                      size="small"
+                      href="/console/settings/ai-models"
+                    >
+                      <sl-icon slot="prefix" name="cpu"></sl-icon>
+                      Add AI Model
+                    </sl-button>`
+                  : html`<sl-button
+                      variant="success"
+                      outline
+                      size="small"
+                      href="/console/settings/ai-models"
+                    >
+                      <sl-icon slot="prefix" name="cpu"></sl-icon>
+                      AI Models Connected
+                      <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
+                    </sl-button>`}
               </div>
             </div>
           </div>
         </div>
+
         <div class="progress-overview">
-          <sl-progress-bar value=${(completedSteps / totalSteps) * 100}>
-          </sl-progress-bar>
-          <div class="metric-subtext">
-            ${completedSteps} / ${totalSteps} onboarding steps completed
-          </div>
+          <sl-progress-bar value="${progress}"></sl-progress-bar>
+          <span class="progress-text"
+            >${completedSteps} / ${totalSteps} completed</span
+          >
         </div>
       </sl-card>
     `;
@@ -977,61 +1200,98 @@ export class DashboardView extends AuthedElement {
 
   private renderRecentFlowExecutionsCard() {
     return html`
-      <sl-card class="content-card">
-        <div class="card-header">
-          <div class="card-title">Recent flow executions</div>
-          <div class="mcp-actions">
-            ${this.failedFlowExecutions.length > 0
+      <!-- Flow Executions - Only show if flows exist -->
+      ${this.hasFlows
+        ? html`<sl-card>
+            <div slot="header" class="chart-header">
+              <sl-icon name="diagram-3"></sl-icon>
+              Recent Flow Executions
+              ${this.failedFlowExecutions.length > 0
+                ? html`<sl-badge variant="danger" pulse
+                    >${this.failedFlowExecutions.length} failed</sl-badge
+                  >`
+                : ''}
+            </div>
+
+            ${this.recentFlowExecutions.length === 0
               ? html`
-                  <sl-badge variant="danger">
-                    ${this.failedFlowExecutions.length} failed
-                  </sl-badge>
-                `
-              : nothing}
-            <a class="header-link" href="/console/flows/executions">View all</a>
-          </div>
-        </div>
-        <div class="list">
-          ${this.recentFlowExecutions.length === 0
-            ? this.renderEmptyState(
-                this.hasFlows
-                  ? 'No executions have run yet.'
-                  : 'No flows yet. Create your first flow to start seeing executions.'
-              )
-            : repeat(
-                this.recentFlowExecutions,
-                (execution) => execution.id,
-                (execution) => html`
-                  <div class="row">
-                    <div class="row-main">
-                      <a
-                        class="row-link row-primary"
-                        href=${`/console/flows/executions/${execution.id}`}
-                      >
-                        ${execution.flow_name || 'Unnamed flow'}
-                      </a>
-                      <sl-badge
-                        variant=${this.getStatusColor(execution.status)}
-                      >
-                        ${execution.status}
-                      </sl-badge>
-                    </div>
-                    <div class="row-meta">
-                      <span>
-                        ${execution.error_message || execution.flow_id}
-                      </span>
-                      <span
-                        >${this.formatRelativeTime(execution.start_time)}</span
-                      >
-                    </div>
+                  <div class="empty-state">
+                    <sl-icon name="inbox"></sl-icon>
+                    <p>
+                      No flow executions yet.
+                      <a href="/console/flows">Create a flow</a>
+                    </p>
                   </div>
                 `
-              )}
-        </div>
-      </sl-card>
+              : html`
+                  <div class="item-list">
+                    ${this.recentFlowExecutions
+                      .filter((exec) => !this.dismissedExecutions.has(exec.id))
+                      .slice(0, 5)
+                      .map(
+                        (exec) => html`
+                          <div
+                            class="item-card ${exec.status === 'FAILED'
+                              ? 'danger'
+                              : ''}"
+                          >
+                            <div class="item-info">
+                              <span class="item-name"
+                                >${exec.flow_name || 'Unnamed Flow'}</span
+                              >
+                              ${exec.error_message
+                                ? html`<span class="item-error"
+                                    >${exec.error_message}</span
+                                  >`
+                                : ''}
+                              <span class="item-secondary"
+                                >${this.formatDate(exec.start_time)}</span
+                              >
+                            </div>
+                            <div
+                              style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
+                            >
+                              <sl-tag
+                                size="small"
+                                variant="${this.getStatusColor(exec.status)}"
+                              >
+                                ${exec.status}
+                              </sl-tag>
+                              <sl-button
+                                size="small"
+                                href="/console/flows/executions/${exec.id}"
+                              >
+                                View
+                              </sl-button>
+                              <sl-icon-button
+                                name="x-lg"
+                                label="Dismiss"
+                                @click=${(e: Event) => {
+                                  e.preventDefault();
+                                  this.dismissExecution(exec.id);
+                                }}
+                              ></sl-icon-button>
+                            </div>
+                          </div>
+                        `
+                      )}
+                  </div>
+
+                  <div class="quick-actions">
+                    <sl-button size="small" href="/console/flows/executions">
+                      <sl-icon slot="prefix" name="list"></sl-icon>
+                      View All Executions
+                    </sl-button>
+                    <sl-button size="small" href="/console/flows">
+                      <sl-icon slot="prefix" name="plus-circle"></sl-icon>
+                      Create Flow
+                    </sl-button>
+                  </div>
+                `}
+          </sl-card>`
+        : ''}
     `;
   }
-
   private renderBudgetHealthCard() {
     if (!this.hasBudgetCard) {
       return nothing;
@@ -1157,7 +1417,7 @@ export class DashboardView extends AuthedElement {
               <div class="row">
                 <div class="row-main">
                   <span class="row-primary">
-                    ${group.primary_event.action.replaceAll('_', ' ')}
+                    ${group.primary_event.action.replace(/_/g, ' ')}
                   </span>
                   <sl-badge
                     variant=${group.outcome === 'budget_denied'
@@ -1427,77 +1687,121 @@ export class DashboardView extends AuthedElement {
 
   private renderMcpServerCard() {
     return html`
-      <sl-card class="content-card">
-        <div class="card-header-with-action">
-          <div class="card-title">MCP server</div>
-          <div class="mcp-actions">
+      <!-- MCP Server & Tools Status -->
+      <sl-card>
+        <div slot="header" class="card-header-with-action">
+          <div class="chart-header">
+            <img
+              src="/images/mcp.png"
+              alt="MCP"
+              style="width: 20px; height: 20px;"
+            />
+            MCP Server
+            <sl-tooltip
+              content="Built-in and external MCP tools for issue management and automation"
+            >
+              <sl-icon name="question-circle"></sl-icon>
+            </sl-tooltip>
+          </div>
+          <div
+            style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+          >
             <a
-              class="header-link"
               href="#"
-              @click=${(event: Event) => {
-                event.preventDefault();
+              class="header-action-link"
+              @click=${(e: Event) => {
+                e.preventDefault();
                 this.showSetupDialog = true;
               }}
+              >Setup</a
             >
-              Setup
-            </a>
-            <a class="header-link" href="/console/tools">Manage</a>
+            <a href="/console/tools" class="header-action-link">Manage</a>
           </div>
         </div>
-        <div class="mcp-summary">
-          <div class="tool-counts">
-            <div class="tool-count">
-              <div class="tool-count-value">
-                ${this.formatNumber(this.mcpServers.length)}
+
+        ${this.mcpServers.length === 0 && this.tools.length === 0
+          ? html`
+              <div class="empty-state">
+                <sl-icon name="inbox"></sl-icon>
+                <p>
+                  No MCP servers or tools configured yet.
+                  <a href="/console/tools">Configure tools</a>
+                </p>
               </div>
-              <div class="tool-count-label">external MCP servers</div>
-            </div>
-            <div class="tool-count">
-              <div class="tool-count-value">
-                ${this.formatNumber(
-                  this.tools.filter((tool) => tool.is_enabled).length
-                )}
+            `
+          : html`
+              <!-- Built-in Tools Summary -->
+              <div class="tool-counts">
+                <div class="tool-count">
+                  <sl-icon name="tools"></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.tools.filter((t) => t.source === 'builtin').length}
+                  </div>
+                  <div class="tool-count-label">built-in tools</div>
+                </div>
+                <div class="tool-count">
+                  <sl-icon
+                    name="check-circle"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.tools.filter(
+                      (t) => t.is_enabled && t.is_supported !== false
+                    ).length}
+                  </div>
+                  <div class="tool-count-label">enabled</div>
+                </div>
+                <div class="tool-count">
+                  <sl-icon
+                    name="shield-check"
+                    style="color: var(--sl-color-warning-600);"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.tools.filter(
+                      (t) =>
+                        (t.approval_workflow_id != null ||
+                          t.has_approval_condition === true) &&
+                        t.is_supported !== false
+                    ).length}
+                  </div>
+                  <div class="tool-count-label">require approval</div>
+                </div>
               </div>
-              <div class="tool-count-label">enabled tools</div>
-            </div>
-            <div class="tool-count">
-              <div class="tool-count-value">
-                ${this.formatNumber(
-                  this.tools.filter(
-                    (tool) =>
-                      tool.approval_workflow_id != null ||
-                      tool.has_approval_condition === true
-                  ).length
-                )}
+
+              <!-- Built-in MCP Server -->
+              <div class="mcp-server-capsule">
+                <div class="status-indicator"></div>
+                <div class="server-details">
+                  <span class="server-endpoint"
+                    >${window.location.origin}/mcp</span
+                  >
+                </div>
+                <sl-tooltip content="Copy URL">
+                  <sl-icon-button
+                    name="clipboard"
+                    style="font-size: 1rem;"
+                    @click=${() => {
+                      navigator.clipboard.writeText(
+                        `${window.location.origin}/mcp`
+                      );
+                      this.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                          bubbles: true,
+                          composed: true,
+                          detail: { message: 'MCP URL copied!' },
+                        })
+                      );
+                    }}
+                  ></sl-icon-button>
+                </sl-tooltip>
               </div>
-              <div class="tool-count-label">tools requiring approval</div>
-            </div>
-            <div class="tool-count">
-              <div class="tool-count-value">
-                ${this.formatNumber(
-                  this.tools.filter((tool) => tool.source === 'builtin').length
-                )}
-              </div>
-              <div class="tool-count-label">built-in tools</div>
-            </div>
-          </div>
-          <div class="mcp-server-capsule">
-            <div class="status-indicator"></div>
-            <div class="server-details">
-              <span class="server-endpoint">${window.location.origin}/mcp</span>
-              <div class="capsule-hint">
-                Built-in endpoint for managed agent and MCP client traffic
-              </div>
-            </div>
-          </div>
-          <a class="capsule-link" href="/console/settings/api-keys">
-            Manage API keys
-          </a>
-        </div>
+              <a href="/console/settings/api-keys" class="capsule-link">
+                Manage Keys
+              </a>
+            `}
       </sl-card>
     `;
   }
-
   private renderApprovalAnalyticsCard() {
     return html`
       <sl-card class="content-card">

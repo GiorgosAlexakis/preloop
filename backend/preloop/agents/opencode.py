@@ -518,18 +518,50 @@ exit $OPENCODE_EXIT_CODE
         #   options.baseURL – API endpoint
         #   models – map of model-id → {name}
         if model_endpoint:
-            config["provider"] = {
-                effective_model_provider: {
-                    "npm": "@ai-sdk/openai-compatible",
-                    "options": {
-                        "baseURL": model_endpoint,
-                        "apiKey": "$OPENAI_API_KEY",
-                    },
-                    "models": {
-                        model_local_id: {"name": model_local_id},
-                    },
+            if gateway_enabled and model_provider in ("google", "gemini"):
+                # Use Anthropic transport for routing Gemini through the Gateway.
+                # OpenAI compatibility layers often mishandle Gemini's stop reasons,
+                # causing Vercel AI SDK to exit loops early. LiteLLM natively handles
+                # translating Anthropic -> Gemini formats robustly.
+                anthropic_endpoint = model_endpoint.replace("/v1", "/anthropic/v1")
+                config["provider"] = {
+                    effective_model_provider: {
+                        "npm": "@ai-sdk/anthropic",
+                        "options": {
+                            "baseURL": anthropic_endpoint,
+                            "apiKey": "$OPENAI_API_KEY",
+                        },
+                        "models": {
+                            model_local_id: {"name": model_local_id},
+                        },
+                    }
                 }
-            }
+            elif not gateway_enabled and model_provider in ("google", "gemini"):
+                config["provider"] = {
+                    effective_model_provider: {
+                        "npm": "@ai-sdk/google",
+                        "options": {
+                            "baseURL": model_endpoint,
+                            "apiKey": "$GOOGLE_API_KEY",
+                        },
+                        "models": {
+                            model_local_id: {"name": model_local_id},
+                        },
+                    }
+                }
+            else:
+                config["provider"] = {
+                    effective_model_provider: {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "options": {
+                            "baseURL": model_endpoint,
+                            "apiKey": "$OPENAI_API_KEY",
+                        },
+                        "models": {
+                            model_local_id: {"name": model_local_id},
+                        },
+                    }
+                }
 
         return config
 
