@@ -302,6 +302,19 @@ class TestOpenCodeBuildConfig:
         assert provider["options"]["baseURL"] == "http://gateway.internal/openai/v1"
         assert "openai/gpt-5" in provider["models"]
 
+    def test_non_gateway_provider_fallback_uses_effective_provider(self):
+        """Direct-provider config derives provider consistently for env fallback."""
+        agent = OpenCodeAgent({})
+        with patch.dict(os.environ, {"GOOGLE_API_BASE": "https://google.example/v1"}):
+            config = agent._build_opencode_config(
+                "gemini-2.5-pro", "google", {}, 600000
+            )
+
+        assert config["model"] == "google/gemini-2.5-pro"
+        assert config["provider"]["google"]["options"]["baseURL"] == (
+            "https://google.example/v1"
+        )
+
     def test_no_endpoint_no_provider_config(self):
         """No provider config when no custom endpoint."""
         agent = OpenCodeAgent({})

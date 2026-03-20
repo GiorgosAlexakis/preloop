@@ -3,12 +3,17 @@
 import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from preloop.api.endpoints.oauth_server import router
+from preloop.api.endpoints.oauth_server import (
+    CLI_JWT_REFRESH_TOKEN_EXPIRE_DAYS,
+    _issue_jwt_tokens,
+    router,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -221,3 +226,27 @@ class TestTokenRevocation:
 
         assert response.status_code == 200
         assert response.json()["status"] == "revoked"
+
+
+@pytest.mark.asyncio
+async def test_issue_jwt_tokens_uses_long_lived_cli_refresh_tokens():
+    db_code = MagicMock()
+    db_code.user_id = uuid4()
+
+    user = MagicMock()
+    captured_expiries = []
+
+    def _capture_token(*args, **kwargs):
+        captured_expiries.append(kwargs.get("expires_delta"))
+        return f"token-{len(captured_expiries)}"
+
+    with (
+        patch("preloop.models.crud.crud_user.get", return_value=user),
+        patch("preloop.api.auth.jwt.create_access_token", side_effect=_capture_token),
+        patch("preloop.api.auth.jwt.ACCESS_TOKEN_EXPIRE_MINUTES", 60),
+    ):
+        response = await _issue_jwt_tokens(MagicMock(), db_code)
+
+    assert response.status_code == 200
+    assert captured_expiries[0] == timedelta(minutes=60)
+    assert captured_expiries[1] == timedelta(days=CLI_JWT_REFRESH_TOKEN_EXPIRE_DAYS)

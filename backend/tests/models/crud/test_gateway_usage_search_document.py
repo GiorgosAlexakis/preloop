@@ -159,9 +159,9 @@ def test_search_account_documents_isolates_runtime_session_with_legacy_fallback(
 
     returned_usage_ids = {item["api_usage_id"] for item in result["items"]}
 
-    assert result["total"] == 2
+    assert result["total"] == 1
     assert str(selected_usage.id) in returned_usage_ids
-    assert str(legacy_usage.id) in returned_usage_ids
+    assert str(legacy_usage.id) not in returned_usage_ids
     assert str(sibling_usage.id) not in returned_usage_ids
 
     sibling_result = crud_gateway_usage_search_document.search_account_documents(

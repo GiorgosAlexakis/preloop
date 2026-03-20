@@ -5,7 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
+
+	"github.com/preloop/preloop/cli/internal/config"
 )
 
 func TestNewClientWithToken(t *testing.T) {
@@ -183,6 +186,126 @@ func TestGet_APIError(t *testing.T) {
 	err := client.Get("/test", &result)
 	if err == nil {
 		t.Fatal("expected error for 401 response")
+	}
+}
+
+func TestClientRefreshesExpiredAccessTokenFromStoredConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/test":
+			requestCount++
+			if requestCount == 1 {
+				if r.Header.Get("Authorization") != "Bearer expired-token" {
+					t.Fatalf("expected expired token on first request, got %q", r.Header.Get("Authorization"))
+				}
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"detail":"expired"}`))
+				return
+			}
+			if r.Header.Get("Authorization") != "Bearer refreshed-token" {
+				t.Fatalf("expected refreshed token on retry, got %q", r.Header.Get("Authorization"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		case "/oauth/token":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("failed to parse token refresh request: %v", err)
+			}
+			if r.Form.Get("grant_type") != "refresh_token" {
+				t.Fatalf("expected refresh_token grant, got %q", r.Form.Get("grant_type"))
+			}
+			if r.Form.Get("refresh_token") != "refresh-token" {
+				t.Fatalf("expected stored refresh token, got %q", r.Form.Get("refresh_token"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"access_token":  "refreshed-token",
+				"refresh_token": "rotated-refresh-token",
+				"token_type":    "bearer",
+			})
+		default:
+			t.Fatalf("unexpected request path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	if err := config.Save(&config.Config{
+		AccessToken:  "expired-token",
+		RefreshToken: "refresh-token",
+		APIURL:       server.URL,
+	}); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	client, err := NewClient("", "")
+	if err != nil {
+		t.Fatalf("failed to build client: %v", err)
+	}
+
+	var result map[string]string
+	if err := client.Get("/api/v1/test", &result); err != nil {
+		t.Fatalf("expected refresh+retry to succeed, got %v", err)
+	}
+	if result["status"] != "ok" {
+		t.Fatalf("expected ok response, got %#v", result)
+	}
+	if client.Token() != "refreshed-token" {
+		t.Fatalf("expected in-memory access token to refresh, got %q", client.Token())
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("failed to reload config: %v", err)
+	}
+	if cfg.AccessToken != "refreshed-token" {
+		t.Fatalf("expected refreshed access token in config, got %q", cfg.AccessToken)
+	}
+	if cfg.RefreshToken != "rotated-refresh-token" {
+		t.Fatalf("expected rotated refresh token in config, got %q", cfg.RefreshToken)
+	}
+}
+
+func TestClientDoesNotRefreshWhenExplicitTokenOverrideIsUsed(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/test":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"detail":"unauthorized"}`))
+		case "/oauth/token":
+			t.Fatal("did not expect token refresh for explicit token override")
+		default:
+			t.Fatalf("unexpected request path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	if err := config.Save(&config.Config{
+		AccessToken:  "stale-config-token",
+		RefreshToken: "refresh-token",
+		APIURL:       server.URL,
+	}); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	client, err := NewClient("override-token", server.URL)
+	if err != nil {
+		t.Fatalf("failed to build client: %v", err)
+	}
+
+	var result map[string]string
+	if err := client.Get("/api/v1/test", &result); err == nil {
+		t.Fatal("expected 401 error when using explicit override token")
 	}
 }
 

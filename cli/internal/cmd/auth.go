@@ -318,7 +318,10 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create API client and fetch user info
-	client := api.NewClientWithToken(cfg.APIURL, cfg.AccessToken)
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to initialize API client: %w", err)
+	}
 
 	var userInfo UserInfo
 	if err := client.Get(userInfoPath, &userInfo); err != nil {
@@ -350,8 +353,18 @@ func runAuthToken(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not authenticated - run 'preloop auth login --token <your-token>' first")
 	}
 
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to initialize API client: %w", err)
+	}
+	if FlagToken == "" && cfg.RefreshToken != "" {
+		if err := client.RefreshAccessToken(); err != nil {
+			return fmt.Errorf("stored login expired - run 'preloop auth login' again: %w", err)
+		}
+	}
+
 	// Print just the token with no newline for scripting
-	fmt.Print(cfg.AccessToken)
+	fmt.Print(client.Token())
 	return nil
 }
 

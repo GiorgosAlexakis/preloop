@@ -408,7 +408,7 @@ def test_gateway_usage_filters_by_ai_model_id(db_session, create_account, create
     assert timeseries[0]["total_tokens"] == 15
 
 
-def test_get_gateway_usage_by_model_isolates_runtime_session_with_legacy_fallback(
+def test_get_gateway_usage_by_model_strictly_isolates_runtime_session(
     db_session, test_user
 ):
     ai_model = crud_ai_model.create_with_account(
@@ -537,11 +537,11 @@ def test_get_gateway_usage_by_model_isolates_runtime_session_with_legacy_fallbac
     )
 
     assert len(result) == 1
-    assert result[0]["request_count"] == 2
-    assert result[0]["prompt_tokens"] == 40
-    assert result[0]["completion_tokens"] == 20
-    assert result[0]["total_tokens"] == 60
-    assert result[0]["estimated_cost"] == 0.4
+    assert result[0]["request_count"] == 1
+    assert result[0]["prompt_tokens"] == 10
+    assert result[0]["completion_tokens"] == 5
+    assert result[0]["total_tokens"] == 15
+    assert result[0]["estimated_cost"] == 0.1
 
     sibling_result = crud_api_usage.get_gateway_usage_by_model(
         db_session,

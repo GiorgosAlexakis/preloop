@@ -6,7 +6,7 @@ import hashlib
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import String, and_, case, cast, func, or_
+from sqlalchemy import String, case, cast, func
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
@@ -20,30 +20,6 @@ from .base import CRUDBase
 
 class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
     """CRUD operations for `GatewayUsageSearchDocument`."""
-
-    @staticmethod
-    def _session_can_claim_legacy_execution_rows(
-        db: Session,
-        *,
-        account_id: str,
-        runtime_session_id: str,
-        flow_execution_id: str,
-    ) -> bool:
-        session = (
-            db.query(
-                RuntimeSession.session_source_type, RuntimeSession.session_source_id
-            )
-            .filter(
-                RuntimeSession.account_id == account_id,
-                RuntimeSession.id == runtime_session_id,
-            )
-            .first()
-        )
-        return bool(
-            session
-            and session.session_source_type == "flow_execution"
-            and session.session_source_id == flow_execution_id
-        )
 
     def get_by_api_usage_id(
         self, db: Session, *, api_usage_id: str
@@ -169,27 +145,7 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             )
         if api_key_id:
             base_query = base_query.filter(ApiUsage.api_key_id == api_key_id)
-        if runtime_session_id and flow_execution_id:
-            if self._session_can_claim_legacy_execution_rows(
-                db,
-                account_id=account_id,
-                runtime_session_id=runtime_session_id,
-                flow_execution_id=flow_execution_id,
-            ):
-                base_query = base_query.filter(
-                    or_(
-                        ApiUsage.runtime_session_id == runtime_session_id,
-                        and_(
-                            ApiUsage.runtime_session_id.is_(None),
-                            ApiUsage.flow_execution_id == flow_execution_id,
-                        ),
-                    )
-                )
-            else:
-                base_query = base_query.filter(
-                    ApiUsage.runtime_session_id == runtime_session_id
-                )
-        elif runtime_session_id:
+        if runtime_session_id:
             base_query = base_query.filter(
                 ApiUsage.runtime_session_id == runtime_session_id
             )

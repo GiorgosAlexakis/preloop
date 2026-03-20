@@ -446,22 +446,30 @@ exit $OPENCODE_EXIT_CODE
             Configuration dict to be serialized as opencode.json
         """
         gateway_enabled = bool(execution_context.get("model_gateway_enabled"))
+        effective_model_provider = (
+            execution_context.get("model_gateway_provider")
+            if gateway_enabled
+            else model_provider or execution_context.get("model_provider")
+        ) or "anthropic"
+        effective_model_provider = str(effective_model_provider).strip().lower()
+
         if gateway_enabled:
             model_endpoint = execution_context.get("model_gateway_url") or ""
-            model_provider = (
-                execution_context.get("model_gateway_provider") or "preloop"
-            )
         else:
             model_endpoint = execution_context.get("model_endpoint") or ""
 
         # Fallback: resolve endpoint from environment if not set in the AI model.
-        if not model_endpoint and model_provider and model_provider != "openai":
-            env_key = f"{model_provider.upper().replace('-', '_')}_API_BASE"
+        if (
+            not model_endpoint
+            and effective_model_provider
+            and effective_model_provider != "openai"
+        ):
+            env_key = f"{effective_model_provider.upper().replace('-', '_')}_API_BASE"
             model_endpoint = os.getenv(env_key) or os.getenv("CUSTOM_API_BASE", "")
 
         # OpenCode splits the model field on "/" to get providerID/modelID.
         # Without the slash, it treats the entire string as the provider.
-        model_qualified = f"{model_provider}/{model}"
+        model_qualified = f"{effective_model_provider}/{model}"
 
         config: Dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
@@ -487,7 +495,7 @@ exit $OPENCODE_EXIT_CODE
         #   models – map of model-id → {name}
         if model_endpoint:
             config["provider"] = {
-                model_provider: {
+                effective_model_provider: {
                     "npm": "@ai-sdk/openai-compatible",
                     "options": {
                         "baseURL": model_endpoint,
