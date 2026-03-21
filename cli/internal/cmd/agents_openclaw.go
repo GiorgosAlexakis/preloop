@@ -13,6 +13,7 @@ import (
 	"time"
 
 	json5 "github.com/yosuke-furukawa/json5/encoding/json5"
+	"github.com/zalando/go-keyring"
 
 	"github.com/preloop/preloop/cli/internal/api"
 )
@@ -181,6 +182,21 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			return err
 		}
 		gatewayURL, _ := resolveOpenClawGateway(client.BaseURL(), parsed.ProviderName)
+
+		if parsed.ProviderAPIKey == "" {
+			if !opts.SkipConfirmation && !opts.AutoApprove {
+				fmt.Fprintf(opts.Output, "\n[Action Required] OpenClaw model %s requires an API key for gateway routing.\n", parsed.ModelAlias)
+				inputKey, err := promptForTextInput(
+					bufio.NewReader(opts.Input),
+					opts.Output,
+					"Enter API key (or leave blank to configure later in UI): ",
+				)
+				if err == nil {
+					parsed.ProviderAPIKey = strings.TrimSpace(inputKey)
+				}
+			}
+		}
+
 		_, aiModelNotes, err = syncOpenClawAIModel(
 			client,
 			managedAgent,
@@ -1223,7 +1239,17 @@ func resolveOpenClawProviderAPIKey(
 ) (string, string) {
 	value := lookupValue(document, "models", "providers", providerID, "apiKey")
 	if value == nil {
-		return resolveOpenClawProfileBackedAPIKey(document, providerID)
+		profileKey, profileNote := resolveOpenClawProfileBackedAPIKey(document, providerID)
+		if profileKey != "" {
+			return profileKey, profileNote
+		}
+		if secret, err := keyring.Get("openclaw", providerID); err == nil && secret != "" {
+			return secret, fmt.Sprintf("Resolved OpenClaw provider API key from OS Keychain (service: openclaw, account: %s).", providerID)
+		}
+		if profileNote != "" && profileNote != "OpenClaw provider API key could not be resolved automatically." {
+			return "", profileNote
+		}
+		return "", "OpenClaw provider API key could not be resolved automatically."
 	}
 	switch typed := value.(type) {
 	case string:
@@ -1398,17 +1424,20 @@ func rewriteOpenClawModelSelector(
 	managedModelRef string,
 	path ...string,
 ) {
-	container, ok := lookupValue(root, path...).(map[string]interface{})
-	if !ok {
+	container := ensureObjectPath(root, path...)
+	current, exists := container["model"]
+	if !exists || current == nil {
+		container["model"] = managedModelRef
 		return
 	}
-	current := container["model"]
 	switch typed := current.(type) {
 	case string:
 		container["model"] = managedModelRef
 	case map[string]interface{}:
 		typed["primary"] = managedModelRef
 		delete(typed, "fallbacks")
+	default:
+		container["model"] = managedModelRef
 	}
 }
 

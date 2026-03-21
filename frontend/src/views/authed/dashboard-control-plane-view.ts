@@ -499,13 +499,6 @@ export class DashboardView extends AuthedElement {
         margin-top: var(--sl-spacing-x-small);
       }
 
-      .progress-overview {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-small);
-        margin-top: var(--sl-spacing-large);
-      }
-
       .list,
       .budget-meter,
       .summary-list,
@@ -1058,153 +1051,64 @@ export class DashboardView extends AuthedElement {
           how to get started:
         </div>
 
-        <div class="getting-started-steps">
-          <!-- Step 1: MCP Servers & Tools -->
-          <div class="step-item ${hasMCPServers ? 'completed' : ''}">
+        <div
+          class="getting-started-paths"
+          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sl-spacing-medium); margin-top: var(--sl-spacing-large);"
+        >
+          <!-- Path 1: Build Flows -->
+          <div class="step-item">
             <div class="step-icon">
-              ${hasMCPServers
-                ? html`<sl-icon
-                    name="check-circle-fill"
-                    style="color: var(--sl-color-success-600);"
-                  ></sl-icon>`
-                : html`<sl-icon
-                    name="1-circle"
-                    style="color: var(--sl-color-primary-600);"
-                  ></sl-icon>`}
+              <sl-icon
+                name="diagram-3"
+                style="color: var(--sl-color-primary-600);"
+              ></sl-icon>
             </div>
             <div class="step-content">
-              <div class="step-title">
-                Add MCP Servers & Configure Approvals
-              </div>
+              <div class="step-title">Build Agentic Automations</div>
               <div class="step-description">
-                Set up Model Context Protocol servers to extend your
-                capabilities with custom tools. Configure approval workflows for
-                tools that need human oversight.
+                Design custom event-driven flows natively in Preloop. Connect AI
+                models, add MCP servers for custom tools, and trigger agents
+                from incoming events.
               </div>
-              ${!hasMCPServers
-                ? html`<sl-button
-                    size="small"
-                    href="/console/tools"
-                    class="step-action"
-                  >
-                    <sl-icon slot="prefix" name="tools"></sl-icon>
-                    Configure Tools
-                  </sl-button>`
-                : html`<sl-button
-                    variant="success"
-                    outline
-                    size="small"
-                    href="/console/tools"
-                    class="step-action"
-                  >
-                    <sl-icon slot="prefix" name="tools"></sl-icon>
-                    Tools Configured
-                    <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
-                  </sl-button>`}
+              <div class="step-actions">
+                <sl-button size="small" href="/console/flows/new">
+                  <sl-icon slot="prefix" name="plus-circle"></sl-icon>
+                  Create Flow
+                </sl-button>
+                <sl-button size="small" variant="text" href="/console/tools">
+                  Add Tools
+                </sl-button>
+              </div>
             </div>
           </div>
 
-          <!-- Step 2: Create Flows -->
-          <div class="step-item ${hasFlows ? 'completed' : ''}">
+          <!-- Path 2: Govern Agents -->
+          <div class="step-item">
             <div class="step-icon">
-              ${hasFlows
-                ? html`<sl-icon
-                    name="check-circle-fill"
-                    style="color: var(--sl-color-success-600);"
-                  ></sl-icon>`
-                : html`<sl-icon
-                    name="2-circle"
-                    style="color: var(--sl-color-primary-600);"
-                  ></sl-icon>`}
+              <sl-icon
+                name="shield-check"
+                style="color: var(--sl-color-primary-600);"
+              ></sl-icon>
             </div>
             <div class="step-content">
-              <div class="step-title">Create Event-Driven Agentic Flows</div>
+              <div class="step-title">Govern Existing Agents</div>
               <div class="step-description">
-                Automate your most time-consuming tasks with AI agents that
-                respond to events. Start with a preset or build from scratch.
+                Bring your own local agents (e.g., OpenClaw). Use the CLI to
+                onboard them instantly, syncing their tools and models behind
+                powerful approval firewalls.
               </div>
-              ${!hasFlows
-                ? html`<sl-button
-                    size="small"
-                    href="/console/flows/new"
-                    class="step-action"
-                  >
-                    <sl-icon slot="prefix" name="diagram-3"></sl-icon>
-                    Create Flow
-                  </sl-button>`
-                : html`<sl-button
-                    variant="success"
-                    outline
-                    size="small"
-                    href="/console/flows/new"
-                    class="step-action"
-                  >
-                    <sl-icon slot="prefix" name="diagram-3"></sl-icon>
-                    Flows Created
-                    <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
-                  </sl-button>`}
-            </div>
-          </div>
-
-          <!-- Step 3: Connect Trackers & AI Models -->
-          <div class="step-item ${hasTrackersAndModels ? 'completed' : ''}">
-            <div class="step-icon">
-              ${hasTrackersAndModels
-                ? html`<sl-icon
-                    name="check-circle-fill"
-                    style="color: var(--sl-color-success-600);"
-                  ></sl-icon>`
-                : html`<sl-icon
-                    name="3-circle"
-                    style="color: var(--sl-color-primary-600);"
-                  ></sl-icon>`}
-            </div>
-            <div class="step-content">
-              <div class="step-title">Connect Trackers & AI Models</div>
-              <div class="step-description">
-                Link your issue trackers (Jira, GitHub, GitLab) and AI models to
-                power your flows, detect duplicate issues, and assess
-                compliance.
-              </div>
-              <div
-                style="display: flex; gap: var(--sl-spacing-small); align-items: center; margin-top: var(--sl-spacing-x-small);"
-              >
-                ${!this.trackers.length
-                  ? html`<sl-button
-                      size="small"
-                      href="/console/trackers?action=add"
-                    >
-                      <sl-icon slot="prefix" name="link-45deg"></sl-icon>
-                      Add Tracker
-                    </sl-button>`
-                  : html`<sl-button
-                      variant="success"
-                      outline
-                      size="small"
-                      href="/console/trackers?action=add"
-                    >
-                      <sl-icon slot="prefix" name="link-45deg"></sl-icon>
-                      Trackers Connected
-                      <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
-                    </sl-button>`}
-                ${!this.hasAIModels
-                  ? html`<sl-button
-                      size="small"
-                      href="/console/settings/ai-models"
-                    >
-                      <sl-icon slot="prefix" name="cpu"></sl-icon>
-                      Add AI Model
-                    </sl-button>`
-                  : html`<sl-button
-                      variant="success"
-                      outline
-                      size="small"
-                      href="/console/settings/ai-models"
-                    >
-                      <sl-icon slot="prefix" name="cpu"></sl-icon>
-                      AI Models Connected
-                      <sl-icon slot="suffix" name="check-circle-fill"></sl-icon>
-                    </sl-button>`}
+              <div class="step-actions">
+                <sl-button size="small" href="/console/agents">
+                  <sl-icon slot="prefix" name="robot"></sl-icon>
+                  View Agents
+                </sl-button>
+                <sl-button
+                  size="small"
+                  variant="text"
+                  href="/console/approvals"
+                >
+                  Approvals
+                </sl-button>
               </div>
             </div>
           </div>
