@@ -26,8 +26,8 @@ def test_messages_endpoint_returns_anthropic_shape(app, client, db_session, test
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_anthropic_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_anthropic_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch(
@@ -88,8 +88,8 @@ def test_messages_endpoint_streams_anthropic_sse(app, client, db_session, test_u
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_anthropic_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_anthropic_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch(
@@ -184,8 +184,8 @@ def test_messages_endpoint_denies_when_account_budget_exceeded(
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_anthropic_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_anthropic_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:

@@ -232,8 +232,10 @@ class TestLogStreaming:
         mock_agent_executor.stream_logs = mock_stream
         orchestrator._persist_live_metrics = AsyncMock()
         orchestrator.execution_logger.parse_agent_logs = MagicMock(
-            side_effect=lambda lines: orchestrator.execution_logger.mcp_usage_logs.append(
-                {"tool_name": "search"}
+            side_effect=lambda lines: (
+                orchestrator.execution_logger.mcp_usage_logs.append(
+                    {"tool_name": "search"}
+                )
             )
         )
 

@@ -120,8 +120,8 @@ def test_openai_gateway_responses_codex_replay_normalizes_tools(
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="gateway-token", user=test_user)
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="gateway-token", user=test_user)
     )
     payload = _load_codex_replay_payload()
 
@@ -175,10 +175,8 @@ def test_list_models_endpoint_returns_gateway_models(
         user_id=test_user.id,
         context_data={"flow_execution_id": "flow-123"},
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(
-            token=presented_token, user=test_user, api_key=api_key
-        )
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token=presented_token, user=test_user, api_key=api_key)
     )
 
     response = client.get(
@@ -212,8 +210,8 @@ def test_chat_completions_endpoint_returns_openai_shape(
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch(
@@ -278,8 +276,8 @@ def test_chat_completions_endpoint_rejects_omitted_model_without_gateway_default
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
@@ -324,8 +322,8 @@ def test_chat_completions_endpoint_denies_when_account_budget_exceeded(
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
@@ -366,8 +364,8 @@ def test_chat_completions_endpoint_returns_openai_error_envelope_for_upstream_fa
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch(
@@ -413,8 +411,8 @@ def test_chat_completions_endpoint_streams_sse(app, client, db_session, test_use
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch(
@@ -474,8 +472,8 @@ def test_responses_endpoint_streams_sse(app, client, db_session, test_user):
         },
         account_id=test_user.account_id,
     )
-    app.dependency_overrides[get_model_gateway_auth_context] = (
-        lambda: ModelGatewayAuthContext(token="runtime-token", user=test_user)
+    app.dependency_overrides[get_model_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="runtime-token", user=test_user)
     )
 
     with patch(

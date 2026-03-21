@@ -840,6 +840,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/extract-name:
+    post:
+      tags:
+      - Account
+      summary: Extract Agent Name
+      description: 'Extract agent name from IDENTITY.md content using LLM.
+
+
+        If the CLI regex parsing fails, it falls back to this endpoint which uses
+
+        the account''s default configured AI model to intelligently infer the name.'
+      operationId: extract_agent_name_api_v1_agents_extract_name_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentNameExtractionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentNameExtractionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /api/v1/agents/{agent_id}:
     get:
       tags:
@@ -6707,6 +6740,26 @@ components:
       - period_end
       title: AccountRuntimeSessionListResponse
       description: Account-scoped runtime session explorer list response.
+    AgentNameExtractionRequest:
+      properties:
+        identity_content:
+          type: string
+          title: Identity Content
+      type: object
+      required:
+      - identity_content
+      title: AgentNameExtractionRequest
+      description: Request to extract an agent's name from IDENTITY.md content.
+    AgentNameExtractionResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: AgentNameExtractionResponse
+      description: Extracted agent name.
     ApiKeyCreate:
       properties:
         name:

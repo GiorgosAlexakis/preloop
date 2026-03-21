@@ -1385,6 +1385,31 @@ func inferAgentDisplayName(agent AgentConfig) string {
 		if err == nil && strings.TrimSpace(name) != "" {
 			return strings.TrimSpace(name)
 		}
+
+		if data, err := os.ReadFile(candidate); err == nil {
+			if extracted := extractAgentNameViaAPI(string(data)); extracted != "" && extracted != "Unknown Agent" {
+				return extracted
+			}
+		}
+	}
+	return ""
+}
+
+func extractAgentNameViaAPI(content string) string {
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil || !client.IsAuthenticated() {
+		return ""
+	}
+
+	request := map[string]string{
+		"identity_content": content,
+	}
+	var result struct {
+		Name string `json:"name"`
+	}
+
+	if err := client.Post("/api/v1/agents/extract-name", request, &result); err == nil {
+		return strings.TrimSpace(result.Name)
 	}
 	return ""
 }
@@ -1397,6 +1422,8 @@ func identityCandidatePaths(agent AgentConfig) []string {
 	candidates := []string{
 		filepath.Join(configDir, "IDENTITY.md"),
 		filepath.Join(configDir, "identity.md"),
+		filepath.Join(configDir, "workspace", "IDENTITY.md"),
+		filepath.Join(configDir, "workspace", "identity.md"),
 	}
 
 	parentDir := filepath.Dir(configDir)
@@ -1405,6 +1432,8 @@ func identityCandidatePaths(agent AgentConfig) []string {
 			candidates,
 			filepath.Join(parentDir, "IDENTITY.md"),
 			filepath.Join(parentDir, "identity.md"),
+			filepath.Join(parentDir, "workspace", "IDENTITY.md"),
+			filepath.Join(parentDir, "workspace", "identity.md"),
 		)
 	}
 	return candidates
@@ -1417,17 +1446,28 @@ func parseAgentIdentityFile(path string) (string, error) {
 	}
 
 	lines := strings.Split(string(data), "\n")
+
+	// First pass: OpenClaw exact pattern match
+	for _, line := range lines {
+		if idx := strings.Index(line, "**Name:** "); idx != -1 {
+			name := strings.TrimSpace(line[idx+len("**Name:** "):])
+			if name != "" {
+				return name, nil
+			}
+		}
+	}
+
+	// Second pass: Generic matches
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
+		if idx := strings.Index(strings.ToLower(trimmed), "name:"); idx != -1 {
+			return strings.TrimSpace(trimmed[idx+len("name:"):]), nil
+		}
 		if strings.HasPrefix(trimmed, "#") {
 			return strings.TrimSpace(strings.TrimLeft(trimmed, "#")), nil
-		}
-		lower := strings.ToLower(trimmed)
-		if strings.HasPrefix(lower, "name:") {
-			return strings.TrimSpace(trimmed[len("name:"):]), nil
 		}
 		return trimmed, nil
 	}

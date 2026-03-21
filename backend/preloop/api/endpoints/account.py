@@ -435,6 +435,81 @@ async def list_account_managed_agents(
     )
 
 
+class AgentNameExtractionRequest(BaseModel):
+    """Request to extract an agent's name from IDENTITY.md content."""
+
+    identity_content: str
+
+
+class AgentNameExtractionResponse(BaseModel):
+    """Extracted agent name."""
+
+    name: str
+
+
+@router.post("/agents/extract-name", response_model=AgentNameExtractionResponse)
+async def extract_agent_name(
+    request: AgentNameExtractionRequest,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Extract agent name from IDENTITY.md content using LLM.
+
+    If the CLI regex parsing fails, it falls back to this endpoint which uses
+    the account's default configured AI model to intelligently infer the name.
+    """
+    import asyncio
+    import litellm
+
+    default_model = crud_ai_model.get_default_active_model(
+        db, account_id=str(account.id)
+    )
+    if not default_model:
+        all_models = crud_ai_model.get_by_account(db, account_id=str(account.id))
+        if not all_models:
+            raise HTTPException(status_code=400, detail="No AI models configured")
+        default_model = sorted(all_models, key=lambda m: m.created_at, reverse=True)[0]
+
+    from preloop.services.policy_generation import _PROVIDER_PREFIX
+
+    provider = (default_model.provider_name or "openai").lower()
+    prefix = _PROVIDER_PREFIX.get(provider, provider)
+    litellm_model = default_model.model_identifier
+    if "/" not in litellm_model:
+        litellm_model = f"{prefix}/{litellm_model}"
+
+    kwargs = {
+        "model": litellm_model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant. Extract the name of the AI agent from the provided markdown identity file content. Return ONLY the agent's name as plain text, nothing else. If you cannot determine the name, return 'Unknown Agent'.",
+            },
+            {"role": "user", "content": request.identity_content},
+        ],
+        "temperature": 0.0,
+        "max_tokens": 100,
+    }
+    if default_model.api_key:
+        kwargs["api_key"] = default_model.api_key
+    if default_model.api_endpoint:
+        kwargs["api_base"] = default_model.api_endpoint
+
+    def _call():
+        response = litellm.completion(**kwargs)
+        return response.choices[0].message.content.strip()
+
+    try:
+        name = await asyncio.to_thread(_call)
+    except Exception as exc:
+        logger.warning(f"Failed to extract agent name via LLM: {exc}")
+        name = "Unknown Agent"
+
+    # Remove any markdown wrapping if the LLM added it
+    name = name.strip("`").strip("*").strip('"').strip("'").strip()
+    return AgentNameExtractionResponse(name=name)
+
+
 @router.get("/agents/{agent_id}", response_model=ManagedAgentDetailResponse)
 async def get_account_managed_agent(
     agent_id: str,
