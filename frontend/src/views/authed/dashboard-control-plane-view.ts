@@ -138,6 +138,21 @@ export class DashboardView extends AuthedElement {
     this.dismissedExecutions = newSet;
   }
 
+  private formatDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '';
+    try {
+      const date = parseUTCDate(dateStr);
+      return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(date);
+    } catch {
+      return dateStr;
+    }
+  }
+
   static styles = [
     css`
       .tool-counts {
