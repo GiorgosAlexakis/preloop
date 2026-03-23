@@ -475,6 +475,8 @@ func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool)
 		return executeManagedEnrollment(agent, managedEnrollmentOptions{
 			Client:           client,
 			SkipConfirmation: true,
+			Input:            os.Stdin,
+			Output:           os.Stdout,
 		})
 	})
 }
@@ -601,6 +603,8 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 		AutoApprove:      autoApprove,
 		LiveValidate:     liveValidate,
 		SkipConfirmation: false,
+		Input:            os.Stdin,
+		Output:           os.Stdout,
 	})
 }
 
@@ -958,9 +962,10 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	var backupPath string
 	state, err := loadLocalEnrollmentState(agent)
-	if err != nil {
-		return err
+	if err == nil {
+		backupPath = state.BackupPath
 	}
 
 	client, err := api.NewClient(FlagToken, FlagURL)
@@ -974,17 +979,28 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 	var detail *managedAgentDetailResponse
 	detail, _ = getManagedAgentDetailForDiscovered(client, agent)
 
+	if state == nil && detail == nil {
+		return fmt.Errorf("agent %q is not onboarded (no local state or remote managed agent found)", args[0])
+	}
+
 	if !autoApprove {
-		confirmed, err := confirmAction(
-			os.Stdin,
-			os.Stdout,
-			fmt.Sprintf(
+		var msg string
+		if backupPath != "" {
+			msg = fmt.Sprintf(
 				"Offboard %s and restore %s from %s? (y/N): ",
 				resolveAgentDisplayName(agent),
 				agent.ConfigPath,
-				state.BackupPath,
-			),
-		)
+				backupPath,
+			)
+		} else {
+			msg = fmt.Sprintf(
+				"Offboard %s from Preloop? (Local backup state not found for %s) (y/N): ",
+				resolveAgentDisplayName(agent),
+				agent.ConfigPath,
+			)
+		}
+
+		confirmed, err := confirmAction(os.Stdin, os.Stdout, msg)
 		if err != nil {
 			return fmt.Errorf("failed to read confirmation: %w", err)
 		}
@@ -994,8 +1010,12 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if _, err := restoreAgentFromBackup(agent, state); err != nil {
-		return err
+	if state != nil {
+		if _, err := restoreAgentFromBackup(agent, state); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("Skipped restoring config: no local backup found.\n")
 	}
 
 	if detail != nil {
@@ -1004,8 +1024,10 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := removeLocalEnrollmentState(agent); err != nil {
-		return err
+	if state != nil {
+		if err := removeLocalEnrollmentState(agent); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("✓ Offboarded %s\n", resolveAgentDisplayName(agent))

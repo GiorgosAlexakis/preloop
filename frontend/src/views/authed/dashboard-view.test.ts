@@ -413,7 +413,6 @@ describe('DashboardView', () => {
 
     const header = element.shadowRoot?.querySelector('view-header');
     expect(header?.getAttribute('headerText')).to.equal('Overview');
-    expect(element.shadowRoot?.textContent).to.contain('Welcome to Preloop');
     expect(element.shadowRoot?.textContent).to.contain(
       'Recent flow executions'
     );

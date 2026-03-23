@@ -523,7 +523,11 @@ exit $OPENCODE_EXIT_CODE
                 # OpenAI compatibility layers often mishandle Gemini's stop reasons,
                 # causing Vercel AI SDK to exit loops early. LiteLLM natively handles
                 # translating Anthropic -> Gemini formats robustly.
-                anthropic_endpoint = model_endpoint.replace("/v1", "/anthropic/v1")
+                anthropic_endpoint = model_endpoint.replace(
+                    "/openai/v1", "/anthropic/v1"
+                )
+                if "/anthropic/v1" not in anthropic_endpoint:
+                    anthropic_endpoint = model_endpoint.replace("/v1", "/anthropic/v1")
                 config["provider"] = {
                     effective_model_provider: {
                         "npm": "@ai-sdk/anthropic",
