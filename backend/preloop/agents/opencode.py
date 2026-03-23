@@ -499,7 +499,6 @@ exit $OPENCODE_EXIT_CODE
             "$schema": "https://opencode.ai/config.json",
             "model": model_qualified,
             "autoupdate": False,
-            "permissions": "allow",
             "mcp": {
                 "preloop": {
                     "type": "remote",

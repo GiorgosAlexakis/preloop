@@ -201,7 +201,7 @@ class Settings(BaseSettings):
         description="Whether model gateway events may include redacted content previews",
     )
     model_gateway_auto_index_interactions: bool = Field(
-        False,
+        True,
         description=(
             "Whether completed model gateway interactions may be automatically indexed "
             "into the gateway semantic-search corpus"
@@ -366,7 +366,7 @@ class Settings(BaseSettings):
             ).lower()
             in ("true", "1", "t", "yes"),
             model_gateway_auto_index_interactions=os.getenv(
-                "MODEL_GATEWAY_AUTO_INDEX_INTERACTIONS", "false"
+                "MODEL_GATEWAY_AUTO_INDEX_INTERACTIONS", "true"
             ).lower()
             in ("true", "1", "t", "yes"),
             model_gateway_auto_index_failed_interactions=os.getenv(

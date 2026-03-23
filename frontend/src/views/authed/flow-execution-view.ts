@@ -1261,9 +1261,8 @@ export class FlowExecutionView extends LitElement {
       /tool:\s*([a-zA-Z0-9._:-]+)/i,
     ]) {
       const match = value.match(pattern);
-      const toolName = this.normalizeToolName(match?.[1]);
-      if (toolName) {
-        return toolName;
+      if (match && match[1]) {
+        return match[1].trim();
       }
     }
     return null;
@@ -1277,10 +1276,13 @@ export class FlowExecutionView extends LitElement {
       return null;
     }
 
+    const explicitName =
+      (typeof payload.tool_name === 'string' && payload.tool_name.trim()) ||
+      (typeof payload.tool === 'string' && payload.tool.trim()) ||
+      (typeof payload.name === 'string' && payload.name.trim());
+
     const toolName =
-      this.normalizeToolName(payload.tool_name) ||
-      this.normalizeToolName(payload.tool) ||
-      this.normalizeToolName(payload.name) ||
+      explicitName ||
       this.extractToolNameFromText(payload.message) ||
       this.extractToolNameFromText(payload.result_summary) ||
       this.extractToolNameFromText(payload.error);

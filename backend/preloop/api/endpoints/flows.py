@@ -258,6 +258,34 @@ def read_flow_execution(
     )
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    if not execution.mcp_usage_logs:
+        from preloop.models.models.runtime_session_activity import (
+            RuntimeSessionActivity,
+        )
+
+        rows = (
+            db.query(RuntimeSessionActivity)
+            .filter(
+                RuntimeSessionActivity.flow_execution_id == execution.id,
+                RuntimeSessionActivity.activity_type == "tool_call",
+            )
+            .order_by(RuntimeSessionActivity.timestamp.asc())
+            .all()
+        )
+        if rows:
+            execution.mcp_usage_logs = [
+                {
+                    "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                    "tool_name": row.tool_name,
+                    "server_name": row.server_name,
+                    "status": row.status,
+                    "summary": row.summary,
+                    **(row.metadata_ or {}),
+                }
+                for row in rows
+            ]
+
     return execution
 
 

@@ -637,6 +637,11 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 		notes = append(notes, resolvedNote)
 	}
 
+	providerBaseURL := lookupString(document, "models", "providers", providerID, "baseUrl")
+	if strings.EqualFold(providerID, openClawManagedProviderID) {
+		providerBaseURL = ""
+	}
+
 	return &openClawParsedConfig{
 		Document:        document,
 		MCPServers:      mcpServers,
@@ -646,7 +651,7 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 		ProviderID:      providerID,
 		ProviderName:    providerName,
 		ProviderAPI:     pickOpenClawGatewayAPI(lookupString(document, "models", "providers", providerID, "api")),
-		ProviderBaseURL: lookupString(document, "models", "providers", providerID, "baseUrl"),
+		ProviderBaseURL: providerBaseURL,
 		ProviderAPIKey:  apiKey,
 		ModelCatalog:    findOpenClawModelCatalog(document, providerID, modelID),
 		Notes:           notes,
@@ -691,7 +696,11 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 				token,
 			),
 		}
-		managedModelRef = openClawManagedProviderID + "/" + parsed.ModelAlias
+		managedModelAlias := parsed.ModelAlias
+		if strings.EqualFold(parsed.ProviderID, openClawManagedProviderID) {
+			managedModelAlias = parsed.ModelID
+		}
+		managedModelRef = openClawManagedProviderID + "/" + managedModelAlias
 		rewriteOpenClawModelTargets(managedDoc, managedModelRef)
 	}
 
@@ -723,6 +732,11 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 	}
 	sanitizeConfigSnapshot(sanitizedManaged)
 
+	managedModelAlias := parsed.ModelAlias
+	if strings.EqualFold(parsed.ProviderID, openClawManagedProviderID) {
+		managedModelAlias = parsed.ModelID
+	}
+
 	return managedMCPEnrollmentPlan{
 		Agent:               agent,
 		DiscoveredDocument:  parsed.Document,
@@ -731,7 +745,7 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 		SanitizedManaged:    sanitizedManaged,
 		ManagedServerName:   "preloop",
 		ManagedServerURL:    managedServerURL,
-		ManagedModelAlias:   parsed.ModelAlias,
+		ManagedModelAlias:   managedModelAlias,
 		ManagedProviderName: openClawManagedProviderID,
 		Notes:               notes,
 	}, nil
@@ -751,10 +765,10 @@ func buildOpenClawManagedProvider(
 		modelEntry[key] = value
 	}
 	modelEntry["id"] = parsed.ModelAlias
-	modelEntry["api"] = gatewayAPI
 	if _, ok := modelEntry["name"].(string); !ok {
 		modelEntry["name"] = parsed.ModelAlias
 	}
+	modelEntry["api"] = gatewayAPI
 
 	return map[string]interface{}{
 		"baseUrl":    gatewayURL,
@@ -1228,9 +1242,44 @@ func resolveOpenClawGateway(baseURL string, providerName string) (string, string
 	// implementation exits early on Gemini models passing through LiteLLM gateways
 	// due to divergent stop-reasons. The Anthropic transport processes it robustly.
 	if providerName == "google" || providerName == "gemini" {
-		return strings.TrimRight(baseURL, "/") + "/anthropic/v1", "anthropic"
+		return strings.TrimRight(baseURL, "/") + "/anthropic/v1", "anthropic-messages"
 	}
 	return strings.TrimRight(baseURL, "/") + "/openai/v1", "openai-responses"
+}
+
+func resolveOpenClawJSONAuthProfile(providerID string) (string, string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
+
+	profilesPath := filepath.Join(home, ".openclaw", "agents", "main", "agent", "auth-profiles.json")
+	data, err := os.ReadFile(profilesPath)
+	if err != nil {
+		return "", ""
+	}
+
+	var store struct {
+		Profiles map[string]struct {
+			Type     string `json:"type"`
+			Provider string `json:"provider"`
+			Key      string `json:"key"`
+		} `json:"profiles"`
+	}
+
+	if err := json.Unmarshal(data, &store); err != nil {
+		return "", ""
+	}
+
+	for _, account := range []string{providerID + ":default", providerID} {
+		if profile, exists := store.Profiles[account]; exists {
+			if profile.Type == "api_key" && profile.Key != "" {
+				return profile.Key, fmt.Sprintf("Resolved OpenClaw provider API key from %s (account: %s).", profilesPath, account)
+			}
+		}
+	}
+
+	return "", ""
 }
 
 func resolveOpenClawProviderAPIKey(
@@ -1243,13 +1292,60 @@ func resolveOpenClawProviderAPIKey(
 		if profileKey != "" {
 			return profileKey, profileNote
 		}
-		if secret, err := keyring.Get("openclaw", providerID); err == nil && secret != "" {
-			return secret, fmt.Sprintf("Resolved OpenClaw provider API key from OS Keychain (service: openclaw, account: %s).", providerID)
+
+		if jsonKey, jsonNote := resolveOpenClawJSONAuthProfile(providerID); jsonKey != "" {
+			return jsonKey, jsonNote
 		}
+
+		// Fallback to well-known environment variables naturally respected by OpenClaw
+		switch providerID {
+		case "google", "gemini":
+			if secret := os.Getenv("GEMINI_API_KEY"); secret != "" {
+				return secret, "Resolved OpenClaw provider API key from GEMINI_API_KEY environment variable."
+			}
+		case "openai":
+			if secret := os.Getenv("OPENAI_API_KEY"); secret != "" {
+				return secret, "Resolved OpenClaw provider API key from OPENAI_API_KEY environment variable."
+			}
+		case "anthropic":
+			if secret := os.Getenv("ANTHROPIC_API_KEY"); secret != "" {
+				return secret, "Resolved OpenClaw provider API key from ANTHROPIC_API_KEY environment variable."
+			}
+		}
+
+		accountsToCheck := []string{providerID, providerID + ":default"}
+
+		for _, account := range accountsToCheck {
+			if secret, err := keyring.Get("openclaw", account); err == nil && secret != "" {
+				return secret, fmt.Sprintf("Resolved OpenClaw provider API key from OS Keychain (service: openclaw, account: %s).", account)
+			}
+
+			// Fallback check for "OpenClaw" capitalized service name
+			if secret, err := keyring.Get("OpenClaw", account); err == nil && secret != "" {
+				return secret, fmt.Sprintf("Resolved OpenClaw provider API key from OS Keychain (service: OpenClaw, account: %s).", account)
+			}
+
+			// Fallback check for "openclaw-ai" NPM package service name
+			if secret, err := keyring.Get("openclaw-ai", account); err == nil && secret != "" {
+				return secret, fmt.Sprintf("Resolved OpenClaw provider API key from OS Keychain (service: openclaw-ai, account: %s).", account)
+			}
+
+			// Fallback check for "OpenClaw-AI" package service name
+			if secret, err := keyring.Get("OpenClaw-AI", account); err == nil && secret != "" {
+				return secret, fmt.Sprintf("Resolved OpenClaw provider API key from OS Keychain (service: OpenClaw-AI, account: %s).", account)
+			}
+		}
+
+		// Detailed logging so the user knows exactly why native resolution failed
+		diagnosticErr := fmt.Sprintf(
+			"The API key for provider '%s' could not be resolved from environment variables or the OS Keychain.",
+			providerID,
+		)
+
 		if profileNote != "" && profileNote != "OpenClaw provider API key could not be resolved automatically." {
-			return "", profileNote
+			return "", fmt.Sprintf("%s (%s)", profileNote, diagnosticErr)
 		}
-		return "", "OpenClaw provider API key could not be resolved automatically."
+		return "", fmt.Sprintf("OpenClaw provider API key could not be resolved automatically. %s", diagnosticErr)
 	}
 	switch typed := value.(type) {
 	case string:
@@ -1392,7 +1488,6 @@ func findOpenClawModelCatalog(
 }
 
 func rewriteOpenClawModelTargets(document map[string]interface{}, managedModelRef string) {
-	rewriteOpenClawModelSelector(document, managedModelRef, "agent")
 	rewriteOpenClawModelSelector(document, managedModelRef, "agents", "defaults")
 
 	agentsList, ok := lookupValue(document, "agents", "list").([]interface{})
@@ -1407,7 +1502,6 @@ func rewriteOpenClawModelTargets(document map[string]interface{}, managedModelRe
 	}
 
 	for _, path := range [][]string{
-		{"agent", "models"},
 		{"agents", "defaults", "models"},
 	} {
 		if container, ok := asObjectMap(lookupValue(document, path...)); ok {
