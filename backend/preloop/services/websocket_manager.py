@@ -14,29 +14,89 @@ from preloop.services.account_realtime import ACCOUNT_REALTIME_TOPICS
 
 logger = logging.getLogger(__name__)
 
+# Dictionary to hold loop-specific queues to prevent test runner cross-loop panics
+_log_queues: dict[asyncio.AbstractEventLoop, asyncio.Queue] = {}
 
-async def persist_execution_log(execution_id: str, log_data: dict):
+
+def get_log_queue() -> asyncio.Queue:
+    """Returns the logging queue associated with the current running event loop."""
+    loop = asyncio.get_running_loop()
+    if loop not in _log_queues:
+        _log_queues[loop] = asyncio.Queue()
+    return _log_queues[loop]
+
+
+def _sync_batch_insert_logs(batch: list):
     """
-    Appends a log entry to the execution_logs array in the database.
-
-    Args:
-        execution_id: ID of the flow execution
-        log_data: Log message data to append
+    Synchronously insert a batch of log records into the database.
     """
     try:
         from preloop.models.crud import crud_flow_execution
 
         db = next(get_db())
         try:
-            # Use CRUD method to append log
-            crud_flow_execution.append_log(
-                db, execution_id=execution_id, log_data=log_data
-            )
+            for execution_id, log_data in batch:
+                crud_flow_execution.append_log(
+                    db, execution_id=execution_id, log_data=log_data, commit=False
+                )
+            db.commit()
         finally:
             db.close()
     except Exception as e:
         logger.error(
-            f"Failed to persist log for execution {execution_id}: {e}", exc_info=True
+            f"Failed to persist batch of {len(batch)} logs: {e}", exc_info=True
+        )
+
+
+async def _log_writer_worker():
+    """
+    Background worker that continuously drains the log queue and writes to the DB in batches.
+    """
+    while True:
+        try:
+            queue = get_log_queue()
+            # Wait for at least one item
+            item = await queue.get()
+            batch = [item]
+
+            # Greedily drain up to 500 items instantly
+            while len(batch) < 500:
+                try:
+                    batch.append(queue.get_nowait())
+                except asyncio.QueueEmpty:
+                    break
+
+            # Dispatch the bulk insert to an isolated thread
+            await asyncio.to_thread(_sync_batch_insert_logs, batch)
+
+            # Mark all dequeued task objects as done
+            for _ in batch:
+                queue.task_done()
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in log writer worker: {e}", exc_info=True)
+            await asyncio.sleep(1)
+
+
+async def persist_execution_log(execution_id: str, log_data: dict):
+    """
+    Asynchronously queues a log entry for persistence to execution_logs array in the database.
+
+    Args:
+        execution_id: ID of the flow execution
+        log_data: Log message data to append
+    """
+    try:
+        # Puts the item into the queue without blocking the NATS consumer event loop
+        get_log_queue().put_nowait((execution_id, log_data))
+    except Exception as e:
+        logger.error(
+            f"Failed to queue log for execution {execution_id}: {e}", exc_info=True
         )
 
 
@@ -328,9 +388,20 @@ async def nats_consumer(manager: "WebSocketManager"):
         activity_sub = await nats_client.subscribe("admin.activity", cb=message_handler)
         logger.info("Subscribed to NATS subject 'admin.activity'")
 
-        # Keep the consumer running
-        while True:
-            await asyncio.sleep(1)
+        # Start the background log writer worker task
+        log_worker_task = asyncio.create_task(_log_writer_worker())
+
+        try:
+            # Keep the consumer running
+            while True:
+                await asyncio.sleep(1)
+        finally:
+            log_worker_task.cancel()
+            try:
+                await log_worker_task
+            except asyncio.CancelledError:
+                pass
+
     except Exception as e:
         logger.error(f"NATS consumer failed: {e}")
 

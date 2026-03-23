@@ -17,6 +17,7 @@ describe('DashboardView', () => {
   let auditResponse: any;
   let trackersResponse: any;
   let apiUsageResponse: any;
+  let apiKeysResponse: any;
   let issueCountResponse: any;
   let mcpServersResponse: any;
   let toolsResponse: any;
@@ -225,6 +226,7 @@ describe('DashboardView', () => {
       { id: 'tracker-1', name: 'GitHub', type: 'github' },
       { id: 'tracker-2', name: 'Jira', type: 'jira' },
     ];
+    apiKeysResponse = [];
     apiUsageResponse = { total_requests: 321 };
     issueCountResponse = { total_issues: 27 };
     mcpServersResponse = [
@@ -339,7 +341,7 @@ describe('DashboardView', () => {
           return json(auditResponse);
         }
 
-        if (url === '/api/v1/trackers') {
+        if (url.startsWith('/api/v1/trackers')) {
           return json(trackersResponse);
         }
 
@@ -347,24 +349,28 @@ describe('DashboardView', () => {
           return json(apiUsageResponse);
         }
 
+        if (url === '/api/v1/auth/api-keys') {
+          return json(apiKeysResponse);
+        }
+
         if (url === '/api/v1/issue-count') {
           return json(issueCountResponse);
         }
 
-        if (url === '/api/v1/mcp-servers') {
+        if (url.startsWith('/api/v1/mcp-servers')) {
           return json(mcpServersResponse);
         }
 
-        if (url === '/api/v1/tools') {
+        if (url.startsWith('/api/v1/tools')) {
           return json(toolsResponse);
-        }
-
-        if (url === '/api/v1/flows') {
-          return json(flowsResponse);
         }
 
         if (url.startsWith('/api/v1/flows/executions')) {
           return json(flowExecutionsResponse);
+        }
+
+        if (url.startsWith('/api/v1/flows')) {
+          return json(flowsResponse);
         }
 
         if (url === '/api/v1/approval-requests?limit=3&status=pending') {
@@ -414,7 +420,7 @@ describe('DashboardView', () => {
     const header = element.shadowRoot?.querySelector('view-header');
     expect(header?.getAttribute('headerText')).to.equal('Overview');
     expect(element.shadowRoot?.textContent).to.contain(
-      'Recent flow executions'
+      'Recent Flow Executions'
     );
     expect(element.shadowRoot?.textContent).to.contain('MCP server');
     expect(element.shadowRoot?.textContent).to.contain('Approval analytics');

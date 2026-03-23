@@ -11,6 +11,7 @@ from preloop.services.websocket_manager import (
     WebSocketManager,
     nats_consumer,
     persist_execution_log,
+    _sync_batch_insert_logs,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -19,78 +20,97 @@ pytestmark = pytest.mark.asyncio
 class TestPersistExecutionLog:
     """Test persist_execution_log function."""
 
-    @patch("preloop.services.websocket_manager.get_db")
-    @patch("preloop.models.crud.crud_flow_execution.append_log")
-    async def test_persist_execution_log_success(self, mock_append, mock_get_db):
-        """Test persisting execution log successfully."""
+    @patch("preloop.services.websocket_manager.get_log_queue")
+    async def test_persist_execution_log_success(self, mock_get_queue):
+        """Test persisting execution log successfully just enqueues it."""
         execution_id = "exec_123"
         log_data = {"message": "Step completed", "level": "INFO"}
+
+        mock_queue = MagicMock()
+        mock_get_queue.return_value = mock_queue
+
+        await persist_execution_log(execution_id, log_data)
+
+        # Verify queue was called
+        mock_queue.put_nowait.assert_called_once_with((execution_id, log_data))
+
+    @patch("preloop.services.websocket_manager.get_db")
+    @patch("preloop.models.crud.crud_flow_execution.append_log")
+    def test_sync_batch_insert_logs_success(self, mock_append, mock_get_db):
+        """Test the synchronous batch insertion function."""
+        execution_id = "exec_123"
+        log_data = {"message": "Step completed", "level": "INFO"}
+        batch = [(execution_id, log_data)]
 
         # Mock database session
         mock_db = MagicMock()
         mock_get_db.return_value = iter([mock_db])
 
-        await persist_execution_log(execution_id, log_data)
+        _sync_batch_insert_logs(batch)
 
-        # Verify CRUD append_log was called
+        # Verify CRUD append_log was called with commit=False
         mock_append.assert_called_once_with(
-            mock_db, execution_id=execution_id, log_data=log_data
+            mock_db, execution_id=execution_id, log_data=log_data, commit=False
         )
+        assert mock_db.commit.called
         assert mock_db.close.called
 
     @patch("preloop.services.websocket_manager.get_db")
     @patch("preloop.models.crud.crud_flow_execution.append_log")
-    async def test_persist_execution_log_with_complex_data(
-        self, mock_append, mock_get_db
-    ):
-        """Test persisting execution log with complex data."""
+    def test_sync_batch_insert_logs_with_complex_data(self, mock_append, mock_get_db):
+        """Test batch persisting execution log with complex data."""
         execution_id = "exec_456"
         log_data = {
             "message": "Complex step",
             "level": "DEBUG",
             "metadata": {"key1": "value1", "key2": [1, 2, 3]},
         }
+        batch = [(execution_id, log_data)]
 
         mock_db = MagicMock()
         mock_get_db.return_value = iter([mock_db])
 
-        await persist_execution_log(execution_id, log_data)
+        _sync_batch_insert_logs(batch)
 
         # Verify CRUD was called with the complex data dict
         mock_append.assert_called_once_with(
-            mock_db, execution_id=execution_id, log_data=log_data
+            mock_db, execution_id=execution_id, log_data=log_data, commit=False
         )
+        assert mock_db.commit.called
         assert mock_db.close.called
 
     @patch("preloop.services.websocket_manager.get_db")
     @patch("preloop.services.websocket_manager.logger")
     @patch("preloop.models.crud.crud_flow_execution.append_log")
-    async def test_persist_execution_log_database_error(
+    def test_sync_batch_insert_logs_database_error(
         self, mock_append, mock_logger, mock_get_db
     ):
-        """Test handling database error when persisting log."""
+        """Test handling database error when persisting log batch."""
         execution_id = "exec_789"
         log_data = {"message": "Test"}
+        batch = [(execution_id, log_data)]
 
         # Mock CRUD to raise exception
         mock_db = MagicMock()
         mock_get_db.return_value = iter([mock_db])
         mock_append.side_effect = Exception("Database error")
 
-        await persist_execution_log(execution_id, log_data)
+        _sync_batch_insert_logs(batch)
 
         # Verify error was logged
         assert mock_logger.error.called
-        # Database should still close
+        # Database should still close, but commit shouldn't happen after error
         assert mock_db.close.called
 
     @patch("preloop.services.websocket_manager.get_db")
-    async def test_persist_execution_log_closes_db_on_success(self, mock_get_db):
+    def test_sync_batch_insert_logs_closes_db_on_success(self, mock_get_db):
         """Test that database is closed even on success."""
         mock_db = MagicMock()
         mock_get_db.return_value = iter([mock_db])
+        batch = [("exec_id", {"message": "test"})]
 
-        await persist_execution_log("exec_id", {"message": "test"})
+        with patch("preloop.models.crud.crud_flow_execution.append_log"):
+            _sync_batch_insert_logs(batch)
 
         assert mock_db.close.called
 

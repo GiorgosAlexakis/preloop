@@ -13,6 +13,7 @@
     "start": "npm run dev",
     "dev": "vite",
     "build": "vite build",
+    "build:watch": "vite build --watch",
     "preview": "vite preview",
     "test": "web-test-runner \"src/**/*.test.{ts,js}\"",
     "test:coverage": "web-test-runner \"src/**/*.test.{ts,js}\" --coverage",

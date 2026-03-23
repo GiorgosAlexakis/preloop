@@ -499,6 +499,7 @@ exit $OPENCODE_EXIT_CODE
             "$schema": "https://opencode.ai/config.json",
             "model": model_qualified,
             "autoupdate": False,
+            "permissions": "allow",
             "mcp": {
                 "preloop": {
                     "type": "remote",
@@ -519,20 +520,11 @@ exit $OPENCODE_EXIT_CODE
         #   models – map of model-id → {name}
         if model_endpoint:
             if gateway_enabled and model_provider in ("google", "gemini"):
-                # Use Anthropic transport for routing Gemini through the Gateway.
-                # OpenAI compatibility layers often mishandle Gemini's stop reasons,
-                # causing Vercel AI SDK to exit loops early. LiteLLM natively handles
-                # translating Anthropic -> Gemini formats robustly.
-                anthropic_endpoint = model_endpoint.replace(
-                    "/openai/v1", "/anthropic/v1"
-                )
-                if "/anthropic/v1" not in anthropic_endpoint:
-                    anthropic_endpoint = model_endpoint.replace("/v1", "/anthropic/v1")
                 config["provider"] = {
                     effective_model_provider: {
-                        "npm": "@ai-sdk/anthropic",
+                        "npm": "@ai-sdk/openai-compatible",
                         "options": {
-                            "baseURL": anthropic_endpoint,
+                            "baseURL": model_endpoint,
                             "apiKey": "$OPENAI_API_KEY",
                         },
                         "models": {
