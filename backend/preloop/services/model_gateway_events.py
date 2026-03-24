@@ -16,6 +16,9 @@ from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.models.api_key import ApiKey
 from preloop.models.models.api_usage import ApiUsage
 from preloop.models.models.managed_agent import ManagedAgent
+from preloop.models.models.runtime_session import RuntimeSession
+from preloop.models.models.runtime_session_activity import RuntimeSessionActivity
+from preloop.models.crud.runtime_session_activity import CRUDRuntimeSessionActivity
 from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_BUDGET_HEALTH,
     ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
@@ -57,8 +60,8 @@ _SENSITIVE_TEXT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
 )
 
-
 crud_flow_execution = CRUDFlowExecution()
+crud_runtime_session_activity = CRUDRuntimeSessionActivity(RuntimeSessionActivity)
 _TEXT_CONTENT_TYPES = {"input_text", "output_text", "text"}
 
 
@@ -87,6 +90,44 @@ class ModelGatewayEventEmitter:
                 self.db,
                 execution_id,
                 event,
+                commit=True,
+            )
+
+        runtime_session_id = (
+            str(usage.runtime_session_id) if usage.runtime_session_id else None
+        )
+        if (
+            not runtime_session_id
+            and not execution_id
+            and usage.runtime_principal_type
+            and usage.runtime_principal_id
+        ):
+            latest_session = (
+                self.db.query(RuntimeSession)
+                .filter(
+                    RuntimeSession.session_source_type == usage.runtime_principal_type,
+                    RuntimeSession.session_source_id.startswith(
+                        f"{usage.runtime_principal_id}-"
+                    )
+                    | (RuntimeSession.session_source_id == usage.runtime_principal_id),
+                )
+                .order_by(RuntimeSession.created_at.desc())
+                .first()
+            )
+            if latest_session:
+                runtime_session_id = str(latest_session.id)
+
+        if runtime_session_id and not execution_id:
+            crud_runtime_session_activity.log_model_gateway_call(
+                self.db,
+                account_id=str(usage.account_id),
+                runtime_session_id=runtime_session_id,
+                status=event["payload"].get("outcome", "success"),
+                summary=None,
+                flow_execution_id=execution_id,
+                api_key_id=str(usage.api_key_id) if usage.api_key_id else None,
+                metadata=event["payload"],
+                timestamp=usage.timestamp,
                 commit=True,
             )
 

@@ -181,7 +181,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		if err != nil {
 			return err
 		}
-		gatewayURL, _ := resolveOpenClawGateway(client.BaseURL(), parsed.ProviderName)
+		gatewayURL, _ := resolveOpenClawGateway(client.BaseURL(), parsed.ProviderName, parsed.ModelAlias)
 
 		if parsed.ProviderAPIKey == "" {
 			if !opts.SkipConfirmation && !opts.AutoApprove {
@@ -677,7 +677,7 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 	}
 
 	managedServerURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
-	gatewayURL, gatewayAPI := resolveOpenClawGateway(baseURL, parsed.ProviderName)
+	gatewayURL, gatewayAPI := resolveOpenClawGateway(baseURL, parsed.ProviderName, parsed.ModelAlias)
 
 	mcp := ensureObjectPath(managedDoc, "mcp")
 	mcp["servers"] = map[string]interface{}{
@@ -1237,11 +1237,11 @@ func pickOpenClawGatewayAPI(sourceAPI string) string {
 	}
 }
 
-func resolveOpenClawGateway(baseURL string, providerName string) (string, string) {
+func resolveOpenClawGateway(baseURL string, providerName string, modelAlias string) (string, string) {
 	// Native OpenAI transport handles most tool calls well, but OpenClaw's OpenAI
 	// implementation exits early on Gemini models passing through LiteLLM gateways
 	// due to divergent stop-reasons. The Anthropic transport processes it robustly.
-	if providerName == "google" || providerName == "gemini" {
+	if providerName == "google" || providerName == "gemini" || strings.Contains(strings.ToLower(modelAlias), "google") || strings.Contains(strings.ToLower(modelAlias), "gemini") {
 		return strings.TrimRight(baseURL, "/") + "/anthropic/v1", "anthropic-messages"
 	}
 	return strings.TrimRight(baseURL, "/") + "/openai/v1", "openai-responses"

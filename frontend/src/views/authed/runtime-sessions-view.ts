@@ -16,6 +16,7 @@ import {
   getAccountRuntimeSessionDetail,
   getAccountRuntimeSessions,
   getFlowExecutionGatewayEvents,
+  getRuntimeSessionGatewayEvents,
   updateAccountRuntimeSession,
   type RuntimeSessionDetailParams,
   type RuntimeSessionListParams,
@@ -610,7 +611,7 @@ export class RuntimeSessionsView extends LitElement {
   private async loadGatewayEvents(
     flowExecutionId: string | null | undefined
   ): Promise<void> {
-    if (!flowExecutionId) {
+    if (!flowExecutionId && !this.selectedSessionId) {
       this.gatewayEvents = [];
       this.gatewayEventsError = null;
       this.gatewayEventsLoading = false;
@@ -620,17 +621,22 @@ export class RuntimeSessionsView extends LitElement {
     this.gatewayEventsLoading = true;
     this.gatewayEventsError = null;
     try {
-      const result = await getFlowExecutionGatewayEvents(flowExecutionId);
+      let result;
+      if (flowExecutionId) {
+        result = await getFlowExecutionGatewayEvents(flowExecutionId);
+      } else {
+        result = await getRuntimeSessionGatewayEvents(this.selectedSessionId!);
+      }
       this.gatewayEvents = (result.logs || []).filter(
         (event) => event?.type === 'model_gateway_call'
       );
     } catch (error) {
-      console.error('Failed to load flow gateway events:', error);
+      console.error('Failed to load gateway events:', error);
       this.gatewayEvents = [];
       this.gatewayEventsError =
         error instanceof Error
           ? error.message
-          : 'Failed to load flow gateway events';
+          : 'Failed to load gateway events';
     } finally {
       this.gatewayEventsLoading = false;
     }
@@ -1350,7 +1356,7 @@ export class RuntimeSessionsView extends LitElement {
   }
 
   private renderGatewayEventsPanel() {
-    if (!this.detail?.session.flow_execution_id) {
+    if (!this.detail) {
       return '';
     }
 
@@ -1373,8 +1379,8 @@ export class RuntimeSessionsView extends LitElement {
         </div>
         <div class="gateway-events-panel">
           <div class="detail-meta">
-            Flow-backed sessions can reuse normalized gateway events to show
-            captured conversation previews and payload details.
+            Normalized gateway events are rendered to show captured conversation
+            previews and payload details.
           </div>
           <div class="interaction-toolbar">
             <sl-input

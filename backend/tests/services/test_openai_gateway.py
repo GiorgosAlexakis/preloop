@@ -32,6 +32,40 @@ def _parse_sse_payload(event: str):
     return json.loads(payload)
 
 
+def test_call_litellm_uses_injected_upstream_backend():
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    upstream_backend = MagicMock()
+    service = OpenAIGatewayService(
+        MagicMock(), auth_context, upstream_backend=upstream_backend
+    )
+    ai_model = SimpleNamespace(
+        provider_name="openai", model_identifier="gpt-5", api_endpoint=None
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.get_secret_service"
+    ) as mock_secret_service:
+        mock_secret_service.return_value.resolve_ai_model_api_key.return_value = (
+            SimpleNamespace(value="provider-secret")
+        )
+        service._call_litellm(
+            ai_model,
+            messages=[{"role": "user", "content": "Hello"}],
+            payload={"temperature": 0.2},
+            provider="openai",
+        )
+
+    upstream_backend.completion.assert_called_once_with(
+        model="openai/gpt-5",
+        messages=[{"role": "user", "content": "Hello"}],
+        api_key="provider-secret",
+        temperature=0.2,
+    )
+
+
 def test_stream_response_emits_output_item_before_text_deltas():
     auth_context = ModelGatewayAuthContext(
         token="token",

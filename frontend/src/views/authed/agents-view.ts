@@ -86,12 +86,46 @@ export class AgentsView extends LitElement {
 
       .cards {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: var(--sl-spacing-medium);
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: var(--sl-spacing-large);
       }
 
       .agent-card::part(base) {
         height: 100%;
+        background: rgba(30, 41, 59, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        color: var(--sl-color-neutral-100);
+        transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease, border-color 0.3s ease;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      }
+
+      .agent-card:hover::part(base) {
+        transform: translateY(-6px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      @keyframes glow-pulse {
+        0% {
+          box-shadow: 0 0 25px 5px rgba(88, 166, 255, 0.6);
+          border-color: rgba(88, 166, 255, 0.8);
+        }
+        100% {
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+          border-color: rgba(255, 255, 255, 0.1);
+        }
+      }
+
+      .agent-card.glowing::part(base) {
+        animation: glow-pulse 1.5s ease-out;
+      }
+
+      .agent-card.live::part(base) {
+        border-color: rgba(88, 166, 255, 0.4);
+        box-shadow: 0 0 15px rgba(88, 166, 255, 0.15);
       }
 
       .card-stack {
@@ -111,28 +145,34 @@ export class AgentsView extends LitElement {
 
       .title-row {
         align-items: start;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding-bottom: var(--sl-spacing-small);
       }
 
       .agent-name {
         font-weight: 700;
-        color: var(--sl-color-neutral-900);
+        font-size: 1.15rem;
+        color: var(--sl-color-neutral-0);
+        letter-spacing: -0.01em;
       }
 
       .agent-meta {
-        color: var(--sl-color-neutral-600);
+        color: var(--sl-color-neutral-400);
         font-size: var(--sl-font-size-small);
-        margin-top: var(--sl-spacing-2x-small);
+        margin-top: var(--sl-spacing-3x-small);
         overflow-wrap: anywhere;
       }
 
       .label {
-        color: var(--sl-color-neutral-600);
-        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-400);
+        font-size: 0.85rem;
+        font-weight: 500;
       }
 
       .value {
-        color: var(--sl-color-neutral-900);
+        color: var(--sl-color-neutral-0);
         font-weight: 600;
+        font-size: 0.95rem;
         text-align: right;
       }
 
@@ -140,6 +180,16 @@ export class AgentsView extends LitElement {
         display: flex;
         flex-wrap: wrap;
         gap: var(--sl-spacing-2x-small);
+      }
+
+      sl-badge {
+        --sl-font-size-small: 0.75rem;
+      }
+
+      .action-row {
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        padding-top: var(--sl-spacing-medium);
+        margin-top: var(--sl-spacing-small);
       }
 
       .empty-state {
@@ -407,8 +457,13 @@ export class AgentsView extends LitElement {
     const liveActivity = this.liveActivity[agent.id];
     const liveTotal =
       (liveActivity?.modelCalls || 0) + (liveActivity?.toolCalls || 0);
+
+    // Determine if we should pulse the card (last activity was < 2 seconds ago)
+    const isGlowing = liveActivity?.lastActivityAt && (Date.now() - new Date(liveActivity.lastActivityAt).getTime() < 2000);
+
+    // Force animation reset by modifying class and key if pulsing
     return html`
-      <sl-card class="agent-card">
+      <sl-card class="agent-card ${liveTotal > 0 ? 'live' : ''} ${isGlowing ? 'glowing' : ''}" data-activity=${liveActivity?.lastActivityAt || ''}>
         <div class="card-stack">
           <div class="title-row">
             <div>

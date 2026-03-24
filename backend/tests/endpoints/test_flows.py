@@ -535,6 +535,53 @@ async def test_read_flow_execution(mock_account: Account, mocker: MockerFixture)
 
 
 @pytest.mark.asyncio
+async def test_read_flow_execution_hydrates_mcp_usage_logs_from_activity(
+    mock_account: Account, mocker: MockerFixture
+):
+    """When mcp_usage_logs is empty, tool calls are loaded via activity CRUD."""
+    execution_id = uuid.uuid4()
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_activity = mocker.patch(
+        "preloop.api.endpoints.flows.crud_runtime_session_activity",
+        new_callable=MagicMock,
+    )
+
+    execution = MagicMock()
+    execution.id = execution_id
+    execution.mcp_usage_logs = None
+    mock_crud_flow_execution.get.return_value = execution
+
+    row = MagicMock()
+    row.timestamp = datetime.now(ZoneInfo("UTC"))
+    row.tool_name = "t"
+    row.server_name = "s"
+    row.status = "success"
+    row.summary = None
+    row.metadata_ = {}
+    mock_crud_activity.list_tool_calls_for_flow_execution.return_value = [row]
+
+    db = MagicMock()
+    result = await maybe_await(
+        flows.read_flow_execution(
+            db=db, execution_id=execution_id, current_user=mock_account
+        )
+    )
+
+    assert result is execution
+    mock_crud_activity.list_tool_calls_for_flow_execution.assert_called_once_with(
+        db,
+        account_id=mock_account.account_id,
+        flow_execution_id=execution_id,
+    )
+    assert execution.mcp_usage_logs is not None
+    assert len(execution.mcp_usage_logs) == 1
+    assert execution.mcp_usage_logs[0]["tool_name"] == "t"
+
+
+@pytest.mark.asyncio
 async def test_read_flow_execution_not_found(
     mock_account: Account, mocker: MockerFixture
 ):

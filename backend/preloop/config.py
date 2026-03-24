@@ -214,6 +214,13 @@ class Settings(BaseSettings):
             "when automatic gateway indexing is enabled"
         ),
     )
+    model_gateway_upstream_backend: str = Field(
+        "litellm",
+        description=(
+            "Upstream transport implementation used by the model gateway. "
+            "Current supported value: litellm"
+        ),
+    )
     model_gateway_max_preview_chars: int = Field(
         4096,
         description="Maximum number of characters to retain in model gateway content previews",

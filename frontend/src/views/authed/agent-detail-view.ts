@@ -767,6 +767,35 @@ export class AgentDetailView extends LitElement {
     }
   }
 
+  private async killAgent(): Promise<void> {
+    if (!this.agentId || !this.agent) {
+      return;
+    }
+    if (
+      !window.confirm(
+        `Are you sure you want to KILL ${this.agent.display_name}? This will instantly suspend all routing to this agent.`
+      )
+    ) {
+      return;
+    }
+    this.actionLoading = true;
+    try {
+      await updateAccountAgent(this.agentId, {
+        lifecycle_action: 'suspend',
+        reason: 'Manually killed by admin kill switch'
+      });
+      await this.loadData();
+    } catch (error) {
+      console.error('Failed to kill managed agent:', error);
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to kill managed agent';
+    } finally {
+      this.actionLoading = false;
+    }
+  }
+
   private formatDateTime(value: string | null | undefined): string {
     if (!value) {
       return 'None';
@@ -955,10 +984,20 @@ export class AgentDetailView extends LitElement {
             <div class="control-row">
               <sl-button
                 variant="danger"
+                outline
                 ?loading=${this.actionLoading}
                 @click=${this.removeAgent}
               >
                 Remove agent record
+              </sl-button>
+              <sl-button
+                variant="danger"
+                ?loading=${this.actionLoading}
+                ?disabled=${this.agent.lifecycle_state === 'suspended' || this.agent.lifecycle_state === 'decommissioned'}
+                @click=${this.killAgent}
+              >
+                <sl-icon slot="prefix" name="power"></sl-icon>
+                KILL SWITCH
               </sl-button>
             </div>
 
@@ -1335,7 +1374,7 @@ export class AgentDetailView extends LitElement {
                       <div class="stack">
                         <div class="hero-title">Session History</div>
                         <div class="timeline">
-                          ${this.sessions.map(
+                          ${this.sessions.slice().sort((a,b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime()).map(
                             (session) => html`
                               <div class="timeline-item">
                                 <div class="timeline-title">

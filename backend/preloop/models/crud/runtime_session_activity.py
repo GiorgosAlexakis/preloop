@@ -81,6 +81,66 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             db.refresh(db_obj)
         return db_obj
 
+    def log_model_gateway_call(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        status: str,
+        summary: Optional[str] = None,
+        flow_execution_id: Optional[Any] = None,
+        api_key_id: Optional[Any] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None,
+        commit: bool = True,
+    ) -> RuntimeSessionActivity:
+        """Persist one normalized model gateway activity item."""
+        activity_timestamp = timestamp or datetime.now(timezone.utc)
+        db_obj = RuntimeSessionActivity(
+            account_id=account_id,
+            runtime_session_id=runtime_session_id,
+            flow_execution_id=flow_execution_id,
+            api_key_id=api_key_id,
+            activity_type="model_gateway_call",
+            status=status,
+            summary=summary,
+            metadata_=metadata,
+            timestamp=activity_timestamp,
+        )
+        db.add(db_obj)
+
+        runtime_session = db.get(RuntimeSession, runtime_session_id)
+        if runtime_session is not None:
+            runtime_session.last_activity_at = activity_timestamp
+            db.add(runtime_session)
+
+            if (
+                runtime_session.runtime_principal_type
+                and runtime_session.runtime_principal_id
+            ):
+                managed_agent = (
+                    db.query(ManagedAgent)
+                    .filter(
+                        ManagedAgent.account_id == account_id,
+                        ManagedAgent.session_source_type
+                        == runtime_session.runtime_principal_type,
+                        ManagedAgent.session_source_id
+                        == runtime_session.runtime_principal_id,
+                    )
+                    .first()
+                )
+                if managed_agent is not None:
+                    if managed_agent.lifecycle_state == "active":
+                        managed_agent.runtime_session_id = runtime_session.id
+                        managed_agent.last_seen_at = activity_timestamp
+                        db.add(managed_agent)
+
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        return db_obj
+
     def list_for_runtime_session(
         self,
         db: Session,
@@ -198,6 +258,25 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             }
             for row in rows
         ]
+
+    def list_tool_calls_for_flow_execution(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        flow_execution_id: Any,
+    ) -> list[RuntimeSessionActivity]:
+        """Return tool_call activities for one flow execution, oldest first."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.flow_execution_id == flow_execution_id,
+                self.model.activity_type == "tool_call",
+            )
+            .order_by(self.model.timestamp.asc())
+            .all()
+        )
 
 
 crud_runtime_session_activity = CRUDRuntimeSessionActivity(RuntimeSessionActivity)

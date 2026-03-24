@@ -4,7 +4,7 @@ import html
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
@@ -1152,6 +1152,59 @@ async def get_account_runtime_session_detail(
         interaction_limit=interaction_limit,
         interaction_offset=interaction_offset,
     )
+
+
+@router.get(
+    "/runtime-sessions/{runtime_session_id}/gateway-events",
+)
+async def get_account_runtime_session_gateway_events(
+    runtime_session_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+    tail: int | None = Query(None),
+) -> dict[str, Any]:
+    """Return stored gateway events (chat histories) for one runtime session."""
+    session = crud_runtime_session.get_account_session(
+        db, account_id=str(account.id), runtime_session_id=runtime_session_id
+    )
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Runtime session not found"
+        )
+
+    from preloop.models.models.runtime_session_activity import RuntimeSessionActivity
+    from sqlalchemy import select
+
+    query = (
+        select(RuntimeSessionActivity)
+        .filter(
+            RuntimeSessionActivity.account_id == account.id,
+            RuntimeSessionActivity.runtime_session_id == runtime_session_id,
+            RuntimeSessionActivity.activity_type == "model_gateway_call",
+        )
+        .order_by(
+            RuntimeSessionActivity.timestamp.desc()
+            if tail
+            else RuntimeSessionActivity.timestamp.asc()
+        )
+    )
+    if tail:
+        query = query.limit(tail)
+
+    rows = db.scalars(query).all()
+    if tail:
+        rows = list(reversed(rows))
+
+    events = [
+        {
+            "id": str(row.id),
+            "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+            "type": row.activity_type,
+            "payload": row.metadata_,
+        }
+        for row in rows
+    ]
+    return {"source": "database", "logs": events}
 
 
 @router.patch(

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from preloop.models import schemas
-from preloop.models.crud import crud_account
+from preloop.models.crud import crud_account, crud_runtime_session_activity
 from preloop.models.crud.flow import CRUDFlow
 from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.db.session import get_db_session as get_db
@@ -260,18 +260,10 @@ def read_flow_execution(
         raise HTTPException(status_code=404, detail="Flow execution not found")
 
     if not execution.mcp_usage_logs:
-        from preloop.models.models.runtime_session_activity import (
-            RuntimeSessionActivity,
-        )
-
-        rows = (
-            db.query(RuntimeSessionActivity)
-            .filter(
-                RuntimeSessionActivity.flow_execution_id == execution.id,
-                RuntimeSessionActivity.activity_type == "tool_call",
-            )
-            .order_by(RuntimeSessionActivity.timestamp.asc())
-            .all()
+        rows = crud_runtime_session_activity.list_tool_calls_for_flow_execution(
+            db,
+            account_id=current_user.account_id,
+            flow_execution_id=execution.id,
         )
         if rows:
             execution.mcp_usage_logs = [

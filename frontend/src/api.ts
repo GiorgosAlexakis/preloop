@@ -495,6 +495,20 @@ export async function updateAccountRuntimeSession(
   return response.json();
 }
 
+export async function getRuntimeSessionGatewayEvents(
+  sessionId: string,
+  tail?: number
+): Promise<FlowGatewayEventsResponse> {
+  const params = tail !== undefined ? `?tail=${tail}` : '';
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${sessionId}/gateway-events${params}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch runtime session gateway events');
+  }
+  return response.json();
+}
+
 export async function getTrackers() {
   const response = await fetchWithAuth('/api/v1/trackers');
   if (!response.ok) {

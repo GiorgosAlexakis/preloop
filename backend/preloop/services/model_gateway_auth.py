@@ -12,11 +12,10 @@ from preloop.api.auth.jwt import (
     get_user_from_token_if_valid,
     _managed_agent_for_api_key,
 )
-from preloop.models.crud import crud_api_key, crud_user
+from preloop.models.crud import crud_api_key, crud_runtime_session, crud_user
 from preloop.models.crud.oauth_mcp_token import crud_oauth_mcp_access_token
 from preloop.models.models.api_key import ApiKey
 from preloop.models.models.oauth_mcp_token import OAuthMCPAccessToken
-from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.user import User
 
 
@@ -49,13 +48,10 @@ async def authenticate_bearer_token(
             runtime_session_id = context_data.get("runtime_session_id")
             runtime_session = None
             if runtime_session_id:
-                runtime_session = (
-                    db.query(RuntimeSession)
-                    .filter(
-                        RuntimeSession.id == runtime_session_id,
-                        RuntimeSession.account_id == api_key.account_id,
-                    )
-                    .first()
+                runtime_session = crud_runtime_session.get_account_session(
+                    db,
+                    account_id=str(api_key.account_id),
+                    runtime_session_id=str(runtime_session_id),
                 )
                 if runtime_session is None or runtime_session.ended_at is not None:
                     return None

@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Protocol
 
 import litellm
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from preloop.config import settings
 from preloop.models.crud import crud_api_usage, crud_managed_agent, crud_runtime_session
 from preloop.models.models.ai_model import AIModel
 from preloop.services.account_realtime import (
@@ -47,12 +48,42 @@ _PROVIDER_PREFIX: Dict[str, str] = {
 logger = logging.getLogger(__name__)
 
 
+class ModelGatewayBackend(Protocol):
+    def completion(self, **kwargs: Any) -> Any: ...
+
+
+class LiteLLMModelGatewayBackend:
+    def completion(self, **kwargs: Any) -> Any:
+        return litellm.completion(**kwargs)
+
+
+def get_model_gateway_backend(
+    backend_name: Optional[str] = None,
+) -> ModelGatewayBackend:
+    normalized_backend_name = (
+        (backend_name or settings.model_gateway_upstream_backend or "litellm")
+        .strip()
+        .lower()
+    )
+    if normalized_backend_name == "litellm":
+        return LiteLLMModelGatewayBackend()
+    raise ValueError(
+        f"Unsupported model gateway upstream backend: {normalized_backend_name}"
+    )
+
+
 class OpenAIGatewayService:
     """Service for Preloop's OpenAI-compatible gateway."""
 
-    def __init__(self, db: Session, auth_context: ModelGatewayAuthContext) -> None:
+    def __init__(
+        self,
+        db: Session,
+        auth_context: ModelGatewayAuthContext,
+        upstream_backend: Optional[ModelGatewayBackend] = None,
+    ) -> None:
         self.db = db
         self.auth_context = auth_context
+        self.upstream_backend = upstream_backend or get_model_gateway_backend()
 
     def list_models(self) -> Dict[str, Any]:
         """List gateway-enabled models available to the authenticated account."""
@@ -436,8 +467,11 @@ class OpenAIGatewayService:
             final_usage_details: Dict[str, Any] = {}
             last_finish_reason: Optional[str] = None
             response_id: Optional[str] = None
-            emitted_start = False
+            emitted_text_start = False
+            emitted_text_stop = False
             recorded = False
+            tool_call_states: Dict[int, Dict[str, Any]] = {}
+            content_index = 0
 
             try:
                 for chunk in upstream_stream:
@@ -453,48 +487,141 @@ class OpenAIGatewayService:
                             completion_key="completion_tokens",
                             output_names=("completion_tokens", "output_tokens"),
                         )
-                    if not emitted_start:
-                        yield self._anthropic_sse_event(
-                            "message_start",
-                            {
-                                "type": "message_start",
-                                "message": self._build_anthropic_message_payload(
-                                    response_id=response_id,
-                                    model_name=requested_model,
-                                    assistant_text="",
-                                    stop_reason=None,
-                                    usage=final_usage,
-                                ),
-                            },
-                        )
-                        yield self._anthropic_sse_event(
-                            "content_block_start",
-                            {
-                                "type": "content_block_start",
-                                "index": 0,
-                                "content_block": {"type": "text", "text": ""},
-                            },
-                        )
-                        emitted_start = True
-
                     delta_text = self._extract_stream_delta_text(chunk_dict)
                     if delta_text:
+                        if not emitted_text_start:
+                            yield self._anthropic_sse_event(
+                                "message_start",
+                                {
+                                    "type": "message_start",
+                                    "message": self._build_anthropic_message_payload(
+                                        response_id=response_id,
+                                        model_name=requested_model,
+                                        assistant_text="",
+                                        stop_reason=None,
+                                        usage=final_usage,
+                                    ),
+                                },
+                            )
+                            yield self._anthropic_sse_event(
+                                "content_block_start",
+                                {
+                                    "type": "content_block_start",
+                                    "index": content_index,
+                                    "content_block": {"type": "text", "text": ""},
+                                },
+                            )
+                            emitted_text_start = True
+
                         assistant_parts.append(delta_text)
                         yield self._anthropic_sse_event(
                             "content_block_delta",
                             {
                                 "type": "content_block_delta",
-                                "index": 0,
+                                "index": content_index,
                                 "delta": {"type": "text_delta", "text": delta_text},
                             },
                         )
+
+                    for tool_delta in self._extract_stream_tool_call_deltas(chunk_dict):
+                        if emitted_text_start and not emitted_text_stop:
+                            yield self._anthropic_sse_event(
+                                "content_block_stop",
+                                {"type": "content_block_stop", "index": content_index},
+                            )
+                            content_index += 1
+                            emitted_text_stop = True
+
+                        index = int(tool_delta.get("index", 0) or 0)
+                        state = tool_call_states.get(index)
+                        if state is None:
+                            if not emitted_text_start and not emitted_text_stop:
+                                yield self._anthropic_sse_event(
+                                    "message_start",
+                                    {
+                                        "type": "message_start",
+                                        "message": self._build_anthropic_message_payload(
+                                            response_id=response_id,
+                                            model_name=requested_model,
+                                            assistant_text="",
+                                            stop_reason=None,
+                                            usage=final_usage,
+                                        ),
+                                    },
+                                )
+                                emitted_text_start = True
+                                emitted_text_stop = True
+
+                            call_id = (
+                                tool_delta.get("id") or f"call_{response_id}_{index}"
+                            )
+                            function_payload = tool_delta.get("function") or {}
+                            state = {
+                                "id": call_id,
+                                "function": {
+                                    "name": function_payload.get("name", ""),
+                                    "arguments": "",
+                                },
+                                "content_index": content_index,
+                            }
+                            tool_call_states[index] = state
+                            yield self._anthropic_sse_event(
+                                "content_block_start",
+                                {
+                                    "type": "content_block_start",
+                                    "index": content_index,
+                                    "content_block": {
+                                        "type": "tool_use",
+                                        "id": call_id,
+                                        "name": state["function"]["name"],
+                                        "input": {},
+                                    },
+                                },
+                            )
+                            content_index += 1
+
+                        function_payload = tool_delta.get("function") or {}
+                        if function_payload.get("name"):
+                            state["function"]["name"] = function_payload["name"]
+                        arguments_delta = function_payload.get("arguments")
+                        if arguments_delta:
+                            if isinstance(arguments_delta, dict):
+                                arguments_delta = json.dumps(
+                                    arguments_delta, ensure_ascii=False
+                                )
+                            elif isinstance(arguments_delta, str):
+                                # LiteLLM sometimes calls str() on dictionary objects.
+                                # Try to detect and fix this so we don't stream invalid JSON with single quotes.
+                                try:
+                                    import ast
+
+                                    parsed = ast.literal_eval(arguments_delta)
+                                    if isinstance(parsed, dict):
+                                        arguments_delta = json.dumps(
+                                            parsed, ensure_ascii=False
+                                        )
+                                except Exception:
+                                    pass
+
+                            state["function"]["arguments"] += arguments_delta
+                            yield self._anthropic_sse_event(
+                                "content_block_delta",
+                                {
+                                    "type": "content_block_delta",
+                                    "index": state["content_index"],
+                                    "delta": {
+                                        "type": "input_json_delta",
+                                        "partial_json": arguments_delta,
+                                    },
+                                },
+                            )
 
                     last_finish_reason = (
                         self._extract_finish_reason(chunk_dict) or last_finish_reason
                     )
 
                 response_id = response_id or f"msg_{int(time.time())}"
-                if not emitted_start:
+                if not emitted_text_start:
                     yield self._anthropic_sse_event(
                         "message_start",
                         {
@@ -512,22 +639,41 @@ class OpenAIGatewayService:
                         "content_block_start",
                         {
                             "type": "content_block_start",
-                            "index": 0,
+                            "index": content_index,
                             "content_block": {"type": "text", "text": ""},
                         },
                     )
 
-                yield self._anthropic_sse_event(
-                    "content_block_stop",
-                    {"type": "content_block_stop", "index": 0},
-                )
+                if not emitted_text_stop and not tool_call_states:
+                    yield self._anthropic_sse_event(
+                        "content_block_stop",
+                        {"type": "content_block_stop", "index": content_index},
+                    )
+
+                for state in sorted(
+                    tool_call_states.values(), key=lambda item: item["content_index"]
+                ):
+                    yield self._anthropic_sse_event(
+                        "content_block_stop",
+                        {
+                            "type": "content_block_stop",
+                            "index": state["content_index"],
+                        },
+                    )
+
                 stop_reason = self._to_anthropic_stop_reason(last_finish_reason)
+
+                final_tool_calls_payload = []
+                for _, state in sorted(tool_call_states.items()):
+                    final_tool_calls_payload.append(state)
+
                 response_payload = self._build_anthropic_message_payload(
                     response_id=response_id,
                     model_name=requested_model,
                     assistant_text="".join(assistant_parts),
                     stop_reason=stop_reason,
                     usage=final_usage,
+                    tool_calls=final_tool_calls_payload,
                 )
                 yield self._anthropic_sse_event(
                     "message_delta",
@@ -1077,15 +1223,15 @@ class OpenAIGatewayService:
             message="No gateway-enabled default model configured",
         )
 
-    def _call_litellm(
+    def _build_completion_kwargs(
         self,
         ai_model: AIModel,
         *,
         messages: List[Dict[str, Any]],
         payload: Dict[str, Any],
-        stream: bool = False,
+        stream: bool,
         provider: GatewayProvider,
-    ):
+    ) -> Dict[str, Any]:
         resolved_secret = get_secret_service().resolve_ai_model_api_key(ai_model)
         if not resolved_secret:
             raise ModelGatewayAPIError(
@@ -1122,8 +1268,27 @@ class OpenAIGatewayService:
             if payload.get(source_key) is not None and target_key not in kwargs:
                 kwargs[target_key] = payload[source_key]
 
+        return kwargs
+
+    def _call_litellm(
+        self,
+        ai_model: AIModel,
+        *,
+        messages: List[Dict[str, Any]],
+        payload: Dict[str, Any],
+        stream: bool = False,
+        provider: GatewayProvider,
+    ):
+        kwargs = self._build_completion_kwargs(
+            ai_model,
+            messages=messages,
+            payload=payload,
+            stream=stream,
+            provider=provider,
+        )
+
         try:
-            return litellm.completion(**kwargs)
+            return self.upstream_backend.completion(**kwargs)
         except Exception as exc:
             raise self._normalize_upstream_error(provider, exc) from exc
 
@@ -1278,7 +1443,78 @@ class OpenAIGatewayService:
                 continue
             role = item.get("role", "user")
             content = item.get("content", "")
-            messages.append({"role": role, "content": self._content_to_text(content)})
+
+            if isinstance(content, str):
+                messages.append({"role": role, "content": content})
+                continue
+
+            if isinstance(content, list):
+                text_parts = []
+                tool_calls = []
+                has_tools = False
+
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type", "")
+                    if block_type in ("text", "input_text", "output_text"):
+                        text_val = block.get("text")
+                        if isinstance(text_val, str):
+                            text_parts.append(text_val)
+                    elif block_type == "tool_use":
+                        has_tools = True
+                        input_val = block.get("input", {})
+                        if isinstance(input_val, dict):
+                            input_str = json.dumps(input_val)
+                        elif isinstance(input_val, str):
+                            try:
+                                import ast
+
+                                parsed = ast.literal_eval(input_val)
+                                if isinstance(parsed, dict):
+                                    input_str = json.dumps(parsed)
+                                else:
+                                    input_str = input_val
+                            except Exception:
+                                input_str = input_val
+                        else:
+                            input_str = "{}"
+
+                        tool_calls.append(
+                            {
+                                "id": block.get("id") or f"call_{int(time.time())}",
+                                "type": "function",
+                                "function": {
+                                    "name": block.get("name", "unknown_tool"),
+                                    "arguments": input_str,
+                                },
+                            }
+                        )
+                    elif block_type == "tool_result":
+                        has_tools = True
+                        tool_content = block.get("content", "")
+                        tool_content_str = (
+                            self._content_to_text(tool_content)
+                            if not isinstance(tool_content, str)
+                            else tool_content
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": block.get("tool_use_id", "unknown_id"),
+                                "name": "tool",
+                                "content": tool_content_str,
+                            }
+                        )
+
+                msg_content = "\n".join(text_parts) if text_parts else ""
+                msg: Dict[str, Any] = {"role": role, "content": msg_content}
+                if tool_calls:
+                    msg["tool_calls"] = tool_calls
+
+                # We append if it's an assistant message, or if it has text/tool_calls, or if it was empty block
+                if msg_content or tool_calls or role == "assistant" or not has_tools:
+                    messages.append(msg)
 
         if len(messages) == 0:
             raise ModelGatewayAPIError(
@@ -1606,6 +1842,32 @@ class OpenAIGatewayService:
         )
         runtime_principal = runtime_context.get("runtime_principal") or {}
 
+        runtime_session_id = runtime_context.get("runtime_session_id")
+        if not runtime_session_id and runtime_principal:
+            session_source_type = runtime_principal.get("type")
+            session_source_id = runtime_principal.get("id")
+            if session_source_type and session_source_id:
+                try:
+                    from datetime import datetime, timezone
+
+                    rs = crud_runtime_session.upsert_by_source(
+                        self.db,
+                        account_id=str(self.auth_context.user.account_id),
+                        session_source_type=session_source_type,
+                        session_source_id=session_source_id,
+                        runtime_principal_type=session_source_type,
+                        runtime_principal_id=session_source_id,
+                        runtime_principal_name=runtime_principal.get("name"),
+                        last_activity_at=datetime.now(timezone.utc),
+                        reopen_if_ended=True,
+                    )
+                    runtime_session_id = str(rs.id)
+                except Exception as e:
+                    logger.debug(
+                        f"Failed to auto-upsert runtime session for gateway request: {e}",
+                        exc_info=True,
+                    )
+
         usage_row = crud_api_usage.log_gateway_request(
             self.db,
             endpoint=endpoint,
@@ -1627,7 +1889,7 @@ class OpenAIGatewayService:
             ai_model_id=str(ai_model.id),
             flow_id=runtime_context.get("flow_id"),
             flow_execution_id=runtime_context.get("flow_execution_id"),
-            runtime_session_id=runtime_context.get("runtime_session_id"),
+            runtime_session_id=runtime_session_id,
             model_alias=runtime.model_gateway_model_alias or requested_model,
             provider_name=ai_model.provider_name,
             upstream_request_id=(
@@ -1902,12 +2164,66 @@ class OpenAIGatewayService:
         assistant_text: str,
         stop_reason: Optional[str],
         usage: Dict[str, int],
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        content: List[Dict[str, Any]] = []
+        if assistant_text:
+            content.append({"type": "text", "text": assistant_text})
+        if tool_calls:
+            for tc in tool_calls:
+                args_raw = tc.get("function", {}).get("arguments", "{}")
+                logger.error(f"LITELLM TOOL CALL RAW: {repr(args_raw)}")
+                try:
+                    args = json.loads(args_raw)
+                    logger.error(
+                        f"JSON.LOADS RESULT TYPE: {type(args)}, VALUE: {repr(args)}"
+                    )
+                    # LiteLLM sometimes double stringifies: json.dumps(str(dict))
+                    # json.loads un-escapes it into a Python string. We need a dict.
+                    if isinstance(args, str):
+                        try:
+                            import ast
+
+                            parsed = ast.literal_eval(args)
+                            logger.error(
+                                f"AST.LITERAL_EVAL PARSED TYPE: {type(parsed)}"
+                            )
+                            if isinstance(parsed, dict):
+                                args = parsed
+                        except Exception as e:
+                            logger.error(
+                                f"AST.LITERAL_EVAL FAILED ON {repr(args)}: {e}"
+                            )
+                except ValueError as ve:
+                    logger.error(f"JSON.LOADS FAILED ON {repr(args_raw)}: {ve}")
+                    args = {}
+                    if isinstance(args_raw, str):
+                        try:
+                            import ast
+
+                            parsed = ast.literal_eval(args_raw)
+                            if isinstance(parsed, dict):
+                                args = parsed
+                        except Exception as e:
+                            logger.error(
+                                f"AST.LITERAL_EVAL FAILED ON args_raw: {repr(args_raw)}: {e}"
+                            )
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc.get("id"),
+                        "name": tc.get("function", {}).get("name", ""),
+                        "input": args,
+                    }
+                )
+        if not content:
+            content.append({"type": "text", "text": ""})
+
         return {
             "id": response_id,
             "type": "message",
             "role": "assistant",
-            "content": [{"type": "text", "text": assistant_text}],
+            "content": content,
             "model": model_name,
             "stop_reason": stop_reason,
             "stop_sequence": None,

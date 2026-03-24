@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from preloop.models.models.account import Account
+from preloop.models.crud import crud_account, crud_flow
 from preloop.models.models.ai_model import AIModel
 from preloop.models.models.api_usage import ApiUsage
 from preloop.models.models.flow import Flow
@@ -57,11 +57,7 @@ class ModelGatewayBudgetService:
         self, ai_model: AIModel, payload: Dict[str, Any]
     ) -> BudgetCheckResult:
         """Check whether a gateway request can proceed within configured budgets."""
-        account = (
-            self.db.query(Account)
-            .filter(Account.id == self.auth_context.user.account_id)
-            .first()
-        )
+        account = crud_account.get(self.db, id=self.auth_context.user.account_id)
         runtime_context = (
             (self.auth_context.api_key.context_data or {})
             if self.auth_context.api_key
@@ -351,7 +347,11 @@ class ModelGatewayBudgetService:
     def _get_flow(self, flow_id: Optional[str]) -> Optional[Flow]:
         if not flow_id:
             return None
-        return self.db.query(Flow).filter(Flow.id == flow_id).first()
+        return crud_flow.get(
+            self.db,
+            id=flow_id,
+            account_id=self.auth_context.user.account_id,
+        )
 
     @staticmethod
     def _estimate_request_cost(
