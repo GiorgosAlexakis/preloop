@@ -95,6 +95,24 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         source: JSON.stringify(landingContent, null, 2),
       });
 
+      this.emitFile({
+        type: 'asset',
+        fileName: 'sitemap.xml',
+        source: generateSitemapXml(brandConfig),
+      });
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'robots.txt',
+        source: generateRobotsTxt(brandConfig),
+      });
+
+      this.emitFile({
+        type: 'asset',
+        fileName: 'llms.txt',
+        source: generateLlmsTxt(brandConfig),
+      });
+
       // Generate static HTML fragments for dynamic loading
       const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
 
@@ -241,6 +259,18 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       html = html.replace(
         /<meta property="og:url" content=".*?">/,
         `<meta property="og:url" content="https://${brandConfig.domain}${route}">`
+      );
+
+      html = upsertHeadTag(
+        html,
+        /<link rel="canonical" href=".*?">/,
+        `<link rel="canonical" href="https://${brandConfig.domain}${route}">`
+      );
+
+      html = upsertHeadTag(
+        html,
+        /<meta name="robots" content=".*?">/,
+        '<meta name="robots" content="index, follow">'
       );
 
       // Replace Twitter card title
@@ -622,6 +652,18 @@ function generateFullHtmlPage(
     `<meta property="og:url" content="https://${config.domain}${route}">`
   );
 
+  html = upsertHeadTag(
+    html,
+    /<link rel="canonical" href=".*?">/,
+    `<link rel="canonical" href="https://${config.domain}${route}">`
+  );
+
+  html = upsertHeadTag(
+    html,
+    /<meta name="robots" content=".*?">/,
+    '<meta name="robots" content="index, follow">'
+  );
+
   // Replace Twitter card title
   html = html.replace(
     /<meta name="twitter:title" content=".*?">/,
@@ -648,6 +690,57 @@ function generateFullHtmlPage(
   );
 
   return html;
+}
+
+function upsertHeadTag(html: string, pattern: RegExp, tag: string): string {
+  if (pattern.test(html)) {
+    return html.replace(pattern, tag);
+  }
+
+  return html.replace('</head>', `  ${tag}\n</head>`);
+}
+
+function getStaticRoutes(config: BrandConfig): string[] {
+  const routes = ['/', '/privacy', '/terms', '/whatis-mcp'];
+
+  if (((config as any).edition || 'saas') === 'saas') {
+    routes.push('/pricing', '/about');
+  }
+
+  return routes;
+}
+
+function generateSitemapXml(config: BrandConfig): string {
+  const urls = getStaticRoutes(config)
+    .map(
+      (route) => `  <url>\n    <loc>https://${config.domain}${route}</loc>\n  </url>`
+    )
+    .join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+}
+
+function generateRobotsTxt(config: BrandConfig): string {
+  return `User-agent: *\nAllow: /\n\nSitemap: https://${config.domain}/sitemap.xml\n`;
+}
+
+function generateLlmsTxt(config: BrandConfig): string {
+  const meta = config.landing?.meta || {};
+  const hero = config.landing?.hero || {};
+
+  return [
+    `# ${config.name}`,
+    '',
+    meta.description || '',
+    '',
+    'Primary pages:',
+    ...getStaticRoutes(config).map((route) => `- https://${config.domain}${route}`),
+    '',
+    'Primary calls to action:',
+    `- ${hero.cta_primary || 'Sign up'} -> https://${config.domain}/register`,
+    `- ${hero.cta_secondary || 'Request demo'} -> ${(hero as any).cta_secondary_url || `https://${config.domain}/request-demo`}`,
+    '',
+  ].join('\n');
 }
 
 /**

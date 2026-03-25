@@ -153,6 +153,38 @@ server {
         try_files $uri =404;
     }
 
+    location = /about {
+        try_files /about.html =404;
+    }
+
+    location = /pricing {
+        try_files /pricing.html =404;
+    }
+
+    location = /privacy {
+        try_files /privacy.html =404;
+    }
+
+    location = /terms {
+        try_files /terms.html =404;
+    }
+
+    location = /whatis-mcp {
+        try_files /whatis-mcp.html =404;
+    }
+
+    location = /robots.txt {
+        try_files /robots.txt =404;
+    }
+
+    location = /sitemap.xml {
+        try_files /sitemap.xml =404;
+    }
+
+    location = /llms.txt {
+        try_files /llms.txt =404;
+    }
+
     # SPA routing - serve index.html for all non-API routes
     location / {
         try_files $uri $uri/ /index.html;
