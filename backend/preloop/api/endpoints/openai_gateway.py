@@ -43,7 +43,7 @@ async def get_model_gateway_auth_context(
 
 
 @router.get("/models")
-async def list_models(
+def list_models(
     db: Session = Depends(get_db_session),
     auth_context: ModelGatewayAuthContext = Depends(get_model_gateway_auth_context),
 ) -> Dict[str, Any]:
@@ -52,7 +52,7 @@ async def list_models(
 
 
 @router.post("/chat/completions")
-async def create_chat_completion(
+def create_chat_completion(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db_session),
     auth_context: ModelGatewayAuthContext = Depends(get_model_gateway_auth_context),
@@ -68,7 +68,7 @@ async def create_chat_completion(
 
 
 @router.post("/responses")
-async def create_response(
+def create_response(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db_session),
     auth_context: ModelGatewayAuthContext = Depends(get_model_gateway_auth_context),

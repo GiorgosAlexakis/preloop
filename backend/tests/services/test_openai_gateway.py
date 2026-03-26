@@ -62,6 +62,7 @@ def test_call_litellm_uses_injected_upstream_backend():
         model="openai/gpt-5",
         messages=[{"role": "user", "content": "Hello"}],
         api_key="provider-secret",
+        timeout=600,
         temperature=0.2,
     )
 

@@ -112,6 +112,18 @@ class CRUDAIModel(CRUDBase[AIModel]):
         """Get all AIModels for a specific account."""
         return db.query(self.model).filter(self.model.account_id == account_id).all()
 
+    def get_all_for_account(self, db: Session, *, account_id: str) -> list[AIModel]:
+        """Get all configured AIModels available to the account, including system defaults."""
+        return (
+            db.query(self.model)
+            .filter(
+                or_(
+                    self.model.account_id == account_id, self.model.account_id.is_(None)
+                )
+            )
+            .all()
+        )
+
     def update(
         self,
         db: Session,

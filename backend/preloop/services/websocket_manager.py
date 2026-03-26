@@ -377,18 +377,24 @@ async def nats_consumer(manager: "WebSocketManager"):
             error_msg = f"Received non-JSON message from NATS: {msg.data.decode()}"
             logger.warning(error_msg)
             try:
-                notify_admins(
-                    subject="[Preloop Alert] Malformed NATS Message Dropped",
-                    message=error_msg,
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        notify_admins,
+                        subject="[Preloop Alert] Malformed NATS Message Dropped",
+                        message=error_msg,
+                    )
                 )
             except Exception:
                 pass
         except Exception as e:
             logger.error(f"Error processing NATS message: {e}")
             try:
-                notify_admins(
-                    subject="[Preloop Alert] NATS Message Processing Failed",
-                    message=f"An exception occurred while processing a NATS message: {str(e)}",
+                asyncio.create_task(
+                    asyncio.to_thread(
+                        notify_admins,
+                        subject="[Preloop Alert] NATS Message Processing Failed",
+                        message=f"An exception occurred while processing a NATS message: {str(e)}",
+                    )
                 )
             except Exception:
                 pass

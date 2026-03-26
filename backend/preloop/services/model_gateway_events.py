@@ -15,8 +15,6 @@ from preloop.config import settings
 from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.models.api_key import ApiKey
 from preloop.models.models.api_usage import ApiUsage
-from preloop.models.models.managed_agent import ManagedAgent
-from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.runtime_session_activity import RuntimeSessionActivity
 from preloop.models.crud.runtime_session_activity import CRUDRuntimeSessionActivity
 from preloop.services.account_realtime import (
@@ -102,17 +100,10 @@ class ModelGatewayEventEmitter:
             and usage.runtime_principal_type
             and usage.runtime_principal_id
         ):
-            latest_session = (
-                self.db.query(RuntimeSession)
-                .filter(
-                    RuntimeSession.session_source_type == usage.runtime_principal_type,
-                    RuntimeSession.session_source_id.startswith(
-                        f"{usage.runtime_principal_id}-"
-                    )
-                    | (RuntimeSession.session_source_id == usage.runtime_principal_id),
-                )
-                .order_by(RuntimeSession.created_at.desc())
-                .first()
+            latest_session = crud_runtime_session.get_latest_by_principal(
+                self.db,
+                principal_type=usage.runtime_principal_type,
+                principal_id=usage.runtime_principal_id,
             )
             if latest_session:
                 runtime_session_id = str(latest_session.id)
@@ -274,14 +265,13 @@ class ModelGatewayEventEmitter:
             return str(managed_agent_id)
         if not usage.runtime_principal_type or not usage.runtime_principal_id:
             return None
-        managed_agent = (
-            self.db.query(ManagedAgent)
-            .filter(
-                ManagedAgent.account_id == usage.account_id,
-                ManagedAgent.session_source_type == usage.runtime_principal_type,
-                ManagedAgent.session_source_id == usage.runtime_principal_id,
-            )
-            .first()
+        from preloop.models.crud.managed_agent import crud_managed_agent
+
+        managed_agent = crud_managed_agent.get_by_source(
+            self.db,
+            account_id=str(usage.account_id),
+            session_source_type=usage.runtime_principal_type,
+            session_source_id=usage.runtime_principal_id,
         )
         return str(managed_agent.id) if managed_agent is not None else None
 

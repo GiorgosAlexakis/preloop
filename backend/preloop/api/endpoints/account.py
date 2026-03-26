@@ -1173,27 +1173,16 @@ async def get_account_runtime_session_gateway_events(
             status_code=status.HTTP_404_NOT_FOUND, detail="Runtime session not found"
         )
 
-    from preloop.models.models.runtime_session_activity import RuntimeSessionActivity
-    from sqlalchemy import select
-
-    query = (
-        select(RuntimeSessionActivity)
-        .filter(
-            RuntimeSessionActivity.account_id == account.id,
-            RuntimeSessionActivity.runtime_session_id == runtime_session_id,
-        )
-        .order_by(
-            RuntimeSessionActivity.timestamp.desc()
-            if tail
-            else RuntimeSessionActivity.timestamp.asc()
-        )
+    from preloop.models.crud.runtime_session_activity import (
+        crud_runtime_session_activity,
     )
-    if tail:
-        query = query.limit(tail)
 
-    rows = db.scalars(query).all()
-    if tail:
-        rows = list(reversed(rows))
+    rows = crud_runtime_session_activity.list_model_gateway_calls_for_session(
+        db,
+        account_id=account.id,
+        runtime_session_id=runtime_session_id,
+        tail=tail,
+    )
 
     events = [
         {

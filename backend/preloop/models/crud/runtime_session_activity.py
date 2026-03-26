@@ -159,9 +159,34 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             )
             .order_by(self.model.timestamp.desc())
             .offset(offset)
-            .limit(limit)
             .all()
         )
+
+    def list_model_gateway_calls_for_session(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        tail: Optional[int] = None,
+    ) -> list[RuntimeSessionActivity]:
+        """Return model gateway call activities for one flow execution."""
+        query = (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.runtime_session_id == runtime_session_id,
+                self.model.activity_type == "model_gateway_call",
+            )
+            .order_by(
+                self.model.timestamp.desc() if tail else self.model.timestamp.asc()
+            )
+        )
+        if tail:
+            query = query.limit(tail)
+            rows = query.all()
+            return list(reversed(rows))
+        return query.all()
 
     def get_server_summary_for_principal(
         self,

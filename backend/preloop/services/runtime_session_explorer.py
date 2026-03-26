@@ -16,7 +16,6 @@ from preloop.models.crud import (
     crud_runtime_session_activity,
 )
 from preloop.models.models.account import Account
-from preloop.models.models.flow_execution import FlowExecution
 from preloop.schemas.gateway_usage import (
     AccountGatewayUsageSearchResponse,
     AccountRuntimeSessionDetailResponse,
@@ -255,11 +254,10 @@ class RuntimeSessionExplorerService:
 
         flow_execution_id = summary_row.get("flow_execution_id")
         if flow_execution_id and not activity_rows:
-            execution = (
-                self.db.query(FlowExecution)
-                .filter(FlowExecution.id == UUID(flow_execution_id))
-                .first()
-            )
+            from preloop.models.crud.flow_execution import CRUDFlowExecution
+
+            crud_flow_execution = CRUDFlowExecution()
+            execution = crud_flow_execution.get(self.db, id=UUID(flow_execution_id))
             if execution and isinstance(execution.mcp_usage_logs, list):
                 for log in execution.mcp_usage_logs:
                     timestamp = self._parse_timestamp(log.get("timestamp"))

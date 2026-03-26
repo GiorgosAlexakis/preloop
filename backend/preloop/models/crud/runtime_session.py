@@ -303,6 +303,25 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             .first()
         )
 
+    def get_latest_by_principal(
+        self,
+        db: Session,
+        *,
+        principal_type: str,
+        principal_id: str,
+    ) -> Optional[RuntimeSession]:
+        """Return the most recent runtime session for a given principal."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.session_source_type == principal_type,
+                self.model.session_source_id.startswith(f"{principal_id}-")
+                | (self.model.session_source_id == principal_id),
+            )
+            .order_by(self.model.created_at.desc())
+            .first()
+        )
+
     def get_account_session_summary(
         self,
         db: Session,

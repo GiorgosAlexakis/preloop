@@ -8,7 +8,6 @@ import time
 from typing import Any, Dict, Iterator, List, Optional, Protocol
 
 import litellm
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from preloop.config import settings
@@ -1183,11 +1182,9 @@ class OpenAIGatewayService:
 
     def _get_account_models(self) -> List[AIModel]:
         account_id = self.auth_context.user.account_id
-        return (
-            self.db.query(AIModel)
-            .filter(or_(AIModel.account_id == account_id, AIModel.account_id.is_(None)))
-            .all()
-        )
+        from preloop.models.crud.ai_model import ai_model as crud_ai_model
+
+        return crud_ai_model.get_all_for_account(self.db, account_id=account_id)
 
     def _resolve_requested_model(
         self, requested_model: Optional[str], *, provider: GatewayProvider

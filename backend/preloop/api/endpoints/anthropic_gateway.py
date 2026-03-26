@@ -54,7 +54,7 @@ async def get_anthropic_gateway_auth_context(
 
 
 @router.post("/messages")
-async def create_message(
+def create_message(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db_session),
     auth_context: ModelGatewayAuthContext = Depends(get_anthropic_gateway_auth_context),
