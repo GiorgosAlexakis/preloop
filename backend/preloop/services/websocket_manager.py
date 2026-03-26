@@ -11,6 +11,7 @@ from nats.aio.msg import Msg
 from preloop.sync.services.event_bus import get_task_publisher
 from preloop.models.db.session import get_db_session as get_db
 from preloop.services.account_realtime import ACCOUNT_REALTIME_TOPICS
+from preloop.sync.tasks import notify_admins
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,15 @@ def _sync_batch_insert_logs(batch: list):
         logger.error(
             f"Failed to persist batch of {len(batch)} logs: {e}", exc_info=True
         )
+        try:
+            notify_admins(
+                subject="[Preloop Alert] NATS Log Persistence Failed",
+                message=f"A batch of {len(batch)} logs failed to persist to the database and were dropped. Error: {str(e)}",
+            )
+        except Exception as alert_err:
+            logger.error(
+                f"Failed to send admin notification for dropped logs: {alert_err}"
+            )
 
 
 async def _log_writer_worker():
@@ -364,9 +374,24 @@ async def nats_consumer(manager: "WebSocketManager"):
                 await manager.broadcast_json(data)
 
         except json.JSONDecodeError:
-            logger.warning(f"Received non-JSON message from NATS: {msg.data.decode()}")
+            error_msg = f"Received non-JSON message from NATS: {msg.data.decode()}"
+            logger.warning(error_msg)
+            try:
+                notify_admins(
+                    subject="[Preloop Alert] Malformed NATS Message Dropped",
+                    message=error_msg,
+                )
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Error processing NATS message: {e}")
+            try:
+                notify_admins(
+                    subject="[Preloop Alert] NATS Message Processing Failed",
+                    message=f"An exception occurred while processing a NATS message: {str(e)}",
+                )
+            except Exception:
+                pass
 
     try:
         # Subscribe to a wildcard subject to receive all flow updates

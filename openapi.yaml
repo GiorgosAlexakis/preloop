@@ -1466,6 +1466,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/gateway-events:
+    get:
+      tags:
+      - Account
+      summary: Get Account Runtime Session Gateway Events
+      description: Return stored gateway events (chat histories) for one runtime session.
+      operationId: get_account_runtime_session_gateway_events_api_v1_runtime_sessions__runtime_session_id__gateway_events_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: tail
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Account Runtime Session Gateway Events Api V1
+                  Runtime Sessions  Runtime Session Id  Gateway Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/account/deletion-request:
     post:
       tags:

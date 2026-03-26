@@ -98,13 +98,20 @@ export class AgentsView extends LitElement {
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 12px;
         color: var(--sl-color-neutral-100);
-        transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease, border-color 0.3s ease;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        transition:
+          transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+          box-shadow 0.3s ease,
+          border-color 0.3s ease;
+        box-shadow:
+          0 4px 6px -1px rgba(0, 0, 0, 0.1),
+          0 2px 4px -1px rgba(0, 0, 0, 0.06);
       }
 
       .agent-card:hover::part(base) {
         transform: translateY(-6px);
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+        box-shadow:
+          0 20px 25px -5px rgba(0, 0, 0, 0.3),
+          0 10px 10px -5px rgba(0, 0, 0, 0.2);
         border-color: rgba(255, 255, 255, 0.2);
       }
 
@@ -459,11 +466,18 @@ export class AgentsView extends LitElement {
       (liveActivity?.modelCalls || 0) + (liveActivity?.toolCalls || 0);
 
     // Determine if we should pulse the card (last activity was < 2 seconds ago)
-    const isGlowing = liveActivity?.lastActivityAt && (Date.now() - new Date(liveActivity.lastActivityAt).getTime() < 2000);
+    const isGlowing =
+      liveActivity?.lastActivityAt &&
+      Date.now() - new Date(liveActivity.lastActivityAt).getTime() < 2000;
 
     // Force animation reset by modifying class and key if pulsing
     return html`
-      <sl-card class="agent-card ${liveTotal > 0 ? 'live' : ''} ${isGlowing ? 'glowing' : ''}" data-activity=${liveActivity?.lastActivityAt || ''}>
+      <sl-card
+        class="agent-card ${liveTotal > 0 ? 'live' : ''} ${isGlowing
+          ? 'glowing'
+          : ''}"
+        data-activity=${liveActivity?.lastActivityAt || ''}
+      >
         <div class="card-stack">
           <div class="title-row">
             <div>

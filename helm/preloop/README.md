@@ -243,7 +243,7 @@ ingress:
 
 ### Scaling the deployment
 
-For production environments, you may want to enable autoscaling:
+For production environments containing concurrent agent executions or human-in-the-loop workflows, you must enable autoscaling:
 
 ```yaml
 autoscaling:
@@ -252,6 +252,14 @@ autoscaling:
   maxReplicas: 10
   targetCPUUtilizationPercentage: 80
 ```
+
+**Note:** This dynamically spans a `HorizontalPodAutoscaler` across both the Preloop REST API (`deployment-api.yaml`) and all asynchronous Worker pods (`spacesync-worker-deployment.yaml`).
+If you need to statically define individual worker limits, you can adjust `worker.pools[].replicaCount` directly in `values.yaml`.
+
+#### High Availability & Capacity Planning
+When utilizing the Model Gateway to stream heavy upstream AI contexts (like giant PR Reviews or complex agent interactions), ensure corresponding capacity:
+1. **CPU / Memory**: The default requests are `500m / 512Mi`. Ensure your node has sufficient headroom.
+2. **Database Connections**: If `autoscaling.maxReplicas` is extremely high, adjust the `max_connections` parameter in the database template (default is 200). You may need to run `PgBouncer` to pool connections efficiently.
 
 ## Health Endpoints
 

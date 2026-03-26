@@ -24,11 +24,11 @@ worker:
   # Worker resources (background tasks)
   resources:
     requests:
-      cpu: "200m"
-      memory: "256Mi"
+      cpu: "500m"
+      memory: "512Mi"
     limits:
-      cpu: "1"
-      memory: "1Gi"
+      cpu: "2"
+      memory: "2Gi"
 
 console:
   repository: ghcr.io/preloop/console
@@ -89,11 +89,11 @@ ingress:
 api:
   resources:
     requests:
-      cpu: "200m"
-      memory: "256Mi"
+      cpu: "500m"
+      memory: "512Mi"
     limits:
-      cpu: "1"
-      memory: "1Gi"
+      cpu: "2"
+      memory: "2Gi"
 
 # Scheduler resources
 scheduler:

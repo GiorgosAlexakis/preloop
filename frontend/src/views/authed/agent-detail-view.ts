@@ -782,15 +782,13 @@ export class AgentDetailView extends LitElement {
     try {
       await updateAccountAgent(this.agentId, {
         lifecycle_action: 'suspend',
-        reason: 'Manually killed by admin kill switch'
+        reason: 'Manually killed by admin kill switch',
       });
       await this.loadData();
     } catch (error) {
       console.error('Failed to kill managed agent:', error);
       this.error =
-        error instanceof Error
-          ? error.message
-          : 'Failed to kill managed agent';
+        error instanceof Error ? error.message : 'Failed to kill managed agent';
     } finally {
       this.actionLoading = false;
     }
@@ -993,7 +991,8 @@ export class AgentDetailView extends LitElement {
               <sl-button
                 variant="danger"
                 ?loading=${this.actionLoading}
-                ?disabled=${this.agent.lifecycle_state === 'suspended' || this.agent.lifecycle_state === 'decommissioned'}
+                ?disabled=${this.agent.lifecycle_state === 'suspended' ||
+                this.agent.lifecycle_state === 'decommissioned'}
                 @click=${this.killAgent}
               >
                 <sl-icon slot="prefix" name="power"></sl-icon>
@@ -1374,32 +1373,39 @@ export class AgentDetailView extends LitElement {
                       <div class="stack">
                         <div class="hero-title">Session History</div>
                         <div class="timeline">
-                          ${this.sessions.slice().sort((a,b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime()).map(
-                            (session) => html`
-                              <div class="timeline-item">
-                                <div class="timeline-title">
-                                  <a
-                                    class="session-link"
-                                    href="#"
-                                    @click=${(event: Event) => {
-                                      event.preventDefault();
-                                      void this.selectSession(session.id);
-                                    }}
-                                  >
-                                    ${this.getSourceLabel(
-                                      session.session_source_type
-                                    )}
-                                    · ${session.session_source_id}
-                                  </a>
+                          ${this.sessions
+                            .slice()
+                            .sort(
+                              (a, b) =>
+                                new Date(b.started_at).getTime() -
+                                new Date(a.started_at).getTime()
+                            )
+                            .map(
+                              (session) => html`
+                                <div class="timeline-item">
+                                  <div class="timeline-title">
+                                    <a
+                                      class="session-link"
+                                      href="#"
+                                      @click=${(event: Event) => {
+                                        event.preventDefault();
+                                        void this.selectSession(session.id);
+                                      }}
+                                    >
+                                      ${this.getSourceLabel(
+                                        session.session_source_type
+                                      )}
+                                      · ${session.session_source_id}
+                                    </a>
+                                  </div>
+                                  <div class="timeline-meta">
+                                    ${this.formatDateTime(session.started_at)} ·
+                                    ${session.total_requests} request(s) ·
+                                    ${this.formatMoney(session.estimated_cost)}
+                                  </div>
                                 </div>
-                                <div class="timeline-meta">
-                                  ${this.formatDateTime(session.started_at)} ·
-                                  ${session.total_requests} request(s) ·
-                                  ${this.formatMoney(session.estimated_cost)}
-                                </div>
-                              </div>
-                            `
-                          )}
+                              `
+                            )}
                         </div>
                       </div>
                     </sl-card>

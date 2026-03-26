@@ -1244,6 +1244,7 @@ class OpenAIGatewayService:
             "model": self._to_litellm_model(ai_model),
             "messages": messages,
             "api_key": resolved_secret.value,
+            "timeout": 600,  # 10 minute timeout for massive concurrent prompts (PR Reviews)
         }
         if stream:
             kwargs["stream"] = True
@@ -1550,6 +1551,18 @@ class OpenAIGatewayService:
 
         error_type = getattr(exc, "type", None) or getattr(exc, "error_type", None)
         code = getattr(exc, "code", None)
+
+        if status_code >= 500:
+            try:
+                from preloop.sync.tasks import notify_admins
+
+                notify_admins(
+                    subject=f"[Preloop Alert] AI Gateway HTTP {status_code} Error ({provider})",
+                    message=f"The AI Gateway experienced an upstream or timeout failure.\n\nProvider: {provider}\nStatus: {status_code}\nMessage: {message}\nType: {error_type}\nCode: {code}\n\nTrace:\n{str(exc)}",
+                )
+            except Exception:
+                pass
+
         return ModelGatewayAPIError(
             provider=provider,
             status_code=status_code,
@@ -2172,10 +2185,10 @@ class OpenAIGatewayService:
         if tool_calls:
             for tc in tool_calls:
                 args_raw = tc.get("function", {}).get("arguments", "{}")
-                logger.error(f"LITELLM TOOL CALL RAW: {repr(args_raw)}")
+                logger.debug(f"LITELLM TOOL CALL RAW: {repr(args_raw)}")
                 try:
                     args = json.loads(args_raw)
-                    logger.error(
+                    logger.debug(
                         f"JSON.LOADS RESULT TYPE: {type(args)}, VALUE: {repr(args)}"
                     )
                     # LiteLLM sometimes double stringifies: json.dumps(str(dict))
@@ -2185,17 +2198,17 @@ class OpenAIGatewayService:
                             import ast
 
                             parsed = ast.literal_eval(args)
-                            logger.error(
+                            logger.debug(
                                 f"AST.LITERAL_EVAL PARSED TYPE: {type(parsed)}"
                             )
                             if isinstance(parsed, dict):
                                 args = parsed
                         except Exception as e:
-                            logger.error(
+                            logger.debug(
                                 f"AST.LITERAL_EVAL FAILED ON {repr(args)}: {e}"
                             )
                 except ValueError as ve:
-                    logger.error(f"JSON.LOADS FAILED ON {repr(args_raw)}: {ve}")
+                    logger.debug(f"JSON.LOADS FAILED ON {repr(args_raw)}: {ve}")
                     args = {}
                     if isinstance(args_raw, str):
                         try:
@@ -2205,7 +2218,7 @@ class OpenAIGatewayService:
                             if isinstance(parsed, dict):
                                 args = parsed
                         except Exception as e:
-                            logger.error(
+                            logger.debug(
                                 f"AST.LITERAL_EVAL FAILED ON args_raw: {repr(args_raw)}: {e}"
                             )
                 content.append(
