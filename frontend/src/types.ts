@@ -709,3 +709,10 @@ export interface RoleListResponse {
   roles: Role[];
   total: number;
 }
+
+export interface DashboardTelemetryResponse {
+  active_agents: number;
+  total_tool_calls: number;
+  daily_cost: number;
+  success_rate: number;
+}

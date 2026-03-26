@@ -47,6 +47,7 @@ from preloop.schemas.gateway_usage import (
     ManagedAgentUsageAggregate,
     RuntimeSessionSummary,
     RuntimeSessionUpdateRequest,
+    DashboardTelemetryResponse,
 )
 from preloop.schemas.subject_governance import (
     SubjectGovernanceConfig,
@@ -1180,7 +1181,6 @@ async def get_account_runtime_session_gateway_events(
         .filter(
             RuntimeSessionActivity.account_id == account.id,
             RuntimeSessionActivity.runtime_session_id == runtime_session_id,
-            RuntimeSessionActivity.activity_type == "model_gateway_call",
         )
         .order_by(
             RuntimeSessionActivity.timestamp.desc()
@@ -1414,3 +1414,55 @@ async def request_account_deletion(
         raise HTTPException(
             status_code=500, detail="Failed to process deletion request"
         )
+
+
+@router.get(
+    "/account/telemetry/dashboard",
+    response_model=DashboardTelemetryResponse,
+)
+async def get_dashboard_telemetry(
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Aggregate high-level metrics for the new global dashboard."""
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select, func, case
+    from preloop.models.models.runtime_session import RuntimeSession
+    from preloop.models.models.api_usage import ApiUsage
+
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(days=1)
+
+    active_sessions = (
+        db.scalar(
+            select(func.count(RuntimeSession.id)).filter(
+                RuntimeSession.account_id == account.id,
+                RuntimeSession.ended_at.is_(None),
+            )
+        )
+        or 0
+    )
+
+    usage_stats = db.execute(
+        select(
+            func.sum(ApiUsage.estimated_cost),
+            func.count(ApiUsage.id),
+            func.sum(case((ApiUsage.status_code < 400, 1), else_=0)),
+        ).filter(
+            ApiUsage.account_id == account.id,
+            ApiUsage.created_at >= day_ago,
+        )
+    ).first()
+
+    cost = usage_stats[0] if usage_stats and usage_stats[0] else 0.0
+    total_calls = usage_stats[1] if usage_stats and usage_stats[1] else 0
+    success_calls = usage_stats[2] if usage_stats and usage_stats[2] else 0
+
+    success_rate = (success_calls / total_calls * 100.0) if total_calls > 0 else 0.0
+
+    return DashboardTelemetryResponse(
+        active_agents=active_sessions,
+        total_tool_calls=total_calls,
+        daily_cost=cost,
+        success_rate=success_rate,
+    )

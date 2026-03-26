@@ -34,6 +34,7 @@ import type {
   AIModelRuntimeSessionListResponse,
   AIModelGatewayUsageSearchResponse,
   AIModel,
+  DashboardTelemetryResponse,
 } from './types';
 
 // Global refresh promise to prevent concurrent refresh requests
@@ -330,6 +331,14 @@ export async function getAccountGatewayUsageSummary(
   );
   if (!response.ok) {
     throw new Error('Failed to fetch account gateway usage summary');
+  }
+  return response.json();
+}
+
+export async function getDashboardTelemetry(): Promise<DashboardTelemetryResponse> {
+  const response = await fetchWithAuth('/api/v1/account/telemetry/dashboard');
+  if (!response.ok) {
+    throw new Error('Failed to fetch dashboard telemetry');
   }
   return response.json();
 }

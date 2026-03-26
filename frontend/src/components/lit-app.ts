@@ -52,6 +52,7 @@ import '../views/authed/policies-view.ts';
 import '../views/authed/audit-view.ts';
 import '../views/authed/agents-view.ts';
 import '../views/authed/agent-detail-view.ts';
+import '../views/authed/onboarding-view.ts';
 import './app-header.ts';
 import './app-footer.ts';
 import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
@@ -384,6 +385,7 @@ export class LitApp extends LitElement {
           { path: '/runtime-sessions', component: 'runtime-sessions-view' },
           { path: '/agents', component: 'agents-view' },
           { path: '/agents/:agentId', component: 'agent-detail-view' },
+          { path: '/onboarding', component: 'onboarding-view' },
           { path: '/api-usage', component: 'api-usage-view' },
           { path: 'settings', redirect: '/console/settings/profile' },
           { path: 'settings/profile', component: 'profile-view' },

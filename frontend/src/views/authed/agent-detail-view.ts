@@ -11,6 +11,7 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
+import '@shoelace-style/shoelace/dist/components/details/details.js';
 import '../../components/governance-rule-set-editor.ts';
 import '../../components/view-header.ts';
 import {
@@ -19,6 +20,7 @@ import {
   getAgentGovernance,
   getAccountAgent,
   getAccountRuntimeSessionDetail,
+  getRuntimeSessionGatewayEvents,
   getFeatures,
   getTools,
   removeAccountAgent,
@@ -27,6 +29,7 @@ import {
 } from '../../api';
 import type {
   AccountRuntimeSessionDetailResponse,
+  FlowGatewayEvent,
   GatewayUsageByModel,
   ManagedAgentDetailResponse,
   ManagedAgentServerActivitySummary,
@@ -62,6 +65,9 @@ export class AgentDetailView extends LitElement {
 
   @state()
   private runtimeDetail: AccountRuntimeSessionDetailResponse | null = null;
+
+  @state()
+  private rawEvents: FlowGatewayEvent[] = [];
 
   @state()
   private aggregate: ManagedAgentUsageAggregate | null = null;
@@ -386,9 +392,20 @@ export class AgentDetailView extends LitElement {
       this.editableDisplayName = detail.agent.display_name;
       this.selectedSessionId =
         detail.agent.runtime_session_id ?? detail.sessions[0]?.id ?? null;
-      this.runtimeDetail = this.selectedSessionId
-        ? await getAccountRuntimeSessionDetail(this.selectedSessionId)
-        : null;
+
+      if (this.selectedSessionId) {
+        this.runtimeDetail = await getAccountRuntimeSessionDetail(
+          this.selectedSessionId
+        );
+        const eventsRes = await getRuntimeSessionGatewayEvents(
+          this.selectedSessionId,
+          100
+        );
+        this.rawEvents = eventsRes.logs || [];
+      } else {
+        this.runtimeDetail = null;
+        this.rawEvents = [];
+      }
     } catch (error) {
       console.error('Failed to load managed agent detail:', error);
       this.error =
@@ -402,6 +419,8 @@ export class AgentDetailView extends LitElement {
     this.selectedSessionId = sessionId;
     try {
       this.runtimeDetail = await getAccountRuntimeSessionDetail(sessionId);
+      const eventsRes = await getRuntimeSessionGatewayEvents(sessionId, 100);
+      this.rawEvents = eventsRes.logs || [];
     } catch (error) {
       console.error('Failed to load runtime session detail:', error);
       this.error =
@@ -806,14 +825,50 @@ export class AgentDetailView extends LitElement {
   }
 
   private renderTimelineItem(item: RuntimeSessionActivityItem) {
+    const rawEvent = this.rawEvents.find(
+      (e) => e.payload?.api_usage_id === item.api_usage_id
+    );
+    const hasPayload = !!rawEvent?.payload;
+    const payloadStr = hasPayload
+      ? JSON.stringify(rawEvent.payload, null, 2)
+      : '';
+    const statusColor =
+      item.status === 'error' || item.status === 'failed'
+        ? 'danger'
+        : item.status === 'success' || item.status === 'completed'
+          ? 'success'
+          : 'neutral';
+
     return html`
-      <div class="timeline-item">
+      <div
+        class="timeline-item"
+        style="border-left: 3px solid var(--sl-color-${statusColor}-500); padding-left: 12px;"
+      >
         <div class="timeline-title">${item.title}</div>
-        <div class="timeline-meta">
+        <div
+          class="timeline-meta"
+          style="${hasPayload ? 'margin-bottom: 8px;' : ''}"
+        >
           ${this.formatDateTime(item.timestamp)}${item.status
             ? html` · ${item.status}`
             : null}${item.summary ? html` · ${item.summary}` : null}
         </div>
+        ${hasPayload
+          ? html`
+              <sl-details
+                summary="View payload trace"
+                style="--background-color: transparent;"
+              >
+                <div
+                  style="background: var(--sl-color-neutral-50); border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); padding: var(--sl-spacing-small); overflow-x: auto;"
+                >
+                  <pre
+                    style="margin: 0; font-family: var(--sl-font-mono); font-size: 11px; color: var(--sl-color-neutral-800);"
+                  ><code>${payloadStr}</code></pre>
+                </div>
+              </sl-details>
+            `
+          : ''}
       </div>
     `;
   }

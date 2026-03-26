@@ -1506,6 +1506,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/telemetry/dashboard:
+    get:
+      tags:
+      - Account
+      summary: Get Dashboard Telemetry
+      description: Aggregate high-level metrics for the new global dashboard.
+      operationId: get_dashboard_telemetry_api_v1_account_telemetry_dashboard_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTelemetryResponse'
+      security:
+      - bearerAuth: []
   /api/v1/account/deletion-request:
     post:
       tags:
@@ -8006,6 +8022,27 @@ components:
       type: object
       title: CustomCommands
       description: Configuration for custom commands (admin-only).
+    DashboardTelemetryResponse:
+      properties:
+        active_agents:
+          type: integer
+          title: Active Agents
+          default: 0
+        total_tool_calls:
+          type: integer
+          title: Total Tool Calls
+          default: 0
+        daily_cost:
+          type: number
+          title: Daily Cost
+          default: 0.0
+        success_rate:
+          type: number
+          title: Success Rate
+          default: 0.0
+      type: object
+      title: DashboardTelemetryResponse
+      description: Aggregate high-level metrics for the global dashboard control plane.
     EmailVerificationRequest:
       properties:
         token:

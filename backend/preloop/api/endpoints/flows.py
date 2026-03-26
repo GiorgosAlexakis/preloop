@@ -440,7 +440,6 @@ def get_flow_execution_gateway_events(
         select(FlowExecutionLog)
         .filter(
             FlowExecutionLog.execution_id == execution_id,
-            FlowExecutionLog.log_type == "model_gateway_call",
         )
         .order_by(
             FlowExecutionLog.timestamp.desc()

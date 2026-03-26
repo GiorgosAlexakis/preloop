@@ -440,3 +440,12 @@ class FlowGatewayUsageSummaryResponse(BaseModel):
     budget: GatewayBudgetSummary
     usage_by_model: List[GatewayUsageByModel] = Field(default_factory=list)
     usage_by_execution: List[GatewayUsageByExecution] = Field(default_factory=list)
+
+
+class DashboardTelemetryResponse(BaseModel):
+    """Aggregate high-level metrics for the global dashboard control plane."""
+
+    active_agents: int = 0
+    total_tool_calls: int = 0
+    daily_cost: float = 0.0
+    success_rate: float = 0.0
