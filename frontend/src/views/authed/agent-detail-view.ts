@@ -42,6 +42,7 @@ import type {
 } from '../../types';
 import type { AccessRuleSummary } from '../../components/governance-rule-set-editor';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import tailwindStyles from '../../styles/tailwind.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import {
   normalizeScopedToolRules,
@@ -155,6 +156,7 @@ export class AgentDetailView extends LitElement {
 
   static styles = [
     unsafeCSS(consoleStyles),
+    unsafeCSS(tailwindStyles),
     css`
       :host {
         display: block;
@@ -832,38 +834,46 @@ export class AgentDetailView extends LitElement {
     const payloadStr = hasPayload
       ? JSON.stringify(rawEvent.payload, null, 2)
       : '';
-    const statusColor =
-      item.status === 'error' || item.status === 'failed'
-        ? 'danger'
-        : item.status === 'success' || item.status === 'completed'
-          ? 'success'
-          : 'neutral';
+    let statusClass = 'border-text-muted';
+    let statusGlow = '';
+    if (item.status === 'error' || item.status === 'failed') {
+      statusClass = 'border-danger text-danger';
+      statusGlow = 'shadow-glow-danger';
+    } else if (item.status === 'success' || item.status === 'completed') {
+      statusClass = 'border-success text-success';
+    }
 
     return html`
       <div
-        class="timeline-item"
-        style="border-left: 3px solid var(--sl-color-${statusColor}-500); padding-left: 12px;"
+        class="border-l-4 ${statusClass} pl-4 pb-6 relative group transition-all duration-300"
       >
-        <div class="timeline-title">${item.title}</div>
         <div
-          class="timeline-meta"
-          style="${hasPayload ? 'margin-bottom: 8px;' : ''}"
-        >
-          ${this.formatDateTime(item.timestamp)}${item.status
-            ? html` · ${item.status}`
-            : null}${item.summary ? html` · ${item.summary}` : null}
+          class="absolute -left-[5px] top-0 size-1.5 rounded-full bg-current opacity-0 group-hover:opacity-100 transition-opacity ${statusGlow}"
+        ></div>
+        <div class="font-bold text-text-main text-sm mb-1">${item.title}</div>
+        <div class="text-xs text-text-muted ${hasPayload ? 'mb-3' : ''}">
+          <span class="font-mono">${this.formatDateTime(item.timestamp)}</span
+          >${item.status
+            ? html` <span class="mx-1">·</span>
+                <span class="uppercase tracking-wider font-display"
+                  >${item.status}</span
+                >`
+            : null}${item.summary
+            ? html` <span class="mx-1">·</span> ${item.summary}`
+            : null}
         </div>
         ${hasPayload
           ? html`
               <sl-details
                 summary="View payload trace"
                 style="--background-color: transparent;"
+                class="glass-panel"
               >
                 <div
-                  style="background: var(--sl-color-neutral-50); border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); padding: var(--sl-spacing-small); overflow-x: auto;"
+                  class="bg-surface-base border border-white/5 rounded-md p-3 overflow-x-auto terminal-feed"
                 >
                   <pre
-                    style="margin: 0; font-family: var(--sl-font-mono); font-size: 11px; color: var(--sl-color-neutral-800);"
+                    class="m-0 font-mono text-[10px] text-text-muted leading-relaxed"
                   ><code>${payloadStr}</code></pre>
                 </div>
               </sl-details>
@@ -992,7 +1002,7 @@ export class AgentDetailView extends LitElement {
           subtitle="Inspect this managed agent record and verify whether it is fully routed through the Preloop gateway and MCP proxy."
         ></view-header>
 
-        <sl-card>
+        <div class="glass-panel rounded-lg p-6 mb-6">
           <div class="stack">
             <div class="hero">
               <div>
@@ -1024,7 +1034,10 @@ export class AgentDetailView extends LitElement {
                 >
                 ${this.liveActivity.modelCalls || this.liveActivity.toolCalls
                   ? html`
-                      <sl-badge variant="primary">
+                      <sl-badge
+                        variant="primary"
+                        class="animate-pulse shadow-glow-primary"
+                      >
                         Live
                         ${this.liveActivity.modelCalls +
                         this.liveActivity.toolCalls}
@@ -1034,7 +1047,7 @@ export class AgentDetailView extends LitElement {
               </div>
             </div>
 
-            <div class="control-row">
+            <div class="control-row mt-4">
               <sl-button
                 variant="danger"
                 outline
@@ -1049,13 +1062,15 @@ export class AgentDetailView extends LitElement {
                 ?disabled=${this.agent.lifecycle_state === 'suspended' ||
                 this.agent.lifecycle_state === 'decommissioned'}
                 @click=${this.killAgent}
+                class="shadow-glow-danger"
               >
                 <sl-icon slot="prefix" name="power"></sl-icon>
                 KILL SWITCH
               </sl-button>
             </div>
 
-            <div class="summary-grid">
+            <div class="summary-grid mt-6">
+              <!-- Cards converted manually or left via existing Shoelace CSS, enhanced by wrapping div -->
               <div class="stat-card">
                 <div class="stat-label">Agent name</div>
                 <div class="stat-value">${this.agent.display_name}</div>
@@ -1239,13 +1254,17 @@ export class AgentDetailView extends LitElement {
               </div>
             </div>
           </div>
-        </sl-card>
+        </div>
 
-        <sl-card>
+        <div class="glass-panel rounded-lg p-6 mb-6">
           <div class="stack">
             <div class="hero">
               <div>
-                <div class="hero-title">Scoped Governance</div>
+                <div
+                  class="hero-title text-text-main text-xl font-display font-bold"
+                >
+                  Scoped Governance
+                </div>
                 <div class="meta-line">
                   Restrict models, set per-model budgets, and apply tool rules
                   just to this agent.
@@ -1264,7 +1283,7 @@ export class AgentDetailView extends LitElement {
                     ).value;
                   }}
                 ></sl-input>
-                <div class="meta-line">
+                <div class="meta-line mt-2">
                   Leave empty to inherit the account-wide model set.
                 </div>
               </div>
@@ -1279,16 +1298,20 @@ export class AgentDetailView extends LitElement {
                     ).value;
                   }}
                 ></sl-textarea>
-                <div class="meta-line">
+                <div class="meta-line mt-2">
                   Example:
                   <code>
                     ${'{"preloop/google/gemini-3.1-pro-preview":{"monthly_usd_limit":25}}'}
                   </code>
                 </div>
               </div>
-              <div class="stat-card">
-                <div class="stat-label">Scoped tool rules</div>
-                <div class="control-row" style="margin-bottom: 0.75rem;">
+              <div
+                class="stat-card col-span-full xl:col-span-2 shadow-inner bg-surface-base p-4 border border-white/5 rounded-md"
+              >
+                <div class="text-text-main mb-4 font-bold">
+                  Scoped tool rules
+                </div>
+                <div class="control-row mb-4">
                   <sl-select
                     placeholder="Choose a tool"
                     .value=${this.governanceToolToAdd}
@@ -1314,14 +1337,15 @@ export class AgentDetailView extends LitElement {
                     }}
                   ></sl-input>
                   <sl-button
-                    variant="default"
+                    variant="primary"
                     @click=${() => this.addGovernanceToolScope()}
+                    class="shadow-glow-primary"
                   >
                     Add tool scope
                   </sl-button>
                 </div>
                 ${Object.keys(this.scopedToolRules).length === 0
-                  ? html`<div class="meta-line">
+                  ? html`<div class="meta-line text-text-muted">
                       No scoped tool rules configured. Leave empty to inherit
                       account-wide tool policies.
                     </div>`
@@ -1330,103 +1354,124 @@ export class AgentDetailView extends LitElement {
                       .map((toolName) => {
                         const tool = this.getGovernanceTool(toolName);
                         return html`
-                          <div class="stat-card" style="margin-top: 0.75rem;">
-                            <div
-                              style="display:flex; justify-content:space-between; gap:12px; align-items:start;"
-                            >
+                          <div
+                            class="glass-panel p-4 rounded-md mb-4 border border-white/10"
+                          >
+                            <div class="flex justify-between gap-4 items-start">
                               <div>
                                 <div
-                                  class="hero-title"
-                                  style="font-size: 1rem;"
+                                  class="text-primary font-bold font-mono text-lg"
                                 >
                                   ${toolName}
                                 </div>
                                 ${tool?.description
-                                  ? html`<div class="meta-line">
+                                  ? html`<div
+                                      class="text-text-muted text-sm mt-1"
+                                    >
                                       ${tool.description}
                                     </div>`
                                   : ''}
                               </div>
                               <sl-button
                                 size="small"
-                                variant="text"
+                                variant="danger"
+                                outline
                                 @click=${() =>
                                   this.removeGovernanceToolScope(toolName)}
                               >
                                 Remove scope
                               </sl-button>
                             </div>
-                            <governance-rule-set-editor
-                              .toolName=${toolName}
-                              .toolSchema=${tool?.schema || null}
-                              .rules=${this.scopedToolRules[toolName] || []}
-                              .workflows=${this.approvalWorkflows}
-                              .features=${this.featureFlags}
-                              .emptyMessage=${'No scoped rules for this tool yet.'}
-                              @save-rule=${(event: CustomEvent) =>
-                                this.saveScopedToolRule(
-                                  toolName,
-                                  event.detail.existingRule,
-                                  event.detail.formData
-                                )}
-                              @delete-rule=${(event: CustomEvent) =>
-                                this.deleteScopedToolRule(
-                                  toolName,
-                                  event.detail.rule.id
-                                )}
-                              @reorder-rules=${(event: CustomEvent) =>
-                                this.reorderScopedToolRules(
-                                  toolName,
-                                  event.detail.reorderedRules
-                                )}
-                              @workflow-created=${() =>
-                                void this.refreshGovernanceWorkflows()}
-                            ></governance-rule-set-editor>
+                            <div class="mt-4">
+                              <governance-rule-set-editor
+                                .toolName=${toolName}
+                                .toolSchema=${tool?.schema || null}
+                                .rules=${this.scopedToolRules[toolName] || []}
+                                .workflows=${this.approvalWorkflows}
+                                .features=${this.featureFlags}
+                                .emptyMessage=${'No scoped rules for this tool yet.'}
+                                @save-rule=${(event: CustomEvent) =>
+                                  this.saveScopedToolRule(
+                                    toolName,
+                                    event.detail.existingRule,
+                                    event.detail.formData
+                                  )}
+                                @delete-rule=${(event: CustomEvent) =>
+                                  this.deleteScopedToolRule(
+                                    toolName,
+                                    event.detail.rule.id
+                                  )}
+                                @reorder-rules=${(event: CustomEvent) =>
+                                  this.reorderScopedToolRules(
+                                    toolName,
+                                    event.detail.reorderedRules
+                                  )}
+                                @workflow-created=${() =>
+                                  void this.refreshGovernanceWorkflows()}
+                              ></governance-rule-set-editor>
+                            </div>
                           </div>
                         `;
                       })}
               </div>
             </div>
-            <div class="control-row">
+            <div class="control-row mt-6">
               <sl-button
                 variant="primary"
                 ?loading=${this.actionLoading}
                 @click=${this.saveGovernance}
+                class="shadow-glow-primary"
               >
                 Save scoped governance
               </sl-button>
             </div>
           </div>
-        </sl-card>
+        </div>
 
-        <sl-card>
+        <div class="glass-panel rounded-lg p-6 mb-6">
           <div class="stack">
-            <div class="hero-title">Historical Model Usage</div>
+            <div
+              class="hero-title text-text-main text-xl font-display font-bold"
+            >
+              Historical Model Usage
+            </div>
             ${this.renderHistoricalModelBreakdown()}
           </div>
-        </sl-card>
+        </div>
 
-        <sl-card>
+        <div class="glass-panel rounded-lg p-6 mb-6">
           <div class="stack">
-            <div class="hero-title">Historical MCP Server Activity</div>
+            <div
+              class="hero-title text-text-main text-xl font-display font-bold"
+            >
+              Historical MCP Server Activity
+            </div>
             ${this.renderServerActivityBreakdown()}
           </div>
-        </sl-card>
+        </div>
 
-        <sl-card>
+        <div class="glass-panel rounded-lg p-6 mb-6">
           <div class="stack">
-            <div class="hero-title">Historical Tool Activity</div>
+            <div
+              class="hero-title text-text-main text-xl font-display font-bold"
+            >
+              Historical Tool Activity
+            </div>
             ${this.renderToolActivityBreakdown()}
           </div>
-        </sl-card>
+        </div>
 
         ${this.runtimeDetail
           ? html`
               ${this.sessions.length
                 ? html`
-                    <sl-card>
+                    <div class="glass-panel rounded-lg p-6 mb-6">
                       <div class="stack">
-                        <div class="hero-title">Session History</div>
+                        <div
+                          class="hero-title text-text-main text-xl font-display font-bold"
+                        >
+                          Session History
+                        </div>
                         <div class="timeline">
                           ${this.sessions
                             .slice()
@@ -1437,10 +1482,14 @@ export class AgentDetailView extends LitElement {
                             )
                             .map(
                               (session) => html`
-                                <div class="timeline-item">
-                                  <div class="timeline-title">
+                                <div
+                                  class="timeline-item border-l-2 border-primary/40 pl-4 py-2 hover:bg-white/5 transition-colors"
+                                >
+                                  <div
+                                    class="timeline-title font-bold text-text-main"
+                                  >
                                     <a
-                                      class="session-link"
+                                      class="text-primary hover:text-white transition-colors no-underline"
                                       href="#"
                                       @click=${(event: Event) => {
                                         event.preventDefault();
@@ -1453,7 +1502,9 @@ export class AgentDetailView extends LitElement {
                                       · ${session.session_source_id}
                                     </a>
                                   </div>
-                                  <div class="timeline-meta">
+                                  <div
+                                    class="timeline-meta text-xs text-text-muted mt-1"
+                                  >
                                     ${this.formatDateTime(session.started_at)} ·
                                     ${session.total_requests} request(s) ·
                                     ${this.formatMoney(session.estimated_cost)}
@@ -1463,37 +1514,68 @@ export class AgentDetailView extends LitElement {
                             )}
                         </div>
                       </div>
-                    </sl-card>
+                    </div>
                   `
                 : null}
 
-              <sl-card>
+              <div class="glass-panel rounded-lg p-6 mb-6 col-span-full">
                 <div class="stack">
-                  <div class="hero-title">Linked Session Overview</div>
-                  <div class="summary-grid">
-                    <div class="stat-card">
-                      <div class="stat-label">Requests</div>
-                      <div class="stat-value">
+                  <div
+                    class="hero-title text-primary text-2xl font-display font-bold mb-4 shadow-neon-glow inline-block"
+                  >
+                    Linked Session Terminal Activity
+                  </div>
+
+                  <div class="summary-grid mb-8">
+                    <div
+                      class="glass-panel p-4 rounded-md flex flex-col items-center justify-center"
+                    >
+                      <div
+                        class="text-text-muted text-xs uppercase tracking-widest mb-2 font-display"
+                      >
+                        Requests
+                      </div>
+                      <div class="text-white text-2xl font-mono font-bold">
                         ${this.runtimeDetail.session.total_requests}
                       </div>
                     </div>
-                    <div class="stat-card">
-                      <div class="stat-label">Tokens</div>
-                      <div class="stat-value">
+                    <div
+                      class="glass-panel p-4 rounded-md flex flex-col items-center justify-center"
+                    >
+                      <div
+                        class="text-text-muted text-xs uppercase tracking-widest mb-2 font-display"
+                      >
+                        Tokens
+                      </div>
+                      <div class="text-primary text-2xl font-mono font-bold">
                         ${this.runtimeDetail.session.token_usage.total_tokens}
                       </div>
                     </div>
-                    <div class="stat-card">
-                      <div class="stat-label">Cost</div>
-                      <div class="stat-value">
+                    <div
+                      class="glass-panel p-4 rounded-md flex flex-col items-center justify-center"
+                    >
+                      <div
+                        class="text-text-muted text-xs uppercase tracking-widest mb-2 font-display"
+                      >
+                        Cost
+                      </div>
+                      <div
+                        class="text-success text-2xl font-mono font-bold shadow-glow-primary"
+                      >
                         ${this.formatMoney(
                           this.runtimeDetail.session.estimated_cost
                         )}
                       </div>
                     </div>
-                    <div class="stat-card">
-                      <div class="stat-label">Last Activity</div>
-                      <div class="stat-value">
+                    <div
+                      class="glass-panel p-4 rounded-md flex flex-col items-center justify-center"
+                    >
+                      <div
+                        class="text-text-muted text-xs uppercase tracking-widest mb-2 font-display"
+                      >
+                        Last Activity
+                      </div>
+                      <div class="text-text-main text-sm font-mono text-center">
                         ${this.formatDateTime(
                           this.runtimeDetail.session.last_activity_at
                         )}
@@ -1501,31 +1583,45 @@ export class AgentDetailView extends LitElement {
                     </div>
                   </div>
 
-                  <div>
-                    <div class="hero-title">Recent Activity</div>
-                    <div class="timeline">
+                  <div
+                    class="bg-black/40 rounded-lg p-6 border border-white/5 mx-[-12px]"
+                  >
+                    <div class="flex items-center gap-3 mb-6">
+                      <div class="flex gap-2">
+                        <div class="size-3 rounded-full bg-danger"></div>
+                        <div class="size-3 rounded-full bg-warning"></div>
+                        <div class="size-3 rounded-full bg-success"></div>
+                      </div>
+                      <div class="text-text-muted text-xs font-mono ml-4">
+                        tty1 — preloop — tail -f execution_log.json
+                      </div>
+                    </div>
+
+                    <div class="space-y-4">
                       ${this.runtimeDetail.activity_timeline.length
                         ? this.runtimeDetail.activity_timeline
-                            .slice(0, 8)
+                            .slice(0, 50)
                             .map((item) => this.renderTimelineItem(item))
                         : html`
-                            <div class="empty-state">
+                            <div
+                              class="text-text-muted font-mono p-4 text-center"
+                            >
                               No activity recorded for the linked runtime
-                              session.
+                              session. Awaiting input...
                             </div>
                           `}
                     </div>
                   </div>
                 </div>
-              </sl-card>
+              </div>
             `
           : html`
-              <sl-card>
-                <div class="empty-state">
+              <div class="glass-panel p-8 text-center rounded-lg">
+                <div class="text-text-muted font-mono">
                   This agent has not produced a linked runtime-session detail
                   yet.
                 </div>
-              </sl-card>
+              </div>
             `}
       </div>
     `;

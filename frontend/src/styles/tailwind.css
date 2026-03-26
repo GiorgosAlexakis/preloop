@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.glass-panel {
+  background-color: var(--color-surface-glass, rgba(28, 18, 45, 0.6));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.terminal-feed {
+  scrollbar-width: thin;
+  scrollbar-color: #8A7B9D transparent;
+}
+
+.terminal-feed::-webkit-scrollbar {
+  width: 4px;
+}
+
+.terminal-feed::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-feed::-webkit-scrollbar-thumb {
+  background-color: #8A7B9D;
+  border-radius: 4px;
+}
+
+.terminal-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

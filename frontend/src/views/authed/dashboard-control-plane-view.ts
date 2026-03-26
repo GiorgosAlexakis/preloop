@@ -41,6 +41,7 @@ import type {
 import { parseUTCDate } from '../../utils/date';
 import type { Tool } from '../../components/tool-card';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import tailwindStyles from '../../styles/tailwind.css?inline';
 
 interface AuditEvent {
   id: string;
@@ -376,6 +377,7 @@ export class DashboardView extends AuthedElement {
     `,
 
     unsafeCSS(consoleStyles),
+    unsafeCSS(tailwindStyles),
     css`
       :host {
         display: block;
@@ -1864,7 +1866,7 @@ export class DashboardView extends AuthedElement {
     `;
   }
 
-  private renderAgentMasonryCards() {
+  renderAgentMasonryCards() {
     if (this.managedAgents.length === 0) {
       return html`
         <div class="empty-state">
@@ -1882,75 +1884,83 @@ export class DashboardView extends AuthedElement {
         const isActive = agent.activity_status === 'active_now';
         const isSuspended = agent.lifecycle_state === 'suspended';
         return html`
-          <sl-card
-            class="masonry-item"
-            style="cursor: pointer;"
+          <div
+            class="masonry-item glass-panel p-4 flex flex-col gap-4 rounded-md transition-all duration-300 cursor-pointer ${isActive
+              ? 'hover:shadow-glow-primary hover:border-primary/30'
+              : 'opacity-70 hover:opacity-100'}"
             @click=${() => {
               window.location.href = `/console/agents/${agent.id}`;
             }}
           >
-            <div
-              style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;"
-            >
+            <div class="flex justify-between items-start">
               <div>
                 <h3
-                  style="margin: 0; font-family: monospace; font-size: 1rem; color: var(--sl-color-neutral-900); display: flex; align-items: center; gap: 8px;"
+                  class="font-display font-bold text-sm text-text-main flex items-center gap-2 m-0"
                 >
                   <span
-                    style="width: 8px; height: 8px; border-radius: 50%; background: var(--sl-color-${isActive
-                      ? 'success'
+                    class="size-2 rounded-full ${isActive
+                      ? 'bg-success animate-pulse shadow-[0_0_8px_rgba(0,255,157,0.6)]'
                       : isSuspended
-                        ? 'danger'
-                        : 'neutral'}-500);"
+                        ? 'bg-danger animate-ping'
+                        : 'bg-text-muted'}"
                   ></span>
                   ${agent.display_name}
                 </h3>
-                <p
-                  style="margin: 4px 0 0; font-family: monospace; font-size: 0.75rem; color: var(--sl-color-neutral-600);"
-                >
+                <p class="font-mono text-[10px] text-text-muted mt-1 m-0">
                   ID: ${agent.id.substring(0, 10)}...
                 </p>
               </div>
-              <sl-badge
-                variant="${isActive
-                  ? 'success'
-                  : isSuspended
-                    ? 'danger'
-                    : 'neutral'}"
+              <div class="text-right">
+                <span
+                  class="font-mono text-xs px-2 py-0.5 rounded border ${isActive
+                    ? 'text-success bg-success/10 border-success/20'
+                    : 'text-text-muted bg-white/5 border-white/10'}"
+                >
+                  ${isActive ? 'ACTIVE' : isSuspended ? 'SUSPENDED' : 'IDLE'}
+                </span>
+              </div>
+            </div>
+
+            <div class="h-12 w-full relative">
+              <svg
+                class="w-full h-full preserve-3d"
+                preserveAspectRatio="none"
+                viewBox="0 0 100 30"
               >
-                ${isActive ? 'ACTIVE' : isSuspended ? 'SUSPENDED' : 'IDLE'}
-              </sl-badge>
+                <path
+                  class="drop-shadow-[0_0_4px_rgba(0,255,157,0.4)]"
+                  d="M0,25 L10,22 L20,28 L30,15 L40,18 L50,8 L60,12 L70,5 L80,15 L90,10 L100,2"
+                  fill="none"
+                  stroke="${isActive ? '#00FF9D' : '#8A7B9D'}"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                ></path>
+              </svg>
             </div>
+
             <div
-              style="height: 48px; width: 100%; border-bottom: 1px solid var(--sl-color-neutral-200); margin-bottom: 16px;"
+              class="bg-surface-base rounded border border-white/5 p-3 h-[90px] overflow-y-auto terminal-feed font-mono text-[11px] leading-relaxed"
             >
-              <!-- Sparkline placeholder -->
-            </div>
-            <div
-              style="background: var(--sl-color-neutral-50); border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); padding: 12px; height: 120px; font-family: monospace; font-size: 0.7rem; color: var(--sl-color-neutral-600);"
-            >
-              <div>
-                <span style="color: var(--sl-color-primary-600);"
-                  >[System]</span
-                >
-                Initialization complete.
+              <div class="text-text-muted mb-1">
+                <span class="text-primary">[System]</span> Initialization
+                complete.
               </div>
-              <div>
-                <span style="color: var(--sl-color-primary-600);"
-                  >[Telemetry]</span
-                >
-                Fetching live streams...
+              <div class="text-text-muted mb-1">
+                <span class="text-primary">[Telemetry]</span> Fetching live
+                streams...
               </div>
-              <div>
+              <div class="text-text-muted mb-1">
                 Last seen: ${this.formatRelativeTime(agent.last_seen_at)}
               </div>
-              <div>Total reqs: ${this.formatNumber(agent.total_requests)}</div>
-              <div style="margin-top: 8px; color: var(--sl-color-neutral-900);">
-                <span style="animation: pulse 2s infinite;">_</span> AWAITING
+              <div class="text-text-muted mb-1">
+                Total reqs: ${this.formatNumber(agent.total_requests)}
+              </div>
+              <div class="text-text-main mt-2">
+                <span class="text-primary animate-pulse">_</span> AWAITING
                 INSTRUCTION
               </div>
             </div>
-          </sl-card>
+          </div>
         `;
       })}
     `;
@@ -1974,65 +1984,84 @@ export class DashboardView extends AuthedElement {
       <view-header headerText="Overview" width="extra-wide"></view-header>
 
       <div
-        style="padding: 24px; max-width: 1600px; margin: 0 auto; width: 100%; box-sizing: border-box;"
+        class="bg-background-dark text-text-main min-h-screen font-body p-6 max-w-[1600px] mx-auto w-full box-border"
       >
         <header
-          style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border: 1px solid var(--sl-color-neutral-200); border-radius: 8px; margin-bottom: 32px; background: var(--sl-color-neutral-50);"
+          class="flex items-center justify-between whitespace-nowrap border-b border-white/10 px-6 py-4 glass-panel rounded-lg mb-8"
         >
-          <div style="display: flex; align-items: center; gap: 16px;">
+          <div class="flex items-center gap-4 text-white">
             <h2
-              style="margin: 0; font-family: monospace; font-weight: bold; font-size: 1.25rem;"
+              class="text-text-main text-xl font-mono font-bold leading-tight tracking-widest m-0"
             >
               [PRELOOP:CORE]
             </h2>
           </div>
-          <sl-button variant="danger" outline>
-            <sl-icon slot="prefix" name="exclamation-triangle"></sl-icon>
+          <button
+            class="flex min-w-[120px] cursor-pointer items-center justify-center overflow-hidden rounded-md h-8 px-4 border border-danger bg-danger/10 text-danger hover:bg-danger/20 hover:shadow-glow-danger transition-all duration-300 font-display text-sm font-bold tracking-widest group"
+          >
+            <sl-icon
+              name="exclamation-triangle"
+              class="mr-2 text-[16px] group-hover:animate-pulse"
+            ></sl-icon>
             KILL ALL
-          </sl-button>
+          </button>
         </header>
 
-        <div
-          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 32px;"
-        >
-          <sl-card>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div
+            class="glass-panel rounded-md p-5 flex flex-col justify-center h-[80px] relative overflow-hidden group hover:border-white/20 transition-colors"
+          >
             <div
-              style="font-size: 0.75rem; text-transform: uppercase; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
+              class="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-primary/5 to-transparent"
+            ></div>
+            <p
+              class="text-text-muted font-display text-xs uppercase tracking-wider mb-1 flex items-center gap-2 m-0"
             >
+              <span
+                class="size-2 rounded-full bg-primary/50 animate-pulse"
+              ></span>
               24h Cost
-            </div>
-            <div
-              style="font-size: 1.75rem; font-family: monospace; font-weight: bold; color: var(--sl-color-primary-600)"
-            >
+            </p>
+            <p class="text-primary font-mono text-2xl font-bold m-0">
               ${this.formatCurrency(this.telemetry?.daily_cost)}
-            </div>
-          </sl-card>
+            </p>
+          </div>
 
-          <sl-card>
+          <div
+            class="glass-panel rounded-md p-5 flex flex-col justify-center h-[80px] relative overflow-hidden group hover:border-white/20 transition-colors"
+          >
             <div
-              style="font-size: 0.75rem; text-transform: uppercase; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
+              class="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-success/5 to-transparent"
+            ></div>
+            <p
+              class="text-text-muted font-display text-xs uppercase tracking-wider mb-1 flex items-center gap-2 m-0"
             >
+              <span
+                class="size-2 rounded-full bg-success/50 animate-pulse"
+              ></span>
               Active Agents
-            </div>
-            <div
-              style="font-size: 1.75rem; font-family: monospace; font-weight: bold; color: var(--sl-color-success-600)"
-            >
+            </p>
+            <p class="text-success font-mono text-2xl font-bold m-0">
               ${this.formatNumber(this.telemetry?.active_agents)}
-            </div>
-          </sl-card>
+            </p>
+          </div>
 
-          <sl-card>
+          <div
+            class="glass-panel rounded-md p-5 flex flex-col justify-center h-[80px] relative overflow-hidden group hover:border-white/20 transition-colors"
+          >
             <div
-              style="font-size: 0.75rem; text-transform: uppercase; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
+              class="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-primary/5 to-transparent"
+            ></div>
+            <p
+              class="text-text-muted font-display text-xs uppercase tracking-wider mb-1 flex items-center gap-2 m-0"
             >
+              <sl-icon name="braces"></sl-icon>
               Total Tool Calls
-            </div>
-            <div
-              style="font-size: 1.75rem; font-family: monospace; font-weight: bold; color: var(--sl-color-primary-600)"
-            >
+            </p>
+            <p class="text-primary font-mono text-2xl font-bold m-0">
               ${this.formatNumber(this.telemetry?.total_tool_calls)}
-            </div>
-          </sl-card>
+            </p>
+          </div>
         </div>
 
         <div class="masonry-grid">${this.renderAgentMasonryCards()}</div>
