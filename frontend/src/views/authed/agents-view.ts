@@ -13,20 +13,26 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/view-header.ts';
 import {
   getAccountAgents,
+  getDashboardTelemetry,
   removeAccountAgent,
   type ManagedAgentListParams,
 } from '../../api';
 import type {
+  DashboardTelemetryResponse,
   AccountManagedAgentListResponse,
   ManagedAgentSummary,
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import tailwindStyles from '../../styles/tailwind.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 
 @customElement('agents-view')
 export class AgentsView extends LitElement {
   @state()
   private agents: AccountManagedAgentListResponse | null = null;
+
+  @state()
+  private telemetry: DashboardTelemetryResponse | null = null;
 
   @state()
   private loading = true;
@@ -57,154 +63,37 @@ export class AgentsView extends LitElement {
 
   static styles = [
     unsafeCSS(consoleStyles),
+    unsafeCSS(tailwindStyles),
     css`
       :host {
         display: block;
       }
-
       .page {
         display: flex;
         flex-direction: column;
         gap: var(--sl-spacing-large);
       }
-
-      .filters {
-        display: flex;
-        gap: var(--sl-spacing-medium);
-        flex-wrap: wrap;
-        align-items: end;
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 1.5rem;
       }
-
       .filters sl-input,
       .filters sl-select {
         min-width: 180px;
       }
-
       .filters sl-input {
         flex: 1 1 280px;
       }
-
-      .cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-        gap: var(--sl-spacing-large);
+      .box-glow {
+        box-shadow: 0 0 12px rgba(6, 232, 249, 0.2);
       }
-
-      .agent-card::part(base) {
-        height: 100%;
-        background: rgba(30, 41, 59, 0.85);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        color: var(--sl-color-neutral-100);
-        transition:
-          transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
-          box-shadow 0.3s ease,
-          border-color 0.3s ease;
-        box-shadow:
-          0 4px 6px -1px rgba(0, 0, 0, 0.1),
-          0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      }
-
-      .agent-card:hover::part(base) {
-        transform: translateY(-6px);
-        box-shadow:
-          0 20px 25px -5px rgba(0, 0, 0, 0.3),
-          0 10px 10px -5px rgba(0, 0, 0, 0.2);
-        border-color: rgba(255, 255, 255, 0.2);
-      }
-
-      @keyframes glow-pulse {
-        0% {
-          box-shadow: 0 0 25px 5px rgba(88, 166, 255, 0.6);
-          border-color: rgba(88, 166, 255, 0.8);
-        }
-        100% {
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-          border-color: rgba(255, 255, 255, 0.1);
-        }
-      }
-
-      .agent-card.glowing::part(base) {
-        animation: glow-pulse 1.5s ease-out;
-      }
-
-      .agent-card.live::part(base) {
-        border-color: rgba(88, 166, 255, 0.4);
-        box-shadow: 0 0 15px rgba(88, 166, 255, 0.15);
-      }
-
-      .card-stack {
-        display: flex;
-        flex-direction: column;
-        gap: var(--sl-spacing-medium);
-      }
-
-      .title-row,
-      .metric-row,
-      .action-row {
-        display: flex;
-        justify-content: space-between;
-        gap: var(--sl-spacing-small);
-        align-items: center;
-      }
-
-      .title-row {
-        align-items: start;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        padding-bottom: var(--sl-spacing-small);
-      }
-
-      .agent-name {
-        font-weight: 700;
-        font-size: 1.15rem;
-        color: var(--sl-color-neutral-0);
-        letter-spacing: -0.01em;
-      }
-
-      .agent-meta {
-        color: var(--sl-color-neutral-400);
-        font-size: var(--sl-font-size-small);
-        margin-top: var(--sl-spacing-3x-small);
-        overflow-wrap: anywhere;
-      }
-
-      .label {
-        color: var(--sl-color-neutral-400);
-        font-size: 0.85rem;
-        font-weight: 500;
-      }
-
-      .value {
-        color: var(--sl-color-neutral-0);
-        font-weight: 600;
-        font-size: 0.95rem;
-        text-align: right;
-      }
-
-      .badges {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--sl-spacing-2x-small);
-      }
-
-      sl-badge {
-        --sl-font-size-small: 0.75rem;
-      }
-
-      .action-row {
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        padding-top: var(--sl-spacing-medium);
-        margin-top: var(--sl-spacing-small);
-      }
-
-      .empty-state {
-        border: 1px dashed var(--sl-color-neutral-300);
-        border-radius: var(--sl-border-radius-medium);
-        padding: var(--sl-spacing-large);
-        color: var(--sl-color-neutral-600);
-        background: var(--sl-color-neutral-0);
+      .chart-header {
+        position: absolute;
+        top: 24px;
+        left: 24px;
+        z-index: 10;
+        pointer-events: none;
       }
     `,
   ];
@@ -267,7 +156,12 @@ export class AgentsView extends LitElement {
     }
 
     try {
-      this.agents = await getAccountAgents(params);
+      const [agentsRes, telemetryRes] = await Promise.all([
+        getAccountAgents(params),
+        getDashboardTelemetry(),
+      ]);
+      this.agents = agentsRes;
+      this.telemetry = telemetryRes;
     } catch (error) {
       console.error('Failed to load managed agents:', error);
       this.error =
@@ -465,150 +359,261 @@ export class AgentsView extends LitElement {
     const liveTotal =
       (liveActivity?.modelCalls || 0) + (liveActivity?.toolCalls || 0);
 
-    // Determine if we should pulse the card (last activity was < 2 seconds ago)
     const isGlowing =
       liveActivity?.lastActivityAt &&
       Date.now() - new Date(liveActivity.lastActivityAt).getTime() < 2000;
 
-    // Force animation reset by modifying class and key if pulsing
+    const cardClasses = `glass-panel flex flex-col p-5 gap-4 rounded-lg relative overflow-hidden transition-all duration-300 ${
+      isGlowing
+        ? 'shadow-glow-primary border-primary/50'
+        : 'border-white/10 hover:border-white/20 hover:-translate-y-1 hover:shadow-2xl'
+    }`;
+
     return html`
-      <sl-card
-        class="agent-card ${liveTotal > 0 ? 'live' : ''} ${isGlowing
-          ? 'glowing'
-          : ''}"
+      <div
+        class=${cardClasses}
         data-activity=${liveActivity?.lastActivityAt || ''}
       >
-        <div class="card-stack">
-          <div class="title-row">
-            <div>
-              <div class="agent-name">${agent.display_name}</div>
-              <div class="agent-meta">
-                ${this.getSourceLabel(agent.session_source_type)} ·
-                ${agent.session_source_id}
-              </div>
-            </div>
-            <div class="badges">
-              <sl-badge variant=${this.getOnboardingVariant(agent)}>
-                ${this.getOnboardingLabel(agent)}
-              </sl-badge>
-              <sl-badge variant=${this.getLifecycleVariant(agent)}>
-                ${this.getLifecycleLabel(agent)}
-              </sl-badge>
-              <sl-badge variant=${this.getLiveValidationVariant(agent)}>
-                ${this.getLiveValidationLabel(agent)}
-              </sl-badge>
-              ${liveTotal
-                ? html`<sl-badge variant="primary">Live ${liveTotal}</sl-badge>`
+        <!-- Status Indicator Strip -->
+        <div
+          class="absolute left-0 top-0 bottom-0 w-1 ${agent.lifecycle_state ===
+          'suspended'
+            ? 'bg-warning'
+            : agent.lifecycle_state === 'decommissioned'
+              ? 'bg-danger'
+              : liveTotal > 0
+                ? 'bg-success shadow-glow-primary'
+                : 'bg-primary/50'}"
+        ></div>
+
+        <!-- Header -->
+        <div class="flex justify-between items-start pl-2">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <h3
+                class="font-display font-bold text-lg text-white m-0 tracking-tight leading-none"
+              >
+                ${agent.display_name}
+              </h3>
+              ${liveTotal > 0
+                ? html`
+                    <div
+                      class="relative flex items-center justify-center size-2.5 ml-1"
+                    >
+                      <div
+                        class="absolute inset-0 rounded-full bg-success opacity-40 animate-ping"
+                      ></div>
+                      <div
+                        class="relative size-1.5 rounded-full bg-success"
+                      ></div>
+                    </div>
+                  `
                 : null}
             </div>
+            <div class="font-mono text-xs text-text-muted mt-1.5">
+              ${this.getSourceLabel(agent.session_source_type)} ·
+              ${agent.session_source_id}
+            </div>
+            ${agent.session_reference
+              ? html`<div
+                  class="font-mono text-[10px] text-text-muted opacity-80 mt-1"
+                >
+                  ${agent.session_reference}
+                </div>`
+              : null}
           </div>
-
-          ${agent.session_reference
-            ? html`<div class="agent-meta">${agent.session_reference}</div>`
-            : null}
-          ${agent.owner_username || agent.owner_email
-            ? html`
-                <div class="agent-meta">
-                  Owner: ${agent.owner_username || agent.owner_email}
-                </div>
-              `
-            : null}
-          ${agent.lifecycle_reason
-            ? html`
-                <div class="agent-meta">
-                  Lifecycle note: ${agent.lifecycle_reason}
-                </div>
-              `
-            : null}
-
-          <div class="metric-row">
-            <span class="label">Preloop MCP Proxy</span>
-            <span class="value"
-              >${agent.mcp_proxy_configured ? 'Configured' : 'Missing'}</span
+          <div class="flex flex-col items-end gap-1.5">
+            <sl-badge variant=${this.getLifecycleVariant(agent)}
+              >${this.getLifecycleLabel(agent)}</sl-badge
+            >
+            <sl-badge variant=${this.getOnboardingVariant(agent)}
+              >${this.getOnboardingLabel(agent)}</sl-badge
             >
           </div>
-          <div class="metric-row">
-            <span class="label">Preloop Model Gateway</span>
-            <span class="value"
-              >${agent.model_gateway_configured
-                ? 'Configured'
-                : 'Missing'}</span
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-2 gap-3 mt-2 pl-2">
+          <div
+            class="bg-black/40 rounded border border-white/5 p-3 flex flex-col gap-1"
+          >
+            <span
+              class="text-text-muted text-[10px] font-medium uppercase tracking-wider"
+              >Gateway Configuration</span
+            >
+            <span
+              class="font-mono text-xs ${agent.model_gateway_configured
+                ? 'text-success'
+                : 'text-warning'}"
+              >${agent.model_gateway_configured ? 'Verified' : 'Missing'}</span
             >
           </div>
-          <div class="metric-row">
-            <span class="label">Latest Model</span>
-            <span class="value">${agent.latest_model_alias || 'Unknown'}</span>
+          <div
+            class="bg-black/40 rounded border border-white/5 p-3 flex flex-col gap-1"
+          >
+            <span
+              class="text-text-muted text-[10px] font-medium uppercase tracking-wider"
+              >MCP Proxy</span
+            >
+            <span
+              class="font-mono text-xs ${agent.mcp_proxy_configured
+                ? 'text-success'
+                : 'text-warning'}"
+              >${agent.mcp_proxy_configured ? 'Verified' : 'Missing'}</span
+            >
           </div>
-          <div class="badges">
-            ${agent.managed_mcp_servers.length
-              ? agent.managed_mcp_servers.map(
-                  (serverName) =>
-                    html`<sl-badge variant="primary">${serverName}</sl-badge>`
-                )
-              : html`<span class="label"
-                  >No upstream MCP servers imported</span
-                >`}
+        </div>
+
+        <!-- Stats List -->
+        <div class="flex flex-col gap-2 mt-2 pl-2">
+          <div
+            class="flex justify-between items-end border-b border-white/5 pb-2"
+          >
+            <span class="text-text-muted text-xs font-medium tracking-wide"
+              >Usage Cost</span
+            >
+            <span class="font-mono text-white text-sm"
+              >${this.formatMoney(agent.estimated_cost)}</span
+            >
           </div>
-          <div class="metric-row">
-            <span class="label">Requests</span>
-            <span class="value">${agent.total_requests}</span>
+          <div
+            class="flex justify-between items-end border-b border-white/5 pb-2"
+          >
+            <span class="text-text-muted text-xs font-medium tracking-wide"
+              >Total Requests</span
+            >
+            <span class="font-mono text-white text-sm"
+              >${agent.total_requests}</span
+            >
           </div>
-          <div class="metric-row">
-            <span class="label">Estimated Cost</span>
-            <span class="value">${this.formatMoney(agent.estimated_cost)}</span>
-          </div>
-          <div class="metric-row">
-            <span class="label">Last Seen</span>
-            <span class="value"
+          <div
+            class="flex justify-between items-end border-b border-white/5 pb-2"
+          >
+            <span class="text-text-muted text-xs font-medium tracking-wide"
+              >Last Seen</span
+            >
+            <span class="font-mono text-white text-sm opacity-80"
               >${this.formatDateTime(
                 liveActivity?.lastActivityAt || agent.last_seen_at
               )}</span
             >
           </div>
-          ${liveTotal
+          ${agent.managed_mcp_servers.length > 0
             ? html`
-                <div class="metric-row">
-                  <span class="label">Live Activity</span>
-                  <span class="value">
-                    ${liveActivity?.modelCalls || 0} messages ·
-                    ${liveActivity?.toolCalls || 0} tools
-                  </span>
+                <div class="flex justify-between items-start pt-1">
+                  <span
+                    class="text-text-muted text-xs font-medium tracking-wide pt-1"
+                    >MCP Tools</span
+                  >
+                  <div class="flex flex-wrap gap-1 justify-end max-w-[60%]">
+                    ${agent.managed_mcp_servers
+                      .slice(0, 3)
+                      .map(
+                        (s) =>
+                          html`<span
+                            class="px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono whitespace-nowrap"
+                            >${s}</span
+                          >`
+                      )}
+                    ${agent.managed_mcp_servers.length > 3
+                      ? html`<span
+                          class="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-text-muted text-[10px] font-mono whitespace-nowrap"
+                          >+${agent.managed_mcp_servers.length - 3}</span
+                        >`
+                      : null}
+                  </div>
                 </div>
               `
             : null}
-
-          <div class="action-row">
-            <span class="label"
-              >Inspect, rename, or remove this agent record</span
-            >
-            <div class="badges">
-              <sl-button
-                size="small"
-                variant="danger"
-                ?loading=${this.actionAgentId === agent.id}
-                @click=${() => this.removeAgent(agent)}
-              >
-                Remove
-              </sl-button>
-              <a href=${detailUrl}>
-                <sl-button size="small" variant="default">View Agent</sl-button>
-              </a>
-            </div>
-          </div>
         </div>
-      </sl-card>
+
+        <!-- Actions -->
+        <div class="mt-auto pt-4 flex gap-3 pl-2">
+          <button
+            @click=${() => this.removeAgent(agent)}
+            class="flex-none px-3 py-1.5 rounded border border-danger/30 text-danger bg-danger/5 hover:bg-danger/20 transition-colors font-display text-xs tracking-wide"
+          >
+            Remove
+          </button>
+          <a href=${detailUrl} class="flex-1">
+            <button
+              class="w-full flex items-center justify-center gap-2 h-full py-1.5 rounded border border-primary/30 text-primary bg-primary/10 hover:bg-primary/20 transition-colors font-display text-xs font-bold tracking-wide"
+            >
+              View Agent Details
+            </button>
+          </a>
+        </div>
+      </div>
     `;
   }
 
   render() {
+    const chartData = (this.telemetry as any)?.latency_series || [
+      30, 40, 45, 50, 49, 60, 70, 91, 125, 110, 95, 105,
+    ];
+    const maxVal = Math.max(...chartData, 10);
+
     return html`
-      <div class="page">
+      <div class="page text-text-main font-body">
+        <div
+          class="glass-panel p-6 rounded-lg mb-2 relative overflow-hidden box-glow border-primary/20"
+        >
+          <div class="chart-header">
+            <h3
+              class="font-display font-medium text-text-muted text-sm uppercase tracking-widest m-0"
+            >
+              Global Gateway Traffic (Mocked View)
+            </h3>
+            <div class="mt-1 flex items-baseline gap-2">
+              <span class="text-3xl font-bold font-mono text-white"
+                >${chartData.reduce((a: number, b: number) => a + b, 0)}</span
+              >
+              <span class="text-success text-xs font-mono font-bold"
+                >+12.4%</span
+              >
+            </div>
+          </div>
+
+          <div
+            class="h-[140px] relative flex items-end gap-[4px] px-6 pb-2 pt-20"
+          >
+            ${chartData.map((val: number, i: number) => {
+              const heightPct = Math.max((val / maxVal) * 100, 2);
+              const isRecent = i >= chartData.length - 3;
+              return html`
+                <div
+                  class="flex-1 bg-primary/20 hover:bg-primary/40 transition-all rounded-t-sm relative group"
+                  style="height: ${heightPct}%; animation: pulse ${1 +
+                  Math.random()}s infinite alternate;"
+                >
+                  <div
+                    class="absolute inset-0 bg-gradient-to-t from-transparent ${isRecent
+                      ? 'to-primary/60'
+                      : 'to-primary/30'}"
+                  ></div>
+                  <div
+                    class="absolute -top-8 left-1/2 -translate-x-1/2 bg-black/80 px-2 py-1 rounded text-xs font-mono opacity-0 group-hover:opacity-100 transition-opacity border border-white/10 z-20"
+                  >
+                    ${val} reqs
+                  </div>
+                </div>
+              `;
+            })}
+          </div>
+          <div
+            class="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent"
+          ></div>
+        </div>
+
         <view-header
-          title="Agents"
+          title="Agents Registry"
           subtitle="Browse managed agent records and verify whether each one is fully routed through the Preloop gateway and MCP proxy."
         ></view-header>
 
-        <form class="filters" @submit=${this.handleSearchSubmit}>
+        <form
+          class="filters glass-panel p-4 rounded-lg mb-2 border-white/5"
+          @submit=${this.handleSearchSubmit}
+        >
           <sl-input
             label="Search"
             placeholder="Search agent name or source id"
@@ -637,7 +642,12 @@ export class AgentsView extends LitElement {
             <sl-option value="active">Active</sl-option>
             <sl-option value="ended">Ended</sl-option>
           </sl-select>
-          <sl-button type="submit" variant="primary">Apply</sl-button>
+          <button
+            type="submit"
+            class="px-6 py-[11px] rounded bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-colors font-display text-sm font-bold tracking-wide ml-2"
+          >
+            Filter
+          </button>
         </form>
 
         ${this.error
@@ -645,9 +655,15 @@ export class AgentsView extends LitElement {
           : null}
         ${this.loading
           ? html`
-              <div class="empty-state">
-                <sl-spinner></sl-spinner>
-                Loading enrolled agents...
+              <div
+                class="glass-panel p-12 rounded-lg text-center flex flex-col items-center justify-center border-white/5"
+              >
+                <sl-spinner
+                  style="font-size: 2rem; --indicator-color: var(--color-primary);"
+                ></sl-spinner>
+                <div class="mt-4 font-mono text-text-muted text-sm">
+                  Loading enrolled agents...
+                </div>
               </div>
             `
           : this.agents && this.agents.items.length > 0
@@ -659,8 +675,12 @@ export class AgentsView extends LitElement {
                 </div>
               `
             : html`
-                <div class="empty-state">
-                  No enrolled agents matched the current filters.
+                <div
+                  class="glass-panel p-12 rounded-lg text-center border-white/5 border-dashed"
+                >
+                  <div class="font-mono text-text-muted">
+                    No enrolled agents matched the current filters.
+                  </div>
                 </div>
               `}
       </div>

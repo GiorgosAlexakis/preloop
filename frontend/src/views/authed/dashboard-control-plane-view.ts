@@ -19,7 +19,6 @@ import {
   getAccountGatewayUsageSearch,
   getAccountGatewayUsageSummary,
   getAccountRuntimeSessions,
-  getDashboardTelemetry,
   getApiUsageStats,
   getFlowExecutions,
   getFlows,
@@ -33,7 +32,6 @@ import { isSaaS } from '../../brand-config';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import type {
   AccountGatewayUsageSummaryResponse,
-  DashboardTelemetryResponse,
   GatewayUsageSearchResultItem,
   ManagedAgentSummary,
   RuntimeSessionSummary,
@@ -41,7 +39,6 @@ import type {
 import { parseUTCDate } from '../../utils/date';
 import type { Tool } from '../../components/tool-card';
 import consoleStyles from '../../styles/console-styles.css?inline';
-import tailwindStyles from '../../styles/tailwind.css?inline';
 
 interface AuditEvent {
   id: string;
@@ -104,7 +101,6 @@ export class DashboardView extends AuthedElement {
   @state() private error: string | null = null;
   @state() private gatewaySummary: AccountGatewayUsageSummaryResponse | null =
     null;
-  @state() private telemetry: DashboardTelemetryResponse | null = null;
   @state() private runtimeSessions: RuntimeSessionSummary[] = [];
   @state() private managedAgents: ManagedAgentSummary[] = [];
   @state() private gatewayInteractions: GatewayUsageSearchResultItem[] = [];
@@ -351,33 +347,9 @@ export class DashboardView extends AuthedElement {
         font-size: var(--sl-font-size-small);
         font-weight: 500;
       }
-      .masonry-grid {
-        column-count: 1;
-        column-gap: 1.5rem;
-      }
-      @media (min-width: 768px) {
-        .masonry-grid {
-          column-count: 2;
-        }
-      }
-      @media (min-width: 1024px) {
-        .masonry-grid {
-          column-count: 3;
-        }
-      }
-      @media (min-width: 1440px) {
-        .masonry-grid {
-          column-count: 4;
-        }
-      }
-      .masonry-item {
-        break-inside: avoid;
-        margin-bottom: 1.5rem;
-      }
     `,
 
     unsafeCSS(consoleStyles),
-    unsafeCSS(tailwindStyles),
     css`
       :host {
         display: block;
@@ -749,7 +721,6 @@ export class DashboardView extends AuthedElement {
 
     try {
       const [
-        telemetry,
         gatewaySummary,
         runtimeSessions,
         managedAgents,
@@ -767,22 +738,19 @@ export class DashboardView extends AuthedElement {
         aiModels,
         users,
       ] = await Promise.all([
-        catchWith403Handling(getDashboardTelemetry(), null),
         catchWith403Handling(getAccountGatewayUsageSummary(), null),
         catchWith403Handling(
           getAccountRuntimeSessions({ status: 'all', limit: 12 }),
           {
             items: [],
-          } as unknown as Awaited<ReturnType<typeof getAccountRuntimeSessions>>
+          } as Awaited<ReturnType<typeof getAccountRuntimeSessions>>
         ),
         catchWith403Handling(getAccountAgents({ status: 'all', limit: 12 }), {
           items: [],
-        } as unknown as Awaited<ReturnType<typeof getAccountAgents>>),
+        } as Awaited<ReturnType<typeof getAccountAgents>>),
         catchWith403Handling(getAccountGatewayUsageSearch({ limit: 12 }), {
           items: [],
-        } as unknown as Awaited<
-          ReturnType<typeof getAccountGatewayUsageSearch>
-        >),
+        } as Awaited<ReturnType<typeof getAccountGatewayUsageSearch>>),
         catchWith403Handling(this.fetchAuditExceptions(), {
           groups: [],
           total: 0,
@@ -818,7 +786,6 @@ export class DashboardView extends AuthedElement {
         ),
       ]);
 
-      this.telemetry = telemetry;
       this.gatewaySummary = gatewaySummary;
       this.runtimeSessions = runtimeSessions.items || [];
       this.managedAgents = managedAgents.items || [];
@@ -1866,106 +1833,6 @@ export class DashboardView extends AuthedElement {
     `;
   }
 
-  renderAgentMasonryCards() {
-    if (this.managedAgents.length === 0) {
-      return html`
-        <div class="empty-state">
-          <sl-icon name="robot"></sl-icon>
-          <p>
-            No agents found.
-            <a href="/console/agents">View Agent Registry</a>
-          </p>
-        </div>
-      `;
-    }
-
-    return html`
-      ${this.managedAgents.map((agent) => {
-        const isActive = agent.activity_status === 'active_now';
-        const isSuspended = agent.lifecycle_state === 'suspended';
-        return html`
-          <div
-            class="masonry-item glass-panel p-4 flex flex-col gap-4 rounded-md transition-all duration-300 cursor-pointer ${isActive
-              ? 'hover:shadow-glow-primary hover:border-primary/30'
-              : 'opacity-70 hover:opacity-100'}"
-            @click=${() => {
-              window.location.href = `/console/agents/${agent.id}`;
-            }}
-          >
-            <div class="flex justify-between items-start">
-              <div>
-                <h3
-                  class="font-display font-bold text-sm text-text-main flex items-center gap-2 m-0"
-                >
-                  <span
-                    class="size-2 rounded-full ${isActive
-                      ? 'bg-success animate-pulse shadow-[0_0_8px_rgba(0,255,157,0.6)]'
-                      : isSuspended
-                        ? 'bg-danger animate-ping'
-                        : 'bg-text-muted'}"
-                  ></span>
-                  ${agent.display_name}
-                </h3>
-                <p class="font-mono text-[10px] text-text-muted mt-1 m-0">
-                  ID: ${agent.id.substring(0, 10)}...
-                </p>
-              </div>
-              <div class="text-right">
-                <span
-                  class="font-mono text-xs px-2 py-0.5 rounded border ${isActive
-                    ? 'text-success bg-success/10 border-success/20'
-                    : 'text-text-muted bg-white/5 border-white/10'}"
-                >
-                  ${isActive ? 'ACTIVE' : isSuspended ? 'SUSPENDED' : 'IDLE'}
-                </span>
-              </div>
-            </div>
-
-            <div class="h-12 w-full relative">
-              <svg
-                class="w-full h-full preserve-3d"
-                preserveAspectRatio="none"
-                viewBox="0 0 100 30"
-              >
-                <path
-                  class="drop-shadow-[0_0_4px_rgba(0,255,157,0.4)]"
-                  d="M0,25 L10,22 L20,28 L30,15 L40,18 L50,8 L60,12 L70,5 L80,15 L90,10 L100,2"
-                  fill="none"
-                  stroke="${isActive ? '#00FF9D' : '#8A7B9D'}"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                ></path>
-              </svg>
-            </div>
-
-            <div
-              class="bg-surface-base rounded border border-white/5 p-3 h-[90px] overflow-y-auto terminal-feed font-mono text-[11px] leading-relaxed"
-            >
-              <div class="text-text-muted mb-1">
-                <span class="text-primary">[System]</span> Initialization
-                complete.
-              </div>
-              <div class="text-text-muted mb-1">
-                <span class="text-primary">[Telemetry]</span> Fetching live
-                streams...
-              </div>
-              <div class="text-text-muted mb-1">
-                Last seen: ${this.formatRelativeTime(agent.last_seen_at)}
-              </div>
-              <div class="text-text-muted mb-1">
-                Total reqs: ${this.formatNumber(agent.total_requests)}
-              </div>
-              <div class="text-text-main mt-2">
-                <span class="text-primary animate-pulse">_</span> AWAITING
-                INSTRUCTION
-              </div>
-            </div>
-          </div>
-        `;
-      })}
-    `;
-  }
-
   render() {
     if (this.loading) {
       return html`
@@ -1982,95 +1849,74 @@ export class DashboardView extends AuthedElement {
 
     return html`
       <view-header headerText="Overview" width="extra-wide"></view-header>
+      <div class="column-layout dashboard extra-wide">
+        <div class="main-column">
+          <div class="dashboard-stack">
+            ${this.error
+              ? html`<sl-alert variant="danger" open>${this.error}</sl-alert>`
+              : nothing}
+            <div class="updated-at">
+              Last updated ${this.formatRelativeTime(this.lastUpdatedAt)}
+            </div>
+            ${this.renderWelcomeCard()}
+            <mcp-setup-dialog
+              ?open=${this.showSetupDialog}
+              @close=${() => (this.showSetupDialog = false)}
+            ></mcp-setup-dialog>
 
-      <div
-        class="bg-background-dark text-text-main min-h-screen font-body p-6 max-w-[1600px] mx-auto w-full box-border"
-      >
-        <header
-          class="flex items-center justify-between whitespace-nowrap border-b border-white/10 px-6 py-4 glass-panel rounded-lg mb-8"
-        >
-          <div class="flex items-center gap-4 text-white">
-            <h2
-              class="text-text-main text-xl font-mono font-bold leading-tight tracking-widest m-0"
-            >
-              [PRELOOP:CORE]
-            </h2>
-          </div>
-          <button
-            class="flex min-w-[120px] cursor-pointer items-center justify-center overflow-hidden rounded-md h-8 px-4 border border-danger bg-danger/10 text-danger hover:bg-danger/20 hover:shadow-glow-danger transition-all duration-300 font-display text-sm font-bold tracking-widest group"
-          >
-            <sl-icon
-              name="exclamation-triangle"
-              class="mr-2 text-[16px] group-hover:animate-pulse"
-            ></sl-icon>
-            KILL ALL
-          </button>
-        </header>
+            <div class="summary-grid">
+              <sl-card class="summary-card">
+                <div class="metric-label">Active agents</div>
+                <div class="metric-value">${this.activeAgents.length}</div>
+                <div class="metric-subtext">
+                  ${this.formatNumber(this.managedAgents.length)} enrolled total
+                </div>
+              </sl-card>
+              <sl-card class="summary-card">
+                <div class="metric-label">Active runtime sessions</div>
+                <div class="metric-value">${this.activeSessions.length}</div>
+                <div class="metric-subtext">
+                  ${this.formatNumber(this.runtimeSessions.length)} tracked
+                  sessions
+                </div>
+              </sl-card>
+              <sl-card class="summary-card">
+                <div class="metric-label">Gateway spend</div>
+                <div class="metric-value">
+                  ${this.formatCurrency(this.gatewaySummary?.estimated_cost)}
+                </div>
+                <div class="metric-subtext">
+                  ${this.formatNumber(this.gatewaySummary?.total_requests)}
+                  requests in range
+                </div>
+              </sl-card>
+              <sl-card class="summary-card">
+                <div class="metric-label">Gateway failures</div>
+                <div class="metric-value">${this.gatewayFailures.length}</div>
+                <div class="metric-subtext">
+                  ${this.formatNumber(this.gatewaySummary?.failed_requests)}
+                  failed requests total
+                </div>
+              </sl-card>
+            </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div
-            class="glass-panel rounded-md p-5 flex flex-col justify-center h-[80px] relative overflow-hidden group hover:border-white/20 transition-colors"
-          >
-            <div
-              class="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-primary/5 to-transparent"
-            ></div>
-            <p
-              class="text-text-muted font-display text-xs uppercase tracking-wider mb-1 flex items-center gap-2 m-0"
-            >
-              <span
-                class="size-2 rounded-full bg-primary/50 animate-pulse"
-              ></span>
-              24h Cost
-            </p>
-            <p class="text-primary font-mono text-2xl font-bold m-0">
-              ${this.formatCurrency(this.telemetry?.daily_cost)}
-            </p>
-          </div>
+            ${this.renderRecentFlowExecutionsCard()}
 
-          <div
-            class="glass-panel rounded-md p-5 flex flex-col justify-center h-[80px] relative overflow-hidden group hover:border-white/20 transition-colors"
-          >
-            <div
-              class="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-success/5 to-transparent"
-            ></div>
-            <p
-              class="text-text-muted font-display text-xs uppercase tracking-wider mb-1 flex items-center gap-2 m-0"
-            >
-              <span
-                class="size-2 rounded-full bg-success/50 animate-pulse"
-              ></span>
-              Active Agents
-            </p>
-            <p class="text-success font-mono text-2xl font-bold m-0">
-              ${this.formatNumber(this.telemetry?.active_agents)}
-            </p>
-          </div>
-
-          <div
-            class="glass-panel rounded-md p-5 flex flex-col justify-center h-[80px] relative overflow-hidden group hover:border-white/20 transition-colors"
-          >
-            <div
-              class="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-primary/5 to-transparent"
-            ></div>
-            <p
-              class="text-text-muted font-display text-xs uppercase tracking-wider mb-1 flex items-center gap-2 m-0"
-            >
-              <sl-icon name="braces"></sl-icon>
-              Total Tool Calls
-            </p>
-            <p class="text-primary font-mono text-2xl font-bold m-0">
-              ${this.formatNumber(this.telemetry?.total_tool_calls)}
-            </p>
+            <div class="control-plane-grid">
+              ${this.renderBudgetHealthCard()}
+              ${this.renderGatewayFailuresCard()}
+              ${this.renderAuditExceptionsCard()} ${this.renderTopModelsCard()}
+              ${this.renderSessionsAttentionCard()}
+            </div>
           </div>
         </div>
 
-        <div class="masonry-grid">${this.renderAgentMasonryCards()}</div>
+        <div class="side-column">
+          ${this.renderPendingApprovalsCard()} ${this.renderMcpServerCard()}
+          ${this.renderApprovalAnalyticsCard()} ${this.renderActiveAgentsCard()}
+          ${this.renderActiveSessionsCard()} ${this.renderKeyMetricsCard()}
+        </div>
       </div>
-
-      <mcp-setup-dialog
-        ?open=${this.showSetupDialog}
-        @close=${() => (this.showSetupDialog = false)}
-      ></mcp-setup-dialog>
     `;
   }
 }
