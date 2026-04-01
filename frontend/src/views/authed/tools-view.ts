@@ -22,7 +22,7 @@ import {
 } from '../../api';
 import '../../components/mcp-server-form';
 import '../../components/mcp-server-card';
-import '../../components/tool-list-item';
+import '../../components/tools-editor-component';
 import '../../components/mcp-setup-dialog';
 import '../../components/approval-workflow-dialog';
 import type { Tool, ApprovalWorkflow } from '../../components/tool-card';
@@ -47,19 +47,7 @@ import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
-// Extended Tool type that includes access rules from the API
-interface ToolWithRules extends Tool {
-  access_rules: AccessRuleSummary[];
-}
-
-interface ToolGroup {
-  id: string;
-  name: string;
-  type: 'builtin' | 'mcp' | 'http';
-  server?: MCPServer;
-  tools: ToolWithRules[];
-  collapsed: boolean;
-}
+import type { ToolWithRules } from '../../components/tools-editor-component';
 
 interface StarterPolicyDiffChange {
   path: string;
@@ -86,8 +74,6 @@ export class ToolsView extends LitElement {
   @state() private currentUser: { id: string } | null = null;
   @state() private showSetupDialog = false;
   @state() private features: { [key: string]: boolean | string[] } = {};
-  @state() private expandedTools: Set<string> = new Set();
-  @state() private collapsedGroups: Set<string> = new Set();
   @state() private filterText = '';
   @state() private isExporting = false;
   @state() private oauthAlert: 'success' | 'error' | null = null;
@@ -825,55 +811,6 @@ export class ToolsView extends LitElement {
     };
   }
 
-  // ─── Tool grouping & filtering ──────────────────────
-
-  private _getToolGroups(): ToolGroup[] {
-    const groups: ToolGroup[] = [];
-    const filtered = this._getFilteredTools();
-
-    // External MCP server groups first (more important to user)
-    for (const server of this.mcpServers) {
-      const serverTools = filtered.filter(
-        (t) => t.source === 'mcp' && t.source_id === server.id
-      );
-      // Always show MCP group for server management access
-      groups.push({
-        id: server.id,
-        name: server.name,
-        type: 'mcp',
-        server,
-        tools: serverTools,
-        collapsed: this.collapsedGroups.has(server.id),
-      });
-    }
-
-    // HTTP tools group
-    const httpTools = filtered.filter((t) => t.source === 'http');
-    if (httpTools.length > 0) {
-      groups.push({
-        id: 'http',
-        name: 'HTTP Tools',
-        type: 'http',
-        tools: httpTools,
-        collapsed: this.collapsedGroups.has('http'),
-      });
-    }
-
-    // Built-in tools last
-    const builtinTools = filtered.filter((t) => t.source === 'builtin');
-    if (builtinTools.length > 0) {
-      groups.push({
-        id: 'builtin',
-        name: 'Built-in',
-        type: 'builtin',
-        tools: builtinTools,
-        collapsed: this.collapsedGroups.has('builtin'),
-      });
-    }
-
-    return groups;
-  }
-
   private _getFilteredTools(): ToolWithRules[] {
     let tools = this.tools;
 
@@ -1275,29 +1212,8 @@ ${this._formatStarterPolicyDiffValue(change.new_value)}</pre
 
   // ─── Event handlers ──────────────────────────────────
 
-  private _toggleGroup(groupId: string) {
-    const updated = new Set(this.collapsedGroups);
-    if (updated.has(groupId)) {
-      updated.delete(groupId);
-    } else {
-      updated.add(groupId);
-    }
-    this.collapsedGroups = updated;
-  }
-
-  private _handleToggleExpand(e: CustomEvent) {
-    const key = this._getToolKey(e.detail.tool);
-    const updated = new Set(this.expandedTools);
-    if (updated.has(key)) {
-      updated.delete(key);
-    } else {
-      updated.add(key);
-    }
-    this.expandedTools = updated;
-  }
-
   private async _handleToggleEnabled(e: CustomEvent) {
-    const tool: ToolWithRules = e.detail.tool;
+    const tool: ToolWithRules = e.detail;
 
     try {
       this.tools = this.tools.map((t) => {
@@ -1846,123 +1762,7 @@ ${this._formatStarterPolicyDiffValue(change.new_value)}</pre
     `;
   }
 
-  private _renderToolGroup(group: ToolGroup) {
-    const enabledCount = group.tools.filter((t) => t.is_enabled).length;
-    const totalCount = group.tools.length;
-
-    return html`
-      <div class="tool-group">
-        <div class="section-header" @click=${() => this._toggleGroup(group.id)}>
-          <sl-icon
-            class="section-icon ${!group.collapsed ? 'open' : ''}"
-            name="chevron-right"
-          ></sl-icon>
-          <span class="section-title">${group.name}</span>
-          <span class="section-meta">
-            ${enabledCount}/${totalCount} enabled
-          </span>
-          ${group.type === 'mcp' && group.server
-            ? html`
-                <div
-                  class="section-actions"
-                  @click=${(e: Event) => e.stopPropagation()}
-                >
-                  <sl-tooltip content="Scan for new tools">
-                    <sl-icon-button
-                      name="arrow-clockwise"
-                      @click=${() =>
-                        this._handleScanMCPServer(group.server!.id)}
-                    ></sl-icon-button>
-                  </sl-tooltip>
-                  <sl-tooltip
-                    content=${this.hasDefaultAIModel
-                      ? 'Suggest starter policy'
-                      : 'Set a default AI model to suggest a starter policy'}
-                  >
-                    <sl-icon-button
-                      name="magic"
-                      @click=${() =>
-                        this._openStarterPolicySuggestion(group.server!.id, {
-                          manual: true,
-                        })}
-                    ></sl-icon-button>
-                  </sl-tooltip>
-                  <sl-tooltip content="Edit server">
-                    <sl-icon-button
-                      name="pencil"
-                      @click=${() => {
-                        this.editingMCPServer = group.server!;
-                      }}
-                    ></sl-icon-button>
-                  </sl-tooltip>
-                  <sl-tooltip content="Delete server">
-                    <sl-icon-button
-                      name="trash"
-                      @click=${() => {
-                        if (
-                          confirm(
-                            `Delete MCP server "${group.name}" and all its tools?`
-                          )
-                        ) {
-                          this._handleDeleteMCPServer(group.server!.id);
-                        }
-                      }}
-                    ></sl-icon-button>
-                  </sl-tooltip>
-                </div>
-              `
-            : ''}
-          <div class="section-line"></div>
-        </div>
-
-        ${!group.collapsed
-          ? html`
-              <div class="tool-list">
-                ${group.tools.length === 0
-                  ? html`<div
-                      style="padding: var(--sl-spacing-small); color: var(--sl-color-neutral-400); font-size: var(--sl-font-size-small);"
-                    >
-                      No tools${this.filterText ? ' matching filter' : ''}.
-                      ${group.type === 'mcp'
-                        ? html`<sl-button
-                            size="small"
-                            variant="text"
-                            @click=${() => this._handleScanMCPServer(group.id)}
-                            >Scan for tools</sl-button
-                          >`
-                        : ''}
-                    </div>`
-                  : repeat(
-                      group.tools,
-                      (tool) => this._getToolKey(tool),
-                      (tool) => html`
-                        <tool-list-item
-                          .tool=${tool}
-                          .accessRules=${tool.access_rules || []}
-                          .policies=${this.approvalPolicies}
-                          .features=${this.features}
-                          ?expanded=${this.expandedTools.has(
-                            this._getToolKey(tool)
-                          )}
-                          @toggle-expand=${this._handleToggleExpand}
-                          @toggle-enabled=${this._handleToggleEnabled}
-                          @save-rule=${this._handleSaveRule}
-                          @delete-rule=${this._handleDeleteRule}
-                          @policy-created=${this._handlePolicyCreated}
-                          @reorder-rules=${this._handleReorderRules}
-                          @tool-updated=${() => this.loadData()}
-                        ></tool-list-item>
-                      `
-                    )}
-              </div>
-            `
-          : ''}
-      </div>
-    `;
-  }
-
   render() {
-    const groups = this._getToolGroups();
     const removedStarterPolicyChanges =
       this._getStarterPolicyDiffChanges('remove');
 
@@ -2063,15 +1863,30 @@ ${this._formatStarterPolicyDiffValue(change.new_value)}</pre
             : html` ${this._renderTopSection()}
                 <div class="tool-groups">
                   ${this._renderFilterBar()}
-                  ${groups.length === 0
-                    ? html`<div class="empty-state">
-                        <sl-icon
-                          name="tools"
-                          style="font-size: 2rem; color: var(--sl-color-neutral-400);"
-                        ></sl-icon>
-                        <p>No tools found. Add an MCP server to get started.</p>
-                      </div>`
-                    : groups.map((group) => this._renderToolGroup(group))}
+                  <tools-editor-component
+                    .tools=${this._getFilteredTools()}
+                    .mcpServers=${this.mcpServers}
+                    .approvalPolicies=${this.approvalPolicies}
+                    .features=${this.features}
+                    .hasDefaultAIModel=${this.hasDefaultAIModel}
+                    mode="global"
+                    @toggle-enabled=${this._handleToggleEnabled}
+                    @save-rule=${this._handleSaveRule}
+                    @delete-rule=${this._handleDeleteRule}
+                    @policy-created=${this._handlePolicyCreated}
+                    @reorder-rules=${this._handleReorderRules}
+                    @tool-updated=${() => this.loadData()}
+                    @scan-server=${(e: CustomEvent) =>
+                      this._handleScanMCPServer(e.detail)}
+                    @suggest-starter-policy=${(e: CustomEvent) =>
+                      this._openStarterPolicySuggestion(e.detail, {
+                        manual: true,
+                      })}
+                    @edit-server=${(e: CustomEvent) =>
+                      (this.editingMCPServer = e.detail)}
+                    @delete-server=${(e: CustomEvent) =>
+                      this._handleDeleteMCPServer(e.detail)}
+                  ></tools-editor-component>
                 </div>`}
         </div>
         <div class="side-column"></div>

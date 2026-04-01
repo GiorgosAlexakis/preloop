@@ -244,6 +244,22 @@ class Settings(BaseSettings):
         "",
         description="Stripe webhook secret",
     )
+    billing_trial_days: int = Field(
+        14,
+        description="Default Stripe trial length in days for paid SaaS plans",
+    )
+    billing_trial_requires_payment_method: bool = Field(
+        True,
+        description="Whether Stripe Checkout must collect a payment method before starting a trial",
+    )
+    billing_trial_hosted_model_hard_cap_usd: float = Field(
+        2.0,
+        description="Maximum built-in hosted model spend allowed during trialing subscriptions",
+    )
+    billing_default_extra_credit_price_per_usd: float = Field(
+        1.0,
+        description="Customer-facing fallback price for each additional USD of hosted-model usage",
+    )
 
     # Notification webhooks for admin alerts
     slack_webhook_url: str = Field(
@@ -388,6 +404,17 @@ class Settings(BaseSettings):
             ),
             stripe_secret_key=stripe_secret_key,
             stripe_webhook_secret=stripe_webhook_secret,
+            billing_trial_days=int(os.getenv("BILLING_TRIAL_DAYS", "14")),
+            billing_trial_requires_payment_method=os.getenv(
+                "BILLING_TRIAL_REQUIRES_PAYMENT_METHOD", "true"
+            ).lower()
+            in ("true", "1", "t", "yes"),
+            billing_trial_hosted_model_hard_cap_usd=float(
+                os.getenv("BILLING_TRIAL_HOSTED_MODEL_HARD_CAP_USD", "2.0")
+            ),
+            billing_default_extra_credit_price_per_usd=float(
+                os.getenv("BILLING_DEFAULT_EXTRA_CREDIT_PRICE_PER_USD", "1.0")
+            ),
             installer_audit_account_id=os.getenv("INSTALLER_AUDIT_ACCOUNT_ID", ""),
         )
 

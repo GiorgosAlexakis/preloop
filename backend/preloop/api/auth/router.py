@@ -212,9 +212,12 @@ def _build_api_key_summary(session: Session, key: ApiKey) -> ApiKeySummary:
         .scalar()
         or 0
     )
-    candidate_times = [
-        value for value in (key.last_used_at, last_model_call, last_tool_call) if value
-    ]
+    candidate_times = []
+    for value in (key.last_used_at, last_model_call, last_tool_call):
+        if value:
+            candidate_times.append(
+                value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+            )
     last_activity_at = max(candidate_times) if candidate_times else None
     managed_agent_id = context_data.get("managed_agent_id")
     return ApiKeySummary(

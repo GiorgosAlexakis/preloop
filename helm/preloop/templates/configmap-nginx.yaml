@@ -124,7 +124,7 @@ data:
 
         # OpenAI-compatible model gateway endpoints
         location ^~ /openai/ {
-            proxy_pass http://{{ include "preloop.fullname" . }}-api:80;
+            proxy_pass http://{{ include "preloop.fullname" . }}-gateway:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -134,7 +134,7 @@ data:
 
         # Anthropic-compatible model gateway endpoints
         location ^~ /anthropic/ {
-            proxy_pass http://{{ include "preloop.fullname" . }}-api:80;
+            proxy_pass http://{{ include "preloop.fullname" . }}-gateway:80;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

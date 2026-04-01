@@ -1364,8 +1364,89 @@ paths:
       tags:
       - Account
       summary: Get Account Runtime Session Detail
-      description: Return one runtime session with captured interaction details.
+      description: Return one runtime session detail summary without heavy arrays.
       operationId: get_account_runtime_session_detail_api_v1_runtime_sessions__runtime_session_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRuntimeSessionDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Account
+      summary: Update Account Runtime Session
+      description: Update runtime-session lifecycle controls for the current account.
+      operationId: update_account_runtime_session_api_v1_runtime_sessions__runtime_session_id__patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSessionUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/interactions:
+    get:
+      tags:
+      - Account
+      summary: Get Account Session Interactions
+      description: Paginated search across captured interactions for this session.
+      operationId: get_account_session_interactions_api_v1_runtime_sessions__runtime_session_id__interactions_get
       security:
       - bearerAuth: []
       parameters:
@@ -1425,19 +1506,20 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AccountRuntimeSessionDetailResponse'
+                $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-    patch:
+  /api/v1/runtime-sessions/{runtime_session_id}/activity:
+    get:
       tags:
       - Account
-      summary: Update Account Runtime Session
-      description: Update runtime-session lifecycle controls for the current account.
-      operationId: update_account_runtime_session_api_v1_runtime_sessions__runtime_session_id__patch
+      summary: Get Account Session Activity Timeline
+      description: Activity timeline overview for this session.
+      operationId: get_account_session_activity_timeline_api_v1_runtime_sessions__runtime_session_id__activity_get
       security:
       - bearerAuth: []
       parameters:
@@ -1447,19 +1529,13 @@ paths:
         schema:
           type: string
           title: Runtime Session Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RuntimeSessionUpdateRequest'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimeSessionSummary'
+                $ref: '#/components/schemas/RuntimeSessionActivityListResponse'
         '422':
           description: Validation Error
           content:
@@ -1500,6 +1576,46 @@ paths:
                 additionalProperties: true
                 title: Response Get Account Runtime Session Gateway Events Api V1
                   Runtime Sessions  Runtime Session Id  Gateway Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/gateway-events/{activity_id}:
+    get:
+      tags:
+      - Account
+      summary: Get Account Runtime Session Gateway Event Detail
+      description: Return the raw, massive stored gateway event JSON detail for one
+        runtime session activity.
+      operationId: get_account_runtime_session_gateway_event_detail_api_v1_runtime_sessions__runtime_session_id__gateway_events__activity_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: activity_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Activity Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Account Runtime Session Gateway Event Detail Api
+                  V1 Runtime Sessions  Runtime Session Id  Gateway Events  Activity
+                  Id  Get
         '422':
           description: Validation Error
           content:
@@ -4816,68 +4932,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
-  /api/v1/version:
-    get:
-      tags:
-      - Version
-      summary: Get Version Info
-      description: 'Returns the server version information and logs the client version.
-
-
-        Accepts an optional `X-Client-Version` header from the client.
-
-        If an `Authorization: Bearer <token>` header is provided and valid,
-
-        the associated account ID will also be logged.'
-      operationId: get_version_info_api_v1_version_get
-      parameters:
-      - name: X-Client-Version
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Version
-      - name: X-Client-Organization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Organization
-      - name: X-Client-Project
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Project
-      - name: X-Additional-Info
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Additional-Info
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VersionInfo'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - bearerAuth: []
   /api/v1/private/webhooks/{tracker_type}/{organization_id}:
     post:
       tags:
@@ -6588,12 +6642,16 @@ components:
     AccountGatewayUsageSearchResponse:
       properties:
         period_start:
-          type: string
-          format: date-time
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
           title: Period Start
         period_end:
-          type: string
-          format: date-time
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
           title: Period End
         query:
           anyOf:
@@ -6618,9 +6676,6 @@ components:
           type: array
           title: Items
       type: object
-      required:
-      - period_start
-      - period_end
       title: AccountGatewayUsageSearchResponse
       description: Account-scoped gateway interaction search results.
     AccountGatewayUsageSummaryResponse:
@@ -6720,12 +6775,16 @@ components:
     AccountRuntimeSessionDetailResponse:
       properties:
         period_start:
-          type: string
-          format: date-time
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
           title: Period Start
         period_end:
-          type: string
-          format: date-time
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
           title: Period End
         session:
           $ref: '#/components/schemas/RuntimeSessionSummary'
@@ -6734,21 +6793,12 @@ components:
             $ref: '#/components/schemas/GatewayUsageByModel'
           type: array
           title: Usage By Model
-        interactions:
-          $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
-        activity_timeline:
-          items:
-            $ref: '#/components/schemas/RuntimeSessionActivityItem'
-          type: array
-          title: Activity Timeline
       type: object
       required:
-      - period_start
-      - period_end
       - session
-      - interactions
       title: AccountRuntimeSessionDetailResponse
-      description: One runtime session plus captured interaction timeline.
+      description: One runtime session detail summary. (Interactions and activity
+        moved to sub-endpoints).
     AccountRuntimeSessionListResponse:
       properties:
         period_start:
@@ -11451,6 +11501,16 @@ components:
       - title
       title: RuntimeSessionActivityItem
       description: One activity item in a runtime session timeline.
+    RuntimeSessionActivityListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RuntimeSessionActivityItem'
+          type: array
+          title: Items
+      type: object
+      title: RuntimeSessionActivityListResponse
+      description: List of activity items for a runtime session.
     RuntimeSessionSummary:
       properties:
         id:
@@ -11733,6 +11793,11 @@ components:
             type: array
           type: object
           title: Tool Rules
+        tool_enabled_overrides:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Tool Enabled Overrides
       type: object
       title: SubjectGovernanceConfig
     SubjectGovernanceResponse:
@@ -12502,29 +12567,6 @@ components:
       - msg
       - type
       title: ValidationError
-    VersionInfo:
-      properties:
-        server_version:
-          type: string
-          title: Server Version
-          description: Current version of the Preloop server.
-        min_client_version:
-          type: string
-          title: Min Client Version
-          description: Minimum required version for clients connecting to this Preloop
-            server.
-        max_client_version:
-          type: string
-          title: Max Client Version
-          description: Maximum recommended version for clients connecting to this
-            Preloop server.
-      type: object
-      required:
-      - server_version
-      - min_client_version
-      - max_client_version
-      title: VersionInfo
-      description: Schema for returning version information.
     WebhookConfig:
       properties:
         webhook_secret:

@@ -83,6 +83,7 @@ export interface FlowGatewayEventPayload {
 }
 
 export interface FlowGatewayEvent {
+  id: string;
   execution_id: string;
   timestamp: string | null;
   type: string;
@@ -365,6 +366,7 @@ export interface SubjectGovernanceConfig {
     }
   >;
   tool_rules: Record<string, Array<Record<string, unknown>>>;
+  tool_enabled_overrides?: Record<string, boolean>;
 }
 
 export interface SubjectGovernanceResponse {
@@ -392,6 +394,10 @@ export interface RuntimeSessionActivityItem {
   api_key_name: string | null;
   estimated_cost: number | null;
   total_tokens: number | null;
+}
+
+export interface RuntimeSessionActivityListResponse {
+  items: RuntimeSessionActivityItem[];
 }
 
 export interface AccountGatewayUsageSummaryResponse {

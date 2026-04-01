@@ -25,6 +25,8 @@ export class ToolListItem extends LitElement {
   @property({ type: Object }) features: { [key: string]: boolean | string[] } =
     {};
   @property({ type: Boolean }) expanded = false;
+  @property({ type: String }) mode: 'global' | 'scoped' = 'global';
+  @property({ type: Boolean }) rulesInherited = false;
 
   @state() private _showJustificationDialog = false;
   @state() private _justificationMode: string = 'disabled';
@@ -176,8 +178,19 @@ export class ToolListItem extends LitElement {
 
   private _handleToggleEnabled(e: Event) {
     e.stopPropagation();
+    const isEnabled = (e.target as HTMLInputElement).checked;
     this.dispatchEvent(
       new CustomEvent('toggle-enabled', {
+        detail: { toolName: this.tool.name, isEnabled },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private _revertToGlobal() {
+    this.dispatchEvent(
+      new CustomEvent('revert-tool', {
         detail: { tool: this.tool },
         bubbles: true,
         composed: true,
@@ -303,6 +316,32 @@ export class ToolListItem extends LitElement {
   private _renderExpandedContent() {
     return html`
       <div class="tool-content">
+        ${this.rulesInherited
+          ? html`
+              <sl-alert
+                variant="primary"
+                open
+                style="margin-bottom: var(--sl-spacing-medium);"
+              >
+                <sl-icon slot="icon" name="info-circle"></sl-icon>
+                <strong>Inherited Configuration</strong><br />
+                These rules are inherited from the global API Catalog. Saving
+                any changes or toggling this tool will create an override
+                specific to this agent.
+              </sl-alert>
+            `
+          : html`
+              <sl-button
+                variant="warning"
+                outline
+                size="small"
+                @click=${this._revertToGlobal}
+                style="margin-bottom: var(--sl-spacing-medium);"
+              >
+                <sl-icon slot="prefix" name="arrow-counterclockwise"></sl-icon>
+                Restore global settings
+              </sl-button>
+            `}
         ${this.tool.description
           ? html`<div
               style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-bottom: var(--sl-spacing-small);"
@@ -371,7 +410,16 @@ export class ToolListItem extends LitElement {
 
           <span class="tool-description">${this.tool.description}</span>
 
-          <div class="rule-summary">${this._renderRuleSummaryBadges()}</div>
+          <div class="rule-summary">
+            ${this.rulesInherited
+              ? html`<sl-badge
+                  variant="neutral"
+                  style="font-size: 0.7em; margin-right: 4px;"
+                  >Inherited</sl-badge
+                >`
+              : ''}
+            ${this._renderRuleSummaryBadges()}
+          </div>
 
           <div class="tool-toggle" @click=${(e: Event) => e.stopPropagation()}>
             <sl-switch

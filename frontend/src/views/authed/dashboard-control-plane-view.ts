@@ -370,6 +370,7 @@ export class DashboardView extends AuthedElement {
       .updated-at {
         color: var(--sl-color-neutral-500);
         font-size: var(--sl-font-size-small);
+        margin-top: -37px;
       }
 
       .summary-grid,
@@ -1849,6 +1850,7 @@ export class DashboardView extends AuthedElement {
 
     return html`
       <view-header headerText="Overview" width="extra-wide"></view-header>
+      <p></p>
       <div class="column-layout dashboard extra-wide">
         <div class="main-column">
           <div class="dashboard-stack">
@@ -1859,10 +1861,6 @@ export class DashboardView extends AuthedElement {
               Last updated ${this.formatRelativeTime(this.lastUpdatedAt)}
             </div>
             ${this.renderWelcomeCard()}
-            <mcp-setup-dialog
-              ?open=${this.showSetupDialog}
-              @close=${() => (this.showSetupDialog = false)}
-            ></mcp-setup-dialog>
 
             <div class="summary-grid">
               <sl-card class="summary-card">
@@ -1916,6 +1914,10 @@ export class DashboardView extends AuthedElement {
           ${this.renderApprovalAnalyticsCard()} ${this.renderActiveAgentsCard()}
           ${this.renderActiveSessionsCard()} ${this.renderKeyMetricsCard()}
         </div>
+        <mcp-setup-dialog
+          ?open=${this.showSetupDialog}
+          @close=${() => (this.showSetupDialog = false)}
+        ></mcp-setup-dialog>
       </div>
     `;
   }

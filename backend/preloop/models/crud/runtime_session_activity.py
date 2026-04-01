@@ -158,6 +158,7 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
                 self.model.runtime_session_id == runtime_session_id,
             )
             .order_by(self.model.timestamp.desc())
+            .limit(limit)
             .offset(offset)
             .all()
         )
@@ -169,24 +170,49 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
         account_id: Any,
         runtime_session_id: Any,
         tail: Optional[int] = None,
-    ) -> list[RuntimeSessionActivity]:
+    ) -> list[Any]:
         """Return model gateway call activities for one flow execution."""
         query = (
-            db.query(self.model)
+            db.query(
+                self.model.id,
+                self.model.timestamp,
+                self.model.activity_type,
+                self.model.metadata_.op("-")("request")
+                .op("-")("response")
+                .op("-")("messages")
+                .op("-")("conversation_preview")
+                .label("metadata_"),
+            )
             .filter(
                 self.model.account_id == account_id,
                 self.model.runtime_session_id == runtime_session_id,
                 self.model.activity_type == "model_gateway_call",
             )
-            .order_by(
-                self.model.timestamp.desc() if tail else self.model.timestamp.asc()
-            )
+            .order_by(self.model.timestamp.desc())
         )
-        if tail:
-            query = query.limit(tail)
-            rows = query.all()
-            return list(reversed(rows))
-        return query.all()
+        limit = min(tail, 200) if tail else 50
+        query = query.limit(limit)
+        rows = query.all()
+        return list(reversed(rows))
+
+    def get_model_gateway_call_for_session(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        activity_id: Any,
+    ) -> Optional[RuntimeSessionActivity]:
+        """Return a single model gateway call activity by id."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.id == activity_id,
+                self.model.account_id == account_id,
+                self.model.runtime_session_id == runtime_session_id,
+            )
+            .first()
+        )
 
     def get_server_summary_for_principal(
         self,

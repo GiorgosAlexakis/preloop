@@ -17,6 +17,7 @@ import type {
   DependencyPair,
   DependencyResponse,
   FlowGatewayEventsResponse,
+  FlowGatewayEvent,
   AccountManagedAgentListResponse,
   ManagedAgentDetailResponse,
   ManagedAgentSummary,
@@ -28,6 +29,7 @@ import type {
   AccountRuntimeSessionListResponse,
   RuntimeSessionSummary,
   RuntimeSessionUpdateRequest,
+  RuntimeSessionActivityListResponse,
   AccountGatewayUsageSummaryResponse,
   FlowGatewayUsageSummaryResponse,
   AIModelGatewayUsageSummaryResponse,
@@ -39,6 +41,17 @@ import type {
 
 // Global refresh promise to prevent concurrent refresh requests
 let refreshPromise: Promise<string | null> | null = null;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    // Notify the app when the accessToken is changed by another tab
+    if (event.key === 'accessToken') {
+      window.dispatchEvent(
+        new CustomEvent('auth-change', { bubbles: true, composed: true })
+      );
+    }
+  });
+}
 
 export function extractErrorMessage(
   errorData: any,
@@ -87,12 +100,27 @@ async function refreshToken(): Promise<string | null> {
       const data = await response.json();
       localStorage.setItem('accessToken', data.access_token);
       localStorage.setItem('refreshToken', data.refresh_token);
+
+      if (typeof window !== 'undefined') {
+        // Dispatch to current window
+        window.dispatchEvent(
+          new CustomEvent('auth-change', { bubbles: true, composed: true })
+        );
+      }
+
       return data.access_token;
     } catch (error) {
       console.error('Error refreshing token:', error);
       // Clear tokens and redirect to login
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('auth-change', { bubbles: true, composed: true })
+        );
+      }
+
       Router.go('/login');
       return null;
     } finally {
@@ -125,6 +153,16 @@ export async function fetchWithAuth(
 
   if (response.status === 401) {
     console.log('Access token expired, attempting to refresh...');
+
+    // If another tab or process already refreshed the token, use the new one directly
+    const currentToken = localStorage.getItem('accessToken');
+    if (currentToken && currentToken !== accessToken) {
+      console.log('Token was already refreshed, retrying request');
+      headers.set('Authorization', `Bearer ${currentToken}`);
+      options.headers = headers;
+      return fetch(url, options);
+    }
+
     const newAccessToken = await refreshToken();
     if (newAccessToken) {
       headers.set('Authorization', `Bearer ${newAccessToken}`);
@@ -206,7 +244,9 @@ export interface RuntimeSessionListParams extends GatewayUsageSummaryParams {
   offset?: number;
 }
 
-export interface RuntimeSessionDetailParams extends GatewayUsageSummaryParams {
+export interface RuntimeSessionDetailParams {}
+
+export interface RuntimeSessionInteractionsParams {
   interactionQuery?: string;
   interactionLimit?: number;
   interactionOffset?: number;
@@ -456,16 +496,23 @@ export async function updateAgentGovernance(
 
 export async function getAccountRuntimeSessionDetail(
   runtimeSessionId: string,
-  params: RuntimeSessionDetailParams = {}
+  _params: RuntimeSessionDetailParams = {}
 ): Promise<AccountRuntimeSessionDetailResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch session detail');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessionInteractions(
+  runtimeSessionId: string,
+  params: RuntimeSessionInteractionsParams = {}
+): Promise<AccountGatewayUsageSearchResponse> {
   const queryParams = new URLSearchParams();
 
-  if (params.startDate) {
-    queryParams.set('start_date', params.startDate);
-  }
-  if (params.endDate) {
-    queryParams.set('end_date', params.endDate);
-  }
   if (params.interactionQuery) {
     queryParams.set('interaction_query', params.interactionQuery);
   }
@@ -478,10 +525,22 @@ export async function getAccountRuntimeSessionDetail(
 
   const queryString = queryParams.toString();
   const response = await fetchWithAuth(
-    `/api/v1/runtime-sessions/${runtimeSessionId}${queryString ? `?${queryString}` : ''}`
+    `/api/v1/runtime-sessions/${runtimeSessionId}/interactions${queryString ? `?${queryString}` : ''}`
   );
   if (!response.ok) {
-    throw new Error('Failed to fetch session detail');
+    throw new Error('Failed to fetch session interactions');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessionActivityTimeline(
+  runtimeSessionId: string
+): Promise<RuntimeSessionActivityListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}/activity`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch session activity timeline');
   }
   return response.json();
 }
@@ -514,6 +573,19 @@ export async function getRuntimeSessionGatewayEvents(
   );
   if (!response.ok) {
     throw new Error('Failed to fetch runtime session gateway events');
+  }
+  return response.json();
+}
+
+export async function getRuntimeSessionGatewayEventDetail(
+  sessionId: string,
+  eventId: string
+): Promise<FlowGatewayEvent> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${sessionId}/gateway-events/${eventId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch runtime session gateway event detail');
   }
   return response.json();
 }

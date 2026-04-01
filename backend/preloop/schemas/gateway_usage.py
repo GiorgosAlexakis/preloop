@@ -119,8 +119,8 @@ class GatewayUsageSearchResultItem(BaseModel):
 class AccountGatewayUsageSearchResponse(BaseModel):
     """Account-scoped gateway interaction search results."""
 
-    period_start: datetime
-    period_end: datetime
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
     query: Optional[str] = None
     total: int = 0
     limit: int = 20
@@ -397,15 +397,19 @@ class RuntimeSessionActivityItem(BaseModel):
     total_tokens: Optional[int] = None
 
 
-class AccountRuntimeSessionDetailResponse(BaseModel):
-    """One runtime session plus captured interaction timeline."""
+class RuntimeSessionActivityListResponse(BaseModel):
+    """List of activity items for a runtime session."""
 
-    period_start: datetime
-    period_end: datetime
+    items: List[RuntimeSessionActivityItem] = Field(default_factory=list)
+
+
+class AccountRuntimeSessionDetailResponse(BaseModel):
+    """One runtime session detail summary. (Interactions and activity moved to sub-endpoints)."""
+
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
     session: RuntimeSessionSummary
     usage_by_model: List[GatewayUsageByModel] = Field(default_factory=list)
-    interactions: AccountGatewayUsageSearchResponse
-    activity_timeline: List[RuntimeSessionActivityItem] = Field(default_factory=list)
 
 
 class AccountGatewayUsageSummaryResponse(BaseModel):

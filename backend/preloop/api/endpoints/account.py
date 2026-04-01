@@ -45,6 +45,7 @@ from preloop.schemas.gateway_usage import (
     ManagedAgentToolActivitySummary,
     ManagedAgentUpdateRequest,
     ManagedAgentUsageAggregate,
+    RuntimeSessionActivityListResponse,
     RuntimeSessionSummary,
     RuntimeSessionUpdateRequest,
     DashboardTelemetryResponse,
@@ -1137,14 +1138,34 @@ async def get_account_runtime_session_detail(
     runtime_session_id: str,
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+):
+    """Return one runtime session detail summary without heavy arrays."""
+    return RuntimeSessionExplorerService(db).get_account_session_detail(
+        account=account,
+        runtime_session_id=runtime_session_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@router.get(
+    "/runtime-sessions/{runtime_session_id}/interactions",
+    response_model=AccountGatewayUsageSearchResponse,
+)
+async def get_account_session_interactions(
+    runtime_session_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
     interaction_query: Optional[str] = Query(None, min_length=1),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     interaction_limit: int = Query(50, ge=1, le=200),
     interaction_offset: int = Query(0, ge=0),
 ):
-    """Return one runtime session with captured interaction details."""
-    return RuntimeSessionExplorerService(db).get_account_session_detail(
+    """Paginated search across captured interactions for this session."""
+    return RuntimeSessionExplorerService(db).get_account_session_interactions(
         account=account,
         runtime_session_id=runtime_session_id,
         interaction_query=interaction_query,
@@ -1152,6 +1173,22 @@ async def get_account_runtime_session_detail(
         end_date=end_date,
         interaction_limit=interaction_limit,
         interaction_offset=interaction_offset,
+    )
+
+
+@router.get(
+    "/runtime-sessions/{runtime_session_id}/activity",
+    response_model=RuntimeSessionActivityListResponse,
+)
+async def get_account_session_activity_timeline(
+    runtime_session_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Activity timeline overview for this session."""
+    return RuntimeSessionExplorerService(db).get_account_session_activity_timeline(
+        account=account,
+        runtime_session_id=runtime_session_id,
     )
 
 
@@ -1194,6 +1231,49 @@ async def get_account_runtime_session_gateway_events(
         for row in rows
     ]
     return {"source": "database", "logs": events}
+
+
+@router.get(
+    "/runtime-sessions/{runtime_session_id}/gateway-events/{activity_id}",
+)
+async def get_account_runtime_session_gateway_event_detail(
+    runtime_session_id: str,
+    activity_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Return the raw, massive stored gateway event JSON detail for one runtime session activity."""
+    session = crud_runtime_session.get_account_session(
+        db, account_id=str(account.id), runtime_session_id=runtime_session_id
+    )
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Runtime session not found"
+        )
+
+    from preloop.models.crud.runtime_session_activity import (
+        crud_runtime_session_activity,
+    )
+
+    activity = crud_runtime_session_activity.get_model_gateway_call_for_session(
+        db,
+        account_id=account.id,
+        runtime_session_id=runtime_session_id,
+        activity_id=activity_id,
+    )
+
+    if activity is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Runtime session activity not found",
+        )
+
+    return {
+        "id": str(activity.id),
+        "timestamp": activity.timestamp.isoformat() if activity.timestamp else None,
+        "type": activity.activity_type,
+        "payload": activity.metadata_,
+    }
 
 
 @router.patch(

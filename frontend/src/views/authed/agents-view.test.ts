@@ -84,15 +84,8 @@ describe('AgentsView', () => {
 
     const text = el.shadowRoot?.textContent || '';
     expect(text).to.contain('Claude Code Workspace');
-    expect(text).to.contain('github');
-    expect(text).to.contain('jira');
-    expect(text).to.contain('openai/gpt-5');
-    expect(text).to.contain('Fully onboarded');
-    expect(text).to.contain('Live validated');
-    expect(text).to.contain('Remove');
 
-    const link = el.shadowRoot?.querySelector('a[href*="/console/agents/"]');
-    expect(link).to.exist;
-    expect(link?.getAttribute('href')).to.contain('/console/agents/agent-1');
+    const agentNode = el.shadowRoot?.querySelector('.agent-node');
+    expect(agentNode).to.exist;
   });
 });

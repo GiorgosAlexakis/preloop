@@ -1,6 +1,5 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import tailwindStyles from '../../styles/tailwind.css?inline';
 import '../../components/view-header.ts';
 
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -13,7 +12,6 @@ export class OnboardingView extends LitElement {
   @state()
   private activeTab: 'cli' | 'plugin' | 'gateway' = 'cli';
   static styles = [
-    unsafeCSS(tailwindStyles),
     css`
       :host {
         display: block;

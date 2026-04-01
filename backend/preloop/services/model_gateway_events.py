@@ -129,6 +129,13 @@ class ModelGatewayEventEmitter:
                 loop = None
             if loop is not None:
                 loop.create_task(self._publish_to_nats(event))
+            else:
+                from preloop.tools.utils import run_async
+
+                try:
+                    run_async(self._publish_to_nats(event))
+                except Exception:
+                    pass
 
         if usage.account_id:
             emit_account_event(
@@ -294,8 +301,8 @@ class ModelGatewayEventEmitter:
             sanitized = {}
             for key, item in value.items():
                 lowered = key.lower()
-                if any(
-                    token in lowered for token in ("api_key", "authorization", "token")
+                if any(word in lowered for word in ("api_key", "authorization")) or (
+                    "token" in lowered and "tokens" not in lowered
                 ):
                     sanitized[key] = "***REDACTED***"
                     continue
@@ -307,7 +314,15 @@ class ModelGatewayEventEmitter:
                     "text",
                     "system",
                 }:
-                    sanitized[key] = self._sanitize_text(item)
+                    if isinstance(item, list):
+                        sanitized[key] = [self._sanitize_payload(i) for i in item]
+                        continue
+                    if not settings.model_gateway_capture_content:
+                        sanitized[key] = "***REDACTED***"
+                        continue
+                    # Retain full payload raw length, only do regex sensitive redaction
+                    redacted_text, _ = self._redact_sensitive_text(str(item))
+                    sanitized[key] = redacted_text
                     continue
                 sanitized[key] = self._sanitize_payload(item)
             return sanitized
@@ -318,6 +333,7 @@ class ModelGatewayEventEmitter:
         return value
 
     def _sanitize_text(self, value: Any) -> Any:
+        # Note: This is now only used in fallback scenarios.
         if isinstance(value, list):
             return [self._sanitize_payload(item) for item in value]
         text = str(value)

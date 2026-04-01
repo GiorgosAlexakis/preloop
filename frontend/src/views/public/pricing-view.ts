@@ -52,7 +52,7 @@ export class PublicPricingView extends LitElement {
         'Team-based approvals (quorum)',
         'Approval escalation',
         'Audit logging',
-        '30-day free trial',
+        '14-day trial (card required)',
         'Email support',
       ],
     },

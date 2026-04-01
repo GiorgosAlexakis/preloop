@@ -349,7 +349,9 @@ export class AIModelDetailView extends LitElement {
     this.connectRealtime();
 
     if (!this.initialized) {
-      this.applyPresetDates(this.selectedRange);
+      if (this.selectedRange !== 'custom') {
+        this.applyPresetDates(this.selectedRange);
+      }
       this.initialized = true;
       if (this.modelId) {
         void this.loadData();
@@ -1076,7 +1078,7 @@ export class AIModelDetailView extends LitElement {
           </sl-button>
         </div>
       </view-header>
-      <div class="column-layout dashboard extra-wide">
+      <div class="dashboard extra-wide">
         <div class="main-column">
           <div class="page">
             <sl-card>

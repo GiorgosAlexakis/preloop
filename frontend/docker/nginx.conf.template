@@ -62,9 +62,9 @@ server {
 
     # OpenAI-compatible model gateway endpoints
     location ^~ /openai/ {
-        set $api_backend "${API_URL}";
+        set $gateway_backend "${GATEWAY_URL}";
 
-        proxy_pass $api_backend;
+        proxy_pass $gateway_backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -74,9 +74,9 @@ server {
 
     # Anthropic-compatible model gateway endpoints
     location ^~ /anthropic/ {
-        set $api_backend "${API_URL}";
+        set $gateway_backend "${GATEWAY_URL}";
 
-        proxy_pass $api_backend;
+        proxy_pass $gateway_backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

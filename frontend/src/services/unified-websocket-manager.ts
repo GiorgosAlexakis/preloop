@@ -240,11 +240,10 @@ export class UnifiedWebSocketManager {
         return;
       }
 
-      // Handle authentication error
       if (message.type === 'auth_error') {
         console.warn(`Authentication failed: ${message.error}`);
-        // Token might be expired, clear it
-        localStorage.removeItem('accessToken');
+        // Do not clear the token here - let HTTP requests handle token refresh.
+        // Once refreshed, they will dispatch 'auth-change' which this WS listens to.
         return;
       }
 

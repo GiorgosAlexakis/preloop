@@ -22,6 +22,7 @@ from preloop.schemas.gateway_usage import (
     AccountRuntimeSessionListResponse,
     GatewayTokenUsage,
     RuntimeSessionActivityItem,
+    RuntimeSessionActivityListResponse,
     RuntimeSessionSummary,
 )
 from preloop.services.model_gateway_usage import ModelGatewayUsageService
@@ -76,13 +77,9 @@ class RuntimeSessionExplorerService:
         *,
         account: Account,
         runtime_session_id: str,
-        interaction_query: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        interaction_limit: int = 50,
-        interaction_offset: int = 0,
     ) -> AccountRuntimeSessionDetailResponse:
-        start_date, end_date = self._normalize_period(start_date, end_date)
         summary_row = crud_runtime_session.get_account_session_summary(
             self.db,
             account_id=str(account.id),
@@ -103,6 +100,39 @@ class RuntimeSessionExplorerService:
             end_date=end_date,
             limit=20,
         )
+
+        return AccountRuntimeSessionDetailResponse(
+            period_start=start_date,
+            period_end=end_date,
+            session=self._summary_row_to_schema(summary_row),
+            usage_by_model=[
+                ModelGatewayUsageService._model_row_to_schema(row)
+                for row in usage_by_model
+            ],
+        )
+
+    def get_account_session_interactions(
+        self,
+        *,
+        account: Account,
+        runtime_session_id: str,
+        interaction_query: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        interaction_limit: int = 50,
+        interaction_offset: int = 0,
+    ) -> AccountGatewayUsageSearchResponse:
+        summary_row = crud_runtime_session.get_account_session_summary(
+            self.db,
+            account_id=str(account.id),
+            runtime_session_id=runtime_session_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if summary_row is None:
+            raise HTTPException(status_code=404, detail="Runtime session not found")
+
+        flow_execution_id = summary_row.get("flow_execution_id")
         interactions = crud_gateway_usage_search_document.search_account_documents(
             self.db,
             account_id=str(account.id),
@@ -119,28 +149,55 @@ class RuntimeSessionExplorerService:
             for item in interactions["items"]
         ]
 
-        return AccountRuntimeSessionDetailResponse(
+        return AccountGatewayUsageSearchResponse(
             period_start=start_date,
             period_end=end_date,
-            session=self._summary_row_to_schema(summary_row),
-            usage_by_model=[
-                ModelGatewayUsageService._model_row_to_schema(row)
-                for row in usage_by_model
-            ],
-            interactions=AccountGatewayUsageSearchResponse(
-                period_start=start_date,
-                period_end=end_date,
-                query=interaction_query,
-                total=interactions["total"],
-                limit=interaction_limit,
-                offset=interaction_offset,
-                items=interaction_items,
-            ),
-            activity_timeline=self._build_activity_timeline(
-                summary_row=summary_row,
-                interactions=interaction_items,
-            ),
+            query=interaction_query,
+            total=interactions["total"],
+            limit=interaction_limit,
+            offset=interaction_offset,
+            items=interaction_items,
         )
+
+    def get_account_session_activity_timeline(
+        self,
+        *,
+        account: Account,
+        runtime_session_id: str,
+    ) -> RuntimeSessionActivityListResponse:
+        summary_row = crud_runtime_session.get_account_session_summary(
+            self.db,
+            account_id=str(account.id),
+            runtime_session_id=runtime_session_id,
+        )
+        if summary_row is None:
+            raise HTTPException(status_code=404, detail="Runtime session not found")
+
+        # The timeline builder also expects interactions in the current structure
+        # In a highly optimized world, we might fetch just the metadata rather than
+        # the full SearchDocument. For now, limit the interactions we merge into timeline.
+        start_date, end_date = self._normalize_period(None, None)
+        flow_execution_id = summary_row.get("flow_execution_id")
+        interactions = crud_gateway_usage_search_document.search_account_documents(
+            self.db,
+            account_id=str(account.id),
+            start_date=start_date,
+            end_date=end_date,
+            runtime_session_id=runtime_session_id,
+            flow_execution_id=flow_execution_id,
+            limit=100,
+            offset=0,
+        )
+        interaction_items = [
+            ModelGatewayUsageService._search_row_to_schema(item)
+            for item in interactions["items"]
+        ]
+
+        items = self._build_activity_timeline(
+            summary_row=summary_row,
+            interactions=interaction_items,
+        )
+        return RuntimeSessionActivityListResponse(items=items)
 
     @staticmethod
     def _normalize_period(

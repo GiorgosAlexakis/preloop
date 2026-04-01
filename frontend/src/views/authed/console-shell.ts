@@ -145,6 +145,14 @@ export class ConsoleShell extends LitElement {
       .main-content {
         overflow-y: auto;
         padding: 1rem 2rem 2rem 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .main-content > ::slotted(*) {
+        width: 100%;
+        max-width: 80rem;
       }
 
       @media (max-width: 768px) {

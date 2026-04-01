@@ -63,6 +63,12 @@ def emit_account_event(event: dict[str, Any]) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
+        from preloop.tools.utils import run_async
+
+        try:
+            run_async(_publish_account_event(event))
+        except Exception:
+            logger.exception("Failed to publish account realtime event synchronously")
         return
     loop.create_task(_publish_account_event(event))
 

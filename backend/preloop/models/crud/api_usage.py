@@ -318,8 +318,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         db: Session,
         *,
         account_id: str,
-        start_date: datetime,
-        end_date: datetime,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
         flow_execution_id: Optional[str] = None,
@@ -342,9 +342,11 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         ).filter(
             ApiUsage.action_type == "model_gateway",
             ApiUsage.account_id == account_id,
-            ApiUsage.timestamp >= start_date,
-            ApiUsage.timestamp < end_date,
         )
+        if start_date:
+            query = query.filter(ApiUsage.timestamp >= start_date)
+        if end_date:
+            query = query.filter(ApiUsage.timestamp < end_date)
         if flow_id:
             query = query.filter(ApiUsage.flow_id == flow_id)
         if runtime_session_id:
@@ -379,14 +381,14 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         db: Session,
         *,
         account_id: str,
-        start_date: datetime,
-        end_date: datetime,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by flow."""
         from ..models.flow import Flow
 
-        rows = (
+        base_query = (
             db.query(
                 ApiUsage.flow_id,
                 Flow.name.label("flow_name"),
@@ -406,10 +408,15 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             .filter(
                 ApiUsage.action_type == "model_gateway",
                 ApiUsage.account_id == account_id,
-                ApiUsage.timestamp >= start_date,
-                ApiUsage.timestamp < end_date,
             )
-            .group_by(ApiUsage.flow_id, Flow.name)
+        )
+        if start_date:
+            base_query = base_query.filter(ApiUsage.timestamp >= start_date)
+        if end_date:
+            base_query = base_query.filter(ApiUsage.timestamp < end_date)
+
+        rows = (
+            base_query.group_by(ApiUsage.flow_id, Flow.name)
             .order_by(func.count(ApiUsage.id).desc())
             .limit(limit)
             .all()

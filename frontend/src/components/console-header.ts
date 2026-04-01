@@ -10,7 +10,7 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import './theme-switcher.ts';
-import * as api from '../api.ts';
+import * as api from '../api';
 import { Router } from '@vaadin/router';
 import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
 
@@ -971,6 +971,9 @@ export class ConsoleHeader extends LitElement {
           <slot name="nav-toggle"></slot>
         </div>
         <div class="user-menu">
+          <div class="theme-switcher-container">
+            <theme-switcher></theme-switcher>
+          </div>
           <!-- Notification Center -->
           <sl-dropdown distance="8" placement="bottom-end">
             <div

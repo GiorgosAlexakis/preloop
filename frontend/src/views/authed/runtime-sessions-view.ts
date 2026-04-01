@@ -12,16 +12,21 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/view-header.ts';
+import '../../components/json-tree.ts';
 import {
   getAccountRuntimeSessionDetail,
   getAccountRuntimeSessions,
   getFlowExecutionGatewayEvents,
   getRuntimeSessionGatewayEvents,
+  getAccountRuntimeSessionActivityTimeline,
+  getAccountRuntimeSessionInteractions,
   updateAccountRuntimeSession,
   type RuntimeSessionDetailParams,
+  type RuntimeSessionInteractionsParams,
   type RuntimeSessionListParams,
 } from '../../api';
 import type {
+  AccountGatewayUsageSearchResponse,
   AccountRuntimeSessionDetailResponse,
   FlowGatewayConversationPreviewMessage,
   FlowGatewayEvent,
@@ -56,6 +61,18 @@ export class RuntimeSessionsView extends LitElement {
 
   @state()
   private selectedSessionId: string | null = null;
+
+  @state()
+  private interactions: AccountGatewayUsageSearchResponse | null = null;
+
+  @state()
+  private activityTimeline: RuntimeSessionActivityItem[] | null = null;
+
+  @state()
+  private interactionsLoading = false;
+
+  @state()
+  private activityTimelineLoading = false;
 
   @state()
   private selectedRange: DateRangePreset = 'last-30';
@@ -488,7 +505,7 @@ export class RuntimeSessionsView extends LitElement {
     }
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = null;
-      void this.loadSessions();
+      void this.loadSessions(true);
     }, 250);
   }
 
@@ -537,16 +554,14 @@ export class RuntimeSessionsView extends LitElement {
   }
 
   private buildDetailParams(): RuntimeSessionDetailParams {
-    const params: RuntimeSessionDetailParams = {
+    return {};
+  }
+
+  private buildInteractionsParams(): RuntimeSessionInteractionsParams {
+    const params: RuntimeSessionInteractionsParams = {
       interactionLimit: 50,
     };
 
-    if (this.startDate) {
-      params.startDate = new Date(`${this.startDate}T00:00:00`).toISOString();
-    }
-    if (this.endDate) {
-      params.endDate = new Date(`${this.endDate}T23:59:59.999`).toISOString();
-    }
     if (this.interactionQuery.trim()) {
       params.interactionQuery = this.interactionQuery.trim();
     }
@@ -554,9 +569,11 @@ export class RuntimeSessionsView extends LitElement {
     return params;
   }
 
-  private async loadSessions() {
-    this.loading = true;
-    this.error = null;
+  private async loadSessions(isSoftRefresh = false) {
+    if (!isSoftRefresh) {
+      this.loading = true;
+      this.error = null;
+    }
 
     try {
       this.sessions = await getAccountRuntimeSessions(this.buildListParams());
@@ -567,58 +584,106 @@ export class RuntimeSessionsView extends LitElement {
         this.selectedSessionId = this.sessions.items[0]?.id ?? null;
         this.syncUrl();
       }
-      await this.loadDetail();
+      await this.loadDetail(isSoftRefresh);
     } catch (error) {
       console.error('Failed to load sessions:', error);
-      this.error =
-        error instanceof Error ? error.message : 'Failed to load sessions';
-      this.sessions = null;
-      this.detail = null;
+      if (!isSoftRefresh) {
+        this.error =
+          error instanceof Error ? error.message : 'Failed to load sessions';
+        this.sessions = null;
+        this.detail = null;
+      }
     } finally {
-      this.loading = false;
+      if (!isSoftRefresh) {
+        this.loading = false;
+      }
     }
   }
 
-  private async loadDetail() {
+  private async loadDetail(isSoftRefresh = false) {
     if (!this.selectedSessionId) {
       this.detail = null;
+      this.interactions = null;
+      this.activityTimeline = null;
       this.gatewayEvents = [];
       this.gatewayEventsError = null;
       return;
     }
 
-    this.detailLoading = true;
+    if (!isSoftRefresh) {
+      this.detailLoading = true;
+    }
     try {
       this.detail = await getAccountRuntimeSessionDetail(
         this.selectedSessionId,
         this.buildDetailParams()
       );
-      await this.loadGatewayEvents(this.detail.session.flow_execution_id);
+      this.loadInteractions(isSoftRefresh);
+      this.loadActivityTimeline(isSoftRefresh);
+      await this.loadGatewayEvents(
+        this.detail.session.flow_execution_id,
+        isSoftRefresh
+      );
     } catch (error) {
       console.error('Failed to load session detail:', error);
-      this.error =
-        error instanceof Error
-          ? error.message
-          : 'Failed to load session detail';
-      this.detail = null;
-      this.gatewayEvents = [];
-      this.gatewayEventsError = null;
+      if (!isSoftRefresh) {
+        this.error =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load session detail';
+        this.detail = null;
+        this.gatewayEvents = [];
+        this.gatewayEventsError = null;
+      }
     } finally {
-      this.detailLoading = false;
+      if (!isSoftRefresh) {
+        this.detailLoading = false;
+      }
+    }
+  }
+
+  private async loadInteractions(isSoftRefresh = false) {
+    if (!this.selectedSessionId) return;
+    if (!isSoftRefresh) this.interactionsLoading = true;
+    try {
+      this.interactions = await getAccountRuntimeSessionInteractions(
+        this.selectedSessionId,
+        this.buildInteractionsParams()
+      );
+    } catch (error) {
+      console.error('Failed to load interactions:', error);
+    } finally {
+      if (!isSoftRefresh) this.interactionsLoading = false;
+    }
+  }
+
+  private async loadActivityTimeline(isSoftRefresh = false) {
+    if (!this.selectedSessionId) return;
+    if (!isSoftRefresh) this.activityTimelineLoading = true;
+    try {
+      const resp = await getAccountRuntimeSessionActivityTimeline(
+        this.selectedSessionId
+      );
+      this.activityTimeline = resp.items;
+    } catch (error) {
+      console.error('Failed to load activity timeline:', error);
+    } finally {
+      if (!isSoftRefresh) this.activityTimelineLoading = false;
     }
   }
 
   private async loadGatewayEvents(
-    flowExecutionId: string | null | undefined
+    flowExecutionId: string | null | undefined,
+    isSoftRefresh = false
   ): Promise<void> {
     if (!flowExecutionId && !this.selectedSessionId) {
       this.gatewayEvents = [];
       this.gatewayEventsError = null;
-      this.gatewayEventsLoading = false;
+      if (!isSoftRefresh) this.gatewayEventsLoading = false;
       return;
     }
 
-    this.gatewayEventsLoading = true;
+    if (!isSoftRefresh) this.gatewayEventsLoading = true;
     this.gatewayEventsError = null;
     try {
       let result;
@@ -632,13 +697,15 @@ export class RuntimeSessionsView extends LitElement {
       );
     } catch (error) {
       console.error('Failed to load gateway events:', error);
-      this.gatewayEvents = [];
-      this.gatewayEventsError =
-        error instanceof Error
-          ? error.message
-          : 'Failed to load gateway events';
+      if (!isSoftRefresh) {
+        this.gatewayEvents = [];
+        this.gatewayEventsError =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load gateway events';
+      }
     } finally {
-      this.gatewayEventsLoading = false;
+      if (!isSoftRefresh) this.gatewayEventsLoading = false;
     }
   }
 
@@ -724,8 +791,9 @@ export class RuntimeSessionsView extends LitElement {
     await this.loadSessions();
   }
 
-  private async applyInteractionSearch() {
-    await this.loadDetail();
+  private applyInteractionSearch() {
+    this.interactions = null;
+    this.loadInteractions();
   }
 
   private getGatewaySearchText(event: FlowGatewayEvent): string {
@@ -999,9 +1067,22 @@ export class RuntimeSessionsView extends LitElement {
     `;
   }
 
-  private renderInteractions(items: GatewayUsageSearchResultItem[]) {
+  private renderInteractions(
+    items: GatewayUsageSearchResultItem[] | undefined,
+    loading: boolean
+  ) {
+    if (loading) {
+      return html`
+        <div class="empty-state">
+          <sl-spinner
+            style="font-size: 2rem; margin-bottom: 1rem;"
+          ></sl-spinner>
+          <div class="empty-state-subtitle">Loading interactions...</div>
+        </div>
+      `;
+    }
     const query = this.interactionQuery.trim();
-    if (items.length === 0) {
+    if (!items || items.length === 0) {
       return html`
         <div class="empty-state">
           <sl-icon name="search"></sl-icon>
@@ -1057,8 +1138,21 @@ export class RuntimeSessionsView extends LitElement {
     `;
   }
 
-  private renderActivityTimeline(items: RuntimeSessionActivityItem[]) {
-    if (items.length === 0) {
+  private renderActivityTimeline(
+    items: RuntimeSessionActivityItem[] | null,
+    loading: boolean
+  ) {
+    if (loading) {
+      return html`
+        <div class="empty-state">
+          <sl-spinner
+            style="font-size: 2rem; margin-bottom: 1rem;"
+          ></sl-spinner>
+          <div class="empty-state-subtitle">Loading activity timeline...</div>
+        </div>
+      `;
+    }
+    if (!items || items.length === 0) {
       return html`
         <div class="empty-state">
           <sl-icon name="clock-history"></sl-icon>
@@ -1349,7 +1443,7 @@ export class RuntimeSessionsView extends LitElement {
         ${this.renderGatewayConversationPreview(payload)}
         <div class="payload-section-title">Event Payload</div>
         <div class="payload-block">
-          <pre>${this.formatGatewayPayload(payload)}</pre>
+          <json-tree .data=${payload}></json-tree>
         </div>
       </sl-details>
     `;
@@ -1548,7 +1642,10 @@ export class RuntimeSessionsView extends LitElement {
 
         <sl-card>
           <div slot="header" class="session-item-title">Activity Timeline</div>
-          ${this.renderActivityTimeline(this.detail.activity_timeline)}
+          ${this.renderActivityTimeline(
+            this.activityTimeline,
+            this.activityTimelineLoading
+          )}
         </sl-card>
 
         <sl-card>
@@ -1567,7 +1664,10 @@ export class RuntimeSessionsView extends LitElement {
               Search
             </sl-button>
           </div>
-          ${this.renderInteractions(this.detail.interactions.items)}
+          ${this.renderInteractions(
+            this.interactions?.items,
+            this.interactionsLoading
+          )}
         </sl-card>
 
         ${this.renderGatewayEventsPanel()}
@@ -1578,7 +1678,7 @@ export class RuntimeSessionsView extends LitElement {
   render() {
     return html`
       <view-header headerText="Sessions" width="extra-wide"></view-header>
-      <div class="column-layout dashboard extra-wide">
+      <div class="dashboard extra-wide">
         <div class="main-column">
           <div class="page">
             <sl-card>

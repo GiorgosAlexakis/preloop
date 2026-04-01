@@ -70,3 +70,5 @@ proprietary
 .devspace
 devspace.yaml
 cli/.cache/
+tmp
+.vite

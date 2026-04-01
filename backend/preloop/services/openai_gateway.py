@@ -83,6 +83,91 @@ class OpenAIGatewayService:
         self.db = db
         self.auth_context = auth_context
         self.upstream_backend = upstream_backend or get_model_gateway_backend()
+        self._resolved_runtime_session_id: Optional[str] = None
+        self._resolved_runtime_session_attempted = False
+
+    def _resolve_runtime_session(self) -> Optional[str]:
+        if self._resolved_runtime_session_attempted:
+            return self._resolved_runtime_session_id
+
+        self._resolved_runtime_session_attempted = True
+
+        runtime_context = (
+            (self.auth_context.api_key.context_data or {})
+            if self.auth_context.api_key
+            else {}
+        )
+        runtime_principal = runtime_context.get("runtime_principal") or {}
+        runtime_session_id = runtime_context.get("runtime_session_id")
+
+        if not runtime_session_id and runtime_principal:
+            session_source_type = runtime_principal.get("type")
+            session_source_id = runtime_principal.get("id")
+            if session_source_type and session_source_id:
+                try:
+                    from datetime import datetime, timezone
+
+                    rs = crud_runtime_session.upsert_by_source(
+                        self.db,
+                        account_id=str(self.auth_context.user.account_id),
+                        session_source_type=session_source_type,
+                        session_source_id=session_source_id,
+                        runtime_principal_type=session_source_type,
+                        runtime_principal_id=session_source_id,
+                        runtime_principal_name=runtime_principal.get("name"),
+                        last_activity_at=datetime.now(timezone.utc),
+                        reopen_if_ended=True,
+                    )
+                    runtime_session_id = str(rs.id)
+                except Exception as e:
+                    logger.debug(
+                        f"Failed to auto-upsert runtime session for gateway request: {e}",
+                        exc_info=True,
+                    )
+
+        self._resolved_runtime_session_id = runtime_session_id
+        return runtime_session_id
+
+    def _emit_gateway_request_started(
+        self,
+        ai_model: AIModel,
+        requested_model: Optional[str],
+        request_payload: Dict[str, Any],
+        endpoint_kind: str,
+    ) -> None:
+        from datetime import datetime, timezone
+        from preloop.services.model_gateway_events import build_account_event
+        from preloop.services.account_realtime import (
+            emit_account_event,
+            ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+        )
+
+        runtime_session_id = self._resolve_runtime_session()
+
+        emit_account_event(
+            build_account_event(
+                account_id=str(self.auth_context.user.account_id),
+                topic=ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+                event_type="model_gateway_request_started",
+                payload={
+                    "status_code": 202,  # accepted, waiting
+                    "outcome": "pending",
+                    "duration": 0,
+                    "estimated_cost": 0,
+                    "model_alias": requested_model,
+                    "total_tokens": 0,
+                    "meta_data": {
+                        "endpoint_kind": endpoint_kind,
+                        "requested_model": requested_model,
+                    },
+                    "request": request_payload,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                runtime_session_id=runtime_session_id,
+                execution_id=None,
+                flow_id=None,
+            )
+        )
 
     def list_models(self) -> Dict[str, Any]:
         """List gateway-enabled models available to the authenticated account."""
@@ -146,6 +231,12 @@ class OpenAIGatewayService:
             )
 
         try:
+            self._emit_gateway_request_started(
+                ai_model=model,
+                requested_model=payload.get("model"),
+                request_payload=payload,
+                endpoint_kind="chat_completions",
+            )
             response = self._call_litellm(
                 model,
                 messages=messages,
@@ -240,6 +331,12 @@ class OpenAIGatewayService:
                 message=detail,
             )
         try:
+            self._emit_gateway_request_started(
+                ai_model=model,
+                requested_model=payload.get("model"),
+                request_payload=payload,
+                endpoint_kind="responses",
+            )
             response = self._call_litellm(
                 model,
                 messages=messages,
@@ -340,6 +437,12 @@ class OpenAIGatewayService:
             )
 
         try:
+            self._emit_gateway_request_started(
+                ai_model=model,
+                requested_model=payload.get("model"),
+                request_payload=payload,
+                endpoint_kind="anthropic_messages",
+            )
             response = self._call_litellm(
                 model,
                 messages=messages,
@@ -427,6 +530,12 @@ class OpenAIGatewayService:
             )
 
         try:
+            self._emit_gateway_request_started(
+                ai_model=model,
+                requested_model=payload.get("model"),
+                request_payload=payload,
+                endpoint_kind="anthropic_messages_stream",
+            )
             upstream_stream = self._call_litellm(
                 model,
                 messages=messages,
@@ -765,6 +874,12 @@ class OpenAIGatewayService:
             )
 
         try:
+            self._emit_gateway_request_started(
+                ai_model=model,
+                requested_model=payload.get("model"),
+                request_payload=payload,
+                endpoint_kind="chat_completions_stream",
+            )
             upstream_stream = self._call_litellm(
                 model,
                 messages=messages,
@@ -920,6 +1035,12 @@ class OpenAIGatewayService:
             )
 
         try:
+            self._emit_gateway_request_started(
+                ai_model=model,
+                requested_model=payload.get("model"),
+                request_payload=payload,
+                endpoint_kind="responses_stream",
+            )
             upstream_stream = self._call_litellm(
                 model,
                 messages=messages,
@@ -1845,38 +1966,14 @@ class OpenAIGatewayService:
         total_tokens = usage.get("total_tokens")
         if total_tokens is None and (prompt_tokens or completion_tokens):
             total_tokens = prompt_tokens + completion_tokens
+
         runtime_context = (
             (self.auth_context.api_key.context_data or {})
             if self.auth_context.api_key
             else {}
         )
         runtime_principal = runtime_context.get("runtime_principal") or {}
-
-        runtime_session_id = runtime_context.get("runtime_session_id")
-        if not runtime_session_id and runtime_principal:
-            session_source_type = runtime_principal.get("type")
-            session_source_id = runtime_principal.get("id")
-            if session_source_type and session_source_id:
-                try:
-                    from datetime import datetime, timezone
-
-                    rs = crud_runtime_session.upsert_by_source(
-                        self.db,
-                        account_id=str(self.auth_context.user.account_id),
-                        session_source_type=session_source_type,
-                        session_source_id=session_source_id,
-                        runtime_principal_type=session_source_type,
-                        runtime_principal_id=session_source_id,
-                        runtime_principal_name=runtime_principal.get("name"),
-                        last_activity_at=datetime.now(timezone.utc),
-                        reopen_if_ended=True,
-                    )
-                    runtime_session_id = str(rs.id)
-                except Exception as e:
-                    logger.debug(
-                        f"Failed to auto-upsert runtime session for gateway request: {e}",
-                        exc_info=True,
-                    )
+        runtime_session_id = self._resolve_runtime_session()
 
         usage_row = crud_api_usage.log_gateway_request(
             self.db,
@@ -2095,6 +2192,9 @@ class OpenAIGatewayService:
             "flow_estimated_total_usd": budget_result.flow_estimated_total_usd,
             "flow_limit_usd": budget_result.flow_limit_usd,
             "flow_soft_limit_usd": budget_result.flow_soft_limit_usd,
+            "trial_hosted_model_limit_usd": budget_result.trial_hosted_model_limit_usd,
+            "trial_hosted_model_current_spend_usd": budget_result.trial_hosted_model_current_spend_usd,
+            "trial_hosted_model_estimated_total_usd": budget_result.trial_hosted_model_estimated_total_usd,
             "soft_limit_exceeded": budget_result.soft_limit_exceeded,
             "hard_limit_exceeded": budget_result.hard_limit_exceeded,
             "enforcement_reason": budget_result.enforcement_reason,
@@ -2106,6 +2206,8 @@ class OpenAIGatewayService:
             return "Model gateway budget exceeded: account monthly limit reached"
         if budget_result.enforcement_reason == "flow_budget_exceeded":
             return "Model gateway budget exceeded: flow monthly limit reached"
+        if budget_result.enforcement_reason == "trial_hosted_model_budget_exceeded":
+            return "Model gateway budget exceeded: trial hosted model limit reached"
         if (
             budget_result.enforcement_reason
             == "pricing_required_for_budget_enforcement"

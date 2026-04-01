@@ -268,11 +268,16 @@ export class TrackerDetailView extends LitElement {
 
     if (this._error || !this._tracker) {
       return html`
-        <div class="column-layout narrow">
+        <view-header headerText="Tracker Details" width="narrow">
+          <div slot="main-column">
+            <sl-button href="/console/trackers">
+              <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to
+              Trackers
+            </sl-button>
+          </div>
+        </view-header>
+        <div class="column-layout narrow" style="padding-top: 0;">
           <div class="main-column">
-            <a href="/console/trackers" class="back-link">
-              <sl-icon name="arrow-left"></sl-icon> Back to Trackers
-            </a>
             <sl-alert variant="danger" open>
               <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
               ${this._error || 'Tracker not found'}
@@ -290,15 +295,17 @@ export class TrackerDetailView extends LitElement {
     const hasProjects = this._projects.length > 0;
 
     return html`
-      <div class="column-layout narrow">
+      <view-header headerText=${tracker.name} width="narrow">
+        <div slot="main-column">
+          <sl-button href="/console/trackers">
+            <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Trackers
+          </sl-button>
+        </div>
+      </view-header>
+      <div class="column-layout narrow" style="padding-top: 0;">
         <div class="main-column">
-          <a href="/console/trackers" class="back-link">
-            <sl-icon name="arrow-left"></sl-icon> Back to Trackers
-          </a>
-
           <div class="tracker-header">
             <sl-icon class="tracker-icon" name=${icon}></sl-icon>
-            <h1 class="tracker-title">${tracker.name}</h1>
             <sl-badge variant=${tracker.is_valid ? 'success' : 'warning'} pill>
               ${tracker.is_valid ? 'Connected' : 'Not validated'}
             </sl-badge>

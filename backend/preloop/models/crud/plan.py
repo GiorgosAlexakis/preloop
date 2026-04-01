@@ -3,6 +3,7 @@
 from datetime import date
 from typing import List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..models.plan import Plan, Subscription, MonthlyUsage
@@ -57,8 +58,13 @@ class CRUDSubscription(CRUDBase[Subscription]):
         return (
             db.query(Subscription)
             .filter(
-                Subscription.account_id == account_id, Subscription.status == "active"
+                Subscription.account_id == account_id,
+                or_(
+                    Subscription.status == "active",
+                    Subscription.status == "trialing",
+                ),
             )
+            .order_by(Subscription.created_at.desc())
             .first()
         )
 

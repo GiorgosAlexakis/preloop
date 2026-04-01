@@ -549,13 +549,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Add profiling middleware
-    app.add_middleware(PyinstrumentMiddleware)
+    service_role = os.getenv("PRELOOP_SERVICE_ROLE", "all").lower()
+
+    # Add profiling middleware only for core API
+    if service_role in ["all", "api"]:
+        app.add_middleware(PyinstrumentMiddleware)
 
     # Add API usage tracking
     # Can be disabled with DISABLE_API_USAGE_TRACKING=true for debugging
     if (
-        os.getenv("TESTING") != "true"
+        service_role in ["all", "api"]
+        and os.getenv("TESTING") != "true"
         and os.getenv("DISABLE_API_USAGE_TRACKING", "false").lower() != "true"
     ):
         app.add_middleware(ApiUsageMiddleware)
@@ -687,8 +691,9 @@ def create_app() -> FastAPI:
     plugin_manager = get_plugin_manager()
     plugin_manager.register_routes(app)
 
-    # Add routers
-    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
+    # Core API routers
+    if service_role in ["all", "api"]:
+        app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
     app.include_router(
         account.router,
         prefix="/api/v1",
@@ -790,70 +795,73 @@ def create_app() -> FastAPI:
         dependencies=[Depends(get_current_active_user)],
     )
     # Public AI models endpoints (no auth required)
-    app.include_router(
-        ai_models.public_router,
-        prefix="/api/v1",
-        tags=["AI Models"],
-    )
-    app.include_router(
-        openai_gateway.router,
-        prefix="/openai/v1",
-        tags=["OpenAI Gateway"],
-        include_in_schema=False,
-    )
-    app.include_router(
-        anthropic_gateway.router,
-        prefix="/anthropic/v1",
-        tags=["Anthropic Gateway"],
-        include_in_schema=False,
-    )
-    # Note: Issue duplicates endpoint is now loaded via plugins/analytics
-    app.include_router(
-        version.router, prefix="/api/v1", tags=["Version"]
-    )  # No auth dependency for version check
-    app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
-    app.include_router(
-        flows.router,
-        prefix="/api/v1",
-        tags=["Flows"],
-        # dependencies=[Depends(get_current_active_user)],
-    )
-
-    # Policies router for policy-as-code YAML import/export
-    app.include_router(
-        policies.router,
-        prefix="/api/v1",
-        tags=["Policies"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-
-    # WebSocket router
-    app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
-
-    # Impersonation router - Enterprise feature (loaded via admin plugin)
-    # No longer loaded from core - handled by plugins/admin
-
-    app.include_router(
-        roles.router,
-        prefix="/api/v1",
-        tags=["Roles"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-
-    # --- Public Approval Page ---
-    @app.get("/approval/{request_id}", include_in_schema=False)
-    async def serve_approval_page(request_id: str):
-        """Serve the public approval page."""
-        approval_html_path = base_dir / "preloop" / "templates" / "approval.html"
-        return FileResponse(str(approval_html_path), media_type="text/html")
-
-    # --- Public Invitation Accept Page ---
-    @app.get("/invitations/accept", include_in_schema=False)
-    async def serve_invitation_accept_page():
-        """Serve the public invitation accept page."""
-        invitation_html_path = (
-            base_dir / "preloop" / "templates" / "invitation-accept.html"
+    if service_role in ["all", "api"]:
+        app.include_router(
+            ai_models.public_router,
+            prefix="/api/v1",
+            tags=["AI Models"],
         )
-        return FileResponse(str(invitation_html_path), media_type="text/html")
+
+    # AI Model Gateway routers
+    if service_role in ["all", "gateway"]:
+        app.include_router(
+            openai_gateway.router,
+            prefix="/openai/v1",
+            tags=["OpenAI Gateway"],
+            include_in_schema=False,
+        )
+        app.include_router(
+            anthropic_gateway.router,
+            prefix="/anthropic/v1",
+            tags=["Anthropic Gateway"],
+            include_in_schema=False,
+        )
+
+    if service_role in ["all", "api"]:
+        # Note: Issue duplicates endpoint is now loaded via plugins/analytics
+        app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
+        app.include_router(
+            flows.router,
+            prefix="/api/v1",
+            tags=["Flows"],
+            # dependencies=[Depends(get_current_active_user)],
+        )
+
+        # Policies router for policy-as-code YAML import/export
+        app.include_router(
+            policies.router,
+            prefix="/api/v1",
+            tags=["Policies"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+
+        # WebSocket router
+        app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
+
+        # Impersonation router - Enterprise feature (loaded via admin plugin)
+        # No longer loaded from core - handled by plugins/admin
+
+        app.include_router(
+            roles.router,
+            prefix="/api/v1",
+            tags=["Roles"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+
+        # --- Public Approval Page ---
+        @app.get("/approval/{request_id}", include_in_schema=False)
+        async def serve_approval_page(request_id: str):
+            """Serve the public approval page."""
+            approval_html_path = base_dir / "preloop" / "templates" / "approval.html"
+            return FileResponse(str(approval_html_path), media_type="text/html")
+
+        # --- Public Invitation Accept Page ---
+        @app.get("/invitations/accept", include_in_schema=False)
+        async def serve_invitation_accept_page():
+            """Serve the public invitation accept page."""
+            invitation_html_path = (
+                base_dir / "preloop" / "templates" / "invitation-accept.html"
+            )
+            return FileResponse(str(invitation_html_path), media_type="text/html")
 
     return app

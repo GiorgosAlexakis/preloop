@@ -1,5 +1,6 @@
 """Tests for the OpenAI-compatible gateway service."""
 
+from datetime import datetime, timedelta, timezone
 import pytest
 import json
 from types import SimpleNamespace
@@ -17,6 +18,10 @@ from preloop.models.crud import (
     crud_runtime_session,
 )
 from preloop.models.crud import crud_api_key
+from preloop.models.crud.plan import (
+    plan as crud_plan,
+    subscription as crud_subscription,
+)
 from preloop.models.schemas.flow import FlowCreate
 from preloop.models.schemas.flow_execution import FlowExecutionCreate
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
@@ -1283,6 +1288,91 @@ def test_create_response_denies_budgeted_request_when_pricing_unavailable(
         ) as exc:
             service.create_response(
                 {"model": "openai/unknown-unpriced-model", "input": "Hello"}
+            )
+
+    assert exc.value.status_code == 403
+    mock_completion.assert_not_called()
+
+    audit_logs = crud_audit_log.get_by_account(
+        db_session, account_id=test_user.account_id
+    )
+    gateway_logs = [log for log in audit_logs if log.action == "model_gateway_request"]
+    assert len(gateway_logs) == 1
+    assert gateway_logs[0].status == "budget_denied"
+    assert gateway_logs[0].details["error_type"] == "budget_limit_exceeded"
+
+
+def test_create_response_denies_trial_hosted_model_cap(
+    db_session, test_user, monkeypatch
+):
+    """Trialing accounts should be denied once built-in hosted usage exceeds the trial cap."""
+    monkeypatch.setattr(settings, "billing_trial_hosted_model_hard_cap_usd", 0.00001)
+    plan = crud_plan.create(
+        db_session,
+        obj_in={
+            "id": "teams",
+            "name": "Teams",
+            "price_monthly": 29.0,
+            "price_annually": 290.0,
+            "features": {
+                "api_calls_monthly": -1,
+                "ai_calls_monthly": -1,
+                "issues_ingested_monthly": -1,
+                "custom_ai_models_enabled": True,
+                "custom_compliance_metrics_enabled": True,
+                "hosted_models_monthly_limit_usd": 10.0,
+                "extra_credit_price_per_usd": 1.0,
+            },
+            "is_active": True,
+            "is_custom": False,
+        },
+    )
+    now = datetime.now(timezone.utc)
+    crud_subscription.create(
+        db_session,
+        obj_in={
+            "account_id": test_user.account_id,
+            "plan_id": plan.id,
+            "stripe_subscription_id": "sub_trial_hosted_cap",
+            "status": "trialing",
+            "current_period_start": now - timedelta(days=1),
+            "current_period_end": now + timedelta(days=13),
+        },
+    )
+    crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Gemini Hosted",
+            "provider_name": "google",
+            "model_identifier": "gemini-3.1",
+            "api_key": "provider-secret",
+            "meta_data": {
+                "hosted": True,
+                "gateway": {
+                    "enabled": True,
+                    "model_alias": "google/gemini-3.1",
+                    "provider_adapter": "preloop",
+                },
+                "pricing": {"input_price_per_1k": 0.01, "output_price_per_1k": 0.02},
+            },
+            "is_default": True,
+        },
+        account_id=None,
+    )
+    service = OpenAIGatewayService(
+        db_session, ModelGatewayAuthContext(token="t", user=test_user)
+    )
+
+    with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
+        with pytest.raises(
+            ModelGatewayAPIError, match="trial hosted model limit reached"
+        ) as exc:
+            service.create_response(
+                {
+                    "model": "google/gemini-3.1",
+                    "instructions": "Be brief",
+                    "input": "Hello",
+                }
             )
 
     assert exc.value.status_code == 403

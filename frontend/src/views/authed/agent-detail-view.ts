@@ -9,27 +9,29 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-import '@shoelace-style/shoelace/dist/components/details/details.js';
 import '../../components/governance-rule-set-editor.ts';
+import '../../components/tools-editor-component.ts';
+import '../../components/session-history-widget.ts';
 import '../../components/view-header.ts';
+import '../../components/resource-actions.ts';
+import type { ResourceAction } from '../../components/resource-actions.ts';
 import {
   fetchWithAuth,
   getApprovalWorkflows,
   getAgentGovernance,
   getAccountAgent,
   getAccountRuntimeSessionDetail,
-  getRuntimeSessionGatewayEvents,
   getFeatures,
+  getAIModels,
   getTools,
+  getMCPServers,
   removeAccountAgent,
   updateAgentGovernance,
   updateAccountAgent,
 } from '../../api';
 import type {
   AccountRuntimeSessionDetailResponse,
-  FlowGatewayEvent,
   GatewayUsageByModel,
   ManagedAgentDetailResponse,
   ManagedAgentServerActivitySummary,
@@ -42,7 +44,6 @@ import type {
 } from '../../types';
 import type { AccessRuleSummary } from '../../components/governance-rule-set-editor';
 import consoleStyles from '../../styles/console-styles.css?inline';
-import tailwindStyles from '../../styles/tailwind.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import {
   normalizeScopedToolRules,
@@ -66,9 +67,6 @@ export class AgentDetailView extends LitElement {
 
   @state()
   private runtimeDetail: AccountRuntimeSessionDetailResponse | null = null;
-
-  @state()
-  private rawEvents: FlowGatewayEvent[] = [];
 
   @state()
   private aggregate: ManagedAgentUsageAggregate | null = null;
@@ -105,6 +103,9 @@ export class AgentDetailView extends LitElement {
   }> = [];
 
   @state()
+  private mcpServers: any[] = [];
+
+  @state()
   private selectedOwnerUserId = '';
 
   @state()
@@ -125,6 +126,7 @@ export class AgentDetailView extends LitElement {
     allowed_models: [],
     model_budgets: {},
     tool_rules: {},
+    tool_enabled_overrides: {},
   };
 
   @state()
@@ -137,10 +139,16 @@ export class AgentDetailView extends LitElement {
   private scopedToolRules: ScopedToolRules = {};
 
   @state()
+  private toolEnabledOverrides: Record<string, boolean> = {};
+
+  @state()
   private toolCatalog: GovernanceToolDefinition[] = [];
 
   @state()
   private approvalWorkflows: any[] = [];
+
+  @state()
+  private availableModels: any[] = [];
 
   @state()
   private featureFlags: { [key: string]: boolean | string[] } = {};
@@ -156,7 +164,6 @@ export class AgentDetailView extends LitElement {
 
   static styles = [
     unsafeCSS(consoleStyles),
-    unsafeCSS(tailwindStyles),
     css`
       :host {
         display: block;
@@ -174,6 +181,24 @@ export class AgentDetailView extends LitElement {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: var(--sl-spacing-medium);
+      }
+
+      .split-pane-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--sl-spacing-large);
+        align-items: stretch;
+      }
+
+      .split-pane-layout > sl-card {
+        max-width: 100%;
+        overflow: hidden;
+      }
+
+      @media (max-width: 1000px) {
+        .split-pane-layout {
+          grid-template-columns: 1fr;
+        }
       }
 
       .stat-card {
@@ -209,7 +234,7 @@ export class AgentDetailView extends LitElement {
 
       .hero-title {
         font-size: 1.25rem;
-        font-weight: 700;
+        font-weight: 600;
         color: var(--sl-color-neutral-900);
       }
 
@@ -330,90 +355,104 @@ export class AgentDetailView extends LitElement {
     }
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = null;
-      void this.loadData();
+      void this.loadData(true);
     }, 250);
   }
 
-  private async loadData(): Promise<void> {
+  private async loadData(isSoftRefresh = false): Promise<void> {
     if (!this.agentId) {
-      this.error = 'Missing agent id.';
+      if (!isSoftRefresh) this.error = 'Missing agent id.';
       this.loading = false;
       return;
     }
 
-    this.loading = true;
-    this.error = null;
-    this.aggregate = null;
-    this.usageByModel = [];
-    this.activityByServer = [];
-    this.activityByTool = [];
+    if (!isSoftRefresh) {
+      this.loading = true;
+      this.error = null;
+      this.aggregate = null;
+      this.usageByModel = [];
+      this.activityByServer = [];
+      this.activityByTool = [];
+    }
 
     try {
-      const [detail, users, governance, tools, workflows, features] =
-        await Promise.all([
-          getAccountAgent(this.agentId),
-          this.fetchUsers(),
-          getAgentGovernance(this.agentId),
-          getTools(),
-          getApprovalWorkflows(),
-          getFeatures(),
-        ]);
+      const [
+        detail,
+        users,
+        governance,
+        tools,
+        servers,
+        workflows,
+        features,
+        models,
+      ] = await Promise.all([
+        getAccountAgent(this.agentId),
+        this.fetchUsers(),
+        getAgentGovernance(this.agentId),
+        getTools(),
+        getMCPServers(),
+        getApprovalWorkflows(),
+        getFeatures(),
+        getAIModels(),
+      ]);
       this.agent = detail.agent;
+      this.availableModels = models || [];
+      this.mcpServers = servers || [];
       this.aggregate = detail.aggregate;
       this.usageByModel = detail.usage_by_model;
       this.activityByServer = detail.activity_by_server;
       this.activityByTool = detail.activity_by_tool;
       this.sessions = detail.sessions;
-      this.liveActivity = {
-        modelCalls: 0,
-        toolCalls: 0,
-        lastActivityAt: null,
-      };
+      if (!isSoftRefresh) {
+        this.liveActivity = {
+          modelCalls: 0,
+          toolCalls: 0,
+          lastActivityAt: null,
+        };
+      }
       this.governance = governance.config;
       this.scopedToolRules = normalizeScopedToolRules(
         governance.config.tool_rules
       );
+      this.toolEnabledOverrides =
+        governance.config.tool_enabled_overrides || {};
       this.allowedModelsText = governance.config.allowed_models.join(', ');
       this.modelBudgetsText = JSON.stringify(
         governance.config.model_budgets || {},
         null,
         2
       );
-      this.toolCatalog = (tools || []).map((tool: any) => ({
-        name: tool.name,
-        description: tool.description,
-        schema:
-          tool.schema && typeof tool.schema === 'object'
-            ? tool.schema
-            : undefined,
-      }));
+      this.toolCatalog = tools || [];
       this.approvalWorkflows = workflows || [];
       this.featureFlags = features?.features || {};
       this.availableUsers = users;
       this.selectedOwnerUserId = detail.agent.owner_user_id ?? '';
-      this.editableDisplayName = detail.agent.display_name;
-      this.selectedSessionId =
-        detail.agent.runtime_session_id ?? detail.sessions[0]?.id ?? null;
-
-      if (this.selectedSessionId) {
-        this.runtimeDetail = await getAccountRuntimeSessionDetail(
-          this.selectedSessionId
-        );
-        const eventsRes = await getRuntimeSessionGatewayEvents(
-          this.selectedSessionId,
-          100
-        );
-        this.rawEvents = eventsRes.logs || [];
-      } else {
-        this.runtimeDetail = null;
-        this.rawEvents = [];
+      if (!isSoftRefresh) {
+        this.editableDisplayName = detail.agent.display_name;
       }
+
+      if (
+        !this.selectedSessionId ||
+        !this.sessions.some((s) => s.id === this.selectedSessionId)
+      ) {
+        this.selectedSessionId =
+          detail.agent.runtime_session_id ?? detail.sessions[0]?.id ?? null;
+      }
+      this.runtimeDetail = this.selectedSessionId
+        ? await getAccountRuntimeSessionDetail(this.selectedSessionId)
+        : null;
     } catch (error) {
       console.error('Failed to load managed agent detail:', error);
-      this.error =
-        error instanceof Error ? error.message : 'Failed to load managed agent';
+      if (!isSoftRefresh) {
+        this.error =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load managed agent';
+      }
     } finally {
-      this.loading = false;
+      if (!isSoftRefresh) {
+        this.loading = false;
+      }
     }
   }
 
@@ -421,8 +460,6 @@ export class AgentDetailView extends LitElement {
     this.selectedSessionId = sessionId;
     try {
       this.runtimeDetail = await getAccountRuntimeSessionDetail(sessionId);
-      const eventsRes = await getRuntimeSessionGatewayEvents(sessionId, 100);
-      this.rawEvents = eventsRes.logs || [];
     } catch (error) {
       console.error('Failed to load runtime session detail:', error);
       this.error =
@@ -570,14 +607,20 @@ export class AgentDetailView extends LitElement {
         latest_provider_name:
           (payload.provider_name as string | null) ??
           this.aggregate.latest_provider_name,
+        token_usage: {
+          ...(this.aggregate.token_usage || {}),
+          total_tokens:
+            (this.aggregate.token_usage?.total_tokens ?? 0) +
+            (payload.total_tokens ?? 0),
+        },
       };
     }
+
+    this.scheduleRefresh();
   }
 
   private async saveOwnerAssignment(): Promise<void> {
-    if (!this.agentId) {
-      return;
-    }
+    if (!this.agentId) return;
     this.actionLoading = true;
     try {
       await updateAccountAgent(this.agentId, {
@@ -593,10 +636,29 @@ export class AgentDetailView extends LitElement {
     }
   }
 
-  private async saveDisplayName(): Promise<void> {
-    if (!this.agentId || !this.editableDisplayName.trim()) {
-      return;
+  private promptChangeOwner(): void {
+    const defaultVal =
+      this.agent?.owner_username || this.agent?.owner_email || '';
+    const newOwnerStr = window.prompt(
+      'Enter the username or email of the new owner:',
+      defaultVal
+    );
+    if (newOwnerStr !== null && newOwnerStr.trim() !== '') {
+      const user = this.availableUsers.find(
+        (u) =>
+          u.username === newOwnerStr.trim() || u.email === newOwnerStr.trim()
+      );
+      if (user) {
+        this.selectedOwnerUserId = user.id;
+        this.saveOwnerAssignment();
+      } else {
+        alert('User not found: ' + newOwnerStr);
+      }
     }
+  }
+
+  private async saveDisplayName(): Promise<void> {
+    if (!this.agentId || !this.editableDisplayName.trim()) return;
     this.actionLoading = true;
     try {
       await updateAccountAgent(this.agentId, {
@@ -612,19 +674,31 @@ export class AgentDetailView extends LitElement {
     }
   }
 
+  private promptRename(): void {
+    const newName = window.prompt(
+      'Enter the new name for this agent:',
+      this.editableDisplayName
+    );
+    if (newName !== null && newName.trim() !== '') {
+      this.editableDisplayName = newName.trim();
+      this.saveDisplayName();
+    }
+  }
+
   private async saveGovernance(): Promise<void> {
     if (!this.agentId) {
       return;
     }
     this.actionLoading = true;
     try {
+      const parsedBudgets = JSON.parse(this.modelBudgetsText || '{}');
       const config: SubjectGovernanceConfig = {
-        allowed_models: this.allowedModelsText
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean),
-        model_budgets: JSON.parse(this.modelBudgetsText || '{}'),
+        allowed_models: Object.keys(parsedBudgets).filter(
+          (key) => key.trim() !== ''
+        ),
+        model_budgets: parsedBudgets,
         tool_rules: serializeScopedToolRules(this.scopedToolRules),
+        tool_enabled_overrides: this.toolEnabledOverrides,
       };
       const response = await updateAgentGovernance(this.agentId, config);
       this.governance = response.config;
@@ -670,6 +744,28 @@ export class AgentDetailView extends LitElement {
     };
     this.governanceToolToAdd = '';
     this.governanceCustomToolName = '';
+  }
+
+  private toggleToolEnabledOverride(e: CustomEvent): void {
+    const { toolName, isEnabled } = e.detail;
+    this.toolEnabledOverrides = {
+      ...this.toolEnabledOverrides,
+      [toolName]: isEnabled,
+    };
+    this.saveGovernance();
+  }
+
+  private revertScopedTool(e: CustomEvent): void {
+    const { tool } = e.detail;
+    if (this.scopedToolRules[tool.name]) {
+      delete this.scopedToolRules[tool.name];
+    }
+    if (tool.name in this.toolEnabledOverrides) {
+      delete this.toolEnabledOverrides[tool.name];
+    }
+    this.scopedToolRules = { ...this.scopedToolRules };
+    this.toolEnabledOverrides = { ...this.toolEnabledOverrides };
+    this.saveGovernance();
   }
 
   private removeGovernanceToolScope(toolName: string): void {
@@ -827,693 +923,451 @@ export class AgentDetailView extends LitElement {
   }
 
   private renderTimelineItem(item: RuntimeSessionActivityItem) {
-    const rawEvent = this.rawEvents.find(
-      (e) => e.payload?.api_usage_id === item.api_usage_id
-    );
-    const hasPayload = !!rawEvent?.payload;
-    const payloadStr = hasPayload
-      ? JSON.stringify(rawEvent.payload, null, 2)
-      : '';
-    let statusClass = 'border-text-muted';
-    let statusGlow = '';
-    if (item.status === 'error' || item.status === 'failed') {
-      statusClass = 'border-danger text-danger';
-      statusGlow = 'shadow-glow-danger';
-    } else if (item.status === 'success' || item.status === 'completed') {
-      statusClass = 'border-success text-success';
-    }
-
     return html`
-      <div
-        class="border-l-4 ${statusClass} pl-4 pb-6 relative group transition-all duration-300"
-      >
-        <div
-          class="absolute -left-[5px] top-0 size-1.5 rounded-full bg-current opacity-0 group-hover:opacity-100 transition-opacity ${statusGlow}"
-        ></div>
-        <div class="font-bold text-text-main text-sm mb-1">${item.title}</div>
-        <div class="text-xs text-text-muted ${hasPayload ? 'mb-3' : ''}">
-          <span class="font-mono">${this.formatDateTime(item.timestamp)}</span
-          >${item.status
-            ? html` <span class="mx-1">·</span>
-                <span class="uppercase tracking-wider font-display"
-                  >${item.status}</span
-                >`
-            : null}${item.summary
-            ? html` <span class="mx-1">·</span> ${item.summary}`
-            : null}
+      <div class="timeline-item">
+        <div class="timeline-title">${item.title}</div>
+        <div class="timeline-meta">
+          ${this.formatDateTime(item.timestamp)}${item.status
+            ? html` · ${item.status}`
+            : null}${item.summary ? html` · ${item.summary}` : null}
         </div>
-        ${hasPayload
-          ? html`
-              <sl-details
-                summary="View payload trace"
-                style="--background-color: transparent;"
-                class="glass-panel"
-              >
-                <div
-                  class="bg-surface-base border border-white/5 rounded-md p-3 overflow-x-auto terminal-feed"
-                >
-                  <pre
-                    class="m-0 font-mono text-[10px] text-text-muted leading-relaxed"
-                  ><code>${payloadStr}</code></pre>
-                </div>
-              </sl-details>
-            `
-          : ''}
       </div>
     `;
   }
 
-  private renderHistoricalModelBreakdown() {
-    if (!this.usageByModel.length) {
-      return html`
-        <div class="empty-state">
-          No model usage has been recorded for this agent yet.
-        </div>
-      `;
+  private get agentActions(): ResourceAction[] {
+    if (!this.agent) return [];
+
+    const actions: ResourceAction[] = [
+      {
+        id: 'rename',
+        label: 'Rename',
+        icon: 'pencil',
+        onClick: () => this.promptRename(),
+      },
+    ];
+
+    if (this.featureFlags.user_management) {
+      actions.push({
+        id: 'change-owner',
+        label: 'Change Owner',
+        icon: 'person-gear',
+        onClick: () => this.promptChangeOwner(),
+      });
     }
 
-    return html`
-      <div class="timeline">
-        ${this.usageByModel.map(
-          (item) => html`
-            <div class="timeline-item">
-              <div class="timeline-title">
-                ${item.model_alias || 'Unknown model'}
-              </div>
-              <div class="timeline-meta">
-                ${item.provider_name || 'Unknown provider'} ·
-                ${item.request_count} request(s) ·
-                ${item.token_usage.total_tokens} tokens ·
-                ${this.formatMoney(item.estimated_cost)}
-              </div>
-            </div>
-          `
-        )}
-      </div>
-    `;
-  }
+    actions.push({
+      id: 'remove',
+      label: 'Remove',
+      variant: 'danger',
+      loading: this.actionLoading,
+      onClick: () => this.removeAgent(),
+    });
 
-  private renderServerActivityBreakdown() {
-    if (!this.activityByServer.length) {
-      return html`
-        <div class="empty-state">
-          No MCP server activity has been recorded for this agent yet.
-        </div>
-      `;
+    const isSuspendedOrDecommissioned =
+      this.agent.lifecycle_state === 'suspended' ||
+      this.agent.lifecycle_state === 'decommissioned';
+
+    if (isSuspendedOrDecommissioned) {
+      actions.push({
+        id: 'replug',
+        label: 'REPLUG',
+        variant: 'success',
+        icon: 'plug',
+        loading: this.actionLoading,
+        onClick: () => this.killAgent(),
+        tooltip: "This action re-enables the agent's API keys.",
+      });
+    } else {
+      actions.push({
+        id: 'unplug',
+        label: 'UNPLUG',
+        variant: 'danger',
+        icon: 'power',
+        loading: this.actionLoading,
+        onClick: () => this.killAgent(),
+        tooltip:
+          "This action immediately disables the agent's API keys and is fully reversible.",
+      });
     }
 
-    return html`
-      <div class="timeline">
-        ${this.activityByServer.map(
-          (item) => html`
-            <div class="timeline-item">
-              <div class="timeline-title">
-                ${item.server_name || 'Unknown server'}
-              </div>
-              <div class="timeline-meta">
-                ${item.call_count} call(s) · ${item.successful_calls} success ·
-                ${item.failed_calls} failed · Last activity
-                ${this.formatDateTime(item.last_activity_at)}
-              </div>
-            </div>
-          `
-        )}
-      </div>
-    `;
-  }
-
-  private renderToolActivityBreakdown() {
-    if (!this.activityByTool.length) {
-      return html`
-        <div class="empty-state">
-          No tool activity has been recorded for this agent yet.
-        </div>
-      `;
-    }
-
-    return html`
-      <div class="timeline">
-        ${this.activityByTool.map(
-          (item) => html`
-            <div class="timeline-item">
-              <div class="timeline-title">
-                ${item.tool_name || 'Unknown tool'}
-              </div>
-              <div class="timeline-meta">
-                ${item.server_name || 'Unknown server'} · ${item.call_count}
-                call(s) · ${item.successful_calls} success ·
-                ${item.failed_calls} failed · Last activity
-                ${this.formatDateTime(item.last_activity_at)}
-              </div>
-            </div>
-          `
-        )}
-      </div>
-    `;
+    return actions;
   }
 
   render() {
     if (this.loading) {
       return html`
-        <div
-          class="glass-panel p-12 rounded-lg text-center flex flex-col items-center justify-center border-white/5 mx-6 mt-6"
-        >
-          <sl-spinner
-            style="font-size: 2rem; --indicator-color: var(--color-primary);"
-          ></sl-spinner>
-          <div class="mt-4 font-mono text-text-muted text-sm">
-            Loading agent details...
-          </div>
+        <div class="loading-state">
+          <sl-spinner></sl-spinner>
+          <div>Loading agent details...</div>
         </div>
       `;
     }
 
     if (this.error) {
-      return html`<sl-alert open variant="danger" class="m-6"
-        >${this.error}</sl-alert
-      >`;
+      return html`<sl-alert open variant="danger">${this.error}</sl-alert>`;
     }
 
     if (!this.agent) {
-      return html`<div
-        class="glass-panel border-dashed p-12 text-center m-6 font-mono text-text-muted"
-      >
-        Managed agent not found.
-      </div>`;
+      return html`<div class="empty-state">Managed agent not found.</div>`;
     }
 
     const runtimeSessionUrl = this.agent.runtime_session_id
       ? `/console/runtime-sessions?sessionId=${encodeURIComponent(this.agent.runtime_session_id)}`
       : null;
     const aggregate = this.aggregate;
-    const liveTotal =
-      this.liveActivity.modelCalls + this.liveActivity.toolCalls;
 
     return html`
-      <div
-        class="h-full flex flex-col text-text-main font-body bg-background-dark relative z-10"
-      >
-        <!-- Header from Stitch Layout -->
-        <header
-          class="flex-none h-16 border-b border-white/10 glass-panel flex items-center justify-between px-6 z-10 shrink-0"
-        >
-          <div class="flex items-center gap-4">
-            <sl-button
-              variant="default"
-              size="small"
-              circle
-              href="/console/agents"
-              class="opacity-70 hover:opacity-100"
-            >
-              <sl-icon name="arrow-left"></sl-icon>
-            </sl-button>
-            <div class="h-6 w-px bg-white/10"></div>
-            <div class="flex items-center gap-3">
-              ${liveTotal > 0
-                ? html`
-                    <div
-                      class="relative flex items-center justify-center size-3"
-                    >
-                      <div
-                        class="absolute inset-0 rounded-full bg-success opacity-40 animate-ping"
-                      ></div>
-                      <div
-                        class="relative size-2 rounded-full bg-success"
-                      ></div>
-                    </div>
-                  `
-                : html`
-                    <div
-                      class="relative flex items-center justify-center size-3"
-                    >
-                      <div
-                        class="relative size-2 rounded-full ${this.agent
-                          .lifecycle_state === 'suspended'
-                          ? 'bg-warning'
-                          : 'bg-text-muted'}"
-                      ></div>
-                    </div>
-                  `}
-              <h1 class="font-display font-bold text-lg tracking-tight m-0">
-                ${this.agent.display_name}
-                <span class="text-text-muted font-normal text-sm ml-2"
-                  >${this.agent.latest_model_alias || 'Unknown Model'}</span
-                >
-              </h1>
-            </div>
-          </div>
-          <div class="flex items-center gap-4">
+      <view-header headerText=${this.agent.display_name}>
+        <div slot="main-column">
+          <sl-button variant="default" @click=${() => window.history.back()}>
+            <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back
+          </sl-button>
+        </div>
+      </view-header>
+      <div class="page" style="padding-top: 0;">
+        <div class="header">
+          <div style="flex: 1;">
             <div
-              class="font-mono text-xs text-text-muted bg-black/40 px-3 py-1.5 rounded-md border border-white/5 hidden md:block"
+              style="color: var(--sl-color-neutral-500); font-size: 0.9rem; margin-top: 4px;"
             >
               ${this.getSourceLabel(this.agent.session_source_type)} ·
               ${this.agent.session_source_id}
-            </div>
-            <sl-button
-              size="small"
-              variant="danger"
-              class="shadow-glow-danger"
-              ?loading=${this.actionLoading}
-              ?disabled=${this.agent.lifecycle_state === 'suspended' ||
-              this.agent.lifecycle_state === 'decommissioned'}
-              @click=${this.killAgent}
-            >
-              <sl-icon slot="prefix" name="power"></sl-icon>
-              HALT / KILL
-            </sl-button>
-          </div>
-        </header>
-
-        <!-- Main Split Layout -->
-        <div class="flex-1 flex overflow-hidden relative">
-          <!-- Left Sidebar (Stats & Config) -->
-          <aside
-            class="w-[320px] flex-none border-r border-white/10 glass-panel overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col p-5 gap-6"
-          >
-            <div class="flex flex-col gap-1">
-              <div
-                class="text-text-muted text-[10px] font-medium uppercase tracking-wider mb-2"
-              >
-                Agent Identity
-              </div>
-              <sl-input
-                size="small"
-                value=${this.editableDisplayName}
-                @sl-input=${(e: Event) =>
-                  (this.editableDisplayName = (
-                    e.target as HTMLInputElement
-                  ).value)}
-              >
-                <sl-icon slot="prefix" name="person"></sl-icon>
-              </sl-input>
-              <sl-button
-                size="small"
-                variant="default"
-                class="mt-1"
-                ?loading=${this.actionLoading}
-                @click=${this.saveDisplayName}
-                >Save Name</sl-button
-              >
+              ${this.agent.session_reference
+                ? ` · ${this.agent.session_reference}`
+                : ''}
             </div>
 
-            <!-- Metrics -->
-            <div class="grid grid-cols-2 gap-3">
-              <div
-                class="bg-black/40 rounded-md p-3 border border-white/5 flex flex-col gap-1"
-              >
-                <span
-                  class="text-text-muted text-[10px] font-medium uppercase tracking-wider"
-                  >Estimated Cost</span
-                >
-                <span class="font-mono text-primary text-base"
-                  >${this.formatMoney(aggregate?.estimated_cost)}</span
-                >
-              </div>
-              <div
-                class="bg-black/40 rounded-md p-3 border border-white/5 flex flex-col gap-1"
-              >
-                <span
-                  class="text-text-muted text-[10px] font-medium uppercase tracking-wider"
-                  >Total Requests</span
-                >
-                <span class="font-mono text-white text-base"
-                  >${aggregate?.total_requests ?? 0}</span
-                >
-              </div>
-            </div>
-
-            <!-- Success Rate Dial -->
             <div
-              class="bg-black/40 rounded-md p-5 border border-white/5 flex flex-col items-center gap-4"
+              style="display: flex; flex-direction: column; align-items: flex-start; gap: var(--sl-spacing-small);"
             >
-              <span
-                class="text-text-muted text-[10px] font-medium uppercase tracking-wider self-start"
-                >Success Rate</span
-              >
-              <div class="relative size-32">
-                ${(() => {
-                  const s = aggregate?.successful_requests ?? 0;
-                  const t = aggregate?.total_requests || 1;
-                  const pct = Math.round((s / t) * 100);
-                  const circleLen = 251.2;
-                  const offset = circleLen - (pct / 100) * circleLen;
-                  return html`
-                    <svg class="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                      <circle
-                        cx="50"
-                        cy="50"
-                        fill="none"
-                        r="40"
-                        stroke="rgba(255,255,255,0.05)"
-                        stroke-width="8"
-                      ></circle>
-                      <circle
-                        class="drop-shadow-[0_0_8px_rgba(0,255,157,0.4)]"
-                        cx="50"
-                        cy="50"
-                        fill="none"
-                        r="40"
-                        stroke="#00FF9D"
-                        stroke-dasharray="${circleLen}"
-                        stroke-dashoffset="${offset}"
-                        stroke-width="8"
-                      ></circle>
-                    </svg>
-                    <div
-                      class="absolute inset-0 flex flex-col items-center justify-center"
-                    >
-                      <span class="font-display font-bold text-2xl text-success"
-                        >${pct}<span class="text-sm text-success/70"
-                          >%</span
-                        ></span
-                      >
-                    </div>
-                  `;
-                })()}
-              </div>
-              <div
-                class="w-full flex justify-between text-[10px] font-mono text-text-muted px-2"
-              >
-                <span>Total Err: ${aggregate?.failed_requests ?? 0}</span>
-                <span>Tokens: ${aggregate?.token_usage.total_tokens ?? 0}</span>
-              </div>
-            </div>
-
-            <div class="flex flex-col gap-2">
-              <span
-                class="text-text-muted text-[10px] font-medium uppercase tracking-wider"
-                >Gateway Preloop Validation</span
-              >
-              <sl-badge
-                variant=${this.agent.model_gateway_configured
-                  ? 'success'
-                  : 'warning'}
-                >${this.agent.model_gateway_configured
-                  ? 'Routing Verified'
-                  : 'Gateway Missing'}</sl-badge
-              >
-              <sl-badge
-                variant=${this.agent.mcp_proxy_configured
-                  ? 'success'
-                  : 'warning'}
-                >${this.agent.mcp_proxy_configured
-                  ? 'Proxy Verified'
-                  : 'Proxy Missing'}</sl-badge
-              >
-            </div>
-
-            <!-- Active Tools List (From Stitch) -->
-            <div class="flex flex-col gap-3 flex-1 mt-2">
-              <div class="flex items-center justify-between">
-                <span
-                  class="text-text-muted text-[10px] font-medium uppercase tracking-wider"
-                  >Detected MCP Tools
-                  (${this.agent.managed_mcp_servers.length})</span
+              <div class="badge-row">
+                <sl-badge variant=${this.getOnboardingVariant()}>
+                  ${this.getOnboardingLabel()}
+                </sl-badge>
+                <sl-badge variant=${this.getLifecycleVariant()}>
+                  ${this.getLifecycleLabel()}
+                </sl-badge>
+                <sl-badge variant=${this.getLiveValidationVariant()}>
+                  ${this.getLiveValidationLabel()}
+                </sl-badge>
+                <sl-badge variant="primary"
+                  >${this.agent.enrolled_via}</sl-badge
                 >
+                ${this.liveActivity.modelCalls || this.liveActivity.toolCalls
+                  ? html`
+                      <sl-badge variant="primary">
+                        Live
+                        ${this.liveActivity.modelCalls +
+                        this.liveActivity.toolCalls}
+                      </sl-badge>
+                    `
+                  : null}
               </div>
-              <div class="flex flex-col gap-2 pr-1 max-h-48 overflow-y-auto">
-                ${this.agent.managed_mcp_servers.length
-                  ? this.agent.managed_mcp_servers.map(
-                      (serverName) => html`
-                        <div
-                          class="flex items-center gap-2 p-2 rounded-md bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
-                        >
-                          <div
-                            class="size-2 rounded-full bg-primary box-glow"
-                          ></div>
-                          <span
-                            class="font-mono text-[11px] text-text-main group-hover:text-primary transition-colors"
-                            >${serverName}</span
-                          >
-                        </div>
-                      `
-                    )
-                  : html`<div
-                      class="text-xs text-text-muted font-mono italic p-2"
-                    >
-                      No imported tools detected
+            </div>
+
+            <div style="margin-top: var(--sl-spacing-medium);">
+              <resource-actions
+                .actions=${this.agentActions}
+              ></resource-actions>
+            </div>
+          </div>
+        </div>
+
+        <sl-card>
+          <div class="stack">
+            <div class="summary-grid">
+              <div class="stat-card">
+                <div class="stat-label">Preloop MCP Proxy</div>
+                <div class="stat-value">
+                  ${this.agent.mcp_proxy_configured ? 'Configured' : 'Missing'}
+                </div>
+                <div class="meta-line">
+                  ${this.agent.mcp_proxy_configured
+                    ? 'The local agent config points at the Preloop MCP proxy.'
+                    : 'No validated Preloop MCP proxy configuration was found.'}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Preloop Model Gateway</div>
+                <div class="stat-value">
+                  ${this.agent.model_gateway_configured
+                    ? 'Configured'
+                    : 'Missing'}
+                </div>
+                <div class="meta-line">
+                  ${this.agent.model_gateway_configured
+                    ? 'The latest enrollment records a Preloop gateway model rewrite.'
+                    : 'The latest enrollment does not prove the agent model is routed through Preloop.'}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Imported Upstream MCP Servers</div>
+                <div class="stat-value">
+                  ${this.agent.managed_mcp_servers.length}
+                </div>
+                <div class="server-badges">
+                  ${this.agent.managed_mcp_servers.length
+                    ? this.agent.managed_mcp_servers.map(
+                        (serverName) =>
+                          html`<sl-badge variant="primary"
+                            >${serverName}</sl-badge
+                          >`
+                      )
+                    : html`<span class="meta-line"
+                        >No upstream MCP servers imported</span
+                      >`}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Historical Sessions</div>
+                <div class="stat-value">${aggregate?.session_count ?? 0}</div>
+                <div class="meta-line">
+                  Last seen
+                  ${this.formatDateTime(
+                    this.liveActivity.lastActivityAt || this.agent.last_seen_at
+                  )}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Live Validation</div>
+                <div class="stat-value">${this.getLiveValidationLabel()}</div>
+                <div class="meta-line">
+                  ${this.agent.last_validated_at
+                    ? `Updated ${this.formatDateTime(this.agent.last_validated_at)}`
+                    : 'No validation timestamp recorded yet'}
+                </div>
+                ${this.liveActivity.modelCalls || this.liveActivity.toolCalls
+                  ? html`
+                      <div class="meta-line">
+                        ${this.liveActivity.modelCalls} messages ·
+                        ${this.liveActivity.toolCalls} tools during this session
+                      </div>
+                    `
+                  : null}
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Lifecycle</div>
+                <div class="stat-value">${this.getLifecycleLabel()}</div>
+                <div class="meta-line">
+                  ${this.agent.lifecycle_updated_at
+                    ? `Updated ${this.formatDateTime(this.agent.lifecycle_updated_at)}`
+                    : 'Not updated yet'}
+                </div>
+                ${this.agent.lifecycle_reason
+                  ? html`
+                      <div class="meta-line">
+                        ${this.agent.lifecycle_reason}
+                      </div>
+                    `
+                  : null}
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Total Requests</div>
+                <div class="stat-value">${aggregate?.total_requests ?? 0}</div>
+                <div class="meta-line">
+                  ${aggregate
+                    ? `${aggregate.successful_requests} success · ${aggregate.failed_requests} failed`
+                    : 'No historical usage yet'}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Estimated Cost</div>
+                <div class="stat-value">
+                  ${this.formatMoney(aggregate?.estimated_cost)}
+                </div>
+                <div class="meta-line">
+                  Latest model ${aggregate?.latest_model_alias || 'None yet'}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Historical Tokens</div>
+                <div class="stat-value">
+                  ${aggregate?.token_usage.total_tokens ?? 0}
+                </div>
+                <div class="meta-line">
+                  Last request
+                  ${this.formatDateTime(aggregate?.last_request_at)}
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Linked Runtime Session</div>
+                <div class="stat-value">
+                  ${this.agent.runtime_session_id ? 'Attached' : 'Not linked'}
+                </div>
+                ${runtimeSessionUrl
+                  ? html`
+                      <a class="session-link" href=${runtimeSessionUrl}>
+                        Open linked runtime session
+                      </a>
+                    `
+                  : html`<div class="meta-line">
+                      No runtime session is linked yet.
                     </div>`}
               </div>
             </div>
+          </div>
+        </sl-card>
 
-            <!-- Danger Zone -->
-            <div class="border-t border-white/10 pt-4 mt-auto">
-              <sl-button
-                size="small"
-                variant="danger"
-                outline
-                class="w-full"
-                ?loading=${this.actionLoading}
-                @click=${this.removeAgent}
-              >
-                Delete Agent Record
-              </sl-button>
-            </div>
-          </aside>
-
-          <!-- Main Terminal Area -->
-          <main
-            class="flex-1 overflow-y-auto flex flex-col relative bg-background-dark/50"
-          >
-            <sl-details
-              summary="Agent Settings & Governance"
-              class="glass-panel m-6 mb-0 rounded-lg"
-            >
+        <div class="split-pane-layout" style="align-items: stretch;">
+          <sl-card>
+            <div class="stack">
+              <div class="hero">
+                <div
+                  style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
+                >
+                  <div>
+                    <div class="hero-title">Models & Spend</div>
+                    <div class="meta-line">
+                      Assign budget limits restricting maximum spend per month.
+                      If a model does not have a budget, it will be prohibited.
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div class="stack">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <div class="stat-label mb-1 font-bold text-white">
-                      Owner Assignment
-                    </div>
-                    <sl-select
-                      size="small"
-                      hoist
-                      value=${this.selectedOwnerUserId}
-                      @sl-change=${(e: CustomEvent) =>
-                        (this.selectedOwnerUserId = e.detail.value || '')}
+                ${Array.from(
+                  new Set(
+                    [
+                      ...(this.governance?.allowed_models || []),
+                      ...Object.keys(JSON.parse(this.modelBudgetsText || '{}')),
+                      ...this.usageByModel.map((u) => u.model_alias),
+                    ].filter(Boolean) as string[]
+                  )
+                ).map((model: string) => {
+                  const currentBudgets = JSON.parse(
+                    this.modelBudgetsText || '{}'
+                  );
+                  const budget = currentBudgets[model] || {};
+                  const usage = this.usageByModel.find(
+                    (u) => u.model_alias === model
+                  );
+                  return html`
+                    <div
+                      class="stat-card"
+                      style="display: flex; gap: var(--sl-spacing-medium); align-items: center; justify-content: space-between;"
                     >
-                      <sl-option value="">Unassigned</sl-option>
-                      ${this.availableUsers.map(
-                        (user) =>
-                          html`<sl-option value=${user.id}
-                            >${user.username} (${user.email})</sl-option
-                          >`
-                      )}
-                    </sl-select>
-                    <sl-button
-                      size="small"
-                      variant="default"
-                      class="mt-2"
-                      ?loading=${this.actionLoading}
-                      @click=${this.saveOwnerAssignment}
-                      >Save Owner</sl-button
-                    >
-                  </div>
-                  <div>
-                    <div class="stat-label mb-1 font-bold text-white">
-                      Allowed Models
-                    </div>
-                    <sl-input
-                      size="small"
-                      value=${this.allowedModelsText}
-                      placeholder="e.g. preloop/google/gemini-pro"
-                      @sl-input=${(e: Event) =>
-                        (this.allowedModelsText = (
-                          e.target as HTMLInputElement
-                        ).value)}
-                    ></sl-input>
-                  </div>
-                </div>
-
-                <div class="mt-4 border-t border-white/10 pt-4">
-                  <div class="text-text-main mb-4 font-bold">
-                    Scoped Tool Governance
-                  </div>
-                  <div class="flex gap-2 mb-4">
-                    <sl-select
-                      size="small"
-                      placeholder="Choose tool"
-                      class="flex-1"
-                      .value=${this.governanceToolToAdd}
-                      @sl-change=${(e: Event) =>
-                        (this.governanceToolToAdd =
-                          (e.target as any).value || '')}
-                    >
-                      ${this.getAvailableGovernanceTools().map(
-                        (t) =>
-                          html`<sl-option value=${t.name}>${t.name}</sl-option>`
-                      )}
-                    </sl-select>
-                    <sl-input
-                      size="small"
-                      placeholder="Custom name"
-                      class="flex-1"
-                      .value=${this.governanceCustomToolName}
-                      @sl-input=${(e: Event) =>
-                        (this.governanceCustomToolName = (
-                          e.target as HTMLInputElement
-                        ).value)}
-                    ></sl-input>
-                    <sl-button
-                      size="small"
-                      variant="primary"
-                      @click=${() => this.addGovernanceToolScope()}
-                      >Add Scope</sl-button
-                    >
-                  </div>
-
-                  <div class="stack">
-                    ${Object.keys(this.scopedToolRules).length === 0
-                      ? html`<div
-                          class="text-text-muted text-sm border border-dashed border-white/10 rounded p-4 text-center"
-                        >
-                          No scoped tool rules configured. Inheriting account
-                          policies.
-                        </div>`
-                      : ''}
-                    ${Object.keys(this.scopedToolRules)
-                      .sort()
-                      .map((toolName) => {
-                        const tool = this.getGovernanceTool(toolName);
-                        return html`
-                          <div
-                            class="glass-panel p-4 rounded-md border border-white/10"
-                          >
-                            <div class="flex justify-between items-center mb-3">
-                              <div
-                                class="text-primary font-bold font-mono text-sm"
-                              >
-                                ${toolName}
-                              </div>
-                              <sl-button
-                                size="small"
-                                variant="danger"
-                                outline
-                                @click=${() =>
-                                  this.removeGovernanceToolScope(toolName)}
-                                >Remove Scope</sl-button
-                              >
-                            </div>
-                            <governance-rule-set-editor
-                              .toolName=${toolName}
-                              .toolSchema=${tool?.schema || null}
-                              .rules=${this.scopedToolRules[toolName] || []}
-                              .workflows=${this.approvalWorkflows}
-                              .features=${this.featureFlags}
-                              emptyMessage="No scoped rules for this tool yet."
-                              @save-rule=${(e: CustomEvent) =>
-                                this.saveScopedToolRule(
-                                  toolName,
-                                  e.detail.existingRule,
-                                  e.detail.formData
-                                )}
-                              @delete-rule=${(e: CustomEvent) =>
-                                this.deleteScopedToolRule(
-                                  toolName,
-                                  e.detail.rule.id
-                                )}
-                              @reorder-rules=${(e: CustomEvent) =>
-                                this.reorderScopedToolRules(
-                                  toolName,
-                                  e.detail.reorderedRules
-                                )}
-                              @workflow-created=${() =>
-                                void this.refreshGovernanceWorkflows()}
-                            ></governance-rule-set-editor>
-                          </div>
-                        `;
-                      })}
-                  </div>
-                  <sl-button
-                    variant="primary"
-                    size="small"
-                    class="mt-4"
-                    ?loading=${this.actionLoading}
-                    @click=${this.saveGovernance}
-                    >Save All Settings & Governance</sl-button
-                  >
-                </div>
-              </div>
-            </sl-details>
-
-            <div class="flex-1 p-6 relative">
-              <div
-                class="flex items-center justify-between pb-2 border-b border-white/10 sticky top-0 bg-background-dark/95 backdrop-blur-md z-20 -mx-6 px-6 -mt-6 pt-6"
-              >
-                <h2
-                  class="font-display text-text-muted text-sm tracking-widest uppercase m-0"
-                >
-                  Live Terminal Payload Feed
-                  <span class="lowercase text-xs ml-2 opacity-50"
-                    >(Linked to latest runtime execution)</span
-                  >
-                </h2>
-                <div class="flex gap-2">
-                  ${runtimeSessionUrl
-                    ? html`<sl-button
-                        href=${runtimeSessionUrl}
-                        size="small"
-                        variant="default"
-                        outline
-                        >View Full Session Log</sl-button
-                      >`
-                    : null}
-                </div>
-              </div>
-
-              <div class="flex flex-col gap-3 mt-4">
-                ${!this.runtimeDetail
-                  ? html`
-                      <div
-                        class="glass-panel rounded-md border border-white/5 p-8 text-center bg-black/50"
-                      >
-                        <span class="font-mono text-text-muted italic text-sm"
-                          >No runtime session activity linked to this agent yet.
-                          Awaiting gateway payload.</span
+                      <div class="stat-label">
+                        <sl-icon
+                          name="robot"
+                          style="margin-right: 4px;"
+                        ></sl-icon>
+                        <a
+                          href="/console/settings/ai-models/${encodeURIComponent(
+                            model
+                          )}"
+                          class="session-link"
+                          style="font-weight: 500;"
+                          >${model}</a
                         >
                       </div>
-                    `
-                  : ''}
-                ${this.runtimeDetail?.activity_timeline.length === 0
-                  ? html`
-                      <div
-                        class="glass-panel rounded-md border border-white/5 p-8 text-center bg-black/50"
-                      >
-                        <span class="font-mono text-text-muted italic text-sm"
-                          >Waiting for incoming gateway payload events...</span
-                        >
-                      </div>
-                    `
-                  : ''}
-                ${this.runtimeDetail?.activity_timeline
-                  .slice(0, 50)
-                  .map((item) => this.renderTimelineItem(item))}
-              </div>
-
-              <div class="pt-8">
-                <sl-details
-                  summary="Show Historical Breakdowns (Usage & Servers)"
-                  class="glass-panel"
-                >
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-8 my-4">
-                    <div>
-                      <h4 class="text-white font-bold mb-4 font-display">
-                        Model Breakdown
-                      </h4>
-                      ${this.renderHistoricalModelBreakdown()}
+                      ${usage || budget.monthly_usd_limit
+                        ? html`<div style="font-size: 0.9em;">
+                            ${usage
+                              ? html`<span
+                                  style="color: var(--sl-color-primary-600); font-weight: 600;"
+                                  >${this.formatMoney(usage.estimated_cost)}
+                                  spent</span
+                                >`
+                              : ''}
+                            ${usage && budget.monthly_usd_limit ? ' / ' : ''}
+                            ${budget.monthly_usd_limit
+                              ? html`<span
+                                  style="color: var(--sl-color-neutral-600);"
+                                  >${this.formatMoney(budget.monthly_usd_limit)}
+                                  budget</span
+                                >`
+                              : ''}
+                          </div>`
+                        : ''}
                     </div>
-                    <div>
-                      <h4 class="text-white font-bold mb-4 font-display">
-                        MCP Server Traffic
-                      </h4>
-                      ${this.renderServerActivityBreakdown()}
-                    </div>
-                  </div>
-                </sl-details>
+                  `;
+                })}
               </div>
             </div>
-          </main>
+          </sl-card>
+
+          <!-- Tools Card -->
+          <sl-card
+            class="tools-card"
+            style="width: 100%; overflow: auto; max-height: 800px; display: flex; flex-direction: column;"
+          >
+            <div
+              class="stack"
+              style="overflow-y: auto; overflow-x: hidden; height: 100%; padding-right: 8px;"
+            >
+              <div class="hero" style="flex-shrink: 0;">
+                <div
+                  style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
+                >
+                  <div>
+                    <div class="hero-title">Tools & Governance</div>
+                    <div class="meta-line">
+                      Agent-specific configurations overrides applying only to
+                      this agent.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <tools-editor-component
+                mode="scoped"
+                ?collapseByDefault=${true}
+                .tools=${this.toolCatalog}
+                .mcpServers=${this.mcpServers}
+                .scopedToolRules=${this.scopedToolRules}
+                .approvalPolicies=${this.approvalWorkflows}
+                .features=${this.featureFlags}
+                @save-rule=${(e: CustomEvent) =>
+                  this.saveScopedToolRule(
+                    e.detail.toolName,
+                    e.detail.rule,
+                    e.detail.formData
+                  )}
+                @delete-rule=${(e: CustomEvent) =>
+                  this.deleteScopedToolRule(e.detail.toolName, e.detail.ruleId)}
+                @reorder-rules=${(e: CustomEvent) =>
+                  this.reorderScopedToolRules(
+                    e.detail.toolName,
+                    e.detail.rules
+                  )}
+                @toggle-enabled=${this.toggleToolEnabledOverride}
+                @revert-tool=${this.revertScopedTool}
+                @policy-created=${() => this.loadData()}
+              ></tools-editor-component>
+            </div>
+          </sl-card>
         </div>
+
+        <sl-card>
+          <div class="stack">
+            <div class="hero">
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
+              >
+                <div>
+                  <div
+                    class="hero-title"
+                    style="display: flex; align-items: center; gap: 8px;"
+                  >
+                    Sessions History
+                    <sl-icon-button
+                      name="arrow-clockwise"
+                      style="font-size: 1.1rem; color: var(--sl-color-neutral-500);"
+                      @click=${() => this.loadData(false)}
+                    ></sl-icon-button>
+                  </div>
+                  <div class="meta-line">
+                    Expand a session to view its captured interactions.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <session-history-widget
+              .sessions=${this.sessions}
+            ></session-history-widget>
+          </div>
+        </sl-card>
       </div>
     `;
   }

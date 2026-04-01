@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from sqlalchemy import String, case, cast, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from ..models.api_usage import ApiUsage
 from ..models.api_key import ApiKey
@@ -69,8 +69,8 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
         db: Session,
         *,
         account_id: str,
-        start_date: datetime,
-        end_date: datetime,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
         query: Optional[str] = None,
         ai_model_id: Optional[str] = None,
         provider_name: Optional[str] = None,
@@ -102,7 +102,10 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
 
         base_query = (
             db.query(
-                GatewayUsageSearchDocument,
+                GatewayUsageSearchDocument.id.label("document_id"),
+                func.substring(
+                    GatewayUsageSearchDocument.searchable_text, 1, 1000
+                ).label("text_preview"),
                 ApiUsage,
                 Flow.name.label("flow_name"),
                 ApiKey.name.label("api_key_name"),
@@ -119,10 +122,14 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
             .filter(
                 ApiUsage.action_type == "model_gateway",
                 ApiUsage.account_id == account_id,
-                ApiUsage.timestamp >= start_date,
-                ApiUsage.timestamp < end_date,
             )
+            .options(defer(ApiUsage.meta_data))
         )
+
+        if start_date:
+            base_query = base_query.filter(ApiUsage.timestamp >= start_date)
+        if end_date:
+            base_query = base_query.filter(ApiUsage.timestamp < end_date)
 
         normalized_query = " ".join(query.strip().split()) if query else None
         if normalized_query:
@@ -171,8 +178,8 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
         )
         items = []
         for row in rows:
-            document = row[0]
-            usage = row[1]
+            text_preview = row.text_preview
+            usage = row.ApiUsage
             items.append(
                 {
                     "api_usage_id": str(usage.id),
@@ -212,9 +219,9 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
                     "completion_tokens": int(usage.completion_tokens or 0),
                     "total_tokens": int(usage.total_tokens or 0),
                     "excerpt": self._build_excerpt(
-                        document.searchable_text, query=normalized_query
+                        text_preview, query=normalized_query
                     ),
-                    "meta_data": document.meta_data or {},
+                    "meta_data": {},
                 }
             )
 

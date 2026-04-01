@@ -38,6 +38,8 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '../../components/icon-selector.ts';
 import '../../components/add-tracker-modal.ts';
 import '../../components/add-ai-model-modal.ts';
+import '../../components/resource-actions.ts';
+import type { ResourceAction } from '../../components/resource-actions.ts';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface GitCloneRepository {
@@ -457,6 +459,33 @@ export class FlowView extends LitElement {
     });
   }
 
+  private getFlowActions(): ResourceAction[] {
+    const actions: ResourceAction[] = [
+      {
+        id: 'edit-flow',
+        label: 'Edit Flow',
+        icon: 'pencil',
+        href: `/console/flows/${this.flowId}?edit=true`,
+      },
+      {
+        id: 'toggle-enabled',
+        label: this.flow.is_enabled ? 'Disable' : 'Enable',
+        variant: this.flow.is_enabled ? 'default' : 'success',
+        icon: this.flow.is_enabled ? 'pause-circle' : 'play-circle',
+        onClick: () => this.toggleFlowEnabled(),
+      },
+      {
+        id: 'test-run',
+        label: 'Test Run',
+        variant: 'primary',
+        icon: 'play-circle',
+        disabled: !this.flow.is_enabled,
+        onClick: () => this.testRun(),
+      },
+    ];
+    return actions;
+  }
+
   render() {
     if (!this.isNew && !this.isEditing) {
       // View mode - show flow details
@@ -479,7 +508,13 @@ export class FlowView extends LitElement {
       <view-header
         headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}"
         width="wide"
-      ></view-header>
+      >
+        <div slot="main-column">
+          <sl-button href="/console/flows">
+            <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Flows
+          </sl-button>
+        </div>
+      </view-header>
       <div class="column-layout wide">
         <div class="main-column">
           ${this.isNew ? this.renderCreationModeSelector() : ''}
@@ -527,38 +562,22 @@ export class FlowView extends LitElement {
         </div>
       </sl-dialog>
 
-      <view-header headerText="${this.flow.name}" width="wide"></view-header>
+      <view-header headerText="${this.flow.name}" width="wide">
+        <div slot="main-column">
+          <sl-button href="/console/flows">
+            <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Flows
+          </sl-button>
+        </div>
+      </view-header>
       <div class="column-layout wide">
         <div class="main-column">
           <!-- Actions -->
           <div
             style="display: flex; gap: var(--sl-spacing-small); margin-bottom: var(--sl-spacing-large);"
           >
-            <sl-button href="/console/flows">
-              <sl-icon name="arrow-left"></sl-icon>
-              Back to Flows
-            </sl-button>
-            <sl-button href="/console/flows/${this.flowId}?edit=true">
-              <sl-icon name="pencil"></sl-icon>
-              Edit Flow
-            </sl-button>
-            <sl-button
-              variant="${this.flow.is_enabled ? 'default' : 'success'}"
-              @click=${this.toggleFlowEnabled}
-            >
-              <sl-icon
-                name="${this.flow.is_enabled ? 'pause-circle' : 'play-circle'}"
-              ></sl-icon>
-              ${this.flow.is_enabled ? 'Disable' : 'Enable'}
-            </sl-button>
-            <sl-button
-              variant="primary"
-              @click=${this.testRun}
-              ?disabled=${!this.flow.is_enabled}
-            >
-              <sl-icon name="play-circle"></sl-icon>
-              Test Run
-            </sl-button>
+            <resource-actions
+              .actions=${this.getFlowActions()}
+            ></resource-actions>
           </div>
 
           <!-- Flow Info Card -->

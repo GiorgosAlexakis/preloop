@@ -39,8 +39,36 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
       LOG_LEVEL: DEBUG
       INIT_TEST_DATA: 'true'
+      PRELOOP_SERVICE_ROLE: api
     ports:
       - "8000:8000"
+    volumes:
+      - .:/app
+    command: ./start.sh
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/preloop/preloop:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres/preloop
+      NATS_URL: nats://nats:4222
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: 'true'
+      SECRET_KEY: development_secret_key_do_not_use_in_production
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      LOG_LEVEL: DEBUG
+      INIT_TEST_DATA: 'true'
+      PRELOOP_SERVICE_ROLE: gateway
+    ports:
+      - "8001:8000"
     volumes:
       - .:/app
     command: ./start.sh

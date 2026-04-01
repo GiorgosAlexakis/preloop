@@ -11,6 +11,7 @@ from nats.aio.msg import Msg
 from preloop.sync.services.event_bus import get_task_publisher
 from preloop.models.db.session import get_db_session as get_db
 from preloop.services.account_realtime import ACCOUNT_REALTIME_TOPICS
+
 from preloop.sync.tasks import notify_admins
 
 logger = logging.getLogger(__name__)

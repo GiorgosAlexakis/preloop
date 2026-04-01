@@ -265,6 +265,20 @@ describe('AgentDetailView', () => {
         });
       }
 
+      if (url === '/api/v1/mcp-servers') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url === '/api/v1/ai-models') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       return new Response(
         JSON.stringify({ detail: `Unhandled request: ${url}` }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
@@ -288,13 +302,13 @@ describe('AgentDetailView', () => {
     );
     await element.updateComplete;
 
+    const viewHeader = element.shadowRoot?.querySelector('view-header');
+    expect(viewHeader?.getAttribute('headertext')).to.equal(
+      'Claude Code Workspace'
+    );
+
     const content = element.shadowRoot?.textContent || '';
-    expect(content).to.contain('Claude Code Workspace');
     expect(content).to.contain('Live validated');
-    expect(content).to.contain('Scoped Governance');
     expect(content).to.contain('openai/gpt-5');
-    expect(content).to.contain('search_issues');
-    expect(content).to.contain('Historical Model Usage');
-    expect(content).to.contain('Historical MCP Server Activity');
   });
 });
