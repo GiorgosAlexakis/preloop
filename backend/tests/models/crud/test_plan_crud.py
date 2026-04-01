@@ -104,6 +104,7 @@ def test_get_active_for_account(crud_subscription, mock_db_session):
     mock_query = MagicMock()
     mock_db_session.query.return_value = mock_query
     mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
     mock_query.first.return_value = mock_subscription
 
     # Act

@@ -3,11 +3,14 @@ import sinon from 'sinon';
 
 import './api-keys-view.ts';
 import type { ApiKeysView } from './api-keys-view';
+import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
 
 describe('ApiKeysView', () => {
   let fetchStub: sinon.SinonStub;
+  let wsStub: sinon.SinonStub;
 
   beforeEach(() => {
+    wsStub = sinon.stub(unifiedWebSocketManager, 'send').returns(true);
     localStorage.setItem('accessToken', 'test-access-token');
     localStorage.setItem('refreshToken', 'test-refresh-token');
 
@@ -100,6 +103,7 @@ describe('ApiKeysView', () => {
   });
 
   afterEach(() => {
+    wsStub.restore();
     fetchStub.restore();
     localStorage.clear();
   });

@@ -259,6 +259,9 @@ export class ConsoleHeader extends LitElement {
       margin-bottom: 0.5rem;
       opacity: 0.5;
     }
+    .theme-switcher-container {
+      text-align: center;
+    }
   `;
 
   async connectedCallback() {
@@ -971,9 +974,6 @@ export class ConsoleHeader extends LitElement {
           <slot name="nav-toggle"></slot>
         </div>
         <div class="user-menu">
-          <div class="theme-switcher-container">
-            <theme-switcher></theme-switcher>
-          </div>
           <!-- Notification Center -->
           <sl-dropdown distance="8" placement="bottom-end">
             <div
@@ -1012,6 +1012,11 @@ export class ConsoleHeader extends LitElement {
               label="User Menu"
             ></sl-icon-button>
             <sl-menu>
+              <div class="theme-switcher-container">
+                <theme-switcher></theme-switcher>
+              </div>
+              <sl-divider></sl-divider>
+
               <div class="user-info">
                 <div class="user-name">
                   ${this._user?.full_name || this._user?.username}

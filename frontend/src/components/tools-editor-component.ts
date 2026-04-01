@@ -341,48 +341,6 @@ export class ToolsEditorComponent extends LitElement {
                               this._getToolKey(tool)
                             )}
                             @toggle-expand=${this._handleToggleExpand}
-                            @toggle-enabled=${(e: CustomEvent) =>
-                              this.dispatchEvent(
-                                new CustomEvent('toggle-enabled', {
-                                  detail: e.detail,
-                                })
-                              )}
-                            @revert-tool=${(e: CustomEvent) =>
-                              this.dispatchEvent(
-                                new CustomEvent('revert-tool', {
-                                  detail: e.detail,
-                                })
-                              )}
-                            @save-rule=${(e: CustomEvent) =>
-                              this.dispatchEvent(
-                                new CustomEvent('save-rule', {
-                                  detail: e.detail,
-                                })
-                              )}
-                            @delete-rule=${(e: CustomEvent) =>
-                              this.dispatchEvent(
-                                new CustomEvent('delete-rule', {
-                                  detail: e.detail,
-                                })
-                              )}
-                            @policy-created=${(e: CustomEvent) =>
-                              this.dispatchEvent(
-                                new CustomEvent('policy-created', {
-                                  detail: e.detail,
-                                })
-                              )}
-                            @reorder-rules=${(e: CustomEvent) =>
-                              this.dispatchEvent(
-                                new CustomEvent('reorder-rules', {
-                                  detail: e.detail,
-                                })
-                              )}
-                            @tool-updated=${(e: CustomEvent) =>
-                              this.dispatchEvent(
-                                new CustomEvent('tool-updated', {
-                                  detail: e.detail,
-                                })
-                              )}
                           ></tool-list-item>
                         `;
                       }

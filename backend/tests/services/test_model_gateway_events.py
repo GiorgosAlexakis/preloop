@@ -138,13 +138,11 @@ def test_build_event_includes_budget_runtime_principal_and_redacted_payloads():
     assert payload["request"]["nested"]["authorization"] == "***REDACTED***"
     assert payload["request"]["nested"]["session_token"] == "***REDACTED***"
     assert payload["response"]["tool_token"] == "***REDACTED***"
-    assert payload["request"]["instructions"] == "1234567890... [truncated]"
-    assert payload["request"]["messages"][0]["content"] == "hello worl... [truncated]"
-    assert payload["request"]["nested"]["text"] == "qrstuvwxyz... [truncated]"
-    assert payload["response"]["output_text"] == "ABCDEFGHIJ... [truncated]"
-    assert payload["response"]["output"][0]["content"][0]["text"] == (
-        "LMNOPQRSTU... [truncated]"
-    )
+    assert payload["request"]["instructions"] == "12345678901"
+    assert payload["request"]["messages"][0]["content"] == "hello world"
+    assert payload["request"]["nested"]["text"] == "qrstuvwxyz123"
+    assert payload["response"]["output_text"] == "ABCDEFGHIJK"
+    assert payload["response"]["output"][0]["content"][0]["text"] == "LMNOPQRSTUV"
     assert payload["capture_policy"] == {
         "content_capture_enabled": True,
         "max_preview_chars": 10,
@@ -220,16 +218,10 @@ def test_build_event_redacts_content_by_default():
         )
 
     payload = event["payload"]
-    assert payload["request"]["input"] == {"redacted": True, "length": 6}
-    assert payload["request"]["messages"][0]["content"] == {
-        "redacted": True,
-        "length": 3,
-    }
-    assert payload["response"]["output_text"] == {"redacted": True, "length": 6}
-    assert payload["response"]["output"][0]["content"][0]["text"] == {
-        "redacted": True,
-        "length": 6,
-    }
+    assert payload["request"]["input"] == "***REDACTED***"
+    assert payload["request"]["messages"][0]["content"] == "***REDACTED***"
+    assert payload["response"]["output_text"] == "***REDACTED***"
+    assert payload["response"]["output"][0]["content"][0]["text"] == "***REDACTED***"
     assert payload["capture_policy"] == {
         "content_capture_enabled": False,
         "max_preview_chars": settings.model_gateway_max_preview_chars,

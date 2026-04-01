@@ -123,6 +123,7 @@ export interface GatewayUsageByModel {
   request_count: number;
   token_usage: GatewayTokenUsage;
   estimated_cost: number;
+  last_request_at?: string | null;
 }
 
 export interface GatewayUsageByFlow {

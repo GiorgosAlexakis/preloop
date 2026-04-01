@@ -129,6 +129,7 @@ export class JsonTree extends LitElement {
   @property({ type: Boolean }) initiallyExpanded: boolean = false;
   // Let parents pass down current path context like "messages[0].role"
   @property({ type: String }) path: string = '';
+  @property({ type: Boolean }) isLastArrayItem: boolean = false;
 
   @state() private expanded = false;
 
@@ -136,6 +137,22 @@ export class JsonTree extends LitElement {
     super.connectedCallback();
     this.expanded =
       this.isRoot || this.initiallyExpanded || this.shouldAutoExpand();
+
+    if (
+      this.expanded &&
+      this.isLastArrayItem &&
+      this.path.match(/messages\[\d+\]$/)
+    ) {
+      // Emit event so the parent widget can scroll to it
+      requestAnimationFrame(() => {
+        this.dispatchEvent(
+          new CustomEvent('json-tree-scroll-target', {
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+    }
   }
 
   private shouldAutoExpand(): boolean {
@@ -144,13 +161,19 @@ export class JsonTree extends LitElement {
 
     // Auto expand the specific "user" and "assistant" roles if requested
     if (this.path.includes('messages')) {
-      // Expand the message object if it's role user/assistant
+      // If we are inside an item of the messages array (like "messages[count-1]"),
+      // expand only if it is the precisely marked last item.
+      if (this.path.match(/messages\[\d+\]$/)) {
+        return this.isLastArrayItem;
+      }
+
+      // Keep expanding contents inside the single expanded last message object
       if (
         typeof this.data === 'object' &&
         !Array.isArray(this.data) &&
         this.data.role
       ) {
-        return true; // We want to see inside messages
+        return true;
       }
     }
 
@@ -222,6 +245,7 @@ export class JsonTree extends LitElement {
                       .data=${item}
                       .isRoot=${false}
                       path="${this.path}[${i}]"
+                      .isLastArrayItem=${i === items.length - 1}
                     ></json-tree>
                   `
                 )

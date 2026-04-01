@@ -298,6 +298,15 @@ export class AgentDetailView extends LitElement {
     `,
   ];
 
+  @state()
+  private changeOwnerDialogOpen = false;
+
+  @state()
+  private updateBudgetsDialogOpen = false;
+
+  @state()
+  private budgetsDialogJson = '{}';
+
   onBeforeEnter(location: { params: { agentId?: string } }) {
     const nextAgentId = location.params.agentId ?? '';
     const changed = this.agentId !== nextAgentId;
@@ -639,22 +648,15 @@ export class AgentDetailView extends LitElement {
   private promptChangeOwner(): void {
     const defaultVal =
       this.agent?.owner_username || this.agent?.owner_email || '';
-    const newOwnerStr = window.prompt(
-      'Enter the username or email of the new owner:',
-      defaultVal
+    const user = this.availableUsers.find(
+      (u) => u.username === defaultVal.trim() || u.email === defaultVal.trim()
     );
-    if (newOwnerStr !== null && newOwnerStr.trim() !== '') {
-      const user = this.availableUsers.find(
-        (u) =>
-          u.username === newOwnerStr.trim() || u.email === newOwnerStr.trim()
-      );
-      if (user) {
-        this.selectedOwnerUserId = user.id;
-        this.saveOwnerAssignment();
-      } else {
-        alert('User not found: ' + newOwnerStr);
-      }
-    }
+    this.selectedOwnerUserId = user
+      ? user.id
+      : this.availableUsers.length > 0
+        ? this.availableUsers[0].id
+        : '';
+    this.changeOwnerDialogOpen = true;
   }
 
   private async saveDisplayName(): Promise<void> {
@@ -705,6 +707,7 @@ export class AgentDetailView extends LitElement {
       this.scopedToolRules = normalizeScopedToolRules(
         response.config.tool_rules
       );
+      this.toolEnabledOverrides = response.config.tool_enabled_overrides || {};
       this.allowedModelsText = response.config.allowed_models.join(', ');
       this.modelBudgetsText = JSON.stringify(
         response.config.model_budgets || {},
@@ -747,12 +750,12 @@ export class AgentDetailView extends LitElement {
   }
 
   private toggleToolEnabledOverride(e: CustomEvent): void {
-    const { toolName, isEnabled } = e.detail;
+    const { tool, isEnabled } = e.detail;
     this.toolEnabledOverrides = {
       ...this.toolEnabledOverrides,
-      [toolName]: isEnabled,
+      [tool.name]: isEnabled,
     };
-    this.saveGovernance();
+    void this.saveGovernance();
   }
 
   private revertScopedTool(e: CustomEvent): void {
@@ -808,6 +811,7 @@ export class AgentDetailView extends LitElement {
         priority: index,
       })),
     };
+    void this.saveGovernance();
   }
 
   private deleteScopedToolRule(toolName: string, ruleId: string): void {
@@ -821,6 +825,7 @@ export class AgentDetailView extends LitElement {
       ...this.scopedToolRules,
       [toolName]: nextRules,
     };
+    void this.saveGovernance();
   }
 
   private reorderScopedToolRules(
@@ -844,6 +849,7 @@ export class AgentDetailView extends LitElement {
       ...this.scopedToolRules,
       [toolName]: nextRules,
     };
+    void this.saveGovernance();
   }
 
   private async refreshGovernanceWorkflows(): Promise<void> {
@@ -1019,10 +1025,20 @@ export class AgentDetailView extends LitElement {
 
     return html`
       <view-header headerText=${this.agent.display_name}>
-        <div slot="main-column">
-          <sl-button variant="default" @click=${() => window.history.back()}>
+        <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+          <sl-button
+            variant="default"
+            size="small"
+            @click=${() => window.history.back()}
+          >
             <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back
           </sl-button>
+        </div>
+        <div
+          slot="main-column"
+          style="display: flex; justify-content: flex-end; flex: 1; min-width: 0;"
+        >
+          <resource-actions .actions=${this.agentActions}></resource-actions>
         </div>
       </view-header>
       <div class="page" style="padding-top: 0;">
@@ -1039,7 +1055,7 @@ export class AgentDetailView extends LitElement {
             </div>
 
             <div
-              style="display: flex; flex-direction: column; align-items: flex-start; gap: var(--sl-spacing-small);"
+              style="display: flex; flex-direction: column; align-items: flex-start; gap: var(--sl-spacing-small); margin-top: var(--sl-spacing-small);"
             >
               <div class="badge-row">
                 <sl-badge variant=${this.getOnboardingVariant()}>
@@ -1064,12 +1080,6 @@ export class AgentDetailView extends LitElement {
                     `
                   : null}
               </div>
-            </div>
-
-            <div style="margin-top: var(--sl-spacing-medium);">
-              <resource-actions
-                .actions=${this.agentActions}
-              ></resource-actions>
             </div>
           </div>
         </div>
@@ -1223,6 +1233,16 @@ export class AgentDetailView extends LitElement {
                       If a model does not have a budget, it will be prohibited.
                     </div>
                   </div>
+                  <sl-button
+                    size="small"
+                    @click=${() => {
+                      this.budgetsDialogJson = this.modelBudgetsText;
+                      this.updateBudgetsDialogOpen = true;
+                    }}
+                  >
+                    <sl-icon slot="prefix" name="pencil"></sl-icon>
+                    Edit Budgets
+                  </sl-button>
                 </div>
               </div>
               <div class="stack">
@@ -1234,55 +1254,73 @@ export class AgentDetailView extends LitElement {
                       ...this.usageByModel.map((u) => u.model_alias),
                     ].filter(Boolean) as string[]
                   )
-                ).map((model: string) => {
-                  const currentBudgets = JSON.parse(
-                    this.modelBudgetsText || '{}'
-                  );
-                  const budget = currentBudgets[model] || {};
-                  const usage = this.usageByModel.find(
-                    (u) => u.model_alias === model
-                  );
-                  return html`
-                    <div
-                      class="stat-card"
-                      style="display: flex; gap: var(--sl-spacing-medium); align-items: center; justify-content: space-between;"
-                    >
-                      <div class="stat-label">
-                        <sl-icon
-                          name="robot"
-                          style="margin-right: 4px;"
-                        ></sl-icon>
-                        <a
-                          href="/console/settings/ai-models/${encodeURIComponent(
-                            model
-                          )}"
-                          class="session-link"
-                          style="font-weight: 500;"
-                          >${model}</a
-                        >
+                )
+                  .sort((a: string, b: string) => {
+                    const usageA = this.usageByModel.find(
+                      (u) => u.model_alias === a
+                    );
+                    const usageB = this.usageByModel.find(
+                      (u) => u.model_alias === b
+                    );
+                    const timeA = usageA?.last_request_at
+                      ? new Date(usageA.last_request_at).getTime()
+                      : 0;
+                    const timeB = usageB?.last_request_at
+                      ? new Date(usageB.last_request_at).getTime()
+                      : 0;
+                    return timeB - timeA;
+                  })
+                  .map((model: string) => {
+                    const currentBudgets = JSON.parse(
+                      this.modelBudgetsText || '{}'
+                    );
+                    const budget = currentBudgets[model] || {};
+                    const usage = this.usageByModel.find(
+                      (u) => u.model_alias === model
+                    );
+                    return html`
+                      <div
+                        class="stat-card"
+                        style="display: flex; gap: var(--sl-spacing-medium); align-items: center; justify-content: space-between;"
+                      >
+                        <div class="stat-label">
+                          <sl-icon
+                            name="robot"
+                            style="margin-right: 4px;"
+                          ></sl-icon>
+                          <a
+                            href="/console/settings/ai-models/${encodeURIComponent(
+                              model
+                            )}"
+                            class="session-link"
+                            style="font-weight: 500;"
+                            >${model}</a
+                          >
+                        </div>
+                        ${usage || budget.monthly_usd_limit
+                          ? html`<div style="font-size: 0.9em;">
+                              ${usage
+                                ? html`<span
+                                    style="color: var(--sl-color-primary-600); font-weight: 600;"
+                                    >${this.formatMoney(usage.estimated_cost)}
+                                    spent</span
+                                  >`
+                                : ''}
+                              ${usage && budget.monthly_usd_limit ? ' / ' : ''}
+                              ${budget.monthly_usd_limit
+                                ? html`<span
+                                    style="color: var(--sl-color-neutral-600);"
+                                    >${this.formatMoney(
+                                      budget.monthly_usd_limit
+                                    )}
+                                    budget</span
+                                  >`
+                                : ''}
+                            </div>`
+                          : ''}
                       </div>
-                      ${usage || budget.monthly_usd_limit
-                        ? html`<div style="font-size: 0.9em;">
-                            ${usage
-                              ? html`<span
-                                  style="color: var(--sl-color-primary-600); font-weight: 600;"
-                                  >${this.formatMoney(usage.estimated_cost)}
-                                  spent</span
-                                >`
-                              : ''}
-                            ${usage && budget.monthly_usd_limit ? ' / ' : ''}
-                            ${budget.monthly_usd_limit
-                              ? html`<span
-                                  style="color: var(--sl-color-neutral-600);"
-                                  >${this.formatMoney(budget.monthly_usd_limit)}
-                                  budget</span
-                                >`
-                              : ''}
-                          </div>`
-                        : ''}
-                    </div>
-                  `;
-                })}
+                    `;
+                  })}
               </div>
             </div>
           </sl-card>
@@ -1354,7 +1392,7 @@ export class AgentDetailView extends LitElement {
                     <sl-icon-button
                       name="arrow-clockwise"
                       style="font-size: 1.1rem; color: var(--sl-color-neutral-500);"
-                      @click=${() => this.loadData(false)}
+                      @click=${() => this.loadData(true)}
                     ></sl-icon-button>
                   </div>
                   <div class="meta-line">
@@ -1369,6 +1407,89 @@ export class AgentDetailView extends LitElement {
           </div>
         </sl-card>
       </div>
+
+      <!-- Change Owner Dialog -->
+      <sl-dialog
+        class="owner-dialog"
+        label="Change Owner"
+        ?open=${this.changeOwnerDialogOpen}
+        @sl-after-hide=${() => {
+          this.changeOwnerDialogOpen = false;
+        }}
+      >
+        <sl-select
+          label="Select New Owner"
+          value=${this.selectedOwnerUserId || ''}
+          @sl-change=${(e: any) => {
+            this.selectedOwnerUserId = e.target.value;
+          }}
+          hoist
+        >
+          ${this.availableUsers.map(
+            (u) => html`
+              <sl-option value=${u.id}>${u.username} (${u.email})</sl-option>
+            `
+          )}
+        </sl-select>
+        <div slot="footer">
+          <sl-button
+            variant="primary"
+            @click=${() => {
+              this.saveOwnerAssignment();
+              this.changeOwnerDialogOpen = false;
+            }}
+            >Confirm</sl-button
+          >
+          <sl-button
+            @click=${() => {
+              this.changeOwnerDialogOpen = false;
+            }}
+            >Cancel</sl-button
+          >
+        </div>
+      </sl-dialog>
+
+      <!-- Update Budgets Dialog -->
+      <sl-dialog
+        class="budgets-dialog"
+        label="Update Model Budgets"
+        ?open=${this.updateBudgetsDialogOpen}
+        @sl-after-hide=${() => {
+          this.updateBudgetsDialogOpen = false;
+        }}
+      >
+        <sl-textarea
+          label="Budgets JSON"
+          value=${this.budgetsDialogJson}
+          @sl-input=${(e: any) => {
+            this.budgetsDialogJson = e.target.value;
+          }}
+          help-text='Example: { "gpt-4o": { "monthly_usd_limit": 5.0 } }'
+          rows="6"
+        ></sl-textarea>
+        <div slot="footer">
+          <sl-button
+            variant="primary"
+            @click=${() => {
+              try {
+                JSON.parse(this.budgetsDialogJson);
+                this.modelBudgetsText = this.budgetsDialogJson;
+                void this.saveGovernance();
+                this.updateBudgetsDialogOpen = false;
+              } catch (e) {
+                alert('Invalid JSON');
+              }
+            }}
+            >Save</sl-button
+          >
+          <sl-button
+            @click=${() => {
+              this.updateBudgetsDialogOpen = false;
+            }}
+            >Cancel</sl-button
+          >
+        </div>
+      </sl-dialog>
     `;
   }
 }

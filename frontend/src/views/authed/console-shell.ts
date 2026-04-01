@@ -311,10 +311,22 @@ export class ConsoleShell extends LitElement {
                   <span class="sidebar-label">Agents</span>
                 </sl-menu-item>
               </a>
+              <a href="/console/flows" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Flows</span>
+                </sl-menu-item>
+              </a>
               <a href="/console/tools" @click=${this._closeSidebar}>
                 <sl-menu-item>
                   <sl-icon name="tools" slot="prefix"></sl-icon>
                   <span class="sidebar-label">Tools</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/trackers" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Trackers</span>
                 </sl-menu-item>
               </a>
               <a
@@ -324,12 +336,6 @@ export class ConsoleShell extends LitElement {
                 <sl-menu-item>
                   <sl-icon name="cpu" slot="prefix"></sl-icon>
                   <span class="sidebar-label">Models</span>
-                </sl-menu-item>
-              </a>
-              <a href="/console/flows" @click=${this._closeSidebar}>
-                <sl-menu-item>
-                  <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
-                  <span class="sidebar-label">Flows</span>
                 </sl-menu-item>
               </a>
               <a href="/console/runtime-sessions" @click=${this._closeSidebar}>
@@ -356,12 +362,6 @@ export class ConsoleShell extends LitElement {
                     `
                   : ''
                 : ''}
-              <a href="/console/trackers" @click=${this._closeSidebar}>
-                <sl-menu-item>
-                  <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
-                  <span class="sidebar-label">Trackers</span>
-                </sl-menu-item>
-              </a>
               <sl-details>
                 <span slot="summary">
                   <sl-icon name="gear" style="padding-right: 6px;"></sl-icon>

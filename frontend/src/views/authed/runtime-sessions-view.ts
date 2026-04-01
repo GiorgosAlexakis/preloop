@@ -488,7 +488,9 @@ export class RuntimeSessionsView extends LitElement {
     const unsubscribers = [
       unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
       unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
-      unifiedWebSocketManager.subscribe('gateway_activity', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('gateway_activity', (message: any) =>
+        this.handleGatewayActivity(message)
+      ),
       unifiedWebSocketManager.subscribe('audit', scheduleRefresh),
     ];
     this.unsubscribeRealtime = () => {
@@ -497,6 +499,81 @@ export class RuntimeSessionsView extends LitElement {
       }
     };
     void unifiedWebSocketManager.connect();
+  }
+
+  private handleGatewayActivity(message: any): void {
+    const payload = message?.payload ?? {};
+    const sessionId = payload.runtime_session_id;
+
+    if (sessionId === this.selectedSessionId) {
+      // Create an optimistic event
+      const newEvent = {
+        id: message.id || crypto.randomUUID(),
+        execution_id: message.execution_id || '',
+        timestamp: payload.timestamp || new Date().toISOString(),
+        type: message.type,
+        payload: {
+          ...payload,
+          outcome:
+            message.type === 'model_gateway_request_started'
+              ? 'pending'
+              : payload.status_code >= 400
+                ? 'error'
+                : 'success',
+        },
+      };
+
+      if (
+        this.gatewayEvents &&
+        (message.type === 'model_gateway_call' ||
+          message.type === 'model_gateway_request_started' ||
+          message.type === 'tool_call')
+      ) {
+        let nextEvents = this.gatewayEvents as any[];
+        // Filter out started if completed arrived
+        if (message.type !== 'model_gateway_request_started') {
+          nextEvents = nextEvents.filter(
+            (e) =>
+              !(
+                e.type === 'model_gateway_request_started' &&
+                Math.abs(
+                  new Date(e.timestamp || new Date().toISOString()).getTime() -
+                    new Date(
+                      payload.timestamp || new Date().toISOString()
+                    ).getTime()
+                ) < 60000
+              )
+          );
+        }
+        this.gatewayEvents = [newEvent, ...nextEvents];
+      }
+
+      // Update interactions list if visible
+      if (message.type === 'model_gateway_call' && this.interactions) {
+        const newInteraction = {
+          id: message.id || crypto.randomUUID(),
+          request: payload.request || {},
+          response: payload.response || {},
+          error_detail: payload.error_detail,
+          timestamp: payload.timestamp || new Date().toISOString(),
+          requested_model: payload.requested_model,
+          model_alias: payload.model_alias,
+          provider_name: payload.provider_name,
+          status_code: payload.status_code,
+          estimated_cost: payload.estimated_cost,
+          total_tokens: payload.total_tokens,
+          prompt_tokens: payload.prompt_tokens,
+          completion_tokens: payload.completion_tokens,
+        } as unknown as GatewayUsageSearchResultItem;
+        this.interactions = {
+          ...this.interactions,
+          items: [newInteraction, ...this.interactions.items],
+        };
+      }
+    }
+
+    // Call scheduleRefresh anyway for non-selected items logic
+    this.scheduleRefresh();
   }
 
   private scheduleRefresh(): void {

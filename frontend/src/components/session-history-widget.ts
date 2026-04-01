@@ -11,6 +11,7 @@ import {
   getRuntimeSessionGatewayEventDetail,
 } from '../api';
 import type { FlowGatewayEvent } from '../types';
+import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
 import './json-tree.js';
 
 @customElement('session-history-widget')
@@ -43,71 +44,78 @@ export class SessionHistoryWidget extends LitElement {
   }
 
   private connectRealtime() {
-    this.unsubscribeRealtime = (
-      window as any
-    ).unifiedWebSocketManager?.subscribe('gateway_activity', (message: any) => {
-      const payload = message?.payload ?? {};
-      const sessionId = payload.runtime_session_id;
-      if (!sessionId) return;
+    this.unsubscribeRealtime = unifiedWebSocketManager.subscribe(
+      'gateway_activity',
+      (message: any) => {
+        const payload = message?.payload ?? {};
+        const sessionId = payload.runtime_session_id;
+        if (!sessionId) return;
 
-      // Update session order
-      const sessionIndex = this.sessions.findIndex((s) => s.id === sessionId);
-      if (sessionIndex >= 0) {
-        const newSessions = [...this.sessions];
-        const [session] = newSessions.splice(sessionIndex, 1);
-        session.last_activity_at =
-          payload.timestamp || session.last_activity_at;
-        if (message.type === 'model_gateway_call') {
-          session.total_requests = (session.total_requests || 0) + 1;
-          session.estimated_cost =
-            (session.estimated_cost || 0) + Number(payload.estimated_cost || 0);
+        // Update session order
+        const sessionIndex = this.sessions.findIndex((s) => s.id === sessionId);
+        if (sessionIndex >= 0) {
+          const newSessions = [...this.sessions];
+          const [session] = newSessions.splice(sessionIndex, 1);
+          session.last_activity_at =
+            payload.timestamp || session.last_activity_at;
+          if (message.type === 'model_gateway_call') {
+            session.total_requests = (session.total_requests || 0) + 1;
+            session.estimated_cost =
+              (session.estimated_cost || 0) +
+              Number(payload.estimated_cost || 0);
+          }
+          this.sessions = [session, ...newSessions];
         }
-        this.sessions = [session, ...newSessions];
-      }
 
-      // Stream event to the active session view
-      if (sessionId === this.activeSessionId && this.loadedEvents[sessionId]) {
-        const newEvent: FlowGatewayEvent = {
-          id: message.id || crypto.randomUUID(),
-          execution_id: message.execution_id || '',
-          timestamp: payload.timestamp || new Date().toISOString(),
-          type: message.type,
-          payload: {
-            ...payload,
-            outcome:
-              message.type === 'model_gateway_request_started'
-                ? 'pending'
-                : payload.status_code >= 400
-                  ? 'error'
-                  : 'success',
-          },
-        };
+        // Stream event to the active session view
+        if (
+          sessionId === this.activeSessionId &&
+          this.loadedEvents[sessionId]
+        ) {
+          const newEvent: FlowGatewayEvent = {
+            id: message.id || crypto.randomUUID(),
+            execution_id: message.execution_id || '',
+            timestamp: payload.timestamp || new Date().toISOString(),
+            type: message.type,
+            payload: {
+              ...payload,
+              outcome:
+                message.type === 'model_gateway_request_started'
+                  ? 'pending'
+                  : payload.status_code >= 400
+                    ? 'error'
+                    : 'success',
+            },
+          };
 
-        const existingEvents = this.loadedEvents[sessionId];
-        let nextEvents = existingEvents;
+          const existingEvents = this.loadedEvents[sessionId];
+          let nextEvents = existingEvents;
 
-        if (message.type === 'model_gateway_call') {
-          nextEvents = existingEvents.filter(
-            (e) =>
-              !(
-                e.type === 'model_gateway_request_started' &&
-                Math.abs(
-                  new Date(e.timestamp || new Date().toISOString()).getTime() -
+          if (message.type === 'model_gateway_call') {
+            nextEvents = existingEvents.filter(
+              (e) =>
+                !(
+                  e.type === 'model_gateway_request_started' &&
+                  Math.abs(
                     new Date(
-                      payload.timestamp || new Date().toISOString()
-                    ).getTime()
-                ) < 60000
-              )
-          );
-        }
+                      e.timestamp || new Date().toISOString()
+                    ).getTime() -
+                      new Date(
+                        payload.timestamp || new Date().toISOString()
+                      ).getTime()
+                  ) < 60000
+                )
+            );
+          }
 
-        // Add to the top of the events array (newest first)
-        this.loadedEvents = {
-          ...this.loadedEvents,
-          [sessionId]: [newEvent, ...nextEvents],
-        };
+          // Add to the top of the events array (newest first)
+          this.loadedEvents = {
+            ...this.loadedEvents,
+            [sessionId]: [newEvent, ...nextEvents],
+          };
+        }
       }
-    });
+    );
   }
 
   static styles = css`
@@ -221,6 +229,13 @@ export class SessionHistoryWidget extends LitElement {
     if (this.activeSessionId) {
       delete this.loadedEvents[this.activeSessionId];
       this._selectSession(this.activeSessionId);
+    }
+  }
+
+  private _handleScrollTarget(e: CustomEvent) {
+    const target = e.target as HTMLElement;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
 
@@ -376,6 +391,8 @@ export class SessionHistoryWidget extends LitElement {
                             <json-tree
                               .data=${detailPayload.request}
                               .initiallyExpanded=${true}
+                              @json-tree-scroll-target=${this
+                                ._handleScrollTarget}
                             ></json-tree>
                           `
                         : ''}
@@ -389,6 +406,8 @@ export class SessionHistoryWidget extends LitElement {
                             <json-tree
                               .data=${detailPayload.response}
                               .initiallyExpanded=${true}
+                              @json-tree-scroll-target=${this
+                                ._handleScrollTarget}
                             ></json-tree>
                           `
                         : detailPayload.outcome === 'error' ||

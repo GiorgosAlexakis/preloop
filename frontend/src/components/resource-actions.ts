@@ -206,8 +206,9 @@ export class ResourceActions extends LitElement {
       }
     }
 
-    let visibleActions = effectiveActions.slice(0, visibleCount);
-    const overflowActions = effectiveActions.slice(visibleCount);
+    const overflowCount = effectiveActions.length - visibleCount;
+    let visibleActions = effectiveActions.slice(overflowCount);
+    const overflowActions = effectiveActions.slice(0, overflowCount);
 
     // If there is only 1 overflow action and it would fit in the overflow dropdown,
     // it's sometimes better to just show it if `visibleCount` allows. But we rely on the math.
@@ -222,10 +223,9 @@ export class ResourceActions extends LitElement {
 
     return html`
       <div class="actions-container" part="container">
-        ${visibleActions.map((action) => this.renderButton(action))}
         ${overflowActions.length > 0
           ? html`
-              <sl-dropdown placement="bottom-end">
+              <sl-dropdown placement="bottom-start">
                 <sl-button slot="trigger" variant="default" caret>
                   <sl-icon name="three-dots"></sl-icon>
                 </sl-button>
@@ -237,6 +237,7 @@ export class ResourceActions extends LitElement {
               </sl-dropdown>
             `
           : ''}
+        ${visibleActions.map((action) => this.renderButton(action))}
       </div>
     `;
   }

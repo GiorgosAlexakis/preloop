@@ -134,7 +134,10 @@ describe('ToolsView (approvals + conditions)', () => {
     );
     await element.updateComplete;
 
-    const toolItem = element.shadowRoot?.querySelector(
+    const editor = element.shadowRoot?.querySelector(
+      'tools-editor-component'
+    ) as HTMLElement;
+    const toolItem = editor.shadowRoot?.querySelector(
       'tool-list-item'
     ) as HTMLElement;
     expect(toolItem).to.exist;
@@ -144,7 +147,7 @@ describe('ToolsView (approvals + conditions)', () => {
     // Step 1: toggle enabled (auto-creates config since config_id is null)
     toolItem.dispatchEvent(
       new CustomEvent('toggle-enabled', {
-        detail: { tool: (element as any).tools[0] },
+        detail: (element as any).tools[0],
         bubbles: true,
         composed: true,
       })
@@ -514,7 +517,10 @@ describe('ToolsView – starter policy suggestions', () => {
     await waitUntil(() => !(el as any).loading, 'Initial load did not finish');
     await el.updateComplete;
 
-    const trigger = el.shadowRoot?.querySelector(
+    const editor = el.shadowRoot?.querySelector(
+      'tools-editor-component'
+    ) as HTMLElement;
+    const trigger = editor.shadowRoot?.querySelector(
       'sl-icon-button[name="magic"]'
     ) as HTMLElement | null;
     expect(trigger).to.exist;
@@ -581,7 +587,10 @@ describe('ToolsView – starter policy suggestions', () => {
     const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
     await waitUntil(() => !(el as any).loading, 'Initial load did not finish');
 
-    const trigger = el.shadowRoot?.querySelector(
+    const editor = el.shadowRoot?.querySelector(
+      'tools-editor-component'
+    ) as HTMLElement;
+    const trigger = editor.shadowRoot?.querySelector(
       'sl-icon-button[name="magic"]'
     ) as HTMLElement | null;
     expect(trigger).to.exist;
