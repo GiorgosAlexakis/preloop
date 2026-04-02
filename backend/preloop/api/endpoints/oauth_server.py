@@ -6,7 +6,8 @@ Provides:
     POST /oauth/register   — Dynamic client registration (MCP clients)
     POST /oauth/revoke     — Token revocation
 
-The CLI uses /oauth/authorize + /oauth/token (no PKCE).
+The CLI uses /oauth/authorize + /oauth/token with either a loopback redirect
+or an out-of-band copy/paste redirect (no PKCE).
 MCP clients (Claude Desktop) discover these via /.well-known metadata.
 """
 

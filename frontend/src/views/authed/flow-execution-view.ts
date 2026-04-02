@@ -9,6 +9,7 @@ import {
   getFlowExecutionMetrics,
   getFlowExecutionLogs,
   getFlowExecutionGatewayEvents,
+  getFlowExecutionGatewayEvent,
   retryFlowExecution,
 } from '../../api';
 import type {
@@ -81,6 +82,7 @@ interface ToolActivityEntry {
   serverName: string;
   status?: string;
   detail?: string;
+  payload?: any;
 }
 
 @customElement('flow-execution-view')
@@ -906,6 +908,59 @@ export class FlowExecutionView extends LitElement {
     }
   }
 
+  gatewayEventsLoaded = false;
+
+  handleTabShow(e: CustomEvent) {
+    if (e.detail.name === 'gateway-events') {
+      if (!this.gatewayEventsLoaded && !this.isLoadingGatewayEvents) {
+        this.loadGatewayEvents(true);
+      }
+    }
+  }
+
+  async loadGatewayEvents(metadataOnly: boolean = false) {
+    if (!this.executionId) return;
+    this.isLoadingGatewayEvents = true;
+    try {
+      const response = await getFlowExecutionGatewayEvents(
+        this.executionId,
+        undefined,
+        metadataOnly
+      );
+      this.gatewayEvents = response.logs || [];
+      this.gatewayEventsSource = response.source;
+      this.gatewayEventsLoaded = true;
+      this.applyGatewayMetricsFromEvents();
+    } catch (error) {
+      console.error('Failed to fetch gateway events:', error);
+      this.gatewayEventsError =
+        error instanceof Error
+          ? error.message
+          : 'Failed to load execution gateway events';
+    } finally {
+      this.isLoadingGatewayEvents = false;
+    }
+  }
+
+  async handleGatewayEventExpand(eventId: string) {
+    if (!this.executionId || !eventId) return;
+
+    const event = this.gatewayEvents.find((ev) => ev.id === eventId);
+    if (!event || (event as any).fullPayloadLoaded) return;
+
+    try {
+      const fullEvent = await getFlowExecutionGatewayEvent(
+        this.executionId,
+        eventId
+      );
+      event.payload = fullEvent.payload;
+      (event as any).fullPayloadLoaded = true;
+      this.requestUpdate();
+    } catch (error) {
+      console.error('Failed to load full gateway event payload:', error);
+    }
+  }
+
   async fetchExecution() {
     if (!this.executionId) return;
 
@@ -922,61 +977,35 @@ export class FlowExecutionView extends LitElement {
       this.execution = await getFlowExecution(this.executionId);
       this.hydrateMetricsFromExecution();
 
-      // Fetch logs and normalized gateway events in parallel.
-      const [logsResult, gatewayEventsResult] = await Promise.allSettled([
-        getFlowExecutionLogs(this.executionId),
-        getFlowExecutionGatewayEvents(this.executionId),
-      ]);
-
-      // Fetch logs from container (if running) or database (if finished)
-      // This ensures we get all historical logs, even for running executions
-      try {
-        if (logsResult.status !== 'fulfilled') {
-          throw logsResult.reason;
-        }
-        const logsResponse = logsResult.value;
-        if (logsResponse.logs && Array.isArray(logsResponse.logs)) {
-          console.log(
-            `Loaded ${logsResponse.logs.length} logs from ${logsResponse.source}`
-          );
-          this.logs = logsResponse.logs;
-        } else {
-          console.log('No logs found in response');
-        }
-      } catch (error) {
-        console.error('Failed to fetch logs:', error);
-        // Fallback to execution_logs from database if available
-        if (
-          this.execution &&
-          this.execution.execution_logs &&
-          Array.isArray(this.execution.execution_logs)
-        ) {
-          console.log(
-            `Using fallback: Loaded ${this.execution.execution_logs.length} persisted logs from database`
-          );
-          this.logs = this.execution.execution_logs;
-        } else {
+      // Fetch logs
+      const logsResult = await getFlowExecutionLogs(this.executionId).catch(
+        (error) => {
+          console.error('Failed to fetch logs:', error);
+          if (
+            this.execution &&
+            this.execution.execution_logs &&
+            Array.isArray(this.execution.execution_logs)
+          ) {
+            console.log(
+              `Using fallback: Loaded ${this.execution.execution_logs.length} persisted logs from database`
+            );
+            return { logs: this.execution.execution_logs, source: 'fallback' };
+          }
           console.log('No fallback logs available');
+          return { logs: [], source: 'none' };
         }
+      );
+
+      if (logsResult && Array.isArray(logsResult.logs)) {
+        console.log(
+          `Loaded ${logsResult.logs.length} logs from ${logsResult.source}`
+        );
+        this.logs = logsResult.logs;
       }
       this.hydrateToolActivityLogs();
 
-      try {
-        if (gatewayEventsResult.status !== 'fulfilled') {
-          throw gatewayEventsResult.reason;
-        }
-        this.gatewayEvents = gatewayEventsResult.value.logs || [];
-        this.gatewayEventsSource = gatewayEventsResult.value.source;
-        this.applyGatewayMetricsFromEvents();
-      } catch (error) {
-        console.error('Failed to fetch gateway events:', error);
-        this.gatewayEventsError =
-          error instanceof Error
-            ? error.message
-            : 'Failed to load execution gateway events';
-      } finally {
-        this.isLoadingGatewayEvents = false;
-      }
+      // Defer loading gateway events until the tab is opened
+      this.isLoadingGatewayEvents = false;
 
       // Fetch flow details
       if (this.execution && this.execution.flow_id) {
@@ -1314,12 +1343,14 @@ export class FlowExecutionView extends LitElement {
         toolName,
         payload.status || 'unknown',
         detail || '',
+        crypto.randomUUID(), // Ensure keys are unique even if the same tool is called at the same second
       ].join(':'),
       timestamp,
       toolName,
       serverName,
       status: typeof payload.status === 'string' ? payload.status : undefined,
       detail,
+      payload,
     };
   }
 
@@ -1374,8 +1405,15 @@ export class FlowExecutionView extends LitElement {
       <div class="tool-activity-list">
         ${toolEntries.map((entry) => {
           return html`
-            <div class="tool-activity-item">
-              <div class="tool-activity-header">
+            <sl-details
+              class="tool-activity-item"
+              style="border:none; padding:0; background:transparent;"
+            >
+              <div
+                slot="summary"
+                class="tool-activity-header"
+                style="width: 100%; border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); background: var(--sl-color-neutral-50); padding: 12px; margin-bottom: 0;"
+              >
                 <div>
                   <div class="tool-activity-title">${entry.toolName}</div>
                   <div class="tool-activity-meta">
@@ -1395,10 +1433,18 @@ export class FlowExecutionView extends LitElement {
                     `
                   : ''}
               </div>
-              ${entry.detail
-                ? html`<div class="tool-activity-meta">${entry.detail}</div>`
-                : ''}
-            </div>
+              <div class="payload-block" style="margin-top: 8px;">
+                ${entry.detail
+                  ? html`<div
+                      class="tool-activity-meta"
+                      style="margin-bottom: 8px; font-weight: 600;"
+                    >
+                      ${entry.detail}
+                    </div>`
+                  : ''}
+                <json-tree .data=${entry.payload}></json-tree>
+              </div>
+            </sl-details>
           `;
         })}
       </div>
@@ -1460,6 +1506,7 @@ export class FlowExecutionView extends LitElement {
     return (
       event.payload.model_alias ||
       event.payload.requested_model ||
+      event.payload.metadata?.requested_model ||
       'Unknown model'
     );
   }
@@ -1468,6 +1515,7 @@ export class FlowExecutionView extends LitElement {
     return (
       event.payload.provider_name ||
       event.payload.gateway_provider ||
+      event.payload.metadata?.provider ||
       'Unknown provider'
     );
   }
@@ -1813,7 +1861,10 @@ ${previewText}</pre
       : 'Unknown';
 
     return html`
-      <sl-details class="gateway-event">
+      <sl-details
+        class="gateway-event"
+        @sl-show=${() => this.handleGatewayEventExpand(event.id)}
+      >
         <div slot="summary" class="gateway-event-summary">
           ${this.renderGatewayField('Timestamp', timestamp)}
           ${this.renderGatewayField('Model', this.getGatewayModelLabel(event))}
@@ -1925,7 +1976,18 @@ ${previewText}</pre
     // Error state
     if (this.loadingError || !this.execution) {
       return html`
-        <view-header headerText="Flow Execution" width="wide"></view-header>
+        <view-header headerText="Flow Execution" width="wide">
+          <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+            <sl-button
+              variant="default"
+              size="small"
+              href="/console/flows/executions"
+            >
+              <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to
+              Executions
+            </sl-button>
+          </div>
+        </view-header>
         <div class="column-layout wide">
           <div class="main-column">
             <sl-alert variant="danger" open>
@@ -1933,13 +1995,6 @@ ${previewText}</pre
               <strong>Error Loading Execution</strong><br />
               ${this.loadingError || 'Execution not found'}
             </sl-alert>
-            <sl-button
-              href="/console/flows/executions"
-              style="margin-top: 16px;"
-            >
-              <sl-icon name="arrow-left"></sl-icon>
-              Back to Executions
-            </sl-button>
           </div>
         </div>
       `;
@@ -1955,38 +2010,49 @@ ${previewText}</pre
       <view-header
         headerText="${this.flow?.name || 'Flow Execution'}"
         width="wide"
-      ></view-header>
-      <div class="column-layout wide">
-        <div class="main-column">
-          <!-- Navigation -->
-          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-            <sl-button size="small" href="/console/flows/executions">
-              <sl-icon name="arrow-left"></sl-icon>
-              All Executions
+      >
+        <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+          <div style="display: flex; gap: var(--sl-spacing-small);">
+            <sl-button
+              variant="default"
+              size="small"
+              href="/console/flows/executions"
+            >
+              <sl-icon slot="prefix" name="arrow-left"></sl-icon> All Executions
             </sl-button>
             ${this.flow
               ? html`
-                  <sl-button size="small" href="/console/flows/${this.flow.id}">
-                    <sl-icon name="diagram-3"></sl-icon>
-                    View Flow
-                  </sl-button>
-                `
-              : ''}
-            ${this.canRetry()
-              ? html`
                   <sl-button
+                    variant="default"
                     size="small"
-                    variant="warning"
-                    ?loading=${this.isRetrying}
-                    @click=${this.retryExecution}
+                    href="/console/flows/${this.flow.id}"
                   >
-                    <sl-icon name="arrow-repeat"></sl-icon>
-                    Retry
+                    <sl-icon slot="prefix" name="diagram-3"></sl-icon> View Flow
                   </sl-button>
                 `
               : ''}
           </div>
-
+        </div>
+        <div
+          slot="main-column"
+          style="display: flex; justify-content: flex-end; flex: 1; min-width: 0;"
+        >
+          ${this.canRetry()
+            ? html`
+                <sl-button
+                  size="small"
+                  variant="warning"
+                  ?loading=${this.isRetrying}
+                  @click=${this.retryExecution}
+                >
+                  <sl-icon slot="prefix" name="arrow-repeat"></sl-icon> Retry
+                </sl-button>
+              `
+            : ''}
+        </div>
+      </view-header>
+      <div class="column-layout wide">
+        <div class="main-column">
           <div class="summary-grid">
             <sl-card>
               <div slot="header">
@@ -2109,7 +2175,10 @@ ${this.execution.resolved_input_prompt}</pre
             : ''}
           ${this.renderToolActivityCard()}
 
-          <sl-tab-group class="execution-tabs">
+          <sl-tab-group
+            class="execution-tabs"
+            @sl-tab-show=${this.handleTabShow}
+          >
             <sl-tab slot="nav" panel="output">Output</sl-tab>
             <sl-tab slot="nav" panel="gateway-events">Gateway Events</sl-tab>
 
@@ -2179,7 +2248,7 @@ ${this.execution.resolved_input_prompt}</pre
                         : ''}
                     </div>
 
-                    ${isRunning
+                    /*${isRunning
                       ? html`
                           <div class="terminal-input">
                             <sl-input
@@ -2202,7 +2271,7 @@ ${this.execution.resolved_input_prompt}</pre
                             </sl-button>
                           </div>
                         `
-                      : ''}
+                      : ''}*/
                   </sl-card>
                 </div>
               </div>

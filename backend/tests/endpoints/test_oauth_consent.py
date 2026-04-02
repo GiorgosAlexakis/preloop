@@ -7,7 +7,12 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from preloop.api.endpoints.oauth_consent import router, _render_template
+from preloop.api.endpoints.oauth_consent import (
+    _CLI_MANUAL_REDIRECT_URI,
+    _render_template,
+    _validate_client_and_redirect,
+    router,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +209,28 @@ class TestConsentPageGet:
         assert ctx["scopes"] == "read write"
         assert ctx["error"] == ""
 
+    def test_manual_cli_flow_adds_copy_paste_note(self, client):
+        rendered_contexts = []
+
+        def capture_render(template_name, context):
+            rendered_contexts.append(context)
+            return "<html>manual</html>"
+
+        with patch(
+            "preloop.api.endpoints.oauth_consent._render_template",
+            side_effect=capture_render,
+        ):
+            response = client.get(
+                "/mcp/authorize/consent",
+                params={
+                    "client_id": "cli",
+                    "redirect_uri": _CLI_MANUAL_REDIRECT_URI,
+                },
+            )
+
+        assert response.status_code == 200
+        assert "paste back into the CLI" in rendered_contexts[0]["next_step_note"]
+
     def test_missing_required_params(self, client):
         response = client.get("/mcp/authorize/consent")
         assert response.status_code == 422  # Validation error
@@ -263,6 +290,50 @@ class TestConsentPagePost:
 
         assert response.status_code == 302
         assert "code=auth_code_xyz" in response.headers["location"]
+
+    def test_successful_manual_cli_login_renders_copy_paste_code(self, client):
+        user = MagicMock()
+        user.id = uuid4()
+        user.account_id = uuid4()
+        user.username = "testuser"
+        user.hashed_password = "hashed"
+        user.is_active = True
+
+        mock_provider = MagicMock()
+        mock_provider.create_authorization_code_for_user.return_value = "auth_code_xyz"
+
+        with (
+            patch("preloop.api.endpoints.oauth_consent.get_db_session") as mock_gen,
+            patch("preloop.models.crud.crud_user") as mock_crud_user,
+            patch("preloop.api.auth.jwt.verify_password", return_value=True),
+            patch(
+                "preloop.api.endpoints.oauth_consent._get_oauth_provider",
+                return_value=mock_provider,
+            ),
+            patch(
+                "preloop.api.endpoints.oauth_consent.construct_redirect_uri"
+            ) as mock_construct_redirect_uri,
+        ):
+            mock_db = MagicMock()
+            mock_gen.return_value = iter([mock_db])
+            mock_crud_user.get_by_username.return_value = user
+
+            response = client.post(
+                "/mcp/authorize/consent",
+                data={
+                    "client_id": "cli",
+                    "redirect_uri": _CLI_MANUAL_REDIRECT_URI,
+                    "code_challenge": "",
+                    "username": "testuser",
+                    "password": "pass123",
+                },
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 200
+        assert "Authorization Code" in response.text
+        assert "auth_code_xyz" in response.text
+        mock_construct_redirect_uri.assert_not_called()
 
     def test_invalid_credentials_renders_error(self, client):
         with (
@@ -329,6 +400,13 @@ class TestConsentPagePost:
             )
 
         assert response.status_code == 200
+
+
+class TestValidateClientAndRedirect:
+    def test_cli_client_allows_manual_redirect(self):
+        result = _validate_client_and_redirect("cli", _CLI_MANUAL_REDIRECT_URI)
+
+        assert result == {"error": None, "client_name": "Preloop CLI"}
 
     def test_inactive_user_renders_error(self, client):
         user = MagicMock()

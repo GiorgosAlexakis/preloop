@@ -411,7 +411,7 @@ func runPolicyValidate(cmd *cobra.Command, args []string) error {
 
 	if !client.IsAuthenticated() {
 		fmt.Println("\nNote: Skipping API validation (not authenticated)")
-		fmt.Println("Run 'preloop auth login' for full validation")
+		fmt.Println("Run 'preloop login' for full validation")
 		return nil
 	}
 
@@ -463,7 +463,7 @@ func runPolicyApply(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	// If dry-run, just validate
@@ -526,7 +526,7 @@ func runPolicyDiff(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	diff, err := diffPolicyContent(client, filepath.Base(filePath), content)
@@ -576,7 +576,7 @@ func runPolicyExport(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	var result struct {
@@ -609,7 +609,7 @@ func runPolicyList(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	var policies []PolicyInfo
@@ -667,7 +667,7 @@ func runPolicyGenerate(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	var result GenerateResponse

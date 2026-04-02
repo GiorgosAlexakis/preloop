@@ -181,7 +181,7 @@ export class ToolListItem extends LitElement {
     const isEnabled = (e.target as HTMLInputElement).checked;
     this.dispatchEvent(
       new CustomEvent('toggle-enabled', {
-        detail: this.tool,
+        detail: { tool: this.tool, isEnabled },
         bubbles: true,
         composed: true,
       })

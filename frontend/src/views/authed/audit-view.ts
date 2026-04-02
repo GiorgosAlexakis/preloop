@@ -22,6 +22,7 @@ import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import '../../components/view-header.ts';
 
 // Types
 interface AuditLog {
@@ -585,27 +586,29 @@ export class AuditView extends AuthedElement {
 
   render() {
     return html`
-      <div class="audit-view">
-        <div class="page-header">
-          <h2>Audit Timeline</h2>
-          <span class="total-badge">${this._total} events</span>
-        </div>
-
-        ${this._renderFilterBar()}
-        ${this._loading
-          ? html`<div class="loading">
-              <sl-spinner style="font-size: 2rem;"></sl-spinner>
-            </div>`
-          : this._groups.length === 0
-            ? html`<div class="empty-state">
-                No audit events found matching your filters.
+      <view-header headerText="Audit Timeline" width="wide">
+        <sl-badge slot="title-prefix" pill variant="neutral"
+          >${this._total} events</sl-badge
+        >
+      </view-header>
+      <div class="column-layout wide">
+        <div class="main-column audit-view" style="padding-top: 0;">
+          ${this._renderFilterBar()}
+          ${this._loading
+            ? html`<div class="loading">
+                <sl-spinner style="font-size: 2rem;"></sl-spinner>
               </div>`
-            : html`
-                <div class="timeline">
-                  ${this._groups.map((g) => this._renderGroup(g))}
-                </div>
-                ${this._renderPagination()}
-              `}
+            : this._groups.length === 0
+              ? html`<div class="empty-state">
+                  No audit events found matching your filters.
+                </div>`
+              : html`
+                  <div class="timeline">
+                    ${this._groups.map((g) => this._renderGroup(g))}
+                  </div>
+                  ${this._renderPagination()}
+                `}
+        </div>
       </div>
     `;
   }

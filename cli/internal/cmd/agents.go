@@ -458,7 +458,7 @@ func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool)
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
 	if !client.IsAuthenticated() {
-		fmt.Println("Tip: Run 'preloop auth login' to onboard discovered agents.")
+		fmt.Println("Tip: Run 'preloop login' to onboard discovered agents.")
 		return nil
 	}
 
@@ -689,7 +689,7 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	agents, err := listManagedAgents(client)
@@ -973,7 +973,7 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	var detail *managedAgentDetailResponse
@@ -1263,7 +1263,7 @@ func addDiscoveredServers(agents []AgentConfig) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	currentUser, err := user.Current()
@@ -1595,7 +1595,7 @@ func runAgentsStarterPolicy(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	matchedServerName, tools, err := findStarterPolicyTools(client, serverName)

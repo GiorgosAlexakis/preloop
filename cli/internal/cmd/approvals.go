@@ -132,7 +132,7 @@ func runApprovalsList(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	var policies []ApprovalWorkflow
@@ -189,7 +189,7 @@ func runApprovalsPending(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	path := fmt.Sprintf("%s?status=pending&limit=%d", approvalRequestsPath, limit)
@@ -246,7 +246,7 @@ func runApprovalsApprove(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	path := fmt.Sprintf("%s/%s/approve", approvalRequestsPath, requestID)
@@ -281,7 +281,7 @@ func runApprovalsDeny(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	path := fmt.Sprintf("%s/%s/decline", approvalRequestsPath, requestID)

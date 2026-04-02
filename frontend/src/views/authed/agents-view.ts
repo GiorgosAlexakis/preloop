@@ -18,14 +18,17 @@ import '../../components/view-header.ts';
 import {
   getAccountAgents,
   removeAccountAgent,
+  getAccountGatewayUsageSummary,
   type ManagedAgentListParams,
 } from '../../api';
 import type {
   AccountManagedAgentListResponse,
   ManagedAgentSummary,
+  AccountGatewayUsageSummaryResponse,
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import { renderAgentIcon } from '../../utils/agent-icons';
 
 @customElement('agents-view')
 export class AgentsView extends LitElement {
@@ -46,6 +49,9 @@ export class AgentsView extends LitElement {
       lastMessageSource?: string;
     }
   > = {};
+
+  @state() private gatewaySummary: AccountGatewayUsageSummaryResponse | null =
+    null;
 
   // Switcher state
   @state() private currentView: 'cards' | 'canvas' = 'canvas';
@@ -401,6 +407,25 @@ export class AgentsView extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+
+    // Restore saved view preference
+    const savedView = localStorage.getItem('preloop.agents.view_mode');
+    if (savedView === 'cards' || savedView === 'canvas') {
+      this.currentView = savedView;
+    }
+
+    // Restore saved node positions
+    try {
+      const savedPositions = localStorage.getItem(
+        'preloop.agents.canvas_positions'
+      );
+      if (savedPositions) {
+        this.nodePositions = JSON.parse(savedPositions);
+      }
+    } catch (e) {
+      console.warn('Failed to parse saved canvas positions', e);
+    }
+
     void this.loadAgents();
     this.connectRealtime();
   }
@@ -454,14 +479,20 @@ export class AgentsView extends LitElement {
       params.sessionSourceType = this.sessionSourceType;
 
     try {
-      this.agents = await getAccountAgents(params);
+      // Parallel fetch
+      const [agentsData, gatewayData] = await Promise.all([
+        getAccountAgents(params),
+        getAccountGatewayUsageSummary(),
+      ]);
+      this.agents = agentsData;
+      this.gatewaySummary = gatewayData;
       this.initializeNodePositions();
     } catch (error) {
-      console.error('Failed to load managed agents:', error);
+      console.error('Failed to load managed agents or gateway summary:', error);
       this.error =
         error instanceof Error
           ? error.message
-          : 'Failed to load managed agents';
+          : 'Failed to load managed agents or gateway summary';
     } finally {
       this.loading = false;
     }
@@ -473,23 +504,35 @@ export class AgentsView extends LitElement {
     let didChange = false;
     const newPositions = { ...this.nodePositions };
 
+    const directions = [
+      { x: -1, y: -1 }, // Top Left
+      { x: 1, y: -1 }, // Top Right
+      { x: -1, y: 1 }, // Bottom Left
+      { x: 1, y: 1 }, // Bottom Right
+    ];
+
     items.forEach((agent, index) => {
       if (!newPositions[agent.id]) {
         didChange = true;
-        const totalNodes = items.length;
-        const angle = (index / totalNodes) * Math.PI * 2;
-        const baseOrbit = 350;
-        const orbitExpander = Math.floor(index / 12) * 200;
-        const radius = baseOrbit + orbitExpander;
+        const layer = Math.floor(index / 4);
+        const posPos = index % 4;
+        const dir = directions[posPos];
+
+        // base distance 350, increase by 200 per layer
+        const distance = 350 + layer * 200;
         newPositions[agent.id] = {
-          x: Math.cos(angle) * radius,
-          y: Math.sin(angle) * radius,
+          x: dir.x * distance,
+          y: dir.y * distance,
         };
       }
     });
 
     if (didChange) {
       this.nodePositions = newPositions;
+      localStorage.setItem(
+        'preloop.agents.canvas_positions',
+        JSON.stringify(newPositions)
+      );
     }
   }
 
@@ -843,8 +886,18 @@ export class AgentsView extends LitElement {
       // If we didn't drag it, it's a click to route.
       if (!this.dragHasMoved) {
         Router.go(`/console/agents/${encodeURIComponent(id)}`);
+      } else {
+        localStorage.setItem(
+          'preloop.agents.canvas_positions',
+          JSON.stringify(this.nodePositions)
+        );
       }
     }
+  }
+
+  private setCurrentView(view: 'cards' | 'canvas') {
+    this.currentView = view;
+    localStorage.setItem('preloop.agents.view_mode', view);
   }
 
   // --- RENDERING ---
@@ -866,11 +919,17 @@ export class AgentsView extends LitElement {
       >
         <div class="card-stack">
           <div class="title-row">
-            <div>
-              <div class="agent-name">${agent.display_name}</div>
-              <div class="agent-meta">
-                ${this.getSourceLabel(agent.session_source_type)} ·
-                ${agent.session_source_id}
+            <div style="display: flex; gap: 12px; align-items: flex-start;">
+              ${renderAgentIcon(
+                agent.session_source_type,
+                'font-size: 24px; color: var(--sl-color-neutral-500); margin-top: 2px;'
+              )}
+              <div>
+                <div class="agent-name">${agent.display_name}</div>
+                <div class="agent-meta">
+                  ${this.getSourceLabel(agent.session_source_type)} ·
+                  ${agent.session_source_id}
+                </div>
               </div>
             </div>
             <div class="badges">
@@ -1034,7 +1093,26 @@ export class AgentsView extends LitElement {
               >
                 <sl-icon name="hdd-network"></sl-icon>
               </div>
-              <div class="gateway-label">PRELOOP GATEWAY</div>
+              <div class="gateway-label" style="text-align: center;">
+                <div>PRELOOP GATEWAY</div>
+                ${this.gatewaySummary
+                  ? html`
+                      <div
+                        style="font-size: 0.75rem; color: var(--sl-color-primary-500); margin-top: 4px; font-weight: 500; font-family: monospace;"
+                      >
+                        ${this.gatewaySummary.token_usage.total_tokens.toLocaleString()}
+                        Tokens ·
+                        ${this.gatewaySummary.requests_by_day?.length > 0
+                          ? (
+                              this.gatewaySummary.token_usage.total_tokens /
+                              this.gatewaySummary.requests_by_day.length
+                            ).toFixed(0)
+                          : '0'}
+                        / day
+                      </div>
+                    `
+                  : ''}
+              </div>
             </div>
 
             ${this.agents?.items.map((agent: ManagedAgentSummary) => {
@@ -1103,10 +1181,10 @@ export class AgentsView extends LitElement {
                       <div
                         style="display: flex; align-items: center; gap: 8px; overflow: hidden;"
                       >
-                        <sl-icon
-                          name="robot"
-                          style="flex-shrink: 0; color: var(--sl-color-neutral-500);"
-                        ></sl-icon>
+                        ${renderAgentIcon(
+                          agent.session_source_type,
+                          'flex-shrink: 0; color: var(--sl-color-neutral-500);'
+                        )}
                         <strong
                           style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;"
                           >${agent.display_name}</strong
@@ -1184,7 +1262,7 @@ export class AgentsView extends LitElement {
       >
         <div
           class="header"
-          style="align-items: flex-end; padding: 1.5rem 1.5rem 0 1.5rem; margin-bottom: 0.5rem; justify-content: start;"
+          style="align-items: flex-end; justify-content: start;"
         >
           <div>
             <h1>Agents</h1>
@@ -1205,7 +1283,7 @@ export class AgentsView extends LitElement {
             <!-- View Switcher -->
             <sl-radio-group
               value=${this.currentView}
-              @sl-change=${(e: any) => (this.currentView = e.target.value)}
+              @sl-change=${(e: any) => this.setCurrentView(e.target.value)}
               size="medium"
             >
               <sl-radio-button value="cards" title="Cards View">

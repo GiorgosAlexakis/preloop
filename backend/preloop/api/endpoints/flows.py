@@ -425,6 +425,7 @@ def get_flow_execution_gateway_events(
     execution_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
     tail: int | None = None,
+    metadata_only: bool = False,
 ) -> Dict[str, Any]:
     """Get normalized model gateway events for a flow execution."""
     from preloop.models.models.flow_execution_log import FlowExecutionLog
@@ -454,16 +455,67 @@ def get_flow_execution_gateway_events(
     if tail:
         rows = list(reversed(rows))
 
-    events = [
-        {
-            "execution_id": str(row.execution_id),
-            "timestamp": row.timestamp.isoformat() if row.timestamp else None,
-            "type": row.log_type or "log",
-            "payload": {**(row.metadata_ or {}), "message": row.message},
-        }
-        for row in rows
-    ]
+    events = []
+    for row in rows:
+        payload = row.metadata_ or {}
+        if metadata_only:
+            # Strip large payload objects for metadata-only response
+            # Need to avoid mutating the original dict if it's tied to SQLAlchemy
+            payload = payload.copy()
+            payload.pop("conversation_preview", None)
+            payload.pop("tools", None)
+            payload.pop("result", None)
+            payload.pop("stream_events", None)
+        else:
+            payload = {**payload, "message": row.message}
+
+        events.append(
+            {
+                "id": str(row.id),
+                "execution_id": str(row.execution_id),
+                "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                "type": row.log_type or "log",
+                "payload": payload,
+            }
+        )
     return {"logs": events, "source": "database"}
+
+
+@router.get("/flows/executions/{execution_id}/gateway-events/{event_id}")
+@require_permission("view_flows")
+def get_flow_execution_gateway_event(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Get a single normalized model gateway event."""
+    from preloop.models.models.flow_execution_log import FlowExecutionLog
+    from sqlalchemy import select
+
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    query = select(FlowExecutionLog).filter(
+        FlowExecutionLog.execution_id == execution_id,
+        FlowExecutionLog.id == event_id,
+    )
+    row = db.execute(query).scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Gateway event not found")
+
+    return {
+        "id": str(row.id),
+        "execution_id": str(row.execution_id),
+        "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+        "type": row.log_type or "log",
+        "payload": {**(row.metadata_ or {}), "message": row.message},
+    }
 
 
 @router.get("/flows/executions/{execution_id}/metrics")

@@ -1213,26 +1213,29 @@ ${this._formatStarterPolicyDiffValue(change.new_value)}</pre
   // ─── Event handlers ──────────────────────────────────
 
   private async _handleToggleEnabled(e: CustomEvent) {
-    const tool: ToolWithRules = e.detail;
+    const detail = e.detail;
+    const tool: ToolWithRules = detail.tool ? detail.tool : detail;
+    const isEnabled: boolean =
+      detail.isEnabled !== undefined ? detail.isEnabled : !tool.is_enabled;
 
     try {
       this.tools = this.tools.map((t) => {
         if (this._getToolKey(t) === this._getToolKey(tool)) {
-          return { ...t, is_enabled: !t.is_enabled };
+          return { ...t, is_enabled: isEnabled };
         }
         return t;
       });
 
       if (tool.config_id) {
         await updateToolConfiguration(tool.config_id, {
-          is_enabled: !tool.is_enabled,
+          is_enabled: isEnabled,
         });
       } else {
         const config = await createToolConfiguration({
           tool_name: tool.name,
           tool_source: tool.source,
           mcp_server_id: tool.source_id,
-          is_enabled: !tool.is_enabled,
+          is_enabled: isEnabled,
           account_id: '',
         });
         this.tools = this.tools.map((t) => {

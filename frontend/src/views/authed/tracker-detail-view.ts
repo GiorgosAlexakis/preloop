@@ -269,8 +269,8 @@ export class TrackerDetailView extends LitElement {
     if (this._error || !this._tracker) {
       return html`
         <view-header headerText="Tracker Details" width="narrow">
-          <div slot="main-column">
-            <sl-button href="/console/trackers">
+          <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+            <sl-button variant="default" size="small" href="/console/trackers">
               <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to
               Trackers
             </sl-button>
@@ -296,8 +296,8 @@ export class TrackerDetailView extends LitElement {
 
     return html`
       <view-header headerText=${tracker.name} width="narrow">
-        <div slot="main-column">
-          <sl-button href="/console/trackers">
+        <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+          <sl-button variant="default" size="small" href="/console/trackers">
             <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Trackers
           </sl-button>
         </div>

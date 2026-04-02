@@ -509,8 +509,8 @@ export class FlowView extends LitElement {
         headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}"
         width="wide"
       >
-        <div slot="main-column">
-          <sl-button href="/console/flows">
+        <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+          <sl-button variant="default" size="small" href="/console/flows">
             <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Flows
           </sl-button>
         </div>
@@ -563,23 +563,22 @@ export class FlowView extends LitElement {
       </sl-dialog>
 
       <view-header headerText="${this.flow.name}" width="wide">
-        <div slot="main-column">
-          <sl-button href="/console/flows">
+        <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+          <sl-button variant="default" size="small" href="/console/flows">
             <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Flows
           </sl-button>
+        </div>
+        <div
+          slot="main-column"
+          style="display: flex; justify-content: flex-end; flex: 1; min-width: 0;"
+        >
+          <resource-actions
+            .actions=${this.getFlowActions()}
+          ></resource-actions>
         </div>
       </view-header>
       <div class="column-layout wide">
         <div class="main-column">
-          <!-- Actions -->
-          <div
-            style="display: flex; gap: var(--sl-spacing-small); margin-bottom: var(--sl-spacing-large);"
-          >
-            <resource-actions
-              .actions=${this.getFlowActions()}
-            ></resource-actions>
-          </div>
-
           <!-- Flow Info Card -->
           <sl-card>
             <div slot="header">

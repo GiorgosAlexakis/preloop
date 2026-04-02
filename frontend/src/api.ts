@@ -1202,14 +1202,32 @@ export async function getFlowExecutionLogs(
 
 export async function getFlowExecutionGatewayEvents(
   executionId: string,
-  tail?: number
+  tail?: number,
+  metadataOnly: boolean = false
 ): Promise<FlowGatewayEventsResponse> {
-  const params = tail !== undefined ? `?tail=${tail}` : '';
+  const params = new URLSearchParams();
+  if (tail !== undefined) params.append('tail', tail.toString());
+  if (metadataOnly) params.append('metadata_only', 'true');
+  const paramsStr = params.toString() ? `?${params.toString()}` : '';
+
   const response = await fetchWithAuth(
-    `/api/v1/flows/executions/${executionId}/gateway-events${params}`
+    `/api/v1/flows/executions/${executionId}/gateway-events${paramsStr}`
   );
   if (!response.ok) {
     throw new Error('Failed to fetch execution gateway events');
+  }
+  return response.json();
+}
+
+export async function getFlowExecutionGatewayEvent(
+  executionId: string,
+  eventId: string
+): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/gateway-events/${eventId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch execution gateway event');
   }
   return response.json();
 }

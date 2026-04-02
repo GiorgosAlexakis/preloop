@@ -107,7 +107,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 	}
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	agent = normalizeDiscoveredAgent(agent)

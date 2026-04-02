@@ -367,6 +367,8 @@ Preloop includes a built-in OAuth 2.1 Authorization Server for MCP client authen
 - `POST /oauth/token` — Token exchange (Authorization Code + PKCE for MCP, JWT for CLI)
 - `POST /oauth/revoke` — Token revocation
 
+The CLI also uses these endpoints. `preloop login` honors `PRELOOP_URL`, uses a loopback callback on local machines, and falls back to a copy/paste authorization-code flow on SSH or headless hosts.
+
 ### Docker Setup
 
 ```bash

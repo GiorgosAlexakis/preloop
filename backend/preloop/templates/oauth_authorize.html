@@ -151,6 +151,7 @@
             <div class="label">Application requesting access</div>
             <div class="name" id="clientName">{{ client_name }}</div>
             <div class="scope-note">This application will be able to access your Preloop account tools and data.</div>
+            <div class="scope-note">{{ next_step_note }}</div>
         </div>
 
         <div class="error" id="errorMsg"></div>
@@ -184,6 +185,20 @@
         function handleDeny() {
             const redirectUri = {{ redirect_uri_json }};
             const state = {{ state_json }};
+            if (redirectUri === 'urn:ietf:wg:oauth:2.0:oob') {
+                document.body.innerHTML = `
+                    <div class="container">
+                        <div class="logo">
+                            <h1>Preloop</h1>
+                            <p class="subtitle">Authorization Cancelled</p>
+                        </div>
+                        <div class="client-info">
+                            <div class="scope-note">You denied this request. You can close this window and return to the CLI.</div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
             let denyUrl = redirectUri + '?error=access_denied&error_description=User+denied+the+request';
             if (state) {
                 denyUrl += '&state=' + encodeURIComponent(state);

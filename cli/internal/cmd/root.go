@@ -37,7 +37,7 @@ Use this CLI to:
   - Configure available tools
   - Review and respond to approval requests
 
-Get started by running 'preloop auth login --token <your-token>' to authenticate.
+Get started by running 'preloop login --token <your-token>' to authenticate.
 
 Authentication priority: --token flag > PRELOOP_TOKEN env var > ~/.preloop/config.yaml
 API URL priority:        --url flag   > PRELOOP_URL env var   > ~/.preloop/config.yaml`,
@@ -67,6 +67,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&FlagURL, "url", "", "API base URL (overrides PRELOOP_URL env var and config file)")
 
 	// Add subcommands
+	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(policyCmd)
 	rootCmd.AddCommand(toolsCmd)

@@ -271,6 +271,8 @@ For detailed rules on how Organizations and Projects limit scope during syncing 
     *   Formats the result into the standard MCP JSON response format.
 3.  **MCP Client:** Receives the HTTP response containing the tool's output.
 
+The `preloop tools list|describe|exec` CLI commands reuse this same `/mcp/v1` surface, so the backend remains the single source of truth for tool visibility and policy enforcement.
+
 ## Database Schema (Managed by preloop.models)
 
 The detailed schema is defined using SQLAlchemy models within the `preloop.models` directory. Key tables include:

@@ -32,6 +32,8 @@ _TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 
 # Known CLI client_id — allowed to use http://localhost redirect URIs
 _CLI_CLIENT_ID = "cli"
+_CLI_MANUAL_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
+_CLI_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def _render_template(template_name: str, context: dict) -> str:
@@ -73,10 +75,16 @@ def _validate_client_and_redirect(client_id: str, redirect_uri: str) -> dict:
     if client_id == _CLI_CLIENT_ID:
         from urllib.parse import urlparse
 
+        if redirect_uri == _CLI_MANUAL_REDIRECT_URI:
+            return {"error": None, "client_name": "Preloop CLI"}
+
         parsed = urlparse(redirect_uri)
-        if parsed.hostname not in ("localhost", "127.0.0.1", "[::1]"):
+        if parsed.hostname not in _CLI_LOOPBACK_HOSTS:
             return {
-                "error": "Invalid redirect_uri for CLI client (must be localhost)",
+                "error": (
+                    "Invalid redirect_uri for CLI client "
+                    "(must be localhost or the CLI out-of-band redirect)"
+                ),
                 "client_name": "CLI",
             }
         return {"error": None, "client_name": "Preloop CLI"}
@@ -109,6 +117,15 @@ def _validate_client_and_redirect(client_id: str, redirect_uri: str) -> dict:
         return {"error": "Internal error validating client", "client_name": ""}
     finally:
         db.close()
+
+
+def _manual_code_note(redirect_uri: str) -> str:
+    if redirect_uri == _CLI_MANUAL_REDIRECT_URI:
+        return (
+            "After signing in, Preloop will show a one-time code for you to "
+            "paste back into the CLI."
+        )
+    return ""
 
 
 @router.get("/mcp/authorize/consent")
@@ -146,6 +163,7 @@ async def consent_page(
         "redirect_uri_provided_explicitly": redirect_uri_provided_explicitly,
         "resource": resource,
         "error": "",
+        "next_step_note": _manual_code_note(redirect_uri),
         # JSON-encoded variants for safe use inside <script> blocks
         "redirect_uri_json": redirect_uri,
         "state_json": state,
@@ -256,14 +274,16 @@ async def consent_submit(
         )
 
         # Redirect back to client with authorization code
+        logger.info(f"OAuth consent granted: user={user.username}, client={client_id}")
+
+        if redirect_uri == _CLI_MANUAL_REDIRECT_URI:
+            return _render_manual_code_response(code, validation["client_name"])
+
         redirect_url = construct_redirect_uri(
             redirect_uri,
             code=code,
             state=state if state else None,
         )
-
-        logger.info(f"OAuth consent granted: user={user.username}, client={client_id}")
-
         return RedirectResponse(url=redirect_url, status_code=302)
 
     finally:
@@ -292,12 +312,77 @@ def _render_error_response(
         "redirect_uri_provided_explicitly": redirect_uri_provided_explicitly,
         "resource": resource,
         "error": error,
+        "next_step_note": _manual_code_note(redirect_uri),
         # JSON-encoded variants for safe use inside <script> blocks
         "redirect_uri_json": redirect_uri,
         "state_json": state,
         "error_json": error,
     }
     html_content = _render_template("oauth_authorize.html", context)
+    return HTMLResponse(content=html_content)
+
+
+def _render_manual_code_response(code: str, client_name: str) -> HTMLResponse:
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preloop - Authorization Code</title>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #e2e8f0;
+            padding: 24px;
+        }}
+        .container {{
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 520px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }}
+        h1 {{
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #f8fafc;
+        }}
+        p {{
+            color: #94a3b8;
+            line-height: 1.5;
+        }}
+        .code {{
+            margin: 24px 0;
+            padding: 18px 20px;
+            border-radius: 12px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 20px;
+            color: #f8fafc;
+            word-break: break-all;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Authorization Code</h1>
+        <p>{html.escape(client_name)} is ready to continue.</p>
+        <p>Copy this one-time code and paste it back into the CLI.</p>
+        <div class="code">{html.escape(code)}</div>
+        <p>You can close this window after pasting the code.</p>
+    </div>
+</body>
+</html>"""
     return HTMLResponse(content=html_content)
 
 

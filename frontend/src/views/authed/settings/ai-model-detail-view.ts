@@ -1071,8 +1071,12 @@ export class AIModelDetailView extends LitElement {
 
     return html`
       <view-header headerText=${headerText} width="extra-wide">
-        <div slot="main-column">
-          <sl-button href="/console/settings/ai-models">
+        <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+          <sl-button
+            variant="default"
+            size="small"
+            href="/console/settings/ai-models"
+          >
             <sl-icon slot="prefix" name="arrow-left"></sl-icon>
             Back to AI Models
           </sl-button>

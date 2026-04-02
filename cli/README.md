@@ -1,6 +1,6 @@
 # Preloop CLI
 
-Command-line interface for managing AI agent policies, approvals, and tool configurations.
+Command-line interface for managing AI agent policies, approvals, and MCP tools.
 
 ## Installation
 
@@ -27,10 +27,16 @@ Download the latest release from [GitHub Releases](https://github.com/preloop/pr
 
 ```bash
 # Authenticate with a token
-preloop auth login --token <your-token>
+preloop login --token <your-token>
 
 # Authenticate with a token and custom API URL
-preloop auth login --token <your-token> --url http://localhost:8000
+preloop login --token <your-token> --url http://localhost:8000
+
+# OAuth login on a local machine
+preloop login
+
+# OAuth login over SSH or on a headless host
+preloop login --headless
 
 # Check authentication status
 preloop auth status
@@ -56,12 +62,17 @@ preloop approvals approve <request-id>
 ### Authentication
 
 ```bash
-preloop auth login --token <token>   # Save an API token
-preloop auth login                   # OAuth browser flow (coming soon)
+preloop login --token <token>        # Save an API token
+preloop login                        # Auto-select loopback or headless OAuth
+preloop login --headless             # Force copy/paste OAuth
+preloop login --loopback             # Force local loopback OAuth
+preloop auth login                   # Same as preloop login
 preloop auth logout                  # Log out and clear credentials
 preloop auth status                  # Show authentication status
 preloop auth token                   # Print token for scripting
 ```
+
+The login flow resolves the API URL in this order: `--url`, `PRELOOP_URL`, config file, then the default `https://preloop.ai`.
 
 ### Policy Management
 
@@ -74,14 +85,16 @@ preloop policy diff <file>             # Compare local vs remote policy
 preloop policy export <name>           # Export a policy to file
 ```
 
-### Tool Configuration
+### MCP Tools
 
 ```bash
-preloop tools list                     # List available tools
-preloop tools list --enabled           # List only enabled tools
-preloop tools enable <tool-name>       # Enable a tool
-preloop tools disable <tool-name>      # Disable a tool
+preloop tools list                               # List tools visible to this token
+preloop tools describe <tool-name>              # Show schema and description
+preloop tools exec <tool-name> --args '{"k":"v"}'
+preloop tools exec <tool-name> --args-file ./input.json
 ```
+
+`preloop tools` talks directly to the MCP endpoint, so the visible and executable tools are automatically filtered by the current token's policy. Agent tokens only see the tools they are allowed to use.
 
 ### Approvals
 
@@ -148,7 +161,7 @@ Both token and URL are resolved in this order (highest priority first):
 1. CLI flags (`--token`, `--url`)
 2. Environment variables (`PRELOOP_TOKEN`, `PRELOOP_URL`)
 3. Config file (`~/.preloop/config.yaml`)
-4. Defaults (`http://localhost:8000`)
+4. Defaults (`https://preloop.ai`)
 
 ## Development
 
@@ -192,9 +205,11 @@ cli/
 │   │   ├── root.go          # Root command
 │   │   ├── auth.go          # auth login/logout/status
 │   │   ├── policy.go        # policy validate/apply/diff/export/list
-│   │   ├── tools.go         # tools list/enable/disable
+│   │   ├── tools.go         # tools list/describe/exec
 │   │   ├── approvals.go     # approvals list/pending/approve/deny
 │   │   └── version.go       # version command
+│   ├── mcpclient/
+│   │   └── client.go        # Minimal MCP HTTP client
 │   └── version/
 │       └── check.go         # Daily version check logic
 ├── go.mod

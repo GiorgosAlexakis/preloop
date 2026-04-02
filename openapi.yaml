@@ -5240,6 +5240,13 @@ paths:
           - type: integer
           - type: 'null'
           title: Tail
+      - name: metadata_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Metadata Only
       responses:
         '200':
           description: Successful Response
@@ -5250,6 +5257,46 @@ paths:
                 additionalProperties: true
                 title: Response Get Flow Execution Gateway Events Api V1 Flows Executions  Execution
                   Id  Gateway Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/gateway-events/{event_id}:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Execution Gateway Event
+      description: Get a single normalized model gateway event.
+      operationId: get_flow_execution_gateway_event_api_v1_flows_executions__execution_id__gateway_events__event_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Flow Execution Gateway Event Api V1 Flows Executions  Execution
+                  Id  Gateway Events  Event Id  Get
         '422':
           description: Validation Error
           content:

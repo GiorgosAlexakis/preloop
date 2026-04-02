@@ -255,7 +255,9 @@ export class AppHeader extends LitElement {
               ? html`
                   ${window.location.pathname.startsWith('/console')
                     ? html`<sl-button @click=${this.logout}>Logout</sl-button>`
-                    : html`<sl-button href="/console">Console</sl-button>`}
+                    : html`<sl-button variant="primary" href="/console"
+                        >Console</sl-button
+                      >`}
                 `
               : html`
                   <sl-button href="/login" variant="text">Sign in</sl-button>
