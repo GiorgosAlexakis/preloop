@@ -243,7 +243,7 @@ func TestClientRefreshesExpiredAccessTokenFromStoredConfig(t *testing.T) {
 		t.Fatalf("failed to save config: %v", err)
 	}
 
-	client, err := NewClient("", "")
+	client, err := NewClient("", "", "")
 	if err != nil {
 		t.Fatalf("failed to build client: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestClientDoesNotRefreshWhenExplicitTokenOverrideIsUsed(t *testing.T) {
 		t.Fatalf("failed to save config: %v", err)
 	}
 
-	client, err := NewClient("override-token", server.URL)
+	client, err := NewClient("override-token", server.URL, "")
 	if err != nil {
 		t.Fatalf("failed to build client: %v", err)
 	}

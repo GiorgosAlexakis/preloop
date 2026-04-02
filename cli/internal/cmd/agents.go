@@ -453,7 +453,7 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 }
 
 func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool) error {
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -621,7 +621,7 @@ func runAgentsStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	localState, _ := loadLocalEnrollmentState(agent)
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -684,7 +684,7 @@ func runAgentsStatus(cmd *cobra.Command, args []string) error {
 
 func runAgentsList(cmd *cobra.Command, args []string) error {
 	asJSON, _ := cmd.Flags().GetBool("json")
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -807,7 +807,7 @@ func runAgentsValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err == nil && client.IsAuthenticated() {
 		enrollmentID := ""
 		existingValidation := map[string]interface{}{}
@@ -913,7 +913,7 @@ func runAgentsRestore(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err == nil && client.IsAuthenticated() {
 		if state.EnrollmentID != "" {
 			_, _ = restoreManagedEnrollmentRecord(
@@ -968,7 +968,7 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 		backupPath = state.BackupPath
 	}
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -1257,7 +1257,7 @@ func containsString(values []string, target string) bool {
 
 // addDiscoveredServers interactively adds servers to the Preloop account.
 func addDiscoveredServers(agents []AgentConfig) error {
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -1418,7 +1418,7 @@ func inferAgentDisplayName(agent AgentConfig) string {
 }
 
 func extractAgentNameViaAPI(content string) string {
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil || !client.IsAuthenticated() {
 		return ""
 	}
@@ -1589,7 +1589,7 @@ func runAgentsStarterPolicy(cmd *cobra.Command, args []string) error {
 	autoApprove, _ := cmd.Flags().GetBool("yes")
 	noContext, _ := cmd.Flags().GetBool("no-context")
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -1950,7 +1950,7 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 	}, nil
 }
 
-func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig) (*remoteServerSyncResult, error) {
+func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig, publicURL string) (*remoteServerSyncResult, error) {
 	var existing []mcpServerResponse
 	if err := client.Get("/api/v1/mcp-servers", &existing); err != nil {
 		return nil, fmt.Errorf("failed to list MCP servers: %w", err)
@@ -1963,7 +1963,7 @@ func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig) (*remo
 	result := &remoteServerSyncResult{}
 	for _, name := range sortedServerNames(agent.MCPServers) {
 		server := agent.MCPServers[name]
-		if isManagedPreloopProxy(name, server, client.BaseURL()) {
+		if isManagedPreloopProxy(name, server, publicURL) {
 			result.Skipped = append(result.Skipped, name)
 			continue
 		}
@@ -2535,9 +2535,9 @@ func lookupMCPServerContainer(doc map[string]interface{}) map[string]interface{}
 }
 
 func clientBaseURLForFlags() string {
-	cfg, err := config.Resolve(FlagToken, FlagURL)
-	if err == nil && cfg.APIURL != "" {
-		return cfg.APIURL
+	cfg, err := config.ResolveWithOverrides(FlagToken, FlagURL, FlagAPIURL)
+	if err == nil && cfg.PublicURL != "" {
+		return cfg.PublicURL
 	}
 	return api.DefaultBaseURL
 }

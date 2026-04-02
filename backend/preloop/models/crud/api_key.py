@@ -228,29 +228,23 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         commit: bool = True,
     ) -> List[ApiKey]:
         """Deactivate runtime-scoped API keys bound to one durable principal."""
+        from sqlalchemy import cast, String
+
         key_objs = (
             db.query(ApiKey)
-            .filter(ApiKey.account_id == account_id, ApiKey.is_active.is_(True))
+            .filter(
+                ApiKey.account_id == account_id,
+                ApiKey.is_active.is_(True),
+                cast(ApiKey.context_data["runtime_principal"]["type"], String)
+                == f'"{runtime_principal_type}"',
+                cast(ApiKey.context_data["runtime_principal"]["id"], String)
+                == f'"{runtime_principal_id}"',
+            )
             .all()
         )
 
         deactivated: List[ApiKey] = []
         for key_obj in key_objs:
-            context_data = (
-                key_obj.context_data if isinstance(key_obj.context_data, dict) else {}
-            )
-            runtime_session_id = context_data.get("runtime_session_id")
-            runtime_principal = (
-                context_data.get("runtime_principal")
-                if isinstance(context_data.get("runtime_principal"), dict)
-                else {}
-            )
-            if not runtime_session_id:
-                continue
-            if runtime_principal.get("type") != runtime_principal_type:
-                continue
-            if str(runtime_principal.get("id")) != str(runtime_principal_id):
-                continue
             key_obj.is_active = False
             db.add(key_obj)
             deactivated.append(key_obj)
@@ -275,19 +269,21 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         commit: bool = True,
     ) -> List[ApiKey]:
         """Deactivate runtime-scoped API keys bound to one managed agent."""
+        from sqlalchemy import cast, String
+
         key_objs = (
             db.query(ApiKey)
-            .filter(ApiKey.account_id == account_id, ApiKey.is_active.is_(True))
+            .filter(
+                ApiKey.account_id == account_id,
+                ApiKey.is_active.is_(True),
+                cast(ApiKey.context_data["managed_agent_id"], String)
+                == f'"{managed_agent_id}"',
+            )
             .all()
         )
 
         deactivated: List[ApiKey] = []
         for key_obj in key_objs:
-            context_data = (
-                key_obj.context_data if isinstance(key_obj.context_data, dict) else {}
-            )
-            if str(context_data.get("managed_agent_id") or "") != managed_agent_id:
-                continue
             key_obj.is_active = False
             db.add(key_obj)
             deactivated.append(key_obj)

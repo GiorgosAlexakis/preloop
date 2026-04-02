@@ -38,6 +38,11 @@ preloop login
 # OAuth login over SSH or on a headless host
 preloop login --headless
 
+# Split deployment: public gateway URL + control-plane API URL
+PRELOOP_URL=https://ai-model-gateway.review.preloop.ai \
+PRELOOP_API_URL=https://review.preloop.ai \
+preloop login --headless
+
 # Check authentication status
 preloop auth status
 
@@ -72,7 +77,8 @@ preloop auth status                  # Show authentication status
 preloop auth token                   # Print token for scripting
 ```
 
-The login flow resolves the API URL in this order: `--url`, `PRELOOP_URL`, config file, then the default `https://preloop.ai`.
+The login flow resolves the public URL in this order: `--url`, `PRELOOP_URL`, config file, then the default `https://preloop.ai`.
+REST API calls use `--api-url` or `PRELOOP_API_URL` first, then fall back to the public URL.
 
 ### Policy Management
 
@@ -139,6 +145,7 @@ The CLI stores configuration in `~/.preloop/config.yaml`:
 access_token: <your-access-token>
 refresh_token: <your-refresh-token>
 api_url: http://localhost:8000
+public_url: http://localhost:8000
 ```
 
 ### Global Flags
@@ -146,22 +153,23 @@ api_url: http://localhost:8000
 All commands accept these flags:
 
 - `--token <token>` - Override the access token for this invocation
-- `--url <url>` - Override the API URL for this invocation
+- `--url <url>` - Override the public URL used for OAuth, MCP, and gateway traffic
+- `--api-url <url>` - Override the control-plane REST API URL for this invocation
 - `--verbose` / `-v` - Enable verbose output
 
 ### Environment Variables
 
 - `PRELOOP_TOKEN` - Override the access token
-- `PRELOOP_URL` - Override the API URL
+- `PRELOOP_URL` - Override the public URL used for OAuth, MCP, and gateway traffic
+- `PRELOOP_API_URL` - Override the control-plane REST API URL
 
 ### Resolution Priority
 
-Both token and URL are resolved in this order (highest priority first):
+Authentication and URL resolution use these rules:
 
-1. CLI flags (`--token`, `--url`)
-2. Environment variables (`PRELOOP_TOKEN`, `PRELOOP_URL`)
-3. Config file (`~/.preloop/config.yaml`)
-4. Defaults (`https://preloop.ai`)
+1. Token: `--token`, then `PRELOOP_TOKEN`, then the config file.
+2. Public URL: `--url`, then `PRELOOP_URL`, then the config file, then `https://preloop.ai`.
+3. API URL: `--api-url`, then `PRELOOP_API_URL`, then the config file, then the resolved public URL.
 
 ## Development
 

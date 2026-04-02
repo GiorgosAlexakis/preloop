@@ -72,3 +72,5 @@ devspace.yaml
 cli/.cache/
 tmp
 .vite
+.gomodcache/
+.gocache/

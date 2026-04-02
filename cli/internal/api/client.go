@@ -35,10 +35,14 @@ type Client struct {
 }
 
 // NewClient creates a new Preloop API client.
-// tokenOverride and urlOverride allow CLI flags to take precedence over
-// environment variables and the config file.
-func NewClient(tokenOverride, urlOverride string) (*Client, error) {
-	cfg, err := config.Resolve(tokenOverride, urlOverride)
+// tokenOverride, publicURLOverride, and apiURLOverride allow CLI flags to take
+// precedence over environment variables and the config file.
+func NewClient(tokenOverride, publicURLOverride, apiURLOverride string) (*Client, error) {
+	cfg, err := config.ResolveWithOverrides(
+		tokenOverride,
+		publicURLOverride,
+		apiURLOverride,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}

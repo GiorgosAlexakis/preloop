@@ -101,13 +101,18 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		output = os.Stdout
 	}
 	if client == nil {
-		client, err = api.NewClient(FlagToken, FlagURL)
+		client, err = api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 		if err != nil {
 			return fmt.Errorf("failed to create API client: %w", err)
 		}
 	}
 	if !client.IsAuthenticated() {
 		return fmt.Errorf("not authenticated - run 'preloop login' first")
+	}
+
+	publicURL, err := resolveConfiguredPublicURL()
+	if err != nil {
+		return err
 	}
 
 	agent = normalizeDiscoveredAgent(agent)
@@ -118,11 +123,11 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 	}
 
-	syncAgent := prepareAgentForRemoteServerSync(agent, client.BaseURL())
+	syncAgent := prepareAgentForRemoteServerSync(agent, publicURL)
 
 	plan, err := buildManagedMCPEnrollmentPlan(
 		agent,
-		client.BaseURL(),
+		publicURL,
 		"<token created at apply time>",
 	)
 	if err != nil {
@@ -153,7 +158,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 	}
 
-	serverSync, err := ensureDiscoveredRemoteServers(client, syncAgent)
+	serverSync, err := ensureDiscoveredRemoteServers(client, syncAgent, publicURL)
 	if err != nil {
 		return err
 	}
@@ -181,7 +186,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		if err != nil {
 			return err
 		}
-		gatewayURL, _ := resolveOpenClawGateway(client.BaseURL(), parsed.ProviderName, parsed.ModelAlias)
+		gatewayURL, _ := resolveOpenClawGateway(publicURL, parsed.ProviderName, parsed.ModelAlias)
 
 		if parsed.ProviderAPIKey == "" {
 			if !opts.SkipConfirmation && !opts.AutoApprove {
@@ -211,7 +216,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 
 	plan, err = buildManagedMCPEnrollmentPlan(
 		agent,
-		client.BaseURL(),
+		publicURL,
 		credentialResp.Token,
 	)
 	if err != nil {
@@ -239,7 +244,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	}
 	validationResult := managedMCPAdapterForAgent(agent).ValidateManagedConfig(
 		validationDocument,
-		client.BaseURL(),
+		publicURL,
 	)
 	validationResult = mergeStringMaps(
 		validationResult,
@@ -421,6 +426,15 @@ func runOpenClawLiveValidation(
 	agent AgentConfig,
 	validationResult map[string]interface{},
 ) (*managedLiveValidationOutcome, error) {
+	publicURL, err := resolveConfiguredPublicURL()
+	if err != nil {
+		return &managedLiveValidationOutcome{
+			Attempted:        true,
+			Passed:           false,
+			ValidationResult: validationResult,
+		}, err
+	}
+
 	detail, err := getManagedAgentDetailForDiscovered(client, agent)
 	if err != nil {
 		return &managedLiveValidationOutcome{
@@ -482,7 +496,7 @@ func runOpenClawLiveValidation(
 		"max_tokens":  32,
 	}
 
-	gatewayClient := api.NewClientWithToken(client.BaseURL(), token)
+	gatewayClient := api.NewClientWithToken(publicURL, token)
 	var gatewayResponse map[string]interface{}
 	requestErr := gatewayClient.Post(
 		"/openai/v1/chat/completions",

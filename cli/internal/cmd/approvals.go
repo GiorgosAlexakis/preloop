@@ -126,7 +126,7 @@ func init() {
 func runApprovalsList(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString("format")
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -183,7 +183,7 @@ func runApprovalsPending(cmd *cobra.Command, args []string) error {
 	limit, _ := cmd.Flags().GetInt("limit")
 	format, _ := cmd.Flags().GetString("format")
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -240,7 +240,7 @@ func runApprovalsApprove(cmd *cobra.Command, args []string) error {
 	requestID := args[0]
 	reason, _ := cmd.Flags().GetString("reason")
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -275,7 +275,7 @@ func runApprovalsDeny(cmd *cobra.Command, args []string) error {
 	requestID := args[0]
 	reason, _ := cmd.Flags().GetString("reason")
 
-	client, err := api.NewClient(FlagToken, FlagURL)
+	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
 	}

@@ -1354,20 +1354,24 @@ export class AgentDetailView extends LitElement {
                 .tools=${this.toolCatalog}
                 .mcpServers=${this.mcpServers}
                 .scopedToolRules=${this.scopedToolRules}
+                .toolEnabledOverrides=${this.toolEnabledOverrides}
                 .approvalPolicies=${this.approvalWorkflows}
                 .features=${this.featureFlags}
                 @save-rule=${(e: CustomEvent) =>
                   this.saveScopedToolRule(
-                    e.detail.toolName,
-                    e.detail.rule,
+                    e.detail.tool.name,
+                    e.detail.existingRule || e.detail.rule,
                     e.detail.formData
                   )}
                 @delete-rule=${(e: CustomEvent) =>
-                  this.deleteScopedToolRule(e.detail.toolName, e.detail.ruleId)}
+                  this.deleteScopedToolRule(
+                    e.detail.tool.name,
+                    e.detail.rule.id
+                  )}
                 @reorder-rules=${(e: CustomEvent) =>
                   this.reorderScopedToolRules(
-                    e.detail.toolName,
-                    e.detail.rules
+                    e.detail.tool.name,
+                    e.detail.reorderedRules
                   )}
                 @toggle-enabled=${this.toggleToolEnabledOverride}
                 @revert-tool=${this.revertScopedTool}
