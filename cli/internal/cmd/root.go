@@ -22,9 +22,6 @@ var (
 
 	// FlagURL is the API URL passed via --url flag.
 	FlagURL string
-
-	// FlagAPIURL is the control-plane API URL passed via --api-url flag.
-	FlagAPIURL string
 )
 
 // rootCmd represents the base command when called without any subcommands.
@@ -43,8 +40,7 @@ Use this CLI to:
 Get started by running 'preloop login --token <your-token>' to authenticate.
 
 Authentication priority: --token flag > PRELOOP_TOKEN env var > ~/.preloop/config.yaml
-Public URL priority:     --url flag   > PRELOOP_URL env var   > ~/.preloop/config.yaml
-API URL priority:        --api-url    > PRELOOP_API_URL env var > (public URL)`,
+API URL priority:        --url flag   > PRELOOP_URL env var   > ~/.preloop/config.yaml`,
 
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Check for updates on each invocation (cached daily)
@@ -68,8 +64,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.preloop/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().StringVar(&FlagToken, "token", "", "access token (overrides PRELOOP_TOKEN env var and config file)")
-	rootCmd.PersistentFlags().StringVar(&FlagURL, "url", "", "Preloop public base URL for OAuth, MCP, and gateway traffic (overrides PRELOOP_URL env var and config file)")
-	rootCmd.PersistentFlags().StringVar(&FlagAPIURL, "api-url", "", "control-plane API base URL for REST commands (overrides PRELOOP_API_URL env var)")
+	rootCmd.PersistentFlags().StringVar(&FlagURL, "url", "", "API base URL (overrides PRELOOP_URL env var and config file)")
 
 	// Add subcommands
 	rootCmd.AddCommand(loginCmd)

@@ -258,6 +258,12 @@ func TestInferOpenClawProviderNamePrefersProviderID(t *testing.T) {
 	}
 }
 
+func TestInferOpenClawProviderNameNormalizesBedrock(t *testing.T) {
+	if got := inferOpenClawProviderName("amazon-bedrock", ""); got != "bedrock" {
+		t.Fatalf("expected amazon-bedrock to normalize to bedrock, got %q", got)
+	}
+}
+
 func TestResolveOpenClawProviderAPIKeyFallsBackToAuthProfiles(t *testing.T) {
 	document := map[string]interface{}{
 		"auth": map[string]interface{}{
@@ -276,6 +282,16 @@ func TestResolveOpenClawProviderAPIKeyFallsBackToAuthProfiles(t *testing.T) {
 	}
 	if !strings.Contains(note, "auth.profiles") || !strings.Contains(note, "google:default") {
 		t.Fatalf("expected auth profile note, got %q", note)
+	}
+}
+
+func TestResolveOpenClawProviderAPIKeyUsesAmbientBedrockCredentials(t *testing.T) {
+	value, note := resolveOpenClawProviderAPIKey(map[string]interface{}{}, "amazon-bedrock")
+	if value != "" {
+		t.Fatalf("expected no inline credential material, got %q", value)
+	}
+	if !strings.Contains(strings.ToLower(note), "ambient aws credentials") {
+		t.Fatalf("expected ambient credentials note, got %q", note)
 	}
 }
 
@@ -406,5 +422,22 @@ func TestMergeGatewayMetaForAIModelGatewayEnabledOnlyWithFlag(t *testing.T) {
 	gwOn, _ := metaOn["gateway"].(map[string]interface{})
 	if gwOn["enabled"] != true {
 		t.Fatalf("expected gateway enabled, got %#v", gwOn)
+	}
+}
+
+func TestMergeOpenClawAmbientProviderMetaAddsRegion(t *testing.T) {
+	meta := mergeOpenClawAmbientProviderMeta(
+		map[string]interface{}{},
+		&openClawParsedConfig{
+			UsesAmbientAuth: true,
+			ProviderRegion:  "us-east-1",
+		},
+	)
+	providerRuntime, _ := meta["provider_runtime"].(map[string]interface{})
+	if providerRuntime["ambient_credentials"] != true {
+		t.Fatalf("expected ambient_credentials flag, got %#v", providerRuntime)
+	}
+	if providerRuntime["region"] != "us-east-1" {
+		t.Fatalf("expected region to be preserved, got %#v", providerRuntime)
 	}
 }

@@ -35,14 +35,10 @@ type Client struct {
 }
 
 // NewClient creates a new Preloop API client.
-// tokenOverride, publicURLOverride, and apiURLOverride allow CLI flags to take
-// precedence over environment variables and the config file.
-func NewClient(tokenOverride, publicURLOverride, apiURLOverride string) (*Client, error) {
-	cfg, err := config.ResolveWithOverrides(
-		tokenOverride,
-		publicURLOverride,
-		apiURLOverride,
-	)
+// tokenOverride and urlOverride allow CLI flags to take precedence over
+// environment variables and the config file.
+func NewClient(tokenOverride, urlOverride string) (*Client, error) {
+	cfg, err := config.Resolve(tokenOverride, urlOverride)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -50,7 +46,7 @@ func NewClient(tokenOverride, publicURLOverride, apiURLOverride string) (*Client
 	explicitTokenOverride := tokenOverride != "" || os.Getenv(config.EnvToken) != ""
 
 	return &Client{
-		baseURL: cfg.APIURL,
+		baseURL: strings.TrimRight(cfg.APIURL, "/"),
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},
@@ -66,6 +62,7 @@ func NewClientWithToken(baseURL, token string) *Client {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+	baseURL = strings.TrimRight(baseURL, "/")
 
 	return &Client{
 		baseURL: baseURL,
@@ -178,7 +175,7 @@ func (c *Client) doWithBody(method, path string, bodyBytes []byte, contentType s
 }
 
 func (c *Client) executeRequest(method, path string, bodyBytes []byte, contentType string) (int, []byte, error) {
-	url := c.baseURL + path
+	url := strings.TrimRight(c.baseURL, "/") + path
 
 	var bodyReader io.Reader
 	if bodyBytes != nil {

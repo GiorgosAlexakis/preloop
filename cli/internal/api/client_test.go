@@ -25,6 +25,13 @@ func TestNewClientWithToken(t *testing.T) {
 	}
 }
 
+func TestNewClientWithToken_TrimsTrailingSlash(t *testing.T) {
+	client := NewClientWithToken("https://example.com/", "test-token")
+	if client.baseURL != "https://example.com" {
+		t.Errorf("expected trimmed baseURL, got %q", client.baseURL)
+	}
+}
+
 func TestNewClientWithToken_DefaultBaseURL(t *testing.T) {
 	client := NewClientWithToken("", "tok")
 	if client.baseURL != DefaultBaseURL {
@@ -243,7 +250,7 @@ func TestClientRefreshesExpiredAccessTokenFromStoredConfig(t *testing.T) {
 		t.Fatalf("failed to save config: %v", err)
 	}
 
-	client, err := NewClient("", "", "")
+	client, err := NewClient("", "")
 	if err != nil {
 		t.Fatalf("failed to build client: %v", err)
 	}
@@ -298,7 +305,7 @@ func TestClientDoesNotRefreshWhenExplicitTokenOverrideIsUsed(t *testing.T) {
 		t.Fatalf("failed to save config: %v", err)
 	}
 
-	client, err := NewClient("override-token", server.URL, "")
+	client, err := NewClient("override-token", server.URL)
 	if err != nil {
 		t.Fatalf("failed to build client: %v", err)
 	}

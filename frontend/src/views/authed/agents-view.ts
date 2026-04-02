@@ -14,6 +14,11 @@ import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
 import '@shoelace-style/shoelace/dist/components/radio-button/radio-button.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
+import '@shoelace-style/shoelace/dist/components/tab/tab.js';
+import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
+import '@shoelace-style/shoelace/dist/components/copy-button/copy-button.js';
 import '../../components/view-header.ts';
 import {
   getAccountAgents,
@@ -52,6 +57,10 @@ export class AgentsView extends LitElement {
 
   @state() private gatewaySummary: AccountGatewayUsageSummaryResponse | null =
     null;
+
+  @state() private showOnboardingDialog = false;
+  // Used to track agents count from the last fetch to detect new registrations
+  private previousAgentCount = -1;
 
   // Switcher state
   @state() private currentView: 'cards' | 'canvas' = 'canvas';
@@ -484,7 +493,28 @@ export class AgentsView extends LitElement {
         getAccountAgents(params),
         getAccountGatewayUsageSummary(),
       ]);
+
+      // Check if a new agent was registered while the dialog is open
+      if (
+        this.showOnboardingDialog &&
+        this.previousAgentCount !== -1 &&
+        agentsData.items.length > this.previousAgentCount
+      ) {
+        this.showOnboardingDialog = false;
+
+        // Show success toast
+        const alertEl = Object.assign(document.createElement('sl-alert'), {
+          variant: 'success',
+          duration: 4000,
+          closable: true,
+          innerHTML: `<sl-icon slot="icon" name="check2-circle"></sl-icon> <strong>Success</strong><br>A new agent was successfully registered!`,
+        });
+        document.body.append(alertEl);
+        alertEl.toast();
+      }
+
       this.agents = agentsData;
+      this.previousAgentCount = agentsData.items.length;
       this.gatewaySummary = gatewayData;
       this.initializeNodePositions();
     } catch (error) {
@@ -1024,7 +1054,7 @@ export class AgentsView extends LitElement {
 
   private renderCanvas() {
     return html`
-      <div class="canvas-container" style="margin: 0 24px 24px 24px;">
+      <div class="canvas-container">
         ${this.loading && !this.agents
           ? html`
               <div
@@ -1091,7 +1121,10 @@ export class AgentsView extends LitElement {
                   ? 'pulsing'
                   : ''}"
               >
-                <sl-icon name="hdd-network"></sl-icon>
+                <sl-icon
+                  src="/assets/preloop-badge.svg"
+                  style="margin-left: -5px;margin-bottom: -4px;"
+                ></sl-icon>
               </div>
               <div class="gateway-label" style="text-align: center;">
                 <div>PRELOOP GATEWAY</div>
@@ -1253,6 +1286,108 @@ export class AgentsView extends LitElement {
     `;
   }
 
+  private renderOnboardingDialog() {
+    return html`
+      <sl-dialog
+        label="Onboard Agents"
+        ?open=${this.showOnboardingDialog}
+        @sl-after-hide=${() => (this.showOnboardingDialog = false)}
+        style="--width: 650px;"
+      >
+        <sl-tab-group>
+          <sl-tab slot="nav" panel="cli">CLI SETUP</sl-tab>
+          <sl-tab slot="nav" panel="openclaw">OpenClaw Plugin</sl-tab>
+          <sl-tab slot="nav" panel="manual">Manual</sl-tab>
+
+          <sl-tab-panel name="cli">
+            <div style="padding: var(--sl-spacing-large) 0 0 0;">
+              <div style="margin-bottom: var(--sl-spacing-medium);">
+                The Preloop CLI is the fastest way to register local agents.
+              </div>
+              <ol style="line-height: 2; margin: 0; padding-left: 20px;">
+                <li>
+                  <strong>Install CLI:</strong> Follow documentation to install
+                  the Preloop CLI.
+                </li>
+                <li>
+                  <strong>Authenticate:</strong> Run
+                  <code
+                    style="background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 4px;"
+                    >preloop login</code
+                  >
+                  <sl-copy-button value="preloop login"></sl-copy-button>
+                </li>
+                <li>
+                  <strong>Discover Agents:</strong> Run
+                  <code
+                    style="background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 4px;"
+                    >preloop agents discover</code
+                  >
+                  <sl-copy-button
+                    value="preloop agents discover"
+                  ></sl-copy-button>
+                </li>
+              </ol>
+            </div>
+          </sl-tab-panel>
+
+          <sl-tab-panel name="openclaw">
+            <div style="padding: var(--sl-spacing-large) 0 0 0;">
+              <div style="margin-bottom: var(--sl-spacing-medium);">
+                For users of OpenClaw, use the native plugin for smooth
+                integration.
+              </div>
+              <ol style="line-height: 2; margin: 0; padding-left: 20px;">
+                <li>
+                  <strong>Install Preloop Plugin:</strong> Find and install the
+                  Preloop Plugin for OpenClaw.
+                </li>
+                <li>
+                  <strong>Authenticate:</strong> Use the plugin interface to log
+                  in to Preloop.
+                </li>
+                <li>
+                  <strong>Complete Onboarding:</strong> Follow the on-screen
+                  flow to finish setup.
+                </li>
+              </ol>
+            </div>
+          </sl-tab-panel>
+
+          <sl-tab-panel name="manual">
+            <div style="padding: var(--sl-spacing-large) 0 0 0;">
+              <ol style="line-height: 1.8; margin: 0; padding-left: 20px;">
+                <li style="margin-bottom: 8px;">
+                  Provide instructions on how to edit the configuration based on
+                  your specific agent framework.
+                </li>
+                <li style="margin-bottom: 8px;">
+                  Add your configured AI models and desired MCP servers to
+                  Preloop.
+                </li>
+                <li style="margin-bottom: 8px;">
+                  Create an Agent-Specific Preloop API key.
+                </li>
+                <li>
+                  Reconfigure your agent to use the AI model through the Preloop
+                  gateway, and tools through the Preloop MCP proxy (or Preloop
+                  CLI).
+                </li>
+              </ol>
+            </div>
+          </sl-tab-panel>
+        </sl-tab-group>
+        <sl-button
+          slot="footer"
+          variant="primary"
+          @click=${() => (this.showOnboardingDialog = false)}
+        >
+          Close
+        </sl-button>
+      </sl-dialog>
+    `;
+  }
+
   render() {
     return html`
       <div
@@ -1260,9 +1395,10 @@ export class AgentsView extends LitElement {
           ? 'page-canvas-wrapper'
           : ''}"
       >
+        ${this.renderOnboardingDialog()}
         <div
           class="header"
-          style="align-items: flex-end; justify-content: start;"
+          style="align-items: flex-start; justify-content: space-between;"
         >
           <div>
             <h1>Agents</h1>
@@ -1273,11 +1409,18 @@ export class AgentsView extends LitElement {
               gateway.
             </div>
           </div>
+          <sl-button
+            variant="primary"
+            @click=${() => (this.showOnboardingDialog = true)}
+          >
+            <sl-icon slot="prefix" name="plus"></sl-icon>
+            Onboard agents
+          </sl-button>
         </div>
 
         <div
           class="px-6 mb-4 flex-none"
-          style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium); padding: 0 1.5rem;"
+          style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
         >
           <div style="display: flex; justify-content: flex-end; width: 100%;">
             <!-- View Switcher -->

@@ -85,6 +85,8 @@ type openClawParsedConfig struct {
 	ProviderAPI     string
 	ProviderBaseURL string
 	ProviderAPIKey  string
+	ProviderRegion  string
+	UsesAmbientAuth bool
 	ModelCatalog    map[string]interface{}
 	Notes           []string
 }
@@ -101,7 +103,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		output = os.Stdout
 	}
 	if client == nil {
-		client, err = api.NewClient(FlagToken, FlagURL, FlagAPIURL)
+		client, err = api.NewClient(FlagToken, FlagURL)
 		if err != nil {
 			return fmt.Errorf("failed to create API client: %w", err)
 		}
@@ -110,7 +112,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
-	publicURL, err := resolveConfiguredPublicURL()
+	baseURL, err := resolveConfiguredAPIURL()
 	if err != nil {
 		return err
 	}
@@ -123,11 +125,11 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 	}
 
-	syncAgent := prepareAgentForRemoteServerSync(agent, publicURL)
+	syncAgent := prepareAgentForRemoteServerSync(agent, baseURL)
 
 	plan, err := buildManagedMCPEnrollmentPlan(
 		agent,
-		publicURL,
+		baseURL,
 		"<token created at apply time>",
 	)
 	if err != nil {
@@ -158,7 +160,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		}
 	}
 
-	serverSync, err := ensureDiscoveredRemoteServers(client, syncAgent, publicURL)
+	serverSync, err := ensureDiscoveredRemoteServers(client, syncAgent, baseURL)
 	if err != nil {
 		return err
 	}
@@ -186,9 +188,9 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		if err != nil {
 			return err
 		}
-		gatewayURL, _ := resolveOpenClawGateway(publicURL, parsed.ProviderName, parsed.ModelAlias)
+		gatewayURL, _ := resolveOpenClawGateway(baseURL, parsed.ProviderName, parsed.ModelAlias)
 
-		if parsed.ProviderAPIKey == "" {
+		if parsed.ProviderAPIKey == "" && !parsed.UsesAmbientAuth {
 			if !opts.SkipConfirmation && !opts.AutoApprove {
 				fmt.Fprintf(opts.Output, "\n[Action Required] OpenClaw model %s requires an API key for gateway routing.\n", parsed.ModelAlias)
 				inputKey, err := promptForTextInput(
@@ -216,7 +218,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 
 	plan, err = buildManagedMCPEnrollmentPlan(
 		agent,
-		publicURL,
+		baseURL,
 		credentialResp.Token,
 	)
 	if err != nil {
@@ -244,7 +246,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	}
 	validationResult := managedMCPAdapterForAgent(agent).ValidateManagedConfig(
 		validationDocument,
-		publicURL,
+		baseURL,
 	)
 	validationResult = mergeStringMaps(
 		validationResult,
@@ -426,7 +428,7 @@ func runOpenClawLiveValidation(
 	agent AgentConfig,
 	validationResult map[string]interface{},
 ) (*managedLiveValidationOutcome, error) {
-	publicURL, err := resolveConfiguredPublicURL()
+	baseURL, err := resolveConfiguredAPIURL()
 	if err != nil {
 		return &managedLiveValidationOutcome{
 			Attempted:        true,
@@ -496,7 +498,7 @@ func runOpenClawLiveValidation(
 		"max_tokens":  32,
 	}
 
-	gatewayClient := api.NewClientWithToken(publicURL, token)
+	gatewayClient := api.NewClientWithToken(baseURL, token)
 	var gatewayResponse map[string]interface{}
 	requestErr := gatewayClient.Post(
 		"/openai/v1/chat/completions",
@@ -645,6 +647,7 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 	modelRef := extractOpenClawPrimaryModel(document)
 	providerID, modelID := splitOpenClawModelRef(modelRef)
 	providerName := inferOpenClawProviderName(providerID, lookupString(document, "models", "providers", providerID, "api"))
+	usesAmbientAuth := openClawProviderUsesAmbientCredentials(providerID, providerName)
 	apiKey, resolvedNote := resolveOpenClawProviderAPIKey(document, providerID)
 	notes := []string{}
 	if resolvedNote != "" {
@@ -667,6 +670,8 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 		ProviderAPI:     pickOpenClawGatewayAPI(lookupString(document, "models", "providers", providerID, "api")),
 		ProviderBaseURL: providerBaseURL,
 		ProviderAPIKey:  apiKey,
+		ProviderRegion:  resolveOpenClawProviderRegion(document, providerID),
+		UsesAmbientAuth: usesAmbientAuth,
 		ModelCatalog:    findOpenClawModelCatalog(document, providerID, modelID),
 		Notes:           notes,
 	}, nil
@@ -811,7 +816,7 @@ func syncOpenClawAIModel(
 	}
 
 	target := findReusableAIModel(existing, parsed, managedModelAlias)
-	upstreamResolved := strings.TrimSpace(parsed.ProviderAPIKey) != ""
+	upstreamResolved := parsed.UsesAmbientAuth || strings.TrimSpace(parsed.ProviderAPIKey) != ""
 	if target != nil && target.HasAPIKey {
 		upstreamResolved = true
 	}
@@ -823,8 +828,11 @@ func syncOpenClawAIModel(
 		managedModelAlias,
 		upstreamResolved,
 	)
+	if parsed.UsesAmbientAuth {
+		metaData = mergeOpenClawAmbientProviderMeta(metaData, parsed)
+	}
 	notes := []string{}
-	if parsed.ProviderAPIKey == "" {
+	if !parsed.UsesAmbientAuth && parsed.ProviderAPIKey == "" {
 		notes = append(
 			notes,
 			"OpenClaw provider credentials were not resolved automatically; verify the imported Preloop AI model has working upstream credentials.",
@@ -923,8 +931,8 @@ func mergeGatewayMetaForAIModel(
 		}
 	}
 	gateway := map[string]interface{}{
-		// Only enable when upstream provider credentials are stored on the
-		// AIModel; otherwise the gateway returns "Model credentials are not configured".
+		// Only enable when upstream credentials are available, either on the
+		// AI model itself or via an ambient provider credential chain.
 		"enabled":          gatewayEnabled,
 		"url":              gatewayURL,
 		"provider_adapter": "preloop",
@@ -1222,6 +1230,8 @@ func inferOpenClawProviderName(providerID, api string) string {
 	switch strings.ToLower(strings.TrimSpace(providerID)) {
 	case "anthropic":
 		return "anthropic"
+	case "amazon-bedrock", "bedrock":
+		return "bedrock"
 	case "google", "gemini":
 		return "google"
 	case "openai":
@@ -1240,6 +1250,54 @@ func inferOpenClawProviderName(providerID, api string) string {
 	default:
 		return "openai"
 	}
+}
+
+func openClawProviderUsesAmbientCredentials(providerID, providerName string) bool {
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "amazon-bedrock", "bedrock":
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(providerName)) {
+	case "amazon-bedrock", "bedrock":
+		return true
+	}
+	return false
+}
+
+func resolveOpenClawProviderRegion(document map[string]interface{}, providerID string) string {
+	for _, key := range []string{"region", "awsRegion", "aws_region", "defaultRegion"} {
+		if value := lookupString(document, "models", "providers", providerID, key); strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func mergeOpenClawAmbientProviderMeta(
+	metaData map[string]interface{},
+	parsed *openClawParsedConfig,
+) map[string]interface{} {
+	merged, err := deepCopyMap(metaData)
+	if err != nil || merged == nil {
+		merged = map[string]interface{}{}
+	}
+	if !parsed.UsesAmbientAuth {
+		return merged
+	}
+
+	providerMeta, _ := merged["provider_runtime"].(map[string]interface{})
+	if cloned, err := deepCopyMap(providerMeta); err == nil && cloned != nil {
+		providerMeta = cloned
+	}
+	if providerMeta == nil {
+		providerMeta = map[string]interface{}{}
+	}
+	providerMeta["ambient_credentials"] = true
+	if parsed.ProviderRegion != "" {
+		providerMeta["region"] = parsed.ProviderRegion
+	}
+	merged["provider_runtime"] = providerMeta
+	return merged
 }
 
 func pickOpenClawGatewayAPI(sourceAPI string) string {
@@ -1300,6 +1358,9 @@ func resolveOpenClawProviderAPIKey(
 	document map[string]interface{},
 	providerID string,
 ) (string, string) {
+	if openClawProviderUsesAmbientCredentials(providerID, "") {
+		return "", "OpenClaw provider uses ambient AWS credentials; Preloop will rely on the server-side AWS credential chain for gateway routing."
+	}
 	value := lookupValue(document, "models", "providers", providerID, "apiKey")
 	if value == nil {
 		profileKey, profileNote := resolveOpenClawProfileBackedAPIKey(document, providerID)

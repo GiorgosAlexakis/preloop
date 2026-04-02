@@ -71,7 +71,7 @@ loopback callback on local machines and a copy/paste flow on SSH or headless hos
 Examples:
   preloop login --token <your-token>
   preloop login --token <your-token> --url http://localhost:8000
-  preloop login --url https://ai-model-gateway.example.com --api-url https://app.example.com
+  PRELOOP_URL=https://review.preloop.ai preloop login --headless
   preloop login
   preloop login --headless`,
 	RunE: runAuthLogin,
@@ -158,16 +158,16 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--code can only be used with the headless login flow")
 	}
 
-	publicURL, err := resolveConfiguredPublicURL()
+	baseURL, err := resolveConfiguredAPIURL()
 	if err != nil {
 		return err
 	}
 
 	if shouldUseHeadlessOAuth() {
-		return runHeadlessOAuthLogin(publicURL)
+		return runHeadlessOAuthLogin(baseURL)
 	}
 
-	if err := runLoopbackOAuthLogin(publicURL); err != nil {
+	if err := runLoopbackOAuthLogin(baseURL); err != nil {
 		if errors.Is(err, errLoopbackCallbackUnavailable) && !loginLoopback {
 			fallbackReason := err
 			if unwrapped := errors.Unwrap(err); unwrapped != nil {
@@ -175,7 +175,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Printf("Loopback callback unavailable: %v\n", fallbackReason)
 			fmt.Println("Falling back to the headless copy/paste login flow...")
-			return runHeadlessOAuthLogin(publicURL)
+			return runHeadlessOAuthLogin(baseURL)
 		}
 		return err
 	}
@@ -185,7 +185,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 
 // runTokenLogin saves a token directly to the config file.
 func runTokenLogin(token string) error {
-	apiURL, publicURL, err := resolveConfiguredURLs()
+	apiURL, err := resolveConfiguredAPIURL()
 	if err != nil {
 		return err
 	}
@@ -193,28 +193,23 @@ func runTokenLogin(token string) error {
 	client := api.NewClientWithToken(apiURL, token)
 	var userInfo UserInfo
 	if err := client.Get(userInfoPath, &userInfo); err != nil {
-		if isMissingRESTAPIError(err) {
-			return invalidAPIBaseURLError(apiURL, publicURL)
-		}
-
 		if err := config.SetTokens(token, ""); err != nil {
 			return fmt.Errorf("failed to save token: %w", err)
 		}
-		if err := config.SetURLs(apiURL, publicURL); err != nil {
-			return fmt.Errorf("failed to save URLs: %w", err)
+		if err := config.SetAPIURL(apiURL); err != nil {
+			return fmt.Errorf("failed to save API URL: %w", err)
 		}
 
 		fmt.Println("Token saved (could not verify — server may be unreachable)")
 		fmt.Printf("  API URL: %s\n", apiURL)
-		printPublicURLIfDistinct(publicURL, apiURL)
 		return nil
 	}
 
 	if err := config.SetTokens(token, ""); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
 	}
-	if err := config.SetURLs(apiURL, publicURL); err != nil {
-		return fmt.Errorf("failed to save URLs: %w", err)
+	if err := config.SetAPIURL(apiURL); err != nil {
+		return fmt.Errorf("failed to save API URL: %w", err)
 	}
 
 	fmt.Println("Authenticated successfully!")
@@ -223,7 +218,6 @@ func runTokenLogin(token string) error {
 		fmt.Printf("  Org:     %s\n", userInfo.Organization)
 	}
 	fmt.Printf("  API URL: %s\n", apiURL)
-	printPublicURLIfDistinct(publicURL, apiURL)
 
 	return nil
 }
@@ -361,43 +355,33 @@ func runHeadlessOAuthLogin(baseURL string) error {
 	return finishOAuthLogin(baseURL, code, redirectURI)
 }
 
-func finishOAuthLogin(publicURL, code, redirectURI string) error {
-	apiURL, err := resolveConfiguredAPIURL()
-	if err != nil {
-		return err
-	}
-
+func finishOAuthLogin(baseURL, code, redirectURI string) error {
 	fmt.Println("Exchanging code for tokens...")
-	tokenResp, err := exchangeCodeForTokens(publicURL, code, redirectURI)
+	tokenResp, err := exchangeCodeForTokens(baseURL, code, redirectURI)
 	if err != nil {
 		return fmt.Errorf("failed to exchange code for tokens: %w", err)
 	}
 
-	client := api.NewClientWithToken(apiURL, tokenResp.AccessToken)
+	client := api.NewClientWithToken(baseURL, tokenResp.AccessToken)
 	var userInfo UserInfo
 	if err := client.Get(userInfoPath, &userInfo); err != nil {
-		if isMissingRESTAPIError(err) {
-			return invalidAPIBaseURLError(apiURL, publicURL)
-		}
-
 		if err := config.SetTokens(tokenResp.AccessToken, tokenResp.RefreshToken); err != nil {
 			return fmt.Errorf("failed to save tokens: %w", err)
 		}
-		if err := config.SetURLs(apiURL, publicURL); err != nil {
-			return fmt.Errorf("failed to save URLs: %w", err)
+		if err := config.SetAPIURL(baseURL); err != nil {
+			return fmt.Errorf("failed to save API URL: %w", err)
 		}
 
 		fmt.Println("\nSuccessfully authenticated!")
-		fmt.Printf("API URL: %s\n", apiURL)
-		printPublicURLIfDistinct(publicURL, apiURL)
+		fmt.Printf("API URL: %s\n", baseURL)
 		return nil
 	}
 
 	if err := config.SetTokens(tokenResp.AccessToken, tokenResp.RefreshToken); err != nil {
 		return fmt.Errorf("failed to save tokens: %w", err)
 	}
-	if err := config.SetURLs(apiURL, publicURL); err != nil {
-		return fmt.Errorf("failed to save URLs: %w", err)
+	if err := config.SetAPIURL(baseURL); err != nil {
+		return fmt.Errorf("failed to save API URL: %w", err)
 	}
 
 	fmt.Println("\nSuccessfully authenticated!")
@@ -405,8 +389,7 @@ func finishOAuthLogin(publicURL, code, redirectURI string) error {
 	if userInfo.Organization != "" {
 		fmt.Printf("Organization: %s\n", userInfo.Organization)
 	}
-	fmt.Printf("API URL: %s\n", apiURL)
-	printPublicURLIfDistinct(publicURL, apiURL)
+	fmt.Printf("API URL: %s\n", baseURL)
 
 	return nil
 }
@@ -417,39 +400,6 @@ func stdinIsTerminal() bool {
 		return false
 	}
 	return (stat.Mode() & os.ModeCharDevice) != 0
-}
-
-func isMissingRESTAPIError(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "status 404") || strings.Contains(message, "\"detail\":\"not found\"")
-}
-
-func invalidAPIBaseURLError(apiURL, publicURL string) error {
-	message := fmt.Sprintf(
-		"configured API URL %q does not expose the Preloop REST API. "+
-			"Set --api-url or PRELOOP_API_URL to the control-plane URL",
-		apiURL,
-	)
-	if publicURL != "" && publicURL != apiURL {
-		message += fmt.Sprintf(
-			" and keep %q as the public OAuth/MCP/gateway URL",
-			publicURL,
-		)
-	} else {
-		message +=
-			". If your deployment uses a dedicated gateway host, keep that on --url or PRELOOP_URL"
-	}
-	return fmt.Errorf(message)
-}
-
-func printPublicURLIfDistinct(publicURL, apiURL string) {
-	if strings.TrimSpace(publicURL) == "" || strings.TrimSpace(publicURL) == strings.TrimSpace(apiURL) {
-		return
-	}
-	fmt.Printf("  Public URL: %s\n", publicURL)
 }
 
 // runAuthLogout clears stored credentials.
@@ -469,7 +419,7 @@ func runAuthLogout(cmd *cobra.Command, args []string) error {
 
 // runAuthStatus shows the current authentication status.
 func runAuthStatus(cmd *cobra.Command, args []string) error {
-	cfg, err := config.ResolveWithOverrides(FlagToken, FlagURL, FlagAPIURL)
+	cfg, err := config.Resolve(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -481,7 +431,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create API client and fetch user info
-	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to initialize API client: %w", err)
 	}
@@ -490,7 +440,6 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	if err := client.Get(userInfoPath, &userInfo); err != nil {
 		fmt.Println("Authenticated (token may be invalid or server unreachable)")
 		fmt.Printf("  API URL: %s\n", cfg.APIURL)
-		printPublicURLIfDistinct(cfg.PublicURL, cfg.APIURL)
 		fmt.Println("Run 'preloop login --token <your-token>' to re-authenticate")
 		return nil
 	}
@@ -502,14 +451,13 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Org:     %s\n", userInfo.Organization)
 	}
 	fmt.Printf("  API URL: %s\n", cfg.APIURL)
-	printPublicURLIfDistinct(cfg.PublicURL, cfg.APIURL)
 
 	return nil
 }
 
 // runAuthToken prints the current access token.
 func runAuthToken(cmd *cobra.Command, args []string) error {
-	cfg, err := config.ResolveWithOverrides(FlagToken, FlagURL, FlagAPIURL)
+	cfg, err := config.Resolve(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -518,7 +466,7 @@ func runAuthToken(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not authenticated - run 'preloop login --token <your-token>' first")
 	}
 
-	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to initialize API client: %w", err)
 	}

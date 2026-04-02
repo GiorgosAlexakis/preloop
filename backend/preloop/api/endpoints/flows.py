@@ -18,6 +18,8 @@ from preloop.services.model_gateway_usage import ModelGatewayUsageService
 from preloop.utils.hashing import compute_content_hash
 from preloop.utils.audit import log_config_change
 from preloop.utils.permissions import require_permission
+from preloop.models.crud.flow_execution_log import crud_flow_execution_log
+
 
 router = APIRouter()
 
@@ -389,15 +391,7 @@ async def get_flow_execution_logs(
 
     # For finished executions or if container logs failed, return database logs.
     # Prefer the normalized flow_execution_log table; fall back to legacy JSONB column.
-    from preloop.models.models.flow_execution_log import FlowExecutionLog
-    from sqlalchemy import select
-
-    log_query = (
-        select(FlowExecutionLog)
-        .filter(FlowExecutionLog.execution_id == execution_id)
-        .order_by(FlowExecutionLog.timestamp.asc())
-    )
-    log_rows = db.execute(log_query).scalars().all()
+    log_rows = crud_flow_execution_log.get_by_execution_id(db, execution_id)
 
     if log_rows:
         logs = [
@@ -428,32 +422,15 @@ def get_flow_execution_gateway_events(
     metadata_only: bool = False,
 ) -> Dict[str, Any]:
     """Get normalized model gateway events for a flow execution."""
-    from preloop.models.models.flow_execution_log import FlowExecutionLog
-    from sqlalchemy import select
-
     execution = crud_flow_execution.get(
         db=db, id=execution_id, account_id=current_user.account_id
     )
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
 
-    query = (
-        select(FlowExecutionLog)
-        .filter(
-            FlowExecutionLog.execution_id == execution_id,
-        )
-        .order_by(
-            FlowExecutionLog.timestamp.desc()
-            if tail
-            else FlowExecutionLog.timestamp.asc()
-        )
+    rows = crud_flow_execution_log.get_by_execution_id(
+        db, execution_id, tail=tail, desc=True if tail else False
     )
-    if tail:
-        query = query.limit(tail)
-
-    rows = db.execute(query).scalars().all()
-    if tail:
-        rows = list(reversed(rows))
 
     events = []
     for row in rows:
@@ -491,20 +468,13 @@ def get_flow_execution_gateway_event(
     current_user: User = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Get a single normalized model gateway event."""
-    from preloop.models.models.flow_execution_log import FlowExecutionLog
-    from sqlalchemy import select
-
     execution = crud_flow_execution.get(
         db=db, id=execution_id, account_id=current_user.account_id
     )
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
 
-    query = select(FlowExecutionLog).filter(
-        FlowExecutionLog.execution_id == execution_id,
-        FlowExecutionLog.id == event_id,
-    )
-    row = db.execute(query).scalar_one_or_none()
+    row = crud_flow_execution_log.get_event_by_id(db, execution_id, event_id)
 
     if not row:
         raise HTTPException(status_code=404, detail="Gateway event not found")

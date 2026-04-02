@@ -188,15 +188,13 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         commit: bool = True,
     ) -> List[ApiKey]:
         """Deactivate runtime-scoped API keys bound to one runtime session."""
-        from sqlalchemy import cast, String
-
         key_objs = (
             db.query(ApiKey)
             .filter(
                 ApiKey.account_id == account_id,
                 ApiKey.is_active.is_(True),
-                cast(ApiKey.context_data["runtime_session_id"], String)
-                == f'"{runtime_session_id}"',
+                ApiKey.context_data["runtime_session_id"].astext
+                == str(runtime_session_id),
             )
             .all()
         )
@@ -228,17 +226,15 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         commit: bool = True,
     ) -> List[ApiKey]:
         """Deactivate runtime-scoped API keys bound to one durable principal."""
-        from sqlalchemy import cast, String
-
         key_objs = (
             db.query(ApiKey)
             .filter(
                 ApiKey.account_id == account_id,
                 ApiKey.is_active.is_(True),
-                cast(ApiKey.context_data["runtime_principal"]["type"], String)
-                == f'"{runtime_principal_type}"',
-                cast(ApiKey.context_data["runtime_principal"]["id"], String)
-                == f'"{runtime_principal_id}"',
+                ApiKey.context_data["runtime_principal"]["type"].astext
+                == str(runtime_principal_type),
+                ApiKey.context_data["runtime_principal"]["id"].astext
+                == str(runtime_principal_id),
             )
             .all()
         )
@@ -269,15 +265,12 @@ class CRUDApiKey(CRUDBase[ApiKey]):
         commit: bool = True,
     ) -> List[ApiKey]:
         """Deactivate runtime-scoped API keys bound to one managed agent."""
-        from sqlalchemy import cast, String
-
         key_objs = (
             db.query(ApiKey)
             .filter(
                 ApiKey.account_id == account_id,
                 ApiKey.is_active.is_(True),
-                cast(ApiKey.context_data["managed_agent_id"], String)
-                == f'"{managed_agent_id}"',
+                ApiKey.context_data["managed_agent_id"].astext == str(managed_agent_id),
             )
             .all()
         )

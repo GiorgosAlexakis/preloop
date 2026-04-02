@@ -35,7 +35,6 @@ func TestSaveAndLoad(t *testing.T) {
 		AccessToken:  "test-access-token",
 		RefreshToken: "test-refresh-token",
 		APIURL:       "https://custom.preloop.ai",
-		PublicURL:    "https://public.preloop.ai",
 	}
 
 	if err := Save(cfg); err != nil {
@@ -60,9 +59,6 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if loaded.APIURL != "https://custom.preloop.ai" {
 		t.Errorf("expected API URL 'https://custom.preloop.ai', got '%s'", loaded.APIURL)
-	}
-	if loaded.PublicURL != "https://public.preloop.ai" {
-		t.Errorf("expected public URL 'https://public.preloop.ai', got '%s'", loaded.PublicURL)
 	}
 }
 
@@ -161,30 +157,23 @@ func TestSetAPIURL(t *testing.T) {
 	if cfg.APIURL != "https://new.api.com" {
 		t.Errorf("expected 'https://new.api.com', got '%s'", cfg.APIURL)
 	}
-	if cfg.PublicURL != "https://new.api.com" {
-		t.Errorf("expected public URL to default to API URL, got '%s'", cfg.PublicURL)
-	}
 }
 
-func TestResolveWithOverrides_SplitPublicAndAPIURLs(t *testing.T) {
+func TestResolveTrimsTrailingSlash(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	os.Setenv("HOME", tmpDir)
 	defer os.Setenv("HOME", origHome)
 
-	t.Setenv(EnvURL, "https://public.preloop.ai")
-	t.Setenv(EnvAPIURL, "https://api.preloop.ai")
+	t.Setenv(EnvURL, "https://review.preloop.ai/")
 
-	cfg, err := ResolveWithOverrides("", "", "")
+	cfg, err := Resolve("", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.PublicURL != "https://public.preloop.ai" {
-		t.Fatalf("expected public URL override, got %q", cfg.PublicURL)
-	}
-	if cfg.APIURL != "https://api.preloop.ai" {
-		t.Fatalf("expected API URL override, got %q", cfg.APIURL)
+	if cfg.APIURL != "https://review.preloop.ai" {
+		t.Fatalf("expected trimmed API URL, got %q", cfg.APIURL)
 	}
 }
 

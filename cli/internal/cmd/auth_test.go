@@ -11,14 +11,11 @@ func TestResolveConfiguredAPIURLUsesEnvVariable(t *testing.T) {
 	t.Setenv("PRELOOP_URL", "http://example.test/api/")
 
 	originalFlagURL := FlagURL
-	originalFlagAPIURL := FlagAPIURL
 	originalFlagToken := FlagToken
 	FlagURL = ""
-	FlagAPIURL = ""
 	FlagToken = ""
 	t.Cleanup(func() {
 		FlagURL = originalFlagURL
-		FlagAPIURL = originalFlagAPIURL
 		FlagToken = originalFlagToken
 	})
 
@@ -28,41 +25,6 @@ func TestResolveConfiguredAPIURLUsesEnvVariable(t *testing.T) {
 	}
 	if baseURL != "http://example.test/api" {
 		t.Fatalf("expected PRELOOP_URL to be used, got %q", baseURL)
-	}
-}
-
-func TestResolveConfiguredAPIURLUsesDedicatedAPIEnvVariable(t *testing.T) {
-	tempHome := t.TempDir()
-	t.Setenv("HOME", tempHome)
-	t.Setenv("PRELOOP_URL", "https://gateway.preloop.ai")
-	t.Setenv("PRELOOP_API_URL", "https://api.preloop.ai")
-
-	originalFlagURL := FlagURL
-	originalFlagAPIURL := FlagAPIURL
-	originalFlagToken := FlagToken
-	FlagURL = ""
-	FlagAPIURL = ""
-	FlagToken = ""
-	t.Cleanup(func() {
-		FlagURL = originalFlagURL
-		FlagAPIURL = originalFlagAPIURL
-		FlagToken = originalFlagToken
-	})
-
-	baseURL, err := resolveConfiguredAPIURL()
-	if err != nil {
-		t.Fatalf("resolveConfiguredAPIURL returned error: %v", err)
-	}
-	if baseURL != "https://api.preloop.ai" {
-		t.Fatalf("expected PRELOOP_API_URL to be used, got %q", baseURL)
-	}
-
-	publicURL, err := resolveConfiguredPublicURL()
-	if err != nil {
-		t.Fatalf("resolveConfiguredPublicURL returned error: %v", err)
-	}
-	if publicURL != "https://gateway.preloop.ai" {
-		t.Fatalf("expected PRELOOP_URL to remain the public URL, got %q", publicURL)
 	}
 }
 
@@ -104,14 +66,12 @@ func snapshotLoginFlags() func() {
 	originalLoginHeadless := loginHeadless
 	originalLoginLoopback := loginLoopback
 	originalLoginCode := loginCode
-	originalFlagAPIURL := FlagAPIURL
 
 	return func() {
 		loginToken = originalLoginToken
 		loginHeadless = originalLoginHeadless
 		loginLoopback = originalLoginLoopback
 		loginCode = originalLoginCode
-		FlagAPIURL = originalFlagAPIURL
 	}
 }
 

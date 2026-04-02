@@ -40,11 +40,30 @@ _PROVIDER_PREFIX: Dict[str, str] = {
     "anthropic": "anthropic",
     "google": "gemini",
     "gemini": "gemini",
+    "bedrock": "bedrock",
+    "amazon-bedrock": "bedrock",
     "qwen": "openai",
     "deepseek": "deepseek",
 }
 
 logger = logging.getLogger(__name__)
+
+
+def _supports_ambient_provider_credentials(ai_model: AIModel) -> bool:
+    provider = (ai_model.provider_name or "").strip().lower()
+    return provider in {"bedrock", "amazon-bedrock"}
+
+
+def _bedrock_region(ai_model: AIModel) -> Optional[str]:
+    raw_meta_data = getattr(ai_model, "meta_data", None)
+    meta_data = raw_meta_data if isinstance(raw_meta_data, dict) else {}
+    provider_runtime = (
+        meta_data.get("provider_runtime")
+        if isinstance(meta_data.get("provider_runtime"), dict)
+        else {}
+    )
+    region = provider_runtime.get("region")
+    return str(region).strip() if region else None
 
 
 class ModelGatewayBackend(Protocol):
@@ -1351,7 +1370,7 @@ class OpenAIGatewayService:
         provider: GatewayProvider,
     ) -> Dict[str, Any]:
         resolved_secret = get_secret_service().resolve_ai_model_api_key(ai_model)
-        if not resolved_secret:
+        if not resolved_secret and not _supports_ambient_provider_credentials(ai_model):
             raise ModelGatewayAPIError(
                 provider=provider,
                 status_code=400,
@@ -1361,9 +1380,12 @@ class OpenAIGatewayService:
         kwargs: Dict[str, Any] = {
             "model": self._to_litellm_model(ai_model),
             "messages": messages,
-            "api_key": resolved_secret.value,
             "timeout": 600,  # 10 minute timeout for massive concurrent prompts (PR Reviews)
         }
+        if resolved_secret:
+            kwargs["api_key"] = resolved_secret.value
+        if region := _bedrock_region(ai_model):
+            kwargs["aws_region_name"] = region
         if stream:
             kwargs["stream"] = True
             if payload.get("stream_options") is not None:

@@ -209,7 +209,7 @@ func newInitializedMCPClient(timeout time.Duration, progressWriter io.Writer) (*
 }
 
 func newAuthenticatedMCPClient(timeout time.Duration, progressWriter io.Writer) (*mcpclient.Client, error) {
-	cfg, err := config.ResolveWithOverrides(FlagToken, FlagURL, FlagAPIURL)
+	cfg, err := config.Resolve(FlagToken, FlagURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -217,7 +217,7 @@ func newAuthenticatedMCPClient(timeout time.Duration, progressWriter io.Writer) 
 		return nil, fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
-	client, err := api.NewClient(FlagToken, FlagURL, FlagAPIURL)
+	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -227,7 +227,7 @@ func newAuthenticatedMCPClient(timeout time.Duration, progressWriter io.Writer) 
 		}
 	}
 
-	return mcpclient.New(cfg.PublicURL, client.Token(), timeout, progressWriter), nil
+	return mcpclient.New(cfg.APIURL, client.Token(), timeout, progressWriter), nil
 }
 
 func sortTools(tools []mcpclient.Tool) {

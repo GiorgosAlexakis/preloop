@@ -12,9 +12,8 @@ import (
 
 // Environment variable names.
 const (
-	EnvToken  = "PRELOOP_TOKEN"
-	EnvURL    = "PRELOOP_URL"
-	EnvAPIURL = "PRELOOP_API_URL"
+	EnvToken = "PRELOOP_TOKEN"
+	EnvURL   = "PRELOOP_URL"
 )
 
 const (
@@ -33,7 +32,6 @@ type Config struct {
 	AccessToken  string `mapstructure:"access_token"`
 	RefreshToken string `mapstructure:"refresh_token"`
 	APIURL       string `mapstructure:"api_url"`
-	PublicURL    string `mapstructure:"public_url"`
 }
 
 // configPath returns the full path to the config file.
@@ -97,7 +95,10 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	normalizeURLs(&cfg)
+	cfg.APIURL = normalizeAPIURL(cfg.APIURL)
+	if cfg.APIURL == "" {
+		cfg.APIURL = DefaultAPIURL
+	}
 	return &cfg, nil
 }
 
@@ -118,8 +119,7 @@ func Save(cfg *Config) error {
 
 	v.Set("access_token", cfg.AccessToken)
 	v.Set("refresh_token", cfg.RefreshToken)
-	v.Set("api_url", cfg.APIURL)
-	v.Set("public_url", cfg.PublicURL)
+	v.Set("api_url", normalizeAPIURL(cfg.APIURL))
 
 	if err := v.WriteConfig(); err != nil {
 		// If config file doesn't exist, create it
@@ -165,41 +165,7 @@ func SetAPIURL(apiURL string) error {
 		return err
 	}
 
-	previousAPIURL := cfg.APIURL
-	cfg.APIURL = apiURL
-	if strings.TrimSpace(cfg.PublicURL) == "" || cfg.PublicURL == previousAPIURL {
-		cfg.PublicURL = apiURL
-	}
-
-	return Save(cfg)
-}
-
-// SetPublicURL updates the public URL used for OAuth/MCP/gateway traffic.
-func SetPublicURL(publicURL string) error {
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-
-	previousPublicURL := cfg.PublicURL
-	cfg.PublicURL = publicURL
-	if strings.TrimSpace(cfg.APIURL) == "" || cfg.APIURL == previousPublicURL {
-		cfg.APIURL = publicURL
-	}
-
-	return Save(cfg)
-}
-
-// SetURLs updates both the control-plane API URL and the public URL.
-func SetURLs(apiURL, publicURL string) error {
-	cfg, err := Load()
-	if err != nil {
-		return err
-	}
-
-	cfg.APIURL = apiURL
-	cfg.PublicURL = publicURL
-
+	cfg.APIURL = normalizeAPIURL(apiURL)
 	return Save(cfg)
 }
 
@@ -216,65 +182,34 @@ func IsAuthenticated() bool {
 // Resolve returns a Config with values resolved in priority order:
 // CLI flags (overrides) > environment variables > config file > defaults.
 func Resolve(tokenOverride, urlOverride string) (*Config, error) {
-	return ResolveWithOverrides(tokenOverride, urlOverride, "")
-}
-
-// ResolveWithOverrides returns a Config with values resolved in priority order:
-// CLI flags (overrides) > environment variables > config file > defaults.
-func ResolveWithOverrides(tokenOverride, publicURLOverride, apiURLOverride string) (*Config, error) {
 	cfg, err := Load()
 	if err != nil {
 		return nil, err
 	}
-	publicURLInherited := cfg.APIURL == "" || cfg.PublicURL == "" || cfg.APIURL == cfg.PublicURL
 
 	// Environment variables override config file
 	if v := os.Getenv(EnvToken); v != "" {
 		cfg.AccessToken = v
 	}
 	if v := os.Getenv(EnvURL); v != "" {
-		if publicURLInherited {
-			cfg.APIURL = v
-		}
-		cfg.PublicURL = v
-	}
-	if v := os.Getenv(EnvAPIURL); v != "" {
 		cfg.APIURL = v
-		publicURLInherited = false
 	}
 
 	// CLI flags override everything
 	if tokenOverride != "" {
 		cfg.AccessToken = tokenOverride
 	}
-	if publicURLOverride != "" {
-		if publicURLInherited && apiURLOverride == "" && os.Getenv(EnvAPIURL) == "" {
-			cfg.APIURL = publicURLOverride
-		}
-		cfg.PublicURL = publicURLOverride
-	}
-	if apiURLOverride != "" {
-		cfg.APIURL = apiURLOverride
+	if urlOverride != "" {
+		cfg.APIURL = urlOverride
 	}
 
-	normalizeURLs(cfg)
+	cfg.APIURL = normalizeAPIURL(cfg.APIURL)
+	if cfg.APIURL == "" {
+		cfg.APIURL = DefaultAPIURL
+	}
 	return cfg, nil
 }
 
-func normalizeURLs(cfg *Config) {
-	if cfg == nil {
-		return
-	}
-
-	if cfg.APIURL == "" && cfg.PublicURL == "" {
-		cfg.APIURL = DefaultAPIURL
-		cfg.PublicURL = DefaultAPIURL
-		return
-	}
-	if cfg.APIURL == "" {
-		cfg.APIURL = cfg.PublicURL
-	}
-	if cfg.PublicURL == "" {
-		cfg.PublicURL = cfg.APIURL
-	}
+func normalizeAPIURL(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
