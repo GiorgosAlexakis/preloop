@@ -193,7 +193,7 @@ class CRUDApiKey(CRUDBase[ApiKey]):
             .filter(
                 ApiKey.account_id == account_id,
                 ApiKey.is_active.is_(True),
-                ApiKey.context_data["runtime_session_id"].astext
+                ApiKey.context_data.op("->>")("runtime_session_id")
                 == str(runtime_session_id),
             )
             .all()
@@ -231,9 +231,9 @@ class CRUDApiKey(CRUDBase[ApiKey]):
             .filter(
                 ApiKey.account_id == account_id,
                 ApiKey.is_active.is_(True),
-                ApiKey.context_data["runtime_principal"]["type"].astext
+                ApiKey.context_data["runtime_principal"].op("->>")("type")
                 == str(runtime_principal_type),
-                ApiKey.context_data["runtime_principal"]["id"].astext
+                ApiKey.context_data["runtime_principal"].op("->>")("id")
                 == str(runtime_principal_id),
             )
             .all()
@@ -270,7 +270,8 @@ class CRUDApiKey(CRUDBase[ApiKey]):
             .filter(
                 ApiKey.account_id == account_id,
                 ApiKey.is_active.is_(True),
-                ApiKey.context_data["managed_agent_id"].astext == str(managed_agent_id),
+                ApiKey.context_data.op("->>")("managed_agent_id")
+                == str(managed_agent_id),
             )
             .all()
         )

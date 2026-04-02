@@ -435,11 +435,21 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize API client: %w", err)
 	}
+	if FlagToken == "" && cfg.RefreshToken != "" {
+		if err := client.RefreshAccessToken(); err != nil {
+			fmt.Println("Authenticated (stored login could not be refreshed)")
+			fmt.Printf("  API URL: %s\n", cfg.APIURL)
+			fmt.Printf("  Error:   %v\n", err)
+			fmt.Println("Run 'preloop login' to re-authenticate")
+			return nil
+		}
+	}
 
 	var userInfo UserInfo
 	if err := client.Get(userInfoPath, &userInfo); err != nil {
 		fmt.Println("Authenticated (token may be invalid or server unreachable)")
 		fmt.Printf("  API URL: %s\n", cfg.APIURL)
+		fmt.Printf("  Error:   %v\n", err)
 		fmt.Println("Run 'preloop login --token <your-token>' to re-authenticate")
 		return nil
 	}
