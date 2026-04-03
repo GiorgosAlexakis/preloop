@@ -66,6 +66,32 @@ def _bedrock_region(ai_model: AIModel) -> Optional[str]:
     return str(region).strip() if region else None
 
 
+def _bedrock_credential_kwargs(secret_value: Optional[str]) -> Dict[str, Any]:
+    raw_secret = (secret_value or "").strip()
+    if not raw_secret:
+        return {}
+
+    try:
+        payload = json.loads(raw_secret)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    kwargs: Dict[str, Any] = {}
+    for source_key, target_key in (
+        ("aws_access_key_id", "aws_access_key_id"),
+        ("aws_secret_access_key", "aws_secret_access_key"),
+        ("aws_session_token", "aws_session_token"),
+        ("aws_region_name", "aws_region_name"),
+    ):
+        value = payload.get(source_key)
+        if value:
+            kwargs[target_key] = str(value).strip()
+    return kwargs
+
+
 class ModelGatewayBackend(Protocol):
     def completion(self, **kwargs: Any) -> Any: ...
 
@@ -1382,10 +1408,16 @@ class OpenAIGatewayService:
             "messages": messages,
             "timeout": 600,  # 10 minute timeout for massive concurrent prompts (PR Reviews)
         }
-        if resolved_secret:
+        if resolved_secret and _supports_ambient_provider_credentials(ai_model):
+            kwargs.update(_bedrock_credential_kwargs(resolved_secret.value))
+        if (
+            resolved_secret
+            and "api_key" not in kwargs
+            and "aws_access_key_id" not in kwargs
+        ):
             kwargs["api_key"] = resolved_secret.value
         if region := _bedrock_region(ai_model):
-            kwargs["aws_region_name"] = region
+            kwargs.setdefault("aws_region_name", region)
         if stream:
             kwargs["stream"] = True
             if payload.get("stream_options") is not None:

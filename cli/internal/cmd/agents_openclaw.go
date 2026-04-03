@@ -14,6 +14,7 @@ import (
 
 	json5 "github.com/yosuke-furukawa/json5/encoding/json5"
 	"github.com/zalando/go-keyring"
+	ini "gopkg.in/ini.v1"
 
 	"github.com/preloop/preloop/cli/internal/api"
 )
@@ -89,6 +90,13 @@ type openClawParsedConfig struct {
 	UsesAmbientAuth bool
 	ModelCatalog    map[string]interface{}
 	Notes           []string
+}
+
+type bedrockCredentialPayload struct {
+	AWSAccessKeyID     string `json:"aws_access_key_id"`
+	AWSSecretAccessKey string `json:"aws_secret_access_key"`
+	AWSSessionToken    string `json:"aws_session_token,omitempty"`
+	AWSRegionName      string `json:"aws_region_name,omitempty"`
 }
 
 func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) error {
@@ -647,8 +655,13 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 	modelRef := extractOpenClawPrimaryModel(document)
 	providerID, modelID := splitOpenClawModelRef(modelRef)
 	providerName := inferOpenClawProviderName(providerID, lookupString(document, "models", "providers", providerID, "api"))
-	usesAmbientAuth := openClawProviderUsesAmbientCredentials(providerID, providerName)
-	apiKey, resolvedNote := resolveOpenClawProviderAPIKey(document, providerID)
+	providerRegion := resolveOpenClawProviderRegion(document, providerID)
+	apiKey, usesAmbientAuth, resolvedNote := resolveOpenClawProviderCredentials(
+		document,
+		providerID,
+		providerName,
+		providerRegion,
+	)
 	notes := []string{}
 	if resolvedNote != "" {
 		notes = append(notes, resolvedNote)
@@ -670,7 +683,7 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 		ProviderAPI:     pickOpenClawGatewayAPI(lookupString(document, "models", "providers", providerID, "api")),
 		ProviderBaseURL: providerBaseURL,
 		ProviderAPIKey:  apiKey,
-		ProviderRegion:  resolveOpenClawProviderRegion(document, providerID),
+		ProviderRegion:  providerRegion,
 		UsesAmbientAuth: usesAmbientAuth,
 		ModelCatalog:    findOpenClawModelCatalog(document, providerID, modelID),
 		Notes:           notes,
@@ -847,7 +860,7 @@ func syncOpenClawAIModel(
 		if !equalJSONMap(target.MetaData, metaData) {
 			update["meta_data"] = metaData
 		}
-		if !target.HasAPIKey && parsed.ProviderAPIKey != "" {
+		if parsed.ProviderAPIKey != "" && (!target.HasAPIKey || aiModelUsesAmbientProviderCredentials(target)) {
 			update["api_key"] = parsed.ProviderAPIKey
 		}
 		if len(update) > 0 {
@@ -888,6 +901,18 @@ func syncOpenClawAIModel(
 		fmt.Sprintf("Imported AI model %q for gateway alias %s.", created.Name, managedModelAlias),
 	)
 	return &created, notes, nil
+}
+
+func aiModelUsesAmbientProviderCredentials(model *aiModelResponse) bool {
+	if model == nil {
+		return false
+	}
+	providerRuntime, ok := asObjectMap(model.MetaData["provider_runtime"])
+	if !ok {
+		return false
+	}
+	ambient, _ := providerRuntime["ambient_credentials"].(bool)
+	return ambient
 }
 
 func findReusableAIModel(
@@ -1264,6 +1289,26 @@ func openClawProviderUsesAmbientCredentials(providerID, providerName string) boo
 	return false
 }
 
+func resolveOpenClawProviderCredentials(
+	document map[string]interface{},
+	providerID, providerName, providerRegion string,
+) (string, bool, string) {
+	if openClawProviderUsesAmbientCredentials(providerID, providerName) {
+		payload, note := resolveOpenClawBedrockCredentialPayload(
+			document,
+			providerID,
+			providerRegion,
+		)
+		if payload != "" {
+			return payload, false, note
+		}
+		return "", false, note
+	}
+
+	value, note := resolveOpenClawProviderAPIKey(document, providerID)
+	return value, false, note
+}
+
 func resolveOpenClawProviderRegion(document map[string]interface{}, providerID string) string {
 	for _, key := range []string{"region", "awsRegion", "aws_region", "defaultRegion"} {
 		if value := lookupString(document, "models", "providers", providerID, key); strings.TrimSpace(value) != "" {
@@ -1298,6 +1343,138 @@ func mergeOpenClawAmbientProviderMeta(
 	}
 	merged["provider_runtime"] = providerMeta
 	return merged
+}
+
+func resolveOpenClawBedrockCredentialPayload(
+	document map[string]interface{},
+	providerID string,
+	providerRegion string,
+) (string, string) {
+	region := strings.TrimSpace(providerRegion)
+	if region == "" {
+		for _, key := range []string{"AWS_REGION", "AWS_DEFAULT_REGION"} {
+			if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+				region = value
+				break
+			}
+		}
+	}
+
+	if payload, note := resolveOpenClawBedrockEnvCredentials(region); payload != "" {
+		return payload, note
+	}
+	if payload, note := resolveOpenClawBedrockSharedCredentials(
+		document,
+		providerID,
+		region,
+	); payload != "" {
+		return payload, note
+	}
+
+	return "", "OpenClaw Bedrock credentials could not be resolved automatically. Export AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (plus AWS_SESSION_TOKEN if needed) or configure ~/.aws/credentials before onboarding, or add the credentials in the Preloop console for this model."
+}
+
+func resolveOpenClawBedrockEnvCredentials(region string) (string, string) {
+	accessKeyID := strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
+	secretAccessKey := strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	if accessKeyID == "" || secretAccessKey == "" {
+		return "", ""
+	}
+
+	payload := bedrockCredentialPayload{
+		AWSAccessKeyID:     accessKeyID,
+		AWSSecretAccessKey: secretAccessKey,
+		AWSSessionToken:    strings.TrimSpace(os.Getenv("AWS_SESSION_TOKEN")),
+		AWSRegionName:      strings.TrimSpace(region),
+	}
+	return marshalOpenClawBedrockPayload(payload),
+		"Resolved OpenClaw Bedrock credentials from AWS environment variables."
+}
+
+func resolveOpenClawBedrockSharedCredentials(
+	document map[string]interface{},
+	providerID string,
+	region string,
+) (string, string) {
+	credentialsPath, configPath := resolveOpenClawAWSConfigPaths()
+	if credentialsPath == "" {
+		return "", ""
+	}
+
+	credentialsFile, err := ini.Load(credentialsPath)
+	if err != nil {
+		return "", ""
+	}
+
+	profileName := resolveOpenClawAWSProfile(document, providerID)
+	section := credentialsFile.Section(profileName)
+	accessKeyID := strings.TrimSpace(section.Key("aws_access_key_id").String())
+	secretAccessKey := strings.TrimSpace(section.Key("aws_secret_access_key").String())
+	if accessKeyID == "" || secretAccessKey == "" {
+		return "", ""
+	}
+
+	if region == "" && configPath != "" {
+		if configFile, err := ini.Load(configPath); err == nil {
+			configSectionName := profileName
+			if profileName != "default" {
+				configSectionName = "profile " + profileName
+			}
+			region = strings.TrimSpace(
+				configFile.Section(configSectionName).Key("region").String(),
+			)
+		}
+	}
+
+	payload := bedrockCredentialPayload{
+		AWSAccessKeyID:     accessKeyID,
+		AWSSecretAccessKey: secretAccessKey,
+		AWSSessionToken:    strings.TrimSpace(section.Key("aws_session_token").String()),
+		AWSRegionName:      strings.TrimSpace(region),
+	}
+	return marshalOpenClawBedrockPayload(payload),
+		fmt.Sprintf(
+			"Resolved OpenClaw Bedrock credentials from %s (profile: %s).",
+			credentialsPath,
+			profileName,
+		)
+}
+
+func resolveOpenClawAWSProfile(document map[string]interface{}, providerID string) string {
+	for _, key := range []string{"profile", "awsProfile", "aws_profile"} {
+		if value := lookupString(document, "models", "providers", providerID, key); strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv("AWS_PROFILE")); value != "" {
+		return value
+	}
+	return "default"
+}
+
+func resolveOpenClawAWSConfigPaths() (string, string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
+
+	credentialsPath := strings.TrimSpace(os.Getenv("AWS_SHARED_CREDENTIALS_FILE"))
+	if credentialsPath == "" {
+		credentialsPath = filepath.Join(home, ".aws", "credentials")
+	}
+	configPath := strings.TrimSpace(os.Getenv("AWS_CONFIG_FILE"))
+	if configPath == "" {
+		configPath = filepath.Join(home, ".aws", "config")
+	}
+	return credentialsPath, configPath
+}
+
+func marshalOpenClawBedrockPayload(payload bedrockCredentialPayload) string {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func pickOpenClawGatewayAPI(sourceAPI string) string {
@@ -1358,9 +1535,6 @@ func resolveOpenClawProviderAPIKey(
 	document map[string]interface{},
 	providerID string,
 ) (string, string) {
-	if openClawProviderUsesAmbientCredentials(providerID, "") {
-		return "", "OpenClaw provider uses ambient AWS credentials; Preloop will rely on the server-side AWS credential chain for gateway routing."
-	}
 	value := lookupValue(document, "models", "providers", providerID, "apiKey")
 	if value == nil {
 		profileKey, profileNote := resolveOpenClawProfileBackedAPIKey(document, providerID)

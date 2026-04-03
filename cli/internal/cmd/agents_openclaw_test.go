@@ -285,13 +285,77 @@ func TestResolveOpenClawProviderAPIKeyFallsBackToAuthProfiles(t *testing.T) {
 	}
 }
 
-func TestResolveOpenClawProviderAPIKeyUsesAmbientBedrockCredentials(t *testing.T) {
-	value, note := resolveOpenClawProviderAPIKey(map[string]interface{}{}, "amazon-bedrock")
-	if value != "" {
-		t.Fatalf("expected no inline credential material, got %q", value)
+func TestResolveOpenClawBedrockCredentialsFromEnv(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIA_TEST")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-test")
+	t.Setenv("AWS_SESSION_TOKEN", "session-test")
+	t.Setenv("AWS_REGION", "us-east-1")
+
+	value, usesAmbient, note := resolveOpenClawProviderCredentials(
+		map[string]interface{}{},
+		"amazon-bedrock",
+		"bedrock",
+		"",
+	)
+	if value == "" {
+		t.Fatal("expected Bedrock credential payload")
 	}
-	if !strings.Contains(strings.ToLower(note), "ambient aws credentials") {
-		t.Fatalf("expected ambient credentials note, got %q", note)
+	if usesAmbient {
+		t.Fatal("expected imported Bedrock credentials, not ambient fallback")
+	}
+	if !strings.Contains(note, "AWS environment variables") {
+		t.Fatalf("expected env note, got %q", note)
+	}
+
+	var payload bedrockCredentialPayload
+	if err := json.Unmarshal([]byte(value), &payload); err != nil {
+		t.Fatalf("expected JSON payload, got error %v", err)
+	}
+	if payload.AWSAccessKeyID != "AKIA_TEST" || payload.AWSSecretAccessKey != "secret-test" {
+		t.Fatalf("unexpected payload %#v", payload)
+	}
+	if payload.AWSRegionName != "us-east-1" {
+		t.Fatalf("expected region in payload, got %#v", payload)
+	}
+}
+
+func TestResolveOpenClawBedrockCredentialsFromSharedAWSFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+	t.Setenv("AWS_PROFILE", "review")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+
+	awsDir := filepath.Join(tempDir, ".aws")
+	if err := os.MkdirAll(awsDir, 0o700); err != nil {
+		t.Fatalf("failed to create aws dir: %v", err)
+	}
+	credentials := "[review]\naws_access_key_id = FILE_KEY\naws_secret_access_key = FILE_SECRET\naws_session_token = FILE_SESSION\n"
+	if err := os.WriteFile(filepath.Join(awsDir, "credentials"), []byte(credentials), 0o600); err != nil {
+		t.Fatalf("failed to write credentials file: %v", err)
+	}
+	config := "[profile review]\nregion = eu-west-1\n"
+	if err := os.WriteFile(filepath.Join(awsDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	value, usesAmbient, note := resolveOpenClawProviderCredentials(
+		map[string]interface{}{},
+		"amazon-bedrock",
+		"bedrock",
+		"",
+	)
+	if value == "" {
+		t.Fatal("expected Bedrock credential payload from shared AWS files")
+	}
+	if usesAmbient {
+		t.Fatal("expected imported Bedrock credentials, not ambient fallback")
+	}
+	if !strings.Contains(note, ".aws/credentials") {
+		t.Fatalf("expected shared credentials note, got %q", note)
 	}
 }
 
@@ -439,5 +503,18 @@ func TestMergeOpenClawAmbientProviderMetaAddsRegion(t *testing.T) {
 	}
 	if providerRuntime["region"] != "us-east-1" {
 		t.Fatalf("expected region to be preserved, got %#v", providerRuntime)
+	}
+}
+
+func TestAIModelUsesAmbientProviderCredentials(t *testing.T) {
+	model := &aiModelResponse{
+		MetaData: map[string]interface{}{
+			"provider_runtime": map[string]interface{}{
+				"ambient_credentials": true,
+			},
+		},
+	}
+	if !aiModelUsesAmbientProviderCredentials(model) {
+		t.Fatal("expected ambient provider credentials to be detected")
 	}
 }

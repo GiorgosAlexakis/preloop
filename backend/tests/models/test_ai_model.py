@@ -40,6 +40,38 @@ def test_create_ai_model(db_session: Session, create_account):
     assert ai_model.account_id == account.id
 
 
+def test_ai_model_with_ambient_credentials_counts_as_configured(
+    db_session: Session, create_account
+):
+    """Ambient provider credentials should surface as configured."""
+    account: Account = create_account()
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Ambient Bedrock Model",
+            "provider_name": "bedrock",
+            "model_identifier": "us.anthropic.claude-opus-4-6-v1",
+            "meta_data": {
+                "provider_runtime": {
+                    "ambient_credentials": True,
+                    "region": "us-east-1",
+                }
+            },
+        },
+        account_id=account.id,
+    )
+
+    assert ai_model.credentials_secret_id is None
+    assert ai_model.uses_ambient_credentials is True
+    assert ai_model.has_api_key is True
+    assert ai_model.credentials_backend_type == "ambient_provider"
+
+    response_model = AIModelRead.model_validate(ai_model)
+    assert response_model.has_api_key is True
+    assert response_model.credentials_backend_type == "ambient_provider"
+
+
 def test_create_system_default_ai_model_with_secret_reference(db_session: Session):
     """System-wide default models should support secret-backed credentials."""
     ai_model = crud_ai_model.create_with_account(

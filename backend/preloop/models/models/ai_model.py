@@ -63,9 +63,22 @@ class AIModel(Base):
     issue_sets: Mapped[List["IssueSet"]] = relationship(back_populates="ai_model")
 
     @property
+    def uses_ambient_credentials(self) -> bool:
+        """Whether this model uses provider-native ambient credentials."""
+        meta_data = self.meta_data if isinstance(self.meta_data, dict) else {}
+        provider_runtime = (
+            meta_data.get("provider_runtime")
+            if isinstance(meta_data.get("provider_runtime"), dict)
+            else {}
+        )
+        return bool(provider_runtime.get("ambient_credentials"))
+
+    @property
     def has_api_key(self) -> bool:
         """Whether this model has any configured credential source."""
-        return bool(self.credentials_secret_id or self.api_key)
+        return bool(
+            self.credentials_secret_id or self.api_key or self.uses_ambient_credentials
+        )
 
     @property
     def credentials_backend_type(self) -> Optional[str]:
@@ -74,6 +87,8 @@ class AIModel(Base):
             return self.credentials_secret.backend_type
         if self.api_key:
             return "legacy_plaintext"
+        if self.uses_ambient_credentials:
+            return "ambient_provider"
         return None
 
     @property

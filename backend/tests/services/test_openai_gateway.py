@@ -107,6 +107,55 @@ def test_call_litellm_allows_bedrock_ambient_credentials():
     )
 
 
+def test_call_litellm_passes_imported_bedrock_credentials():
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    upstream_backend = MagicMock()
+    service = OpenAIGatewayService(
+        MagicMock(), auth_context, upstream_backend=upstream_backend
+    )
+    ai_model = SimpleNamespace(
+        provider_name="bedrock",
+        model_identifier="us.anthropic.claude-opus-4-6-v1",
+        api_endpoint=None,
+        meta_data={"provider_runtime": {"region": "us-east-1"}},
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.get_secret_service"
+    ) as mock_secret_service:
+        mock_secret_service.return_value.resolve_ai_model_api_key.return_value = (
+            SimpleNamespace(
+                value=json.dumps(
+                    {
+                        "aws_access_key_id": "AKIA_TEST",
+                        "aws_secret_access_key": "secret-test",
+                        "aws_session_token": "session-test",
+                        "aws_region_name": "eu-central-1",
+                    }
+                )
+            )
+        )
+        service._call_litellm(
+            ai_model,
+            messages=[{"role": "user", "content": "Hello"}],
+            payload={},
+            provider="openai",
+        )
+
+    upstream_backend.completion.assert_called_once_with(
+        model="bedrock/us.anthropic.claude-opus-4-6-v1",
+        messages=[{"role": "user", "content": "Hello"}],
+        timeout=600,
+        aws_access_key_id="AKIA_TEST",
+        aws_secret_access_key="secret-test",
+        aws_session_token="session-test",
+        aws_region_name="eu-central-1",
+    )
+
+
 def test_stream_response_emits_output_item_before_text_deltas():
     auth_context = ModelGatewayAuthContext(
         token="token",
