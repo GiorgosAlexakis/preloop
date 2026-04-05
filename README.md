@@ -112,12 +112,36 @@ Preloop can terminate model traffic on behalf of managed runtimes instead of han
 - Per-request attribution to account, flow, flow execution, API key, and runtime principal
 - Token and estimated-cost accounting persisted to the gateway usage ledger
 - Account-level and flow-level budget enforcement with soft-limit annotations and hard stops
+- Subject-scoped allowed-model enforcement for managed-agent and API-key traffic
 - Product-facing usage summary endpoints for account and flow monitoring
 - Account-scoped runtime session explorer endpoints for browsing managed sessions beyond flows
+- Dashboard telemetry for active runtime sessions, recent tool calls, and daily model spend
 - Execution-scoped gateway event inspection via `GET /api/v1/flows/executions/{execution_id}/gateway-events`
 - Console surfaces for browsing recent runtime sessions and searching captured gateway interactions
 
 Managed desktop/CLI onboarding now builds on the same gateway surface. For OpenClaw, `preloop agents discover` can prompt to onboard newly discovered agents, `preloop agents enroll openclaw` can import the current model into Preloop, rewrite supported model settings to Preloop's OpenAI-compatible gateway, and reduce the local MCP config to a single managed `preloop` entry with backup/restore support.
+
+### Subject-Scoped Governance
+
+Preloop can apply governance rules at multiple subject layers instead of only at the account level:
+
+- Account defaults remain the broad fallback for tools and model access
+- Managed-agent governance can narrow tool visibility, tool rules, and model access for one enrolled runtime
+- API-key governance can further narrow behavior for one token, taking precedence over the managed-agent scope when both are present
+- Subject-scoped settings can control `allowed_models`, per-model budget metadata, ordered tool access rules, and explicit tool enable/disable overrides
+
+This subject context is propagated consistently through MCP tool listing, policy evaluation, and model gateway budget checks so one runtime token only sees and uses the tools and models intended for it.
+
+### Runtime Sessions and Managed Agents
+
+Preloop distinguishes between durable runtime identities and individual runtime sessions:
+
+- `ManagedAgent` is the durable identity for an enrolled CLI or desktop agent
+- `RuntimeSession` is the per-session activity record used for live status, recent activity, and observability
+- `session_source_type` and `session_source_id` identify where a session came from
+- `runtime_principal_type`, `runtime_principal_id`, and `runtime_principal_name` identify the durable owner of the session
+
+This separation lets one enrolled agent accumulate multiple sessions over time while preserving searchable gateway usage, MCP activity, audit events, and operator lifecycle controls per session.
 
 ### Secret Custody
 

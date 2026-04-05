@@ -205,7 +205,7 @@ func (c *Client) executeRequest(method, path string, bodyBytes []byte, contentTy
 	if err != nil {
 		return 0, nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {

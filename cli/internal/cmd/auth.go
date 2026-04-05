@@ -287,7 +287,7 @@ func runLoopbackOAuthLogin(baseURL string) error {
 			errChan <- fmt.Errorf("callback server error: %w", serveErr)
 		}
 	}()
-	defer server.Shutdown(context.Background())
+	defer server.Shutdown(context.Background()) //nolint:errcheck
 
 	addr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
@@ -500,7 +500,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 		errDesc := query.Get("error_description")
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>%s: %s</p><p>You can close this window.</p></body></html>", errMsg, errDesc)
+		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>%s: %s</p><p>You can close this window.</p></body></html>", errMsg, errDesc) //nolint:errcheck
 		errChan <- fmt.Errorf("OAuth error: %s - %s", errMsg, errDesc)
 		return
 	}
@@ -510,7 +510,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 	if state != expectedState {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>Invalid state parameter</p><p>You can close this window.</p></body></html>")
+		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>Invalid state parameter</p><p>You can close this window.</p></body></html>") //nolint:errcheck
 		errChan <- fmt.Errorf("invalid state parameter")
 		return
 	}
@@ -520,7 +520,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 	if code == "" {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>No authorization code received</p><p>You can close this window.</p></body></html>")
+		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>No authorization code received</p><p>You can close this window.</p></body></html>") //nolint:errcheck
 		errChan <- fmt.Errorf("no authorization code received")
 		return
 	}
@@ -528,7 +528,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 	// Success
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `<html>
+	_, _ = fmt.Fprintf(w, `<html>
 <head>
 	<style>
 		body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); }
@@ -563,7 +563,7 @@ func exchangeCodeForTokens(baseURL, code, redirectURI string) (*TokenResponse, e
 	if err != nil {
 		return nil, fmt.Errorf("token request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token request failed with status %d", resp.StatusCode)

@@ -263,10 +263,10 @@ func findToolByName(tools []mcpclient.Tool, name string) (*mcpclient.Tool, error
 
 func writeToolTable(tools []mcpclient.Tool) error {
 	writer := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "NAME\tREQUIRED\tDESCRIPTION")
+	fmt.Fprintln(writer, "NAME\tREQUIRED\tDESCRIPTION") //nolint:errcheck
 	for _, tool := range tools {
 		required, _ := schemaFields(tool.InputSchema)
-		fmt.Fprintf(
+		fmt.Fprintf( //nolint:errcheck
 			writer,
 			"%s\t%s\t%s\n",
 			tool.Name,
@@ -452,6 +452,6 @@ func writeJSON(writer io.Writer, value any) error {
 
 func writeYAML(writer io.Writer, value any) error {
 	encoder := yaml.NewEncoder(writer)
-	defer encoder.Close()
+	defer encoder.Close() //nolint:errcheck
 	return encoder.Encode(value)
 }

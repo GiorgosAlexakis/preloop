@@ -156,15 +156,23 @@ The Tools page has been redesigned from a card-based layout to a tree-style list
 *   **Streaming:** Supports SSE streaming for chat completions and responses.
 *   **Authentication:** Reuses short-lived runtime bearer tokens while preserving `ApiKey` context and runtime-principal metadata.
 *   **Accounting:** Persists token usage and estimated cost in `ApiUsage`.
-*   **Budget Enforcement:** Applies account-level and flow-level budget checks before upstream dispatch.
+*   **Budget Enforcement:** Applies account-level, flow-level, and subject-scoped allowed-model checks before upstream dispatch.
 *   **Observability:** Emits normalized model-call events with redaction-aware request/response payload capture, provider-neutral conversation previews, and optional indexing into a gateway search corpus.
-*   **Debug Surface:** Flow execution-scoped gateway events can already be queried via the flows API, and the longer-term direction is to generalize this into runtime-session observability beyond flows.
+*   **Debug Surface:** Flow execution-scoped gateway events can already be queried via the flows API, runtime-session explorers can query recent session activity directly, and the operator dashboard can aggregate active sessions, recent tool calls, and daily model spend.
 *   **Managed Agent Onboarding:** External agents such as OpenClaw can be enrolled so local model traffic is rewritten onto this gateway while local MCP configuration is narrowed to Preloop-managed proxy access.
+
+### Subject-Scoped Governance
+*   **Purpose:** Apply governance decisions against the concrete subject using the platform, not just the parent account.
+*   **Scope Chain:** Resolution currently walks the active API key first, then the linked managed agent, and finally falls back to account defaults.
+*   **Configuration Surface:** Subject-scoped governance can carry `allowed_models`, per-model budget metadata, ordered tool access rules, and `tool_enabled_overrides`.
+*   **Enforcement Points:** The same subject context is propagated through MCP tool listing, policy evaluation, and model gateway budget checks so one runtime token sees only the intended tools and models.
+*   **Primary Use Case:** Managed agent owners can grant a broad account-level tool catalog while restricting one enrolled desktop/CLI runtime to a tighter set of tools and models.
 
 ### Runtime Session Identity
 *   **Purpose:** Provide a shared identity layer for browsing, auditing, and searching managed runtime sessions across both flows and onboarded external agents.
 *   **Current Implementation:** A new additive `RuntimeSession` layer now uses flows as the first session source, bridged through `runtime_session_id`, `flow_execution_id`, runtime-principal metadata, and optional `agent_session_reference`.
 *   **Current Explorer Surface:** Account-scoped runtime session list/detail endpoints now expose recent managed sessions plus their captured gateway interactions so the console can drill from aggregate usage into one session timeline.
+*   **Operator Actions:** Operators can end a session explicitly, which updates runtime state, emits audit and runtime-session events, and refreshes managed-agent summaries derived from the same principal.
 *   **Target Direction:** Introduce a runtime-wide session abstraction that can represent flow executions, independent CLI/desktop agent sessions, and later enrolled workforce entities without making `flow_execution` the universal long-term session model.
 
 ### Managed CLI/Desktop Agent Enrollment

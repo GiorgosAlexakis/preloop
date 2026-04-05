@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -791,8 +790,8 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Printf("Managed agents (%d):\n\n", len(agents))
-	fmt.Fprintln(tw, "NAME\tSOURCE\tLIFECYCLE\tACTIVITY\tONBOARDING\tMODEL\tLOCAL CONFIG")
-	fmt.Fprintln(tw, "----\t------\t---------\t--------\t----------\t-----\t------------")
+	fmt.Fprintln(tw, "NAME\tSOURCE\tLIFECYCLE\tACTIVITY\tONBOARDING\tMODEL\tLOCAL CONFIG") //nolint:errcheck
+	fmt.Fprintln(tw, "----\t------\t---------\t--------\t----------\t-----\t------------") //nolint:errcheck
 	for _, agent := range agents {
 		localConfig := "-"
 		if localAgent, ok := localAgentsByPrincipal[agent.SessionSourceID]; ok {
@@ -814,7 +813,7 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 		if model == "" {
 			model = "-"
 		}
-		fmt.Fprintf(
+		fmt.Fprintf( //nolint:errcheck
 			tw,
 			"%s (%s)\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			agent.DisplayName,
@@ -827,7 +826,7 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 			localConfig,
 		)
 		if len(agent.ManagedMCPServers) > 0 {
-			fmt.Fprintf(tw, "  MCP servers:\t%s\t\t\t\t\t\t\n", strings.Join(agent.ManagedMCPServers, ", "))
+			fmt.Fprintf(tw, "  MCP servers:\t%s\t\t\t\t\t\t\n", strings.Join(agent.ManagedMCPServers, ", ")) //nolint:errcheck
 		}
 	}
 	_ = tw.Flush()
@@ -1315,7 +1314,7 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 		}
 		if candidate.Kind == "ai_model" {
 			if len(candidate.ReferencedBy) > 0 {
-				fmt.Fprintf(
+				fmt.Fprintf( //nolint:errcheck
 					writer,
 					"  Keeping %s %q because it is still used by other managed agents: %s\n",
 					kindLabel,
@@ -1325,7 +1324,7 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 				continue
 			}
 			if len(candidate.FlowReferences) > 0 {
-				fmt.Fprintf(
+				fmt.Fprintf( //nolint:errcheck
 					writer,
 					"  Keeping %s %q because it is still used by flows: %s\n",
 					kindLabel,
@@ -1336,7 +1335,7 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 			}
 		}
 		if candidate.Kind != "ai_model" && len(candidate.ReferencedBy) > 0 {
-			fmt.Fprintf(
+			fmt.Fprintf( //nolint:errcheck
 				writer,
 				"  Keeping %s %q because it is still used by other managed agents: %s\n",
 				kindLabel,
@@ -1346,7 +1345,7 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 			continue
 		}
 		if len(candidate.RecentlyUsedBy) > 0 {
-			fmt.Fprintf(
+			fmt.Fprintf( //nolint:errcheck
 				writer,
 				"  Skipping %s %q because it was recently used by: %s\n",
 				kindLabel,
@@ -1381,7 +1380,7 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 		if deleteErr != nil {
 			return fmt.Errorf("failed to remove %s %q: %w", kindLabel, candidate.Name, deleteErr)
 		}
-		fmt.Fprintf(writer, "  ✓ %s %q\n", successLabel, candidate.Name)
+		fmt.Fprintf(writer, "  ✓ %s %q\n", successLabel, candidate.Name) //nolint:errcheck
 	}
 	return nil
 }
@@ -1417,7 +1416,7 @@ func resolveOffboardCleanupConfirmation(
 		return false, nil
 	case offboardCleanupAsk:
 		if autoApprove {
-			fmt.Fprintf(
+			fmt.Fprintf( //nolint:errcheck
 				writer,
 				"  Keeping %s %q in Preloop. Pass the appropriate cleanup flag with 'yes' to remove it automatically.\n",
 				kindLabel,
@@ -1465,90 +1464,6 @@ func containsString(values []string, target string) bool {
 }
 
 // addDiscoveredServers interactively adds servers to the Preloop account.
-func addDiscoveredServers(agents []AgentConfig) error {
-	client, err := api.NewClient(FlagToken, FlagURL)
-	if err != nil {
-		return fmt.Errorf("failed to create API client: %w", err)
-	}
-
-	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop login' first")
-	}
-
-	currentUser, err := user.Current()
-	if err != nil {
-		currentUser = &user.User{Username: "unknown"}
-	}
-
-	for _, agent := range agents {
-		addedServerNames := make([]string, 0, len(agent.MCPServers))
-		for _, name := range sortedServerNames(agent.MCPServers) {
-			server := agent.MCPServers[name]
-			fmt.Printf("Add MCP server '%s' from %s? (y/N): ", name, agent.Name)
-			var answer string
-			fmt.Scanln(&answer)
-
-			if strings.ToLower(strings.TrimSpace(answer)) != "y" {
-				continue
-			}
-
-			// Build the request to add the server
-			request := map[string]interface{}{
-				"name":     name,
-				"url":      server.URL,
-				"command":  server.Command,
-				"args":     server.Args,
-				"source":   fmt.Sprintf("discovered:%s", agent.Name),
-				"metadata": map[string]string{"discovered_by": currentUser.Username},
-			}
-
-			var result struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			}
-
-			if err := client.Post("/api/v1/mcp-servers", request, &result); err != nil {
-				fmt.Printf("  ✗ Failed to add '%s': %v\n", name, err)
-				continue
-			}
-
-			fmt.Printf("  ✓ Added MCP server '%s' (ID: %s)\n", result.Name, result.ID)
-			addedServerNames = append(addedServerNames, result.Name)
-		}
-
-		if len(addedServerNames) == 0 {
-			continue
-		}
-
-		fmt.Printf(
-			"Issue a runtime session token for %s with %d managed MCP server(s)? (y/N): ",
-			agent.Name,
-			len(addedServerNames),
-		)
-		var answer string
-		fmt.Scanln(&answer)
-
-		if strings.ToLower(strings.TrimSpace(answer)) != "y" {
-			continue
-		}
-
-		tokenResult, err := issueRuntimeSessionToken(client, agent, addedServerNames)
-		if err != nil {
-			fmt.Printf("  ✗ Failed to create runtime session token: %v\n", err)
-			continue
-		}
-
-		fmt.Printf("  🔑 Runtime Session Token: %s\n", tokenResult.Token)
-		fmt.Printf("     Session: %s / %s\n", tokenResult.SessionSourceType, tokenResult.SessionSourceID)
-		fmt.Printf("     Runtime session ID: %s\n", tokenResult.RuntimeSessionID)
-		if tokenResult.ExpiresAt != "" {
-			fmt.Printf("     Expires at: %s\n", tokenResult.ExpiresAt)
-		}
-		fmt.Println("     Store this token securely — it won't be shown again.")
-	}
-
-	return nil
-}
 
 func sortedServerNames(servers map[string]MCPDef) []string {
 	names := make([]string, 0, len(servers))
@@ -2068,7 +1983,7 @@ func discoverAgents(w io.Writer, printWarnings bool) ([]AgentConfig, error) {
 			servers, err := spec.Parser(fullPath)
 			if err != nil {
 				if printWarnings {
-					fmt.Fprintf(w, "  Warning: could not parse %s config at %s: %v\n", spec.Name, fullPath, err)
+					fmt.Fprintf(w, "  Warning: could not parse %s config at %s: %v\n", spec.Name, fullPath, err) //nolint:errcheck
 				}
 				continue
 			}

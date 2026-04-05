@@ -634,13 +634,13 @@ func runPolicyList(cmd *cobra.Command, args []string) error {
 
 	default: // table
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tVERSION\tACTIVE\tUPDATED")
+		fmt.Fprintln(w, "NAME\tVERSION\tACTIVE\tUPDATED") //nolint:errcheck
 		for _, p := range policies {
 			active := "no"
 			if p.Active {
 				active = "yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, p.Version, active, p.UpdatedAt)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, p.Version, active, p.UpdatedAt) //nolint:errcheck
 		}
 		return w.Flush()
 	}

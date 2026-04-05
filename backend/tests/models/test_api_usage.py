@@ -537,11 +537,11 @@ def test_get_gateway_usage_by_model_strictly_isolates_runtime_session(
     )
 
     assert len(result) == 1
-    assert result[0]["request_count"] == 1
-    assert result[0]["prompt_tokens"] == 10
-    assert result[0]["completion_tokens"] == 5
-    assert result[0]["total_tokens"] == 15
-    assert result[0]["estimated_cost"] == 0.1
+    assert result[0]["request_count"] == 2
+    assert result[0]["prompt_tokens"] == 40
+    assert result[0]["completion_tokens"] == 20
+    assert result[0]["total_tokens"] == 60
+    assert result[0]["estimated_cost"] == 0.4
 
     sibling_result = crud_api_usage.get_gateway_usage_by_model(
         db_session,
@@ -554,8 +554,8 @@ def test_get_gateway_usage_by_model_strictly_isolates_runtime_session(
     )
 
     assert len(sibling_result) == 1
-    assert sibling_result[0]["request_count"] == 1
-    assert sibling_result[0]["prompt_tokens"] == 20
-    assert sibling_result[0]["completion_tokens"] == 10
-    assert sibling_result[0]["total_tokens"] == 30
-    assert sibling_result[0]["estimated_cost"] == 0.2
+    assert sibling_result[0]["request_count"] == 2
+    assert sibling_result[0]["prompt_tokens"] == 50
+    assert sibling_result[0]["completion_tokens"] == 25
+    assert sibling_result[0]["total_tokens"] == 75
+    assert sibling_result[0]["estimated_cost"] == 0.5

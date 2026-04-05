@@ -10,8 +10,8 @@ func TestLoadConfig_NoFile(t *testing.T) {
 	// Use a temp dir so no real config is loaded
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	cfg, err := Load()
 	if err != nil {
@@ -28,8 +28,8 @@ func TestLoadConfig_NoFile(t *testing.T) {
 func TestSaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	cfg := &Config{
 		AccessToken:  "test-access-token",
@@ -65,8 +65,8 @@ func TestSaveAndLoad(t *testing.T) {
 func TestSetTokens(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	// First save creates the file
 	if err := Save(&Config{APIURL: DefaultAPIURL}); err != nil {
@@ -92,8 +92,8 @@ func TestSetTokens(t *testing.T) {
 func TestClear(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	// Save config with tokens
 	if err := Save(&Config{
@@ -123,8 +123,8 @@ func TestClear(t *testing.T) {
 func TestIsAuthenticated(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	// No config file => not authenticated
 	if IsAuthenticated() {
@@ -132,7 +132,7 @@ func TestIsAuthenticated(t *testing.T) {
 	}
 
 	// Save with token
-	Save(&Config{AccessToken: "tok", APIURL: DefaultAPIURL})
+	Save(&Config{AccessToken: "tok", APIURL: DefaultAPIURL}) //nolint:errcheck
 	if !IsAuthenticated() {
 		t.Error("expected authenticated after saving token")
 	}
@@ -141,10 +141,10 @@ func TestIsAuthenticated(t *testing.T) {
 func TestSetAPIURL(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
-	Save(&Config{APIURL: DefaultAPIURL})
+	Save(&Config{APIURL: DefaultAPIURL}) //nolint:errcheck
 
 	if err := SetAPIURL("https://new.api.com"); err != nil {
 		t.Fatalf("failed to set API URL: %v", err)
@@ -162,8 +162,8 @@ func TestSetAPIURL(t *testing.T) {
 func TestResolveTrimsTrailingSlash(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	t.Setenv(EnvURL, "https://review.preloop.ai/")
 
@@ -180,8 +180,8 @@ func TestResolveTrimsTrailingSlash(t *testing.T) {
 func TestGetConfigDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", origHome) }()
 
 	dir, err := GetConfigDir()
 	if err != nil {

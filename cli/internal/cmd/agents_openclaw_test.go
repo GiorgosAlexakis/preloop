@@ -272,8 +272,8 @@ func TestParseOpenClawConfigResolvesAmazonBedrockRefToBedrockProviderBlock(t *te
 func TestParseOpenClawConfigRecoversUpstreamFromManagedConfigState(t *testing.T) {
 	tempDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tempDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tempDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	configPath := filepath.Join(tempDir, ".openclaw", "openclaw.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {

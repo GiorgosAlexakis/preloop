@@ -289,7 +289,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 
 		if parsed.ProviderAPIKey == "" && !parsed.UsesAmbientAuth {
 			if !opts.SkipConfirmation && !opts.AutoApprove {
-				fmt.Fprintf(opts.Output, "\n[Action Required] OpenClaw model %s requires an API key for gateway routing.\n", parsed.ModelAlias)
+				fmt.Fprintf(opts.Output, "\n[Action Required] OpenClaw model %s requires an API key for gateway routing.\n", parsed.ModelAlias) //nolint:errcheck
 				inputKey, err := promptForTextInput(
 					bufio.NewReader(opts.Input),
 					opts.Output,
@@ -1788,7 +1788,7 @@ func resolveClaudeRecentModelRef() string {
 		if err != nil {
 			return nil
 		}
-		defer file.Close()
+		defer file.Close() //nolint:errcheck
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 		for scanner.Scan() {

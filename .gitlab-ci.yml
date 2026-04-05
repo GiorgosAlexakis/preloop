@@ -379,7 +379,7 @@ test:unit:preloop-services-approval:
 test:unit:cli:
   stage: test
   needs: []
-  image: golang:1.22-alpine
+  image: golang:1.26-alpine
   before_script:
     - apk add --no-cache gcc musl-dev
   script:

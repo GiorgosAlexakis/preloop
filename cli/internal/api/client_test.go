@@ -81,7 +81,7 @@ func TestGet_Success(t *testing.T) {
 			t.Errorf("expected path /api/v1/test, got %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(expected)
+		json.NewEncoder(w).Encode(expected) //nolint:errcheck
 	}))
 	defer server.Close()
 
@@ -105,13 +105,13 @@ func TestPost_Success(t *testing.T) {
 		}
 
 		var body map[string]string
-		json.NewDecoder(r.Body).Decode(&body)
+		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 		if body["name"] != "test" {
 			t.Errorf("expected body name 'test', got '%s'", body["name"])
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"id": "123"})
+		json.NewEncoder(w).Encode(map[string]string{"id": "123"}) //nolint:errcheck
 	}))
 	defer server.Close()
 
@@ -144,7 +144,7 @@ func TestPostMultipart_Success(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected multipart file field: %v", err)
 		}
-		defer file.Close()
+		defer file.Close() //nolint:errcheck
 
 		content, err := io.ReadAll(file)
 		if err != nil {
@@ -159,7 +159,7 @@ func TestPostMultipart_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true}) //nolint:errcheck
 	}))
 	defer server.Close()
 
@@ -184,7 +184,7 @@ func TestPostMultipart_Success(t *testing.T) {
 func TestGet_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"detail":"Not authenticated"}`))
+		w.Write([]byte(`{"detail":"Not authenticated"}`)) //nolint:errcheck
 	}))
 	defer server.Close()
 
@@ -199,8 +199,8 @@ func TestGet_APIError(t *testing.T) {
 func TestClientRefreshesExpiredAccessTokenFromStoredConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -281,8 +281,8 @@ func TestClientRefreshesExpiredAccessTokenFromStoredConfig(t *testing.T) {
 func TestClientDoesNotRefreshWhenExplicitTokenOverrideIsUsed(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -322,7 +322,7 @@ func TestPut_Success(t *testing.T) {
 			t.Errorf("expected PUT, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true}) //nolint:errcheck
 	}))
 	defer server.Close()
 
@@ -343,7 +343,7 @@ func TestDelete_Success(t *testing.T) {
 			t.Errorf("expected DELETE, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"message": "deleted"})
+		json.NewEncoder(w).Encode(map[string]string{"message": "deleted"}) //nolint:errcheck
 	}))
 	defer server.Close()
 
@@ -364,7 +364,7 @@ func TestGet_NoAuth(t *testing.T) {
 			t.Errorf("expected no Authorization header, got '%s'", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"public": "data"})
+		json.NewEncoder(w).Encode(map[string]string{"public": "data"}) //nolint:errcheck
 	}))
 	defer server.Close()
 

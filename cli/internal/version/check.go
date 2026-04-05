@@ -122,7 +122,7 @@ func fetchVersionInfo() (*VersionInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for updates: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("version check returned status %d", resp.StatusCode)

@@ -186,7 +186,7 @@ func (c *Client) doRequest(ctx context.Context, request jsonRPCRequest, expectRe
 	if err != nil {
 		return nil, fmt.Errorf("MCP request failed: %w", err)
 	}
-	defer response.Body.Close()
+	defer response.Body.Close() //nolint:errcheck
 
 	if sessionID := response.Header.Get(sessionHeaderName); sessionID != "" {
 		c.sessionID = sessionID
