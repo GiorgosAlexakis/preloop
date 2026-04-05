@@ -2,8 +2,12 @@
 
 from datetime import UTC, datetime
 
+from preloop.api.endpoints.account import _managed_agent_onboarding_flags
 from preloop.models.crud import (
+    crud_ai_model,
     crud_api_usage,
+    crud_managed_agent,
+    crud_managed_agent_enrollment,
     crud_runtime_session,
     crud_runtime_session_activity,
 )
@@ -105,6 +109,257 @@ def test_account_agents_endpoint_lists_onboarded_agents(client, db_session, test
     assert item["onboarding_state"] == "incomplete"
     assert item["mcp_proxy_configured"] is False
     assert item["model_gateway_configured"] is False
+
+
+def test_account_agents_endpoint_exposes_configured_model_alias(
+    client, db_session, test_user
+):
+    """Managed agent summaries should expose the configured gateway model alias."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-opencode",
+            "session_reference": "claude-session-opencode",
+            "runtime_principal_name": "Claude Code Workspace",
+            "allowed_mcp_servers": [],
+        },
+    )
+
+    assert token_response.status_code == 201
+
+    agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="claude_code",
+        session_source_id="workspace-opencode",
+    )
+    assert agent is not None
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "OpenCode zai/glm-5-turbo",
+            "provider_name": "openai",
+            "model_identifier": "glm-5-turbo",
+            "meta_data": {
+                "gateway": {"enabled": True, "model_alias": "zai/glm-5-turbo"},
+                "managed_agent_id": str(agent.id),
+            },
+        },
+        account_id=test_user.account_id,
+    )
+
+    crud_managed_agent_enrollment.create_for_agent(
+        db_session,
+        account_id=test_user.account_id,
+        agent_id=agent.id,
+        created_by_user_id=test_user.id,
+        enrollment_type="cli_managed_config",
+        adapter_key="opencode",
+        status="active",
+        target_config_path="~/.config/opencode/config.json",
+        managed_config={
+            "mcp": {
+                "preloop": {
+                    "type": "remote",
+                    "url": "https://preloop.example/mcp/v1",
+                }
+            },
+            "model": "preloop/zai/glm-5-turbo",
+            "provider": {
+                "preloop": {
+                    "options": {
+                        "baseURL": "https://preloop.example/openai/v1",
+                        "apiKey": "agt_secret",
+                    }
+                }
+            },
+        },
+    )
+    db_session.commit()
+
+    response = client.get("/api/v1/agents")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"][0]["configured_model_alias"] == "zai/glm-5-turbo"
+    assert body["items"][0]["configured_model_id"] == str(ai_model.id)
+    assert body["items"][0]["onboarding_state"] == "fully_onboarded"
+
+    detail_response = client.get(f"/api/v1/agents/{body['items'][0]['id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["agent"]["configured_model_id"] == str(ai_model.id)
+
+
+def test_account_agents_endpoint_uses_most_recent_model_alias(
+    client, db_session, test_user
+):
+    """Managed agent summaries should use the most recent usage row, not max(alias)."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-latest-model",
+            "session_reference": "claude-session-latest",
+            "runtime_principal_name": "Claude Code Workspace",
+            "allowed_mcp_servers": [],
+        },
+    )
+    assert token_response.status_code == 201
+
+    runtime_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-latest-model",
+    )
+    assert runtime_session is not None
+
+    older_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="zai/glm-5-turbo",
+        provider_name="openai",
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+        estimated_cost=0.25,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-latest-model",
+        runtime_principal_name="Claude Code Workspace",
+    )
+    newer_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="openai/gpt-5.4",
+        provider_name="openai",
+        prompt_tokens=50,
+        completion_tokens=10,
+        total_tokens=60,
+        estimated_cost=0.1,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-latest-model",
+        runtime_principal_name="Claude Code Workspace",
+    )
+    older_usage.timestamp = datetime(2026, 4, 3, 21, 0, tzinfo=UTC)
+    newer_usage.timestamp = datetime(2026, 4, 3, 21, 5, tzinfo=UTC)
+    db_session.add(older_usage)
+    db_session.add(newer_usage)
+    db_session.commit()
+
+    response = client.get("/api/v1/agents")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"][0]["latest_model_alias"] == "openai/gpt-5.4"
+
+
+def test_managed_agent_onboarding_flags_supports_codex_gateway_config():
+    """Codex custom-provider configs should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcp": {
+                    "servers": {
+                        "preloop": {
+                            "url": "https://preloop.example/mcp/v1",
+                            "transport": "http",
+                        }
+                    }
+                },
+                "model_provider": "preloop",
+                "model": "openai/gpt-5.4",
+                "model_providers": {
+                    "preloop": {
+                        "base_url": "https://preloop.example/openai/v1",
+                        "wire_api": "responses",
+                    }
+                },
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_supports_opencode_gateway_config():
+    """OpenCode provider configs should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcp": {
+                    "preloop": {
+                        "type": "remote",
+                        "url": "https://preloop.example/mcp/v1",
+                    }
+                },
+                "model": "preloop/openai/gpt-5.4",
+                "provider": {
+                    "preloop": {
+                        "options": {
+                            "baseURL": "https://preloop.example/openai/v1",
+                            "apiKey": "agt_secret",
+                        }
+                    }
+                },
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_supports_claude_gateway_config():
+    """Claude settings env overrides should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.example/mcp/v1"}},
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://preloop.example/anthropic",
+                    "ANTHROPIC_AUTH_TOKEN": "agt_secret",
+                    "ANTHROPIC_MODEL": "openai/gpt-5.4",
+                    "ANTHROPIC_CUSTOM_MODEL_OPTION": "openai/gpt-5.4",
+                },
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_supports_gemini_gateway_config():
+    """Gemini custom endpoint configs should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.example/mcp/v1"}},
+                "baseUrl": "https://preloop.example/gemini/v1beta",
+                "apiKey": "agt_secret",
+                "apiKeyHeader": "x-goog-api-key",
+                "model": {"name": "google/gemini-3.1-pro-preview"},
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
 
 
 def test_account_agent_detail_endpoint_returns_one_agent(client, db_session, test_user):

@@ -14,6 +14,34 @@ from ..models.runtime_session import RuntimeSession
 from .base import CRUDBase
 
 
+def _latest_gateway_usage_for_session(
+    db: Session,
+    *,
+    account_id: str,
+    runtime_session_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    ai_model_id: Optional[str] = None,
+):
+    """Return the latest gateway usage row for one runtime session."""
+    query = db.query(
+        ApiUsage.model_alias.label("latest_model_alias"),
+        ApiUsage.provider_name.label("latest_provider_name"),
+        ApiUsage.timestamp.label("last_request_at"),
+    ).filter(
+        ApiUsage.account_id == account_id,
+        ApiUsage.action_type == "model_gateway",
+        ApiUsage.runtime_session_id == runtime_session_id,
+    )
+    if start_date is not None:
+        query = query.filter(ApiUsage.timestamp >= start_date)
+    if end_date is not None:
+        query = query.filter(ApiUsage.timestamp < end_date)
+    if ai_model_id is not None:
+        query = query.filter(ApiUsage.ai_model_id == ai_model_id)
+    return query.order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc()).first()
+
+
 class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
     """CRUD helpers for shared runtime session identities."""
 
@@ -289,7 +317,24 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             .all()
         )
 
-        return {"total": total, "items": [self._row_to_summary(row) for row in rows]}
+        items = []
+        for row in rows:
+            summary = self._row_to_summary(row)
+            latest_usage = _latest_gateway_usage_for_session(
+                db,
+                account_id=account_id,
+                runtime_session_id=str(row.id),
+                start_date=start_date,
+                end_date=end_date,
+                ai_model_id=ai_model_id,
+            )
+            if latest_usage is not None:
+                summary["latest_model_alias"] = latest_usage.latest_model_alias
+                summary["latest_provider_name"] = latest_usage.latest_provider_name
+                summary["last_request_at"] = latest_usage.last_request_at
+            items.append(summary)
+
+        return {"total": total, "items": items}
 
     def get_account_session(
         self, db: Session, *, account_id: str, runtime_session_id: str
@@ -395,7 +440,22 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             )
             .first()
         )
-        return self._row_to_summary(row) if row is not None else None
+        if row is None:
+            return None
+        summary = self._row_to_summary(row)
+        latest_usage = _latest_gateway_usage_for_session(
+            db,
+            account_id=account_id,
+            runtime_session_id=runtime_session_id,
+            start_date=start_date,
+            end_date=end_date,
+            ai_model_id=ai_model_id,
+        )
+        if latest_usage is not None:
+            summary["latest_model_alias"] = latest_usage.latest_model_alias
+            summary["latest_provider_name"] = latest_usage.latest_provider_name
+            summary["last_request_at"] = latest_usage.last_request_at
+        return summary
 
     @staticmethod
     def _usage_join_conditions(

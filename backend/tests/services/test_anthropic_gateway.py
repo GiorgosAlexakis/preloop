@@ -5,7 +5,6 @@ from unittest.mock import patch
 import pytest
 
 from preloop.models.crud import (
-    crud_account,
     crud_ai_model,
     crud_api_key,
     crud_flow,
@@ -94,55 +93,6 @@ def test_create_message_returns_anthropic_shape(db_session, test_user):
     assert usage_row.provider_name == "anthropic"
     assert usage_row.prompt_tokens == 5
     assert usage_row.completion_tokens == 7
-
-
-def test_create_message_denies_when_account_budget_exceeded(db_session, test_user):
-    """Anthropic messages should respect hard budget denials."""
-    account = crud_account.get(db_session, id=test_user.account_id)
-    crud_account.update(
-        db_session,
-        db_obj=account,
-        obj_in={"meta_data": {"model_gateway_budget": {"monthly_usd_limit": 0.00001}}},
-    )
-    crud_ai_model.create_with_account(
-        db=db_session,
-        obj_in={
-            "name": "Claude Gateway Model",
-            "provider_name": "anthropic",
-            "model_identifier": "claude-sonnet-4-5",
-            "api_key": "provider-secret",
-            "meta_data": {
-                "gateway": {
-                    "enabled": True,
-                    "model_alias": "anthropic/claude-sonnet-4-5",
-                    "provider_adapter": "preloop",
-                },
-                "pricing": {"input_price_per_1k": 0.01, "output_price_per_1k": 0.02},
-            },
-            "is_default": True,
-        },
-        account_id=test_user.account_id,
-    )
-    service = OpenAIGatewayService(
-        db_session, ModelGatewayAuthContext(token="t", user=test_user)
-    )
-
-    with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
-        try:
-            service.create_message(
-                {
-                    "model": "anthropic/claude-sonnet-4-5",
-                    "messages": [{"role": "user", "content": "Hello"}],
-                    "max_tokens": 256,
-                }
-            )
-        except ModelGatewayAPIError as exc:
-            assert exc.status_code == 403
-            assert "account monthly limit reached" in exc.message
-        else:
-            raise AssertionError("Expected ModelGatewayAPIError for hard budget denial")
-
-    mock_completion.assert_not_called()
 
 
 def test_stream_message_emits_anthropic_events_and_records_usage(db_session, test_user):
@@ -286,64 +236,6 @@ def test_stream_message_emits_anthropic_events_and_records_usage(db_session, tes
     assert event["runtime_session_id"] is not None
     assert event["payload"]["endpoint_kind"] == "anthropic_messages_stream"
     assert event["payload"]["outcome"] == "success"
-
-
-def test_stream_message_denies_when_account_budget_exceeded(db_session, test_user):
-    """Anthropic streaming should deny before the upstream call and log the denial."""
-    account = crud_account.get(db_session, id=test_user.account_id)
-    crud_account.update(
-        db_session,
-        db_obj=account,
-        obj_in={"meta_data": {"model_gateway_budget": {"monthly_usd_limit": 0.00001}}},
-    )
-    crud_ai_model.create_with_account(
-        db=db_session,
-        obj_in={
-            "name": "Claude Gateway Model",
-            "provider_name": "anthropic",
-            "model_identifier": "claude-sonnet-4-5",
-            "api_key": "provider-secret",
-            "meta_data": {
-                "gateway": {
-                    "enabled": True,
-                    "model_alias": "anthropic/claude-sonnet-4-5",
-                    "provider_adapter": "preloop",
-                },
-                "pricing": {"input_price_per_1k": 0.01, "output_price_per_1k": 0.02},
-            },
-            "is_default": True,
-        },
-        account_id=test_user.account_id,
-    )
-    service = OpenAIGatewayService(
-        db_session, ModelGatewayAuthContext(token="t", user=test_user)
-    )
-
-    with patch("preloop.services.openai_gateway.litellm.completion") as mock_completion:
-        with pytest.raises(
-            ModelGatewayAPIError, match="account monthly limit reached"
-        ) as exc:
-            service.stream_message(
-                {
-                    "model": "anthropic/claude-sonnet-4-5",
-                    "messages": [{"role": "user", "content": "Hello"}],
-                    "max_tokens": 256,
-                    "stream": True,
-                }
-            )
-
-    assert exc.value.status_code == 403
-    mock_completion.assert_not_called()
-
-    usage_row = (
-        db_session.query(ApiUsage)
-        .filter(ApiUsage.endpoint == "/anthropic/v1/messages")
-        .order_by(ApiUsage.timestamp.desc())
-        .first()
-    )
-    assert usage_row is not None
-    assert usage_row.status_code == 403
-    assert usage_row.meta_data["endpoint_kind"] == "anthropic_messages_stream"
 
 
 def test_create_message_maps_upstream_status_to_anthropic_error(db_session, test_user):

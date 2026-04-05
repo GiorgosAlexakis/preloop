@@ -49,10 +49,6 @@ FLOW_SUCCESS_SENTINEL = "FLOW_EXECUTION_SUCCESS"
 # preventing false positives from the prompt echo that contains the sentinel
 # instruction text.
 AGENT_EXEC_START_MARKER = "PRELOOP_AGENT_EXEC_START"
-GEMINI_GATEWAY_DISABLED_REASON = (
-    "Gemini CLI supports the Preloop MCP proxy, but not the Preloop model "
-    "gateway transport yet. Falling back to direct provider traffic for this run."
-)
 MCP_TOOL_LOOP_PATTERN_MAX_LENGTH = 3
 MCP_TOOL_LOOP_MIN_REPETITIONS = 3
 MCP_TOOL_LOOP_SINGLE_CALL_REPETITIONS = 4
@@ -560,17 +556,9 @@ class FlowExecutionOrchestrator:
         gateway_requested = bool(
             (self.ai_model.meta_data or {}).get("gateway", {}).get("enabled")
         )
-        allow_gateway = self.flow.agent_type != "gemini"
-        if gateway_requested and not allow_gateway:
-            logger.warning(
-                "AI model %s is gateway-enabled, but Gemini only supports MCP "
-                "proxying for now. Falling back to direct provider mode.",
-                self.ai_model.id,
-            )
-
         return (
-            resolve_ai_model_runtime(self.ai_model, allow_gateway=allow_gateway),
-            gateway_requested and not allow_gateway,
+            resolve_ai_model_runtime(self.ai_model, allow_gateway=True),
+            False,
         )
 
     async def _resolve_prompt(self) -> str:

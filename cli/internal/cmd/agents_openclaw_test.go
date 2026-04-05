@@ -118,6 +118,416 @@ func TestParseOpenClawConfigJSON5(t *testing.T) {
 	}
 }
 
+func TestParseOpenClawConfigResolvesBedrockCredentialsFromConfigEnv(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "openclaw.json5")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+
+	config := `{
+  env: {
+    vars: {
+      AWS_ACCESS_KEY_ID: "AKIA_CFG",
+      AWS_SECRET_ACCESS_KEY: "cfg-secret",
+      AWS_SESSION_TOKEN: "cfg-session",
+      AWS_REGION: "us-east-1",
+    },
+  },
+  agents: {
+    defaults: {
+      model: {
+        primary: "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
+      },
+    },
+  },
+  models: {
+    providers: {
+      "amazon-bedrock": {
+        api: "bedrock-converse-stream",
+        auth: "aws-sdk",
+        models: [
+          {
+            id: "us.anthropic.claude-opus-4-6-v1",
+            name: "Claude Opus 4.6 (Bedrock)",
+          },
+        ],
+      },
+    },
+  },
+}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	parsed, err := parseOpenClawConfig(configPath)
+	if err != nil {
+		t.Fatalf("parseOpenClawConfig returned error: %v", err)
+	}
+	if parsed.UsesAmbientAuth {
+		t.Fatal("expected imported Bedrock credentials, not ambient fallback")
+	}
+	if parsed.ProviderAPIKey == "" {
+		t.Fatal("expected imported Bedrock credential payload")
+	}
+
+	var payload bedrockCredentialPayload
+	if err := json.Unmarshal([]byte(parsed.ProviderAPIKey), &payload); err != nil {
+		t.Fatalf("expected JSON credential payload, got %v", err)
+	}
+	if payload.AWSAccessKeyID != "AKIA_CFG" || payload.AWSSecretAccessKey != "cfg-secret" {
+		t.Fatalf("unexpected credential payload %#v", payload)
+	}
+	if payload.AWSRegionName != "us-east-1" {
+		t.Fatalf("expected region from config env, got %#v", payload)
+	}
+}
+
+func TestParseOpenClawConfigPrefersInlineBedrockAPIKey(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "openclaw.json")
+
+	config := `{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "bedrock/anthropic.claude-opus-4-6-2025-11-01-v1:0"
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "bedrock": {
+        "baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "apiKey": "ABSKQ-inline-test",
+        "auth": "api-key",
+        "api": "bedrock-converse-stream",
+        "authHeader": true,
+        "models": [
+          {
+            "id": "anthropic.claude-opus-4-6-2025-11-01-v1:0",
+            "name": "Claude Opus 4.6 (Bedrock)"
+          }
+        ]
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	parsed, err := parseOpenClawConfig(configPath)
+	if err != nil {
+		t.Fatalf("parseOpenClawConfig returned error: %v", err)
+	}
+	if parsed.UsesAmbientAuth {
+		t.Fatal("expected inline Bedrock API key to disable ambient fallback")
+	}
+	if parsed.ProviderAPIKey != "ABSKQ-inline-test" {
+		t.Fatalf("expected inline Bedrock API key, got %q", parsed.ProviderAPIKey)
+	}
+}
+
+func TestParseOpenClawConfigResolvesAmazonBedrockRefToBedrockProviderBlock(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "openclaw.json")
+
+	config := `{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "amazon-bedrock/us.anthropic.claude-opus-4-6-v1"
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "bedrock": {
+        "baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "apiKey": "ABSKQ-alias-test",
+        "auth": "api-key",
+        "api": "bedrock-converse-stream",
+        "models": [
+          {
+            "id": "us.anthropic.claude-opus-4-6-v1",
+            "name": "Claude Opus 4.6 (Bedrock)"
+          }
+        ]
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	parsed, err := parseOpenClawConfig(configPath)
+	if err != nil {
+		t.Fatalf("parseOpenClawConfig returned error: %v", err)
+	}
+	if parsed.ProviderAPIKey != "ABSKQ-alias-test" {
+		t.Fatalf("expected provider alias fallback to resolve inline key, got %q", parsed.ProviderAPIKey)
+	}
+}
+
+func TestParseOpenClawConfigRecoversUpstreamFromManagedConfigState(t *testing.T) {
+	tempDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	defer os.Setenv("HOME", origHome)
+
+	configPath := filepath.Join(tempDir, ".openclaw", "openclaw.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	managedConfig := `{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "preloop/amazon-bedrock/us.anthropic.claude-opus-4-6-v1"
+      }
+    }
+  },
+  "models": {
+    "mode": "replace",
+    "providers": {
+      "preloop": {
+        "baseUrl": "https://review.preloop.ai/openai/v1",
+        "apiKey": "runtime-session-token",
+        "api": "openai-responses",
+        "models": [
+          {
+            "id": "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
+            "name": "amazon-bedrock/us.anthropic.claude-opus-4-6-v1"
+          }
+        ]
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(managedConfig), 0o600); err != nil {
+		t.Fatalf("failed to write managed config: %v", err)
+	}
+
+	statePath, err := localEnrollmentStatePath("openclaw", configPath)
+	if err != nil {
+		t.Fatalf("failed to resolve state path: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		t.Fatalf("failed to create state dir: %v", err)
+	}
+	state := localEnrollmentState{
+		AgentName:  "openclaw",
+		ConfigPath: configPath,
+		DiscoveredConfig: map[string]interface{}{
+			"agents": map[string]interface{}{
+				"defaults": map[string]interface{}{
+					"model": map[string]interface{}{
+						"primary": "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
+					},
+				},
+			},
+			"models": map[string]interface{}{
+				"providers": map[string]interface{}{
+					"bedrock": map[string]interface{}{
+						"baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com",
+						"apiKey":  "ABSKQ-state-test",
+						"api":     "bedrock-converse-stream",
+						"models": []interface{}{
+							map[string]interface{}{
+								"id":   "us.anthropic.claude-opus-4-6-v1",
+								"name": "Claude Opus 4.6 (Bedrock)",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("failed to encode state: %v", err)
+	}
+	if err := os.WriteFile(statePath, stateBytes, 0o600); err != nil {
+		t.Fatalf("failed to write state: %v", err)
+	}
+
+	parsed, err := parseOpenClawConfig(configPath)
+	if err != nil {
+		t.Fatalf("parseOpenClawConfig returned error: %v", err)
+	}
+	if parsed.ProviderID != "amazon-bedrock" {
+		t.Fatalf("expected recovered provider id amazon-bedrock, got %q", parsed.ProviderID)
+	}
+	if parsed.ProviderName != "bedrock" {
+		t.Fatalf("expected recovered provider name bedrock, got %q", parsed.ProviderName)
+	}
+	if parsed.ModelID != "us.anthropic.claude-opus-4-6-v1" {
+		t.Fatalf("expected recovered model id, got %q", parsed.ModelID)
+	}
+	if parsed.ProviderBaseURL != "https://bedrock-runtime.us-east-1.amazonaws.com" {
+		t.Fatalf("expected recovered base url, got %q", parsed.ProviderBaseURL)
+	}
+	if parsed.ProviderAPIKey != "ABSKQ-state-test" {
+		t.Fatalf("expected recovered api key, got %q", parsed.ProviderAPIKey)
+	}
+	if parsed.ModelAlias != "amazon-bedrock/us.anthropic.claude-opus-4-6-v1" {
+		t.Fatalf("expected recovered model alias, got %q", parsed.ModelAlias)
+	}
+}
+
+func TestFindReusableAIModelPrefersMatchingUpstreamFingerprint(t *testing.T) {
+	parsed := &openClawParsedConfig{
+		ModelAlias:      "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
+		ModelID:         "us.anthropic.claude-opus-4-6-v1",
+		ProviderID:      "amazon-bedrock",
+		ProviderName:    "amazon-bedrock",
+		ProviderBaseURL: "https://bedrock-runtime.us-east-1.amazonaws.com/",
+		ProviderAPIKey:  "ABSKQ-current",
+	}
+	managedModelAlias := openClawManagedModelAlias(parsed)
+	otherConfig := &openClawParsedConfig{
+		ModelID:         parsed.ModelID,
+		ProviderName:    parsed.ProviderName,
+		ProviderBaseURL: "https://bedrock-runtime.us-east-1.amazonaws.com",
+		ProviderAPIKey:  "ABSKQ-other",
+	}
+	models := []aiModelResponse{
+		{
+			ID:              "model-alias-match",
+			Name:            "Alias Match",
+			ProviderName:    parsed.ProviderName,
+			ModelIdentifier: parsed.ModelID,
+			APIEndpoint:     "https://bedrock-runtime.us-east-1.amazonaws.com",
+			HasAPIKey:       true,
+			MetaData: mergeOpenClawUpstreamMeta(
+				map[string]interface{}{
+					"gateway": map[string]interface{}{"model_alias": managedModelAlias},
+				},
+				otherConfig,
+			),
+		},
+		{
+			ID:              "model-fingerprint-match",
+			Name:            "Shared Upstream",
+			ProviderName:    parsed.ProviderName,
+			ModelIdentifier: parsed.ModelID,
+			APIEndpoint:     "https://bedrock-runtime.us-east-1.amazonaws.com",
+			HasAPIKey:       true,
+			MetaData: mergeOpenClawUpstreamMeta(
+				map[string]interface{}{
+					"gateway": map[string]interface{}{"model_alias": "preloop/shared-bedrock"},
+				},
+				parsed,
+			),
+		},
+	}
+
+	reused := findReusableAIModel(models, parsed, managedModelAlias)
+	if reused == nil {
+		t.Fatal("expected reusable model")
+	}
+	if reused.ID != "model-fingerprint-match" {
+		t.Fatalf("expected fingerprint match to win, got %q", reused.ID)
+	}
+}
+
+func TestFindReusableAIModelFallsBackToSingleLegacyCandidate(t *testing.T) {
+	parsed := &openClawParsedConfig{
+		ModelAlias:      "openai/gpt-5",
+		ModelID:         "gpt-5",
+		ProviderID:      "openai",
+		ProviderName:    "openai",
+		ProviderBaseURL: "https://api.openai.com/v1/",
+		ProviderAPIKey:  "sk-current",
+	}
+	models := []aiModelResponse{
+		{
+			ID:              "legacy-model",
+			Name:            "Legacy OpenAI",
+			ProviderName:    "openai",
+			ModelIdentifier: "gpt-5",
+			APIEndpoint:     "https://api.openai.com/v1",
+			HasAPIKey:       true,
+			MetaData: map[string]interface{}{
+				"gateway": map[string]interface{}{"model_alias": "preloop/openai/gpt-5"},
+			},
+		},
+	}
+
+	reused := findReusableAIModel(models, parsed, openClawManagedModelAlias(parsed))
+	if reused == nil {
+		t.Fatal("expected legacy model to be reused")
+	}
+	if reused.ID != "legacy-model" {
+		t.Fatalf("expected legacy model, got %q", reused.ID)
+	}
+}
+
+func TestFindReusableAIModelPrefersConfiguredAliasMatchWhenEndpointUnknown(t *testing.T) {
+	parsed := &openClawParsedConfig{
+		ModelAlias:      "amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
+		ModelID:         "us.anthropic.claude-opus-4-6-v1",
+		ProviderID:      "amazon-bedrock",
+		ProviderName:    "bedrock",
+		ProviderBaseURL: "",
+	}
+	managedModelAlias := openClawManagedModelAlias(parsed)
+	models := []aiModelResponse{
+		{
+			ID:              "bedrock-empty",
+			ProviderName:    "bedrock",
+			ModelIdentifier: parsed.ModelID,
+			APIEndpoint:     "",
+			HasAPIKey:       false,
+			MetaData: map[string]interface{}{
+				"gateway": map[string]interface{}{"model_alias": managedModelAlias},
+			},
+		},
+		{
+			ID:              "bedrock-configured",
+			ProviderName:    "bedrock",
+			ModelIdentifier: parsed.ModelID,
+			APIEndpoint:     "https://bedrock-runtime.us-east-1.amazonaws.com",
+			HasAPIKey:       true,
+			MetaData: map[string]interface{}{
+				"gateway": map[string]interface{}{"model_alias": managedModelAlias},
+			},
+		},
+	}
+
+	reused := findReusableAIModel(models, parsed, managedModelAlias)
+	if reused == nil {
+		t.Fatal("expected configured model to be reused")
+	}
+	if reused.ID != "bedrock-configured" {
+		t.Fatalf("expected configured alias match, got %q", reused.ID)
+	}
+}
+
+func TestResolveOpenClawManagedGatewayToken(t *testing.T) {
+	document := map[string]interface{}{
+		"agents": map[string]interface{}{
+			"defaults": map[string]interface{}{
+				"model": map[string]interface{}{
+					"primary": "preloop/amazon-bedrock/us.anthropic.claude-opus-4-6-v1",
+				},
+			},
+		},
+		"models": map[string]interface{}{
+			"providers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"apiKey": "managed-runtime-token",
+				},
+			},
+		},
+	}
+
+	if token := resolveOpenClawManagedGatewayToken(document); token != "managed-runtime-token" {
+		t.Fatalf("expected managed token, got %q", token)
+	}
+}
+
 func TestBuildOpenClawManagedMCPEnrollmentPlanRewritesGateway(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "openclaw.json")
@@ -286,6 +696,7 @@ func TestResolveOpenClawProviderAPIKeyFallsBackToAuthProfiles(t *testing.T) {
 }
 
 func TestResolveOpenClawBedrockCredentialsFromEnv(t *testing.T) {
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "AKIA_TEST")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-test")
 	t.Setenv("AWS_SESSION_TOKEN", "session-test")
@@ -323,6 +734,7 @@ func TestResolveOpenClawBedrockCredentialsFromSharedAWSFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
 	t.Setenv("AWS_PROFILE", "review")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 	t.Setenv("AWS_SESSION_TOKEN", "")
@@ -400,6 +812,42 @@ func TestDefaultManagedLiveValidationResult_ForOpenClaw(t *testing.T) {
 	}
 	if status := result["live_validation_status"]; status != "not_run" {
 		t.Fatalf("expected not_run status, got %#v", result)
+	}
+}
+
+func TestDefaultManagedLiveValidationResult_ForCodex(t *testing.T) {
+	result := defaultManagedLiveValidationResult(AgentConfig{Name: "Codex CLI"})
+	if supported, _ := result["live_validation_supported"].(bool); !supported {
+		t.Fatalf("expected Codex live validation to be supported, got %#v", result)
+	}
+	if status := result["live_validation_status"]; status != "not_run" {
+		t.Fatalf("expected Codex live validation status not_run, got %#v", result)
+	}
+}
+
+func TestResolveCodexManagedGatewayTokenAndModelAlias(t *testing.T) {
+	document := map[string]interface{}{
+		"model_provider": "preloop",
+		"model":          "openai/gpt-5.4",
+		"model_providers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"experimental_bearer_token": "codex-durable-token",
+				"wire_api":                  "responses",
+			},
+		},
+	}
+	if got := resolveCodexManagedGatewayToken(document); got != "codex-durable-token" {
+		t.Fatalf("expected Codex managed gateway token, got %#v", got)
+	}
+	if got := resolveCodexManagedModelAlias(document); got != "openai/gpt-5.4" {
+		t.Fatalf("expected Codex managed model alias, got %#v", got)
+	}
+}
+
+func TestExtractClaudeTokenFromCredentialBlobSupportsClaudeAiOauthAccessToken(t *testing.T) {
+	raw := `{"claudeAiOauth":{"accessToken":"claude-access-token","refreshToken":"claude-refresh-token","expiresAt":1893456000000}}`
+	if got := extractClaudeTokenFromCredentialBlob(raw); got != "claude-access-token" {
+		t.Fatalf("expected Claude access token from claudeAiOauth blob, got %#v", got)
 	}
 }
 

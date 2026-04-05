@@ -98,7 +98,6 @@ class GeminiAgent(ContainerAgentExecutor):
         Returns:
             Container ID or pod name
         """
-        self._ensure_gateway_transport_supported(execution_context)
         self._log_gateway_fallback(execution_context)
 
         # Enhance execution context with Gemini-specific settings
@@ -500,17 +499,15 @@ exit $GEMINI_EXIT_CODE
         Returns:
             Environment variables dict
         """
-        self._ensure_gateway_transport_supported(execution_context)
-
         env = {}
 
         # Add Gemini API key
         if "model_api_key" in execution_context:
             env["GEMINI_API_KEY"] = execution_context["model_api_key"]
-        if execution_context.get("model_endpoint") and not execution_context.get(
-            "model_gateway_enabled"
-        ):
+        if execution_context.get("model_endpoint"):
             env["GEMINI_API_BASE_URL"] = execution_context["model_endpoint"]
+        if execution_context.get("model_gateway_enabled"):
+            env["GEMINI_API_KEY_HEADER"] = "x-goog-api-key"
 
         # HOME is set by the container setup (container.py) based on the
         # configured UID. Don't hardcode it here.
@@ -571,15 +568,6 @@ exit $GEMINI_EXIT_CODE
         self.logger.info(f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s")
 
         return env
-
-    @staticmethod
-    def _ensure_gateway_transport_supported(execution_context: Dict[str, Any]) -> None:
-        """Fail closed for gateway-enabled Gemini flows until transport is supported."""
-        if execution_context.get("model_gateway_enabled"):
-            raise RuntimeError(
-                "Gemini gateway transport is not supported yet. "
-                "Refusing to bypass the Preloop gateway with direct provider traffic."
-            )
 
     def _log_gateway_fallback(self, execution_context: Dict[str, Any]) -> None:
         """Log when Gemini is intentionally running in MCP-only compatibility mode."""

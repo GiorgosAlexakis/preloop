@@ -59,6 +59,7 @@ class ManagedAgent(Base):
     managed_mcp_servers: Mapped[List[str]] = mapped_column(
         JSONB, nullable=False, default=list
     )
+    tags: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False, default=dict)
     lifecycle_state: Mapped[str] = mapped_column(
         String(32), nullable=False, default="active"
     )

@@ -24,6 +24,8 @@ class ResolvedModelRuntime:
     model_endpoint: Optional[str]
     model_api_key: Optional[str]
     model_api_key_backend: Optional[str]
+    model_auth_type: Optional[str]
+    model_auth_payload: Optional[Dict[str, Any]]
     model_parameters: Optional[Dict[str, Any]]
     model_transport_mode: str
     model_gateway_enabled: bool
@@ -41,6 +43,8 @@ class ResolvedModelRuntime:
             "model_endpoint": self.model_endpoint,
             "model_api_key": self.model_api_key,
             "model_api_key_backend": self.model_api_key_backend,
+            "model_auth_type": self.model_auth_type,
+            "model_auth_payload": self.model_auth_payload,
             "model_parameters": self.model_parameters,
             "model_transport_mode": self.model_transport_mode,
             "model_gateway_enabled": self.model_gateway_enabled,
@@ -65,15 +69,26 @@ def _get_gateway_config(ai_model: AIModel) -> Dict[str, Any]:
 
 def _resolve_direct_ai_model_runtime(ai_model: AIModel) -> ResolvedModelRuntime:
     """Resolve direct-provider runtime settings for an AI model."""
-    resolved_model_secret = get_secret_service().resolve_ai_model_api_key(ai_model)
+    resolved_credentials = get_secret_service().resolve_ai_model_credentials(ai_model)
     return ResolvedModelRuntime(
         model_identifier=ai_model.model_identifier,
         model_provider=ai_model.provider_name,
         model_endpoint=ai_model.api_endpoint,
-        model_api_key=resolved_model_secret.value if resolved_model_secret else None,
-        model_api_key_backend=(
-            resolved_model_secret.backend_type if resolved_model_secret else None
+        model_api_key=(
+            resolved_credentials.value
+            if resolved_credentials
+            and resolved_credentials.credential_type == "api_key"
+            else None
         ),
+        model_api_key_backend=(
+            resolved_credentials.backend_type if resolved_credentials else None
+        ),
+        model_auth_type=(
+            resolved_credentials.credential_type if resolved_credentials else None
+        ),
+        model_auth_payload=resolved_credentials.payload
+        if resolved_credentials
+        else None,
         model_parameters=ai_model.model_parameters,
         model_transport_mode="direct_provider",
         model_gateway_enabled=False,
@@ -108,6 +123,8 @@ def resolve_ai_model_runtime(
             model_endpoint=gateway_url,
             model_api_key=None,
             model_api_key_backend=None,
+            model_auth_type=None,
+            model_auth_payload=None,
             model_parameters=model_parameters,
             model_transport_mode=gateway_config.get("transport_mode")
             or DEFAULT_GATEWAY_TRANSPORT_MODE,

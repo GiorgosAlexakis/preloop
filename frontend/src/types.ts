@@ -261,6 +261,7 @@ export interface ManagedAgentSummary {
   session_source_id: string;
   session_reference: string | null;
   enrolled_via: string;
+  tags?: Record<string, string>;
   managed_mcp_servers: string[];
   lifecycle_state: 'active' | 'suspended' | 'decommissioned' | string;
   lifecycle_reason: string | null;
@@ -280,6 +281,8 @@ export interface ManagedAgentSummary {
   ended_at: string | null;
   total_requests: number;
   estimated_cost: number;
+  configured_model_alias: string | null;
+  configured_model_id?: string | null;
   latest_model_alias: string | null;
   latest_provider_name: string | null;
   last_request_at: string | null;
@@ -353,6 +356,7 @@ export interface ManagedAgentDetailResponse {
 export interface ManagedAgentUpdateRequest {
   owner_user_id?: string | null;
   display_name?: string | null;
+  tags?: Record<string, string> | null;
   lifecycle_action?: 'suspend' | 'resume' | 'decommission' | 'reenroll';
   reason?: string | null;
 }

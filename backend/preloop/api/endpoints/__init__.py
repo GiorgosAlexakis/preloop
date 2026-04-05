@@ -7,6 +7,7 @@ __all__ = [
     "approval_requests",
     "comments",
     "features",
+    "gemini_gateway",
     "health",
     "issues",
     "mcp_servers",

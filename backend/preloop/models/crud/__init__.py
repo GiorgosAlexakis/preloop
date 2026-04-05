@@ -91,6 +91,12 @@ from .policy_snapshot import CRUDPolicySnapshot, crud_policy_snapshot
 from .runtime_session import CRUDRuntimeSession
 from .runtime_session_activity import CRUDRuntimeSessionActivity
 from .secret_reference import CRUDSecretReference, crud_secret_reference
+from .budget import (
+    CRUDBudgetPolicy,
+    CRUDBudgetSpendActivity,
+    crud_budget_policy,
+    crud_budget_spend,
+)
 
 crud_account = CRUDAccount(Account)
 # crud_tracker is already instantiated in tracker.py
@@ -226,4 +232,8 @@ __all__ = [
     "crud_policy_snapshot",
     "crud_runtime_session",
     "crud_runtime_session_activity",
+    "CRUDBudgetPolicy",
+    "CRUDBudgetSpendActivity",
+    "crud_budget_policy",
+    "crud_budget_spend",
 ]

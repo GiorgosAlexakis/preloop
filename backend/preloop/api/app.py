@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Any
 from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,6 +31,7 @@ from preloop.api.endpoints import (
     approval_requests,
     comments,
     features,
+    gemini_gateway,
     health,
     issues,
     mcp_servers,
@@ -69,7 +71,7 @@ logger = logging.getLogger(__name__)
 class PyinstrumentMiddleware(BaseHTTPMiddleware):
     """Middleware to profile requests using pyinstrument."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
         """Process a request and profile it.
         Args:
             request: The request to process.
@@ -121,7 +123,7 @@ class PyinstrumentMiddleware(BaseHTTPMiddleware):
 class ApiUsageMiddleware(BaseHTTPMiddleware):
     """Middleware to track API usage."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
         """Process a request and track API usage.
 
         Args:
@@ -218,7 +220,7 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup logic
     logger.info("Starting up application and database...")
 
@@ -245,7 +247,7 @@ async def lifespan(app: FastAPI):
         if os.getenv("INIT_TEST_DATA", "false").lower() == "true":
             logger.info("Initializing test data...")
             # Import and run the test data initialization script
-            from scripts.init_test_data import main as init_data_main
+            from scripts.init_test_data import main as init_data_main  # type: ignore
 
             init_data_main()
             logger.info("Test data initialization complete.")
@@ -469,7 +471,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(ModelGatewayAPIError)
     async def model_gateway_exception_handler(
         request: Request, exc: ModelGatewayAPIError
-    ):
+    ) -> JSONResponse:
         """Render provider-native gateway error bodies."""
         logger.warning(
             "Model gateway error in %s %s: %s",
@@ -480,7 +482,9 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=exc.status_code, content=exc.to_payload())
 
     @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception):
+    async def global_exception_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
         """Log all exceptions with full traceback."""
         logger.error(
             f"Unhandled exception in {request.method} {request.url.path}: {exc}",
@@ -498,13 +502,13 @@ def create_app() -> FastAPI:
 
     # Override the default JSON encoder to handle datetime objects
     class CustomJSONEncoder(json.JSONEncoder):
-        def default(self, obj):
+        def default(self, obj: Any) -> Any:
             if isinstance(obj, datetime):
                 return obj.isoformat()
             return super().default(obj)
 
     # Replace the default jsonable_encoder function with our custom one
-    def custom_jsonable_encoder(obj, *args, **kwargs):
+    def custom_jsonable_encoder(obj: Any, *args: Any, **kwargs: Any) -> Any:
         # First let FastAPI's encoder prepare the object
         encoded = jsonable_encoder(obj, *args, **kwargs)
         # Then manually process any datetime objects that might have been missed
@@ -579,7 +583,7 @@ def create_app() -> FastAPI:
 
     # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
     @app.get("/docs/api", include_in_schema=False)  # Changed path
-    async def custom_swagger_ui_html():
+    async def custom_swagger_ui_html() -> Any:
         return get_swagger_ui_html(
             openapi_url=app.openapi_url,
             title=f"{app.title} - Swagger UI",
@@ -590,8 +594,8 @@ def create_app() -> FastAPI:
 
     @app.get("/api/v1/openapi.yaml", include_in_schema=False)
     @app.get("/api/v1/spec", include_in_schema=False)
-    async def get_openapi_yaml():
-        import yaml
+    async def get_openapi_yaml() -> Any:
+        import yaml  # type: ignore
         from fastapi.responses import PlainTextResponse
 
         schema = app.openapi()
@@ -599,7 +603,7 @@ def create_app() -> FastAPI:
         return PlainTextResponse(yaml_str, media_type="application/x-yaml")
 
     @app.get("/docs/redoc", include_in_schema=False)  # Changed path
-    async def custom_redoc_html():
+    async def custom_redoc_html() -> Any:
         return get_redoc_html(
             openapi_url=app.openapi_url,
             title=f"{app.title} - ReDoc",
@@ -607,9 +611,9 @@ def create_app() -> FastAPI:
         )
 
     # Add custom OpenAPI schema
-    def custom_openapi():
+    def custom_openapi() -> dict[str, Any]:
         if app.openapi_schema:
-            return app.openapi_schema
+            return app.openapi_schema  # type: ignore
 
         openapi_schema = get_openapi(
             title=app.title,
@@ -661,10 +665,10 @@ def create_app() -> FastAPI:
                             {"bearerAuth": []}
                         ]
 
-        app.openapi_schema = openapi_schema
-        return app.openapi_schema
+        app.openapi_schema = openapi_schema  # type: ignore
+        return app.openapi_schema  # type: ignore
 
-    app.openapi = custom_openapi
+    app.openapi = custom_openapi  # type: ignore
 
     # OAuth consent page (login form for CLI and MCP OAuth flows)
     from preloop.api.endpoints.oauth_consent import router as oauth_consent_router
@@ -690,6 +694,8 @@ def create_app() -> FastAPI:
 
     plugin_manager = get_plugin_manager()
     plugin_manager.register_routes(app)
+    for plugin in plugin_manager._plugins.values():
+        app.dependency_overrides.update(plugin.get_dependencies())
 
     # Core API routers
     if service_role in ["all", "api"]:
@@ -816,6 +822,12 @@ def create_app() -> FastAPI:
             tags=["Anthropic Gateway"],
             include_in_schema=False,
         )
+        app.include_router(
+            gemini_gateway.router,
+            prefix="/gemini/v1beta",
+            tags=["Gemini Gateway"],
+            include_in_schema=False,
+        )
 
     if service_role in ["all", "api"]:
         # Note: Issue duplicates endpoint is now loaded via plugins/analytics
@@ -850,14 +862,14 @@ def create_app() -> FastAPI:
 
         # --- Public Approval Page ---
         @app.get("/approval/{request_id}", include_in_schema=False)
-        async def serve_approval_page(request_id: str):
+        async def serve_approval_page(request_id: str) -> FileResponse:
             """Serve the public approval page."""
             approval_html_path = base_dir / "preloop" / "templates" / "approval.html"
             return FileResponse(str(approval_html_path), media_type="text/html")
 
         # --- Public Invitation Accept Page ---
         @app.get("/invitations/accept", include_in_schema=False)
-        async def serve_invitation_accept_page():
+        async def serve_invitation_accept_page() -> FileResponse:
             """Serve the public invitation accept page."""
             invitation_html_path = (
                 base_dir / "preloop" / "templates" / "invitation-accept.html"

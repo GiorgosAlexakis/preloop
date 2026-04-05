@@ -1,5 +1,7 @@
 """Tests for AIModel model and CRUD operations."""
 
+import json
+
 from sqlalchemy.orm import Session
 
 from preloop.models.crud import ai_model as ai_model_crud_module
@@ -143,6 +145,46 @@ def test_create_ai_model_with_external_secret_reference(
     response_model = AIModelRead.model_validate(ai_model)
     assert response_model.credentials_backend_type == VAULT_KV_V2_BACKEND
     assert response_model.credentials_external_ref == "providers/openai/team-a"
+    assert response_model.has_api_key is True
+
+
+def test_create_ai_model_with_structured_credentials(
+    db_session: Session, create_account
+):
+    """Structured inline credentials should be encrypted via SecretReference."""
+    account: Account = create_account()
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Codex OAuth Model",
+            "provider_name": "openai-codex",
+            "model_identifier": "gpt-5.4",
+            "credential_type": "oauth_openai_codex",
+            "credential_payload": {
+                "access": "access-token",
+                "refresh": "refresh-token",
+                "expires": 1893456000000,
+                "account_id": "acct-123",
+            },
+        },
+        account_id=account.id,
+    )
+
+    assert ai_model.api_key is None
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.credentials_secret is not None
+    assert ai_model.credentials_secret.secret_kind == "ai_model_credentials"
+    assert ai_model.credential_type == "oauth_openai_codex"
+
+    stored = json.loads(
+        SecretService().resolve_secret_reference(ai_model.credentials_secret).value
+    )
+    assert stored["type"] == "oauth_openai_codex"
+    assert stored["account_id"] == "acct-123"
+
+    response_model = AIModelRead.model_validate(ai_model)
+    assert response_model.credential_type == "oauth_openai_codex"
     assert response_model.has_api_key is True
 
 

@@ -121,11 +121,25 @@ preloop agents enroll openclaw --yes   # Skip the confirmation prompt
 preloop agents status openclaw         # Show local/remote managed state
 preloop agents validate openclaw       # Validate the managed config
 preloop agents restore openclaw        # Restore the most recent local backup
+preloop agents offboard openclaw       # Offboard and restore the local backup
+preloop agents offboard openclaw --yes --remove-model no --remove-mcp-servers no
+preloop agents offboard openclaw --yes --remove-model yes
 ```
 
 `preloop agents discover` is the starting point for agent onboarding. In interactive terminals it can prompt to onboard newly discovered agents one by one. Use `--no-onboard-prompt` to keep discovery read-only in scripts/CI, or `--yes` to auto-onboard all new candidates. `preloop agents enroll openclaw` remains the explicit mutating command.
 
 Managed OpenClaw onboarding creates a durable managed credential, backs up the local config, replaces the local MCP config with a managed `preloop` entry, and may also import existing MCP servers plus rewrite supported model settings to Preloop's OpenAI-compatible gateway. Use `--dry-run` to preview changes first.
+
+`preloop agents offboard` restores the last local backup and removes the managed agent from Preloop. Cleanup of account-level resources is controlled separately:
+
+- `--remove-model ask|yes|no` controls whether an eligible AI model should also be removed from Preloop
+- `--remove-mcp-servers ask|yes|no` controls whether eligible MCP servers should also be removed from Preloop
+
+Both flags default to `ask`. With `--yes` alone, the CLI skips the main offboard confirmation but keeps eligible AI models and MCP servers unless you explicitly opt into removing them. Shared resources are protected automatically:
+
+- AI models are kept if they are still referenced by another managed agent or by any flow
+- MCP servers are kept if they are still referenced by another managed agent
+- Recently active shared resources are also skipped
 
 ### Version
 

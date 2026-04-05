@@ -38,6 +38,8 @@ describe('AgentDetailView', () => {
               ended_at: null,
               total_requests: 1,
               estimated_cost: 0.12,
+              configured_model_alias: 'openai/gpt-5',
+              configured_model_id: 'configured-model-1',
               latest_model_alias: 'openai/gpt-5',
               latest_provider_name: 'openai',
               last_request_at: '2026-03-10T09:58:00Z',
@@ -69,7 +71,7 @@ describe('AgentDetailView', () => {
             },
             usage_by_model: [
               {
-                ai_model_id: null,
+                ai_model_id: 'model-1',
                 model_alias: 'openai/gpt-5',
                 provider_name: 'openai',
                 request_count: 4,
@@ -310,5 +312,16 @@ describe('AgentDetailView', () => {
     const content = element.shadowRoot?.textContent || '';
     expect(content).to.contain('Live validated');
     expect(content).to.contain('openai/gpt-5');
+    expect(content).to.contain(
+      'Tool calls and model traffic both flow through Preloop.'
+    );
+    const modelLink = element.shadowRoot?.querySelector(
+      'a.session-link[href="/console/settings/ai-models/configured-model-1"]'
+    );
+    expect(modelLink).to.exist;
+    const wrongModelLink = element.shadowRoot?.querySelector(
+      'a.session-link[href="/console/settings/ai-models/model-1"]'
+    );
+    expect(wrongModelLink).to.not.exist;
   });
 });

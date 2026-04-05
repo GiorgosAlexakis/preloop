@@ -25,6 +25,8 @@ from preloop.services.mcp_client_pool import get_mcp_client_pool
 from preloop.models.crud import crud_mcp_server, crud_tool_configuration
 from preloop.models.db.session import get_db_session as get_db
 from preloop.api.endpoints.tools import BUILTIN_TOOLS
+from preloop.services.subject_governance import is_tool_enabled_for_subject
+from preloop.models.models.account import Account
 
 logger = logging.getLogger(__name__)
 
@@ -344,8 +346,48 @@ class DynamicFastMCP(FastMCP):
             )
 
         logger.info(
-            f"Returning {len(available_tools)} total tools for user {user_context.username}"
+            f"Returning {len(available_tools)} total tools for user {user_context.username} before governance filter"
         )
+
+        # ── Apply subject governance to filter out disabled tools ─────────
+        try:
+
+            def _fetch_account_meta():
+                db = next(get_db())
+                try:
+                    acc = (
+                        db.query(Account)
+                        .filter(Account.id == user_context.account_id)
+                        .first()
+                    )
+                    return getattr(acc, "meta_data", {})
+                finally:
+                    db.close()
+
+            account_meta = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, _fetch_account_meta),
+                timeout=30,
+            )
+
+            subject_context = {
+                "api_key_id": user_context.api_key_id,
+                "managed_agent_id": getattr(user_context, "managed_agent_id", None),
+            }
+
+            final_tools = []
+            for tool in available_tools:
+                if is_tool_enabled_for_subject(
+                    account_meta, tool_name=tool.name, subject_context=subject_context
+                ):
+                    final_tools.append(tool)
+
+            available_tools = final_tools
+
+        except Exception as e:
+            logger.error(
+                f"Error filtering tools through subject governance: {e}", exc_info=True
+            )
+
         for tool in available_tools:
             logger.info(f"  - {tool.name}")
 
@@ -926,7 +968,7 @@ async def {internal_name}({params_str}) -> str:
                                     "runtime_principal_name": user_context.runtime_principal_name,
                                     "managed_agent_id": str(managed_agent.id)
                                     if managed_agent is not None
-                                    else None,
+                                    else user_context.managed_agent_id,
                                     "api_key_id": user_context.api_key_id,
                                     "api_key_name": user_context.api_key_name,
                                     "server_name": server_name,

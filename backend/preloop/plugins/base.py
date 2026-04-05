@@ -88,6 +88,10 @@ class Plugin(ABC):
         """Return services to register (name -> instance)."""
         return {}
 
+    def get_dependencies(self) -> Dict[Any, Any]:
+        """Return FastAPI dependencies to override."""
+        return {}
+
     def get_features(self) -> Dict[str, bool]:
         """Return feature flags this plugin enables.
 

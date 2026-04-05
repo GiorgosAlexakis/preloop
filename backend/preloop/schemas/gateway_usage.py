@@ -195,6 +195,8 @@ class ManagedAgentSummary(BaseModel):
     ended_at: Optional[datetime] = None
     total_requests: int = 0
     estimated_cost: float = 0.0
+    configured_model_alias: Optional[str] = None
+    configured_model_id: Optional[str] = None
     latest_model_alias: Optional[str] = None
     latest_provider_name: Optional[str] = None
     last_request_at: Optional[datetime] = None
@@ -205,6 +207,7 @@ class ManagedAgentSummary(BaseModel):
     live_validation_passed: Optional[bool] = None
     live_validation_status: str = "unsupported"
     last_validated_at: Optional[datetime] = None
+    tags: dict[str, str] = Field(default_factory=dict)
 
 
 class ManagedAgentUsageAggregate(BaseModel):
@@ -370,6 +373,7 @@ class ManagedAgentUpdateRequest(BaseModel):
         default=None, pattern="^(suspend|resume|decommission|reenroll)$"
     )
     reason: Optional[str] = None
+    tags: Optional[dict[str, str]] = None
 
 
 class RuntimeSessionUpdateRequest(BaseModel):

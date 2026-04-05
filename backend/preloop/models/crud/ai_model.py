@@ -1,5 +1,6 @@
 """CRUD operations for AIModel model."""
 
+import json
 import uuid
 from typing import Dict, Optional
 
@@ -26,6 +27,8 @@ class CRUDAIModel(CRUDBase[AIModel]):
     ) -> None:
         """Resolve incoming credential fields into a SecretReference."""
         api_key = obj_data.pop("api_key", None) if "api_key" in obj_data else None
+        credential_type = obj_data.pop("credential_type", None)
+        credential_payload = obj_data.pop("credential_payload", None)
         credentials_backend_type = obj_data.pop("credentials_backend_type", None)
         credentials_external_ref = obj_data.pop("credentials_external_ref", None)
         credentials_meta_data = obj_data.pop("credentials_meta_data", None)
@@ -38,6 +41,22 @@ class CRUDAIModel(CRUDBase[AIModel]):
                 secret_kind="ai_model_api_key",
                 secret_value=api_key,
                 existing_secret_id=existing_secret_id,
+            )
+            obj_data["credentials_secret_id"] = secret_ref.id
+            obj_data["api_key"] = None
+            return
+
+        if credential_type or credential_payload is not None:
+            payload = dict(credential_payload or {})
+            payload["type"] = credential_type
+            secret_ref = get_secret_service().create_local_secret_reference(
+                db,
+                account_id=account_id,
+                name=secret_name,
+                secret_kind="ai_model_credentials",
+                secret_value=json.dumps(payload),
+                existing_secret_id=existing_secret_id,
+                meta_data={"credential_type": credential_type},
             )
             obj_data["credentials_secret_id"] = secret_ref.id
             obj_data["api_key"] = None

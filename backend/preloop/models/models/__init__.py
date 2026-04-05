@@ -46,6 +46,13 @@ from .policy_snapshot import PolicySnapshot
 from .runtime_session import RuntimeSession
 from .runtime_session_activity import RuntimeSessionActivity
 from .secret_reference import SecretReference
+from .oauth_mcp_client import OAuthMCPClient
+from .oauth_mcp_token import (
+    OAuthMCPAuthorizationCode,
+    OAuthMCPAccessToken,
+    OAuthMCPRefreshToken,
+)
+from .budget import BudgetPolicy, BudgetSpendActivity, BudgetPeriod
 
 __all__ = [
     "Base",
@@ -110,4 +117,11 @@ __all__ = [
     "RuntimeSession",
     "RuntimeSessionActivity",
     "SecretReference",
+    "BudgetPolicy",
+    "BudgetSpendActivity",
+    "BudgetPeriod",
+    "OAuthMCPClient",
+    "OAuthMCPAuthorizationCode",
+    "OAuthMCPAccessToken",
+    "OAuthMCPRefreshToken",
 ]

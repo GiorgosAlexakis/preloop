@@ -1,4 +1,4 @@
-import { LitElement, css, html, unsafeCSS } from 'lit';
+import { LitElement, css, html, unsafeCSS, TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
@@ -11,6 +11,7 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '../../components/governance-rule-set-editor.ts';
+import '../../components/budget-policy-editor.ts';
 import '../../components/tools-editor-component.ts';
 import '../../components/session-history-widget.ts';
 import '../../components/view-header.ts';
@@ -50,6 +51,7 @@ import {
   serializeScopedToolRules,
   type ScopedToolRules,
 } from '../../utils/scoped-governance';
+import { renderAgentIcon } from '../../utils/agent-icons';
 
 interface GovernanceToolDefinition {
   name: string;
@@ -155,6 +157,12 @@ export class AgentDetailView extends LitElement {
 
   @state()
   private governanceToolToAdd = '';
+
+  @state()
+  private showTagsDialog = false;
+
+  @state()
+  private tagsDialogInput = '';
 
   @state()
   private governanceCustomToolName = '';
@@ -499,6 +507,10 @@ export class AgentDetailView extends LitElement {
         return 'Codex';
       case 'openclaw':
         return 'OpenClaw';
+      case 'gemini_cli':
+        return 'Gemini CLI';
+      case 'opencode':
+        return 'OpenCode';
       case 'desktop_agent':
         return 'Desktop Agent';
       case 'custom':
@@ -550,9 +562,97 @@ export class AgentDetailView extends LitElement {
     if (!this.agent) return 'Unknown';
     if (this.agent.onboarding_state === 'fully_onboarded')
       return 'Fully onboarded';
-    if (this.agent.onboarding_state === 'mcp_proxy_only') return 'Proxy only';
+    if (this.agent.onboarding_state === 'mcp_proxy_only') return 'MCP only';
     if (this.agent.onboarding_state === 'gateway_only') return 'Gateway only';
     return 'Incomplete';
+  }
+
+  private getOnboardingDescription(): string {
+    if (!this.agent) return 'This agent is not fully managed by Preloop yet.';
+    if (this.agent.onboarding_state === 'fully_onboarded') {
+      return 'Tool calls and model traffic both flow through Preloop.';
+    }
+    if (this.agent.onboarding_state === 'mcp_proxy_only') {
+      return 'Tool calls flow through Preloop, but model traffic is still direct.';
+    }
+    if (this.agent.onboarding_state === 'gateway_only') {
+      return 'Model traffic flows through Preloop, but MCP tool traffic is still direct.';
+    }
+    return 'This agent is not fully managed by Preloop yet.';
+  }
+
+  private getParsedModelBudgets(): Record<
+    string,
+    { monthly_usd_limit?: number }
+  > {
+    try {
+      const parsed = JSON.parse(this.modelBudgetsText || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private getDisplayedAgentModels(): string[] {
+    const configuredModel = this.agent?.configured_model_alias?.trim();
+    const budgets = this.getParsedModelBudgets();
+    const models = new Set<string>();
+
+    if (configuredModel) models.add(configuredModel);
+
+    for (const model of this.governance?.allowed_models || []) {
+      if (model) models.add(model);
+    }
+
+    for (const model of Object.keys(budgets)) {
+      if (model) models.add(model);
+    }
+
+    if (models.size === 0) {
+      for (const usage of this.usageByModel) {
+        if (usage.model_alias) models.add(usage.model_alias);
+      }
+    }
+
+    return Array.from(models).sort((a, b) => {
+      if (configuredModel && a === configuredModel) return -1;
+      if (configuredModel && b === configuredModel) return 1;
+
+      const usageA = this.usageByModel.find((u) => u.model_alias === a);
+      const usageB = this.usageByModel.find((u) => u.model_alias === b);
+      const timeA = usageA?.last_request_at
+        ? new Date(usageA.last_request_at).getTime()
+        : 0;
+      const timeB = usageB?.last_request_at
+        ? new Date(usageB.last_request_at).getTime()
+        : 0;
+      return timeB - timeA;
+    });
+  }
+
+  private getUsageForDisplayedModel(model: string): GatewayUsageByModel | null {
+    const isConfiguredModel = model === this.agent?.configured_model_alias;
+    const configuredModelId = this.agent?.configured_model_id?.trim();
+    if (isConfiguredModel && configuredModelId) {
+      return (
+        this.usageByModel.find(
+          (usage) =>
+            usage.model_alias === model &&
+            usage.ai_model_id === configuredModelId
+        ) || null
+      );
+    }
+    return (
+      this.usageByModel.find((usage) => usage.model_alias === model) || null
+    );
+  }
+
+  private getDisplayedModelId(model: string): string | null {
+    const isConfiguredModel = model === this.agent?.configured_model_alias;
+    if (isConfiguredModel && this.agent?.configured_model_id?.trim()) {
+      return this.agent.configured_model_id.trim();
+    }
+    return this.getUsageForDisplayedModel(model)?.ai_model_id?.trim() || null;
   }
 
   private getLiveValidationVariant(): string {
@@ -684,6 +784,44 @@ export class AgentDetailView extends LitElement {
     if (newName !== null && newName.trim() !== '') {
       this.editableDisplayName = newName.trim();
       this.saveDisplayName();
+    }
+  }
+
+  private promptEditTags(): void {
+    if (!this.agent) return;
+    const currentTags = Object.entries(this.agent.tags || {})
+      .map(([k, v]) => (v && v !== 'true' ? `${k}=${v}` : k))
+      .join(' ');
+
+    this.tagsDialogInput = currentTags;
+    this.showTagsDialog = true;
+  }
+
+  private submitTagsDialog(): void {
+    if (this.tagsDialogInput !== null) {
+      const tags: Record<string, string> = {};
+      this.tagsDialogInput.split(/\s+/).forEach((t: string) => {
+        if (!t) return;
+        const [k, ...vParts] = t.split('=');
+        tags[k] = vParts.length > 0 ? vParts.join('=') : 'true';
+      });
+      void this.saveTags(tags);
+    }
+    this.showTagsDialog = false;
+  }
+
+  private async saveTags(tags: Record<string, string>): Promise<void> {
+    if (!this.agentId) return;
+    this.actionLoading = true;
+    try {
+      await updateAccountAgent(this.agentId, { tags });
+      await this.loadData();
+    } catch (error) {
+      console.error('Failed to update tags:', error);
+      this.error =
+        error instanceof Error ? error.message : 'Failed to update tags';
+    } finally {
+      this.actionLoading = false;
     }
   }
 
@@ -1025,6 +1163,15 @@ export class AgentDetailView extends LitElement {
 
     return html`
       <view-header headerText=${this.agent.display_name}>
+        <div
+          slot="title-prefix"
+          style="display: flex; align-items: center; color: var(--sl-color-neutral-600);"
+        >
+          ${renderAgentIcon(
+            this.agent.session_source_type,
+            'font-size: 1.2em; display: block;'
+          )}
+        </div>
         <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
           <sl-button
             variant="default"
@@ -1079,6 +1226,46 @@ export class AgentDetailView extends LitElement {
                       </sl-badge>
                     `
                   : null}
+              </div>
+              <div class="meta-line">${this.getOnboardingDescription()}</div>
+
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center; margin-top: var(--sl-spacing-x-small);"
+              >
+                <div
+                  style="font-size: var(--sl-font-size-small); font-weight: 500; color: var(--sl-color-neutral-700);"
+                >
+                  Tags:
+                </div>
+                ${!this.agent.tags || Object.keys(this.agent.tags).length === 0
+                  ? html`<span
+                      style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-400); font-style: italic;"
+                      >None</span
+                    >`
+                  : html`<div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                      ${Object.entries(this.agent.tags).map(
+                        ([k, v]) => html`
+                          <sl-badge
+                            variant="neutral"
+                            style="text-transform: none;"
+                          >
+                            <span style="opacity: 0.7">${k}</span>${v &&
+                            v !== 'true'
+                              ? html`<span style="opacity: 0.4; margin: 0 4px;"
+                                    >=</span
+                                  >${v}`
+                              : ''}
+                          </sl-badge>
+                        `
+                      )}
+                    </div>`}
+                <sl-button
+                  size="small"
+                  variant="text"
+                  @click=${this.promptEditTags}
+                >
+                  <sl-icon name="pencil" slot="prefix"></sl-icon> Edit
+                </sl-button>
               </div>
             </div>
           </div>
@@ -1182,12 +1369,22 @@ export class AgentDetailView extends LitElement {
                 </div>
               </div>
               <div class="stat-card">
+                <div class="stat-label">Configured Model</div>
+                <div class="stat-value">
+                  ${this.agent.configured_model_alias || 'None'}
+                </div>
+                <div class="meta-line">
+                  Latest used ${aggregate?.latest_model_alias || 'None yet'}
+                </div>
+              </div>
+              <div class="stat-card">
                 <div class="stat-label">Estimated Cost</div>
                 <div class="stat-value">
                   ${this.formatMoney(aggregate?.estimated_cost)}
                 </div>
                 <div class="meta-line">
-                  Latest model ${aggregate?.latest_model_alias || 'None yet'}
+                  Last request
+                  ${this.formatDateTime(aggregate?.last_request_at)}
                 </div>
               </div>
               <div class="stat-card">
@@ -1196,8 +1393,8 @@ export class AgentDetailView extends LitElement {
                   ${aggregate?.token_usage.total_tokens ?? 0}
                 </div>
                 <div class="meta-line">
-                  Last request
-                  ${this.formatDateTime(aggregate?.last_request_at)}
+                  ${aggregate?.successful_requests ?? 0} success ·
+                  ${aggregate?.failed_requests ?? 0} failed
                 </div>
               </div>
               <div class="stat-card">
@@ -1246,81 +1443,64 @@ export class AgentDetailView extends LitElement {
                 </div>
               </div>
               <div class="stack">
-                ${Array.from(
-                  new Set(
-                    [
-                      ...(this.governance?.allowed_models || []),
-                      ...Object.keys(JSON.parse(this.modelBudgetsText || '{}')),
-                      ...this.usageByModel.map((u) => u.model_alias),
-                    ].filter(Boolean) as string[]
-                  )
-                )
-                  .sort((a: string, b: string) => {
-                    const usageA = this.usageByModel.find(
-                      (u) => u.model_alias === a
-                    );
-                    const usageB = this.usageByModel.find(
-                      (u) => u.model_alias === b
-                    );
-                    const timeA = usageA?.last_request_at
-                      ? new Date(usageA.last_request_at).getTime()
-                      : 0;
-                    const timeB = usageB?.last_request_at
-                      ? new Date(usageB.last_request_at).getTime()
-                      : 0;
-                    return timeB - timeA;
-                  })
-                  .map((model: string) => {
-                    const currentBudgets = JSON.parse(
-                      this.modelBudgetsText || '{}'
-                    );
-                    const budget = currentBudgets[model] || {};
-                    const usage = this.usageByModel.find(
-                      (u) => u.model_alias === model
-                    );
-                    return html`
-                      <div
-                        class="stat-card"
-                        style="display: flex; gap: var(--sl-spacing-medium); align-items: center; justify-content: space-between;"
-                      >
-                        <div class="stat-label">
-                          <sl-icon
-                            name="robot"
-                            style="margin-right: 4px;"
-                          ></sl-icon>
-                          <a
-                            href="/console/settings/ai-models/${encodeURIComponent(
-                              model
-                            )}"
-                            class="session-link"
-                            style="font-weight: 500;"
-                            >${model}</a
-                          >
-                        </div>
-                        ${usage || budget.monthly_usd_limit
-                          ? html`<div style="font-size: 0.9em;">
-                              ${usage
-                                ? html`<span
-                                    style="color: var(--sl-color-primary-600); font-weight: 600;"
-                                    >${this.formatMoney(usage.estimated_cost)}
-                                    spent</span
-                                  >`
-                                : ''}
-                              ${usage && budget.monthly_usd_limit ? ' / ' : ''}
-                              ${budget.monthly_usd_limit
-                                ? html`<span
-                                    style="color: var(--sl-color-neutral-600);"
-                                    >${this.formatMoney(
-                                      budget.monthly_usd_limit
-                                    )}
-                                    budget</span
-                                  >`
-                                : ''}
-                            </div>`
-                          : ''}
+                ${this.getDisplayedAgentModels().map((model: string) => {
+                  const currentBudgets = this.getParsedModelBudgets();
+                  const budget = currentBudgets[model] || {};
+                  const isConfiguredModel =
+                    model === this.agent?.configured_model_alias;
+                  const usage = this.getUsageForDisplayedModel(model);
+                  const modelId = this.getDisplayedModelId(model);
+                  const showZeroSpend = isConfiguredModel && !usage;
+                  return html`
+                    <div
+                      class="stat-card"
+                      style="display: flex; gap: var(--sl-spacing-medium); align-items: center; justify-content: space-between;"
+                    >
+                      <div class="stat-label">
+                        <sl-icon
+                          name="robot"
+                          style="margin-right: 4px;"
+                        ></sl-icon>
+                        ${modelId
+                          ? html`<a
+                              href="/console/settings/ai-models/${encodeURIComponent(
+                                modelId
+                              )}"
+                              class="session-link"
+                              style="font-weight: 500;"
+                              >${model}</a
+                            >`
+                          : html`<span style="font-weight: 500;"
+                              >${model}</span
+                            >`}
                       </div>
-                    `;
-                  })}
+                      ${usage || budget.monthly_usd_limit || showZeroSpend
+                        ? html`<div style="font-size: 0.9em;">
+                            ${usage || showZeroSpend
+                              ? html`<span
+                                  style="color: var(--sl-color-primary-600); font-weight: 600;"
+                                  >${this.formatMoney(
+                                    usage?.estimated_cost ?? 0
+                                  )}
+                                  spent</span
+                                >`
+                              : ''}
+                            ${(usage || showZeroSpend) &&
+                            budget.monthly_usd_limit
+                              ? ' / '
+                              : ''}
+                            ${budget.monthly_usd_limit
+                              ? html`<span
+                                  style="color: var(--sl-color-neutral-600);"
+                                  >${this.formatMoney(budget.monthly_usd_limit)}
+                                  budget</span
+                                >`
+                              : ''}
+                          </div>`
+                        : ''}
+                    </div>
+                  `;
+                })}
               </div>
             </div>
           </sl-card>
@@ -1456,43 +1636,73 @@ export class AgentDetailView extends LitElement {
       <!-- Update Budgets Dialog -->
       <sl-dialog
         class="budgets-dialog"
-        label="Update Model Budgets"
+        label="Update Budgets"
         ?open=${this.updateBudgetsDialogOpen}
         @sl-after-hide=${() => {
           this.updateBudgetsDialogOpen = false;
         }}
+        style="--width: 600px;"
       >
-        <sl-textarea
-          label="Budgets JSON"
-          value=${this.budgetsDialogJson}
-          @sl-input=${(e: any) => {
-            this.budgetsDialogJson = e.target.value;
-          }}
-          help-text='Example: { "gpt-4o": { "monthly_usd_limit": 5.0 } }'
-          rows="6"
-        ></sl-textarea>
+        <budget-policy-editor
+          subjectType="managed_agent"
+          .subjectId=${this.agentId || ''}
+        ></budget-policy-editor>
         <div slot="footer">
-          <sl-button
-            variant="primary"
-            @click=${() => {
-              try {
-                JSON.parse(this.budgetsDialogJson);
-                this.modelBudgetsText = this.budgetsDialogJson;
-                void this.saveGovernance();
-                this.updateBudgetsDialogOpen = false;
-              } catch (e) {
-                alert('Invalid JSON');
-              }
-            }}
-            >Save</sl-button
-          >
           <sl-button
             @click=${() => {
               this.updateBudgetsDialogOpen = false;
             }}
-            >Cancel</sl-button
+            >Close</sl-button
           >
         </div>
+      </sl-dialog>
+
+      ${this.renderTagsDialog()}
+    `;
+  }
+
+  private renderTagsDialog(): TemplateResult {
+    return html`
+      <sl-dialog
+        label="Edit Tags"
+        ?open=${this.showTagsDialog}
+        @sl-request-close=${(e: CustomEvent) => {
+          if (e.detail.source === 'overlay') {
+            e.preventDefault();
+          } else {
+            this.showTagsDialog = false;
+          }
+        }}
+      >
+        <div style="margin-bottom: var(--sl-spacing-medium);">
+          Enter tags separated by space. Use 'key=value' for key-value pairs, or
+          just 'key' for boolean tags.
+        </div>
+        <sl-input
+          placeholder="e.g. env=prod target=aws db"
+          .value=${this.tagsDialogInput}
+          @input=${(e: Event) =>
+            (this.tagsDialogInput = (e.target as HTMLInputElement).value)}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+              this.submitTagsDialog();
+            }
+          }}
+        ></sl-input>
+        <sl-button
+          slot="footer"
+          variant="default"
+          @click=${() => (this.showTagsDialog = false)}
+        >
+          Cancel
+        </sl-button>
+        <sl-button
+          slot="footer"
+          variant="primary"
+          @click=${() => this.submitTagsDialog()}
+        >
+          Save
+        </sl-button>
       </sl-dialog>
     `;
   }

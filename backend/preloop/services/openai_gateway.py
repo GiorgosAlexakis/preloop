@@ -6,6 +6,8 @@ import json
 import logging
 import time
 from typing import Any, Dict, Iterator, List, Optional, Protocol
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import litellm
 from sqlalchemy.orm import Session
@@ -32,11 +34,16 @@ from preloop.services.model_gateway_errors import (
 from preloop.services.model_pricing import estimate_ai_model_usage_cost
 from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
 from preloop.services.gateway_usage_search import GatewayUsageSearchService
-from preloop.services.secret_service import get_secret_service
+from preloop.services.secret_service import (
+    OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE,
+    ResolvedModelCredentials,
+    get_secret_service,
+)
 from preloop.utils.audit import log_model_gateway_request
 
 _PROVIDER_PREFIX: Dict[str, str] = {
     "openai": "openai",
+    "openai-codex": "openai",
     "anthropic": "anthropic",
     "google": "gemini",
     "gemini": "gemini",
@@ -124,10 +131,12 @@ class OpenAIGatewayService:
         db: Session,
         auth_context: ModelGatewayAuthContext,
         upstream_backend: Optional[ModelGatewayBackend] = None,
+        budget_enforcer: Optional[Any] = None,
     ) -> None:
         self.db = db
         self.auth_context = auth_context
         self.upstream_backend = upstream_backend or get_model_gateway_backend()
+        self.budget_enforcer = budget_enforcer
         self._resolved_runtime_session_id: Optional[str] = None
         self._resolved_runtime_session_attempted = False
 
@@ -173,6 +182,35 @@ class OpenAIGatewayService:
         self._resolved_runtime_session_id = runtime_session_id
         return runtime_session_id
 
+    def _resolve_managed_agent_id(self) -> Optional[str]:
+        api_key = self.auth_context.api_key
+        context_data = (
+            api_key.context_data
+            if api_key and isinstance(api_key.context_data, dict)
+            else {}
+        )
+        managed_agent_id = (
+            context_data.get("managed_agent_id") if context_data else None
+        )
+        if managed_agent_id:
+            return str(managed_agent_id)
+
+        runtime_principal = context_data.get("runtime_principal") or {}
+        session_source_type = runtime_principal.get("type")
+        session_source_id = runtime_principal.get("id")
+        if not session_source_type or not session_source_id:
+            return None
+
+        from preloop.models.crud.managed_agent import crud_managed_agent
+
+        managed_agent = crud_managed_agent.get_by_source(
+            self.db,
+            account_id=str(self.auth_context.user.account_id),
+            session_source_type=session_source_type,
+            session_source_id=session_source_id,
+        )
+        return str(managed_agent.id) if managed_agent is not None else None
+
     def _emit_gateway_request_started(
         self,
         ai_model: AIModel,
@@ -188,6 +226,7 @@ class OpenAIGatewayService:
         )
 
         runtime_session_id = self._resolve_runtime_session()
+        managed_agent_id = self._resolve_managed_agent_id()
 
         emit_account_event(
             build_account_event(
@@ -200,6 +239,7 @@ class OpenAIGatewayService:
                     "duration": 0,
                     "estimated_cost": 0,
                     "model_alias": requested_model,
+                    "managed_agent_id": managed_agent_id,
                     "total_tokens": 0,
                     "meta_data": {
                         "endpoint_kind": endpoint_kind,
@@ -282,13 +322,22 @@ class OpenAIGatewayService:
                 request_payload=payload,
                 endpoint_kind="chat_completions",
             )
-            response = self._call_litellm(
-                model,
-                messages=messages,
-                payload=payload,
-                provider="openai",
-            )
-            response_dict = self._response_to_dict(response)
+            if self._is_openai_codex_model(model):
+                response_dict = self._create_openai_codex_response(
+                    model,
+                    self._build_openai_codex_payload_from_chat_completion(
+                        payload=payload,
+                        messages=messages,
+                    ),
+                )
+            else:
+                response = self._call_litellm(
+                    model,
+                    messages=messages,
+                    payload=payload,
+                    provider="openai",
+                )
+                response_dict = self._response_to_dict(response)
             assistant_content = self._extract_assistant_text(response_dict)
             usage = self._normalize_usage(
                 response_dict.get("usage"),
@@ -382,37 +431,24 @@ class OpenAIGatewayService:
                 request_payload=payload,
                 endpoint_kind="responses",
             )
-            response = self._call_litellm(
-                model,
-                messages=messages,
-                payload=payload,
-                provider="openai",
+            if self._is_openai_codex_model(model):
+                response_dict = self._create_openai_codex_response(model, payload)
+            else:
+                response = self._call_litellm(
+                    model,
+                    messages=messages,
+                    payload=payload,
+                    provider="openai",
+                )
+                response_dict = self._response_to_dict(response)
+            response_payload = self._build_responses_api_payload(
+                ai_model=model,
+                requested_model=(
+                    payload.get("model")
+                    or resolve_ai_model_runtime(model).model_gateway_model_alias
+                ),
+                response_dict=response_dict,
             )
-            response_dict = self._response_to_dict(response)
-            output_items = self._build_response_output_items(response_dict)
-            assistant_text = self._response_output_text(output_items)
-            usage = self._normalize_usage(
-                response_dict.get("usage"),
-                prompt_key="prompt_tokens",
-                completion_key="completion_tokens",
-                output_names=("completion_tokens", "output_tokens"),
-            )
-
-            response_payload = {
-                "id": response_dict.get("id", f"resp_{int(time.time())}"),
-                "object": "response",
-                "created_at": response_dict.get("created", int(time.time())),
-                "model": payload.get("model")
-                or resolve_ai_model_runtime(model).model_gateway_model_alias,
-                "status": "completed",
-                "output": output_items,
-                "output_text": assistant_text,
-                "usage": {
-                    "input_tokens": usage["prompt_tokens"],
-                    "output_tokens": usage["completion_tokens"],
-                    "total_tokens": usage["total_tokens"],
-                },
-            }
             self._record_gateway_request(
                 endpoint="/openai/v1/responses",
                 method="POST",
@@ -1086,6 +1122,13 @@ class OpenAIGatewayService:
                 request_payload=payload,
                 endpoint_kind="responses_stream",
             )
+            if self._is_openai_codex_model(model):
+                return self._stream_openai_codex_response(
+                    ai_model=model,
+                    payload=payload,
+                    started_at=started_at,
+                    budget_result=budget_result,
+                )
             upstream_stream = self._call_litellm(
                 model,
                 messages=messages,
@@ -1386,6 +1429,300 @@ class OpenAIGatewayService:
             message="No gateway-enabled default model configured",
         )
 
+    def _is_openai_codex_model(self, ai_model: AIModel) -> bool:
+        return (ai_model.provider_name or "").strip().lower() == "openai-codex"
+
+    def _resolve_openai_codex_credentials(
+        self, ai_model: AIModel
+    ) -> ResolvedModelCredentials:
+        resolved = get_secret_service().resolve_ai_model_credentials(
+            ai_model,
+            db=self.db,
+            allow_refresh=True,
+        )
+        if (
+            not resolved
+            or resolved.credential_type != OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE
+        ):
+            raise ModelGatewayAPIError(
+                provider="openai",
+                status_code=400,
+                message="OpenAI Codex OAuth credentials are not configured",
+            )
+        payload = resolved.payload or {}
+        if not resolved.value or not payload.get("account_id"):
+            raise ModelGatewayAPIError(
+                provider="openai",
+                status_code=400,
+                message="OpenAI Codex OAuth credentials are incomplete",
+            )
+        return resolved
+
+    def _build_openai_codex_payload(
+        self, ai_model: AIModel, payload: Dict[str, Any], *, stream: bool = False
+    ) -> Dict[str, Any]:
+        upstream_payload = json.loads(json.dumps(payload))
+        upstream_payload["model"] = ai_model.model_identifier
+        if stream:
+            upstream_payload["stream"] = True
+        return upstream_payload
+
+    def _build_openai_codex_payload_from_chat_completion(
+        self,
+        *,
+        payload: Dict[str, Any],
+        messages: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        upstream_payload: Dict[str, Any] = {
+            "model": payload.get("model"),
+            "input": [
+                {
+                    "type": "message",
+                    "role": message.get("role"),
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": self._content_to_text(message.get("content", "")),
+                        }
+                    ],
+                }
+                for message in messages
+            ],
+        }
+        for key in (
+            "temperature",
+            "top_p",
+            "max_output_tokens",
+            "max_completion_tokens",
+            "tools",
+            "tool_choice",
+            "parallel_tool_calls",
+            "instructions",
+        ):
+            if payload.get(key) is not None:
+                upstream_payload[key] = payload[key]
+        return upstream_payload
+
+    def _create_openai_codex_response(
+        self, ai_model: AIModel, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        credentials = self._resolve_openai_codex_credentials(ai_model)
+        upstream_payload = self._build_openai_codex_payload(ai_model, payload)
+        headers = {
+            "Authorization": f"Bearer {credentials.value}",
+            "Content-Type": "application/json",
+            "OpenAI-Beta": "responses=experimental",
+            "chatgpt-account-id": str(credentials.payload.get("account_id")),
+            "originator": "preloop",
+            "User-Agent": "Preloop/1.0",
+        }
+        req = urllib_request.Request(
+            "https://chatgpt.com/backend-api/codex/responses",
+            data=json.dumps(upstream_payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib_request.urlopen(req, timeout=600) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib_error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "ignore")
+            raise ModelGatewayAPIError(
+                provider="openai",
+                status_code=exc.code,
+                message=detail or "OpenAI Codex upstream request failed",
+            ) from exc
+        except urllib_error.URLError as exc:
+            raise ModelGatewayAPIError(
+                provider="openai",
+                status_code=502,
+                message=f"OpenAI Codex upstream request failed: {exc.reason}",
+            ) from exc
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ModelGatewayAPIError(
+                provider="openai",
+                status_code=502,
+                message="OpenAI Codex upstream returned invalid JSON",
+            ) from exc
+
+    def _stream_openai_codex_response(
+        self,
+        *,
+        ai_model: AIModel,
+        payload: Dict[str, Any],
+        started_at: float,
+        budget_result: Optional[BudgetCheckResult],
+    ) -> Iterator[str]:
+        requested_model = (
+            payload.get("model")
+            or resolve_ai_model_runtime(ai_model).model_gateway_model_alias
+        )
+
+        def event_stream() -> Iterator[str]:
+            response_dict = self._create_openai_codex_response(ai_model, payload)
+            response_payload = self._build_responses_api_payload(
+                ai_model=ai_model,
+                requested_model=requested_model,
+                response_dict=response_dict,
+            )
+            response_id = response_payload["id"]
+            created_at = response_payload["created_at"]
+            output_items = response_payload["output"]
+            assistant_text = response_payload["output_text"]
+            text_item = next(
+                (
+                    item
+                    for item in output_items
+                    if item.get("type") == "message" and item.get("role") == "assistant"
+                ),
+                None,
+            )
+            text_output_index = output_items.index(text_item) if text_item else None
+            try:
+                yield self._sse_event(
+                    {
+                        "type": "response.created",
+                        "response": {
+                            "id": response_id,
+                            "object": "response",
+                            "created_at": created_at,
+                            "model": requested_model,
+                            "status": "in_progress",
+                        },
+                    }
+                )
+                for index, item in enumerate(output_items):
+                    yield self._sse_event(
+                        {
+                            "type": "response.output_item.added",
+                            "response_id": response_id,
+                            "output_index": index,
+                            "item": item,
+                        }
+                    )
+                if text_item and text_output_index is not None:
+                    item_id = text_item.get("id", f"msg_{response_id}")
+                    yield self._sse_event(
+                        {
+                            "type": "response.content_part.added",
+                            "item_id": item_id,
+                            "output_index": text_output_index,
+                            "content_index": 0,
+                            "part": {"type": "output_text", "text": ""},
+                        }
+                    )
+                    if assistant_text:
+                        yield self._sse_event(
+                            {
+                                "type": "response.output_text.delta",
+                                "item_id": item_id,
+                                "output_index": text_output_index,
+                                "content_index": 0,
+                                "delta": assistant_text,
+                            }
+                        )
+                    yield self._sse_event(
+                        {
+                            "type": "response.output_text.done",
+                            "item_id": item_id,
+                            "output_index": text_output_index,
+                            "content_index": 0,
+                            "text": assistant_text,
+                        }
+                    )
+                    yield self._sse_event(
+                        {
+                            "type": "response.content_part.done",
+                            "item_id": item_id,
+                            "output_index": text_output_index,
+                            "content_index": 0,
+                            "part": {"type": "output_text", "text": assistant_text},
+                        }
+                    )
+                for index, item in enumerate(output_items):
+                    yield self._sse_event(
+                        {
+                            "type": "response.output_item.done",
+                            "output_index": index,
+                            "item": item,
+                        }
+                    )
+                yield self._sse_event(
+                    {
+                        "type": "response.completed",
+                        "response": response_payload,
+                    }
+                )
+                self._record_gateway_request(
+                    endpoint="/openai/v1/responses",
+                    method="POST",
+                    status_code=200,
+                    duration=time.perf_counter() - started_at,
+                    ai_model=ai_model,
+                    requested_model=payload.get("model"),
+                    response_payload=response_payload,
+                    upstream_response=response_dict,
+                    endpoint_kind="responses_stream",
+                    budget_result=budget_result,
+                    request_payload=payload,
+                )
+                yield "data: [DONE]\n\n"
+            except Exception as exc:
+                self._record_gateway_request(
+                    endpoint="/openai/v1/responses",
+                    method="POST",
+                    status_code=502,
+                    duration=time.perf_counter() - started_at,
+                    ai_model=ai_model,
+                    requested_model=payload.get("model"),
+                    response_payload=None,
+                    upstream_response=None,
+                    endpoint_kind="responses_stream",
+                    budget_result=budget_result,
+                    error_detail=str(exc),
+                    request_payload=payload,
+                )
+                raise
+
+        return event_stream()
+
+    def _build_responses_api_payload(
+        self,
+        *,
+        ai_model: AIModel,
+        requested_model: str,
+        response_dict: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        output_items = self._build_response_output_items(response_dict)
+        assistant_text = self._response_output_text(output_items)
+        if not assistant_text:
+            assistant_text = str(response_dict.get("output_text") or "").strip()
+        if not assistant_text:
+            assistant_text = self._extract_assistant_text(response_dict)
+        usage = self._normalize_usage(
+            response_dict.get("usage"),
+            prompt_key="prompt_tokens",
+            completion_key="completion_tokens",
+            output_names=("completion_tokens", "output_tokens"),
+        )
+        return {
+            "id": response_dict.get("id", f"resp_{int(time.time())}"),
+            "object": "response",
+            "created_at": response_dict.get(
+                "created_at", response_dict.get("created", int(time.time()))
+            ),
+            "model": requested_model
+            or resolve_ai_model_runtime(ai_model).model_gateway_model_alias,
+            "status": "completed",
+            "output": output_items,
+            "output_text": assistant_text,
+            "usage": {
+                "input_tokens": usage["prompt_tokens"],
+                "output_tokens": usage["completion_tokens"],
+                "total_tokens": usage["total_tokens"],
+            },
+        }
+
     def _build_completion_kwargs(
         self,
         ai_model: AIModel,
@@ -1425,7 +1762,10 @@ class OpenAIGatewayService:
         if ai_model.api_endpoint:
             kwargs["api_base"] = ai_model.api_endpoint
         if payload.get("tools") is not None:
-            kwargs["tools"] = self._normalize_openai_tools(payload["tools"])
+            if provider == "anthropic":
+                kwargs["tools"] = self._normalize_anthropic_tools(payload["tools"])
+            else:
+                kwargs["tools"] = self._normalize_openai_tools(payload["tools"])
         if payload.get("tool_choice") is not None:
             kwargs["tool_choice"] = self._normalize_openai_tool_choice(
                 payload["tool_choice"]
@@ -1437,9 +1777,12 @@ class OpenAIGatewayService:
             ("temperature", "temperature"),
             ("max_tokens", "max_tokens"),
             ("max_completion_tokens", "max_tokens"),
+            ("top_p", "top_p"),
         ):
             if payload.get(source_key) is not None and target_key not in kwargs:
                 kwargs[target_key] = payload[source_key]
+        if payload.get("stop") is not None:
+            kwargs["stop"] = payload["stop"]
 
         return kwargs
 
@@ -1912,6 +2255,37 @@ class OpenAIGatewayService:
         return normalized_tools
 
     @staticmethod
+    def _normalize_anthropic_tools(tools: Any) -> Any:
+        """Normalize Anthropic tool declarations to chat-completions format."""
+        if not isinstance(tools, list):
+            return tools
+        normalized_tools = []
+        for tool in tools:
+            if not isinstance(tool, dict):
+                normalized_tools.append(tool)
+                continue
+            if tool.get("type") == "function" and isinstance(
+                tool.get("function"), dict
+            ):
+                normalized_tools.append(tool)
+                continue
+            function_name = tool.get("name")
+            if not function_name:
+                normalized_tools.append(tool)
+                continue
+            normalized_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": function_name,
+                        "description": tool.get("description"),
+                        "parameters": tool.get("input_schema") or {"type": "object"},
+                    },
+                }
+            )
+        return normalized_tools
+
+    @staticmethod
     def _normalize_custom_tool_payload(
         custom_payload: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -2225,6 +2599,12 @@ class OpenAIGatewayService:
         self, ai_model: AIModel, payload: Dict[str, Any]
     ) -> Optional[BudgetCheckResult]:
         """Check configured gateway budgets before the upstream call."""
+        # Execute plugin budget enforcement (HTTP 403 on limit exceeded)
+        if hasattr(self.budget_enforcer, "enforce_or_raise"):
+            self.budget_enforcer.enforce_or_raise(
+                self.db, self.auth_context, ai_model, payload
+            )
+
         return ModelGatewayBudgetService(self.db, self.auth_context).preflight_check(
             ai_model, payload
         )

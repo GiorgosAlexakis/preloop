@@ -81,6 +81,27 @@ class AIModel(Base):
         )
 
     @property
+    def credential_type(self) -> Optional[str]:
+        """Return the logical credential type configured for the model."""
+        if self.credentials_secret:
+            secret_kind = (self.credentials_secret.secret_kind or "").strip().lower()
+            secret_meta = (
+                self.credentials_secret.meta_data
+                if isinstance(self.credentials_secret.meta_data, dict)
+                else {}
+            )
+            if secret_kind == "ai_model_credentials":
+                credential_type = secret_meta.get("credential_type")
+                if isinstance(credential_type, str) and credential_type.strip():
+                    return credential_type.strip()
+            return "api_key"
+        if self.api_key:
+            return "api_key"
+        if self.uses_ambient_credentials:
+            return "ambient_provider"
+        return None
+
+    @property
     def credentials_backend_type(self) -> Optional[str]:
         """Return the backend type for the configured credentials."""
         if self.credentials_secret:

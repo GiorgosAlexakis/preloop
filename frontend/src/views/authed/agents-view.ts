@@ -52,6 +52,8 @@ export class AgentsView extends LitElement {
       lastActivityAt: string | null;
       lastMessagePreview?: string;
       lastMessageSource?: string;
+      currentBubble?: { text: string; source: string; timestamp: number };
+      messageQueue?: { text: string; source: string; timestamp: number }[];
     }
   > = {};
 
@@ -119,7 +121,6 @@ export class AgentsView extends LitElement {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
         gap: var(--sl-spacing-large);
-        padding: 0 24px 24px 24px;
       }
       .agent-card::part(base) {
         height: 100%;
@@ -261,6 +262,12 @@ export class AgentsView extends LitElement {
       }
 
       /* Canvas specific styles */
+      .page-canvas-wrapper .content-bounds {
+        width: 100%;
+        max-width: 80rem;
+        margin: 0 auto;
+        padding: 1rem 2rem 0 2rem;
+      }
       .page-canvas-wrapper {
         display: flex;
         flex-direction: column;
@@ -275,7 +282,6 @@ export class AgentsView extends LitElement {
         position: relative;
         overflow: hidden;
         background-color: transparent;
-        border-top: 1px solid var(--sl-color-neutral-200);
         border-radius: var(--sl-border-radius-medium);
       }
       .canvas-viewport {
@@ -339,7 +345,8 @@ export class AgentsView extends LitElement {
         }
       }
       .gateway-label {
-        margin-top: 12px;
+        position: absolute;
+        top: calc(100% + 12px);
         background-color: var(
           --sl-panel-background-color,
           var(--sl-color-neutral-0)
@@ -351,6 +358,7 @@ export class AgentsView extends LitElement {
         box-shadow: var(--sl-shadow-medium);
         border: 1px solid var(--sl-color-neutral-200);
         letter-spacing: 1px;
+        width: max-content;
       }
       .agent-node {
         position: absolute;
@@ -439,6 +447,19 @@ export class AgentsView extends LitElement {
     this.connectRealtime();
   }
 
+  updated(changedProperties: Map<string, unknown>) {
+    super.updated?.(changedProperties);
+    if (changedProperties.has('currentView')) {
+      this.dispatchEvent(
+        new CustomEvent('request-full-bleed', {
+          detail: this.currentView === 'canvas',
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+  }
+
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.unsubscribeRealtime?.();
@@ -446,6 +467,16 @@ export class AgentsView extends LitElement {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+  }
+
+  onBeforeLeave() {
+    this.dispatchEvent(
+      new CustomEvent('request-full-bleed', {
+        detail: false,
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private connectRealtime(): void {
@@ -483,7 +514,32 @@ export class AgentsView extends LitElement {
       status: this.status as 'all' | 'active' | 'ended',
       limit: 50,
     };
-    if (this.searchQuery.trim()) params.query = this.searchQuery.trim();
+
+    let queryPart = this.searchQuery.trim();
+    if (queryPart) {
+      const tags: Record<string, string> = {};
+      let ownerUsername: string | undefined;
+
+      const tagRegex = /tags?:([\w-]+(?:=[\w-]+)?)/g;
+      const ownerRegex = /owner:([\w.-]+)/g;
+
+      let match;
+      while ((match = tagRegex.exec(queryPart)) !== null) {
+        const parts = match[1].split('=');
+        tags[parts[0]] = parts[1] || 'true';
+      }
+      queryPart = queryPart.replace(tagRegex, '').trim();
+
+      while ((match = ownerRegex.exec(queryPart)) !== null) {
+        ownerUsername = match[1];
+      }
+      queryPart = queryPart.replace(ownerRegex, '').trim();
+
+      if (queryPart) params.query = queryPart;
+      if (Object.keys(tags).length > 0) params.tags = JSON.stringify(tags);
+      if (ownerUsername) params.ownerUsername = ownerUsername;
+    }
+
     if (this.sessionSourceType !== 'all')
       params.sessionSourceType = this.sessionSourceType;
 
@@ -513,10 +569,14 @@ export class AgentsView extends LitElement {
         alertEl.toast();
       }
 
+      const shouldForceReset =
+        this.previousAgentCount !== -1 &&
+        agentsData.items.length !== this.previousAgentCount;
+
       this.agents = agentsData;
       this.previousAgentCount = agentsData.items.length;
       this.gatewaySummary = gatewayData;
-      this.initializeNodePositions();
+      this.initializeNodePositions(shouldForceReset);
     } catch (error) {
       console.error('Failed to load managed agents or gateway summary:', error);
       this.error =
@@ -528,42 +588,140 @@ export class AgentsView extends LitElement {
     }
   }
 
-  private initializeNodePositions() {
+  private initializeNodePositions(forceReset = false) {
     if (!this.agents) return;
     const items = this.agents.items;
     let didChange = false;
-    const newPositions = { ...this.nodePositions };
+    let newPositions = forceReset ? {} : { ...this.nodePositions };
 
-    const directions = [
-      { x: -1, y: -1 }, // Top Left
-      { x: 1, y: -1 }, // Top Right
-      { x: -1, y: 1 }, // Bottom Left
-      { x: 1, y: 1 }, // Bottom Right
-    ];
+    const unpositionedAgents = items.filter((a) => !newPositions[a.id]);
 
-    items.forEach((agent, index) => {
-      if (!newPositions[agent.id]) {
-        didChange = true;
-        const layer = Math.floor(index / 4);
-        const posPos = index % 4;
-        const dir = directions[posPos];
+    // If nothing to position and not forcing reset, do nothing
+    if (!forceReset && unpositionedAgents.length === 0) {
+      return;
+    }
 
-        // base distance 350, increase by 200 per layer
-        const distance = 350 + layer * 200;
+    didChange = true;
+    const isFirstTime = Object.keys(newPositions).length === 0;
+
+    if ((forceReset || isFirstTime) && items.length > 3) {
+      // Polygon layout around the center (0,0)
+      newPositions = {};
+
+      const viewport = this.shadowRoot?.querySelector('.canvas-viewport');
+      const bounds = viewport
+        ? viewport.getBoundingClientRect()
+        : { width: window.innerWidth, height: window.innerHeight };
+
+      // Calculate a radius that pushes items to the edges of the screen comfortably
+      const maxRadiusX = Math.max(100, bounds.width / 2 - 200);
+      const maxRadiusY = Math.max(100, bounds.height / 2 - 160);
+      const adaptiveRadius = Math.min(maxRadiusX, maxRadiusY);
+
+      const radius = Math.max(adaptiveRadius, items.length * 60);
+      const angleStep = (2 * Math.PI) / items.length;
+
+      items.forEach((agent, i) => {
+        // Start from top (-90 degrees) and distribute evenly
+        const angle = -Math.PI / 2 + i * angleStep;
         newPositions[agent.id] = {
-          x: dir.x * distance,
-          y: dir.y * distance,
+          x: Math.round(Math.cos(angle) * radius),
+          y: Math.round(Math.sin(angle) * radius),
         };
-      }
-    });
+      });
+    } else {
+      // Legacy corner/layer-based layout for <= 3 agents,
+      // or for appending a new agent without resetting existing layout
+      const directions = [
+        { x: -1, y: -1 }, // Top Left
+        { x: 1, y: -1 }, // Top Right
+        { x: -1, y: 1 }, // Bottom Left
+        { x: 1, y: 1 }, // Bottom Right
+      ];
+
+      // Build a set of taken coordinate strings to avoid exact overlaps
+      const takenCoords = new Set(
+        Object.values(newPositions).map((p) => `${p.x},${p.y}`)
+      );
+
+      let nextSlotIndex = 0;
+      items.forEach((agent) => {
+        if (!newPositions[agent.id]) {
+          let found = false;
+          while (!found) {
+            const layer = Math.floor(nextSlotIndex / 4);
+            const posPos = nextSlotIndex % 4;
+            const dir = directions[posPos];
+
+            // base distance 250, increase by 200 per layer
+            const distance = 250 + layer * 200;
+            const x = dir.x * distance;
+            const y = dir.y * distance;
+            const coord = `${x},${y}`;
+
+            if (!takenCoords.has(coord)) {
+              newPositions[agent.id] = { x, y };
+              takenCoords.add(coord);
+              found = true;
+            }
+            nextSlotIndex++;
+          }
+        }
+      });
+    }
 
     if (didChange) {
-      this.nodePositions = newPositions;
       localStorage.setItem(
         'preloop.agents.canvas_positions',
         JSON.stringify(newPositions)
       );
+      this.animateNodePositions(newPositions);
     }
+  }
+
+  private animatePositionFrameId: number | null = null;
+
+  private animateNodePositions(
+    targetPositions: Record<string, { x: number; y: number }>
+  ) {
+    if (this.animatePositionFrameId) {
+      cancelAnimationFrame(this.animatePositionFrameId);
+    }
+
+    const startPositions = { ...this.nodePositions };
+    const startTime = performance.now();
+    const duration = 600;
+
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const animate = (time: number) => {
+      const elapsed = time - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = easeOutCubic(progress);
+
+      const currentPositions: Record<string, { x: number; y: number }> = {};
+      let allDone = progress >= 1;
+
+      for (const id in targetPositions) {
+        const start = startPositions[id] || { x: 0, y: 0 };
+        const target = targetPositions[id];
+        currentPositions[id] = {
+          x: start.x + (target.x - start.x) * ease,
+          y: start.y + (target.y - start.y) * ease,
+        };
+      }
+
+      this.nodePositions = currentPositions;
+
+      if (!allDone) {
+        this.animatePositionFrameId = requestAnimationFrame(animate);
+      } else {
+        this.animatePositionFrameId = null;
+        this.nodePositions = targetPositions; // ensure exact final values
+      }
+    };
+
+    this.animatePositionFrameId = requestAnimationFrame(animate);
   }
 
   private handleSearchInput(event: Event): void {
@@ -596,6 +754,10 @@ export class AgentsView extends LitElement {
         return 'Codex';
       case 'openclaw':
         return 'OpenClaw';
+      case 'gemini_cli':
+        return 'Gemini CLI';
+      case 'opencode':
+        return 'OpenCode';
       case 'desktop_agent':
         return 'Desktop Agent';
       case 'custom':
@@ -643,9 +805,30 @@ export class AgentsView extends LitElement {
 
   private getOnboardingLabel(agent: ManagedAgentSummary): string {
     if (agent.onboarding_state === 'fully_onboarded') return 'Fully onboarded';
-    if (agent.onboarding_state === 'mcp_proxy_only') return 'Proxy only';
+    if (agent.onboarding_state === 'mcp_proxy_only') return 'MCP only';
     if (agent.onboarding_state === 'gateway_only') return 'Gateway only';
     return 'Incomplete';
+  }
+
+  private getOnboardingDescription(agent: ManagedAgentSummary): string {
+    if (agent.onboarding_state === 'fully_onboarded') {
+      return 'Tool calls and model traffic both flow through Preloop.';
+    }
+    if (agent.onboarding_state === 'mcp_proxy_only') {
+      return 'Tool calls flow through Preloop, but model traffic is still direct.';
+    }
+    if (agent.onboarding_state === 'gateway_only') {
+      return 'Model traffic flows through Preloop, but MCP tool traffic is still direct.';
+    }
+    return 'This agent is not fully managed by Preloop yet.';
+  }
+
+  private isMcpConfigured(agent: ManagedAgentSummary): boolean {
+    return !!agent.mcp_proxy_configured;
+  }
+
+  private isModelConfigured(agent: ManagedAgentSummary): boolean {
+    return !!agent.model_gateway_configured;
   }
 
   private getLiveValidationVariant(agent: ManagedAgentSummary): string {
@@ -662,22 +845,119 @@ export class AgentsView extends LitElement {
     return 'Live check pending';
   }
 
+  private extractPreviewFromRequest(
+    request: any
+  ): { text: string; source: string } | null {
+    let text = '';
+
+    const messages = request.messages;
+    if (Array.isArray(messages) && messages.length > 0) {
+      const lastMsg: any = messages[messages.length - 1];
+      if (lastMsg.content) {
+        text =
+          typeof lastMsg.content === 'string'
+            ? lastMsg.content
+            : JSON.stringify(lastMsg.content);
+      }
+    } else if (request.prompt) {
+      text =
+        typeof request.prompt === 'string'
+          ? request.prompt
+          : JSON.stringify(request.prompt);
+    }
+
+    if (text) {
+      return { text: text.substring(0, 300), source: 'Agent' };
+    }
+    return null;
+  }
+
+  private enqueueBubble(agentId: string, text: string, source: string) {
+    if (!text || !text.trim()) return;
+
+    const state = this.liveActivity[agentId] || {
+      modelCalls: 0,
+      toolCalls: 0,
+      lastActivityAt: null,
+    };
+
+    const isVisible =
+      state.currentBubble && Date.now() - state.currentBubble.timestamp < 6000;
+    const isDuplicate =
+      (isVisible && state.currentBubble?.text === text) ||
+      state.messageQueue?.some((b: any) => b.text === text);
+    if (isDuplicate) return;
+
+    const bubble = { text, source, timestamp: Date.now() };
+
+    const nextState = {
+      ...state,
+      messageQueue: [...(state.messageQueue || []), bubble],
+    };
+    this.liveActivity = { ...this.liveActivity, [agentId]: nextState };
+
+    this.processBubbleQueue(agentId);
+  }
+
+  private processBubbleQueue(agentId: string) {
+    const state = this.liveActivity[agentId];
+    if (!state) return;
+
+    if (
+      state.currentBubble &&
+      Date.now() - state.currentBubble.timestamp < 2400
+    ) {
+      return;
+    }
+
+    const queue = state.messageQueue || [];
+    if (queue.length > 0) {
+      const nextBubble = { ...queue[0], timestamp: Date.now() };
+      const nextState = {
+        ...state,
+        currentBubble: nextBubble,
+        messageQueue: queue.slice(1),
+      };
+      this.liveActivity = { ...this.liveActivity, [agentId]: nextState };
+
+      setTimeout(() => this.processBubbleQueue(agentId), 2500);
+      setTimeout(() => this.requestUpdate(), 6000);
+    }
+  }
+
   private handleGatewayActivity(message: any): void {
+    console.debug('Gateway Activity received:', message);
     const payload = message?.payload ?? {};
     const agentId = payload.managed_agent_id;
     if (!agentId || !this.agents) return;
     const type = message?.type;
 
-    let preview = undefined;
-    let source = undefined;
-    if (
+    let preview: { text: string; source: string } | undefined = undefined;
+
+    if (type === 'model_gateway_request_started' && payload.request) {
+      preview = this.extractPreviewFromRequest(payload.request) || undefined;
+    } else if (
       type === 'model_gateway_call' &&
       payload.conversation_preview?.messages?.length > 0
     ) {
       const messages = payload.conversation_preview.messages;
       const last = messages[messages.length - 1];
-      preview = last.text;
-      source = last.source === 'request' ? 'Agent' : 'AI Model';
+      preview = {
+        text: last.text,
+        source: last.source === 'request' ? 'Agent' : 'AI Model',
+      };
+    } else if (type === 'mcp_call') {
+      const toolName = payload.tool_name || 'Tool';
+      const serverName = payload.server_name ? payload.server_name + '/' : '';
+      const status = payload.status === 'failed' ? 'Failed: ' : 'Running: ';
+      preview = {
+        text: `${status}${serverName}${toolName}`,
+        source: 'Tool',
+      };
+    }
+
+    if (preview) {
+      this.enqueueBubble(agentId, preview.text, preview.source);
     }
 
     const previous = this.liveActivity[agentId] ?? {
@@ -685,7 +965,12 @@ export class AgentsView extends LitElement {
       toolCalls: 0,
       lastActivityAt: null,
     };
+
+    // Note: enqueueBubble may have just updated `this.liveActivity[agentId]`. We must re-read it.
+    const current = this.liveActivity[agentId] ?? previous;
+
     const next = {
+      ...current,
       modelCalls: previous.modelCalls + (type === 'model_gateway_call' ? 1 : 0),
       toolCalls: previous.toolCalls + (type === 'mcp_call' ? 1 : 0),
       lastActivityAt:
@@ -693,9 +978,10 @@ export class AgentsView extends LitElement {
         payload.last_activity_at ??
         previous.lastActivityAt ??
         new Date().toISOString(),
-      lastMessagePreview: preview ?? previous.lastMessagePreview,
-      lastMessageSource: source ?? previous.lastMessageSource,
+      lastMessagePreview: preview?.text ?? previous.lastMessagePreview,
+      lastMessageSource: preview?.source ?? previous.lastMessageSource,
     };
+
     this.liveActivity = { ...this.liveActivity, [agentId]: next };
     this.agents = {
       ...this.agents,
@@ -848,17 +1134,67 @@ export class AgentsView extends LitElement {
   }
 
   private resetView() {
-    this.scale = 1;
+    if (!this.agents || this.agents.items.length === 0) {
+      this.scale = 1;
+      this.translateX = window.innerWidth / 2;
+      this.translateY = window.innerHeight / 2;
+      return;
+    }
+
+    // Force recalculation of node positions based on the algorithm
+    this.initializeNodePositions(true);
+
     const bounds = this.shadowRoot
       ?.querySelector('.canvas-viewport')
       ?.getBoundingClientRect();
-    if (bounds) {
-      this.translateX = bounds.width / 2;
-      this.translateY = bounds.height / 2;
-    } else {
+
+    if (!bounds || bounds.width === 0) {
+      this.scale = 1;
       this.translateX = window.innerWidth / 2;
       this.translateY = window.innerHeight / 2;
+      return;
     }
+
+    // Find bounding box of all nodes
+    let minX = 0,
+      maxX = 0,
+      minY = 0,
+      maxY = 0;
+    this.agents.items.forEach((agent) => {
+      const pos = this.nodePositions[agent.id];
+      if (pos) {
+        minX = Math.min(minX, pos.x);
+        maxX = Math.max(maxX, pos.x);
+        minY = Math.min(minY, pos.y);
+        maxY = Math.max(maxY, pos.y);
+      }
+    });
+
+    // Add padding for node dimensions (width ~250px, height ~150px) and visual padding
+    minX -= 180;
+    maxX += 180;
+    minY -= 150;
+    maxY += 150;
+
+    const contentWidth = maxX - minX;
+    const contentHeight = maxY - minY;
+
+    // Determine scale to fit
+    const scaleX = bounds.width / contentWidth;
+    const scaleY = bounds.height / contentHeight;
+    let targetScale = Math.min(scaleX, scaleY, 1); // Cap maximum zoom at 1x
+
+    // Ensure minimum reasonable zoom
+    targetScale = Math.max(targetScale, 0.2);
+
+    this.scale = targetScale;
+
+    // Center the bounding box in the viewport
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+
+    this.translateX = bounds.width / 2 - contentCenterX * targetScale;
+    this.translateY = bounds.height / 2 - contentCenterY * targetScale;
   }
 
   firstUpdated() {
@@ -976,6 +1312,50 @@ export class AgentsView extends LitElement {
                 ? html`<sl-badge variant="primary">Live ${liveTotal}</sl-badge>`
                 : null}
             </div>
+          </div>
+
+          ${agent.owner_username
+            ? html`
+                <div
+                  style="font-size: 0.85rem; color: var(--sl-color-neutral-700); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"
+                >
+                  <sl-icon
+                    name="person-circle"
+                    style="color: var(--sl-color-primary-500);"
+                  ></sl-icon>
+                  <strong>Owner:</strong> ${agent.owner_username}
+                </div>
+              `
+            : ''}
+          ${agent.tags && Object.keys(agent.tags).length > 0
+            ? html`
+                <div
+                  style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;"
+                >
+                  ${Object.entries(agent.tags).map(
+                    ([k, v]) => html`
+                      <sl-badge
+                        variant="neutral"
+                        pill
+                        style="font-weight: normal; max-width: 100%; overflow: hidden; text-overflow: ellipsis;"
+                      >
+                        <span style="opacity: 0.7">${k}</span>${v &&
+                        v !== 'true'
+                          ? html`<span style="opacity: 0.4; margin: 0 4px;"
+                                >=</span
+                              >${v}`
+                          : ''}
+                      </sl-badge>
+                    `
+                  )}
+                </div>
+              `
+            : ''}
+
+          <div
+            style="font-size: 0.85rem; color: var(--sl-color-neutral-600); margin-bottom: 12px;"
+          >
+            ${this.getOnboardingDescription(agent)}
           </div>
 
           ${liveActivity?.lastMessagePreview
@@ -1099,6 +1479,23 @@ export class AgentsView extends LitElement {
         </div>
 
         <div
+          style="position: absolute; left: 20px; bottom: 20px; z-index: 20; background: color-mix(in srgb, var(--sl-panel-background-color) 92%, transparent); border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); padding: 10px 12px; font-size: 0.8rem; color: var(--sl-color-neutral-700); display: flex; gap: 16px;"
+        >
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span
+              style="display: inline-block; width: 20px; height: 0; border-top: 2px solid var(--sl-color-primary-500);"
+            ></span>
+            <span>Model traffic</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span
+              style="display: inline-block; width: 20px; height: 0; border-top: 2px dashed var(--sl-color-warning-500);"
+            ></span>
+            <span>Tool traffic</span>
+          </div>
+        </div>
+
+        <div
           class="canvas-viewport"
           @wheel=${this.handleWheel}
           @pointerdown=${this.handlePointerDown}
@@ -1116,7 +1513,9 @@ export class AgentsView extends LitElement {
             <div class="gateway-node">
               <div
                 class="gateway-icon ${Object.values(this.liveActivity).some(
-                  (v) => v.modelCalls > 0 || v.toolCalls > 0
+                  (v) =>
+                    v.lastActivityAt &&
+                    Date.now() - new Date(v.lastActivityAt).getTime() < 2000
                 )
                   ? 'pulsing'
                   : ''}"
@@ -1149,30 +1548,80 @@ export class AgentsView extends LitElement {
             </div>
 
             ${this.agents?.items.map((agent: ManagedAgentSummary) => {
-              const pos = this.nodePositions[agent.id] || { x: 0, y: 0 };
+              const pos = this.nodePositions[agent.id] || { x: 250, y: 250 };
               const liveActivity = this.liveActivity[agent.id];
               const liveTotal = liveActivity
                 ? liveActivity.modelCalls + liveActivity.toolCalls
                 : 0;
+              const mcpEnabled = this.isMcpConfigured(agent);
+              const modelEnabled = this.isModelConfigured(agent);
+              const modelActive = !!(
+                liveActivity?.modelCalls &&
+                liveActivity?.lastActivityAt &&
+                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
+                  2000
+              );
+              const toolActive = !!(
+                liveActivity?.toolCalls &&
+                liveActivity?.lastActivityAt &&
+                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
+                  2000
+              );
               const isGlowing =
                 liveTotal > 0 &&
                 liveActivity &&
                 Date.now() -
                   new Date(liveActivity.lastActivityAt || 0).getTime() <
                   2000;
+              const distance = Math.max(
+                Math.sqrt(pos.x * pos.x + pos.y * pos.y),
+                1
+              );
+              const offsetX = (-pos.y / distance) * 8;
+              const offsetY = (pos.x / distance) * 8;
 
               return html`
-                <svg class="connection-line" xmlns="http://www.w3.org/2000/svg">
+                <svg
+                  class="connection-line ${this.draggingNodeId === agent.id
+                    ? 'dragging'
+                    : ''}"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
                   <line
-                    x1="0"
-                    y1="0"
-                    x2="${pos.x}"
-                    y2="${pos.y}"
-                    stroke="${isGlowing
-                      ? 'var(--sl-color-success-500)'
-                      : 'var(--sl-color-neutral-400)'}"
-                    stroke-width="${isGlowing ? '3' : '1.5'}"
-                    stroke-dasharray="${isGlowing ? '0' : '4 4'}"
+                    x1="${offsetX}"
+                    y1="${offsetY}"
+                    x2="${pos.x + offsetX}"
+                    y2="${pos.y + offsetY}"
+                    stroke="${modelEnabled
+                      ? modelActive
+                        ? 'var(--sl-color-success-500)'
+                        : 'var(--sl-color-primary-500)'
+                      : 'var(--sl-color-neutral-300)'}"
+                    stroke-width="${modelActive
+                      ? '3'
+                      : modelEnabled
+                        ? '2'
+                        : '1.25'}"
+                    stroke-dasharray="${modelEnabled ? '0' : '6 6'}"
+                    opacity="${modelEnabled ? '1' : '0.55'}"
+                  />
+                  <line
+                    x1="${-offsetX}"
+                    y1="${-offsetY}"
+                    x2="${pos.x - offsetX}"
+                    y2="${pos.y - offsetY}"
+                    stroke="${mcpEnabled
+                      ? toolActive
+                        ? 'var(--sl-color-success-500)'
+                        : 'var(--sl-color-warning-500)'
+                      : 'var(--sl-color-neutral-300)'}"
+                    stroke-width="${toolActive
+                      ? '3'
+                      : mcpEnabled
+                        ? '2'
+                        : '1.25'}"
+                    stroke-dasharray="${mcpEnabled ? '5 4' : '6 6'}"
+                    opacity="${mcpEnabled ? '1' : '0.55'}"
                   />
                 </svg>
 
@@ -1191,19 +1640,16 @@ export class AgentsView extends LitElement {
                     this.handleNodePointerUp(e, agent.id)}
                 >
                   <div
-                    class="agent-speech-bubble ${liveActivity?.lastMessagePreview &&
-                    liveActivity?.lastActivityAt &&
-                    Date.now() -
-                      new Date(liveActivity.lastActivityAt).getTime() <
-                      6000
+                    class="agent-speech-bubble ${liveActivity?.currentBubble &&
+                    Date.now() - liveActivity.currentBubble.timestamp < 6000
                       ? 'visible'
                       : ''}"
                   >
                     <div class="speech-source">
-                      ${liveActivity?.lastMessageSource || 'Agent'}
+                      ${liveActivity?.currentBubble?.source || 'Agent'}
                     </div>
                     <div class="speech-text">
-                      ${liveActivity?.lastMessagePreview}
+                      ${liveActivity?.currentBubble?.text || ''}
                     </div>
                   </div>
                   <sl-card>
@@ -1235,6 +1681,52 @@ export class AgentsView extends LitElement {
                       style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; word-break: break-all;"
                     >
                       ${agent.session_source_id}
+                    </div>
+                    ${agent.owner_username
+                      ? html` <div
+                          style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                        >
+                          <sl-icon
+                            name="person-circle"
+                            style="color: var(--sl-color-primary-500);"
+                          ></sl-icon>
+                          ${agent.owner_username}
+                        </div>`
+                      : ''}
+                    ${agent.tags && Object.keys(agent.tags).length > 0
+                      ? html` <div
+                          style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"
+                        >
+                          ${Object.entries(agent.tags)
+                            .slice(0, 3)
+                            .map(
+                              ([k, v]) => html`
+                                <div
+                                  style="font-size: 0.65rem; background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 10px; color: var(--sl-color-neutral-700); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                                >
+                                  <span style="opacity: 0.7">${k}</span>${v &&
+                                  v !== 'true'
+                                    ? html`<span
+                                          style="opacity: 0.4; margin: 0 2px;"
+                                          >=</span
+                                        >${v}`
+                                    : ''}
+                                </div>
+                              `
+                            )}
+                          ${Object.keys(agent.tags).length > 3
+                            ? html`<div
+                                style="font-size: 0.65rem; padding: 2px;"
+                              >
+                                +${Object.keys(agent.tags).length - 3}
+                              </div>`
+                            : ''}
+                        </div>`
+                      : ''}
+                    <div
+                      style="font-size: 0.78rem; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
+                    >
+                      ${this.getOnboardingDescription(agent)}
                     </div>
                     <div
                       style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; border-top: 1px solid var(--sl-color-neutral-200); padding-top: 8px;"
@@ -1396,93 +1888,95 @@ export class AgentsView extends LitElement {
           : ''}"
       >
         ${this.renderOnboardingDialog()}
-        <div
-          class="header"
-          style="align-items: flex-start; justify-content: space-between;"
-        >
-          <div>
-            <h1>Agents</h1>
-            <div
-              style="color: var(--sl-color-neutral-500); font-size: 0.9rem; margin-top: 4px;"
-            >
-              Connections, telemetry, and live sessions managed by the Preloop
-              gateway.
+        <div class="content-bounds">
+          <div
+            class="header"
+            style="align-items: flex-start; justify-content: space-between;"
+          >
+            <div>
+              <h1>Agents</h1>
+              <div
+                style="color: var(--sl-color-neutral-500); font-size: 0.9rem; margin-top: 4px;"
+              >
+                Connections, telemetry, and live sessions managed by the Preloop
+                gateway.
+              </div>
             </div>
-          </div>
-          <sl-button
-            variant="primary"
-            @click=${() => (this.showOnboardingDialog = true)}
-          >
-            <sl-icon slot="prefix" name="plus"></sl-icon>
-            Onboard agents
-          </sl-button>
-        </div>
-
-        <div
-          class="px-6 mb-4 flex-none"
-          style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
-        >
-          <div style="display: flex; justify-content: flex-end; width: 100%;">
-            <!-- View Switcher -->
-            <sl-radio-group
-              value=${this.currentView}
-              @sl-change=${(e: any) => this.setCurrentView(e.target.value)}
-              size="medium"
+            <sl-button
+              variant="primary"
+              @click=${() => (this.showOnboardingDialog = true)}
             >
-              <sl-radio-button value="cards" title="Cards View">
-                <sl-icon name="grid"></sl-icon>
-              </sl-radio-button>
-              <sl-radio-button value="canvas" title="Canvas View">
-                <sl-icon name="share"></sl-icon>
-              </sl-radio-button>
-            </sl-radio-group>
+              <sl-icon slot="prefix" name="plus"></sl-icon>
+              Onboard agents
+            </sl-button>
           </div>
 
-          <form
-            class="filters"
-            style="display: flex; gap: var(--sl-spacing-medium); flex-wrap: wrap; align-items: end; width: 100%;"
-            @submit=${this.handleSearchSubmit}
+          <div
+            class="px-6 mb-4 flex-none"
+            style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
           >
-            <sl-input
-              label="Search"
-              placeholder="Search agent name or source id"
-              clearable
-              .value=${this.searchQuery}
-              @sl-input=${this.handleSearchInput}
-            >
-              <sl-icon name="search" slot="prefix"></sl-icon>
-            </sl-input>
+            <div style="display: flex; justify-content: flex-end; width: 100%;">
+              <!-- View Switcher -->
+              <sl-radio-group
+                value=${this.currentView}
+                @sl-change=${(e: any) => this.setCurrentView(e.target.value)}
+                size="small"
+              >
+                <sl-radio-button value="cards" title="Cards View">
+                  <sl-icon name="grid"></sl-icon>
+                </sl-radio-button>
+                <sl-radio-button value="canvas" title="Canvas View">
+                  <sl-icon name="share"></sl-icon>
+                </sl-radio-button>
+              </sl-radio-group>
+            </div>
 
-            <sl-select
-              label="Source"
-              value=${this.sessionSourceType}
-              @sl-change=${this.handleSourceTypeChange}
+            <form
+              class="filters"
+              style="display: flex; gap: var(--sl-spacing-medium); flex-wrap: wrap; align-items: end; width: 100%;"
+              @submit=${this.handleSearchSubmit}
             >
-              <sl-option value="all">All sources</sl-option>
-              <sl-option value="apikey">API Key</sl-option>
-              <sl-option value="oauth">OAuth</sl-option>
-            </sl-select>
+              <sl-input
+                placeholder="Search name, tags:env=prod, owner:dimo"
+                clearable
+                .value=${this.searchQuery}
+                @sl-input=${this.handleSearchInput}
+              >
+                <sl-icon name="search" slot="prefix"></sl-icon>
+              </sl-input>
 
-            <sl-select
-              label="Status"
-              value=${this.status}
-              @sl-change=${this.handleStatusChange}
-            >
-              <sl-option value="all">All</sl-option>
-              <sl-option value="active">Active</sl-option>
-              <sl-option value="ended">Ended</sl-option>
-            </sl-select>
-            <sl-button type="submit" variant="default" style="margin-top: auto;"
-              >Filter</sl-button
-            >
-          </form>
+              <sl-select
+                value=${this.sessionSourceType}
+                @sl-change=${this.handleSourceTypeChange}
+              >
+                <sl-option value="all">All Types</sl-option>
+                <sl-option value="openclaw">OpenClaw</sl-option>
+                <sl-option value="cli">CLI</sl-option>
+              </sl-select>
+
+              <sl-select
+                value=${this.status}
+                @sl-change=${this.handleStatusChange}
+              >
+                <sl-option value="all">All</sl-option>
+                <sl-option value="active">Active</sl-option>
+                <sl-option value="ended">Ended</sl-option>
+              </sl-select>
+              <sl-button
+                type="submit"
+                variant="default"
+                style="margin-top: auto;"
+                >Filter</sl-button
+              >
+            </form>
+          </div>
+
+          ${this.error
+            ? html`<sl-alert open variant="danger" class="mx-6 mb-4"
+                >${this.error}</sl-alert
+              >`
+            : null}
         </div>
-
-        ${this.error
-          ? html`<sl-alert open variant="danger" class="mx-6"
-              >${this.error}</sl-alert
-            >`
-          : null}
         ${this.currentView === 'canvas'
           ? this.renderCanvas()
           : html`

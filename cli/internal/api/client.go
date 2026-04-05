@@ -116,6 +116,11 @@ func (c *Client) PostMultipart(path string, fields map[string]string, fileFieldN
 	)
 }
 
+// Patch performs a PATCH request to the specified path with the given body.
+func (c *Client) Patch(path string, body, result interface{}) error {
+	return c.do(http.MethodPatch, path, body, result)
+}
+
 // Put performs a PUT request to the specified path with the given body.
 func (c *Client) Put(path string, body, result interface{}) error {
 	return c.do(http.MethodPut, path, body, result)

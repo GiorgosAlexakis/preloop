@@ -107,6 +107,8 @@ RUNTIME_SESSION_SOURCE_TYPES = {
     "claude_desktop",
     "openclaw",
     "codex",
+    "gemini_cli",
+    "opencode",
     "desktop_agent",
     "custom",
 }

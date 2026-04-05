@@ -23,12 +23,13 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import type { SlMenuItem } from '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import type SlMenuItem from '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
 import '../../../components/governance-rule-set-editor.ts';
+import '../../../components/budget-policy-editor.ts';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 import { parseUTCDate } from '../../../utils/date';
 import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
@@ -759,17 +760,12 @@ export class ApiKeysView extends LitElement {
           }}
           style="margin-bottom: 1rem;"
         ></sl-input>
-        <sl-textarea
-          label="Per-model budgets (JSON)"
-          rows="8"
-          .value=${this.governanceModelBudgets}
-          @sl-input=${(event: Event) => {
-            this.governanceModelBudgets = (
-              event.target as HTMLTextAreaElement
-            ).value;
-          }}
-          style="margin-bottom: 1rem;"
-        ></sl-textarea>
+        <div style="margin-bottom: 1rem;">
+          <budget-policy-editor
+            subjectType="api_key"
+            .subjectId=${this.governanceKeyId}
+          ></budget-policy-editor>
+        </div>
         <div style="margin-bottom: 1rem;">
           <div
             style="font-size: var(--sl-input-label-font-size-medium); font-weight: var(--sl-input-label-font-weight); margin-bottom: 0.5rem;"

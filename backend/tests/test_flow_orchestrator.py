@@ -1272,13 +1272,13 @@ class TestFlowExecutionOrchestrator:
             assert orchestrator.execution_log.status == "SUCCEEDED"
 
     @pytest.mark.asyncio
-    async def test_gemini_flow_downgrades_gateway_enabled_model_to_mcp_only(
+    async def test_gemini_flow_keeps_gateway_enabled_model_routing(
         self,
         db_session: Session,
         mock_nats_client,
         test_account: Account,
     ):
-        """Gemini should keep MCP proxying but fall back to direct model traffic."""
+        """Gemini should now retain full gateway routing when configured."""
         from preloop.models.models import AIModel
         from uuid import uuid4
 
@@ -1332,20 +1332,14 @@ class TestFlowExecutionOrchestrator:
 
         execution_context = await orchestrator._prepare_execution_context()
 
-        assert execution_context["model_gateway_requested"] is True
-        assert execution_context["model_gateway_enabled"] is False
-        assert execution_context["model_provider"] == "google"
-        assert execution_context["model_identifier"] == "gemini-2.5-pro"
+        assert execution_context["model_gateway_enabled"] is True
+        assert execution_context["model_provider"] == "preloop"
+        assert execution_context["model_identifier"] == "gemini/gemini-2.5-pro"
         assert (
-            execution_context["model_endpoint"]
-            == "https://generativelanguage.googleapis.com/v1beta"
+            execution_context["model_endpoint"] == "https://review.preloop.ai/openai/v1"
         )
-        assert execution_context["model_api_key"] == "gemini-secret"
-        assert "Preloop MCP proxy" in execution_context["model_gateway_disabled_reason"]
-        assert (
-            "Falling back to direct provider traffic"
-            in execution_context["model_gateway_disabled_reason"]
-        )
+        assert execution_context["model_api_key"] is None
+        assert "model_gateway_disabled_reason" not in execution_context
 
     @pytest.mark.skip(
         reason="FK constraint prevents creating flow with non-existent AI model. "

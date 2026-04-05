@@ -32,6 +32,49 @@ def _coerce_utc(timestamp: Optional[datetime]) -> Optional[datetime]:
     return timestamp.astimezone(UTC)
 
 
+def _latest_gateway_usage_for_runtime_session(
+    db: Session, *, account_id: str, runtime_session_id: Any
+):
+    """Return the latest gateway usage row for one runtime session."""
+    if runtime_session_id is None:
+        return None
+    return (
+        db.query(
+            ApiUsage.model_alias.label("latest_model_alias"),
+            ApiUsage.provider_name.label("latest_provider_name"),
+            ApiUsage.timestamp.label("last_request_at"),
+        )
+        .filter(
+            ApiUsage.account_id == account_id,
+            ApiUsage.action_type == "model_gateway",
+            ApiUsage.runtime_session_id == runtime_session_id,
+        )
+        .order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc())
+        .first()
+    )
+
+
+def _latest_gateway_usage_for_principal(
+    db: Session, *, account_id: str, principal_type: str, principal_id: str
+):
+    """Return the latest gateway usage row for one durable agent principal."""
+    return (
+        db.query(
+            ApiUsage.model_alias.label("latest_model_alias"),
+            ApiUsage.provider_name.label("latest_provider_name"),
+            ApiUsage.timestamp.label("last_request_at"),
+        )
+        .filter(
+            ApiUsage.account_id == account_id,
+            ApiUsage.action_type == "model_gateway",
+            ApiUsage.runtime_principal_type == principal_type,
+            ApiUsage.runtime_principal_id == principal_id,
+        )
+        .order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc())
+        .first()
+    )
+
+
 class CRUDManagedAgent(CRUDBase[ManagedAgent]):
     """CRUD helpers for account-scoped managed-agent registry entries."""
 
@@ -109,6 +152,8 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         set_display_name: bool = False,
         lifecycle_state: Optional[str] = None,
         lifecycle_reason: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
+        set_tags: bool = False,
         commit: bool = True,
     ) -> Optional[ManagedAgent]:
         """Update ownership and lifecycle controls for one managed agent."""
@@ -120,6 +165,8 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             db_obj.owner_user_id = owner_user_id
         if set_display_name and display_name is not None:
             db_obj.display_name = display_name.strip()
+        if set_tags and tags is not None:
+            db_obj.tags = tags
         if lifecycle_state is not None:
             db_obj.lifecycle_state = lifecycle_state
             db_obj.lifecycle_reason = lifecycle_reason
@@ -228,6 +275,8 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         query: Optional[str] = None,
         session_source_type: Optional[str] = None,
         status: str = "all",
+        tags: Optional[dict[str, str]] = None,
+        owner_username: Optional[str] = None,
         limit: int = 20,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -255,6 +304,10 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             base_query = base_query.filter(
                 self.model.session_source_type == session_source_type
             )
+        if owner_username:
+            base_query = base_query.filter(User.username == owner_username)
+        if tags:
+            base_query = base_query.filter(self.model.tags.contains(tags))
         if status == "active":
             base_query = base_query.filter(
                 self.model.lifecycle_state == "active",
@@ -293,6 +346,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.lifecycle_reason,
                 self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                self.model.tags,
                 User.username.label("owner_username"),
                 User.email.label("owner_email"),
                 RuntimeSession.started_at,
@@ -320,6 +374,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.lifecycle_reason,
                 self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                self.model.tags,
                 User.username,
                 User.email,
                 RuntimeSession.started_at,
@@ -339,7 +394,21 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .all()
         )
 
-        return {"total": total, "items": [self._row_to_summary(row) for row in rows]}
+        items = []
+        for row in rows:
+            summary = self._row_to_summary(row)
+            latest_usage = _latest_gateway_usage_for_runtime_session(
+                db,
+                account_id=account_id,
+                runtime_session_id=row.runtime_session_id,
+            )
+            if latest_usage is not None:
+                summary["latest_model_alias"] = latest_usage.latest_model_alias
+                summary["latest_provider_name"] = latest_usage.latest_provider_name
+                summary["last_request_at"] = latest_usage.last_request_at
+            items.append(summary)
+
+        return {"total": total, "items": items}
 
     def get_summary_for_account(
         self, db: Session, *, account_id: str, agent_id: str
@@ -373,6 +442,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.lifecycle_reason,
                 self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                self.model.tags,
                 User.username.label("owner_username"),
                 User.email.label("owner_email"),
                 RuntimeSession.started_at,
@@ -400,6 +470,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.lifecycle_reason,
                 self.model.lifecycle_updated_at,
                 self.model.last_seen_at,
+                self.model.tags,
                 User.username,
                 User.email,
                 RuntimeSession.started_at,
@@ -410,7 +481,17 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         )
         if row is None:
             return None
-        return self._row_to_summary(row)
+        summary = self._row_to_summary(row)
+        latest_usage = _latest_gateway_usage_for_runtime_session(
+            db,
+            account_id=account_id,
+            runtime_session_id=row.runtime_session_id,
+        )
+        if latest_usage is not None:
+            summary["latest_model_alias"] = latest_usage.latest_model_alias
+            summary["latest_provider_name"] = latest_usage.latest_provider_name
+            summary["last_request_at"] = latest_usage.last_request_at
+        return summary
 
     def get_usage_aggregate_for_account(
         self, db: Session, *, account_id: str, agent_id: str
@@ -463,6 +544,13 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             .one()
         )
 
+        latest_usage = _latest_gateway_usage_for_principal(
+            db,
+            account_id=account_id,
+            principal_type=agent.session_source_type,
+            principal_id=agent.session_source_id,
+        )
+
         return {
             "session_count": int(session_count or 0),
             "total_requests": int(usage_row.request_count or 0),
@@ -472,9 +560,21 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             "completion_tokens": int(usage_row.completion_tokens or 0),
             "total_tokens": int(usage_row.total_tokens or 0),
             "estimated_cost": float(usage_row.estimated_cost or 0.0),
-            "latest_model_alias": usage_row.latest_model_alias,
-            "latest_provider_name": usage_row.latest_provider_name,
-            "last_request_at": usage_row.last_request_at,
+            "latest_model_alias": (
+                latest_usage.latest_model_alias
+                if latest_usage
+                else usage_row.latest_model_alias
+            ),
+            "latest_provider_name": (
+                latest_usage.latest_provider_name
+                if latest_usage
+                else usage_row.latest_provider_name
+            ),
+            "last_request_at": (
+                latest_usage.last_request_at
+                if latest_usage
+                else usage_row.last_request_at
+            ),
         }
 
     def get_usage_by_model_for_account(
@@ -580,6 +680,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             "lifecycle_state": row.lifecycle_state,
             "lifecycle_reason": row.lifecycle_reason,
             "lifecycle_updated_at": row.lifecycle_updated_at,
+            "tags": row.tags or {},
             "is_active_now": is_active_now,
             "activity_status": activity_status,
             "last_seen_at": row.last_seen_at,

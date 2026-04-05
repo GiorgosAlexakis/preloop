@@ -68,6 +68,34 @@ describe('AgentsView', () => {
         );
       }
 
+      if (url.startsWith('/api/v1/account/gateway-usage/summary')) {
+        return new Response(
+          JSON.stringify({
+            start_date: '2026-02-10T00:00:00Z',
+            end_date: '2026-03-10T00:00:00Z',
+            token_usage: {
+              total_tokens: 10000,
+              input_tokens: 8000,
+              output_tokens: 2000,
+            },
+            estimated_cost: 0.5,
+            total_requests: 100,
+            has_pricing: true,
+            requests_by_day: [],
+            top_models: [],
+            top_agents: [],
+            total_agents: 1,
+            total_models: 1,
+            top_flows: [],
+            total_flows: 0,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       return new Response('Not found', { status: 404 });
     });
   });
@@ -84,6 +112,9 @@ describe('AgentsView', () => {
 
     const text = el.shadowRoot?.textContent || '';
     expect(text).to.contain('Claude Code Workspace');
+    expect(text).to.contain(
+      'Tool calls and model traffic both flow through Preloop.'
+    );
 
     const agentNode = el.shadowRoot?.querySelector('.agent-node');
     expect(agentNode).to.exist;

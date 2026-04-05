@@ -27,6 +27,19 @@ class AIModelBase(BaseModel):
         None, description="URL for the model's API, if not standard"
     )
     api_key: Optional[str] = Field(None, description="API key for the model provider")
+    credential_type: Optional[str] = Field(
+        None,
+        description=(
+            "Optional inline credential envelope type, e.g. 'oauth_openai_codex'"
+        ),
+    )
+    credential_payload: Optional[Dict] = Field(
+        None,
+        description=(
+            "Optional inline credential payload for non-API-key auth, stored "
+            "encrypted when provided"
+        ),
+    )
     credentials_backend_type: Optional[str] = Field(
         None,
         description="Optional external credential backend type, e.g. 'vault_kv_v2'",
@@ -56,6 +69,9 @@ class AIModelCreate(AIModelBase):
 
     @model_validator(mode="after")
     def validate_credentials(self):
+        has_inline_payload = (
+            self.credential_type is not None or self.credential_payload is not None
+        )
         has_external = any(
             value is not None
             for value in (
@@ -64,9 +80,17 @@ class AIModelCreate(AIModelBase):
                 self.credentials_meta_data,
             )
         )
-        if self.api_key and has_external:
+        if self.api_key and (has_external or has_inline_payload):
+            raise ValueError("api_key cannot be combined with other credential fields")
+        if has_inline_payload and has_external:
             raise ValueError(
-                "api_key cannot be combined with external credential fields"
+                "credential_type/credential_payload cannot be combined with external credential fields"
+            )
+        if has_inline_payload and (
+            not self.credential_type or self.credential_payload is None
+        ):
+            raise ValueError(
+                "credential_type and credential_payload are required together"
             )
         if has_external and (
             not self.credentials_backend_type or not self.credentials_external_ref
@@ -86,6 +110,8 @@ class AIModelUpdate(BaseModel):
     model_identifier: Optional[str] = None
     api_endpoint: Optional[str] = None
     api_key: Optional[str] = None
+    credential_type: Optional[str] = None
+    credential_payload: Optional[Dict] = None
     credentials_backend_type: Optional[str] = None
     credentials_external_ref: Optional[str] = None
     credentials_meta_data: Optional[Dict] = None
@@ -95,6 +121,9 @@ class AIModelUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_credentials(self):
+        has_inline_payload = (
+            self.credential_type is not None or self.credential_payload is not None
+        )
         has_external = any(
             value is not None
             for value in (
@@ -103,9 +132,17 @@ class AIModelUpdate(BaseModel):
                 self.credentials_meta_data,
             )
         )
-        if self.api_key and has_external:
+        if self.api_key and (has_external or has_inline_payload):
+            raise ValueError("api_key cannot be combined with other credential fields")
+        if has_inline_payload and has_external:
             raise ValueError(
-                "api_key cannot be combined with external credential fields"
+                "credential_type/credential_payload cannot be combined with external credential fields"
+            )
+        if has_inline_payload and (
+            not self.credential_type or self.credential_payload is None
+        ):
+            raise ValueError(
+                "credential_type and credential_payload are required together"
             )
         if has_external and (
             not self.credentials_backend_type or not self.credentials_external_ref
@@ -139,6 +176,9 @@ class AIModelInDBBase(TimestampMixin, BaseModel):
     )
     credentials_external_ref: Optional[str] = Field(
         None, description="External secret reference when using a non-local backend"
+    )
+    credential_type: Optional[str] = Field(
+        None, description="Logical credential type stored for the model"
     )
     has_api_key: bool = Field(
         False, description="Whether this model has credentials configured"

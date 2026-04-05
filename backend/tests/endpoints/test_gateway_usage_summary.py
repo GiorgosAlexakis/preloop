@@ -1,5 +1,7 @@
 """Endpoint tests for gateway usage summaries."""
 
+from datetime import UTC, datetime
+
 from preloop.models.crud import (
     crud_ai_model,
     crud_api_usage,
@@ -334,22 +336,99 @@ def test_account_runtime_sessions_endpoints(client, db_session, test_user):
     assert list_body["items"][0]["runtime_principal_name"] == "Claude Workspace"
     assert list_body["items"][0]["token_usage"]["total_tokens"] == 89
 
-    detail_response = client.get(
-        f"/api/v1/runtime-sessions/{runtime_session.id}",
+    detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
+
+    interactions_response = client.get(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/interactions",
         params={"interaction_query": "deployment risk"},
     )
 
     assert detail_response.status_code == 200
+    assert interactions_response.status_code == 200
     detail_body = detail_response.json()
+    interactions_body = interactions_response.json()
     assert detail_body["session"]["id"] == str(runtime_session.id)
     assert detail_body["session"]["session_source_type"] == "claude_code"
     assert (
         detail_body["usage_by_model"][0]["model_alias"] == "anthropic/claude-sonnet-4"
     )
-    assert detail_body["interactions"]["total"] == 1
-    assert (
-        "deployment risk" in detail_body["interactions"]["items"][0]["excerpt"].lower()
+    assert interactions_body["total"] == 1
+    assert "deployment risk" in interactions_body["items"][0]["excerpt"].lower()
+
+
+def test_account_runtime_sessions_use_most_recent_model_alias(
+    client, db_session, test_user
+):
+    """Runtime session summaries should use the newest usage row, not max(alias)."""
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-latest",
+        session_reference="claude-session-latest",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-latest",
+        runtime_principal_name="Claude Workspace",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
     )
+    db_session.commit()
+
+    older_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="zai/glm-5-turbo",
+        provider_name="openai",
+        prompt_tokens=20,
+        completion_tokens=5,
+        total_tokens=25,
+        estimated_cost=0.02,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-latest",
+        runtime_principal_name="Claude Workspace",
+    )
+    newer_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="openai/gpt-5.4",
+        provider_name="openai",
+        prompt_tokens=10,
+        completion_tokens=4,
+        total_tokens=14,
+        estimated_cost=0.01,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-latest",
+        runtime_principal_name="Claude Workspace",
+    )
+    older_usage.timestamp = datetime(2026, 4, 3, 21, 0, tzinfo=UTC)
+    newer_usage.timestamp = datetime(2026, 4, 3, 21, 5, tzinfo=UTC)
+    db_session.add(older_usage)
+    db_session.add(newer_usage)
+    db_session.commit()
+
+    list_response = client.get("/api/v1/runtime-sessions")
+
+    assert list_response.status_code == 200
+    list_body = list_response.json()
+    assert list_body["items"][0]["latest_model_alias"] == "openai/gpt-5.4"
+
+    detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
+
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert detail_body["session"]["latest_model_alias"] == "openai/gpt-5.4"
 
 
 def test_ai_model_detail_endpoints_scope_by_durable_model_id(
@@ -568,38 +647,33 @@ def test_runtime_session_detail_includes_flow_activity_timeline(
         response_payload={"output_text": "Issue history summarized"},
     )
 
-    detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
+    activity_response = client.get(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/activity"
+    )
 
-    assert detail_response.status_code == 200
-    detail_body = detail_response.json()
-    assert len(detail_body["activity_timeline"]) == 4
-    activity_types = {
-        item["activity_type"] for item in detail_body["activity_timeline"]
-    }
+    assert activity_response.status_code == 200
+    activity_body = activity_response.json()
+    assert len(activity_body["items"]) == 3
+    activity_types = {item["activity_type"] for item in activity_body["items"]}
     assert activity_types == {
         "session_started",
         "tool_call",
         "model_interaction",
-        "session_ended",
     }
     assert any(
         item["activity_type"] == "session_started"
         and item["title"] == "Session started"
-        for item in detail_body["activity_timeline"]
+        for item in activity_body["items"]
     )
     assert any(
         item["activity_type"] == "tool_call" and item["title"] == "search_issues"
-        for item in detail_body["activity_timeline"]
+        for item in activity_body["items"]
     )
     assert any(
         item["activity_type"] == "model_interaction"
         and item["api_usage_id"] == str(api_usage.id)
         and item["auth_subject_type"] == "api_key"
-        for item in detail_body["activity_timeline"]
-    )
-    assert any(
-        item["activity_type"] == "session_ended" and item["title"] == "Session ended"
-        for item in detail_body["activity_timeline"]
+        for item in activity_body["items"]
     )
 
 
@@ -670,6 +744,9 @@ def test_runtime_session_detail_falls_back_to_flow_execution_gateway_usage(
 
     list_response = client.get("/api/v1/runtime-sessions")
     detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
+    interactions_response = client.get(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/interactions"
+    )
 
     assert list_response.status_code == 200
     list_body = list_response.json()
@@ -681,17 +758,17 @@ def test_runtime_session_detail_falls_back_to_flow_execution_gateway_usage(
     assert listed_session["estimated_cost"] == 0.15
 
     assert detail_response.status_code == 200
+    assert interactions_response.status_code == 200
     detail_body = detail_response.json()
+    interactions_body = interactions_response.json()
     assert detail_body["session"]["total_requests"] == 1
     assert detail_body["session"]["token_usage"]["total_tokens"] == 50
     assert detail_body["session"]["estimated_cost"] == 0.15
     assert detail_body["usage_by_model"][0]["model_alias"] == "openai/gpt-5"
     assert detail_body["usage_by_model"][0]["request_count"] == 1
-    assert detail_body["interactions"]["total"] == 1
-    assert detail_body["interactions"]["items"][0]["flow_execution_id"] == str(
-        execution.id
-    )
-    assert detail_body["interactions"]["items"][0]["runtime_session_id"] is None
+    assert interactions_body["total"] == 1
+    assert interactions_body["items"][0]["flow_execution_id"] == str(execution.id)
+    assert interactions_body["items"][0]["runtime_session_id"] is None
 
 
 def test_runtime_session_detail_includes_normalized_tool_activity_for_non_flow_session(
@@ -719,15 +796,16 @@ def test_runtime_session_detail_includes_normalized_tool_activity_for_non_flow_s
         tool_name="search_issues",
         status="success",
     )
+    activity_response = client.get(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/activity"
+    )
 
-    detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
-
-    assert detail_response.status_code == 200
-    detail_body = detail_response.json()
+    assert activity_response.status_code == 200
+    activity_body = activity_response.json()
     assert any(
         item["activity_type"] == "tool_call"
         and item["title"] == "search_issues"
         and item["server_name"] == "github"
         and item["status"] == "success"
-        for item in detail_body["activity_timeline"]
+        for item in activity_body["items"]
     )

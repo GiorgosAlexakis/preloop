@@ -10,15 +10,21 @@ export function renderAgentIcon(
       : html`<sl-icon name="${name}" style="${style}"></sl-icon>`;
   };
 
-  switch (sourceType) {
+  switch (sourceType?.toLowerCase()) {
     case 'claude_code':
-      return renderIcon('code-slash');
+      return renderIcon('', '/images/logos/claude.svg');
     case 'claude_desktop':
       return renderIcon('display');
     case 'openclaw':
       return renderIcon('', '/images/logos/openclaw.svg');
     case 'codex':
-      return renderIcon('braces');
+      return renderIcon('', '/images/logos/codex.svg');
+    case 'gemini_cli':
+    case 'gemini-cli':
+    case 'geminicli':
+      return renderIcon('', '/images/logos/gemini-cli.svg');
+    case 'opencode':
+      return renderIcon('', '/images/logos/opencode.svg');
     case 'desktop_agent':
       return renderIcon('pc-display');
     case 'custom':

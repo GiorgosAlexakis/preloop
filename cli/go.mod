@@ -27,6 +27,7 @@ require (
 	github.com/zalando/go-keyring v0.2.7 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
+	golang.org/x/crypto v0.16.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/sys v0.27.0 // indirect
 	golang.org/x/text v0.14.0 // indirect

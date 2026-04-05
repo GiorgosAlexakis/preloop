@@ -121,6 +121,37 @@ def test_create_runtime_session_token_rejects_unknown_source_type(client):
     assert "Unsupported session_source_type" in response.json()["detail"]
 
 
+@pytest.mark.parametrize("source_type", ["gemini_cli", "opencode"])
+def test_create_runtime_session_token_accepts_managed_cli_source_types(
+    client, db_session, test_user, source_type
+):
+    """Managed CLI integrations should be allowed as first-class source types."""
+    response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": source_type,
+            "session_source_id": "workspace-123",
+            "runtime_principal_name": "Managed CLI Workspace",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["session_source_type"] == source_type
+    managed_agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type=source_type,
+        session_source_id="workspace-123",
+    )
+    assert managed_agent is not None
+    enrollments = crud_managed_agent_enrollment.list_for_agent(
+        db_session, account_id=str(test_user.account_id), agent_id=str(managed_agent.id)
+    )
+    assert len(enrollments) == 1
+    assert enrollments[0]["adapter_key"] == source_type
+
+
 def test_create_runtime_session_token_rejects_scope_escalation(client):
     """Runtime session tokens should reject scopes outside the runtime-safe set."""
     response = client.post(

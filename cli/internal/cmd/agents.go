@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/preloop/preloop/cli/internal/api"
@@ -23,11 +25,16 @@ import (
 
 // AgentConfig describes a discovered AI agent MCP configuration.
 type AgentConfig struct {
-	Name               string            `json:"name"`
-	DisplayName        string            `json:"display_name,omitempty"`
-	RuntimePrincipalID string            `json:"runtime_principal_id,omitempty"`
-	ConfigPath         string            `json:"config_path"`
-	MCPServers         map[string]MCPDef `json:"mcp_servers,omitempty"`
+	Name                 string            `json:"name"`
+	DisplayName          string            `json:"display_name,omitempty"`
+	RuntimePrincipalID   string            `json:"runtime_principal_id,omitempty"`
+	ConfigPath           string            `json:"config_path"`
+	MCPServers           map[string]MCPDef `json:"mcp_servers,omitempty"`
+	IsOnboarded          bool              `json:"is_onboarded,omitempty"`
+	OnboardingState      string            `json:"onboarding_state,omitempty"`
+	ConfigDrift          bool              `json:"config_drift,omitempty"`
+	ReonboardRecommended bool              `json:"reonboard_recommended,omitempty"`
+	DriftReasons         []string          `json:"drift_reasons,omitempty"`
 }
 
 // MCPDef is a minimal MCP server definition read from an agent config.
@@ -43,15 +50,22 @@ type MCPDef struct {
 
 // agentSpec defines where to look for a particular AI agent.
 type agentSpec struct {
-	Name        string
-	ConfigPaths []string // relative to $HOME
-	Parser      func(path string) (map[string]MCPDef, error)
+	Name                string
+	ConfigPaths         []string // relative to $HOME
+	DetectionPaths      []string // optional install markers relative to $HOME
+	BootstrapConfigPath string   // optional synthesized config path relative to $HOME
+	Parser              func(path string) (map[string]MCPDef, error)
 }
 
 var agentSpecs = []agentSpec{
 	{
 		Name:        "Claude Code",
-		ConfigPaths: []string{".claude/mcp-servers.json", ".claude/claude_desktop_config.json", ".config/claude/claude_desktop_config.json"},
+		ConfigPaths: []string{".claude/settings.json", ".claude/mcp-servers.json"},
+		Parser:      parseClaudeConfig,
+	},
+	{
+		Name:        "Claude Desktop",
+		ConfigPaths: []string{".claude/claude_desktop_config.json", ".config/claude/claude_desktop_config.json"},
 		Parser:      parseClaudeConfig,
 	},
 	{
@@ -75,14 +89,16 @@ var agentSpecs = []agentSpec{
 		Parser:      parseGeminiConfig,
 	},
 	{
-		Name:        "OpenCode",
-		ConfigPaths: []string{".config/opencode/config.json"},
-		Parser:      parseGenericMCP,
+		Name:                "OpenCode",
+		ConfigPaths:         []string{".config/opencode/config.json"},
+		DetectionPaths:      []string{".local/share/opencode/auth.json", ".config/opencode/package.json"},
+		BootstrapConfigPath: ".config/opencode/config.json",
+		Parser:              parseGenericMCP,
 	},
 	{
 		Name:        "Codex CLI",
-		ConfigPaths: []string{".codex/config.json"},
-		Parser:      parseGenericMCP,
+		ConfigPaths: []string{".codex/config.toml", ".codex/config.json"},
+		Parser:      parseCodexConfig,
 	},
 	{
 		Name: "OpenClaw",
@@ -92,7 +108,9 @@ var agentSpecs = []agentSpec{
 			".openclaw-dev/openclaw.json",
 			".openclaw-dev/openclaw.json5",
 		},
-		Parser: parseOpenClawMCP,
+		DetectionPaths:      []string{".openclaw", ".openclaw/openclaw.json.bak", ".config/openclaw", "Library/pnpm/openclaw"},
+		BootstrapConfigPath: ".openclaw/openclaw.json",
+		Parser:              parseOpenClawMCP,
 	},
 }
 
@@ -167,6 +185,12 @@ var agentsOffboardCmd = &cobra.Command{
 	RunE:  runAgentsOffboard,
 }
 
+const (
+	offboardCleanupAsk = "ask"
+	offboardCleanupYes = "yes"
+	offboardCleanupNo  = "no"
+)
+
 type starterPolicyTool struct {
 	Name                 string                    `json:"name"`
 	Description          string                    `json:"description,omitempty"`
@@ -213,6 +237,13 @@ type mcpServerResponse struct {
 	Transport  string                 `json:"transport,omitempty"`
 	AuthType   string                 `json:"auth_type,omitempty"`
 	AuthConfig map[string]interface{} `json:"auth_config,omitempty"`
+}
+
+type flowSummaryResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	AIModelID string `json:"ai_model_id,omitempty"`
+	IsPreset  bool   `json:"is_preset,omitempty"`
 }
 
 type managedAgentSummary struct {
@@ -325,6 +356,7 @@ type localEnrollmentState struct {
 	RuntimePrincipalID string                 `json:"runtime_principal_id"`
 	EnrollmentID       string                 `json:"enrollment_id,omitempty"`
 	ConfigPath         string                 `json:"config_path"`
+	ConfigExisted      bool                   `json:"config_existed"`
 	BackupPath         string                 `json:"backup_path"`
 	ManagedServerName  string                 `json:"managed_server_name"`
 	ManagedServerURL   string                 `json:"managed_server_url"`
@@ -380,11 +412,14 @@ func init() {
 	agentsEnrollCmd.Flags().Bool("dry-run", false, "preview account and config changes without writing")
 	agentsEnrollCmd.Flags().Bool("yes", false, "skip the onboarding confirmation prompt")
 	agentsEnrollCmd.Flags().Bool("live-validate", false, "after onboarding, run a supported live validation prompt through the agent")
+	agentsEnrollCmd.Flags().StringSlice("tags", []string{}, "add key-value tags to the enrolled agent (e.g., --tags ext=true,env=prod)")
 	agentsListCmd.Flags().Bool("json", false, "output managed agents as JSON")
 	agentsStatusCmd.Flags().Bool("json", false, "output managed status as JSON")
 	agentsValidateCmd.Flags().Bool("live", false, "run a supported live validation prompt in addition to config validation")
 	agentsRestoreCmd.Flags().Bool("yes", false, "skip the restore confirmation prompt")
 	agentsOffboardCmd.Flags().Bool("yes", false, "skip offboarding and cleanup confirmations")
+	agentsOffboardCmd.Flags().String("remove-model", offboardCleanupAsk, "whether to remove an eligible AI model from Preloop as part of offboarding: ask, yes, or no")
+	agentsOffboardCmd.Flags().String("remove-mcp-servers", offboardCleanupAsk, "whether to remove eligible MCP servers from Preloop as part of offboarding: ask, yes, or no")
 	agentsStarterPolicyCmd.Flags().StringP("output", "o", "", "write generated policy YAML to a file")
 	agentsStarterPolicyCmd.Flags().Bool("apply", false, "apply the generated policy immediately")
 	agentsStarterPolicyCmd.Flags().Bool("dry-run", false, "when used with --apply, validate without applying changes")
@@ -404,6 +439,11 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 	}
 
 	discovered, err := discoverAgents(os.Stdout, !asJSON)
+	if err != nil {
+		return err
+	}
+	client := authenticatedDiscoveryClient()
+	discovered, err = enrichDiscoveredAgents(discovered, client)
 	if err != nil {
 		return err
 	}
@@ -430,6 +470,22 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 		fmt.Printf("     Agent Name: %s\n", resolveAgentDisplayName(agent))
 		fmt.Printf("     Runtime principal: %s\n", runtimePrincipalIDForAgent(agent))
 		fmt.Printf("     Config: %s\n", agent.ConfigPath)
+		if agent.IsOnboarded {
+			fmt.Printf(
+				"     Managed: yes (%s)\n",
+				onboardingStateLabel(agent.OnboardingState),
+			)
+			fmt.Printf("     Routing: %s\n", onboardingStateNote(agent.OnboardingState))
+			if agent.ConfigDrift {
+				fmt.Println("     Config drift: detected")
+				if agent.ReonboardRecommended {
+					fmt.Println("     Re-onboard recommended: yes")
+				}
+				for _, reason := range agent.DriftReasons {
+					fmt.Printf("       - %s\n", reason)
+				}
+			}
+		}
 		if serverCount > 0 {
 			fmt.Printf("     MCP Servers (%d):\n", serverCount)
 			for name := range agent.MCPServers {
@@ -492,10 +548,14 @@ func promptToOnboardCandidates(
 
 	for _, agent := range candidates {
 		if !autoApprove {
+			action := "Onboard"
+			if agent.IsOnboarded {
+				action = "Re-onboard"
+			}
 			confirmed, err := confirmAction(
 				bufferedReader,
 				writer,
-				fmt.Sprintf("Onboard %s (%s) into managed Preloop access now? (y/N): ", agent.Name, resolveAgentDisplayName(agent)),
+				fmt.Sprintf("%s %s (%s) into managed Preloop access now? (y/N): ", action, agent.Name, resolveAgentDisplayName(agent)),
 			)
 			if err != nil {
 				return fmt.Errorf("failed to read onboarding confirmation: %w", err)
@@ -571,6 +631,10 @@ func filterAgentsPendingLocalEnrollment(discovered []AgentConfig) []AgentConfig 
 func filterAgentsPendingEnrollment(client *api.Client, discovered []AgentConfig) ([]AgentConfig, error) {
 	candidates := make([]AgentConfig, 0, len(discovered))
 	for _, agent := range discovered {
+		if agent.ReonboardRecommended {
+			candidates = append(candidates, agent)
+			continue
+		}
 		if _, err := loadLocalEnrollmentState(agent); err == nil {
 			continue
 		}
@@ -588,6 +652,17 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	autoApprove, _ := cmd.Flags().GetBool("yes")
 	liveValidate, _ := cmd.Flags().GetBool("live-validate")
+	tagsInput, _ := cmd.Flags().GetStringSlice("tags")
+
+	tags := make(map[string]string)
+	for _, kv := range tagsInput {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) == 2 {
+			tags[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		} else if len(parts) == 1 {
+			tags[strings.TrimSpace(parts[0])] = "true"
+		}
+	}
 
 	discovered, err := discoverAgents(os.Stdout, true)
 	if err != nil {
@@ -602,6 +677,7 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 		DryRun:           dryRun,
 		AutoApprove:      autoApprove,
 		LiveValidate:     liveValidate,
+		Tags:             tags,
 		SkipConfirmation: false,
 		Input:            os.Stdin,
 		Output:           os.Stdout,
@@ -949,10 +1025,25 @@ type offboardCleanupCandidate struct {
 	ResourceID     string
 	ReferencedBy   []string
 	RecentlyUsedBy []string
+	FlowReferences []string
 }
 
 func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 	autoApprove, _ := cmd.Flags().GetBool("yes")
+	modelRemovalPolicy, err := cmd.Flags().GetString("remove-model")
+	if err != nil {
+		return err
+	}
+	if err := validateOffboardCleanupPolicy("--remove-model", modelRemovalPolicy); err != nil {
+		return err
+	}
+	serverRemovalPolicy, err := cmd.Flags().GetString("remove-mcp-servers")
+	if err != nil {
+		return err
+	}
+	if err := validateOffboardCleanupPolicy("--remove-mcp-servers", serverRemovalPolicy); err != nil {
+		return err
+	}
 
 	discovered, err := discoverAgents(io.Discard, false)
 	if err != nil {
@@ -1016,6 +1107,9 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		fmt.Printf("Skipped restoring config: no local backup found.\n")
+		if err := removeClaudeCodeManagedMCPServer(agent); err != nil {
+			return err
+		}
 	}
 
 	if detail != nil {
@@ -1038,7 +1132,15 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := promptOffboardCleanup(os.Stdin, os.Stdout, autoApprove, client, candidates); err != nil {
+		if err := promptOffboardCleanup(
+			os.Stdin,
+			os.Stdout,
+			autoApprove,
+			modelRemovalPolicy,
+			serverRemovalPolicy,
+			client,
+			candidates,
+		); err != nil {
 			return err
 		}
 	}
@@ -1051,8 +1153,21 @@ func restoreAgentFromBackup(agent AgentConfig, state *localEnrollmentState) (tim
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to read backup: %w", err)
 	}
-	if err := os.WriteFile(agent.ConfigPath, backupBytes, 0644); err != nil {
-		return time.Time{}, fmt.Errorf("failed to restore config: %w", err)
+	shouldRestoreFile := state.ConfigExisted || len(bytes.TrimSpace(backupBytes)) > 0
+	if !shouldRestoreFile {
+		if err := os.Remove(agent.ConfigPath); err != nil && !os.IsNotExist(err) {
+			return time.Time{}, fmt.Errorf("failed to remove synthesized config: %w", err)
+		}
+	} else {
+		if err := os.WriteFile(agent.ConfigPath, backupBytes, 0644); err != nil {
+			return time.Time{}, fmt.Errorf("failed to restore config: %w", err)
+		}
+	}
+	if err := removeManagedAgentRuntimeArtifacts(agent); err != nil {
+		return time.Time{}, err
+	}
+	if err := removeClaudeCodeManagedMCPServer(agent); err != nil {
+		return time.Time{}, err
 	}
 	now := time.Now().UTC()
 	state.RestoredAt = &now
@@ -1109,6 +1224,10 @@ func collectOffboardCleanupCandidates(client *api.Client, current managedAgentSu
 	if err := client.Get("/api/v1/ai-models", &modelIndex); err != nil {
 		return nil, fmt.Errorf("failed to list AI models: %w", err)
 	}
+	var flows []flowSummaryResponse
+	if err := client.Get("/api/v1/flows?limit=1000", &flows); err != nil {
+		return nil, fmt.Errorf("failed to list flows: %w", err)
+	}
 
 	candidates := make([]offboardCleanupCandidate, 0, len(current.ManagedMCPServers)+1)
 	for _, serverName := range current.ManagedMCPServers {
@@ -1152,12 +1271,20 @@ func collectOffboardCleanupCandidates(client *api.Client, current managedAgentSu
 					recentlyUsedBy = append(recentlyUsedBy, other.DisplayName)
 				}
 			}
+			flowReferences := []string{}
+			for _, flow := range flows {
+				if strings.TrimSpace(flow.AIModelID) != model.ID {
+					continue
+				}
+				flowReferences = append(flowReferences, labelOffboardFlow(flow))
+			}
 			candidates = append(candidates, offboardCleanupCandidate{
 				Kind:           "ai_model",
 				Name:           current.LatestModelAlias,
 				ResourceID:     model.ID,
 				ReferencedBy:   referencedBy,
 				RecentlyUsedBy: recentlyUsedBy,
+				FlowReferences: flowReferences,
 			})
 			break
 		}
@@ -1172,7 +1299,7 @@ func collectOffboardCleanupCandidates(client *api.Client, current managedAgentSu
 	return candidates, nil
 }
 
-func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool, client *api.Client, candidates []offboardCleanupCandidate) error {
+func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool, modelRemovalPolicy string, serverRemovalPolicy string, client *api.Client, candidates []offboardCleanupCandidate) error {
 	if len(candidates) == 0 {
 		return nil
 	}
@@ -1186,6 +1313,38 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 			deletePath = "/api/v1/ai-models/" + candidate.ResourceID
 			successLabel = "Removed AI model"
 		}
+		if candidate.Kind == "ai_model" {
+			if len(candidate.ReferencedBy) > 0 {
+				fmt.Fprintf(
+					writer,
+					"  Keeping %s %q because it is still used by other managed agents: %s\n",
+					kindLabel,
+					candidate.Name,
+					strings.Join(candidate.ReferencedBy, ", "),
+				)
+				continue
+			}
+			if len(candidate.FlowReferences) > 0 {
+				fmt.Fprintf(
+					writer,
+					"  Keeping %s %q because it is still used by flows: %s\n",
+					kindLabel,
+					candidate.Name,
+					strings.Join(candidate.FlowReferences, ", "),
+				)
+				continue
+			}
+		}
+		if candidate.Kind != "ai_model" && len(candidate.ReferencedBy) > 0 {
+			fmt.Fprintf(
+				writer,
+				"  Keeping %s %q because it is still used by other managed agents: %s\n",
+				kindLabel,
+				candidate.Name,
+				strings.Join(candidate.ReferencedBy, ", "),
+			)
+			continue
+		}
 		if len(candidate.RecentlyUsedBy) > 0 {
 			fmt.Fprintf(
 				writer,
@@ -1196,27 +1355,17 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 			)
 			continue
 		}
-		if len(candidate.ReferencedBy) > 0 {
-			fmt.Fprintf(
-				writer,
-				"  Note: %s %q is still referenced by other managed agents: %s\n",
-				kindLabel,
-				candidate.Name,
-				strings.Join(candidate.ReferencedBy, ", "),
-			)
-		}
 
-		confirmed := autoApprove
-		var err error
-		if !autoApprove {
-			confirmed, err = confirmAction(
-				bufferedReader,
-				writer,
-				fmt.Sprintf("Remove %s %q from Preloop as well? (y/N): ", kindLabel, candidate.Name),
-			)
-			if err != nil {
-				return fmt.Errorf("failed to read cleanup confirmation: %w", err)
-			}
+		confirmed, err := resolveOffboardCleanupConfirmation(
+			bufferedReader,
+			writer,
+			autoApprove,
+			offboardCleanupPolicyForKind(candidate.Kind, modelRemovalPolicy, serverRemovalPolicy),
+			kindLabel,
+			candidate.Name,
+		)
+		if err != nil {
+			return err
 		}
 		if !confirmed {
 			continue
@@ -1235,6 +1384,66 @@ func promptOffboardCleanup(reader io.Reader, writer io.Writer, autoApprove bool,
 		fmt.Fprintf(writer, "  ✓ %s %q\n", successLabel, candidate.Name)
 	}
 	return nil
+}
+
+func validateOffboardCleanupPolicy(flagName string, policy string) error {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case offboardCleanupAsk, offboardCleanupYes, offboardCleanupNo:
+		return nil
+	default:
+		return fmt.Errorf("%s must be one of: ask, yes, no", flagName)
+	}
+}
+
+func offboardCleanupPolicyForKind(kind string, modelRemovalPolicy string, serverRemovalPolicy string) string {
+	if kind == "ai_model" {
+		return modelRemovalPolicy
+	}
+	return serverRemovalPolicy
+}
+
+func resolveOffboardCleanupConfirmation(
+	reader *bufio.Reader,
+	writer io.Writer,
+	autoApprove bool,
+	modelRemovalPolicy string,
+	kindLabel string,
+	name string,
+) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(modelRemovalPolicy)) {
+	case offboardCleanupYes:
+		return true, nil
+	case offboardCleanupNo:
+		return false, nil
+	case offboardCleanupAsk:
+		if autoApprove {
+			fmt.Fprintf(
+				writer,
+				"  Keeping %s %q in Preloop. Pass the appropriate cleanup flag with 'yes' to remove it automatically.\n",
+				kindLabel,
+				name,
+			)
+			return false, nil
+		}
+		confirmed, err := confirmAction(
+			reader,
+			writer,
+			fmt.Sprintf("Remove %s %q from Preloop as well? (y/N): ", kindLabel, name),
+		)
+		if err != nil {
+			return false, fmt.Errorf("failed to read cleanup confirmation: %w", err)
+		}
+		return confirmed, nil
+	default:
+		return false, fmt.Errorf("cleanup policy must be one of: ask, yes, no")
+	}
+}
+
+func labelOffboardFlow(flow flowSummaryResponse) string {
+	if strings.TrimSpace(flow.Name) != "" {
+		return flow.Name
+	}
+	return flow.ID
 }
 
 func isRecentlyActiveAgent(agent managedAgentSummary) bool {
@@ -1524,6 +1733,10 @@ func runtimeSessionSourceTypeForAgent(agentName string) string {
 		return "codex"
 	case "openclaw":
 		return "openclaw"
+	case "gemini cli":
+		return "gemini_cli"
+	case "opencode":
+		return "opencode"
 	default:
 		return "desktop_agent"
 	}
@@ -1847,6 +2060,7 @@ func discoverAgents(w io.Writer, printWarnings bool) ([]AgentConfig, error) {
 
 	var discovered []AgentConfig
 	for _, spec := range agentSpecs {
+		discoveredSpec := false
 		for _, fullPath := range configPathsForAgentSpec(home, spec) {
 			if _, err := os.Stat(fullPath); err != nil {
 				continue
@@ -1864,10 +2078,166 @@ func discoverAgents(w io.Writer, printWarnings bool) ([]AgentConfig, error) {
 				MCPServers: servers,
 			})
 			discovered[len(discovered)-1] = normalizeDiscoveredAgent(discovered[len(discovered)-1])
+			discoveredSpec = true
 			break
+		}
+		if discoveredSpec {
+			continue
+		}
+		if fallbackPath, ok := detectInstalledAgent(home, spec); ok {
+			discovered = append(discovered, normalizeDiscoveredAgent(AgentConfig{
+				Name:       spec.Name,
+				ConfigPath: fallbackPath,
+				MCPServers: map[string]MCPDef{},
+			}))
 		}
 	}
 	return discovered, nil
+}
+
+func detectInstalledAgent(home string, spec agentSpec) (string, bool) {
+	if strings.TrimSpace(spec.BootstrapConfigPath) == "" || len(spec.DetectionPaths) == 0 {
+		return "", false
+	}
+	for _, relativePath := range spec.DetectionPaths {
+		fullPath := expandAgentConfigPath(home, filepath.Join(home, relativePath))
+		if _, err := os.Stat(fullPath); err == nil {
+			return expandAgentConfigPath(home, filepath.Join(home, spec.BootstrapConfigPath)), true
+		}
+	}
+	return "", false
+}
+
+func authenticatedDiscoveryClient() *api.Client {
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil || client == nil || !client.IsAuthenticated() {
+		return nil
+	}
+	return client
+}
+
+func enrichDiscoveredAgents(discovered []AgentConfig, client *api.Client) ([]AgentConfig, error) {
+	enriched := make([]AgentConfig, 0, len(discovered))
+	for _, agent := range discovered {
+		resolved, err := enrichDiscoveredAgent(agent, client)
+		if err != nil {
+			return nil, err
+		}
+		enriched = append(enriched, resolved)
+	}
+	return enriched, nil
+}
+
+func enrichDiscoveredAgent(agent AgentConfig, client *api.Client) (AgentConfig, error) {
+	agent = normalizeDiscoveredAgent(agent)
+	state, _ := loadLocalEnrollmentState(agent)
+	var remote *managedAgentSummary
+	if client != nil {
+		if managed, err := getManagedAgentForDiscovered(client, agent); err == nil {
+			remote = managed
+		}
+	}
+	agent.IsOnboarded = state != nil || remote != nil
+	if remote != nil && strings.TrimSpace(remote.OnboardingState) != "" {
+		agent.OnboardingState = strings.TrimSpace(remote.OnboardingState)
+	}
+	if state == nil {
+		if agent.OnboardingState == "" {
+			agent.OnboardingState = "incomplete"
+		}
+		return agent, nil
+	}
+
+	currentConfig, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		agent.ConfigDrift = true
+		agent.ReonboardRecommended = true
+		agent.DriftReasons = append(agent.DriftReasons, fmt.Sprintf("Current config could not be loaded: %v", err))
+		if agent.OnboardingState == "" {
+			agent.OnboardingState = "incomplete"
+		}
+		return agent, nil
+	}
+
+	validation := managedMCPAdapterForAgent(agent).ValidateManagedConfig(
+		currentConfig,
+		clientBaseURLForFlags(),
+	)
+	if agent.OnboardingState == "" {
+		agent.OnboardingState = onboardingStateFromValidation(validation)
+	}
+	if passed, _ := validation["validation_passed"].(bool); !passed {
+		agent.ConfigDrift = true
+		agent.ReonboardRecommended = true
+		agent.DriftReasons = append(agent.DriftReasons, "Current managed config no longer matches the expected Preloop-managed shape.")
+	}
+
+	currentSnapshot, snapshotErr := deepCopyMap(currentConfig)
+	if snapshotErr == nil {
+		sanitizeConfigSnapshot(currentSnapshot)
+		if len(state.ManagedConfig) > 0 && !equalJSONMap(currentSnapshot, state.ManagedConfig) {
+			agent.ConfigDrift = true
+			agent.ReonboardRecommended = true
+			agent.DriftReasons = append(agent.DriftReasons, "Local tool or model configuration has changed since the last onboarding.")
+		}
+	}
+	if agent.OnboardingState == "" {
+		agent.OnboardingState = "incomplete"
+	}
+	return agent, nil
+}
+
+func onboardingStateFromValidation(validation map[string]interface{}) string {
+	if len(validation) == 0 {
+		return "incomplete"
+	}
+	mcpConfigured := false
+	if present, _ := validation["preloop_server_present"].(bool); present {
+		mcpConfigured = true
+	}
+	gatewayConfigured := false
+	if ok, _ := validation["gateway_provider_ok"].(bool); ok {
+		gatewayConfigured = true
+	}
+	if ok, _ := validation["model_provider_rewritten"].(bool); ok {
+		gatewayConfigured = true
+	}
+	if mcpConfigured && gatewayConfigured {
+		return "fully_onboarded"
+	}
+	if mcpConfigured {
+		return "mcp_proxy_only"
+	}
+	if gatewayConfigured {
+		return "gateway_only"
+	}
+	return "incomplete"
+}
+
+func onboardingStateLabel(state string) string {
+	switch strings.TrimSpace(state) {
+	case "fully_onboarded":
+		return "Fully onboarded"
+	case "mcp_proxy_only":
+		return "MCP proxy only"
+	case "gateway_only":
+		return "Model gateway only"
+	default:
+		return "Incomplete"
+	}
+}
+
+func onboardingStateNote(state string) string {
+	switch strings.TrimSpace(state) {
+	case "fully_onboarded":
+		return "Tool calls and model traffic are both routed through Preloop."
+	case "mcp_proxy_only":
+		return "Tool calls are routed through Preloop, but model traffic is still direct."
+	case "gateway_only":
+		return "Model traffic is routed through Preloop, but MCP tool traffic is still direct."
+	default:
+		return "This agent is not fully managed by Preloop yet."
+	}
 }
 
 func findDiscoveredAgent(discovered []AgentConfig, value string) (AgentConfig, error) {
@@ -1918,6 +2288,9 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 	if err != nil {
 		return managedMCPEnrollmentPlan{}, fmt.Errorf("failed to load config document: %w", err)
 	}
+	if discoveredDoc == nil {
+		discoveredDoc = map[string]interface{}{}
+	}
 	managedDoc, err := deepCopyMap(discoveredDoc)
 	if err != nil {
 		return managedMCPEnrollmentPlan{}, err
@@ -1927,6 +2300,7 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 		return managedMCPEnrollmentPlan{}, err
 	}
 	container["preloop"] = adapter.BuildManagedServer(baseURL, token)
+	ensureLegacyCodexMCPServer(agent, managedDoc, baseURL)
 
 	sanitizedDiscovered, err := deepCopyMap(discoveredDoc)
 	if err != nil {
@@ -1948,6 +2322,235 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 		ManagedServerName:   "preloop",
 		ManagedServerURL:    strings.TrimRight(baseURL, "/") + "/mcp/v1",
 	}, nil
+}
+
+func refreshManagedPlanSnapshots(plan managedMCPEnrollmentPlan) (managedMCPEnrollmentPlan, error) {
+	sanitizedManaged, err := deepCopyMap(plan.ManagedDocument)
+	if err != nil {
+		return managedMCPEnrollmentPlan{}, err
+	}
+	sanitizeConfigSnapshot(sanitizedManaged)
+	plan.SanitizedManaged = sanitizedManaged
+	return plan, nil
+}
+
+func supportsManagedGateway(agent AgentConfig) bool {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "codex cli", "opencode", "claude code", "gemini cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func applyManagedGatewayForAgent(
+	plan managedMCPEnrollmentPlan,
+	agent AgentConfig,
+	baseURL string,
+	token string,
+	modelAlias string,
+) (managedMCPEnrollmentPlan, error) {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "codex cli":
+		return applyCodexManagedGateway(plan, baseURL, token, modelAlias)
+	case "opencode":
+		return applyOpenCodeManagedGateway(plan, baseURL, token, modelAlias)
+	case "claude code":
+		return applyClaudeManagedGateway(plan, baseURL, token, modelAlias)
+	case "gemini cli":
+		return applyGeminiManagedGateway(plan, baseURL, token, modelAlias)
+	default:
+		return plan, nil
+	}
+}
+
+func applyCodexManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, modelAlias string) (managedMCPEnrollmentPlan, error) {
+	providers, ok := asObjectMap(plan.ManagedDocument["model_providers"])
+	if !ok {
+		providers = make(map[string]interface{})
+		plan.ManagedDocument["model_providers"] = providers
+	}
+	providers["preloop"] = map[string]interface{}{
+		"name":                      "Preloop",
+		"base_url":                  strings.TrimRight(baseURL, "/") + openClawGatewayPath,
+		"experimental_bearer_token": token,
+		"wire_api":                  "responses",
+	}
+	plan.ManagedDocument["model_provider"] = "preloop"
+	plan.ManagedDocument["model"] = modelAlias
+	plan.ManagedModelAlias = modelAlias
+	plan.ManagedProviderName = "preloop"
+	plan.Notes = append(
+		plan.Notes,
+		fmt.Sprintf("Model traffic will route through Preloop using %s.", modelAlias),
+	)
+	return refreshManagedPlanSnapshots(plan)
+}
+
+func geminiClientModelName(modelAlias string) string {
+	modelAlias = strings.TrimSpace(modelAlias)
+	if modelAlias == "" {
+		return ""
+	}
+	if _, modelID, ok := strings.Cut(modelAlias, "/"); ok && strings.TrimSpace(modelID) != "" {
+		return strings.TrimSpace(modelID)
+	}
+	return modelAlias
+}
+
+func normalizeGeminiGatewayModelAlias(modelRef string) string {
+	modelRef = strings.TrimSpace(modelRef)
+	if modelRef == "" {
+		return ""
+	}
+	if strings.Contains(modelRef, "/") {
+		return modelRef
+	}
+	return "google/" + modelRef
+}
+
+func applyGeminiManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, modelAlias string) (managedMCPEnrollmentPlan, error) {
+	plan.ManagedDocument["apiKey"] = token
+	plan.ManagedDocument["baseUrl"] = strings.TrimRight(baseURL, "/") + "/gemini/v1beta"
+	modelConfig, ok := asObjectMap(plan.ManagedDocument["model"])
+	if !ok {
+		modelConfig = make(map[string]interface{})
+	}
+	modelConfig["name"] = geminiClientModelName(modelAlias)
+	plan.ManagedDocument["model"] = modelConfig
+	plan.ManagedModelAlias = modelAlias
+	plan.ManagedProviderName = "preloop"
+	plan.Notes = append(
+		plan.Notes,
+		fmt.Sprintf("Model traffic will route through Preloop using %s.", modelAlias),
+	)
+	return refreshManagedPlanSnapshots(plan)
+}
+
+func applyOpenCodeManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, modelAlias string) (managedMCPEnrollmentPlan, error) {
+	providers, ok := asObjectMap(plan.ManagedDocument["provider"])
+	if !ok {
+		providers = make(map[string]interface{})
+		plan.ManagedDocument["provider"] = providers
+	}
+	providers["preloop"] = map[string]interface{}{
+		"npm": "@ai-sdk/openai-compatible",
+		"options": map[string]interface{}{
+			"baseURL": strings.TrimRight(baseURL, "/") + openClawGatewayPath,
+			"apiKey":  token,
+		},
+		"models": map[string]interface{}{
+			modelAlias: map[string]interface{}{
+				"name": modelAlias,
+			},
+		},
+	}
+	plan.ManagedDocument["model"] = "preloop/" + modelAlias
+	plan.ManagedModelAlias = modelAlias
+	plan.ManagedProviderName = "preloop"
+	plan.Notes = append(
+		plan.Notes,
+		fmt.Sprintf("Model traffic will route through Preloop using %s.", modelAlias),
+	)
+	return refreshManagedPlanSnapshots(plan)
+}
+
+func applyClaudeManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, modelAlias string) (managedMCPEnrollmentPlan, error) {
+	env, ok := asObjectMap(plan.ManagedDocument["env"])
+	if !ok {
+		env = make(map[string]interface{})
+		plan.ManagedDocument["env"] = env
+	}
+	env["ANTHROPIC_BASE_URL"] = strings.TrimRight(baseURL, "/") + "/anthropic"
+	delete(env, "ANTHROPIC_AUTH_TOKEN")
+	env["ANTHROPIC_API_KEY"] = token
+	env["CLAUDE_CODE_USE_BEDROCK"] = "0"
+	env["CLAUDE_CODE_SIMPLE"] = "1"
+	env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "0"
+	env["DISABLE_TELEMETRY"] = "1"
+	env["OTEL_METRICS_EXPORTER"] = "none"
+	env["OTEL_LOGS_EXPORTER"] = "none"
+	env["OTEL_TRACES_EXPORTER"] = "none"
+	env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = modelAlias
+	env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = "Preloop " + modelAlias
+	for _, key := range []string{
+		"AWS_BEARER_TOKEN_BEDROCK",
+		"AWS_ACCESS_KEY_ID",
+		"AWS_SECRET_ACCESS_KEY",
+		"AWS_SESSION_TOKEN",
+		"AWS_REGION",
+		"AWS_DEFAULT_REGION",
+		"AWS_PROFILE",
+		"AWS_SHARED_CREDENTIALS_FILE",
+		"AWS_CONFIG_FILE",
+		"CLAUDE_CODE_OAUTH_TOKEN",
+	} {
+		delete(env, key)
+	}
+	clearClaudePinnedModelEnv(env)
+	if selection, envKey := claudePinnedModelSelection(modelAlias); envKey != "" {
+		plan.ManagedDocument["model"] = selection
+		env["ANTHROPIC_MODEL"] = selection
+		env[envKey] = modelAlias
+		env[envKey+"_NAME"] = "Preloop " + modelAlias
+	} else {
+		env["ANTHROPIC_MODEL"] = modelAlias
+	}
+	plan.ManagedModelAlias = modelAlias
+	plan.ManagedProviderName = "preloop"
+	plan.Notes = append(
+		plan.Notes,
+		fmt.Sprintf("Model traffic will route through Preloop using %s.", modelAlias),
+	)
+	return refreshManagedPlanSnapshots(plan)
+}
+
+func clearClaudePinnedModelEnv(env map[string]interface{}) {
+	for _, key := range []string{
+		"ANTHROPIC_DEFAULT_OPUS_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
+	} {
+		delete(env, key)
+	}
+}
+
+func claudePinnedModelSelection(modelAlias string) (string, string) {
+	lower := strings.ToLower(strings.TrimSpace(modelAlias))
+	switch {
+	case strings.Contains(lower, "claude-opus"), strings.Contains(lower, "/opus"):
+		return "opus", "ANTHROPIC_DEFAULT_OPUS_MODEL"
+	case strings.Contains(lower, "claude-sonnet"), strings.Contains(lower, "/sonnet"):
+		return "sonnet", "ANTHROPIC_DEFAULT_SONNET_MODEL"
+	case strings.Contains(lower, "claude-haiku"), strings.Contains(lower, "/haiku"):
+		return "haiku", "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+	default:
+		return "", ""
+	}
+}
+
+func ensureLegacyCodexMCPServer(agent AgentConfig, doc map[string]interface{}, baseURL string) {
+	if !strings.EqualFold(strings.TrimSpace(agent.Name), "codex cli") {
+		return
+	}
+	servers, ok := asObjectMap(doc["mcp_servers"])
+	if !ok {
+		servers = make(map[string]interface{})
+		doc["mcp_servers"] = servers
+	}
+	servers["preloop"] = map[string]interface{}{
+		"url":                  strings.TrimRight(baseURL, "/") + "/mcp/v1",
+		"bearer_token_env_var": "PRELOOP_TOKEN",
+	}
 }
 
 func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig, publicURL string) (*remoteServerSyncResult, error) {
@@ -2043,10 +2646,10 @@ func getManagedAgentForDiscovered(client *api.Client, agent AgentConfig) (*manag
 	if err := client.Get("/api/v1/agents?limit=100", &response); err != nil {
 		return nil, fmt.Errorf("failed to list managed agents: %w", err)
 	}
-	sourceType := runtimeSessionSourceTypeForAgent(agent.Name)
+	sourceTypes := managedAgentLookupSourceTypes(agent)
 	candidateIDs := runtimePrincipalIDCandidates(agent)
 	for _, item := range response.Items {
-		if item.SessionSourceType != sourceType {
+		if !containsString(sourceTypes, item.SessionSourceType) {
 			continue
 		}
 		for _, sourceID := range candidateIDs {
@@ -2056,6 +2659,16 @@ func getManagedAgentForDiscovered(client *api.Client, agent AgentConfig) (*manag
 		}
 	}
 	return nil, fmt.Errorf("managed agent not found after bootstrap for %s", agent.Name)
+}
+
+func managedAgentLookupSourceTypes(agent AgentConfig) []string {
+	primary := runtimeSessionSourceTypeForAgent(agent.Name)
+	sourceTypes := []string{primary}
+	switch primary {
+	case "gemini_cli", "opencode":
+		sourceTypes = append(sourceTypes, "desktop_agent")
+	}
+	return sourceTypes
 }
 
 func runtimePrincipalIDCandidates(agent AgentConfig) []string {
@@ -2178,7 +2791,30 @@ func restoreManagedEnrollmentRecord(
 	return &response, nil
 }
 
-func createLocalEnrollmentBackup(agent AgentConfig, originalBytes []byte, plan managedMCPEnrollmentPlan) (*localEnrollmentState, error) {
+func createLocalEnrollmentBackup(agent AgentConfig, configExisted bool, originalBytes []byte, plan managedMCPEnrollmentPlan) (*localEnrollmentState, error) {
+	if existingState, err := loadLocalEnrollmentState(agent); err == nil {
+		if strings.TrimSpace(existingState.BackupPath) != "" {
+			if _, statErr := os.Stat(existingState.BackupPath); statErr == nil {
+				discoveredConfig := existingState.DiscoveredConfig
+				if len(discoveredConfig) == 0 {
+					discoveredConfig = plan.SanitizedDiscovered
+				}
+				return &localEnrollmentState{
+					AgentName:          agent.Name,
+					DisplayName:        resolveAgentDisplayName(agent),
+					RuntimePrincipalID: runtimePrincipalIDForAgent(agent),
+					ConfigPath:         agent.ConfigPath,
+					ConfigExisted:      existingState.ConfigExisted,
+					BackupPath:         existingState.BackupPath,
+					ManagedServerName:  plan.ManagedServerName,
+					ManagedServerURL:   plan.ManagedServerURL,
+					AppliedAt:          time.Now().UTC(),
+					DiscoveredConfig:   discoveredConfig,
+					ManagedConfig:      plan.SanitizedManaged,
+				}, nil
+			}
+		}
+	}
 	baseDir, err := config.GetConfigDir()
 	if err != nil {
 		return nil, err
@@ -2200,6 +2836,7 @@ func createLocalEnrollmentBackup(agent AgentConfig, originalBytes []byte, plan m
 		DisplayName:        resolveAgentDisplayName(agent),
 		RuntimePrincipalID: runtimePrincipalID,
 		ConfigPath:         agent.ConfigPath,
+		ConfigExisted:      configExisted,
 		BackupPath:         backupPath,
 		ManagedServerName:  plan.ManagedServerName,
 		ManagedServerURL:   plan.ManagedServerURL,
@@ -2279,7 +2916,18 @@ func loadJSONDocument(path string) (map[string]interface{}, error) {
 	return doc, nil
 }
 
+func parseDocumentFromTOML(data []byte) (map[string]interface{}, error) {
+	var doc map[string]interface{}
+	if err := toml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
 func writeJSONDocument(path string, doc map[string]interface{}) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode managed config: %w", err)
@@ -2289,6 +2937,34 @@ func writeJSONDocument(path string, doc map[string]interface{}) error {
 		return fmt.Errorf("failed to write managed config: %w", err)
 	}
 	return nil
+}
+
+func writeTOMLDocument(path string, doc map[string]interface{}) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	data, err := toml.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to encode managed config: %w", err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		data = append(data, '\n')
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write managed config: %w", err)
+	}
+	return nil
+}
+
+func readExistingAgentConfig(path string) ([]byte, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []byte{}, false, nil
+		}
+		return nil, false, err
+	}
+	return data, true, nil
 }
 
 func deepCopyMap(value map[string]interface{}) (map[string]interface{}, error) {
@@ -2318,9 +2994,17 @@ func (a genericManagedMCPAdapter) EnsureServerContainer(doc map[string]interface
 	if servers, ok := asObjectMap(doc["servers"]); ok {
 		return servers, nil
 	}
+	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "codex cli") {
+		if servers, ok := asObjectMap(doc["mcp_servers"]); ok {
+			return servers, nil
+		}
+	}
 	if mcp, ok := asObjectMap(doc["mcp"]); ok {
 		if servers, ok := asObjectMap(mcp["servers"]); ok {
 			return servers, nil
+		}
+		if looksLikeMCPServerContainer(mcp) {
+			return mcp, nil
 		}
 		created := make(map[string]interface{})
 		mcp["servers"] = created
@@ -2335,6 +3019,10 @@ func (a genericManagedMCPAdapter) EnsureServerContainer(doc map[string]interface
 	case "codex cli":
 		created := make(map[string]interface{})
 		doc["mcp"] = map[string]interface{}{"servers": created}
+		return created, nil
+	case "opencode":
+		created := make(map[string]interface{})
+		doc["mcp"] = created
 		return created, nil
 	default:
 		created := make(map[string]interface{})
@@ -2353,6 +3041,23 @@ func (a genericManagedMCPAdapter) BuildManagedServer(baseURL, token string) map[
 			"auth": map[string]interface{}{
 				"type":  "bearer",
 				"token": token,
+			},
+		}
+	case "gemini cli":
+		return map[string]interface{}{
+			"url":  url,
+			"type": "http",
+			"headers": map[string]interface{}{
+				"Authorization": "Bearer " + token,
+			},
+		}
+	case "opencode":
+		return map[string]interface{}{
+			"type":    "remote",
+			"url":     url,
+			"enabled": true,
+			"headers": map[string]interface{}{
+				"Authorization": "Bearer " + token,
 			},
 		}
 	default:
@@ -2391,9 +3096,34 @@ func (a genericManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface
 
 	result["preloop_url_ok"] = preloop["url"] == expectedURL
 	result["transport_ok"] = preloop["transport"] != nil
+	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "gemini cli") {
+		if transport, _ := preloop["transport"].(string); strings.EqualFold(strings.TrimSpace(transport), "http-streaming") {
+			result["transport_ok"] = true
+		} else {
+			result["transport_ok"] = strings.EqualFold(
+				strings.TrimSpace(fmt.Sprint(preloop["type"])),
+				"http",
+			)
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "opencode") {
+		result["transport_ok"] = strings.EqualFold(
+			strings.TrimSpace(fmt.Sprint(preloop["type"])),
+			"remote",
+		)
+	}
 	if headers, ok := preloop["headers"].(map[string]interface{}); ok {
 		if auth, ok := headers["Authorization"].(string); ok && strings.HasPrefix(auth, "Bearer ") {
 			result["authorization_header_ok"] = true
+		}
+	}
+	if !result["authorization_header_ok"].(bool) {
+		if auth, ok := preloop["auth"].(map[string]interface{}); ok {
+			authType, _ := auth["type"].(string)
+			token, _ := auth["token"].(string)
+			if strings.EqualFold(strings.TrimSpace(authType), "bearer") && strings.TrimSpace(token) != "" {
+				result["authorization_header_ok"] = true
+			}
 		}
 	}
 	result["validation_passed"] =
@@ -2401,6 +3131,160 @@ func (a genericManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface
 			result["preloop_url_ok"] == true &&
 			result["transport_ok"] == true &&
 			result["authorization_header_ok"] == true
+	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "codex cli") {
+		expectedGatewayURL := strings.TrimRight(baseURL, "/") + openClawGatewayPath
+		result["expected_gateway_url"] = expectedGatewayURL
+		result["gateway_provider_ok"] = false
+		result["gateway_base_url_ok"] = false
+		result["gateway_token_ok"] = false
+		result["gateway_wire_api_ok"] = false
+		result["model_provider_rewritten"] = false
+		result["gateway_model_alias"] = ""
+		result["legacy_mcp_server_present"] = false
+
+		if providers, ok := asObjectMap(doc["model_providers"]); ok {
+			if managedProvider, ok := asObjectMap(providers["preloop"]); ok {
+				result["gateway_provider_ok"] = true
+				if base, _ := managedProvider["base_url"].(string); base == expectedGatewayURL {
+					result["gateway_base_url_ok"] = true
+				}
+				if token, _ := managedProvider["experimental_bearer_token"].(string); strings.TrimSpace(token) != "" {
+					result["gateway_token_ok"] = true
+				}
+				if wireAPI, _ := managedProvider["wire_api"].(string); strings.EqualFold(strings.TrimSpace(wireAPI), "responses") {
+					result["gateway_wire_api_ok"] = true
+				}
+			}
+		}
+		if provider, _ := doc["model_provider"].(string); strings.EqualFold(strings.TrimSpace(provider), "preloop") {
+			result["model_provider_rewritten"] = true
+		}
+		if modelAlias, _ := doc["model"].(string); strings.TrimSpace(modelAlias) != "" {
+			result["gateway_model_alias"] = strings.TrimSpace(modelAlias)
+		}
+		if legacyServers, ok := asObjectMap(doc["mcp_servers"]); ok {
+			if legacy, ok := asObjectMap(legacyServers["preloop"]); ok {
+				result["legacy_mcp_server_present"] = true
+				if url, _ := legacy["url"].(string); strings.TrimSpace(url) == expectedURL {
+					result["preloop_server_present"] = true
+					result["preloop_url_ok"] = true
+					result["transport_ok"] = true
+				}
+				if envKey, _ := legacy["bearer_token_env_var"].(string); strings.TrimSpace(envKey) != "" {
+					result["authorization_header_ok"] = true
+				}
+			}
+		}
+		result["validation_passed"] =
+			result["preloop_server_present"] == true &&
+				result["preloop_url_ok"] == true &&
+				result["transport_ok"] == true &&
+				result["authorization_header_ok"] == true &&
+				result["gateway_provider_ok"] == true &&
+				result["gateway_base_url_ok"] == true &&
+				result["gateway_token_ok"] == true &&
+				result["gateway_wire_api_ok"] == true &&
+				result["model_provider_rewritten"] == true
+	}
+	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "opencode") {
+		expectedGatewayURL := strings.TrimRight(baseURL, "/") + openClawGatewayPath
+		result["expected_gateway_url"] = expectedGatewayURL
+		result["gateway_provider_ok"] = false
+		result["gateway_base_url_ok"] = false
+		result["gateway_token_ok"] = false
+		result["model_provider_rewritten"] = false
+		result["gateway_model_alias"] = ""
+
+		if providers, ok := asObjectMap(doc["provider"]); ok {
+			if managedProvider, ok := asObjectMap(providers["preloop"]); ok {
+				result["gateway_provider_ok"] = true
+				if options, ok := asObjectMap(managedProvider["options"]); ok {
+					if base, _ := options["baseURL"].(string); base == expectedGatewayURL {
+						result["gateway_base_url_ok"] = true
+					}
+					if token, _ := options["apiKey"].(string); strings.TrimSpace(token) != "" {
+						result["gateway_token_ok"] = true
+					}
+				}
+			}
+		}
+		if modelRef, _ := doc["model"].(string); strings.HasPrefix(strings.TrimSpace(modelRef), "preloop/") {
+			result["model_provider_rewritten"] = true
+			result["gateway_model_alias"] = strings.TrimPrefix(strings.TrimSpace(modelRef), "preloop/")
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "claude code") {
+		expectedGatewayURL := strings.TrimRight(baseURL, "/") + "/anthropic"
+		result["expected_gateway_url"] = expectedGatewayURL
+		result["gateway_provider_ok"] = false
+		result["gateway_base_url_ok"] = false
+		result["gateway_token_ok"] = false
+		result["model_provider_rewritten"] = false
+		result["gateway_model_alias"] = ""
+
+		if env, ok := asObjectMap(doc["env"]); ok {
+			if base, _ := env["ANTHROPIC_BASE_URL"].(string); base == expectedGatewayURL {
+				result["gateway_base_url_ok"] = true
+			}
+			if token, _ := env["ANTHROPIC_API_KEY"].(string); strings.TrimSpace(token) != "" {
+				result["gateway_token_ok"] = true
+			}
+			if token, _ := env["ANTHROPIC_AUTH_TOKEN"].(string); strings.TrimSpace(token) != "" {
+				result["gateway_token_ok"] = true
+			}
+			if custom, _ := env["ANTHROPIC_CUSTOM_MODEL_OPTION"].(string); strings.TrimSpace(custom) != "" {
+				result["gateway_provider_ok"] = true
+			}
+			for _, key := range []string{
+				"ANTHROPIC_DEFAULT_OPUS_MODEL",
+				"ANTHROPIC_DEFAULT_SONNET_MODEL",
+				"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+			} {
+				if modelAlias, _ := env[key].(string); strings.TrimSpace(modelAlias) != "" {
+					result["model_provider_rewritten"] = true
+					result["gateway_model_alias"] = strings.TrimSpace(modelAlias)
+					break
+				}
+			}
+			if result["gateway_model_alias"] == "" {
+				if modelAlias, _ := env["ANTHROPIC_MODEL"].(string); strings.TrimSpace(modelAlias) != "" {
+					result["model_provider_rewritten"] = true
+					result["gateway_model_alias"] = strings.TrimSpace(modelAlias)
+				}
+			}
+			if result["gateway_model_alias"] == "" {
+				if modelSetting, _ := doc["model"].(string); strings.TrimSpace(modelSetting) != "" {
+					result["model_provider_rewritten"] = true
+				}
+			}
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "gemini cli") {
+		expectedGatewayURL := strings.TrimRight(baseURL, "/") + "/gemini/v1beta"
+		result["expected_gateway_url"] = expectedGatewayURL
+		result["gateway_provider_ok"] = false
+		result["gateway_base_url_ok"] = false
+		result["gateway_token_ok"] = false
+		result["model_provider_rewritten"] = false
+		result["gateway_model_alias"] = ""
+
+		if base, _ := doc["baseUrl"].(string); base == expectedGatewayURL {
+			result["gateway_base_url_ok"] = true
+		}
+		if token, _ := doc["apiKey"].(string); strings.TrimSpace(token) != "" {
+			result["gateway_token_ok"] = true
+			result["gateway_provider_ok"] = true
+		}
+		if modelConfig, ok := asObjectMap(doc["model"]); ok {
+			if modelAlias, _ := modelConfig["name"].(string); strings.TrimSpace(modelAlias) != "" {
+				result["model_provider_rewritten"] = true
+				result["gateway_model_alias"] = normalizeGeminiGatewayModelAlias(modelAlias)
+			}
+		} else if modelAlias, _ := doc["model"].(string); strings.TrimSpace(modelAlias) != "" {
+			result["model_provider_rewritten"] = true
+			result["gateway_model_alias"] = normalizeGeminiGatewayModelAlias(modelAlias)
+		}
+	}
 	return result
 }
 
@@ -2478,10 +3362,16 @@ func (a openClawManagedMCPAdapter) ValidateManagedConfig(doc map[string]interfac
 	if providers, ok := asObjectMap(lookupValue(doc, "models", "providers")); ok {
 		if gatewayProvider, ok := asObjectMap(providers[openClawManagedProviderID]); ok {
 			result["gateway_provider_ok"] = true
-			result["gateway_base_url_ok"] = gatewayProvider["baseUrl"] == expectedGatewayURL
-			if apiName, _ := gatewayProvider["api"].(string); apiName == "openai-responses" || apiName == "openai-completions" {
+			apiName, _ := gatewayProvider["api"].(string)
+			switch strings.TrimSpace(apiName) {
+			case "anthropic-messages":
+				expectedGatewayURL = strings.TrimRight(baseURL, "/") + "/anthropic/v1"
+				result["expected_gateway_url"] = expectedGatewayURL
+				result["gateway_api_ok"] = true
+			case "openai-responses", "openai-completions":
 				result["gateway_api_ok"] = true
 			}
+			result["gateway_base_url_ok"] = gatewayProvider["baseUrl"] == expectedGatewayURL
 		}
 	}
 	if modelRef := extractOpenClawPrimaryModel(doc); strings.HasPrefix(modelRef, openClawManagedProviderID+"/") {
@@ -2530,8 +3420,52 @@ func lookupMCPServerContainer(doc map[string]interface{}) map[string]interface{}
 		if servers, ok := asObjectMap(mcp["servers"]); ok {
 			return servers
 		}
+		if looksLikeMCPServerContainer(mcp) {
+			return mcp
+		}
+	}
+	if servers, ok := asObjectMap(doc["mcp_servers"]); ok {
+		return servers
 	}
 	return map[string]interface{}{}
+}
+
+func looksLikeMCPServerContainer(value map[string]interface{}) bool {
+	if len(value) == 0 {
+		return false
+	}
+	for _, raw := range value {
+		entry, ok := asObjectMap(raw)
+		if !ok || !looksLikeMCPServerEntry(entry) {
+			return false
+		}
+	}
+	return true
+}
+
+func looksLikeMCPServerEntry(value map[string]interface{}) bool {
+	if value == nil {
+		return false
+	}
+	if _, ok := value["url"]; ok {
+		return true
+	}
+	if _, ok := value["command"]; ok {
+		return true
+	}
+	if _, ok := value["transport"]; ok {
+		return true
+	}
+	if _, ok := value["headers"]; ok {
+		return true
+	}
+	if _, ok := value["auth"]; ok {
+		return true
+	}
+	if _, ok := value["type"]; ok {
+		return true
+	}
+	return false
 }
 
 func clientBaseURLForFlags() string {
@@ -2616,6 +3550,17 @@ func parseGenericMCP(path string) (map[string]MCPDef, error) {
 	return parseServerMapFromJSON(data)
 }
 
+func parseCodexConfig(path string) (map[string]MCPDef, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(filepath.Ext(path), ".toml") {
+		return parseServerMapFromTOML(data)
+	}
+	return parseServerMapFromJSON(data)
+}
+
 // parseGeminiConfig reads Gemini CLI's settings.json format.
 func parseGeminiConfig(path string) (map[string]MCPDef, error) {
 	data, err := os.ReadFile(path)
@@ -2626,12 +3571,16 @@ func parseGeminiConfig(path string) (map[string]MCPDef, error) {
 }
 
 func parseServerMapFromJSON(data []byte) (map[string]MCPDef, error) {
-	var root map[string]json.RawMessage
-	if err := json.Unmarshal(data, &root); err != nil {
-		return nil, err
-	}
 	var doc map[string]interface{}
 	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	return parseServerMapFromDocument(doc), nil
+}
+
+func parseServerMapFromTOML(data []byte) (map[string]MCPDef, error) {
+	var doc map[string]interface{}
+	if err := toml.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
 	return parseServerMapFromDocument(doc), nil

@@ -14,6 +14,7 @@ from preloop.api.auth.jwt import get_current_active_user
 from preloop.api.common import get_account_for_user
 from preloop.models.crud import (
     crud_account,
+    crud_ai_model,
     crud_api_key,
     crud_managed_agent,
     crud_managed_agent_credential,
@@ -108,6 +109,10 @@ def _managed_agent_onboarding_flags(
             and isinstance(managed_config["mcp"].get("servers"), dict)
             and "preloop" in managed_config["mcp"]["servers"]
         )
+        or (
+            isinstance(managed_config.get("mcp"), dict)
+            and "preloop" in managed_config["mcp"]
+        )
     )
     model_gateway_configured = bool(
         validation.get("gateway_model_configured")
@@ -115,6 +120,33 @@ def _managed_agent_onboarding_flags(
             isinstance(managed_config.get("models"), dict)
             and isinstance(managed_config["models"].get("providers"), dict)
             and "preloop" in managed_config["models"]["providers"]
+        )
+        or (
+            managed_config.get("model_provider") == "preloop"
+            and isinstance(managed_config.get("model_providers"), dict)
+            and "preloop" in managed_config["model_providers"]
+        )
+        or (
+            isinstance(managed_config.get("provider"), dict)
+            and "preloop" in managed_config["provider"]
+            and isinstance(managed_config.get("model"), str)
+            and managed_config["model"].startswith("preloop/")
+        )
+        or (
+            isinstance(managed_config.get("env"), dict)
+            and isinstance(managed_config["env"].get("ANTHROPIC_BASE_URL"), str)
+            and isinstance(managed_config["env"].get("ANTHROPIC_MODEL"), str)
+        )
+        or (
+            isinstance(managed_config.get("baseUrl"), str)
+            and isinstance(managed_config.get("apiKey"), str)
+            and (
+                (
+                    isinstance(managed_config.get("model"), dict)
+                    and isinstance(managed_config["model"].get("name"), str)
+                )
+                or isinstance(managed_config.get("model"), str)
+            )
         )
     )
 
@@ -125,6 +157,107 @@ def _managed_agent_onboarding_flags(
     if model_gateway_configured:
         return False, True, "gateway_only"
     return False, False, "incomplete"
+
+
+def _lookup_nested_string(root: dict, *path: str) -> Optional[str]:
+    current = root
+    for key in path[:-1]:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    if not isinstance(current, dict):
+        return None
+    value = current.get(path[-1])
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _normalize_gateway_model_alias(alias: Optional[str]) -> Optional[str]:
+    if not isinstance(alias, str):
+        return None
+    trimmed = alias.strip()
+    if not trimmed:
+        return None
+    if trimmed.lower().startswith("preloop/"):
+        trimmed = trimmed.split("/", 1)[1].strip()
+    return trimmed or None
+
+
+def _managed_agent_configured_model_alias(
+    latest_enrollment: Optional[dict],
+) -> Optional[str]:
+    if not latest_enrollment:
+        return None
+
+    managed_config = (
+        latest_enrollment.get("managed_config")
+        if isinstance(latest_enrollment.get("managed_config"), dict)
+        else {}
+    )
+    candidates = [
+        _lookup_nested_string(managed_config, "env", "ANTHROPIC_MODEL"),
+        _lookup_nested_string(managed_config, "model"),
+        _lookup_nested_string(managed_config, "model", "name"),
+        _lookup_nested_string(managed_config, "agents", "defaults", "model"),
+        _lookup_nested_string(managed_config, "agents", "defaults", "model", "primary"),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_gateway_model_alias(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _ai_model_meta_lookup(ai_model: Any, *path: str) -> Optional[str]:
+    meta_data = ai_model.meta_data if isinstance(ai_model.meta_data, dict) else {}
+    current: Any = meta_data
+    for key in path[:-1]:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    if not isinstance(current, dict):
+        return None
+    value = current.get(path[-1])
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _managed_agent_configured_model_id(
+    db: Session,
+    *,
+    account_id: str,
+    agent_id: str,
+    configured_model_alias: Optional[str],
+) -> Optional[str]:
+    normalized_alias = _normalize_gateway_model_alias(configured_model_alias)
+    models = crud_ai_model.get_by_account(db, account_id=account_id)
+
+    best_match: Optional[Any] = None
+    for ai_model in models:
+        managed_agent_id = _ai_model_meta_lookup(ai_model, "managed_agent_id")
+        gateway_alias = _normalize_gateway_model_alias(
+            _ai_model_meta_lookup(ai_model, "gateway", "model_alias")
+        )
+        if managed_agent_id == agent_id and gateway_alias == normalized_alias:
+            return str(ai_model.id)
+        if managed_agent_id == agent_id and best_match is None:
+            best_match = ai_model
+
+    if best_match is not None:
+        return str(best_match.id)
+
+    if normalized_alias is None:
+        return None
+
+    alias_matches = [
+        ai_model
+        for ai_model in models
+        if _normalize_gateway_model_alias(
+            _ai_model_meta_lookup(ai_model, "gateway", "model_alias")
+        )
+        == normalized_alias
+    ]
+    if len(alias_matches) == 1:
+        return str(alias_matches[0].id)
+    return None
 
 
 def _managed_agent_live_validation_state(
@@ -187,6 +320,15 @@ def _enrich_managed_agent_summary(
         summary["live_validation_status"],
         summary["last_validated_at"],
     ) = _managed_agent_live_validation_state(latest_enrollment_summary)
+    summary["configured_model_alias"] = _managed_agent_configured_model_alias(
+        latest_enrollment_summary
+    )
+    summary["configured_model_id"] = _managed_agent_configured_model_id(
+        db,
+        account_id=account_id,
+        agent_id=summary["id"],
+        configured_model_alias=summary["configured_model_alias"],
+    )
     return summary
 
 
@@ -408,16 +550,30 @@ async def list_account_managed_agents(
     query: Optional[str] = Query(None, min_length=1),
     session_source_type: Optional[str] = Query(None),
     status: str = Query("all", pattern="^(all|active|ended)$"),
+    owner_username: Optional[str] = Query(None),
+    tags: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
     """List enrolled external agents for the current account."""
+    parsed_tags = None
+    if tags:
+        import json
+
+        try:
+            parsed_tags = json.loads(tags)
+        except json.JSONDecodeError:
+            # Fallback for simple key=value pairs or generic strings not properly json encoded if passed directly from some clients, although we expect valid JSON.
+            pass
+
     result = crud_managed_agent.list_for_account(
         db,
         account_id=str(account.id),
         query=query,
         session_source_type=session_source_type,
         status=status,
+        owner_username=owner_username,
+        tags=parsed_tags,
         limit=limit,
         offset=offset,
     )
@@ -958,6 +1114,7 @@ async def update_account_managed_agent(
 
     set_owner = "owner_user_id" in update.model_fields_set
     set_display_name = "display_name" in update.model_fields_set
+    set_tags = "tags" in update.model_fields_set
     owner_user_id = None
     if set_owner and update.owner_user_id:
         owner = crud_user.get(db, id=update.owner_user_id)
@@ -993,6 +1150,8 @@ async def update_account_managed_agent(
         set_display_name=set_display_name,
         lifecycle_state=lifecycle_state,
         lifecycle_reason=update.reason,
+        tags=update.tags,
+        set_tags=set_tags,
         commit=False,
     )
     if updated is None:

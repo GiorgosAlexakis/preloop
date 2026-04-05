@@ -71,4 +71,4 @@ def test_scoped_tool_rules_prioritize_api_key_before_agent():
         subject_context={"api_key_id": "key-1", "managed_agent_id": "agent-1"},
     )
 
-    assert [rule["action"] for rule in rules] == ["require_approval", "deny"]
+    assert [rule["action"] for rule in rules] == ["require_approval"]

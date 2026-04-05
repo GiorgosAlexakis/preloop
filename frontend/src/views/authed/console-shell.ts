@@ -37,6 +37,9 @@ export class ConsoleShell extends LitElement {
   @state()
   private _isMobile = false;
 
+  @state()
+  private _fullBleed = false;
+
   private _mediaQuery?: MediaQueryList;
   private _mediaQueryHandler?: (e: MediaQueryListEvent) => void;
 
@@ -150,14 +153,27 @@ export class ConsoleShell extends LitElement {
         align-items: center;
       }
 
+      .main-content.full-bleed {
+        padding: 0;
+        overflow: hidden;
+      }
+
       .main-content > ::slotted(*) {
         width: 100%;
         max-width: 80rem;
       }
 
+      .main-content.full-bleed > ::slotted(*) {
+        max-width: none;
+        height: 100%;
+      }
+
       @media (max-width: 768px) {
         .main-content {
           padding: 1rem;
+        }
+        .main-content.full-bleed {
+          padding: 0;
         }
       }
 
@@ -211,6 +227,10 @@ export class ConsoleShell extends LitElement {
     window.addEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
     });
+    window.addEventListener(
+      'vaadin-router-location-changed',
+      this._handleLocationChanged
+    );
     this._mediaQuery = window.matchMedia(
       `(max-width: ${SIDEBAR_BREAKPOINT}px)`
     );
@@ -249,6 +269,10 @@ export class ConsoleShell extends LitElement {
     }
   };
 
+  private _handleLocationChanged = () => {
+    this._fullBleed = false;
+  };
+
   updated(changedProperties: Map<string, unknown>) {
     super.updated?.(changedProperties);
     if (
@@ -265,6 +289,10 @@ export class ConsoleShell extends LitElement {
     window.removeEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
     });
+    window.removeEventListener(
+      'vaadin-router-location-changed',
+      this._handleLocationChanged
+    );
     this._mediaQuery?.removeEventListener('change', this._mediaQueryHandler!);
     super.disconnectedCallback();
   }
@@ -420,7 +448,11 @@ export class ConsoleShell extends LitElement {
               @click=${this._handleSidebarToggle}
             ></sl-icon-button>
           </console-header>
-          <div class="main-content">
+          <div
+            class="main-content ${this._fullBleed ? 'full-bleed' : ''}"
+            @request-full-bleed=${(e: CustomEvent) =>
+              (this._fullBleed = !!e.detail)}
+          >
             <slot></slot>
           </div>
         </div>

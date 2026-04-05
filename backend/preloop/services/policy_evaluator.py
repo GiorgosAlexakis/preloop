@@ -14,7 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from preloop.models import models
-from preloop.services.subject_governance import get_scoped_tool_rules
+from preloop.services.subject_governance import (
+    get_scoped_tool_rules,
+    is_tool_enabled_for_subject,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -217,8 +220,15 @@ def evaluate_policy(
         - matched_rule_description: Description of the matched rule (or reason for default)
     """
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    account_meta = (account.meta_data or {}) if account else {}
+
+    if not is_tool_enabled_for_subject(
+        account_meta, tool_name=tool_name, subject_context=subject_context or {}
+    ):
+        return "deny", None, "Tool disabled by agent or API key configuration"
+
     scoped_rules = get_scoped_tool_rules(
-        (account.meta_data or {}) if account else {},
+        account_meta,
         tool_name=tool_name,
         subject_context=subject_context or {},
     )
@@ -271,6 +281,18 @@ def evaluate_policy(
     )
     if scoped_decision is not None:
         return scoped_decision
+
+    if scoped_rules:
+        _log_policy_decision_async(
+            account_id=account_id,
+            tool_name=tool_name,
+            action="allow",
+            rule_description="No scoped rules matched (default allow for subject)",
+            tool_args=tool_args,
+            user_id=user_id,
+            execution_id=execution_id,
+        )
+        return "allow", None, "No scoped rules matched (default allow for subject)"
 
     if not tool_config:
         # No configuration found, default allow
@@ -724,6 +746,12 @@ async def evaluate_policy_async(
         select(models.Account.meta_data).where(models.Account.id == account_id)
     )
     account_meta_data = account_result.scalar_one_or_none() or {}
+
+    if not is_tool_enabled_for_subject(
+        account_meta_data, tool_name=tool_name, subject_context=subject_context or {}
+    ):
+        return "deny", None, "Tool disabled by agent or API key configuration"
+
     scoped_rules = get_scoped_tool_rules(
         account_meta_data,
         tool_name=tool_name,
@@ -778,6 +806,20 @@ async def evaluate_policy_async(
     )
     if scoped_decision is not None:
         return scoped_decision
+
+    if scoped_rules:
+        _log_policy_decision_async(
+            account_id=account_id,
+            tool_name=tool_name,
+            action="allow",
+            rule_description="No scoped rules matched (default allow for subject)",
+            tool_args=tool_args,
+            user_id=user_id,
+            execution_id=execution_id,
+            correlation_id=correlation_id,
+            extra_details=extra_details,
+        )
+        return "allow", None, "No scoped rules matched (default allow for subject)"
 
     if not tool_config:
         # Log the policy decision (fire-and-forget)

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from base64 import urlsafe_b64decode
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 import logging
-from typing import Optional, Protocol
+from typing import Any, Dict, Optional, Protocol
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
@@ -25,6 +27,13 @@ logger = logging.getLogger(__name__)
 LOCAL_ENCRYPTED_BACKEND = "local_encrypted"
 VAULT_KV_V2_BACKEND = "vault_kv_v2"
 OPENBAO_KV_V2_BACKEND = "openbao_kv_v2"
+AI_MODEL_API_KEY_SECRET_KIND = "ai_model_api_key"
+AI_MODEL_CREDENTIALS_SECRET_KIND = "ai_model_credentials"
+OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE = "oauth_openai_codex"
+OPENAI_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+OPENAI_CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
+OPENAI_CODEX_JWT_CLAIM_PATH = "https://api.openai.com/auth"
+OPENAI_CODEX_REFRESH_SKEW_MS = 60_000
 
 
 @dataclass
@@ -33,6 +42,17 @@ class ResolvedSecret:
 
     value: str
     backend_type: str
+    secret_reference_id: Optional[UUID] = None
+
+
+@dataclass
+class ResolvedModelCredentials:
+    """Resolved model credentials with logical type information."""
+
+    credential_type: str
+    backend_type: str
+    value: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
     secret_reference_id: Optional[UUID] = None
 
 
@@ -221,6 +241,7 @@ class SecretService:
         secret_kind: str,
         secret_value: str,
         existing_secret_id: Optional[UUID] = None,
+        meta_data: Optional[dict] = None,
     ) -> SecretReference:
         """Create or update a locally encrypted secret reference."""
         encrypted_value = encrypt_value(secret_value)
@@ -235,6 +256,7 @@ class SecretService:
                 secret_ref.encrypted_value = encrypted_value
                 secret_ref.status = "active"
                 secret_ref.last_verified_at = now
+                secret_ref.meta_data = meta_data or {}
                 db.add(secret_ref)
                 db.commit()
                 db.refresh(secret_ref)
@@ -250,7 +272,7 @@ class SecretService:
                 "encrypted_value": encrypted_value,
                 "status": "active",
                 "last_verified_at": now,
-                "meta_data": {},
+                "meta_data": meta_data or {},
                 "created_at": now,
                 "updated_at": now,
             },
@@ -322,16 +344,237 @@ class SecretService:
             secret_reference_id=secret_ref.id,
         )
 
-    def resolve_ai_model_api_key(self, ai_model: AIModel) -> Optional[ResolvedSecret]:
-        """Resolve the API key for an AI model."""
+    def resolve_ai_model_credentials(
+        self,
+        ai_model: AIModel,
+        *,
+        db: Optional[Session] = None,
+        allow_refresh: bool = False,
+    ) -> Optional[ResolvedModelCredentials]:
+        """Resolve typed credentials for an AI model."""
         if ai_model.credentials_secret:
-            return self.resolve_secret_reference(ai_model.credentials_secret)
+            resolved = self.resolve_secret_reference(ai_model.credentials_secret)
+            secret_kind = (
+                (ai_model.credentials_secret.secret_kind or "").strip().lower()
+            )
+            if secret_kind == AI_MODEL_CREDENTIALS_SECRET_KIND:
+                return self._resolve_structured_ai_model_credentials(
+                    ai_model,
+                    resolved,
+                    db=db,
+                    allow_refresh=allow_refresh,
+                )
+            return ResolvedModelCredentials(
+                credential_type="api_key",
+                backend_type=resolved.backend_type,
+                value=resolved.value,
+                secret_reference_id=resolved.secret_reference_id,
+            )
 
         if ai_model.api_key:
-            # Legacy plaintext fallback while existing deployments are migrated.
-            return ResolvedSecret(
-                value=ai_model.api_key, backend_type="legacy_plaintext"
+            return ResolvedModelCredentials(
+                credential_type="api_key",
+                backend_type="legacy_plaintext",
+                value=ai_model.api_key,
             )
+
+        return None
+
+    def resolve_ai_model_api_key(self, ai_model: AIModel) -> Optional[ResolvedSecret]:
+        """Resolve the API key for an AI model."""
+        resolved_credentials = self.resolve_ai_model_credentials(ai_model)
+        if (
+            not resolved_credentials
+            or resolved_credentials.credential_type != "api_key"
+        ):
+            return None
+        return ResolvedSecret(
+            value=resolved_credentials.value or "",
+            backend_type=resolved_credentials.backend_type,
+            secret_reference_id=resolved_credentials.secret_reference_id,
+        )
+
+    def _resolve_structured_ai_model_credentials(
+        self,
+        ai_model: AIModel,
+        resolved_secret: ResolvedSecret,
+        *,
+        db: Optional[Session] = None,
+        allow_refresh: bool = False,
+    ) -> Optional[ResolvedModelCredentials]:
+        try:
+            payload = json.loads(resolved_secret.value or "")
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("AI model credential payload is not valid JSON") from exc
+
+        if not isinstance(payload, dict):
+            raise ValueError("AI model credential payload must be a JSON object")
+
+        credential_type = str(payload.get("type") or "").strip()
+        if not credential_type:
+            raise ValueError("AI model credential payload is missing type")
+
+        if (
+            credential_type == OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE
+            and allow_refresh
+            and self._openai_codex_refresh_required(payload)
+        ):
+            payload = self._refresh_openai_codex_ai_model_credentials(
+                ai_model,
+                payload,
+                db=db,
+            )
+
+        if credential_type == "api_key":
+            api_key = str(payload.get("api_key") or payload.get("value") or "").strip()
+            return ResolvedModelCredentials(
+                credential_type=credential_type,
+                backend_type=resolved_secret.backend_type,
+                value=api_key or None,
+                payload=payload,
+                secret_reference_id=resolved_secret.secret_reference_id,
+            )
+
+        if credential_type == OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE:
+            access_token = str(payload.get("access") or "").strip()
+            return ResolvedModelCredentials(
+                credential_type=credential_type,
+                backend_type=resolved_secret.backend_type,
+                value=access_token or None,
+                payload=payload,
+                secret_reference_id=resolved_secret.secret_reference_id,
+            )
+
+        return ResolvedModelCredentials(
+            credential_type=credential_type,
+            backend_type=resolved_secret.backend_type,
+            payload=payload,
+            secret_reference_id=resolved_secret.secret_reference_id,
+        )
+
+    def _openai_codex_refresh_required(self, payload: Dict[str, Any]) -> bool:
+        expires_raw = payload.get("expires")
+        expires_ms = self._coerce_epoch_millis(expires_raw)
+        if expires_ms is None:
+            return False
+        return (
+            expires_ms
+            <= int(datetime.now(timezone.utc).timestamp() * 1000)
+            + OPENAI_CODEX_REFRESH_SKEW_MS
+        )
+
+    def _refresh_openai_codex_ai_model_credentials(
+        self,
+        ai_model: AIModel,
+        payload: Dict[str, Any],
+        *,
+        db: Optional[Session] = None,
+    ) -> Dict[str, Any]:
+        refresh_token = str(payload.get("refresh") or "").strip()
+        if not refresh_token:
+            return payload
+
+        refreshed = self._refresh_openai_codex_token(refresh_token)
+        account_id = refreshed.get("account_id") or payload.get("account_id")
+        next_payload = {
+            "type": OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE,
+            "access": refreshed["access"],
+            "refresh": refreshed["refresh"],
+            "expires": refreshed["expires"],
+        }
+        if account_id:
+            next_payload["account_id"] = account_id
+
+        if (
+            db is not None
+            and ai_model.credentials_secret is not None
+            and ai_model.credentials_secret.backend_type == LOCAL_ENCRYPTED_BACKEND
+        ):
+            ai_model.credentials_secret.encrypted_value = encrypt_value(
+                json.dumps(next_payload)
+            )
+            ai_model.credentials_secret.last_verified_at = datetime.now(timezone.utc)
+            ai_model.credentials_secret.meta_data = {
+                **(
+                    ai_model.credentials_secret.meta_data
+                    if isinstance(ai_model.credentials_secret.meta_data, dict)
+                    else {}
+                ),
+                "credential_type": OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE,
+            }
+            db.add(ai_model.credentials_secret)
+            db.commit()
+            db.refresh(ai_model.credentials_secret)
+
+        return next_payload
+
+    def _refresh_openai_codex_token(self, refresh_token: str) -> Dict[str, Any]:
+        body = urllib_parse.urlencode(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": OPENAI_CODEX_CLIENT_ID,
+            }
+        ).encode("utf-8")
+        req = urllib_request.Request(
+            OPENAI_CODEX_TOKEN_URL,
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with urllib_request.urlopen(req, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib_error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "ignore")
+            raise ValueError(
+                f"OpenAI Codex token refresh failed with status {exc.code}: {detail}"
+            ) from exc
+        except urllib_error.URLError as exc:
+            raise ValueError(
+                f"OpenAI Codex token refresh failed: {exc.reason}"
+            ) from exc
+
+        access = str(payload.get("access_token") or "").strip()
+        refresh = str(payload.get("refresh_token") or "").strip()
+        expires_in = payload.get("expires_in")
+        if not access or not refresh or not isinstance(expires_in, (int, float)):
+            raise ValueError("OpenAI Codex token refresh response missing fields")
+        return {
+            "access": access,
+            "refresh": refresh,
+            "expires": int(datetime.now(timezone.utc).timestamp() * 1000)
+            + int(expires_in * 1000),
+            "account_id": self._extract_openai_codex_account_id(access),
+        }
+
+    def _extract_openai_codex_account_id(self, access_token: str) -> Optional[str]:
+        parts = access_token.split(".")
+        if len(parts) != 3:
+            return None
+        payload = parts[1]
+        padding = "=" * (-len(payload) % 4)
+        try:
+            decoded = json.loads(
+                urlsafe_b64decode((payload + padding).encode("utf-8")).decode("utf-8")
+            )
+        except (ValueError, json.JSONDecodeError):
+            return None
+        auth = decoded.get(OPENAI_CODEX_JWT_CLAIM_PATH)
+        if not isinstance(auth, dict):
+            return None
+        account_id = auth.get("chatgpt_account_id")
+        return str(account_id).strip() if account_id else None
+
+    @staticmethod
+    def _coerce_epoch_millis(value: Any) -> Optional[int]:
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(float(value))
+            except ValueError:
+                return None
 
         return None
 

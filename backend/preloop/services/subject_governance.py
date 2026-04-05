@@ -67,6 +67,7 @@ def sanitize_subject_governance_config(config: dict[str, Any]) -> dict[str, Any]
         "allowed_models": [],
         "model_budgets": {},
         "tool_rules": {},
+        "tool_enabled_overrides": {},
     }
     allowed_models = config.get("allowed_models")
     if isinstance(allowed_models, list):
@@ -79,6 +80,9 @@ def sanitize_subject_governance_config(config: dict[str, Any]) -> dict[str, Any]
     tool_rules = config.get("tool_rules")
     if isinstance(tool_rules, dict):
         sanitized["tool_rules"] = deepcopy(tool_rules)
+    tool_enabled_overrides = config.get("tool_enabled_overrides")
+    if isinstance(tool_enabled_overrides, dict):
+        sanitized["tool_enabled_overrides"] = deepcopy(tool_enabled_overrides)
     return sanitized
 
 
@@ -138,9 +142,7 @@ def get_scoped_tool_rules(
             continue
         rules = tool_rules.get(tool_name)
         if isinstance(rules, list):
-            matched_rules.extend(
-                rule for rule in deepcopy(rules) if isinstance(rule, dict)
-            )
+            return [rule for rule in deepcopy(rules) if isinstance(rule, dict)]
     return matched_rules
 
 
@@ -157,3 +159,31 @@ def get_scoped_model_governance(
         if config:
             configs.append(config)
     return configs
+
+
+def is_tool_enabled_for_subject(
+    meta_data: Optional[dict[str, Any]],
+    *,
+    tool_name: str,
+    subject_context: dict[str, Optional[str]],
+) -> bool:
+    """Check if a tool is explicitly enabled or disabled for a subject.
+
+    Walks the scope chain (most specific to least specific).
+    Returns False if an explicit override disabled the tool.
+    Returns True if an explicit override enabled the tool, or if no override exists.
+    """
+    for subject_type, subject_id in subject_scope_chain(subject_context):
+        config = get_subject_governance(
+            meta_data, subject_type=subject_type, subject_id=subject_id
+        )
+        overrides = config.get("tool_enabled_overrides")
+        if not isinstance(overrides, dict):
+            continue
+
+        # Check if the tool has an explicit override boolean value
+        is_enabled = overrides.get(tool_name)
+        if isinstance(is_enabled, bool):
+            return is_enabled
+
+    return True

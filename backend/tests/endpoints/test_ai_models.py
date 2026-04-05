@@ -214,9 +214,9 @@ def test_ai_model_schema_rejects_mixed_inline_and_external_credentials():
             credentials_external_ref="providers/openai/team-a",
         )
 
-    assert "api_key cannot be combined with external credential fields" in str(
+    assert "api_key cannot be combined with other credential fields" in str(
         create_error.value
     )
-    assert "api_key cannot be combined with external credential fields" in str(
+    assert "api_key cannot be combined with other credential fields" in str(
         update_error.value
     )

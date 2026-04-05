@@ -2248,7 +2248,7 @@ ${this.execution.resolved_input_prompt}</pre
                         : ''}
                     </div>
 
-                    /*${isRunning
+                    ${false && isRunning
                       ? html`
                           <div class="terminal-input">
                             <sl-input
@@ -2271,7 +2271,7 @@ ${this.execution.resolved_input_prompt}</pre
                             </sl-button>
                           </div>
                         `
-                      : ''}*/
+                      : ''}
                   </sl-card>
                 </div>
               </div>

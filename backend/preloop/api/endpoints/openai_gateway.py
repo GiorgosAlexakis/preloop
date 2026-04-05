@@ -13,6 +13,7 @@ from preloop.services.model_gateway_auth import (
     ModelGatewayAuthContext,
     authenticate_bearer_token,
 )
+from preloop.api.deps import get_budget_enforcer
 from preloop.services.model_gateway_errors import ModelGatewayAPIError
 from preloop.services.openai_gateway import OpenAIGatewayService
 
@@ -56,9 +57,10 @@ def create_chat_completion(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db_session),
     auth_context: ModelGatewayAuthContext = Depends(get_model_gateway_auth_context),
+    budget_enforcer: Any = Depends(get_budget_enforcer),
 ) -> Any:
     """Create an OpenAI-compatible chat completion."""
-    service = OpenAIGatewayService(db, auth_context)
+    service = OpenAIGatewayService(db, auth_context, budget_enforcer=budget_enforcer)
     if payload.get("stream"):
         return StreamingResponse(
             service.stream_chat_completion(payload),
@@ -72,9 +74,10 @@ def create_response(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db_session),
     auth_context: ModelGatewayAuthContext = Depends(get_model_gateway_auth_context),
+    budget_enforcer: Any = Depends(get_budget_enforcer),
 ) -> Any:
     """Create an OpenAI-compatible response."""
-    service = OpenAIGatewayService(db, auth_context)
+    service = OpenAIGatewayService(db, auth_context, budget_enforcer=budget_enforcer)
     if payload.get("stream"):
         return StreamingResponse(
             service.stream_response(payload),

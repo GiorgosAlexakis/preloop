@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import String, case, cast, func, or_
+from sqlalchemy import String, and_, case, cast, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -135,6 +135,39 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         )
 
         db.add(db_obj)
+        db.flush()  # assign an ID
+
+        # Atomically record spend if estimated_cost is present and > 0
+        if estimated_cost and account_id:
+            from .budget import record_spend_for_request
+
+            try:
+                import uuid
+
+                parsed_account_id = uuid.UUID(account_id)
+
+                # Derive subject ID based on the auth_subject_type
+                subject_id = None
+                if auth_subject_type == "api_keys" and api_key_id:
+                    subject_id = api_key_id
+                elif auth_subject_type == "managed_agents" and runtime_principal_id:
+                    # Often the principal acts as the agent's ID in this context
+                    subject_id = runtime_principal_id
+                elif auth_subject_type == "flows" and flow_id:
+                    subject_id = flow_id
+
+                record_spend_for_request(
+                    db=db,
+                    account_id=parsed_account_id,
+                    subject_type=auth_subject_type,
+                    subject_id=subject_id,
+                    model_alias=model_alias,
+                    estimated_cost=estimated_cost,
+                    timestamp=db_obj.timestamp,
+                )
+            except ValueError:
+                pass  # account_id is not a valid UUID, so skip budget recording
+
         db.commit()
         db.refresh(db_obj)
         return db_obj
@@ -349,7 +382,17 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.timestamp < end_date)
         if flow_id:
             query = query.filter(ApiUsage.flow_id == flow_id)
-        if runtime_session_id:
+        if runtime_session_id and flow_execution_id:
+            query = query.filter(
+                or_(
+                    ApiUsage.runtime_session_id == runtime_session_id,
+                    and_(
+                        ApiUsage.runtime_session_id.is_(None),
+                        ApiUsage.flow_execution_id == flow_execution_id,
+                    ),
+                )
+            )
+        elif runtime_session_id:
             query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
         elif flow_execution_id:
             query = query.filter(ApiUsage.flow_execution_id == flow_execution_id)

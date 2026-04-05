@@ -6,10 +6,25 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 
-GatewayProvider = Literal["openai", "anthropic"]
+GatewayProvider = Literal["openai", "anthropic", "gemini"]
 
 
 def _default_error_type(provider: GatewayProvider, status_code: int) -> str:
+    if provider == "gemini":
+        if status_code == 400:
+            return "INVALID_ARGUMENT"
+        if status_code == 401:
+            return "UNAUTHENTICATED"
+        if status_code == 403:
+            return "PERMISSION_DENIED"
+        if status_code == 404:
+            return "NOT_FOUND"
+        if status_code == 429:
+            return "RESOURCE_EXHAUSTED"
+        if status_code >= 500:
+            return "INTERNAL"
+        return "UNKNOWN"
+
     if provider == "anthropic":
         if status_code == 400:
             return "invalid_request_error"
@@ -56,6 +71,15 @@ class ModelGatewayAPIError(Exception):
 
     def to_payload(self) -> dict[str, Any]:
         """Return the provider-native error response body."""
+        if self.provider == "gemini":
+            return {
+                "error": {
+                    "code": self.status_code,
+                    "message": self.message,
+                    "status": self.error_type,
+                }
+            }
+
         if self.provider == "anthropic":
             return {
                 "type": "error",

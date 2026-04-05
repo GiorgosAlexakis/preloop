@@ -810,6 +810,22 @@ paths:
           pattern: ^(all|active|ended)$
           default: all
           title: Status
+      - name: owner_username
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Username
+      - name: tags
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tags
       - name: limit
         in: query
         required: false
@@ -6235,6 +6251,20 @@ components:
           - type: 'null'
           title: Api Key
           description: API key for the model provider
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+          description: Optional inline credential envelope type, e.g. 'oauth_openai_codex'
+        credential_payload:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credential Payload
+          description: Optional inline credential payload for non-API-key auth, stored
+            encrypted when provided
         credentials_backend_type:
           anyOf:
           - type: string
@@ -6408,6 +6438,12 @@ components:
           - type: 'null'
           title: Credentials External Ref
           description: External secret reference when using a non-local backend
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+          description: Logical credential type stored for the model
         has_api_key:
           type: boolean
           title: Has Api Key
@@ -6453,6 +6489,17 @@ components:
           - type: string
           - type: 'null'
           title: Api Key
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+        credential_payload:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credential Payload
         credentials_backend_type:
           anyOf:
           - type: string
@@ -10463,6 +10510,16 @@ components:
           type: number
           title: Estimated Cost
           default: 0.0
+        configured_model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Configured Model Alias
+        configured_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Configured Model Id
         latest_model_alias:
           anyOf:
           - type: string
@@ -10510,6 +10567,11 @@ components:
             format: date-time
           - type: 'null'
           title: Last Validated At
+        tags:
+          additionalProperties:
+            type: string
+          type: object
+          title: Tags
       type: object
       required:
       - id
@@ -10578,6 +10640,13 @@ components:
           - type: string
           - type: 'null'
           title: Reason
+        tags:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Tags
       type: object
       title: ManagedAgentUpdateRequest
       description: Operator-driven updates for one managed agent.

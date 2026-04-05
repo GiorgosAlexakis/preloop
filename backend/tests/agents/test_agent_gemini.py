@@ -61,20 +61,22 @@ class TestGeminiModelResolution:
     """Test model resolution logic in start()."""
 
     @pytest.mark.asyncio
-    async def test_gateway_enabled_fails_closed(self):
-        """Gemini should refuse gateway-enabled execution until transport exists."""
+    async def test_gateway_enabled_start_uses_gateway_model(self):
+        """Gemini should accept gateway-enabled execution contexts."""
         agent = GeminiAgent({})
         context = {
             "model_gateway_enabled": True,
-            "model_gateway_model_alias": "gemini/gemini-2.5-pro",
+            "model_identifier": "google/gemini-3.1-pro-preview",
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
-
-        with pytest.raises(
-            RuntimeError, match="Gemini gateway transport is not supported yet"
-        ):
-            await agent.start(context)
+        with patch.object(
+            agent, "_start_docker_container", new_callable=AsyncMock, return_value="cid"
+        ) as mock_start:
+            with patch.object(agent, "use_kubernetes", False):
+                await agent.start(context)
+                call_ctx = mock_start.call_args[0][0]
+                assert call_ctx["gemini_model"] == "google/gemini-3.1-pro-preview"
 
     @pytest.mark.asyncio
     async def test_model_identifier_takes_priority(self):
@@ -220,15 +222,16 @@ class TestGeminiPrepareEnvironment:
     """Test _prepare_environment method."""
 
     @pytest.mark.asyncio
-    async def test_gateway_enabled_prepare_environment_fails_closed(self):
-        """Gemini env prep should also refuse gateway-enabled execution."""
+    async def test_gateway_enabled_prepare_environment_sets_base_url_and_header(self):
+        """Gateway-enabled Gemini env prep should configure the managed endpoint."""
         agent = GeminiAgent({})
-        context = {"model_gateway_enabled": True}
-
-        with pytest.raises(
-            RuntimeError, match="Gemini gateway transport is not supported yet"
-        ):
-            await agent._prepare_environment(context)
+        context = {
+            "model_gateway_enabled": True,
+            "model_endpoint": "https://review.preloop.ai/gemini/v1beta",
+        }
+        env = await agent._prepare_environment(context)
+        assert env["GEMINI_API_BASE_URL"] == "https://review.preloop.ai/gemini/v1beta"
+        assert env["GEMINI_API_KEY_HEADER"] == "x-goog-api-key"
 
     @pytest.mark.asyncio
     async def test_gemini_api_key(self):

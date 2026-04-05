@@ -1,5 +1,6 @@
 """Tests for secret service."""
 
+import json
 import pytest
 from uuid import uuid4
 
@@ -138,3 +139,65 @@ def test_resolve_external_secret_reference_rejects_path_traversal(
 
     with pytest.raises(ValueError, match="credentials_external_ref"):
         service.resolve_secret_reference(secret_ref)
+
+
+def test_resolve_ai_model_credentials_refreshes_openai_codex_oauth(
+    db_session: Session,
+):
+    """Structured Codex OAuth credentials should refresh and persist."""
+    account: Account = crud_account.create(
+        db_session,
+        obj_in={
+            "organization_name": "Codex OAuth Org",
+            "is_active": True,
+        },
+    )
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Codex OAuth Model",
+            "provider_name": "openai-codex",
+            "model_identifier": "gpt-5.4",
+            "credential_type": "oauth_openai_codex",
+            "credential_payload": {
+                "access": "old-access",
+                "refresh": "refresh-token",
+                "expires": 1,
+                "account_id": "acct-old",
+            },
+        },
+        account_id=account.id,
+    )
+
+    service = SecretService()
+    service._refresh_openai_codex_token = lambda refresh_token: {
+        "access": "new-access",
+        "refresh": refresh_token + "-updated",
+        "expires": 1893456000000,
+        "account_id": "acct-new",
+    }
+
+    resolved = service.resolve_ai_model_credentials(
+        ai_model,
+        db=db_session,
+        allow_refresh=True,
+    )
+
+    assert resolved is not None
+    assert resolved.credential_type == "oauth_openai_codex"
+    assert resolved.value == "new-access"
+    assert resolved.payload == {
+        "type": "oauth_openai_codex",
+        "access": "new-access",
+        "refresh": "refresh-token-updated",
+        "expires": 1893456000000,
+        "account_id": "acct-new",
+    }
+
+    db_session.refresh(ai_model)
+    assert ai_model.credentials_secret is not None
+    stored = json.loads(
+        service.resolve_secret_reference(ai_model.credentials_secret).value
+    )
+    assert stored["access"] == "new-access"
+    assert stored["account_id"] == "acct-new"

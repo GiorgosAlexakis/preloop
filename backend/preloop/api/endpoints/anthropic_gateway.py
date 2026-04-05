@@ -13,6 +13,7 @@ from preloop.services.model_gateway_auth import (
     ModelGatewayAuthContext,
     authenticate_bearer_token,
 )
+from preloop.api.deps import get_budget_enforcer
 from preloop.services.model_gateway_errors import ModelGatewayAPIError
 from preloop.services.openai_gateway import OpenAIGatewayService
 
@@ -58,9 +59,10 @@ def create_message(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db_session),
     auth_context: ModelGatewayAuthContext = Depends(get_anthropic_gateway_auth_context),
+    budget_enforcer: Any = Depends(get_budget_enforcer),
 ) -> Any:
     """Create an Anthropic-compatible message."""
-    service = OpenAIGatewayService(db, auth_context)
+    service = OpenAIGatewayService(db, auth_context, budget_enforcer=budget_enforcer)
     if payload.get("stream"):
         return StreamingResponse(
             service.stream_message(payload),

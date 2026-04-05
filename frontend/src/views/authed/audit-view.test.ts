@@ -162,7 +162,11 @@ describe('AuditView', () => {
     await element.updateComplete;
 
     const content = element.shadowRoot?.textContent || '';
-    expect(content).to.contain('Audit Timeline');
+    expect(
+      element.shadowRoot
+        ?.querySelector('view-header')
+        ?.getAttribute('headerText')
+    ).to.equal('Audit Timeline');
     expect(content).to.contain('Runtime session started');
     expect(content).to.contain('search');
     expect(content).to.contain('Alice Example via Claude Workspace Token');

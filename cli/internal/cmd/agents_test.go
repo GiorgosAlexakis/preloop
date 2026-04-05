@@ -3,10 +3,16 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -248,6 +254,845 @@ func TestParseGenericMCP_NestedMCPServers(t *testing.T) {
 	}
 }
 
+func TestParseCodexConfigTOML_NestedMCPServers(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[mcp.servers.preloop]
+url = "https://preloop.ai/mcp/v1"
+transport = "http"
+
+[mcp.servers.preloop.auth]
+type = "bearer"
+token = "test-token"
+`), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	servers, err := parseCodexConfig(configPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	preloop, ok := servers["preloop"]
+	if !ok {
+		t.Fatalf("expected preloop server, got %+v", servers)
+	}
+	if preloop.Transport != "http" {
+		t.Fatalf("expected transport http, got %q", preloop.Transport)
+	}
+	if preloop.Auth["type"] != "bearer" || preloop.Auth["token"] != "test-token" {
+		t.Fatalf("unexpected auth payload: %+v", preloop.Auth)
+	}
+}
+
+func TestParseCodexConfigTOML_LegacyMCPServers(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[mcp_servers.preloop]
+url = "https://preloop.ai/mcp/v1"
+bearer_token_env_var = "PRELOOP_TOKEN"
+`), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	servers, err := parseCodexConfig(configPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	preloop, ok := servers["preloop"]
+	if !ok {
+		t.Fatalf("expected preloop server, got %+v", servers)
+	}
+	if preloop.URL != "https://preloop.ai/mcp/v1" {
+		t.Fatalf("unexpected legacy Codex server: %+v", preloop)
+	}
+}
+
+func TestDiscoverAgentsFindsClaudeCodeSettingsAndCodexTOML(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0755); err != nil {
+		t.Fatalf("failed to create claude dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0755); err != nil {
+		t.Fatalf("failed to create codex dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(`{"model":"claude-sonnet-4"}`), 0644); err != nil {
+		t.Fatalf("failed to write claude settings: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"), []byte(`
+[projects."/tmp/workspace"]
+trust_level = "trusted"
+`), 0644); err != nil {
+		t.Fatalf("failed to write codex config: %v", err)
+	}
+
+	discovered, err := discoverAgents(io.Discard, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	byName := map[string]AgentConfig{}
+	for _, agent := range discovered {
+		byName[agent.Name] = agent
+	}
+	if _, ok := byName["Claude Code"]; !ok {
+		t.Fatalf("expected Claude Code to be discovered, got %#v", discovered)
+	}
+	if got, ok := byName["Codex CLI"]; !ok {
+		t.Fatalf("expected Codex CLI to be discovered, got %#v", discovered)
+	} else if got.ConfigPath != filepath.Join(home, ".codex", "config.toml") {
+		t.Fatalf("expected codex config path to use TOML file, got %q", got.ConfigPath)
+	}
+}
+
+func TestDiscoverAgentsFindsInstalledOpenCodeWithoutConfig(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	authPath := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(authPath), 0755); err != nil {
+		t.Fatalf("failed to create opencode auth dir: %v", err)
+	}
+	if err := os.WriteFile(authPath, []byte(`{"ok":true}`), 0644); err != nil {
+		t.Fatalf("failed to write opencode auth marker: %v", err)
+	}
+
+	discovered, err := discoverAgents(io.Discard, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, agent := range discovered {
+		if agent.Name != "OpenCode" {
+			continue
+		}
+		wantPath := filepath.Join(home, ".config", "opencode", "config.json")
+		if agent.ConfigPath != wantPath {
+			t.Fatalf("expected synthesized OpenCode config path %q, got %q", wantPath, agent.ConfigPath)
+		}
+		if len(agent.MCPServers) != 0 {
+			t.Fatalf("expected empty MCP server set for unconfigured OpenCode, got %+v", agent.MCPServers)
+		}
+		return
+	}
+	t.Fatalf("expected OpenCode to be discovered from installation markers, got %#v", discovered)
+}
+
+func TestParseOpenCodeManagedGatewayUpstreamUsesAuthDefaults(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	authPath := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(authPath), 0755); err != nil {
+		t.Fatalf("failed to create auth dir: %v", err)
+	}
+	if err := os.WriteFile(
+		authPath,
+		[]byte(`{"zai":{"type":"api","key":"zai-secret"}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write auth file: %v", err)
+	}
+
+	upstream, err := parseOpenCodeManagedGatewayUpstream(
+		AgentConfig{
+			Name:       "OpenCode",
+			ConfigPath: filepath.Join(home, ".config", "opencode", "config.json"),
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream model to be detected")
+	}
+	if upstream.SourceProviderID != "zai" {
+		t.Fatalf("unexpected provider id: %#v", upstream.SourceProviderID)
+	}
+	if upstream.ProviderName != "openai" {
+		t.Fatalf("unexpected provider name: %#v", upstream.ProviderName)
+	}
+	if upstream.ModelIdentifier != "glm-5-turbo" {
+		t.Fatalf("unexpected model id: %#v", upstream.ModelIdentifier)
+	}
+	if upstream.ManagedModelAlias != "zai/glm-5-turbo" {
+		t.Fatalf("unexpected managed alias: %#v", upstream.ManagedModelAlias)
+	}
+	if upstream.APIEndpoint != "https://api.z.ai/api/coding/paas/v4" {
+		t.Fatalf("unexpected api endpoint: %#v", upstream.APIEndpoint)
+	}
+	if upstream.APIKey != "zai-secret" {
+		t.Fatalf("unexpected api key: %#v", upstream.APIKey)
+	}
+	if !upstream.CanRouteThroughGateway() {
+		t.Fatal("expected OpenCode upstream to be routable through the gateway")
+	}
+}
+
+func TestParseOpenCodeManagedGatewayUpstreamPrefersDiscoveredState(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".config", "opencode", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"provider":{"preloop":{"options":{"baseURL":"https://preloop.example/openai/v1","apiKey":"managed"}}},"model":"preloop/openai/gpt-5.4"}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write managed config: %v", err)
+	}
+
+	authPath := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(authPath), 0755); err != nil {
+		t.Fatalf("failed to create auth dir: %v", err)
+	}
+	if err := os.WriteFile(
+		authPath,
+		[]byte(`{"zai":{"type":"api","key":"zai-secret"}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write auth file: %v", err)
+	}
+
+	statePath, err := localEnrollmentStatePath("OpenCode", configPath)
+	if err != nil {
+		t.Fatalf("failed to resolve state path: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(statePath), 0755); err != nil {
+		t.Fatalf("failed to create state dir: %v", err)
+	}
+	state := localEnrollmentState{
+		AgentName:        "OpenCode",
+		ConfigPath:       configPath,
+		DiscoveredConfig: map[string]interface{}{"model": "zai/glm-5-turbo"},
+		ManagedConfig:    map[string]interface{}{"model": "preloop/openai/gpt-5.4"},
+	}
+	stateData, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("failed to encode state: %v", err)
+	}
+	if err := os.WriteFile(statePath, stateData, 0644); err != nil {
+		t.Fatalf("failed to write state: %v", err)
+	}
+
+	upstream, err := parseOpenCodeManagedGatewayUpstream(
+		AgentConfig{Name: "OpenCode", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream model to be detected")
+	}
+	if upstream.ManagedModelAlias != "zai/glm-5-turbo" {
+		t.Fatalf("expected discovered config alias, got %#v", upstream.ManagedModelAlias)
+	}
+}
+
+func TestParseOpenCodeManagedGatewayUpstreamIgnoresManagedPreloopConfig(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".config", "opencode", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"provider":{"preloop":{"options":{"baseURL":"https://ai-model-gateway.review.preloop.ai/openai/v1","apiKey":"managed"}}},"model":"preloop/openai/gpt-5.4"}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write managed config: %v", err)
+	}
+
+	authPath := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(authPath), 0755); err != nil {
+		t.Fatalf("failed to create auth dir: %v", err)
+	}
+	if err := os.WriteFile(
+		authPath,
+		[]byte(`{"zai":{"type":"api","key":"zai-secret"}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write auth file: %v", err)
+	}
+
+	upstream, err := parseOpenCodeManagedGatewayUpstream(
+		AgentConfig{Name: "OpenCode", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected auth-backed upstream model to be detected")
+	}
+	if upstream.ManagedModelAlias != "zai/glm-5-turbo" {
+		t.Fatalf("expected OpenCode to ignore managed preloop config, got %#v", upstream.ManagedModelAlias)
+	}
+}
+
+func TestParseCodexManagedGatewayUpstreamReturnsNilWithoutResolvedModel(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create codex dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte("[projects.\"/tmp/project\"]\ntrust_level = \"trusted\"\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex config: %v", err)
+	}
+
+	upstream, err := parseCodexManagedGatewayUpstream(
+		AgentConfig{Name: "Codex CLI", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream != nil {
+		t.Fatalf("expected unresolved Codex config to stay direct, got %+v", upstream)
+	}
+}
+
+func TestParseGeminiManagedGatewayUpstreamUsesRecentChatAndDotEnv(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".gemini", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create gemini dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"security":{"auth":{"selectedType":"gemini-api-key"}}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write gemini config: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".gemini", ".env"),
+		[]byte("export GEMINI_API_KEY='gemini-secret'\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write gemini env file: %v", err)
+	}
+
+	chatPath := filepath.Join(home, ".gemini", "tmp", "preloop-ee", "chats", "session.json")
+	if err := os.MkdirAll(filepath.Dir(chatPath), 0755); err != nil {
+		t.Fatalf("failed to create gemini chat dir: %v", err)
+	}
+	if err := os.WriteFile(
+		chatPath,
+		[]byte(`{"lastUpdated":"2026-04-04T10:00:00Z","messages":[{"type":"gemini","timestamp":"2026-04-04T10:00:00Z","model":"gemini-3-flash-preview"}]}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write gemini chat session: %v", err)
+	}
+
+	upstream, err := parseGeminiManagedGatewayUpstream(
+		AgentConfig{Name: "Gemini CLI", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream Gemini model to be detected")
+	}
+	if upstream.ManagedModelAlias != "google/gemini-3-flash-preview" {
+		t.Fatalf("expected inferred Gemini model alias, got %#v", upstream.ManagedModelAlias)
+	}
+	if upstream.APIKey != "gemini-secret" {
+		t.Fatalf("expected Gemini API key from .env, got %#v", upstream.APIKey)
+	}
+	if len(upstream.Notes) == 0 {
+		t.Fatalf("expected explanatory notes, got %#v", upstream)
+	}
+}
+
+func TestParseGeminiManagedGatewayUpstreamUsesEncryptedStoredAPIKey(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	oldUser := os.Getenv("USER")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("USER", "preloop-gemini-test"); err != nil {
+		t.Fatalf("failed to set USER: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+		_ = os.Setenv("USER", oldUser)
+	}()
+
+	configPath := filepath.Join(home, ".gemini", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create gemini dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"security":{"auth":{"selectedType":"gemini-api-key"}}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write gemini config: %v", err)
+	}
+
+	chatPath := filepath.Join(home, ".gemini", "tmp", "preloop-ee", "chats", "session.json")
+	if err := os.MkdirAll(filepath.Dir(chatPath), 0755); err != nil {
+		t.Fatalf("failed to create gemini chat dir: %v", err)
+	}
+	if err := os.WriteFile(
+		chatPath,
+		[]byte(`{"lastUpdated":"2026-04-04T10:00:00Z","messages":[{"type":"gemini","timestamp":"2026-04-04T10:00:00Z","model":"gemini-3-flash-preview"}]}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write gemini chat session: %v", err)
+	}
+
+	blob, err := json.Marshal(map[string]interface{}{
+		"serverName": "default-api-key",
+		"token": map[string]interface{}{
+			"accessToken": "gemini-stored-secret",
+			"tokenType":   "ApiKey",
+		},
+		"updatedAt": 1712224800000,
+	})
+	if err != nil {
+		t.Fatalf("failed to encode Gemini credential blob: %v", err)
+	}
+	store, err := json.Marshal(map[string]map[string]string{
+		geminiAPIKeyServiceName: {
+			geminiAPIKeyAccountName: string(blob),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to encode Gemini credential store: %v", err)
+	}
+	encryptedStore, err := encryptGeminiCredentialStoreForTest(string(store))
+	if err != nil {
+		t.Fatalf("failed to encrypt Gemini credential store: %v", err)
+	}
+	credentialsPath := filepath.Join(home, ".gemini", "gemini-credentials.json")
+	if err := os.WriteFile(credentialsPath, []byte(encryptedStore), 0600); err != nil {
+		t.Fatalf("failed to write Gemini credential store: %v", err)
+	}
+
+	upstream, err := parseGeminiManagedGatewayUpstream(
+		AgentConfig{Name: "Gemini CLI", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream Gemini model to be detected")
+	}
+	if upstream.APIKey != "gemini-stored-secret" {
+		t.Fatalf("expected Gemini API key from secure storage, got %#v", upstream.APIKey)
+	}
+	if len(upstream.Notes) == 0 || !strings.Contains(strings.Join(upstream.Notes, " "), "gemini-credentials.json") {
+		t.Fatalf("expected note about encrypted Gemini credential store, got %#v", upstream.Notes)
+	}
+}
+
+func TestParseClaudeManagedGatewayUpstreamUsesRecentSessionModel(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	oldToken := os.Getenv("CLAUDE_TEST_TOKEN")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("CLAUDE_TEST_TOKEN", "claude-auth-token"); err != nil {
+		t.Fatalf("failed to set CLAUDE_TEST_TOKEN: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+		_ = os.Setenv("CLAUDE_TEST_TOKEN", oldToken)
+	}()
+
+	configPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create claude dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"model":"opus[1m]","env":{"ANTHROPIC_AUTH_TOKEN":"${CLAUDE_TEST_TOKEN}"}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write claude config: %v", err)
+	}
+
+	sessionPath := filepath.Join(home, ".claude", "projects", "project-a", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0755); err != nil {
+		t.Fatalf("failed to create claude session dir: %v", err)
+	}
+	if err := os.WriteFile(
+		sessionPath,
+		[]byte("{\"timestamp\":\"2026-04-04T11:00:00Z\",\"message\":{\"model\":\"claude-opus-4-6\"}}\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write claude session log: %v", err)
+	}
+	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("ANTHROPIC_MODEL", "")
+
+	upstream, err := parseClaudeManagedGatewayUpstream(
+		AgentConfig{Name: "Claude Code", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream Claude model to be detected")
+	}
+	if upstream.ManagedModelAlias != "anthropic/claude-opus-4-6" {
+		t.Fatalf("expected inferred Claude alias, got %#v", upstream.ManagedModelAlias)
+	}
+	if upstream.APIKey != "claude-auth-token" {
+		t.Fatalf("expected Claude auth token, got %#v", upstream.APIKey)
+	}
+	if len(upstream.Notes) == 0 {
+		t.Fatalf("expected explanatory notes, got %#v", upstream)
+	}
+}
+
+func encryptGeminiCredentialStoreForTest(plaintext string) (string, error) {
+	key, err := deriveGeminiCredentialStoreKey()
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	iv := bytes.Repeat([]byte{0x2a}, 16)
+	gcm, err := cipher.NewGCMWithNonceSize(block, len(iv))
+	if err != nil {
+		return "", err
+	}
+	ciphertextWithTag := gcm.Seal(nil, iv, []byte(plaintext), nil)
+	authTagStart := len(ciphertextWithTag) - gcm.Overhead()
+	ciphertext := ciphertextWithTag[:authTagStart]
+	authTag := ciphertextWithTag[authTagStart:]
+	return hex.EncodeToString(iv) + ":" + hex.EncodeToString(authTag) + ":" + hex.EncodeToString(ciphertext), nil
+}
+
+func TestParseCodexManagedGatewayUpstreamNotesChatGPTOAuth(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create codex dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte("model = 'gpt-5.4'\nmodel_provider = 'openai'\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex config: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".codex", "auth.json"),
+		[]byte(`{"auth_mode":"chatgpt","OPENAI_API_KEY":null}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex auth file: %v", err)
+	}
+
+	upstream, err := parseCodexManagedGatewayUpstream(
+		AgentConfig{Name: "Codex CLI", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected Codex upstream to resolve model metadata")
+	}
+	if upstream.APIKey != "" {
+		t.Fatalf("expected no importable Codex API key, got %#v", upstream.APIKey)
+	}
+	if len(upstream.Notes) == 0 || !strings.Contains(upstream.Notes[0], "could not be resolved") {
+		t.Fatalf("expected ChatGPT OAuth note, got %#v", upstream.Notes)
+	}
+}
+
+func TestParseCodexManagedGatewayUpstreamImportsChatGPTOAuth(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create codex dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte("model = 'gpt-5.4'\nmodel_provider = 'openai'\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex config: %v", err)
+	}
+
+	jwtPayload := base64.RawURLEncoding.EncodeToString([]byte(`{"exp":1893456000,"https://api.openai.com/auth":{"chatgpt_account_id":"acct-test"}}`))
+	accessToken := "header." + jwtPayload + ".sig"
+	authJSON := `{
+		"auth_mode":"chatgpt",
+		"tokens":{
+			"access_token":"` + accessToken + `",
+			"refresh_token":"refresh-token"
+		}
+	}`
+	if err := os.WriteFile(
+		filepath.Join(home, ".codex", "auth.json"),
+		[]byte(authJSON),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex auth file: %v", err)
+	}
+
+	upstream, err := parseCodexManagedGatewayUpstream(
+		AgentConfig{Name: "Codex CLI", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected Codex upstream to resolve model metadata")
+	}
+	if upstream.CredentialType != "oauth_openai_codex" {
+		t.Fatalf("expected oauth_openai_codex credentials, got %#v", upstream.CredentialType)
+	}
+	if upstream.ProviderName != "openai-codex" {
+		t.Fatalf("expected openai-codex provider, got %#v", upstream.ProviderName)
+	}
+	if upstream.APIEndpoint != "https://chatgpt.com/backend-api/codex" {
+		t.Fatalf("unexpected Codex endpoint: %#v", upstream.APIEndpoint)
+	}
+	if got := upstream.CredentialPayload["account_id"]; got != "acct-test" {
+		t.Fatalf("expected account_id from JWT, got %#v", got)
+	}
+	if got := upstream.CredentialPayload["access"]; got != accessToken {
+		t.Fatalf("expected access token in payload, got %#v", got)
+	}
+}
+
+func TestParseCodexManagedGatewayUpstreamInfersModelFromRecentSession(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create codex dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte("[projects.\"/tmp/project\"]\ntrust_level = \"trusted\"\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex config: %v", err)
+	}
+
+	sessionPath := filepath.Join(
+		home,
+		".codex",
+		"sessions",
+		"2026",
+		"04",
+		"04",
+		"rollout.jsonl",
+	)
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0755); err != nil {
+		t.Fatalf("failed to create codex session dir: %v", err)
+	}
+	if err := os.WriteFile(
+		sessionPath,
+		[]byte("{\"payload\":{\"model\":\"openai/gpt-5.4\"}}\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex session file: %v", err)
+	}
+
+	jwtPayload := base64.RawURLEncoding.EncodeToString([]byte(`{"exp":1893456000,"https://api.openai.com/auth":{"chatgpt_account_id":"acct-test"}}`))
+	accessToken := "header." + jwtPayload + ".sig"
+	authJSON := `{
+		"auth_mode":"chatgpt",
+		"tokens":{
+			"access_token":"` + accessToken + `",
+			"refresh_token":"refresh-token"
+		}
+	}`
+	if err := os.WriteFile(
+		filepath.Join(home, ".codex", "auth.json"),
+		[]byte(authJSON),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write codex auth file: %v", err)
+	}
+
+	upstream, err := parseCodexManagedGatewayUpstream(
+		AgentConfig{Name: "Codex CLI", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected Codex upstream to resolve from session history")
+	}
+	if upstream.ManagedModelAlias != "openai/gpt-5.4" {
+		t.Fatalf("expected model inferred from session history, got %#v", upstream.ManagedModelAlias)
+	}
+	if len(upstream.Notes) == 0 || !strings.Contains(upstream.Notes[0], "recent session history") {
+		t.Fatalf("expected session-history note, got %#v", upstream.Notes)
+	}
+}
+
+func TestEnrichDiscoveredAgentMarksManagedConfigDrift(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create claude dir: %v", err)
+	}
+	currentConfig := `{
+  "servers": {
+    "preloop": {
+      "url": "https://preloop.example/mcp/v1",
+      "transport": "http-streaming",
+      "headers": {
+        "Authorization": "Bearer durable-token"
+      }
+    },
+    "github": {
+      "url": "https://github.example/mcp"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(currentConfig), 0644); err != nil {
+		t.Fatalf("failed to write current config: %v", err)
+	}
+	state := &localEnrollmentState{
+		AgentName:          "Claude Code",
+		DisplayName:        "Claude",
+		RuntimePrincipalID: "claude-123",
+		ConfigPath:         configPath,
+		BackupPath:         filepath.Join(home, "backup.json"),
+		ManagedServerName:  "preloop",
+		ManagedServerURL:   "https://preloop.example/mcp/v1",
+		AppliedAt:          time.Now().UTC(),
+		ManagedConfig: map[string]interface{}{
+			"servers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url":       "https://preloop.example/mcp/v1",
+					"transport": "http-streaming",
+					"headers": map[string]interface{}{
+						"Authorization": "<redacted>",
+					},
+				},
+			},
+		},
+	}
+	if err := saveLocalEnrollmentState(state); err != nil {
+		t.Fatalf("failed to seed local enrollment state: %v", err)
+	}
+
+	enriched, err := enrichDiscoveredAgent(
+		AgentConfig{Name: "Claude Code", ConfigPath: configPath},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !enriched.IsOnboarded {
+		t.Fatalf("expected discovered agent to be marked onboarded, got %#v", enriched)
+	}
+	if !enriched.ConfigDrift {
+		t.Fatalf("expected config drift to be detected, got %#v", enriched)
+	}
+	if !enriched.ReonboardRecommended {
+		t.Fatalf("expected reonboard recommendation, got %#v", enriched)
+	}
+	if enriched.OnboardingState != "mcp_proxy_only" {
+		t.Fatalf("expected mcp_proxy_only state, got %#v", enriched)
+	}
+	if len(enriched.DriftReasons) == 0 {
+		t.Fatalf("expected drift reasons, got %#v", enriched)
+	}
+}
+
 func TestFilterAgentsPendingEnrollmentSkipsRemoteManagedAgent(t *testing.T) {
 	managedAgent := managedAgentListResponse{
 		Items: []managedAgentSummary{
@@ -279,6 +1124,66 @@ func TestFilterAgentsPendingEnrollmentSkipsRemoteManagedAgent(t *testing.T) {
 	}
 	if len(candidates) != 1 || candidates[0].Name != "Codex CLI" {
 		t.Fatalf("expected only the unenrolled agent to remain, got %#v", candidates)
+	}
+}
+
+func TestGetManagedAgentForDiscoveredFallsBackToLegacyDesktopAgentSourceType(
+	t *testing.T,
+) {
+	tests := []struct {
+		name      string
+		agentName string
+	}{
+		{name: "Gemini CLI", agentName: "Gemini CLI"},
+		{name: "OpenCode", agentName: "OpenCode"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := AgentConfig{Name: tc.agentName, ConfigPath: "/tmp/config.json"}
+			expectedID := runtimePrincipalIDForAgent(agent)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(managedAgentListResponse{
+					Items: []managedAgentSummary{
+						{
+							ID:                "agent-legacy",
+							DisplayName:       tc.agentName,
+							SessionSourceType: "desktop_agent",
+							SessionSourceID:   expectedID,
+							LifecycleState:    "active",
+						},
+					},
+				})
+			}))
+			defer server.Close()
+
+			client := api.NewClientWithToken(server.URL, "tok")
+			managed, err := getManagedAgentForDiscovered(client, agent)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if managed.ID != "agent-legacy" {
+				t.Fatalf("expected legacy desktop agent match, got %#v", managed)
+			}
+		})
+	}
+}
+
+func TestFilterAgentsPendingEnrollmentKeepsReonboardCandidate(t *testing.T) {
+	candidates, err := filterAgentsPendingEnrollment(nil, []AgentConfig{
+		{
+			Name:                 "OpenClaw",
+			ConfigPath:           "/tmp/openclaw.json",
+			IsOnboarded:          true,
+			ReonboardRecommended: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 || !candidates[0].ReonboardRecommended {
+		t.Fatalf("expected reonboard candidate to remain, got %#v", candidates)
 	}
 }
 
@@ -417,6 +1322,85 @@ func TestPrepareAgentForRemoteServerSync_RestoresDiscoveredServersFromLocalState
 	}
 }
 
+func TestCreateLocalEnrollmentBackup_ReusesOriginalBackupState(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	agent := AgentConfig{
+		Name:        "OpenClaw",
+		DisplayName: "Claw",
+		ConfigPath:  filepath.Join(home, ".openclaw", "openclaw.json"),
+	}
+	backupDir := filepath.Join(home, ".preloop", "agents", "backups", runtimePrincipalIDForAgent(agent))
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("failed to create backup dir: %v", err)
+	}
+	backupPath := filepath.Join(backupDir, "original-openclaw.json")
+	originalBackup := []byte(`{"models":{"providers":{"bedrock":{"apiKey":"upstream"}}}}`)
+	if err := os.WriteFile(backupPath, originalBackup, 0o600); err != nil {
+		t.Fatalf("failed to write backup file: %v", err)
+	}
+
+	discovered := map[string]interface{}{
+		"models": map[string]interface{}{
+			"providers": map[string]interface{}{
+				"bedrock": map[string]interface{}{"baseUrl": "https://bedrock-runtime.us-east-1.amazonaws.com"},
+			},
+		},
+	}
+	if err := saveLocalEnrollmentState(&localEnrollmentState{
+		AgentName:          agent.Name,
+		DisplayName:        agent.DisplayName,
+		RuntimePrincipalID: runtimePrincipalIDForAgent(agent),
+		ConfigPath:         agent.ConfigPath,
+		BackupPath:         backupPath,
+		ManagedServerName:  "preloop",
+		ManagedServerURL:   "https://preloop.example/mcp/v1",
+		AppliedAt:          time.Now().UTC(),
+		DiscoveredConfig:   discovered,
+		ManagedConfig: map[string]interface{}{
+			"models": map[string]interface{}{"providers": map[string]interface{}{"preloop": map[string]interface{}{"apiKey": "<redacted>"}}},
+		},
+	}); err != nil {
+		t.Fatalf("failed to seed local enrollment state: %v", err)
+	}
+
+	plan := managedMCPEnrollmentPlan{
+		ManagedServerName: "preloop",
+		ManagedServerURL:  "https://preloop.example/mcp/v1",
+		SanitizedDiscovered: map[string]interface{}{
+			"models": map[string]interface{}{"providers": map[string]interface{}{"preloop": map[string]interface{}{"apiKey": "<redacted>"}}},
+		},
+		SanitizedManaged: map[string]interface{}{
+			"models": map[string]interface{}{"providers": map[string]interface{}{"preloop": map[string]interface{}{"apiKey": "<redacted>"}}},
+		},
+	}
+
+	state, err := createLocalEnrollmentBackup(agent, true, []byte(`{"managed":true}`), plan)
+	if err != nil {
+		t.Fatalf("createLocalEnrollmentBackup returned error: %v", err)
+	}
+	if state.BackupPath != backupPath {
+		t.Fatalf("expected original backup path %q, got %q", backupPath, state.BackupPath)
+	}
+	if _, ok := state.DiscoveredConfig["models"].(map[string]interface{})["providers"].(map[string]interface{})["bedrock"]; !ok {
+		t.Fatalf("expected original discovered config to be preserved, got %#v", state.DiscoveredConfig)
+	}
+	gotBackup, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatalf("failed to read preserved backup: %v", err)
+	}
+	if string(gotBackup) != string(originalBackup) {
+		t.Fatalf("expected backup file to remain unchanged, got %q", string(gotBackup))
+	}
+}
+
 func TestBuildManagedMCPEnrollmentPlan_AddsPreloopAndRedactsSecrets(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "settings.json")
@@ -444,6 +1428,9 @@ func TestBuildManagedMCPEnrollmentPlan_AddsPreloopAndRedactsSecrets(t *testing.T
 
 	managedServers := plan.ManagedDocument["mcpServers"].(map[string]interface{})
 	preloop := managedServers["preloop"].(map[string]interface{})
+	if preloop["type"] != "http" {
+		t.Fatalf("expected Gemini managed MCP type http, got %+v", preloop)
+	}
 	headers := preloop["headers"].(map[string]interface{})
 	if headers["Authorization"] != "Bearer durable-secret-token" {
 		t.Fatalf("expected durable token in managed config, got %+v", headers)
@@ -499,6 +1486,780 @@ func TestBuildManagedMCPEnrollmentPlan_OpenClawUsesNestedHTTPServer(t *testing.T
 	headers := preloop["headers"].(map[string]interface{})
 	if headers["Authorization"] != "Bearer openclaw-durable-token" {
 		t.Fatalf("unexpected OpenClaw auth header: %+v", headers)
+	}
+}
+
+func TestBuildManagedMCPEnrollmentPlan_CodexCLIUsesNestedTOMLShape(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(`
+[projects."/tmp/workspace"]
+trust_level = "trusted"
+`), 0644); err != nil {
+		t.Fatalf("failed to write codex config: %v", err)
+	}
+
+	plan, err := buildManagedMCPEnrollmentPlan(AgentConfig{
+		Name:       "Codex CLI",
+		ConfigPath: configPath,
+	}, "https://preloop.example", "codex-durable-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	mcp := plan.ManagedDocument["mcp"].(map[string]interface{})
+	servers := mcp["servers"].(map[string]interface{})
+	preloop := servers["preloop"].(map[string]interface{})
+	auth := preloop["auth"].(map[string]interface{})
+	if preloop["url"] != "https://preloop.example/mcp/v1" {
+		t.Fatalf("unexpected Codex managed URL: %+v", preloop)
+	}
+	if auth["type"] != "bearer" || auth["token"] != "codex-durable-token" {
+		t.Fatalf("unexpected Codex auth config: %+v", auth)
+	}
+}
+
+func TestBuildManagedMCPEnrollmentPlan_OpenCodeAllowsMissingConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".config", "opencode", "config.json")
+
+	plan, err := buildManagedMCPEnrollmentPlan(AgentConfig{
+		Name:       "OpenCode",
+		ConfigPath: configPath,
+	}, "https://preloop.example", "opencode-durable-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	preloop := plan.ManagedDocument["mcp"].(map[string]interface{})["preloop"].(map[string]interface{})
+	headers := preloop["headers"].(map[string]interface{})
+	if preloop["type"] != "remote" {
+		t.Fatalf("unexpected OpenCode managed server type: %+v", preloop)
+	}
+	if preloop["url"] != "https://preloop.example/mcp/v1" {
+		t.Fatalf("unexpected OpenCode managed URL: %+v", preloop)
+	}
+	if headers["Authorization"] != "Bearer opencode-durable-token" {
+		t.Fatalf("unexpected OpenCode auth header: %+v", headers)
+	}
+}
+
+func TestParseServerMapFromDocumentSupportsOpenCodeRootMCP(t *testing.T) {
+	servers := parseServerMapFromDocument(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"type": "remote",
+				"url":  "https://preloop.example/mcp/v1",
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer durable-token",
+				},
+			},
+		},
+	})
+	preloop, ok := servers["preloop"]
+	if !ok {
+		t.Fatalf("expected preloop server to be parsed from root mcp map, got %#v", servers)
+	}
+	if preloop.URL != "https://preloop.example/mcp/v1" {
+		t.Fatalf("unexpected parsed OpenCode URL: %+v", preloop)
+	}
+	if preloop.Transport != "remote" {
+		t.Fatalf("expected OpenCode transport to reflect type, got %+v", preloop)
+	}
+	if preloop.Headers["Authorization"] != "Bearer durable-token" {
+		t.Fatalf("unexpected parsed OpenCode headers: %+v", preloop)
+	}
+}
+
+func TestParseServerMapFromDocumentSupportsGeminiHTTPType(t *testing.T) {
+	servers := parseServerMapFromDocument(map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"type": "http",
+				"url":  "https://preloop.example/mcp/v1",
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer durable-token",
+				},
+			},
+		},
+	})
+	preloop, ok := servers["preloop"]
+	if !ok {
+		t.Fatalf("expected preloop server to be parsed from Gemini settings, got %#v", servers)
+	}
+	if preloop.URL != "https://preloop.example/mcp/v1" {
+		t.Fatalf("unexpected parsed Gemini URL: %+v", preloop)
+	}
+	if preloop.Transport != "http" {
+		t.Fatalf("expected Gemini transport to reflect type, got %+v", preloop)
+	}
+}
+
+func TestGenericAdapterValidateManagedConfigSupportsCodexAuthBlock(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "Codex CLI"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"servers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url":       "https://preloop.example/mcp/v1",
+					"transport": "http",
+					"auth": map[string]interface{}{
+						"type":  "bearer",
+						"token": "durable-token",
+					},
+				},
+			},
+		},
+		"model_provider": "preloop",
+		"model":          "openai/gpt-5.4",
+		"model_providers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"base_url":                  "https://preloop.example/openai/v1",
+				"experimental_bearer_token": "durable-token",
+				"wire_api":                  "responses",
+			},
+		},
+	}, "https://preloop.example")
+	if result["validation_passed"] != true {
+		t.Fatalf("expected codex validation to pass, got %+v", result)
+	}
+}
+
+func TestApplyCodexManagedGatewayConfiguresCustomProvider(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create codex dir: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte(""), 0644); err != nil {
+		t.Fatalf("failed to seed codex config: %v", err)
+	}
+
+	plan, err := buildManagedMCPEnrollmentPlan(AgentConfig{
+		Name:       "Codex CLI",
+		ConfigPath: configPath,
+	}, "https://preloop.example", "codex-durable-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	plan, err = applyCodexManagedGateway(
+		plan,
+		"https://preloop.example",
+		"codex-durable-token",
+		"openai/gpt-5.4",
+	)
+	if err != nil {
+		t.Fatalf("unexpected gateway apply error: %v", err)
+	}
+
+	if got := plan.ManagedDocument["model_provider"]; got != "preloop" {
+		t.Fatalf("unexpected codex model_provider: %#v", got)
+	}
+	if got := plan.ManagedDocument["model"]; got != "openai/gpt-5.4" {
+		t.Fatalf("unexpected codex model: %#v", got)
+	}
+	providers := plan.ManagedDocument["model_providers"].(map[string]interface{})
+	preloop := providers["preloop"].(map[string]interface{})
+	if preloop["base_url"] != "https://preloop.example/openai/v1" {
+		t.Fatalf("unexpected codex gateway base_url: %#v", preloop)
+	}
+	if preloop["experimental_bearer_token"] != "codex-durable-token" {
+		t.Fatalf("unexpected codex gateway token: %#v", preloop)
+	}
+	if preloop["wire_api"] != "responses" {
+		t.Fatalf("unexpected codex gateway wire_api: %#v", preloop)
+	}
+	legacyServers := plan.ManagedDocument["mcp_servers"].(map[string]interface{})
+	legacyPreloop := legacyServers["preloop"].(map[string]interface{})
+	if legacyPreloop["url"] != "https://preloop.example/mcp/v1" {
+		t.Fatalf("unexpected Codex legacy MCP URL: %#v", legacyPreloop)
+	}
+	if legacyPreloop["bearer_token_env_var"] != "PRELOOP_TOKEN" {
+		t.Fatalf("unexpected Codex legacy bearer env key: %#v", legacyPreloop)
+	}
+}
+
+func TestGenericAdapterValidateManagedConfigSupportsCodexGateway(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "Codex CLI"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"servers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url":       "https://preloop.example/mcp/v1",
+					"transport": "http",
+					"auth": map[string]interface{}{
+						"type":  "bearer",
+						"token": "durable-token",
+					},
+				},
+			},
+		},
+		"model_provider": "preloop",
+		"model":          "openai/gpt-5.4",
+		"model_providers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"base_url":                  "https://preloop.example/openai/v1",
+				"experimental_bearer_token": "durable-token",
+				"wire_api":                  "responses",
+			},
+		},
+	}, "https://preloop.example")
+	if result["gateway_provider_ok"] != true || result["model_provider_rewritten"] != true {
+		t.Fatalf("expected codex gateway validation to pass, got %+v", result)
+	}
+	if got := result["gateway_model_alias"]; got != "openai/gpt-5.4" {
+		t.Fatalf("unexpected gateway model alias: %#v", got)
+	}
+}
+
+func TestGenericAdapterValidateManagedConfigSupportsCodexLegacyMCPConfig(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "Codex CLI"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcp_servers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"url":                  "https://preloop.example/mcp/v1",
+				"bearer_token_env_var": "PRELOOP_TOKEN",
+			},
+		},
+		"model_provider": "preloop",
+		"model":          "openai/gpt-5.4",
+		"model_providers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"base_url":                  "https://preloop.example/openai/v1",
+				"experimental_bearer_token": "durable-token",
+				"wire_api":                  "responses",
+			},
+		},
+	}, "https://preloop.example")
+	if result["validation_passed"] != true {
+		t.Fatalf("expected legacy codex validation to pass, got %+v", result)
+	}
+	if result["legacy_mcp_server_present"] != true {
+		t.Fatalf("expected legacy codex MCP marker, got %+v", result)
+	}
+}
+
+func TestGenericAdapterValidateManagedConfigSupportsOpenCodeRootMCP(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "OpenCode"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"type": "remote",
+				"url":  "https://preloop.example/mcp/v1",
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer durable-token",
+				},
+			},
+		},
+	}, "https://preloop.example")
+	if result["validation_passed"] != true {
+		t.Fatalf("expected OpenCode validation to pass, got %+v", result)
+	}
+}
+
+func TestApplyOpenCodeManagedGatewayConfiguresProvider(t *testing.T) {
+	plan := managedMCPEnrollmentPlan{
+		ManagedDocument: map[string]interface{}{
+			"mcp": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"type": "remote",
+					"url":  "https://preloop.example/mcp/v1",
+				},
+			},
+		},
+	}
+	plan, err := applyOpenCodeManagedGateway(
+		plan,
+		"https://preloop.example",
+		"opencode-durable-token",
+		"openai/gpt-5.4",
+	)
+	if err != nil {
+		t.Fatalf("unexpected gateway apply error: %v", err)
+	}
+
+	if got := plan.ManagedDocument["model"]; got != "preloop/openai/gpt-5.4" {
+		t.Fatalf("unexpected OpenCode model: %#v", got)
+	}
+	providers := plan.ManagedDocument["provider"].(map[string]interface{})
+	preloop := providers["preloop"].(map[string]interface{})
+	options := preloop["options"].(map[string]interface{})
+	if options["baseURL"] != "https://preloop.example/openai/v1" {
+		t.Fatalf("unexpected OpenCode gateway baseURL: %#v", options)
+	}
+	if options["apiKey"] != "opencode-durable-token" {
+		t.Fatalf("unexpected OpenCode gateway token: %#v", options)
+	}
+}
+
+func TestGenericAdapterValidateManagedConfigSupportsOpenCodeGateway(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "OpenCode"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"type": "remote",
+				"url":  "https://preloop.example/mcp/v1",
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer durable-token",
+				},
+			},
+		},
+		"model": "preloop/openai/gpt-5.4",
+		"provider": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"options": map[string]interface{}{
+					"baseURL": "https://preloop.example/openai/v1",
+					"apiKey":  "durable-token",
+				},
+			},
+		},
+	}, "https://preloop.example")
+	if result["gateway_provider_ok"] != true || result["model_provider_rewritten"] != true {
+		t.Fatalf("expected OpenCode gateway validation to pass, got %+v", result)
+	}
+	if got := result["gateway_model_alias"]; got != "openai/gpt-5.4" {
+		t.Fatalf("unexpected OpenCode gateway model alias: %#v", got)
+	}
+}
+
+func TestApplyClaudeManagedGatewayConfiguresEnv(t *testing.T) {
+	plan := managedMCPEnrollmentPlan{
+		ManagedDocument: map[string]interface{}{
+			"mcpServers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url": "https://preloop.example/mcp/v1",
+				},
+			},
+		},
+	}
+	plan, err := applyClaudeManagedGateway(
+		plan,
+		"https://preloop.example",
+		"claude-durable-token",
+		"amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+	)
+	if err != nil {
+		t.Fatalf("unexpected gateway apply error: %v", err)
+	}
+
+	env := plan.ManagedDocument["env"].(map[string]interface{})
+	if env["ANTHROPIC_BASE_URL"] != "https://preloop.example/anthropic" {
+		t.Fatalf("unexpected Claude base URL: %#v", env)
+	}
+	if env["ANTHROPIC_API_KEY"] != "claude-durable-token" {
+		t.Fatalf("unexpected Claude token: %#v", env)
+	}
+	if _, exists := env["ANTHROPIC_AUTH_TOKEN"]; exists {
+		t.Fatalf("did not expect legacy Claude auth token key: %#v", env)
+	}
+	if env["CLAUDE_CODE_USE_BEDROCK"] != "0" {
+		t.Fatalf("expected managed Claude config to disable Bedrock mode: %#v", env)
+	}
+	if env["CLAUDE_CODE_SIMPLE"] != "1" {
+		t.Fatalf("expected managed Claude config to enable simple mode: %#v", env)
+	}
+	if env["CLAUDE_CODE_ENABLE_TELEMETRY"] != "0" || env["DISABLE_TELEMETRY"] != "1" {
+		t.Fatalf("expected managed Claude config to disable telemetry: %#v", env)
+	}
+	if env["OTEL_METRICS_EXPORTER"] != "none" ||
+		env["OTEL_LOGS_EXPORTER"] != "none" ||
+		env["OTEL_TRACES_EXPORTER"] != "none" {
+		t.Fatalf("expected managed Claude config to disable OTEL exporters: %#v", env)
+	}
+	if env["ANTHROPIC_MODEL"] != "haiku" {
+		t.Fatalf("expected managed Claude config to select haiku alias: %#v", env)
+	}
+	if env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] != "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0" {
+		t.Fatalf("unexpected Claude model: %#v", env)
+	}
+	if got := plan.ManagedDocument["model"]; got != "haiku" {
+		t.Fatalf("expected Claude settings model to stay on haiku, got %#v", got)
+	}
+}
+
+func TestGenericAdapterValidateManagedConfigSupportsClaudeGateway(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "Claude Code"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"url": "https://preloop.example/mcp/v1",
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer durable-token",
+				},
+				"transport": "http",
+			},
+		},
+		"env": map[string]interface{}{
+			"ANTHROPIC_BASE_URL":            "https://preloop.example/anthropic",
+			"ANTHROPIC_API_KEY":             "durable-token",
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL": "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+			"ANTHROPIC_CUSTOM_MODEL_OPTION": "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+		},
+		"model": "haiku",
+	}, "https://preloop.example")
+	if result["gateway_provider_ok"] != true || result["model_provider_rewritten"] != true {
+		t.Fatalf("expected Claude gateway validation to pass, got %+v", result)
+	}
+	if got := result["gateway_model_alias"]; got != "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0" {
+		t.Fatalf("unexpected Claude gateway model alias: %#v", got)
+	}
+}
+
+func TestApplyGeminiManagedGatewayConfiguresSettings(t *testing.T) {
+	plan := managedMCPEnrollmentPlan{
+		ManagedDocument: map[string]interface{}{
+			"mcpServers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url": "https://preloop.example/mcp/v1",
+				},
+			},
+		},
+	}
+	plan, err := applyGeminiManagedGateway(
+		plan,
+		"https://preloop.example",
+		"gemini-durable-token",
+		"google/gemini-3.1-pro-preview",
+	)
+	if err != nil {
+		t.Fatalf("unexpected gateway apply error: %v", err)
+	}
+
+	if got := plan.ManagedDocument["baseUrl"]; got != "https://preloop.example/gemini/v1beta" {
+		t.Fatalf("unexpected Gemini baseUrl: %#v", got)
+	}
+	if got := plan.ManagedDocument["apiKey"]; got != "gemini-durable-token" {
+		t.Fatalf("unexpected Gemini apiKey: %#v", got)
+	}
+	if _, exists := plan.ManagedDocument["apiKeyHeader"]; exists {
+		t.Fatalf("did not expect Gemini apiKeyHeader override, got %#v", plan.ManagedDocument["apiKeyHeader"])
+	}
+	modelConfig := plan.ManagedDocument["model"].(map[string]interface{})
+	if modelConfig["name"] != "gemini-3.1-pro-preview" {
+		t.Fatalf("unexpected Gemini model config: %#v", modelConfig)
+	}
+}
+
+func TestGenericAdapterValidateManagedConfigSupportsGeminiGateway(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "Gemini CLI"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"preloop": map[string]interface{}{
+				"url":  "https://preloop.example/mcp/v1",
+				"type": "http",
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer durable-token",
+				},
+			},
+		},
+		"baseUrl": "https://preloop.example/gemini/v1beta",
+		"apiKey":  "durable-token",
+		"model": map[string]interface{}{
+			"name": "gemini-3.1-pro-preview",
+		},
+	}, "https://preloop.example")
+	if result["gateway_provider_ok"] != true || result["model_provider_rewritten"] != true {
+		t.Fatalf("expected Gemini gateway validation to pass, got %+v", result)
+	}
+	if got := result["gateway_model_alias"]; got != "google/gemini-3.1-pro-preview" {
+		t.Fatalf("unexpected Gemini gateway model alias: %#v", got)
+	}
+}
+
+func TestSyncManagedAgentRuntimeArtifactsInstallsGeminiLauncher(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	launcherDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(launcherDir, 0o755); err != nil {
+		t.Fatalf("failed to create launcher dir: %v", err)
+	}
+	originalDir := filepath.Join(home, "orig-bin")
+	if err := os.MkdirAll(originalDir, 0o755); err != nil {
+		t.Fatalf("failed to create original bin dir: %v", err)
+	}
+	originalPath := filepath.Join(originalDir, "gemini")
+	if err := os.WriteFile(
+		originalPath,
+		[]byte("#!/usr/bin/env bash\nprintf '%s|%s' \"$GEMINI_API_KEY\" \"$GOOGLE_GEMINI_BASE_URL\"\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("failed to write fake gemini executable: %v", err)
+	}
+	t.Setenv(
+		"PATH",
+		launcherDir+string(os.PathListSeparator)+originalDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	if err := syncManagedAgentRuntimeArtifacts(
+		AgentConfig{Name: "Gemini CLI"},
+		"https://preloop.example",
+		"gemini-durable-token",
+	); err != nil {
+		t.Fatalf("unexpected gemini launcher install error: %v", err)
+	}
+
+	wrapperPath := filepath.Join(launcherDir, "gemini")
+	output, err := exec.Command(wrapperPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("managed gemini launcher failed: %v (%s)", err, string(output))
+	}
+	if got := string(output); got != "gemini-durable-token|https://preloop.example/gemini/v1beta" {
+		t.Fatalf("unexpected gemini launcher env output: %q", got)
+	}
+}
+
+func TestSyncManagedAgentRuntimeArtifactsInstallsCodexLauncher(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	launcherDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(launcherDir, 0o755); err != nil {
+		t.Fatalf("failed to create launcher dir: %v", err)
+	}
+	originalDir := filepath.Join(home, "orig-bin")
+	if err := os.MkdirAll(originalDir, 0o755); err != nil {
+		t.Fatalf("failed to create original bin dir: %v", err)
+	}
+	originalPath := filepath.Join(originalDir, "codex")
+	if err := os.WriteFile(
+		originalPath,
+		[]byte("#!/usr/bin/env bash\nprintf '%s' \"$PRELOOP_TOKEN\"\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("failed to write fake codex executable: %v", err)
+	}
+	t.Setenv(
+		"PATH",
+		launcherDir+string(os.PathListSeparator)+originalDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	if err := syncManagedAgentRuntimeArtifacts(
+		AgentConfig{Name: "Codex CLI"},
+		"https://preloop.example",
+		"codex-durable-token",
+	); err != nil {
+		t.Fatalf("unexpected codex launcher install error: %v", err)
+	}
+
+	wrapperPath := filepath.Join(launcherDir, "codex")
+	output, err := exec.Command(wrapperPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("managed codex launcher failed: %v (%s)", err, string(output))
+	}
+	if got := string(output); got != "codex-durable-token" {
+		t.Fatalf("unexpected codex launcher env output: %q", got)
+	}
+}
+
+func TestParseClaudeManagedGatewayUpstreamUsesShellExportsForBedrock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("ANTHROPIC_MODEL", "")
+	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "")
+
+	configPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("failed to create claude dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"model":"haiku"}`),
+		0o644,
+	); err != nil {
+		t.Fatalf("failed to write claude config: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".zshrc"),
+		[]byte(
+			"export CLAUDE_CODE_USE_BEDROCK=1\n"+
+				"export ANTHROPIC_MODEL='us.anthropic.claude-haiku-4-5-20251001-v1:0' # comment\n"+
+				"export AWS_BEARER_TOKEN_BEDROCK=bedrock-token\n",
+		),
+		0o644,
+	); err != nil {
+		t.Fatalf("failed to write zshrc: %v", err)
+	}
+
+	upstream, err := parseClaudeManagedGatewayUpstream(
+		AgentConfig{Name: "Claude Code", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected Claude Bedrock upstream to be detected")
+	}
+	if upstream.ProviderName != "amazon-bedrock" {
+		t.Fatalf("expected Bedrock provider, got %#v", upstream.ProviderName)
+	}
+	if upstream.ManagedModelAlias != "amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0" {
+		t.Fatalf("unexpected Claude Bedrock alias: %#v", upstream.ManagedModelAlias)
+	}
+	if upstream.APIKey != "bedrock-token" {
+		t.Fatalf("expected Claude Bedrock bearer token, got %#v", upstream.APIKey)
+	}
+	if len(upstream.Notes) == 0 || !strings.Contains(strings.Join(upstream.Notes, " "), ".zshrc") {
+		t.Fatalf("expected Claude Bedrock note to mention shell config, got %#v", upstream.Notes)
+	}
+}
+
+func TestOpenClawValidateManagedConfigSupportsAnthropicGateway(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: "OpenClaw"})
+	result := adapter.ValidateManagedConfig(map[string]interface{}{
+		"mcp": map[string]interface{}{
+			"servers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url":       "https://preloop.example/mcp/v1",
+					"transport": "http",
+					"headers": map[string]interface{}{
+						"Authorization": "Bearer durable-token",
+					},
+				},
+			},
+		},
+		"agents": map[string]interface{}{
+			"defaults": map[string]interface{}{
+				"model": map[string]interface{}{
+					"primary": "preloop/google/gemini-3.1-pro-preview",
+				},
+			},
+		},
+		"models": map[string]interface{}{
+			"providers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"api":     "anthropic-messages",
+					"baseUrl": "https://preloop.example/anthropic/v1",
+				},
+			},
+		},
+	}, "https://preloop.example")
+	if result["validation_passed"] != true {
+		t.Fatalf("expected OpenClaw anthropic gateway validation to pass, got %+v", result)
+	}
+}
+
+func TestDiscoverAgentsFindsInstalledOpenClawWithoutConfig(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	openClawDir := filepath.Join(home, ".openclaw")
+	if err := os.MkdirAll(openClawDir, 0755); err != nil {
+		t.Fatalf("failed to create openclaw dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(openClawDir, "openclaw.json.bak"), []byte(`{}`), 0644); err != nil {
+		t.Fatalf("failed to write openclaw backup marker: %v", err)
+	}
+
+	discovered, err := discoverAgents(io.Discard, false)
+	if err != nil {
+		t.Fatalf("discoverAgents returned error: %v", err)
+	}
+	for _, agent := range discovered {
+		if agent.Name != "OpenClaw" {
+			continue
+		}
+		wantPath := filepath.Join(home, ".openclaw", "openclaw.json")
+		if agent.ConfigPath != wantPath {
+			t.Fatalf("expected synthesized OpenClaw config path %q, got %q", wantPath, agent.ConfigPath)
+		}
+		if len(agent.MCPServers) != 0 {
+			t.Fatalf("expected empty MCP server set for detected OpenClaw install, got %+v", agent.MCPServers)
+		}
+		return
+	}
+	t.Fatalf("expected OpenClaw to be discovered from install markers, got %#v", discovered)
+}
+
+func TestRestoreAgentFromBackupRemovesSynthesizedConfig(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".config", "opencode", "config.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"preloop":{"url":"https://preloop.example/mcp/v1"}}}`), 0644); err != nil {
+		t.Fatalf("failed to seed synthesized config: %v", err)
+	}
+	backupPath := filepath.Join(home, "backup.json")
+	if err := os.WriteFile(backupPath, []byte{}, 0600); err != nil {
+		t.Fatalf("failed to write backup placeholder: %v", err)
+	}
+
+	state := &localEnrollmentState{
+		AgentName:          "OpenCode",
+		RuntimePrincipalID: runtimePrincipalIDForAgent(AgentConfig{Name: "OpenCode", ConfigPath: configPath}),
+		ConfigPath:         configPath,
+		ConfigExisted:      false,
+		BackupPath:         backupPath,
+		ManagedServerName:  "preloop",
+		ManagedServerURL:   "https://preloop.example/mcp/v1",
+		AppliedAt:          time.Now().UTC(),
+	}
+	if _, err := restoreAgentFromBackup(AgentConfig{Name: "OpenCode", ConfigPath: configPath}, state); err != nil {
+		t.Fatalf("unexpected restore error: %v", err)
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("expected synthesized config to be removed, stat err=%v", err)
+	}
+}
+
+func TestRestoreAgentFromBackupRestoresNonEmptyBackupEvenWhenStateSaysSynthetic(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	configPath := filepath.Join(home, ".openclaw", "openclaw.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte(`{"managed":true}`), 0644); err != nil {
+		t.Fatalf("failed to seed managed config: %v", err)
+	}
+	backupPath := filepath.Join(home, "backup-openclaw.json")
+	backup := []byte(`{"agents":{"defaults":{"model":{"primary":"openai/gpt-5"}}}}`)
+	if err := os.WriteFile(backupPath, backup, 0600); err != nil {
+		t.Fatalf("failed to write backup: %v", err)
+	}
+
+	state := &localEnrollmentState{
+		AgentName:          "OpenClaw",
+		RuntimePrincipalID: runtimePrincipalIDForAgent(AgentConfig{Name: "OpenClaw", ConfigPath: configPath}),
+		ConfigPath:         configPath,
+		ConfigExisted:      false,
+		BackupPath:         backupPath,
+		ManagedServerName:  "preloop",
+		ManagedServerURL:   "https://preloop.example/mcp/v1",
+		AppliedAt:          time.Now().UTC(),
+	}
+	if _, err := restoreAgentFromBackup(AgentConfig{Name: "OpenClaw", ConfigPath: configPath}, state); err != nil {
+		t.Fatalf("unexpected restore error: %v", err)
+	}
+	restored, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read restored config: %v", err)
+	}
+	if string(restored) != string(backup) {
+		t.Fatalf("expected backup bytes to be restored, got %q", string(restored))
 	}
 }
 
@@ -622,6 +2383,8 @@ func TestCollectOffboardCleanupCandidatesHonorsRecentUsage(t *testing.T) {
 					},
 				},
 			})
+		case "/api/v1/flows":
+			_ = json.NewEncoder(w).Encode([]flowSummaryResponse{})
 		default:
 			http.NotFound(w, r)
 		}
@@ -658,6 +2421,301 @@ func TestCollectOffboardCleanupCandidatesHonorsRecentUsage(t *testing.T) {
 	}
 	if got := byName["google/gemini-3.1-pro-preview"].RecentlyUsedBy; len(got) != 1 || got[0] != "Codex" {
 		t.Fatalf("expected model alias to be protected by recent usage, got %#v", got)
+	}
+}
+
+func TestCollectOffboardCleanupCandidatesProtectsModelsUsedByFlows(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/agents":
+			_ = json.NewEncoder(w).Encode(managedAgentListResponse{
+				Items: []managedAgentSummary{
+					{
+						ID:                "agent-current",
+						DisplayName:       "OpenClaw",
+						SessionSourceType: "openclaw",
+						SessionSourceID:   "openclaw-current",
+						LatestModelAlias:  "google/gemini-3.1-pro-preview",
+					},
+				},
+			})
+		case "/api/v1/mcp-servers":
+			_ = json.NewEncoder(w).Encode([]mcpServerResponse{})
+		case "/api/v1/ai-models":
+			_ = json.NewEncoder(w).Encode([]aiModelResponse{
+				{
+					ID:   "model-1",
+					Name: "OpenClaw google/gemini-3.1-pro-preview",
+					MetaData: map[string]interface{}{
+						"gateway": map[string]interface{}{
+							"model_alias": "google/gemini-3.1-pro-preview",
+						},
+					},
+				},
+			})
+		case "/api/v1/flows":
+			_ = json.NewEncoder(w).Encode([]flowSummaryResponse{
+				{ID: "flow-1", Name: "Nightly Review", AIModelID: "model-1"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	candidates, err := collectOffboardCleanupCandidates(client, managedAgentSummary{
+		ID:                "agent-current",
+		DisplayName:       "OpenClaw",
+		SessionSourceType: "openclaw",
+		SessionSourceID:   "openclaw-current",
+		LatestModelAlias:  "google/gemini-3.1-pro-preview",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("expected one cleanup candidate, got %#v", candidates)
+	}
+	if got := candidates[0].FlowReferences; len(got) != 1 || got[0] != "Nightly Review" {
+		t.Fatalf("expected model candidate to be protected by flow reference, got %#v", got)
+	}
+}
+
+func TestPromptOffboardCleanupSkipsAIModelRemovalWhenPolicyIsNo(t *testing.T) {
+	deleteCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/ai-models/model-1" {
+			deleteCalls++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	output := &bytes.Buffer{}
+	err := promptOffboardCleanup(
+		strings.NewReader(""),
+		output,
+		true,
+		offboardCleanupNo,
+		offboardCleanupAsk,
+		client,
+		[]offboardCleanupCandidate{
+			{
+				Kind:       "ai_model",
+				Name:       "google/gemini-3.1-pro-preview",
+				ResourceID: "model-1",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalls != 0 {
+		t.Fatalf("expected AI model deletion to be skipped, got %d delete call(s)", deleteCalls)
+	}
+}
+
+func TestPromptOffboardCleanupSkipsAIModelUsedByFlowEvenWithRemoveModelYes(t *testing.T) {
+	deleteCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/ai-models/model-1" {
+			deleteCalls++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	output := &bytes.Buffer{}
+	err := promptOffboardCleanup(
+		strings.NewReader(""),
+		output,
+		true,
+		offboardCleanupYes,
+		offboardCleanupAsk,
+		client,
+		[]offboardCleanupCandidate{
+			{
+				Kind:           "ai_model",
+				Name:           "google/gemini-3.1-pro-preview",
+				ResourceID:     "model-1",
+				FlowReferences: []string{"Nightly Review"},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalls != 0 {
+		t.Fatalf("expected AI model deletion to be skipped, got %d delete call(s)", deleteCalls)
+	}
+	if !strings.Contains(output.String(), "Nightly Review") {
+		t.Fatalf("expected output to mention blocking flow reference, got %q", output.String())
+	}
+}
+
+func TestPromptOffboardCleanupDeletesEligibleAIModelWhenPolicyIsYes(t *testing.T) {
+	deleteCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/ai-models/model-1" {
+			deleteCalls++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	output := &bytes.Buffer{}
+	err := promptOffboardCleanup(
+		strings.NewReader(""),
+		output,
+		true,
+		offboardCleanupYes,
+		offboardCleanupAsk,
+		client,
+		[]offboardCleanupCandidate{
+			{
+				Kind:       "ai_model",
+				Name:       "google/gemini-3.1-pro-preview",
+				ResourceID: "model-1",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalls != 1 {
+		t.Fatalf("expected AI model deletion, got %d delete call(s)", deleteCalls)
+	}
+	if !strings.Contains(output.String(), "Removed AI model") {
+		t.Fatalf("expected output to confirm AI model removal, got %q", output.String())
+	}
+}
+
+func TestPromptOffboardCleanupSkipsMCPServerRemovalWhenPolicyIsNo(t *testing.T) {
+	deleteCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/mcp-servers/srv-1" {
+			deleteCalls++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	output := &bytes.Buffer{}
+	err := promptOffboardCleanup(
+		strings.NewReader(""),
+		output,
+		true,
+		offboardCleanupAsk,
+		offboardCleanupNo,
+		client,
+		[]offboardCleanupCandidate{
+			{
+				Kind:       "mcp_server",
+				Name:       "github",
+				ResourceID: "srv-1",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalls != 0 {
+		t.Fatalf("expected MCP server deletion to be skipped, got %d delete call(s)", deleteCalls)
+	}
+}
+
+func TestPromptOffboardCleanupSkipsMCPServerUsedByOtherAgentEvenWithYes(t *testing.T) {
+	deleteCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/mcp-servers/srv-1" {
+			deleteCalls++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	output := &bytes.Buffer{}
+	err := promptOffboardCleanup(
+		strings.NewReader(""),
+		output,
+		true,
+		offboardCleanupAsk,
+		offboardCleanupYes,
+		client,
+		[]offboardCleanupCandidate{
+			{
+				Kind:         "mcp_server",
+				Name:         "github",
+				ResourceID:   "srv-1",
+				ReferencedBy: []string{"Codex"},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalls != 0 {
+		t.Fatalf("expected MCP server deletion to be skipped, got %d delete call(s)", deleteCalls)
+	}
+	if !strings.Contains(output.String(), "Codex") {
+		t.Fatalf("expected output to mention blocking agent reference, got %q", output.String())
+	}
+}
+
+func TestPromptOffboardCleanupDeletesEligibleMCPServerWhenPolicyIsYes(t *testing.T) {
+	deleteCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/mcp-servers/srv-1" {
+			deleteCalls++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := api.NewClientWithToken(server.URL, "tok")
+	output := &bytes.Buffer{}
+	err := promptOffboardCleanup(
+		strings.NewReader(""),
+		output,
+		true,
+		offboardCleanupAsk,
+		offboardCleanupYes,
+		client,
+		[]offboardCleanupCandidate{
+			{
+				Kind:       "mcp_server",
+				Name:       "github",
+				ResourceID: "srv-1",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleteCalls != 1 {
+		t.Fatalf("expected MCP server deletion, got %d delete call(s)", deleteCalls)
+	}
+	if !strings.Contains(output.String(), "Removed MCP server") {
+		t.Fatalf("expected output to confirm MCP server removal, got %q", output.String())
 	}
 }
 

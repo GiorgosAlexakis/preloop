@@ -2,21 +2,31 @@ package cmd
 
 import (
 	"bufio"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"sort"
 	"strings"
 	"time"
 
 	json5 "github.com/yosuke-furukawa/json5/encoding/json5"
 	"github.com/zalando/go-keyring"
+	"golang.org/x/crypto/scrypt"
 	ini "gopkg.in/ini.v1"
 
 	"github.com/preloop/preloop/cli/internal/api"
+	"github.com/preloop/preloop/cli/internal/config"
 )
 
 const (
@@ -25,6 +35,23 @@ const (
 )
 
 var openClawEnvPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
+var opencodeEnvPattern = regexp.MustCompile(`^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$`)
+var opencodeBearerEnvPattern = regexp.MustCompile(`^[Bb]earer\s+\{env:([A-Za-z_][A-Za-z0-9_]*)\}$`)
+var managedGatewayLLMLogPattern = regexp.MustCompile(`service=llm providerID=([^\s]+) modelID=([^\s]+)`)
+
+const (
+	geminiAPIKeyServiceName = "gemini-cli-api-key"
+	geminiAPIKeyAccountName = "default-api-key"
+	geminiFileStorageSecret = "gemini-cli-oauth"
+)
+
+var openCodeDefaultModelByProvider = map[string]string{
+	"zai": "glm-5-turbo",
+}
+
+var openCodeDefaultEndpointByProvider = map[string]string{
+	"zai": "https://api.z.ai/api/coding/paas/v4",
+}
 
 type managedEnrollmentOptions struct {
 	Client           *api.Client
@@ -32,6 +59,7 @@ type managedEnrollmentOptions struct {
 	AutoApprove      bool
 	LiveValidate     bool
 	SkipConfirmation bool
+	Tags             map[string]string
 	Input            io.Reader
 	Output           io.Writer
 }
@@ -62,6 +90,7 @@ type aiModelResponse struct {
 	ModelIdentifier string                 `json:"model_identifier"`
 	APIEndpoint     string                 `json:"api_endpoint"`
 	MetaData        map[string]interface{} `json:"meta_data"`
+	CredentialType  string                 `json:"credential_type"`
 	HasAPIKey       bool                   `json:"has_api_key"`
 }
 
@@ -72,7 +101,37 @@ type aiModelCreateRequest struct {
 	ModelIdentifier string                 `json:"model_identifier"`
 	APIEndpoint     string                 `json:"api_endpoint,omitempty"`
 	APIKey          string                 `json:"api_key,omitempty"`
+	CredentialType  string                 `json:"credential_type,omitempty"`
+	CredentialsJSON map[string]interface{} `json:"credential_payload,omitempty"`
 	MetaData        map[string]interface{} `json:"meta_data,omitempty"`
+}
+
+type managedGatewayUpstream struct {
+	SourceAgent       string
+	SourceProviderID  string
+	ProviderName      string
+	ModelIdentifier   string
+	APIEndpoint       string
+	APIKey            string
+	CredentialType    string
+	CredentialPayload map[string]interface{}
+	UsesAmbientAuth   bool
+	ManagedModelAlias string
+	Notes             []string
+}
+
+func (u *managedGatewayUpstream) CanRouteThroughGateway() bool {
+	if u == nil {
+		return false
+	}
+	if strings.TrimSpace(u.ProviderName) == "" ||
+		strings.TrimSpace(u.ModelIdentifier) == "" ||
+		strings.TrimSpace(u.ManagedModelAlias) == "" {
+		return false
+	}
+	return u.UsesAmbientAuth ||
+		strings.TrimSpace(u.APIKey) != "" ||
+		len(u.CredentialPayload) > 0
 }
 
 type openClawParsedConfig struct {
@@ -143,6 +202,29 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	if err != nil {
 		return err
 	}
+	if supportsManagedGateway(agent) {
+		upstream, upstreamErr := resolveManagedGatewayUpstream(agent)
+		if upstreamErr != nil {
+			return upstreamErr
+		}
+		if upstream != nil {
+			plan.Notes = append(plan.Notes, upstream.Notes...)
+		}
+		if upstream != nil && upstream.CanRouteThroughGateway() {
+			plan, err = applyManagedGatewayForAgent(
+				plan,
+				agent,
+				baseURL,
+				"<token created at apply time>",
+				upstream.ManagedModelAlias,
+			)
+			if err != nil {
+				return err
+			}
+		} else if note := unresolvedManagedGatewayNote(agent, upstream); note != "" {
+			plan.Notes = append(plan.Notes, note)
+		}
+	}
 
 	printEnrollmentPlan(plan, opts.DryRun)
 	if opts.DryRun {
@@ -183,6 +265,13 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	managedAgent, err := getManagedAgentForDiscovered(client, agent)
 	if err != nil {
 		return err
+	}
+
+	if len(opts.Tags) > 0 {
+		err = updateManagedAgentTags(client, managedAgent.ID, opts.Tags)
+		if err != nil {
+			return err
+		}
 	}
 
 	credentialResp, err := createDurableManagedCredential(client, managedAgent)
@@ -232,16 +321,56 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	if err != nil {
 		return err
 	}
+	if supportsManagedGateway(agent) {
+		upstream, upstreamErr := resolveManagedGatewayUpstream(agent)
+		if upstreamErr != nil {
+			return upstreamErr
+		}
+		if upstream != nil {
+			plan.Notes = append(plan.Notes, upstream.Notes...)
+		}
+		if upstream != nil && upstream.CanRouteThroughGateway() {
+			_, gatewayNotes, gatewayErr := syncManagedGatewayAIModel(
+				client,
+				managedAgent,
+				agent,
+				upstream,
+				strings.TrimRight(baseURL, "/")+openClawGatewayPath,
+			)
+			if gatewayErr != nil {
+				return gatewayErr
+			}
+			plan.Notes = append(plan.Notes, gatewayNotes...)
+			plan, err = applyManagedGatewayForAgent(
+				plan,
+				agent,
+				baseURL,
+				credentialResp.Token,
+				upstream.ManagedModelAlias,
+			)
+			if err != nil {
+				return err
+			}
+		} else if note := unresolvedManagedGatewayNote(agent, upstream); note != "" {
+			plan.Notes = append(plan.Notes, note)
+		}
+	}
 
-	originalBytes, err := os.ReadFile(agent.ConfigPath)
+	originalBytes, configExisted, err := readExistingAgentConfig(agent.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to read agent config: %w", err)
 	}
-	backupState, err := createLocalEnrollmentBackup(agent, originalBytes, plan)
+	backupState, err := createLocalEnrollmentBackup(agent, configExisted, originalBytes, plan)
 	if err != nil {
 		return err
 	}
-	if err := writeJSONDocument(agent.ConfigPath, plan.ManagedDocument); err != nil {
+	if err := writeAgentConfigDocument(agent, plan.ManagedDocument); err != nil {
+		return err
+	}
+	if err := syncClaudeCodeManagedMCPServer(agent, baseURL, credentialResp.Token); err != nil {
+		return err
+	}
+	if err := syncManagedAgentRuntimeArtifacts(agent, baseURL, credentialResp.Token); err != nil {
 		return err
 	}
 	if err := saveLocalEnrollmentState(backupState); err != nil {
@@ -371,6 +500,9 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			plan.ManagedModelAlias,
 		)
 	}
+	onboardingState := onboardingStateFromValidation(validationResult)
+	fmt.Printf("  Onboarding mode: %s\n", onboardingStateLabel(onboardingState))
+	fmt.Printf("  Routing: %s\n", onboardingStateNote(onboardingState))
 	if validationResult["live_validation_status"] != nil {
 		fmt.Printf("  Live validation: %v\n", validationResult["live_validation_status"])
 	}
@@ -385,8 +517,25 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	return nil
 }
 
+func updateManagedAgentTags(client *api.Client, agentID string, tags map[string]string) error {
+	path := fmt.Sprintf("/v1/accounts/me/agents/%s", agentID)
+	payload := map[string]interface{}{
+		"tags": tags,
+	}
+	err := client.Patch(path, payload, nil)
+	if err != nil {
+		return fmt.Errorf("failed to update agent tags: %w", err)
+	}
+	return nil
+}
+
 func supportsManagedLiveValidation(agent AgentConfig) bool {
-	return strings.EqualFold(strings.TrimSpace(agent.Name), "openclaw")
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "openclaw", "codex cli":
+		return true
+	default:
+		return false
+	}
 }
 
 func defaultManagedLiveValidationResult(agent AgentConfig) map[string]interface{} {
@@ -428,7 +577,18 @@ func runManagedAgentLiveValidation(
 			ValidationResult: validationResult,
 		}, nil
 	}
-	return runOpenClawLiveValidation(client, agent, validationResult)
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "openclaw":
+		return runOpenClawLiveValidation(client, agent, validationResult)
+	case "codex cli":
+		return runCodexLiveValidation(client, agent, validationResult)
+	default:
+		return &managedLiveValidationOutcome{
+			Attempted:        false,
+			Passed:           false,
+			ValidationResult: validationResult,
+		}, nil
+	}
 }
 
 func runOpenClawLiveValidation(
@@ -459,6 +619,20 @@ func runOpenClawLiveValidation(
 		}, err
 	}
 
+	validationDocument, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
 	parsed, err := parseOpenClawConfig(agent.ConfigPath)
 	if err != nil {
 		return &managedLiveValidationOutcome{
@@ -473,7 +647,10 @@ func runOpenClawLiveValidation(
 		}, err
 	}
 
-	token := strings.TrimSpace(parsed.ProviderAPIKey)
+	token := resolveOpenClawManagedGatewayToken(validationDocument)
+	if token == "" {
+		token = strings.TrimSpace(parsed.ProviderAPIKey)
+	}
 	if token == "" {
 		err = fmt.Errorf("managed OpenClaw config does not contain a Preloop gateway token")
 		return &managedLiveValidationOutcome{
@@ -534,6 +711,159 @@ func runOpenClawLiveValidation(
 		"live_validation_model_alias":    managedModelAlias,
 		"live_validation_runtime_agent":  resolveAgentDisplayName(agent),
 		"live_validation_runtime_source": runtimePrincipalIDForAgent(agent),
+	})
+	if passed {
+		result["live_validation_status"] = "passed"
+	}
+	if apiKeyID != "" {
+		result["live_validation_api_key_id"] = apiKeyID
+	}
+	if searchHit != nil {
+		result["live_validation_request_logged"] = true
+		result["live_validation_api_usage_id"] = searchHit.APIUsageID
+		result["live_validation_logged_at"] = searchHit.Timestamp
+		result["live_validation_status_code"] = searchHit.StatusCode
+	} else {
+		result["live_validation_request_logged"] = false
+	}
+
+	var validationErr error
+	if requestErr != nil {
+		result["live_validation_error"] = requestErr.Error()
+		validationErr = requestErr
+	}
+	if searchErr != nil {
+		result["live_validation_lookup_error"] = searchErr.Error()
+		if validationErr == nil {
+			validationErr = searchErr
+		} else {
+			validationErr = fmt.Errorf("%v; %w", validationErr, searchErr)
+		}
+	}
+	if !passed && validationErr == nil {
+		validationErr = fmt.Errorf("validation request did not appear in gateway usage")
+		result["live_validation_lookup_error"] = validationErr.Error()
+	}
+
+	return &managedLiveValidationOutcome{
+		Attempted:        true,
+		Passed:           passed,
+		ValidationResult: result,
+	}, validationErr
+}
+
+func runCodexLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	baseURL, err := resolveConfiguredAPIURL()
+	if err != nil {
+		return &managedLiveValidationOutcome{
+			Attempted:        true,
+			Passed:           false,
+			ValidationResult: validationResult,
+		}, err
+	}
+
+	detail, err := getManagedAgentDetailForDiscovered(client, agent)
+	if err != nil {
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
+	validationDocument, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
+	token := resolveCodexManagedGatewayToken(validationDocument)
+	if token == "" {
+		err = fmt.Errorf("managed Codex config does not contain a Preloop gateway token")
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
+	managedModelAlias := resolveCodexManagedModelAlias(validationDocument)
+	if managedModelAlias == "" {
+		err = fmt.Errorf("managed Codex config does not contain a Preloop model alias")
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+			}),
+		}, err
+	}
+
+	validationToken := fmt.Sprintf("preloop-validation-%d", time.Now().UTC().UnixNano())
+	prompt := fmt.Sprintf(
+		"Welcome to Preloop. Validation token: %s. Reply with ACK only.",
+		validationToken,
+	)
+	requestPayload := map[string]interface{}{
+		"model":             managedModelAlias,
+		"input":             prompt,
+		"max_output_tokens": 32,
+	}
+
+	gatewayClient := api.NewClientWithToken(baseURL, token)
+	var gatewayResponse map[string]interface{}
+	requestErr := gatewayClient.Post(
+		"/openai/v1/responses",
+		requestPayload,
+		&gatewayResponse,
+	)
+	_ = gatewayResponse
+
+	apiKeyID := mostLikelyManagedAPIKeyID(detail.Credentials)
+	searchHit, searchErr := waitForManagedValidationUsage(
+		client,
+		runtimePrincipalIDForAgent(agent),
+		apiKeyID,
+		managedModelAlias,
+		validationToken,
+	)
+
+	passed := requestErr == nil && searchErr == nil && searchHit != nil && searchHit.StatusCode < 400
+	result := mergeStringMaps(validationResult, map[string]interface{}{
+		"live_validation_attempted":      true,
+		"live_validation_passed":         passed,
+		"live_validation_status":         "failed",
+		"live_validation_token":          validationToken,
+		"live_validation_prompt":         prompt,
+		"live_validation_model_alias":    managedModelAlias,
+		"live_validation_runtime_agent":  resolveAgentDisplayName(agent),
+		"live_validation_runtime_source": runtimePrincipalIDForAgent(agent),
+		"live_validation_endpoint":       "/openai/v1/responses",
 	})
 	if passed {
 		result["live_validation_status"] = "passed"
@@ -654,40 +984,1562 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 	mcpServers := parseServerMapFromDocument(document)
 	modelRef := extractOpenClawPrimaryModel(document)
 	providerID, modelID := splitOpenClawModelRef(modelRef)
-	providerName := inferOpenClawProviderName(providerID, lookupString(document, "models", "providers", providerID, "api"))
-	providerRegion := resolveOpenClawProviderRegion(document, providerID)
+	providerDocument := document
+	notes := []string{}
+	if strings.EqualFold(providerID, openClawManagedProviderID) {
+		if discovered := loadOpenClawDiscoveredConfig(path); discovered != nil {
+			providerDocument = discovered
+			discoveredModelRef := extractOpenClawPrimaryModel(discovered)
+			if discoveredProviderID, discoveredModelID := splitOpenClawModelRef(discoveredModelRef); discoveredProviderID != "" && discoveredModelID != "" {
+				providerID = discoveredProviderID
+				modelID = discoveredModelID
+				notes = append(notes, "Recovered OpenClaw upstream model settings from the saved discovered config.")
+			}
+		}
+		if strings.EqualFold(providerID, openClawManagedProviderID) {
+			if upstreamProviderID, upstreamModelID := splitOpenClawModelRef(modelID); upstreamProviderID != "" && upstreamModelID != "" {
+				providerID = upstreamProviderID
+				modelID = upstreamModelID
+			}
+		}
+	}
+
+	providerLookupID := resolveOpenClawProviderLookupID(providerDocument, providerID)
+	providerName := inferOpenClawProviderName(
+		providerLookupID,
+		lookupString(providerDocument, "models", "providers", providerLookupID, "api"),
+	)
+	providerRegion := resolveOpenClawProviderRegion(providerDocument, providerLookupID)
 	apiKey, usesAmbientAuth, resolvedNote := resolveOpenClawProviderCredentials(
-		document,
-		providerID,
+		providerDocument,
+		providerLookupID,
 		providerName,
 		providerRegion,
 	)
-	notes := []string{}
 	if resolvedNote != "" {
 		notes = append(notes, resolvedNote)
 	}
 
-	providerBaseURL := lookupString(document, "models", "providers", providerID, "baseUrl")
+	providerBaseURL := lookupString(
+		providerDocument,
+		"models",
+		"providers",
+		providerLookupID,
+		"baseUrl",
+	)
 	if strings.EqualFold(providerID, openClawManagedProviderID) {
 		providerBaseURL = ""
 	}
 
 	return &openClawParsedConfig{
-		Document:        document,
-		MCPServers:      mcpServers,
-		ModelRef:        modelRef,
-		ModelAlias:      buildOpenClawGatewayAlias(providerID, modelID),
-		ModelID:         modelID,
-		ProviderID:      providerID,
-		ProviderName:    providerName,
-		ProviderAPI:     pickOpenClawGatewayAPI(lookupString(document, "models", "providers", providerID, "api")),
+		Document:     document,
+		MCPServers:   mcpServers,
+		ModelRef:     modelRef,
+		ModelAlias:   buildOpenClawGatewayAlias(providerID, modelID),
+		ModelID:      modelID,
+		ProviderID:   providerID,
+		ProviderName: providerName,
+		ProviderAPI: pickOpenClawGatewayAPI(
+			lookupString(providerDocument, "models", "providers", providerLookupID, "api"),
+		),
 		ProviderBaseURL: providerBaseURL,
 		ProviderAPIKey:  apiKey,
 		ProviderRegion:  providerRegion,
 		UsesAmbientAuth: usesAmbientAuth,
-		ModelCatalog:    findOpenClawModelCatalog(document, providerID, modelID),
+		ModelCatalog:    findOpenClawModelCatalog(providerDocument, providerLookupID, modelID),
 		Notes:           notes,
 	}, nil
+}
+
+func loadOpenClawDiscoveredConfig(path string) map[string]interface{} {
+	statePath, err := localEnrollmentStatePath("openclaw", path)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil
+	}
+	var state localEnrollmentState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil
+	}
+	if len(state.DiscoveredConfig) == 0 {
+		return nil
+	}
+	return state.DiscoveredConfig
+}
+
+func loadManagedDiscoveredConfig(agent AgentConfig) map[string]interface{} {
+	statePath, err := localEnrollmentStatePath(agent.Name, agent.ConfigPath)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil
+	}
+	var state localEnrollmentState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil
+	}
+	if len(state.DiscoveredConfig) == 0 {
+		return nil
+	}
+	return state.DiscoveredConfig
+}
+
+func readAgentConfigForGatewayResolution(agent AgentConfig) (map[string]interface{}, error) {
+	if discovered := loadManagedDiscoveredConfig(agent); discovered != nil {
+		return discovered, nil
+	}
+	return loadAgentConfigDocument(agent)
+}
+
+func resolveManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "opencode":
+		return parseOpenCodeManagedGatewayUpstream(agent)
+	case "gemini cli":
+		return parseGeminiManagedGatewayUpstream(agent)
+	case "claude code":
+		return parseClaudeManagedGatewayUpstream(agent)
+	case "codex cli":
+		return parseCodexManagedGatewayUpstream(agent)
+	default:
+		return nil, nil
+	}
+}
+
+func unresolvedManagedGatewayNote(agent AgentConfig, upstream *managedGatewayUpstream) string {
+	if upstream == nil {
+		return fmt.Sprintf(
+			"Could not resolve %s's current upstream model and credentials automatically, so model traffic will remain direct.",
+			resolveAgentDisplayName(agent),
+		)
+	}
+	if strings.TrimSpace(upstream.ManagedModelAlias) != "" {
+		return fmt.Sprintf(
+			"Could not resolve credentials for %s model %s automatically, so model traffic will remain direct.",
+			resolveAgentDisplayName(agent),
+			upstream.ManagedModelAlias,
+		)
+	}
+	return fmt.Sprintf(
+		"Could not resolve %s's current upstream model and credentials automatically, so model traffic will remain direct.",
+		resolveAgentDisplayName(agent),
+	)
+}
+
+func looksManagedGatewayModelRef(modelRef string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(modelRef))
+	return trimmed == "" || strings.HasPrefix(trimmed, "preloop/")
+}
+
+type openCodeAuthProfile struct {
+	Type string `json:"type"`
+	Key  string `json:"key"`
+}
+
+func parseOpenCodeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
+	document, err := readAgentConfigForGatewayResolution(agent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse OpenCode config: %w", err)
+	}
+	providers, _ := asObjectMap(document["provider"])
+	authProfiles, err := loadOpenCodeAuthProfiles()
+	if err != nil {
+		return nil, err
+	}
+
+	modelRef := strings.TrimSpace(lookupString(document, "model"))
+	if strings.HasPrefix(strings.ToLower(modelRef), "preloop/") {
+		modelRef = ""
+	}
+	notes := []string{}
+	if modelRef == "" {
+		if inferred := resolveOpenCodeRecentModelRef(); inferred != "" {
+			modelRef = inferred
+			notes = append(
+				notes,
+				fmt.Sprintf("Detected OpenCode's recent upstream model as %s.", modelRef),
+			)
+		}
+	}
+
+	providerID, modelID := splitOpenClawModelRef(modelRef)
+	if strings.EqualFold(providerID, "preloop") {
+		providerID = ""
+		modelID = ""
+	}
+	if providerID == "" {
+		providerID = singleProviderKey(providers)
+	}
+	if providerID == "" {
+		providerID = singleOpenCodeAuthProvider(authProfiles)
+	}
+	if modelID == "" {
+		modelID = singleOpenCodeProviderModel(providers, providerID)
+	}
+	if modelID == "" {
+		if fallback := openCodeDefaultModelByProvider[strings.ToLower(providerID)]; fallback != "" {
+			modelID = fallback
+			modelRef = strings.TrimSpace(providerID + "/" + modelID)
+			notes = append(
+				notes,
+				fmt.Sprintf(
+					"Inferred OpenCode's upstream model as %s from local provider credentials.",
+					modelRef,
+				),
+			)
+		}
+	}
+	if providerID == "" || modelID == "" {
+		return nil, nil
+	}
+
+	providerConfig, _ := asObjectMap(providers[providerID])
+	apiEndpoint := normalizeAIModelEndpoint(lookupString(providerConfig, "options", "baseURL"))
+	if apiEndpoint == "" {
+		apiEndpoint = normalizeAIModelEndpoint(
+			openCodeDefaultEndpointByProvider[strings.ToLower(providerID)],
+		)
+	}
+
+	apiKey := resolveConfigSecret(lookupValue(providerConfig, "options", "apiKey"))
+	if apiKey == "" {
+		if headers, ok := asObjectMap(lookupValue(providerConfig, "options", "headers")); ok {
+			apiKey = resolveBearerSecret(headers["Authorization"])
+		}
+	}
+	if apiKey == "" {
+		if authProfile, ok := authProfiles[strings.ToLower(providerID)]; ok {
+			apiKey = strings.TrimSpace(authProfile.Key)
+		}
+	}
+
+	providerName := normalizeOpenCodeProviderName(providerID, providerConfig, apiEndpoint)
+	managedAlias := strings.TrimSpace(modelRef)
+	if managedAlias == "" {
+		managedAlias = strings.TrimSpace(providerID + "/" + modelID)
+	}
+
+	return &managedGatewayUpstream{
+		SourceAgent:       "opencode",
+		SourceProviderID:  providerID,
+		ProviderName:      providerName,
+		ModelIdentifier:   modelID,
+		APIEndpoint:       apiEndpoint,
+		APIKey:            apiKey,
+		ManagedModelAlias: managedAlias,
+		Notes:             notes,
+	}, nil
+}
+
+func parseGeminiManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
+	document, err := readAgentConfigForGatewayResolution(agent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Gemini CLI config: %w", err)
+	}
+
+	notes := []string{}
+	modelRef := strings.TrimSpace(lookupString(document, "model"))
+	if modelRef == "" {
+		if modelConfig, ok := asObjectMap(document["model"]); ok {
+			modelRef = strings.TrimSpace(lookupString(modelConfig, "name"))
+		}
+	}
+	if looksManagedGatewayModelRef(modelRef) && modelRef != "" {
+		modelRef = ""
+	}
+	if strings.Contains(strings.ToLower(lookupString(document, "baseUrl")), "preloop") {
+		return nil, nil
+	}
+	if modelRef == "" {
+		if recentModel := resolveGeminiRecentModelRef(); recentModel != "" {
+			modelRef = recentModel
+			notes = append(
+				notes,
+				fmt.Sprintf("Detected Gemini CLI's recent upstream model as %s.", modelRef),
+			)
+		}
+	}
+	if modelRef == "" {
+		return nil, nil
+	}
+
+	apiKey, apiKeyNote := resolveGeminiAPIKey(document)
+	if apiKeyNote != "" {
+		notes = append(notes, apiKeyNote)
+	}
+	if apiKey == "" && strings.EqualFold(lookupString(document, "security", "auth", "selectedType"), "gemini-api-key") {
+		notes = append(
+			notes,
+			"Gemini CLI is configured for API-key auth, but no reusable API key was found in the current shell, ~/.gemini/.env, or Gemini CLI secure storage.",
+		)
+	}
+	providerID := ""
+	modelID := ""
+	if strings.Contains(modelRef, "/") {
+		providerID, modelID = splitOpenClawModelRef(modelRef)
+	} else {
+		modelID = modelRef
+		providerID = "google"
+	}
+	managedAlias := strings.TrimSpace(modelRef)
+	if !strings.Contains(managedAlias, "/") {
+		managedAlias = providerID + "/" + modelID
+	}
+
+	return &managedGatewayUpstream{
+		SourceAgent:       "gemini",
+		SourceProviderID:  providerID,
+		ProviderName:      "google",
+		ModelIdentifier:   modelID,
+		APIEndpoint:       normalizeAIModelEndpoint(lookupString(document, "baseUrl")),
+		APIKey:            apiKey,
+		ManagedModelAlias: managedAlias,
+		Notes:             notes,
+	}, nil
+}
+
+func parseClaudeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
+	document, err := readAgentConfigForGatewayResolution(agent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Claude Code config: %w", err)
+	}
+	document = augmentDocumentWithShellExports(
+		document,
+		"CLAUDE_CODE_USE_BEDROCK",
+		"ANTHROPIC_MODEL",
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_AUTH_TOKEN",
+		"CLAUDE_CODE_OAUTH_TOKEN",
+		"AWS_BEARER_TOKEN_BEDROCK",
+		"AWS_ACCESS_KEY_ID",
+		"AWS_SECRET_ACCESS_KEY",
+		"AWS_SESSION_TOKEN",
+		"AWS_REGION",
+		"AWS_DEFAULT_REGION",
+		"AWS_PROFILE",
+		"AWS_SHARED_CREDENTIALS_FILE",
+		"AWS_CONFIG_FILE",
+	)
+
+	notes := []string{}
+	modelRef := strings.TrimSpace(resolveOpenClawEnvVar(document, "ANTHROPIC_MODEL"))
+	if modelRef == "" {
+		modelRef = strings.TrimSpace(lookupString(document, "model"))
+	}
+	if strings.Contains(
+		strings.ToLower(resolveOpenClawEnvVar(document, "ANTHROPIC_BASE_URL")),
+		"preloop",
+	) {
+		return nil, nil
+	}
+	if looksManagedGatewayModelRef(modelRef) && modelRef != "" {
+		modelRef = ""
+	}
+	if modelRef == "" || strings.Contains(modelRef, "[") {
+		if recentModel := resolveClaudeRecentModelRef(); recentModel != "" {
+			modelRef = recentModel
+			notes = append(
+				notes,
+				fmt.Sprintf("Detected Claude Code's recent upstream model as %s.", modelRef),
+			)
+		}
+	}
+	if modelRef == "" || strings.Contains(modelRef, "[") {
+		return nil, nil
+	}
+	if claudeUsesBedrock(document) {
+		providerID, modelID := splitOpenClawModelRef(modelRef)
+		if modelID == "" {
+			modelID = modelRef
+		}
+		switch strings.ToLower(strings.TrimSpace(providerID)) {
+		case "", "anthropic":
+			providerID = "amazon-bedrock"
+		case "bedrock":
+			providerID = "amazon-bedrock"
+		}
+		apiKey := strings.TrimSpace(resolveOpenClawEnvVar(document, "AWS_BEARER_TOKEN_BEDROCK"))
+		if apiKey != "" {
+			notes = append(notes, claudeShellExportNote("AWS_BEARER_TOKEN_BEDROCK"))
+		} else if payload, note := resolveOpenClawBedrockCredentialPayload(
+			document,
+			providerID,
+			"",
+		); payload != "" {
+			apiKey = payload
+			if note != "" {
+				notes = append(notes, strings.ReplaceAll(note, "OpenClaw", "Claude Code"))
+			}
+		} else if note != "" {
+			notes = append(notes, strings.ReplaceAll(note, "OpenClaw", "Claude Code"))
+		}
+		managedAlias := strings.TrimSpace(modelRef)
+		if !strings.Contains(managedAlias, "/") {
+			managedAlias = providerID + "/" + modelID
+		}
+		return &managedGatewayUpstream{
+			SourceAgent:       "claude_code",
+			SourceProviderID:  providerID,
+			ProviderName:      providerID,
+			ModelIdentifier:   modelID,
+			APIKey:            apiKey,
+			ManagedModelAlias: managedAlias,
+			Notes:             notes,
+		}, nil
+	}
+	apiKey, apiKeyNote := resolveClaudeAuthToken(document)
+	if apiKeyNote != "" {
+		notes = append(notes, apiKeyNote)
+	}
+	if apiKey == "" && resolveClaudeOAuthEmail() != "" {
+		notes = append(
+			notes,
+			"Claude Code appears to rely on local OAuth/keychain auth, but no reusable upstream token was available for automatic import.",
+		)
+	}
+
+	providerID, modelID := splitOpenClawModelRef(modelRef)
+	if modelID == "" {
+		modelID = modelRef
+		providerID = "anthropic"
+	}
+	managedAlias := strings.TrimSpace(modelRef)
+	if !strings.Contains(managedAlias, "/") {
+		managedAlias = "anthropic/" + modelID
+	}
+
+	return &managedGatewayUpstream{
+		SourceAgent:       "claude_code",
+		SourceProviderID:  providerID,
+		ProviderName:      "anthropic",
+		ModelIdentifier:   modelID,
+		APIEndpoint:       normalizeAIModelEndpoint(lookupString(document, "env", "ANTHROPIC_BASE_URL")),
+		APIKey:            apiKey,
+		ManagedModelAlias: managedAlias,
+		Notes:             notes,
+	}, nil
+}
+
+func parseCodexManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
+	document, err := readAgentConfigForGatewayResolution(agent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Codex CLI config: %w", err)
+	}
+
+	modelRef := strings.TrimSpace(lookupString(document, "model"))
+	providerID := strings.TrimSpace(lookupString(document, "model_provider"))
+	notes := []string{}
+	if modelRef == "" {
+		if recentModelRef := resolveCodexRecentModelRef(); recentModelRef != "" {
+			modelRef = recentModelRef
+			notes = append(
+				notes,
+				fmt.Sprintf(
+					"Inferred Codex model %s from recent session history.",
+					recentModelRef,
+				),
+			)
+		} else if cachedModelRef := resolveCodexCachedModelRef(); cachedModelRef != "" {
+			modelRef = cachedModelRef
+			notes = append(
+				notes,
+				fmt.Sprintf(
+					"Inferred Codex model %s from the local model cache.",
+					cachedModelRef,
+				),
+			)
+		}
+	}
+	parsedProviderID, modelID := splitOpenClawModelRef(modelRef)
+	if providerID == "" {
+		providerID = parsedProviderID
+	}
+	if strings.EqualFold(providerID, "preloop") {
+		return nil, nil
+	}
+	if modelID == "" {
+		modelID = modelRef
+	}
+	if providerID == "" || modelID == "" {
+		return nil, nil
+	}
+
+	providers, _ := asObjectMap(document["model_providers"])
+	providerConfig, _ := asObjectMap(providers[providerID])
+	apiKey := resolveCodexAPIKey(providerConfig)
+	credentialType := ""
+	credentialPayload := map[string]interface{}{}
+	providerName := normalizeCodexProviderName(providerID, providerConfig)
+	apiEndpoint := normalizeCodexManagedEndpoint(lookupString(providerConfig, "base_url"))
+	if apiKey == "" {
+		if oauthCredential, oauthNote := resolveCodexOAuthCredential(); oauthCredential != nil {
+			credentialType = "oauth_openai_codex"
+			credentialPayload = oauthCredential.Payload()
+			providerName = "openai-codex"
+			apiEndpoint = normalizeCodexManagedEndpoint(apiEndpoint)
+			if oauthNote != "" {
+				notes = append(notes, oauthNote)
+			}
+		}
+	}
+	if apiKey == "" && credentialType == "" && strings.EqualFold(resolveCodexAuthMode(), "chatgpt") {
+		notes = append(
+			notes,
+			"Codex is signed in with ChatGPT OAuth, but the local OAuth session could not be resolved into a reusable Preloop credential bundle.",
+		)
+	}
+	managedAlias := strings.TrimSpace(modelRef)
+	if !strings.Contains(managedAlias, "/") {
+		managedAlias = providerID + "/" + modelID
+	}
+
+	return &managedGatewayUpstream{
+		SourceAgent:       "codex",
+		SourceProviderID:  providerID,
+		ProviderName:      providerName,
+		ModelIdentifier:   modelID,
+		APIEndpoint:       apiEndpoint,
+		APIKey:            apiKey,
+		CredentialType:    credentialType,
+		CredentialPayload: credentialPayload,
+		ManagedModelAlias: managedAlias,
+		Notes:             notes,
+	}, nil
+}
+
+func loadOpenCodeAuthProfiles() (map[string]openCodeAuthProfile, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve home directory for OpenCode auth: %w", err)
+	}
+	path := filepath.Join(home, ".local", "share", "opencode", "auth.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]openCodeAuthProfile{}, nil
+		}
+		return nil, fmt.Errorf("failed to read OpenCode auth profile: %w", err)
+	}
+	raw := map[string]openCodeAuthProfile{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse OpenCode auth profile: %w", err)
+	}
+	profiles := make(map[string]openCodeAuthProfile, len(raw))
+	for key, profile := range raw {
+		profiles[strings.ToLower(strings.TrimSpace(key))] = profile
+	}
+	return profiles, nil
+}
+
+func resolveOpenCodeRecentModelRef() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	entries, err := os.ReadDir(filepath.Join(home, ".local", "share", "opencode", "log"))
+	if err != nil {
+		return ""
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(home, ".local", "share", "opencode", "log", entries[i].Name()))
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for j := len(lines) - 1; j >= 0; j-- {
+			matches := managedGatewayLLMLogPattern.FindStringSubmatch(lines[j])
+			if len(matches) != 3 {
+				continue
+			}
+			providerID := strings.TrimSpace(matches[1])
+			modelID := strings.TrimSpace(matches[2])
+			if providerID == "" || modelID == "" || strings.EqualFold(providerID, "preloop") {
+				continue
+			}
+			if strings.Contains(modelID, "/") {
+				return modelID
+			}
+			return providerID + "/" + modelID
+		}
+	}
+	return ""
+}
+
+func resolveGeminiRecentModelRef() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	root := filepath.Join(home, ".gemini", "tmp")
+	bestModel := ""
+	bestTime := time.Time{}
+	chatsSegment := string(filepath.Separator) + "chats" + string(filepath.Separator)
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".json" || !strings.Contains(path, chatsSegment) {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var session struct {
+			LastUpdated string `json:"lastUpdated"`
+			Messages    []struct {
+				Type      string `json:"type"`
+				Model     string `json:"model"`
+				Timestamp string `json:"timestamp"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(data, &session); err != nil {
+			return nil
+		}
+		for _, message := range session.Messages {
+			if !strings.EqualFold(strings.TrimSpace(message.Type), "gemini") {
+				continue
+			}
+			model := strings.TrimSpace(message.Model)
+			if looksManagedGatewayModelRef(model) {
+				continue
+			}
+			candidateTime := info.ModTime()
+			if parsedTime, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(message.Timestamp)); err == nil {
+				candidateTime = parsedTime
+			} else if parsedTime, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(session.LastUpdated)); err == nil {
+				candidateTime = parsedTime
+			}
+			if candidateTime.After(bestTime) {
+				bestTime = candidateTime
+				bestModel = model
+			}
+		}
+		return nil
+	})
+	return bestModel
+}
+
+func resolveGeminiAPIKey(document map[string]interface{}) (string, string) {
+	if apiKey := resolveConfigSecret(document["apiKey"]); apiKey != "" {
+		return apiKey, ""
+	}
+	for _, envKey := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"} {
+		if value := strings.TrimSpace(os.Getenv(envKey)); value != "" {
+			return value, fmt.Sprintf("Resolved Gemini CLI API key from %s.", envKey)
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
+	path := filepath.Join(home, ".gemini", ".env")
+	for _, envKey := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"} {
+		if value := resolveEnvFileSecret(path, envKey); value != "" {
+			return value, fmt.Sprintf("Resolved Gemini CLI API key from %s.", path)
+		}
+	}
+	if apiKey, note := resolveGeminiStoredAPIKey(); apiKey != "" {
+		return apiKey, note
+	}
+	return "", ""
+}
+
+func resolveGeminiStoredAPIKey() (string, string) {
+	if apiKey, note := resolveGeminiKeyringAPIKey(); apiKey != "" {
+		return apiKey, note
+	}
+	return resolveGeminiEncryptedFileAPIKey()
+}
+
+func resolveGeminiKeyringAPIKey() (string, string) {
+	raw, err := keyring.Get(geminiAPIKeyServiceName, geminiAPIKeyAccountName)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return "", ""
+	}
+	if apiKey := extractGeminiAPIKeyFromCredentialBlob(raw); apiKey != "" {
+		return apiKey, fmt.Sprintf(
+			"Resolved Gemini CLI API key from OS secure storage (service: %s, account: %s).",
+			geminiAPIKeyServiceName,
+			geminiAPIKeyAccountName,
+		)
+	}
+	return "", ""
+}
+
+func resolveGeminiEncryptedFileAPIKey() (string, string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
+	path := filepath.Join(home, ".gemini", "gemini-credentials.json")
+	encryptedData, err := os.ReadFile(path)
+	if err != nil {
+		return "", ""
+	}
+	decryptedJSON, err := decryptGeminiCredentialStore(strings.TrimSpace(string(encryptedData)))
+	if err != nil {
+		return "", ""
+	}
+	var store map[string]map[string]string
+	if err := json.Unmarshal([]byte(decryptedJSON), &store); err != nil {
+		return "", ""
+	}
+	raw := strings.TrimSpace(store[geminiAPIKeyServiceName][geminiAPIKeyAccountName])
+	if apiKey := extractGeminiAPIKeyFromCredentialBlob(raw); apiKey != "" {
+		return apiKey, fmt.Sprintf("Resolved Gemini CLI API key from %s.", path)
+	}
+	return "", ""
+}
+
+func extractGeminiAPIKeyFromCredentialBlob(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var credentials struct {
+		Token struct {
+			AccessToken string `json:"accessToken"`
+		} `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(raw), &credentials); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(credentials.Token.AccessToken)
+}
+
+func decryptGeminiCredentialStore(encryptedData string) (string, error) {
+	parts := strings.Split(encryptedData, ":")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid Gemini credential store format")
+	}
+	iv, err := hex.DecodeString(parts[0])
+	if err != nil {
+		return "", fmt.Errorf("invalid Gemini credential store IV: %w", err)
+	}
+	authTag, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("invalid Gemini credential store auth tag: %w", err)
+	}
+	ciphertext, err := hex.DecodeString(parts[2])
+	if err != nil {
+		return "", fmt.Errorf("invalid Gemini credential store ciphertext: %w", err)
+	}
+	key, err := deriveGeminiCredentialStoreKey()
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize Gemini credential cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCMWithNonceSize(block, len(iv))
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize Gemini credential GCM: %w", err)
+	}
+	plaintext, err := gcm.Open(nil, iv, append(ciphertext, authTag...), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to decrypt Gemini credential store: %w", err)
+	}
+	return string(plaintext), nil
+}
+
+func deriveGeminiCredentialStoreKey() ([]byte, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve hostname for Gemini credential store: %w", err)
+	}
+	username := strings.TrimSpace(os.Getenv("USER"))
+	if username == "" {
+		username = strings.TrimSpace(os.Getenv("USERNAME"))
+	}
+	if username == "" {
+		return nil, fmt.Errorf("failed to resolve username for Gemini credential store")
+	}
+	salt := []byte(fmt.Sprintf("%s-%s-gemini-cli", hostname, username))
+	key, err := scrypt.Key([]byte(geminiFileStorageSecret), salt, 16384, 8, 1, 32)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive Gemini credential store key: %w", err)
+	}
+	return key, nil
+}
+
+func resolveClaudeRecentModelRef() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	root := filepath.Join(home, ".claude", "projects")
+	bestModel := ""
+	bestTime := time.Time{}
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info == nil || info.IsDir() || filepath.Ext(path) != ".jsonl" {
+			return nil
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+		for scanner.Scan() {
+			var entry map[string]interface{}
+			if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+				continue
+			}
+			model := extractClaudeRecentModel(entry)
+			if model == "" || looksManagedGatewayModelRef(model) || strings.Contains(model, "[") {
+				continue
+			}
+			candidateTime := info.ModTime()
+			if parsedTime, err := time.Parse(time.RFC3339Nano, lookupString(entry, "timestamp")); err == nil {
+				candidateTime = parsedTime
+			}
+			if candidateTime.After(bestTime) {
+				bestTime = candidateTime
+				bestModel = model
+			}
+		}
+		return nil
+	})
+	return bestModel
+}
+
+func extractClaudeRecentModel(entry map[string]interface{}) string {
+	if message, ok := asObjectMap(entry["message"]); ok {
+		model := strings.TrimSpace(lookupString(message, "model"))
+		if model != "" && !strings.EqualFold(model, "<synthetic>") {
+			return model
+		}
+	}
+	model := strings.TrimSpace(lookupString(entry, "model"))
+	if strings.EqualFold(model, "<synthetic>") {
+		return ""
+	}
+	return model
+}
+
+func resolveClaudeAuthToken(document map[string]interface{}) (string, string) {
+	for _, value := range []interface{}{
+		lookupValue(document, "env", "ANTHROPIC_API_KEY"),
+		lookupValue(document, "env", "ANTHROPIC_AUTH_TOKEN"),
+		lookupValue(document, "env", "CLAUDE_CODE_OAUTH_TOKEN"),
+	} {
+		if token := resolveConfigSecret(value); token != "" {
+			return token, ""
+		}
+	}
+	for _, envKey := range []string{
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_AUTH_TOKEN",
+		"CLAUDE_CODE_OAUTH_TOKEN",
+	} {
+		if value := strings.TrimSpace(os.Getenv(envKey)); value != "" {
+			return value, fmt.Sprintf("Resolved Claude Code auth token from %s.", envKey)
+		}
+		if value := resolveShellExportedEnvVar(envKey); value != "" {
+			return value, claudeShellExportNote(envKey)
+		}
+	}
+	if token, note := resolveClaudeCredentialFileToken(); token != "" {
+		return token, note
+	}
+	if token, note := resolveClaudeKeychainToken(); token != "" {
+		return token, note
+	}
+	return "", ""
+}
+
+func resolveClaudeCredentialFileToken() (string, string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
+	path := filepath.Join(home, ".claude", ".credentials.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", ""
+	}
+	if token := extractClaudeTokenFromCredentialBlob(string(data)); token != "" {
+		return token, fmt.Sprintf("Resolved Claude Code auth token from %s.", path)
+	}
+	return "", ""
+}
+
+func resolveClaudeKeychainToken() (string, string) {
+	if runtime.GOOS != "darwin" {
+		return "", ""
+	}
+	if raw := readClaudeKeychainCredentialBlob(); raw != "" {
+		if token := extractClaudeTokenFromCredentialBlob(raw); token != "" {
+			return token, "Resolved Claude Code auth token from OS Keychain (service: Claude Code-credentials)."
+		}
+	}
+	candidates := []string{}
+	if user := strings.TrimSpace(os.Getenv("USER")); user != "" {
+		candidates = append(candidates, user)
+	}
+	if email := resolveClaudeOAuthEmail(); email != "" {
+		candidates = append(candidates, email)
+	}
+	candidates = append(candidates, "Claude Code")
+	seen := map[string]struct{}{}
+	for _, account := range candidates {
+		account = strings.TrimSpace(account)
+		if account == "" {
+			continue
+		}
+		if _, exists := seen[account]; exists {
+			continue
+		}
+		seen[account] = struct{}{}
+		secret, err := keyring.Get("Claude Code-credentials", account)
+		if err != nil || strings.TrimSpace(secret) == "" {
+			continue
+		}
+		if token := extractClaudeTokenFromCredentialBlob(secret); token != "" {
+			return token, fmt.Sprintf(
+				"Resolved Claude Code auth token from OS Keychain (service: Claude Code-credentials, account: %s).",
+				account,
+			)
+		}
+	}
+	return "", ""
+}
+
+func readClaudeKeychainCredentialBlob() string {
+	cmd := exec.Command(
+		"security",
+		"find-generic-password",
+		"-s",
+		"Claude Code-credentials",
+		"-w",
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func resolveClaudeOAuthEmail() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(home, ".claude.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var document map[string]interface{}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return ""
+	}
+	for _, value := range []string{
+		lookupString(document, "oauthAccount", "email"),
+		lookupString(document, "oauthAccount", "emailAddress"),
+	} {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func extractClaudeTokenFromCredentialBlob(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "sk-ant-") {
+		return trimmed
+	}
+	var document map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &document); err != nil {
+		if strings.Count(trimmed, ".") >= 2 {
+			return trimmed
+		}
+		return ""
+	}
+	for _, path := range [][]string{
+		{"authToken"},
+		{"accessToken"},
+		{"token"},
+		{"anthropic", "authToken"},
+		{"anthropic", "accessToken"},
+		{"claude", "authToken"},
+		{"claude", "accessToken"},
+		{"oauth", "authToken"},
+		{"oauth", "accessToken"},
+		{"claudeAiOauth", "authToken"},
+		{"claudeAiOauth", "accessToken"},
+	} {
+		if token := strings.TrimSpace(lookupString(document, path...)); token != "" {
+			return token
+		}
+	}
+	return ""
+}
+
+func resolveEnvFileSecret(path string, key string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) != key {
+			continue
+		}
+		return trimEnvFileValue(parts[1])
+	}
+	return ""
+}
+
+func trimEnvFileValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if len(trimmed) >= 2 {
+		if (strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"")) ||
+			(strings.HasPrefix(trimmed, "'") && strings.HasSuffix(trimmed, "'")) {
+			return strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+		}
+	}
+	return trimmed
+}
+
+func resolveCodexAuthMode() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(home, ".codex", "auth.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var auth map[string]interface{}
+	if err := json.Unmarshal(data, &auth); err != nil {
+		return ""
+	}
+	mode, _ := auth["auth_mode"].(string)
+	return strings.TrimSpace(mode)
+}
+
+func resolveCodexRecentModelRef() string {
+	home := resolveCodexHomePath()
+	entries, err := os.ReadDir(filepath.Join(home, "sessions"))
+	if err != nil {
+		return ""
+	}
+	bestPath := ""
+	for _, year := range entries {
+		if !year.IsDir() {
+			continue
+		}
+		yearPath := filepath.Join(home, "sessions", year.Name())
+		months, err := os.ReadDir(yearPath)
+		if err != nil {
+			continue
+		}
+		for _, month := range months {
+			if !month.IsDir() {
+				continue
+			}
+			monthPath := filepath.Join(yearPath, month.Name())
+			days, err := os.ReadDir(monthPath)
+			if err != nil {
+				continue
+			}
+			for _, day := range days {
+				if !day.IsDir() {
+					continue
+				}
+				dayPath := filepath.Join(monthPath, day.Name())
+				files, err := os.ReadDir(dayPath)
+				if err != nil {
+					continue
+				}
+				for _, file := range files {
+					if file.IsDir() || !strings.HasSuffix(strings.ToLower(file.Name()), ".jsonl") {
+						continue
+					}
+					candidate := filepath.Join(dayPath, file.Name())
+					if candidate > bestPath {
+						bestPath = candidate
+					}
+				}
+			}
+		}
+	}
+	if bestPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(bestPath)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		var item map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &item); err != nil {
+			continue
+		}
+		payload, _ := asObjectMap(item["payload"])
+		for _, candidate := range []string{
+			lookupString(payload, "model"),
+			lookupString(payload, "collaboration_mode", "settings", "model"),
+		} {
+			trimmed := strings.TrimSpace(candidate)
+			if trimmed == "" {
+				continue
+			}
+			if strings.HasPrefix(strings.ToLower(trimmed), "preloop/") {
+				trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "preloop/"))
+			}
+			if providerID, modelID := splitOpenClawModelRef(trimmed); providerID != "" && modelID != "" {
+				return providerID + "/" + modelID
+			}
+		}
+	}
+	return ""
+}
+
+func resolveCodexCachedModelRef() string {
+	data, err := os.ReadFile(filepath.Join(resolveCodexHomePath(), "models_cache.json"))
+	if err != nil {
+		return ""
+	}
+	var document map[string]interface{}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return ""
+	}
+	models, ok := document["models"].([]interface{})
+	if !ok {
+		return ""
+	}
+	bestSlug := ""
+	bestPriority := 0
+	for _, entry := range models {
+		model, ok := entry.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		slug := strings.TrimSpace(lookupString(model, "slug"))
+		if slug == "" || strings.Contains(slug, "/") {
+			continue
+		}
+		priority := 0
+		switch typed := model["priority"].(type) {
+		case float64:
+			priority = int(typed)
+		case int:
+			priority = typed
+		}
+		if bestSlug == "" || priority < bestPriority {
+			bestSlug = slug
+			bestPriority = priority
+		}
+	}
+	if bestSlug == "" {
+		return ""
+	}
+	return "openai/" + bestSlug
+}
+
+func singleProviderKey(providers map[string]interface{}) string {
+	var result string
+	for key := range providers {
+		if strings.EqualFold(strings.TrimSpace(key), "preloop") {
+			continue
+		}
+		if result != "" {
+			return ""
+		}
+		result = strings.TrimSpace(key)
+	}
+	return result
+}
+
+func singleOpenCodeAuthProvider(profiles map[string]openCodeAuthProfile) string {
+	if len(profiles) != 1 {
+		return ""
+	}
+	for key := range profiles {
+		return strings.TrimSpace(key)
+	}
+	return ""
+}
+
+func singleOpenCodeProviderModel(providers map[string]interface{}, providerID string) string {
+	if strings.TrimSpace(providerID) == "" {
+		return ""
+	}
+	providerConfig, ok := asObjectMap(providers[providerID])
+	if !ok {
+		return ""
+	}
+	models, ok := asObjectMap(providerConfig["models"])
+	if !ok || len(models) != 1 {
+		return ""
+	}
+	for key := range models {
+		return strings.TrimSpace(key)
+	}
+	return ""
+}
+
+func normalizeOpenCodeProviderName(
+	providerID string,
+	providerConfig map[string]interface{},
+	apiEndpoint string,
+) string {
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "anthropic":
+		return "anthropic"
+	case "google", "gemini":
+		return "google"
+	case "bedrock", "amazon-bedrock":
+		return "amazon-bedrock"
+	case "deepseek":
+		return "deepseek"
+	case "qwen":
+		return "qwen"
+	case "openai", "zai":
+		return "openai"
+	}
+	if strings.EqualFold(lookupString(providerConfig, "npm"), "@ai-sdk/openai-compatible") ||
+		strings.TrimSpace(apiEndpoint) != "" {
+		return "openai"
+	}
+	return strings.ToLower(strings.TrimSpace(providerID))
+}
+
+func normalizeCodexProviderName(
+	providerID string,
+	providerConfig map[string]interface{},
+) string {
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "anthropic":
+		return "anthropic"
+	case "google", "gemini":
+		return "google"
+	case "bedrock", "amazon-bedrock":
+		return "amazon-bedrock"
+	case "deepseek":
+		return "deepseek"
+	case "qwen":
+		return "qwen"
+	case "openai":
+		return "openai"
+	}
+	if strings.TrimSpace(lookupString(providerConfig, "base_url")) != "" {
+		return "openai"
+	}
+	return strings.ToLower(strings.TrimSpace(providerID))
+}
+
+func resolveConfigSecret(value interface{}) string {
+	raw, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if matches := openClawEnvPattern.FindStringSubmatch(trimmed); len(matches) == 2 {
+		return strings.TrimSpace(os.Getenv(matches[1]))
+	}
+	if matches := opencodeEnvPattern.FindStringSubmatch(trimmed); len(matches) == 2 {
+		return strings.TrimSpace(os.Getenv(matches[1]))
+	}
+	return trimmed
+}
+
+func resolveBearerSecret(value interface{}) string {
+	raw, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if matches := opencodeBearerEnvPattern.FindStringSubmatch(trimmed); len(matches) == 2 {
+		return strings.TrimSpace(os.Getenv(matches[1]))
+	}
+	if strings.HasPrefix(strings.ToLower(trimmed), "bearer ") {
+		return strings.TrimSpace(trimmed[len("Bearer "):])
+	}
+	return ""
+}
+
+func resolveCodexAPIKey(providerConfig map[string]interface{}) string {
+	if envKey := strings.TrimSpace(lookupString(providerConfig, "env_key")); envKey != "" {
+		if value := strings.TrimSpace(os.Getenv(envKey)); value != "" {
+			return value
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(home, ".codex", "auth.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var auth map[string]interface{}
+	if err := json.Unmarshal(data, &auth); err != nil {
+		return ""
+	}
+	if apiKey, ok := auth["OPENAI_API_KEY"].(string); ok {
+		return strings.TrimSpace(apiKey)
+	}
+	return ""
+}
+
+func resolveCodexManagedGatewayToken(document map[string]interface{}) string {
+	if !strings.EqualFold(strings.TrimSpace(lookupString(document, "model_provider")), "preloop") {
+		return ""
+	}
+	providers, _ := asObjectMap(document["model_providers"])
+	preloopProvider, _ := asObjectMap(providers["preloop"])
+	for _, value := range []interface{}{
+		preloopProvider["experimental_bearer_token"],
+		preloopProvider["api_key"],
+		preloopProvider["token"],
+	} {
+		if token := resolveConfigSecret(value); token != "" {
+			return token
+		}
+	}
+	if envKey := strings.TrimSpace(lookupString(preloopProvider, "env_key")); envKey != "" {
+		return strings.TrimSpace(os.Getenv(envKey))
+	}
+	return ""
+}
+
+func resolveCodexManagedModelAlias(document map[string]interface{}) string {
+	if !strings.EqualFold(strings.TrimSpace(lookupString(document, "model_provider")), "preloop") {
+		return ""
+	}
+	return strings.TrimSpace(lookupString(document, "model"))
+}
+
+type codexOAuthCredential struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresAtMS  int64
+	AccountID    string
+}
+
+func (c *codexOAuthCredential) Payload() map[string]interface{} {
+	if c == nil {
+		return map[string]interface{}{}
+	}
+	payload := map[string]interface{}{
+		"access":  strings.TrimSpace(c.AccessToken),
+		"refresh": strings.TrimSpace(c.RefreshToken),
+		"expires": c.ExpiresAtMS,
+	}
+	if accountID := strings.TrimSpace(c.AccountID); accountID != "" {
+		payload["account_id"] = accountID
+	}
+	return payload
+}
+
+func normalizeCodexManagedEndpoint(endpoint string) string {
+	normalized := normalizeAIModelEndpoint(endpoint)
+	lowered := strings.ToLower(normalized)
+	switch {
+	case normalized == "":
+		return "https://chatgpt.com/backend-api/codex"
+	case lowered == "https://api.openai.com/v1":
+		return "https://chatgpt.com/backend-api/codex"
+	case strings.HasPrefix(lowered, "https://chatgpt.com/backend-api/codex"):
+		return normalized
+	case strings.HasPrefix(lowered, "https://chatgpt.com/backend-api"):
+		return normalized + "/codex"
+	default:
+		return normalized
+	}
+}
+
+func resolveCodexOAuthCredential() (*codexOAuthCredential, string) {
+	if runtime.GOOS == "darwin" {
+		if credential, note := readCodexKeychainOAuthCredential(); credential != nil {
+			return credential, note
+		}
+	}
+	return readCodexFileOAuthCredential()
+}
+
+func readCodexKeychainOAuthCredential() (*codexOAuthCredential, string) {
+	account := computeCodexKeychainAccount(resolveCodexHomePath())
+	secret, err := keyring.Get("Codex Auth", account)
+	if err != nil || strings.TrimSpace(secret) == "" {
+		return nil, ""
+	}
+	credential := parseCodexOAuthCredentialBlob(
+		[]byte(secret),
+		time.Now().UTC().Add(time.Hour).UnixMilli(),
+	)
+	if credential == nil {
+		return nil, ""
+	}
+	return credential, fmt.Sprintf(
+		"Resolved Codex ChatGPT OAuth credentials from OS Keychain (service: Codex Auth, account: %s).",
+		account,
+	)
+}
+
+func readCodexFileOAuthCredential() (*codexOAuthCredential, string) {
+	path := resolveCodexAuthPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ""
+	}
+	fallbackExpiry := time.Now().UTC().Add(time.Hour).UnixMilli()
+	if info, statErr := os.Stat(path); statErr == nil {
+		fallbackExpiry = info.ModTime().UTC().Add(time.Hour).UnixMilli()
+	}
+	credential := parseCodexOAuthCredentialBlob(data, fallbackExpiry)
+	if credential == nil {
+		return nil, ""
+	}
+	return credential, fmt.Sprintf("Resolved Codex ChatGPT OAuth credentials from %s.", path)
+}
+
+func parseCodexOAuthCredentialBlob(
+	data []byte,
+	fallbackExpiry int64,
+) *codexOAuthCredential {
+	var document map[string]interface{}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return nil
+	}
+	tokens, _ := asObjectMap(document["tokens"])
+	if len(tokens) == 0 {
+		return nil
+	}
+	accessToken := strings.TrimSpace(lookupString(tokens, "access_token"))
+	refreshToken := strings.TrimSpace(lookupString(tokens, "refresh_token"))
+	if accessToken == "" || refreshToken == "" {
+		return nil
+	}
+	expiresAt := decodeJWTExpiryMillis(accessToken)
+	if expiresAt == 0 {
+		expiresAt = fallbackExpiry
+		if lastRefresh := strings.TrimSpace(fmt.Sprint(document["last_refresh"])); lastRefresh != "" {
+			if parsed, err := time.Parse(time.RFC3339Nano, lastRefresh); err == nil {
+				expiresAt = parsed.UTC().Add(time.Hour).UnixMilli()
+			}
+		}
+	}
+	accountID := strings.TrimSpace(lookupString(tokens, "account_id"))
+	if accountID == "" {
+		accountID = decodeCodexAccountID(accessToken)
+	}
+	return &codexOAuthCredential{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresAtMS:  expiresAt,
+		AccountID:    accountID,
+	}
+}
+
+func resolveCodexHomePath() string {
+	configured := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+	home := configured
+	if home == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return filepath.Clean(filepath.Join("~", ".codex"))
+		}
+		home = filepath.Join(userHome, ".codex")
+	}
+	if resolved, err := filepath.EvalSymlinks(home); err == nil {
+		return resolved
+	}
+	return filepath.Clean(home)
+}
+
+func resolveCodexAuthPath() string {
+	return filepath.Join(resolveCodexHomePath(), "auth.json")
+}
+
+func computeCodexKeychainAccount(codexHome string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(codexHome)))
+	return "cli|" + hex.EncodeToString(sum[:])[:16]
+}
+
+func decodeJWTExpiryMillis(token string) int64 {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return 0
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return 0
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		return 0
+	}
+	expRaw, ok := parsed["exp"]
+	if !ok {
+		return 0
+	}
+	switch typed := expRaw.(type) {
+	case float64:
+		return int64(typed) * 1000
+	case int64:
+		return typed * 1000
+	case int:
+		return int64(typed) * 1000
+	default:
+		return 0
+	}
+}
+
+func decodeCodexAccountID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		return ""
+	}
+	authClaims, _ := asObjectMap(parsed["https://api.openai.com/auth"])
+	return strings.TrimSpace(lookupString(authClaims, "chatgpt_account_id"))
 }
 
 func buildOpenClawManagedMCPEnrollmentPlan(
@@ -844,6 +2696,7 @@ func syncOpenClawAIModel(
 	if parsed.UsesAmbientAuth {
 		metaData = mergeOpenClawAmbientProviderMeta(metaData, parsed)
 	}
+	metaData = mergeOpenClawUpstreamMeta(metaData, parsed)
 	notes := []string{}
 	if !parsed.UsesAmbientAuth && parsed.ProviderAPIKey == "" {
 		notes = append(
@@ -854,8 +2707,9 @@ func syncOpenClawAIModel(
 
 	if target != nil {
 		update := map[string]interface{}{}
-		if parsed.ProviderBaseURL != "" && parsed.ProviderBaseURL != target.APIEndpoint {
-			update["api_endpoint"] = parsed.ProviderBaseURL
+		normalizedEndpoint := normalizeAIModelEndpoint(parsed.ProviderBaseURL)
+		if normalizedEndpoint != "" && normalizedEndpoint != normalizeAIModelEndpoint(target.APIEndpoint) {
+			update["api_endpoint"] = normalizedEndpoint
 		}
 		if !equalJSONMap(target.MetaData, metaData) {
 			update["meta_data"] = metaData
@@ -869,10 +2723,24 @@ func syncOpenClawAIModel(
 				return nil, nil, fmt.Errorf("failed to update AI model %q: %w", target.Name, err)
 			}
 			target = &updated
-			notes = append(
-				notes,
-				fmt.Sprintf("Updated AI model %q for gateway alias %s.", target.Name, managedModelAlias),
-			)
+			if len(update) == 1 {
+				if _, metaOnly := update["meta_data"]; metaOnly {
+					notes = append(
+						notes,
+						fmt.Sprintf("Reused existing AI model %q for gateway alias %s.", target.Name, managedModelAlias),
+					)
+				} else {
+					notes = append(
+						notes,
+						fmt.Sprintf("Updated AI model %q for gateway alias %s.", target.Name, managedModelAlias),
+					)
+				}
+			} else {
+				notes = append(
+					notes,
+					fmt.Sprintf("Updated AI model %q for gateway alias %s.", target.Name, managedModelAlias),
+				)
+			}
 		} else {
 			notes = append(
 				notes,
@@ -887,7 +2755,7 @@ func syncOpenClawAIModel(
 		Description:     "Imported from OpenClaw managed onboarding",
 		ProviderName:    parsed.ProviderName,
 		ModelIdentifier: parsed.ModelID,
-		APIEndpoint:     parsed.ProviderBaseURL,
+		APIEndpoint:     normalizeAIModelEndpoint(parsed.ProviderBaseURL),
 		APIKey:          parsed.ProviderAPIKey,
 		MetaData:        metaData,
 	}
@@ -899,6 +2767,137 @@ func syncOpenClawAIModel(
 	notes = append(
 		notes,
 		fmt.Sprintf("Imported AI model %q for gateway alias %s.", created.Name, managedModelAlias),
+	)
+	return &created, notes, nil
+}
+
+func syncManagedGatewayAIModel(
+	client *api.Client,
+	managedAgent *managedAgentSummary,
+	agent AgentConfig,
+	upstream *managedGatewayUpstream,
+	gatewayURL string,
+) (*aiModelResponse, []string, error) {
+	if client == nil || upstream == nil || !upstream.CanRouteThroughGateway() {
+		return nil, nil, nil
+	}
+
+	var existing []aiModelResponse
+	if err := client.Get("/api/v1/ai-models", &existing); err != nil {
+		return nil, nil, fmt.Errorf("failed to list AI models: %w", err)
+	}
+
+	target := findReusableManagedGatewayAIModel(existing, upstream)
+	metaData := mergeGatewayMetaForAIModel(
+		target,
+		managedAgent,
+		agent,
+		gatewayURL,
+		upstream.ManagedModelAlias,
+		true,
+	)
+	metaData["managed_by"] = "preloop agents onboard"
+	metaData["source_agent"] = upstream.SourceAgent
+	metaData = mergeManagedGatewayUpstreamMeta(metaData, upstream)
+	notes := append([]string{}, upstream.Notes...)
+
+	if target != nil {
+		update := map[string]interface{}{}
+		normalizedEndpoint := normalizeAIModelEndpoint(upstream.APIEndpoint)
+		if normalizedEndpoint != "" &&
+			normalizedEndpoint != normalizeAIModelEndpoint(target.APIEndpoint) {
+			update["api_endpoint"] = normalizedEndpoint
+		}
+		if !equalJSONMap(target.MetaData, metaData) {
+			update["meta_data"] = metaData
+		}
+		if upstream.APIKey != "" && !target.HasAPIKey {
+			update["api_key"] = upstream.APIKey
+		}
+		if len(upstream.CredentialPayload) > 0 && (!target.HasAPIKey || strings.TrimSpace(target.CredentialType) != strings.TrimSpace(upstream.CredentialType)) {
+			update["credential_type"] = upstream.CredentialType
+			update["credential_payload"] = upstream.CredentialPayload
+		}
+		if len(update) > 0 {
+			var updated aiModelResponse
+			if err := client.Put("/api/v1/ai-models/"+target.ID, update, &updated); err != nil {
+				return nil, nil, fmt.Errorf(
+					"failed to update AI model %q: %w",
+					target.Name,
+					err,
+				)
+			}
+			target = &updated
+			if len(update) == 1 {
+				if _, metaOnly := update["meta_data"]; metaOnly {
+					notes = append(
+						notes,
+						fmt.Sprintf(
+							"Reused existing AI model %q for gateway alias %s.",
+							target.Name,
+							upstream.ManagedModelAlias,
+						),
+					)
+				} else {
+					notes = append(
+						notes,
+						fmt.Sprintf(
+							"Updated AI model %q for gateway alias %s.",
+							target.Name,
+							upstream.ManagedModelAlias,
+						),
+					)
+				}
+			} else {
+				notes = append(
+					notes,
+					fmt.Sprintf(
+						"Updated AI model %q for gateway alias %s.",
+						target.Name,
+						upstream.ManagedModelAlias,
+					),
+				)
+			}
+		} else {
+			notes = append(
+				notes,
+				fmt.Sprintf(
+					"Reused existing AI model %q for gateway alias %s.",
+					target.Name,
+					upstream.ManagedModelAlias,
+				),
+			)
+		}
+		return target, notes, nil
+	}
+
+	create := aiModelCreateRequest{
+		Name:            fmt.Sprintf("%s %s", resolveAgentDisplayName(agent), upstream.ManagedModelAlias),
+		Description:     fmt.Sprintf("Imported from %s managed onboarding", resolveAgentDisplayName(agent)),
+		ProviderName:    upstream.ProviderName,
+		ModelIdentifier: upstream.ModelIdentifier,
+		APIEndpoint:     normalizeAIModelEndpoint(upstream.APIEndpoint),
+		APIKey:          upstream.APIKey,
+		CredentialType:  upstream.CredentialType,
+		CredentialsJSON: upstream.CredentialPayload,
+		MetaData:        metaData,
+	}
+
+	var created aiModelResponse
+	if err := client.Post("/api/v1/ai-models", create, &created); err != nil {
+		return nil, nil, fmt.Errorf(
+			"failed to create AI model for %s: %w",
+			upstream.ManagedModelAlias,
+			err,
+		)
+	}
+	notes = append(
+		notes,
+		fmt.Sprintf(
+			"Imported AI model %q for gateway alias %s.",
+			created.Name,
+			upstream.ManagedModelAlias,
+		),
 	)
 	return &created, notes, nil
 }
@@ -915,16 +2914,169 @@ func aiModelUsesAmbientProviderCredentials(model *aiModelResponse) bool {
 	return ambient
 }
 
+func normalizeAIModelEndpoint(endpoint string) string {
+	return strings.TrimRight(strings.TrimSpace(endpoint), "/")
+}
+
+func managedGatewayUpstreamFingerprint(upstream *managedGatewayUpstream) string {
+	if upstream == nil {
+		return ""
+	}
+	keyDigest := ""
+	if apiKey := strings.TrimSpace(upstream.APIKey); apiKey != "" {
+		sum := sha256.Sum256([]byte(apiKey))
+		keyDigest = hex.EncodeToString(sum[:])
+	}
+	credentialType := strings.TrimSpace(upstream.CredentialType)
+	credentialDigest := ""
+	if len(upstream.CredentialPayload) > 0 {
+		payloadBytes, marshalErr := json.Marshal(upstream.CredentialPayload)
+		if marshalErr == nil {
+			sum := sha256.Sum256(payloadBytes)
+			credentialDigest = hex.EncodeToString(sum[:])
+		}
+	}
+	payload, err := json.Marshal(map[string]string{
+		"provider_name":      strings.TrimSpace(upstream.ProviderName),
+		"model_identifier":   strings.TrimSpace(upstream.ModelIdentifier),
+		"api_endpoint":       normalizeAIModelEndpoint(upstream.APIEndpoint),
+		"api_key_sha256":     keyDigest,
+		"credential_type":    credentialType,
+		"credential_payload": credentialDigest,
+		"source_provider":    strings.TrimSpace(upstream.SourceProviderID),
+	})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func openClawUpstreamFingerprint(parsed *openClawParsedConfig) string {
+	if parsed == nil {
+		return ""
+	}
+	keyDigest := ""
+	if apiKey := strings.TrimSpace(parsed.ProviderAPIKey); apiKey != "" {
+		sum := sha256.Sum256([]byte(apiKey))
+		keyDigest = hex.EncodeToString(sum[:])
+	}
+	payload, err := json.Marshal(map[string]string{
+		"provider_name":    strings.TrimSpace(parsed.ProviderName),
+		"model_identifier": strings.TrimSpace(parsed.ModelID),
+		"api_endpoint":     normalizeAIModelEndpoint(parsed.ProviderBaseURL),
+		"api_key_sha256":   keyDigest,
+	})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func aiModelUpstreamFingerprint(model aiModelResponse) string {
+	upstream, ok := asObjectMap(model.MetaData["upstream_config"])
+	if !ok {
+		return ""
+	}
+	fingerprint, _ := upstream["fingerprint"].(string)
+	return strings.TrimSpace(fingerprint)
+}
+
+func mergeManagedGatewayUpstreamMeta(
+	meta map[string]interface{},
+	upstream *managedGatewayUpstream,
+) map[string]interface{} {
+	if meta == nil {
+		meta = map[string]interface{}{}
+	}
+	if upstream == nil {
+		return meta
+	}
+	upstreamMeta := map[string]interface{}{
+		"provider_name":    strings.TrimSpace(upstream.ProviderName),
+		"model_identifier": strings.TrimSpace(upstream.ModelIdentifier),
+		"api_endpoint":     normalizeAIModelEndpoint(upstream.APIEndpoint),
+	}
+	if credentialType := strings.TrimSpace(upstream.CredentialType); credentialType != "" {
+		upstreamMeta["credential_type"] = credentialType
+	}
+	if sourceProviderID := strings.TrimSpace(upstream.SourceProviderID); sourceProviderID != "" {
+		upstreamMeta["source_provider_id"] = sourceProviderID
+	}
+	if fingerprint := managedGatewayUpstreamFingerprint(upstream); fingerprint != "" {
+		upstreamMeta["fingerprint"] = fingerprint
+	}
+	meta["upstream_config"] = upstreamMeta
+	return meta
+}
+
+func mergeOpenClawUpstreamMeta(
+	meta map[string]interface{},
+	parsed *openClawParsedConfig,
+) map[string]interface{} {
+	if meta == nil {
+		meta = map[string]interface{}{}
+	}
+	if parsed == nil {
+		return meta
+	}
+	upstream := map[string]interface{}{
+		"provider_name":    strings.TrimSpace(parsed.ProviderName),
+		"model_identifier": strings.TrimSpace(parsed.ModelID),
+		"api_endpoint":     normalizeAIModelEndpoint(parsed.ProviderBaseURL),
+	}
+	if fingerprint := openClawUpstreamFingerprint(parsed); fingerprint != "" {
+		upstream["fingerprint"] = fingerprint
+	}
+	meta["upstream_config"] = upstream
+	return meta
+}
+
+func chooseReusableAIModel(
+	candidates []*aiModelResponse,
+	managedModelAlias string,
+) *aiModelResponse {
+	var best *aiModelResponse
+	bestScore := -1
+	for _, candidate := range candidates {
+		if candidate == nil {
+			continue
+		}
+		score := 0
+		if gatewayAliasForAIModel(*candidate) == managedModelAlias {
+			score += 4
+		}
+		if candidate.HasAPIKey {
+			score += 2
+		}
+		if normalizeAIModelEndpoint(candidate.APIEndpoint) != "" {
+			score++
+		}
+		if aiModelUsesAmbientProviderCredentials(candidate) {
+			score++
+		}
+		if best == nil || score > bestScore {
+			best = candidate
+			bestScore = score
+		}
+	}
+	return best
+}
+
 func findReusableAIModel(
 	models []aiModelResponse,
 	parsed *openClawParsedConfig,
 	managedModelAlias string,
 ) *aiModelResponse {
-	for i := range models {
-		if gatewayAliasForAIModel(models[i]) == managedModelAlias {
-			return &models[i]
-		}
+	if parsed == nil {
+		return nil
 	}
+	desiredEndpoint := normalizeAIModelEndpoint(parsed.ProviderBaseURL)
+	desiredFingerprint := openClawUpstreamFingerprint(parsed)
+	candidates := make([]*aiModelResponse, 0)
+	fingerprintMatches := make([]*aiModelResponse, 0)
+	aliasMatches := make([]*aiModelResponse, 0)
 	for i := range models {
 		if models[i].ProviderName != parsed.ProviderName {
 			continue
@@ -932,10 +3084,71 @@ func findReusableAIModel(
 		if models[i].ModelIdentifier != parsed.ModelID {
 			continue
 		}
-		if strings.TrimSpace(models[i].APIEndpoint) != strings.TrimSpace(parsed.ProviderBaseURL) {
+		if desiredEndpoint != "" && normalizeAIModelEndpoint(models[i].APIEndpoint) != desiredEndpoint {
 			continue
 		}
-		return &models[i]
+		candidate := &models[i]
+		candidates = append(candidates, candidate)
+		if gatewayAliasForAIModel(models[i]) == managedModelAlias {
+			aliasMatches = append(aliasMatches, candidate)
+		}
+		if desiredFingerprint != "" && aiModelUpstreamFingerprint(models[i]) == desiredFingerprint {
+			fingerprintMatches = append(fingerprintMatches, candidate)
+		}
+	}
+	if len(fingerprintMatches) > 0 {
+		return chooseReusableAIModel(fingerprintMatches, managedModelAlias)
+	}
+	if len(aliasMatches) > 0 {
+		return chooseReusableAIModel(aliasMatches, managedModelAlias)
+	}
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	return nil
+}
+
+func findReusableManagedGatewayAIModel(
+	models []aiModelResponse,
+	upstream *managedGatewayUpstream,
+) *aiModelResponse {
+	if upstream == nil {
+		return nil
+	}
+	desiredEndpoint := normalizeAIModelEndpoint(upstream.APIEndpoint)
+	desiredFingerprint := managedGatewayUpstreamFingerprint(upstream)
+	candidates := make([]*aiModelResponse, 0)
+	fingerprintMatches := make([]*aiModelResponse, 0)
+	aliasMatches := make([]*aiModelResponse, 0)
+	for i := range models {
+		if models[i].ProviderName != upstream.ProviderName {
+			continue
+		}
+		if models[i].ModelIdentifier != upstream.ModelIdentifier {
+			continue
+		}
+		if desiredEndpoint != "" &&
+			normalizeAIModelEndpoint(models[i].APIEndpoint) != desiredEndpoint {
+			continue
+		}
+		candidate := &models[i]
+		candidates = append(candidates, candidate)
+		if gatewayAliasForAIModel(models[i]) == upstream.ManagedModelAlias {
+			aliasMatches = append(aliasMatches, candidate)
+		}
+		if desiredFingerprint != "" &&
+			aiModelUpstreamFingerprint(models[i]) == desiredFingerprint {
+			fingerprintMatches = append(fingerprintMatches, candidate)
+		}
+	}
+	if len(fingerprintMatches) > 0 {
+		return chooseReusableAIModel(fingerprintMatches, upstream.ManagedModelAlias)
+	}
+	if len(aliasMatches) > 0 {
+		return chooseReusableAIModel(aliasMatches, upstream.ManagedModelAlias)
+	}
+	if len(candidates) == 1 {
+		return candidates[0]
 	}
 	return nil
 }
@@ -998,7 +3211,295 @@ func loadAgentConfigDocument(agent AgentConfig) (map[string]interface{}, error) 
 	if strings.EqualFold(strings.TrimSpace(agent.Name), "openclaw") {
 		return loadJSON5Document(agent.ConfigPath)
 	}
+	if strings.EqualFold(strings.TrimSpace(agent.Name), "codex cli") ||
+		strings.EqualFold(filepath.Ext(agent.ConfigPath), ".toml") {
+		return loadTOMLDocument(agent.ConfigPath)
+	}
+	if allowsSynthesizedEmptyConfig(agent) {
+		if _, err := os.Stat(agent.ConfigPath); err != nil {
+			if os.IsNotExist(err) {
+				return map[string]interface{}{}, nil
+			}
+		}
+	}
 	return loadJSONDocument(agent.ConfigPath)
+}
+
+func writeAgentConfigDocument(agent AgentConfig, doc map[string]interface{}) error {
+	if strings.EqualFold(strings.TrimSpace(agent.Name), "codex cli") ||
+		strings.EqualFold(filepath.Ext(agent.ConfigPath), ".toml") {
+		return writeTOMLDocument(agent.ConfigPath, doc)
+	}
+	return writeJSONDocument(agent.ConfigPath, doc)
+}
+
+const preloopManagedLauncherMarker = "# preloop-managed-wrapper"
+
+func syncManagedAgentRuntimeArtifacts(agent AgentConfig, baseURL, token string) error {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "gemini cli":
+		return syncManagedAgentLauncher(
+			"gemini",
+			"gemini-cli.env",
+			map[string]string{
+				"GEMINI_API_KEY":         token,
+				"GOOGLE_API_KEY":         token,
+				"GOOGLE_GEMINI_BASE_URL": strings.TrimRight(baseURL, "/") + "/gemini/v1beta",
+			},
+		)
+	case "codex cli":
+		return syncManagedAgentLauncher(
+			"codex",
+			"codex-cli.env",
+			map[string]string{
+				"PRELOOP_TOKEN": token,
+			},
+		)
+	default:
+		return nil
+	}
+}
+
+func removeManagedAgentRuntimeArtifacts(agent AgentConfig) error {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "gemini cli":
+		return removeManagedAgentLauncher("gemini", "gemini-cli.env")
+	case "codex cli":
+		return removeManagedAgentLauncher("codex", "codex-cli.env")
+	default:
+		return nil
+	}
+}
+
+func syncManagedAgentLauncher(commandName, envFileName string, exports map[string]string) error {
+	envPath, err := managedAgentRuntimeEnvPath(envFileName)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(envPath), 0700); err != nil {
+		return fmt.Errorf("failed to create managed runtime directory: %w", err)
+	}
+	if err := os.WriteFile(envPath, []byte(renderManagedRuntimeEnv(exports)), 0600); err != nil {
+		return fmt.Errorf("failed to write managed runtime env file: %w", err)
+	}
+
+	launcherPath, err := managedAgentLauncherPath(commandName)
+	if err != nil {
+		return err
+	}
+	originalPath, err := resolveManagedAgentExecutablePath(commandName, launcherPath)
+	if err != nil {
+		return fmt.Errorf("failed to locate %s executable for managed launcher: %w", commandName, err)
+	}
+	if existing, err := os.ReadFile(launcherPath); err == nil {
+		if !strings.Contains(string(existing), preloopManagedLauncherMarker) {
+			return fmt.Errorf(
+				"refusing to overwrite existing %s launcher at %s because it is not managed by Preloop",
+				commandName,
+				launcherPath,
+			)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to inspect managed launcher path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(launcherPath), 0755); err != nil {
+		return fmt.Errorf("failed to create launcher directory: %w", err)
+	}
+	script := renderManagedLauncherScript(envPath, originalPath)
+	if err := os.WriteFile(launcherPath, []byte(script), 0755); err != nil {
+		return fmt.Errorf("failed to write managed launcher: %w", err)
+	}
+	return nil
+}
+
+func removeManagedAgentLauncher(commandName, envFileName string) error {
+	envPath, err := managedAgentRuntimeEnvPath(envFileName)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove managed runtime env file: %w", err)
+	}
+
+	launcherPath, err := managedAgentLauncherPath(commandName)
+	if err != nil {
+		return err
+	}
+	if existing, err := os.ReadFile(launcherPath); err == nil {
+		if strings.Contains(string(existing), preloopManagedLauncherMarker) {
+			if err := os.Remove(launcherPath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to remove managed launcher: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to inspect managed launcher path: %w", err)
+	}
+	return nil
+}
+
+func managedAgentRuntimeEnvPath(envFileName string) (string, error) {
+	baseDir, err := config.GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, "agents", "runtime", envFileName), nil
+}
+
+func managedAgentLauncherPath(commandName string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".local", "bin", commandName), nil
+}
+
+func resolveManagedAgentExecutablePath(commandName, launcherPath string) (string, error) {
+	cleanLauncher := filepath.Clean(launcherPath)
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if strings.TrimSpace(dir) == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, commandName)
+		if filepath.Clean(candidate) == cleanLauncher {
+			continue
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if info.Mode()&0111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", exec.ErrNotFound
+}
+
+func renderManagedRuntimeEnv(exports map[string]string) string {
+	if len(exports) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(exports))
+	for key := range exports {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var builder strings.Builder
+	for _, key := range keys {
+		builder.WriteString("export ")
+		builder.WriteString(key)
+		builder.WriteString("=")
+		builder.WriteString(shellSingleQuote(exports[key]))
+		builder.WriteString("\n")
+	}
+	return builder.String()
+}
+
+func renderManagedLauncherScript(envPath, originalPath string) string {
+	return strings.Join([]string{
+		"#!/usr/bin/env bash",
+		"set -euo pipefail",
+		preloopManagedLauncherMarker,
+		"PRELOOP_ENV_FILE=" + shellSingleQuote(envPath),
+		"if [ -f \"$PRELOOP_ENV_FILE\" ]; then",
+		"  # shellcheck disable=SC1090",
+		"  source \"$PRELOOP_ENV_FILE\"",
+		"fi",
+		"exec " + shellSingleQuote(originalPath) + " \"$@\"",
+		"",
+	}, "\n")
+}
+
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
+func syncClaudeCodeManagedMCPServer(agent AgentConfig, baseURL, token string) error {
+	if !strings.EqualFold(strings.TrimSpace(agent.Name), "claude code") {
+		return nil
+	}
+	if strings.TrimSpace(token) == "" {
+		return fmt.Errorf("missing Claude Code MCP token")
+	}
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		// Fall back to the settings document when the Claude CLI is unavailable.
+		return nil
+	}
+
+	url := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	for _, scope := range []string{"local", "project", "user"} {
+		_ = runClaudeMCPCommand(
+			claudePath,
+			[]string{"mcp", "remove", "preloop", "--scope", scope},
+		)
+	}
+	if err := runClaudeMCPCommand(
+		claudePath,
+		[]string{
+			"mcp",
+			"add",
+			"--scope",
+			"user",
+			"--transport",
+			"http",
+			"preloop",
+			url,
+			"--header",
+			"Authorization: Bearer " + token,
+		},
+	); err != nil {
+		return fmt.Errorf("failed to configure Claude Code MCP server: %w", err)
+	}
+	return nil
+}
+
+func removeClaudeCodeManagedMCPServer(agent AgentConfig) error {
+	if !strings.EqualFold(strings.TrimSpace(agent.Name), "claude code") {
+		return nil
+	}
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		return nil
+	}
+	for _, scope := range []string{"local", "project", "user"} {
+		_ = runClaudeMCPCommand(
+			claudePath,
+			[]string{"mcp", "remove", "preloop", "--scope", scope},
+		)
+	}
+	return nil
+}
+
+func runClaudeMCPCommand(claudePath string, args []string) error {
+	cmd := exec.Command(claudePath, args...)
+	if wd := claudeMCPWorkingDirectory(); strings.TrimSpace(wd) != "" {
+		cmd.Dir = wd
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, message)
+	}
+	return nil
+}
+
+func claudeMCPWorkingDirectory() string {
+	wd, err := os.Getwd()
+	if err != nil || strings.TrimSpace(wd) == "" {
+		return ""
+	}
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = wd
+	output, err := cmd.Output()
+	if err == nil {
+		if root := strings.TrimSpace(string(output)); root != "" {
+			return root
+		}
+	}
+	return wd
 }
 
 func loadJSON5Document(path string) (map[string]interface{}, error) {
@@ -1011,6 +3512,23 @@ func loadJSON5Document(path string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return doc, nil
+}
+
+func loadTOMLDocument(path string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return parseDocumentFromTOML(data)
+}
+
+func allowsSynthesizedEmptyConfig(agent AgentConfig) bool {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "opencode":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseServerMapFromDocument(document map[string]interface{}) map[string]MCPDef {
@@ -1028,6 +3546,16 @@ func parseServerMapFromDocument(document map[string]interface{}) map[string]MCPD
 		var def MCPDef
 		if err := json.Unmarshal(data, &def); err != nil {
 			continue
+		}
+		if def.URL == "" {
+			if httpURL, _ := object["httpUrl"].(string); strings.TrimSpace(httpURL) != "" {
+				def.URL = strings.TrimSpace(httpURL)
+			}
+		}
+		if def.Transport == "" {
+			if transport, _ := object["type"].(string); strings.TrimSpace(transport) != "" {
+				def.Transport = strings.TrimSpace(transport)
+			}
 		}
 		result[name] = def
 	}
@@ -1190,9 +3718,7 @@ func extractURLFromCommandBackedServer(server MCPDef) string {
 func firstURLFromText(value string) string {
 	for _, field := range strings.Fields(value) {
 		candidate := strings.Trim(field, "\"'")
-		if strings.HasPrefix(candidate, "--url=") {
-			candidate = strings.TrimPrefix(candidate, "--url=")
-		}
+		candidate = strings.TrimPrefix(candidate, "--url=")
 		if strings.HasPrefix(candidate, "http://") || strings.HasPrefix(candidate, "https://") {
 			if parsed, err := url.Parse(candidate); err == nil && parsed.Host != "" {
 				return candidate
@@ -1289,10 +3815,48 @@ func openClawProviderUsesAmbientCredentials(providerID, providerName string) boo
 	return false
 }
 
+func resolveOpenClawProviderLookupID(
+	document map[string]interface{},
+	providerID string,
+) string {
+	providers, ok := asObjectMap(lookupValue(document, "models", "providers"))
+	if !ok {
+		return providerID
+	}
+	if _, ok := providers[providerID]; ok {
+		return providerID
+	}
+
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "amazon-bedrock":
+		if _, ok := providers["bedrock"]; ok {
+			return "bedrock"
+		}
+	case "bedrock":
+		if _, ok := providers["amazon-bedrock"]; ok {
+			return "amazon-bedrock"
+		}
+	case "gemini":
+		if _, ok := providers["google"]; ok {
+			return "google"
+		}
+	case "google":
+		if _, ok := providers["gemini"]; ok {
+			return "gemini"
+		}
+	}
+
+	return providerID
+}
+
 func resolveOpenClawProviderCredentials(
 	document map[string]interface{},
 	providerID, providerName, providerRegion string,
 ) (string, bool, string) {
+	value, note := resolveOpenClawProviderAPIKey(document, providerID)
+	if value != "" {
+		return value, false, note
+	}
 	if openClawProviderUsesAmbientCredentials(providerID, providerName) {
 		payload, note := resolveOpenClawBedrockCredentialPayload(
 			document,
@@ -1305,8 +3869,20 @@ func resolveOpenClawProviderCredentials(
 		return "", false, note
 	}
 
-	value, note := resolveOpenClawProviderAPIKey(document, providerID)
-	return value, false, note
+	return "", false, note
+}
+
+func resolveOpenClawManagedGatewayToken(document map[string]interface{}) string {
+	modelRef := extractOpenClawPrimaryModel(document)
+	providerID, _ := splitOpenClawModelRef(modelRef)
+	if !strings.EqualFold(providerID, openClawManagedProviderID) {
+		return ""
+	}
+	token, _ := resolveOpenClawProviderAPIKey(
+		document,
+		resolveOpenClawProviderLookupID(document, openClawManagedProviderID),
+	)
+	return strings.TrimSpace(token)
 }
 
 func resolveOpenClawProviderRegion(document map[string]interface{}, providerID string) string {
@@ -1316,6 +3892,153 @@ func resolveOpenClawProviderRegion(document map[string]interface{}, providerID s
 		}
 	}
 	return ""
+}
+
+func resolveOpenClawEnvVar(document map[string]interface{}, key string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	envBlock, ok := asObjectMap(document["env"])
+	if !ok {
+		return ""
+	}
+
+	if value, ok := envBlock[key]; ok {
+		if raw, ok := value.(string); ok {
+			return strings.TrimSpace(raw)
+		}
+	}
+
+	varsBlock, ok := asObjectMap(envBlock["vars"])
+	if !ok {
+		return ""
+	}
+	if value, ok := varsBlock[key]; ok {
+		if raw, ok := value.(string); ok {
+			return strings.TrimSpace(raw)
+		}
+	}
+	return ""
+}
+
+func claudeUsesBedrock(document map[string]interface{}) bool {
+	value := strings.ToLower(strings.TrimSpace(resolveOpenClawEnvVar(document, "CLAUDE_CODE_USE_BEDROCK")))
+	return value == "1" || value == "true" || value == "yes" || value == "on"
+}
+
+func augmentDocumentWithShellExports(
+	document map[string]interface{},
+	keys ...string,
+) map[string]interface{} {
+	cloned, err := deepCopyMap(document)
+	if err != nil || cloned == nil {
+		cloned = map[string]interface{}{}
+	}
+	envBlock, _ := asObjectMap(cloned["env"])
+	if envBlock == nil {
+		envBlock = map[string]interface{}{}
+		cloned["env"] = envBlock
+	}
+	varsBlock, _ := asObjectMap(envBlock["vars"])
+	if varsBlock == nil {
+		varsBlock = map[string]interface{}{}
+		envBlock["vars"] = varsBlock
+	}
+	for _, key := range keys {
+		if strings.TrimSpace(resolveOpenClawEnvVar(cloned, key)) != "" {
+			continue
+		}
+		if value := resolveShellExportedEnvVar(key); value != "" {
+			varsBlock[key] = value
+		}
+	}
+	return cloned
+}
+
+func resolveShellExportedEnvVar(key string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	for _, relPath := range []string{
+		".zshrc",
+		".zprofile",
+		".bashrc",
+		".bash_profile",
+		".profile",
+	} {
+		path := filepath.Join(home, relPath)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if value := extractShellExportValue(string(data), key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func extractShellExportValue(content string, key string) string {
+	prefixes := []string{
+		"export " + key + "=",
+		key + "=",
+	}
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		for _, prefix := range prefixes {
+			if !strings.HasPrefix(trimmed, prefix) {
+				continue
+			}
+			raw := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+			if raw == "" {
+				return ""
+			}
+			switch raw[0] {
+			case '\'':
+				if end := strings.Index(raw[1:], "'"); end >= 0 {
+					return strings.TrimSpace(raw[1 : end+1])
+				}
+			case '"':
+				if end := strings.Index(raw[1:], "\""); end >= 0 {
+					return strings.TrimSpace(raw[1 : end+1])
+				}
+			default:
+				if idx := strings.Index(raw, " #"); idx >= 0 {
+					raw = raw[:idx]
+				}
+				return strings.TrimSpace(strings.Fields(raw)[0])
+			}
+		}
+	}
+	return ""
+}
+
+func claudeShellExportNote(key string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Sprintf("Resolved Claude Code Bedrock credentials from shell export %s.", key)
+	}
+	for _, relPath := range []string{
+		".zshrc",
+		".zprofile",
+		".bashrc",
+		".bash_profile",
+		".profile",
+	} {
+		path := filepath.Join(home, relPath)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if extractShellExportValue(string(data), key) != "" {
+			return fmt.Sprintf("Resolved Claude Code Bedrock credentials from %s.", path)
+		}
+	}
+	return fmt.Sprintf("Resolved Claude Code Bedrock credentials from shell export %s.", key)
 }
 
 func mergeOpenClawAmbientProviderMeta(
@@ -1353,14 +4076,14 @@ func resolveOpenClawBedrockCredentialPayload(
 	region := strings.TrimSpace(providerRegion)
 	if region == "" {
 		for _, key := range []string{"AWS_REGION", "AWS_DEFAULT_REGION"} {
-			if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			if value := resolveOpenClawEnvVar(document, key); value != "" {
 				region = value
 				break
 			}
 		}
 	}
 
-	if payload, note := resolveOpenClawBedrockEnvCredentials(region); payload != "" {
+	if payload, note := resolveOpenClawBedrockEnvCredentials(document, region); payload != "" {
 		return payload, note
 	}
 	if payload, note := resolveOpenClawBedrockSharedCredentials(
@@ -1374,9 +4097,12 @@ func resolveOpenClawBedrockCredentialPayload(
 	return "", "OpenClaw Bedrock credentials could not be resolved automatically. Export AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (plus AWS_SESSION_TOKEN if needed) or configure ~/.aws/credentials before onboarding, or add the credentials in the Preloop console for this model."
 }
 
-func resolveOpenClawBedrockEnvCredentials(region string) (string, string) {
-	accessKeyID := strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
-	secretAccessKey := strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
+func resolveOpenClawBedrockEnvCredentials(
+	document map[string]interface{},
+	region string,
+) (string, string) {
+	accessKeyID := strings.TrimSpace(resolveOpenClawEnvVar(document, "AWS_ACCESS_KEY_ID"))
+	secretAccessKey := strings.TrimSpace(resolveOpenClawEnvVar(document, "AWS_SECRET_ACCESS_KEY"))
 	if accessKeyID == "" || secretAccessKey == "" {
 		return "", ""
 	}
@@ -1384,7 +4110,7 @@ func resolveOpenClawBedrockEnvCredentials(region string) (string, string) {
 	payload := bedrockCredentialPayload{
 		AWSAccessKeyID:     accessKeyID,
 		AWSSecretAccessKey: secretAccessKey,
-		AWSSessionToken:    strings.TrimSpace(os.Getenv("AWS_SESSION_TOKEN")),
+		AWSSessionToken:    strings.TrimSpace(resolveOpenClawEnvVar(document, "AWS_SESSION_TOKEN")),
 		AWSRegionName:      strings.TrimSpace(region),
 	}
 	return marshalOpenClawBedrockPayload(payload),
@@ -1396,7 +4122,7 @@ func resolveOpenClawBedrockSharedCredentials(
 	providerID string,
 	region string,
 ) (string, string) {
-	credentialsPath, configPath := resolveOpenClawAWSConfigPaths()
+	credentialsPath, configPath := resolveOpenClawAWSConfigPaths(document)
 	if credentialsPath == "" {
 		return "", ""
 	}
@@ -1446,23 +4172,25 @@ func resolveOpenClawAWSProfile(document map[string]interface{}, providerID strin
 			return strings.TrimSpace(value)
 		}
 	}
-	if value := strings.TrimSpace(os.Getenv("AWS_PROFILE")); value != "" {
+	if value := strings.TrimSpace(resolveOpenClawEnvVar(document, "AWS_PROFILE")); value != "" {
 		return value
 	}
 	return "default"
 }
 
-func resolveOpenClawAWSConfigPaths() (string, string) {
+func resolveOpenClawAWSConfigPaths(document map[string]interface{}) (string, string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", ""
 	}
 
-	credentialsPath := strings.TrimSpace(os.Getenv("AWS_SHARED_CREDENTIALS_FILE"))
+	credentialsPath := strings.TrimSpace(
+		resolveOpenClawEnvVar(document, "AWS_SHARED_CREDENTIALS_FILE"),
+	)
 	if credentialsPath == "" {
 		credentialsPath = filepath.Join(home, ".aws", "credentials")
 	}
-	configPath := strings.TrimSpace(os.Getenv("AWS_CONFIG_FILE"))
+	configPath := strings.TrimSpace(resolveOpenClawEnvVar(document, "AWS_CONFIG_FILE"))
 	if configPath == "" {
 		configPath = filepath.Join(home, ".aws", "config")
 	}
@@ -1549,15 +4277,19 @@ func resolveOpenClawProviderAPIKey(
 		// Fallback to well-known environment variables naturally respected by OpenClaw
 		switch providerID {
 		case "google", "gemini":
-			if secret := os.Getenv("GEMINI_API_KEY"); secret != "" {
+			if secret := resolveOpenClawEnvVar(document, "GEMINI_API_KEY"); secret != "" {
 				return secret, "Resolved OpenClaw provider API key from GEMINI_API_KEY environment variable."
 			}
+		case "bedrock", "amazon-bedrock":
+			if secret := resolveOpenClawEnvVar(document, "AWS_BEARER_TOKEN_BEDROCK"); secret != "" {
+				return secret, "Resolved OpenClaw provider API key from AWS_BEARER_TOKEN_BEDROCK environment variable."
+			}
 		case "openai":
-			if secret := os.Getenv("OPENAI_API_KEY"); secret != "" {
+			if secret := resolveOpenClawEnvVar(document, "OPENAI_API_KEY"); secret != "" {
 				return secret, "Resolved OpenClaw provider API key from OPENAI_API_KEY environment variable."
 			}
 		case "anthropic":
-			if secret := os.Getenv("ANTHROPIC_API_KEY"); secret != "" {
+			if secret := resolveOpenClawEnvVar(document, "ANTHROPIC_API_KEY"); secret != "" {
 				return secret, "Resolved OpenClaw provider API key from ANTHROPIC_API_KEY environment variable."
 			}
 		}
@@ -1600,7 +4332,7 @@ func resolveOpenClawProviderAPIKey(
 	case string:
 		matches := openClawEnvPattern.FindStringSubmatch(strings.TrimSpace(typed))
 		if len(matches) == 2 {
-			if resolved := strings.TrimSpace(os.Getenv(matches[1])); resolved != "" {
+			if resolved := strings.TrimSpace(resolveOpenClawEnvVar(document, matches[1])); resolved != "" {
 				return resolved, fmt.Sprintf(
 					"Resolved OpenClaw provider API key from environment variable %s.",
 					matches[1],
@@ -1615,7 +4347,7 @@ func resolveOpenClawProviderAPIKey(
 	case map[string]interface{}:
 		if source, _ := typed["source"].(string); source == "env" {
 			if id, _ := typed["id"].(string); strings.TrimSpace(id) != "" {
-				if resolved := strings.TrimSpace(os.Getenv(id)); resolved != "" {
+				if resolved := strings.TrimSpace(resolveOpenClawEnvVar(document, id)); resolved != "" {
 					return resolved, fmt.Sprintf(
 						"Resolved OpenClaw provider API key from SecretRef env %s.",
 						id,
@@ -1646,7 +4378,7 @@ func extractOpenClawProfileAPIKeyMaterial(profile map[string]interface{}) (strin
 		)
 	}
 	for _, raw := range candidates {
-		if key, note := resolveOpenClawInlineAPIKeyString(raw); key != "" {
+		if key, note := resolveOpenClawInlineAPIKeyString(nil, raw); key != "" {
 			return key, note
 		}
 	}
@@ -1661,14 +4393,17 @@ func getStringField(object map[string]interface{}, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func resolveOpenClawInlineAPIKeyString(raw string) (string, string) {
+func resolveOpenClawInlineAPIKeyString(
+	document map[string]interface{},
+	raw string,
+) (string, string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", ""
 	}
 	matches := openClawEnvPattern.FindStringSubmatch(raw)
 	if len(matches) == 2 {
-		if resolved := strings.TrimSpace(os.Getenv(matches[1])); resolved != "" {
+		if resolved := strings.TrimSpace(resolveOpenClawEnvVar(document, matches[1])); resolved != "" {
 			return resolved, fmt.Sprintf(
 				"Resolved OpenClaw profile API key from environment variable %s.",
 				matches[1],
@@ -1698,7 +4433,7 @@ func resolveOpenClawProfileBackedAPIKey(
 			continue
 		}
 		if mode, _ := profile["mode"].(string); strings.EqualFold(strings.TrimSpace(mode), "api_key") {
-			if key, note := extractOpenClawProfileAPIKeyMaterial(profile); key != "" {
+			if key, note := extractOpenClawProfileAPIKeyMaterialWithDocument(document, profile); key != "" {
 				return key, note
 			}
 			return "", fmt.Sprintf(
@@ -1706,6 +4441,29 @@ func resolveOpenClawProfileBackedAPIKey(
 				providerID,
 				profileName,
 			)
+		}
+	}
+	return "", ""
+}
+
+func extractOpenClawProfileAPIKeyMaterialWithDocument(
+	document map[string]interface{},
+	profile map[string]interface{},
+) (string, string) {
+	candidates := []string{
+		getStringField(profile, "apiKey"),
+		getStringField(profile, "api_key"),
+	}
+	if creds, ok := asObjectMap(profile["credentials"]); ok {
+		candidates = append(
+			candidates,
+			getStringField(creds, "apiKey"),
+			getStringField(creds, "api_key"),
+		)
+	}
+	for _, raw := range candidates {
+		if key, note := resolveOpenClawInlineAPIKeyString(document, raw); key != "" {
+			return key, note
 		}
 	}
 	return "", ""

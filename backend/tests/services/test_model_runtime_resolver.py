@@ -73,3 +73,49 @@ def test_resolve_ai_model_runtime_for_direct_provider_model(db_session: Session)
     assert resolved.model_provider == "anthropic"
     assert resolved.model_endpoint == "https://api.anthropic.com/v1"
     assert resolved.model_api_key == "provider-secret"
+
+
+def test_resolve_ai_model_runtime_for_structured_direct_credentials(
+    db_session: Session,
+):
+    """Structured credentials should flow through the direct runtime resolver."""
+    account = crud_account.create(
+        db_session,
+        obj_in={
+            "organization_name": "Structured Runtime Resolver Org",
+            "is_active": True,
+        },
+    )
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Codex Direct Model",
+            "provider_name": "openai-codex",
+            "model_identifier": "gpt-5.4",
+            "api_endpoint": "https://chatgpt.com/backend-api/codex",
+            "credential_type": "oauth_openai_codex",
+            "credential_payload": {
+                "access": "access-token",
+                "refresh": "refresh-token",
+                "expires": 1893456000000,
+                "account_id": "acct-123",
+            },
+        },
+        account_id=account.id,
+    )
+
+    resolved = resolve_ai_model_runtime(ai_model)
+
+    assert resolved.model_gateway_enabled is False
+    assert resolved.model_transport_mode == "direct_provider"
+    assert resolved.model_identifier == "gpt-5.4"
+    assert resolved.model_provider == "openai-codex"
+    assert resolved.model_api_key is None
+    assert resolved.model_auth_type == "oauth_openai_codex"
+    assert resolved.model_auth_payload == {
+        "type": "oauth_openai_codex",
+        "access": "access-token",
+        "refresh": "refresh-token",
+        "expires": 1893456000000,
+        "account_id": "acct-123",
+    }

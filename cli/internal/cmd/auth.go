@@ -526,7 +526,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 	}
 
 	// Success
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `<html>
 <head>

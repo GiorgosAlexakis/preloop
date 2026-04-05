@@ -18,7 +18,7 @@ describe('FlowExecutionView', () => {
         const method = (init?.method || 'GET').toUpperCase();
 
         if (
-          url.endsWith('/api/v1/flows/executions/exec-1/gateway-events') &&
+          url.includes('/api/v1/flows/executions/exec-1/gateway-events') &&
           method === 'GET'
         ) {
           return new Response(
@@ -94,7 +94,7 @@ describe('FlowExecutionView', () => {
         }
 
         if (
-          url.endsWith('/api/v1/flows/executions/exec-1/logs') &&
+          url.includes('/api/v1/flows/executions/exec-1/logs') &&
           method === 'GET'
         ) {
           return new Response(
@@ -156,7 +156,7 @@ describe('FlowExecutionView', () => {
         }
 
         if (
-          url.endsWith(
+          url.includes(
             '/api/v1/flows/executions/exec-running/gateway-events'
           ) &&
           method === 'GET'
@@ -174,7 +174,7 @@ describe('FlowExecutionView', () => {
         }
 
         if (
-          url.endsWith('/api/v1/flows/executions/exec-running/logs') &&
+          url.includes('/api/v1/flows/executions/exec-running/logs') &&
           method === 'GET'
         ) {
           return new Response(
@@ -281,9 +281,15 @@ describe('FlowExecutionView', () => {
     await waitUntil(
       () =>
         (element as any).execution?.id === 'exec-1' &&
-        (element as any).gatewayEvents?.length === 1 &&
         !(element as any).isLoading,
       'Execution view did not finish loading'
+    );
+    await element.updateComplete;
+
+    (element as any).loadGatewayEvents();
+    await waitUntil(
+      () => (element as any).gatewayEvents?.length === 1,
+      'Gateway events did not load'
     );
     await element.updateComplete;
 
@@ -326,9 +332,14 @@ describe('FlowExecutionView', () => {
     await waitUntil(
       () =>
         (element as any).execution?.id === 'exec-1' &&
-        (element as any).gatewayEvents?.length === 1 &&
         !(element as any).isLoading,
       'Execution view did not finish loading'
+    );
+
+    (element as any).loadGatewayEvents();
+    await waitUntil(
+      () => (element as any).gatewayEvents?.length === 1,
+      'Gateway events did not load'
     );
 
     (element as any).handleWebSocketMessage({

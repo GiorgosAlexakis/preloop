@@ -254,6 +254,8 @@ export interface RuntimeSessionInteractionsParams {
 
 export interface ManagedAgentListParams {
   query?: string;
+  tags?: string;
+  ownerUsername?: string;
   sessionSourceType?: string;
   status?: 'all' | 'active' | 'ended';
   limit?: number;
@@ -345,6 +347,12 @@ function buildManagedAgentListQuery(
 
   if (params.query) {
     queryParams.set('query', params.query);
+  }
+  if (params.tags) {
+    queryParams.set('tags', params.tags);
+  }
+  if (params.ownerUsername) {
+    queryParams.set('owner_username', params.ownerUsername);
   }
   if (params.sessionSourceType) {
     queryParams.set('session_source_type', params.sessionSourceType);
@@ -2531,4 +2539,76 @@ export async function generatePolicyFromAudit(options?: {
     );
   }
   return response.json();
+}
+
+export interface BudgetPolicy {
+  id: string;
+  subject_type: string;
+  subject_id: string | null;
+  model_alias: string | null;
+  period: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'all_time';
+  hard_limit_usd: number | null;
+  soft_limit_usd: number | null;
+  notify_on_soft: boolean;
+  notify_on_hard: boolean;
+  notification_emails: string[] | null;
+}
+
+export interface BudgetPolicyCreate {
+  subject_type: string;
+  subject_id: string | null;
+  model_alias: string | null;
+  period: string;
+  hard_limit_usd: number | null;
+  soft_limit_usd: number | null;
+  notify_on_soft: boolean;
+  notify_on_hard: boolean;
+  notification_emails: string[] | null;
+}
+
+export async function getBudgetPolicies(
+  subject_type?: string,
+  subject_id?: string
+): Promise<BudgetPolicy[]> {
+  const params = new URLSearchParams();
+  if (subject_type) params.append('subject_type', subject_type);
+  if (subject_id) params.append('subject_id', subject_id);
+  const q = params.toString();
+  const response = await fetchWithAuth(
+    `/api/v1/budget/policies${q ? '?' + q : ''}`
+  );
+  if (!response.ok) throw new Error('Failed to fetch budget policies');
+  return response.json();
+}
+
+export async function createBudgetPolicy(
+  data: BudgetPolicyCreate
+): Promise<BudgetPolicy> {
+  const response = await fetchWithAuth('/api/v1/budget/policies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to create budget policy');
+  return response.json();
+}
+
+export async function updateBudgetPolicy(
+  id: string,
+  data: Partial<BudgetPolicyCreate>
+): Promise<BudgetPolicy> {
+  const response = await fetchWithAuth(`/api/v1/budget/policies/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to update budget policy');
+  return response.json();
+}
+
+export async function deleteBudgetPolicy(id: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/budget/policies/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete budget policy');
 }
