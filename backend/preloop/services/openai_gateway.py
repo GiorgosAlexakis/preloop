@@ -2718,12 +2718,8 @@ class OpenAIGatewayService:
         if tool_calls:
             for tc in tool_calls:
                 args_raw = tc.get("function", {}).get("arguments", "{}")
-                logger.debug(f"LITELLM TOOL CALL RAW: {repr(args_raw)}")
                 try:
                     args = json.loads(args_raw)
-                    logger.debug(
-                        f"JSON.LOADS RESULT TYPE: {type(args)}, VALUE: {repr(args)}"
-                    )
                     # LiteLLM sometimes double stringifies: json.dumps(str(dict))
                     # json.loads un-escapes it into a Python string. We need a dict.
                     if isinstance(args, str):
@@ -2731,17 +2727,11 @@ class OpenAIGatewayService:
                             import ast
 
                             parsed = ast.literal_eval(args)
-                            logger.debug(
-                                f"AST.LITERAL_EVAL PARSED TYPE: {type(parsed)}"
-                            )
                             if isinstance(parsed, dict):
                                 args = parsed
-                        except Exception as e:
-                            logger.debug(
-                                f"AST.LITERAL_EVAL FAILED ON {repr(args)}: {e}"
-                            )
-                except ValueError as ve:
-                    logger.debug(f"JSON.LOADS FAILED ON {repr(args_raw)}: {ve}")
+                        except Exception:
+                            pass
+                except ValueError:
                     args = {}
                     if isinstance(args_raw, str):
                         try:
@@ -2750,10 +2740,8 @@ class OpenAIGatewayService:
                             parsed = ast.literal_eval(args_raw)
                             if isinstance(parsed, dict):
                                 args = parsed
-                        except Exception as e:
-                            logger.debug(
-                                f"AST.LITERAL_EVAL FAILED ON args_raw: {repr(args_raw)}: {e}"
-                            )
+                        except Exception:
+                            pass
                 content.append(
                     {
                         "type": "tool_use",

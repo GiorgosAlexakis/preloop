@@ -1678,7 +1678,7 @@ async def get_dashboard_telemetry(
             func.sum(case((ApiUsage.status_code < 400, 1), else_=0)),
         ).filter(
             ApiUsage.account_id == account.id,
-            ApiUsage.created_at >= day_ago,
+            ApiUsage.timestamp >= day_ago,
         )
     ).first()
 

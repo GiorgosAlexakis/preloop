@@ -553,15 +553,7 @@ def upgrade() -> None:
     )
     op.drop_constraint(op.f("instances_instance_uuid_key"), "instances", type_="unique")
     op.create_index(op.f("ix_instances_id"), "instances", ["id"], unique=False)
-    op.drop_index(
-        op.f("idx_issueembedding_vector_128"),
-        table_name="issueembedding",
-        postgresql_ops={
-            "(subvector(embedding, 1, 128)::vector(128))": "vector_cosine_ops"
-        },
-        postgresql_with={"m": "16", "ef_construction": "40"},
-        postgresql_using="hnsw",
-    )
+
     op.create_index(op.f("ix_mcp_server_id"), "mcp_server", ["id"], unique=False)
     op.create_index(op.f("ix_mcp_tool_id"), "mcp_tool", ["id"], unique=False)
     op.alter_column(
@@ -1549,17 +1541,7 @@ def downgrade() -> None:
     )
     op.drop_index(op.f("ix_mcp_tool_id"), table_name="mcp_tool")
     op.drop_index(op.f("ix_mcp_server_id"), table_name="mcp_server")
-    op.create_index(
-        op.f("idx_issueembedding_vector_128"),
-        "issueembedding",
-        [sa.literal_column("(subvector(embedding, 1, 128)::vector(128))")],
-        unique=False,
-        postgresql_ops={
-            "(subvector(embedding, 1, 128)::vector(128))": "vector_cosine_ops"
-        },
-        postgresql_with={"m": "16", "ef_construction": "40"},
-        postgresql_using="hnsw",
-    )
+
     op.drop_index(op.f("ix_instances_id"), table_name="instances")
     op.create_unique_constraint(
         op.f("instances_instance_uuid_key"),

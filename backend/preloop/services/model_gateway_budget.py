@@ -181,7 +181,7 @@ class ModelGatewayBudgetService:
                 detail = "Model gateway budget exceeded: account model limit reached"
             elif result.enforcement_reason == "pricing_required_for_budget_enforcement":
                 detail = "Model gateway budget exceeded: pricing unavailable for requested model"
-            elif result.enforcement_reason == "trial_hosted_model_exceeded":
+            elif result.enforcement_reason == "trial_hosted_model_budget_exceeded":
                 detail = "Preloop trial limit for hosted model reached. Please configure your own OpenAI/Anthropic API key."
 
             if result.reset_at:
