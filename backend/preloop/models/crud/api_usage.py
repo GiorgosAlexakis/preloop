@@ -144,7 +144,11 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             try:
                 import uuid
 
-                parsed_account_id = uuid.UUID(account_id)
+                parsed_account_id = (
+                    account_id
+                    if isinstance(account_id, uuid.UUID)
+                    else uuid.UUID(str(account_id))
+                )
 
                 # Derive subject ID based on the auth_subject_type
                 subject_id = None
