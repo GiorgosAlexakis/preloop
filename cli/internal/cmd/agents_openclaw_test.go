@@ -122,6 +122,11 @@ func TestParseOpenClawConfigResolvesBedrockCredentialsFromConfigEnv(t *testing.T
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "openclaw.json5")
 	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
 
 	config := `{
   env: {
