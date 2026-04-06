@@ -527,7 +527,7 @@ exit $OPENCODE_EXIT_CODE
                             "apiKey": "$OPENAI_API_KEY",
                         },
                         "models": {
-                            model_local_id: {"name": model_local_id},
+                            model_local_id: {"name": model},
                         },
                     }
                 }
@@ -540,7 +540,7 @@ exit $OPENCODE_EXIT_CODE
                             "apiKey": "$GOOGLE_API_KEY",
                         },
                         "models": {
-                            model_local_id: {"name": model_local_id},
+                            model_local_id: {"name": model},
                         },
                     }
                 }
@@ -553,7 +553,7 @@ exit $OPENCODE_EXIT_CODE
                             "apiKey": "$OPENAI_API_KEY",
                         },
                         "models": {
-                            model_local_id: {"name": model_local_id},
+                            model_local_id: {"name": model},
                         },
                     }
                 }

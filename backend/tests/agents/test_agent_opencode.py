@@ -316,7 +316,7 @@ class TestOpenCodeBuildConfig:
         )
         assert config["model"] == "preloop/openai/gpt-5"
         assert config["provider"]["preloop"]["models"] == {
-            "openai/gpt-5": {"name": "openai/gpt-5"}
+            "openai/gpt-5": {"name": "preloop/openai/gpt-5"}
         }
 
     def test_non_gateway_provider_fallback_uses_effective_provider(self):
