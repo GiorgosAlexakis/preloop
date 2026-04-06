@@ -96,6 +96,21 @@ describe('AgentsView', () => {
         );
       }
 
+      if (url.startsWith('/api/v1/flows')) {
+        return new Response(
+          JSON.stringify({
+            items: [],
+            total: 0,
+            limit: 50,
+            offset: 0,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       return new Response('Not found', { status: 404 });
     });
   });
@@ -113,7 +128,7 @@ describe('AgentsView', () => {
     const text = el.shadowRoot?.textContent || '';
     expect(text).to.contain('Claude Code Workspace');
     expect(text).to.contain(
-      'Tool calls and model traffic both flow through Preloop.'
+      'Connections, telemetry, and live sessions managed by the Preloop'
     );
 
     const agentNode = el.shadowRoot?.querySelector('.agent-node');

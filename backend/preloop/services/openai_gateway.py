@@ -1412,7 +1412,7 @@ class OpenAIGatewayService:
 
         if requested_model:
             for ai_model, alias in gateway_enabled_models:
-                if alias == requested_model:
+                if alias == requested_model or alias.endswith(f"/{requested_model}"):
                     return ai_model
             raise ModelGatewayAPIError(
                 provider=provider,

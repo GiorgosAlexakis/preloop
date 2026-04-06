@@ -386,25 +386,24 @@ class TestGetUserFromTokenIfValid:
     async def test_returns_user_when_valid(self):
         """Test returns user when token is valid."""
         mock_user = MagicMock()
+        mock_user.is_active = True
 
-        with patch.object(
-            jwt_module, "get_current_user", new_callable=AsyncMock
-        ) as mock_get_user:
-            mock_get_user.return_value = mock_user
+        with patch.object(jwt_module, "crud_api_key") as mock_crud:
+            mock_crud.get_by_key.return_value = MagicMock()
+            with patch.object(jwt_module, "_authenticate_with_api_key") as mock_auth:
+                mock_auth.return_value = mock_user
 
-            result = await jwt_module.get_user_from_token_if_valid(
-                token="valid_token", db_session=MagicMock()
-            )
+                result = await jwt_module.get_user_from_token_if_valid(
+                    token="validtoken", db_session=MagicMock()
+                )
 
-            assert result == mock_user
+                assert result == mock_user
 
     @pytest.mark.asyncio
     async def test_returns_none_on_exception(self):
         """Test returns None when exception occurs."""
-        with patch.object(
-            jwt_module, "get_current_user", new_callable=AsyncMock
-        ) as mock_get_user:
-            mock_get_user.side_effect = Exception("Some error")
+        with patch.object(jwt_module, "crud_api_key") as mock_crud:
+            mock_crud.get_by_key.side_effect = Exception("Some error")
 
             result = await jwt_module.get_user_from_token_if_valid(
                 token="some_token", db_session=MagicMock()

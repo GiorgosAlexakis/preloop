@@ -7,9 +7,26 @@ from preloop.services.flow_orchestrator import FlowExecutionOrchestrator
 from preloop.services.model_gateway_auth import authenticate_bearer_token
 
 
+@pytest.fixture
+def test_flow(db_session, test_user) -> Flow:
+    flow = Flow(
+        id=uuid4(),
+        name="Test Flow",
+        account_id=test_user.account_id,
+        prompt_template="You are a helpful assistant.",
+        agent_config={},
+    )
+    db_session.add(flow)
+    db_session.flush()
+    return flow
+
+
 @pytest.mark.asyncio
 async def test_bearer_token_end_to_end(db_session, test_flow: Flow, test_user: User):
-    orch = FlowExecutionOrchestrator(db_session, test_flow.id)
+    orch = FlowExecutionOrchestrator(
+        db_session, test_flow.id, trigger_event_data={}, nats_client=None
+    )
+    orch.flow = test_flow
     execution_id = uuid4()
     orch.execution_log = type(
         "obj", (object,), {"id": execution_id, "start_time": None}

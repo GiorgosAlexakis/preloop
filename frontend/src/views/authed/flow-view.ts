@@ -167,6 +167,10 @@ export class FlowView extends LitElement {
         transform: translateY(-2px);
         box-shadow: var(--sl-shadow-large);
       }
+
+      div[slot='header'] > sl-icon {
+        margin-bottom: -2px;
+      }
     `,
   ];
 
