@@ -116,6 +116,15 @@ func TestParseOpenClawConfigJSON5(t *testing.T) {
 	if got := parsed.ModelCatalog["name"]; got != "GPT-5" {
 		t.Fatalf("expected model catalog to be preserved, got %#v", parsed.ModelCatalog)
 	}
+	if len(parsed.ConfiguredModels) != 2 {
+		t.Fatalf("expected two configured models, got %#v", parsed.ConfiguredModels)
+	}
+	if parsed.ConfiguredModels[0].ConfigKey != "agents.defaults.model.primary" {
+		t.Fatalf("unexpected primary config key: %#v", parsed.ConfiguredModels)
+	}
+	if parsed.ConfiguredModels[1].ConfigKey != "agents.defaults.model.fallbacks[0]" {
+		t.Fatalf("unexpected fallback config key: %#v", parsed.ConfiguredModels)
+	}
 }
 
 func TestParseOpenClawConfigResolvesBedrockCredentialsFromConfigEnv(t *testing.T) {
@@ -621,6 +630,18 @@ func TestBuildOpenClawManagedMCPEnrollmentPlanRewritesGateway(t *testing.T) {
 	}
 	if extractOpenClawPrimaryModel(plan.ManagedDocument) != "preloop/openai/gpt-5" {
 		t.Fatalf("expected primary model to be rewritten, got %#v", plan.ManagedDocument)
+	}
+	defaults, ok := lookupValue(plan.ManagedDocument, "agents", "defaults", "model").(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected defaults model block, got %#v", plan.ManagedDocument)
+	}
+	fallbacks, ok := defaults["fallbacks"].([]interface{})
+	if !ok || len(fallbacks) != 1 || fallbacks[0] != "preloop/openai/gpt-4.1" {
+		t.Fatalf("expected fallback model to be rewritten, got %#v", defaults)
+	}
+	managedModels, ok := managedProvider["models"].([]interface{})
+	if !ok || len(managedModels) != 2 {
+		t.Fatalf("expected managed provider to expose both configured models, got %#v", managedProvider)
 	}
 
 	validation := openClawManagedMCPAdapter{}.ValidateManagedConfig(

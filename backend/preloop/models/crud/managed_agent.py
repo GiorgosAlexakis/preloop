@@ -18,6 +18,12 @@ MANAGED_AGENT_ACTIVE_WINDOW = timedelta(minutes=10)
 MANAGED_AGENT_RECENT_WINDOW = timedelta(hours=24)
 
 
+def normalize_managed_agent_kind(session_source_type: Optional[str]) -> str:
+    """Normalize one durable agent kind from a runtime source type."""
+    normalized = str(session_source_type or "").strip().lower().replace(" ", "_")
+    return normalized or "external_agent"
+
+
 def _utc_now() -> datetime:
     """Return the current UTC time as a timezone-aware timestamp."""
     return datetime.now(UTC)
@@ -73,6 +79,73 @@ def _latest_gateway_usage_for_principal(
         .order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc())
         .first()
     )
+
+
+def _usage_aggregate_for_principal(
+    db: Session, *, account_id: str, principal_type: str, principal_id: str
+) -> dict[str, Any]:
+    """Return principal-scoped usage totals across all runtime sessions."""
+    session_count = (
+        db.query(func.count(RuntimeSession.id))
+        .filter(
+            RuntimeSession.account_id == account_id,
+            RuntimeSession.runtime_principal_type == principal_type,
+            RuntimeSession.runtime_principal_id == principal_id,
+        )
+        .scalar()
+        or 0
+    )
+
+    usage_row = (
+        db.query(
+            func.count(ApiUsage.id).label("request_count"),
+            func.coalesce(
+                func.sum(case((ApiUsage.status_code < 400, 1), else_=0)), 0
+            ).label("success_count"),
+            func.coalesce(
+                func.sum(case((ApiUsage.status_code >= 400, 1), else_=0)), 0
+            ).label("error_count"),
+            func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label("prompt_tokens"),
+            func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+                "completion_tokens"
+            ),
+            func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                "estimated_cost"
+            ),
+            func.max(ApiUsage.timestamp).label("last_request_at"),
+        )
+        .filter(
+            ApiUsage.account_id == account_id,
+            ApiUsage.action_type == "model_gateway",
+            ApiUsage.runtime_principal_type == principal_type,
+            ApiUsage.runtime_principal_id == principal_id,
+        )
+        .one()
+    )
+
+    latest_usage = _latest_gateway_usage_for_principal(
+        db,
+        account_id=account_id,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
+
+    return {
+        "session_count": int(session_count or 0),
+        "total_requests": int(usage_row.request_count or 0),
+        "successful_requests": int(usage_row.success_count or 0),
+        "failed_requests": int(usage_row.error_count or 0),
+        "prompt_tokens": int(usage_row.prompt_tokens or 0),
+        "completion_tokens": int(usage_row.completion_tokens or 0),
+        "total_tokens": int(usage_row.total_tokens or 0),
+        "estimated_cost": float(usage_row.estimated_cost or 0.0),
+        "latest_model_alias": latest_usage.latest_model_alias if latest_usage else None,
+        "latest_provider_name": (
+            latest_usage.latest_provider_name if latest_usage else None
+        ),
+        "last_request_at": latest_usage.last_request_at if latest_usage else None,
+    }
 
 
 class CRUDManagedAgent(CRUDBase[ManagedAgent]):
@@ -241,6 +314,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             db_obj = ManagedAgent(
                 account_id=account_id,
                 runtime_session_id=runtime_session_id,
+                agent_kind=normalize_managed_agent_kind(session_source_type),
                 session_source_type=session_source_type,
                 session_source_id=session_source_id,
                 session_reference=session_reference,
@@ -257,6 +331,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             return db_obj
 
         db_obj.runtime_session_id = runtime_session_id
+        db_obj.agent_kind = normalize_managed_agent_kind(session_source_type)
         db_obj.display_name = display_name
         db_obj.enrolled_via = enrolled_via
         db_obj.last_seen_at = observed_at
@@ -336,6 +411,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.id,
                 self.model.runtime_session_id,
                 self.model.owner_user_id,
+                self.model.agent_kind,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -364,6 +440,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.id,
                 self.model.runtime_session_id,
                 self.model.owner_user_id,
+                self.model.agent_kind,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -397,15 +474,17 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         items = []
         for row in rows:
             summary = self._row_to_summary(row)
-            latest_usage = _latest_gateway_usage_for_runtime_session(
+            aggregate = _usage_aggregate_for_principal(
                 db,
                 account_id=account_id,
-                runtime_session_id=row.runtime_session_id,
+                principal_type=row.session_source_type,
+                principal_id=row.session_source_id,
             )
-            if latest_usage is not None:
-                summary["latest_model_alias"] = latest_usage.latest_model_alias
-                summary["latest_provider_name"] = latest_usage.latest_provider_name
-                summary["last_request_at"] = latest_usage.last_request_at
+            summary["total_requests"] = aggregate["total_requests"]
+            summary["estimated_cost"] = aggregate["estimated_cost"]
+            summary["latest_model_alias"] = aggregate["latest_model_alias"]
+            summary["latest_provider_name"] = aggregate["latest_provider_name"]
+            summary["last_request_at"] = aggregate["last_request_at"]
             items.append(summary)
 
         return {"total": total, "items": items}
@@ -432,6 +511,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.id,
                 self.model.runtime_session_id,
                 self.model.owner_user_id,
+                self.model.agent_kind,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -460,6 +540,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 self.model.id,
                 self.model.runtime_session_id,
                 self.model.owner_user_id,
+                self.model.agent_kind,
                 self.model.display_name,
                 self.model.session_source_type,
                 self.model.session_source_id,
@@ -482,15 +563,17 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         if row is None:
             return None
         summary = self._row_to_summary(row)
-        latest_usage = _latest_gateway_usage_for_runtime_session(
+        aggregate = _usage_aggregate_for_principal(
             db,
             account_id=account_id,
-            runtime_session_id=row.runtime_session_id,
+            principal_type=row.session_source_type,
+            principal_id=row.session_source_id,
         )
-        if latest_usage is not None:
-            summary["latest_model_alias"] = latest_usage.latest_model_alias
-            summary["latest_provider_name"] = latest_usage.latest_provider_name
-            summary["last_request_at"] = latest_usage.last_request_at
+        summary["total_requests"] = aggregate["total_requests"]
+        summary["estimated_cost"] = aggregate["estimated_cost"]
+        summary["latest_model_alias"] = aggregate["latest_model_alias"]
+        summary["latest_provider_name"] = aggregate["latest_provider_name"]
+        summary["last_request_at"] = aggregate["last_request_at"]
         return summary
 
     def get_usage_aggregate_for_account(
@@ -501,81 +584,12 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         if agent is None:
             return None
 
-        session_count = (
-            db.query(func.count(RuntimeSession.id))
-            .filter(
-                RuntimeSession.account_id == account_id,
-                RuntimeSession.runtime_principal_type == agent.session_source_type,
-                RuntimeSession.runtime_principal_id == agent.session_source_id,
-            )
-            .scalar()
-            or 0
-        )
-
-        usage_row = (
-            db.query(
-                func.count(ApiUsage.id).label("request_count"),
-                func.coalesce(
-                    func.sum(case((ApiUsage.status_code < 400, 1), else_=0)), 0
-                ).label("success_count"),
-                func.coalesce(
-                    func.sum(case((ApiUsage.status_code >= 400, 1), else_=0)), 0
-                ).label("error_count"),
-                func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label(
-                    "prompt_tokens"
-                ),
-                func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
-                    "completion_tokens"
-                ),
-                func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
-                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
-                    "estimated_cost"
-                ),
-                func.max(ApiUsage.model_alias).label("latest_model_alias"),
-                func.max(ApiUsage.provider_name).label("latest_provider_name"),
-                func.max(ApiUsage.timestamp).label("last_request_at"),
-            )
-            .filter(
-                ApiUsage.account_id == account_id,
-                ApiUsage.action_type == "model_gateway",
-                ApiUsage.runtime_principal_type == agent.session_source_type,
-                ApiUsage.runtime_principal_id == agent.session_source_id,
-            )
-            .one()
-        )
-
-        latest_usage = _latest_gateway_usage_for_principal(
+        return _usage_aggregate_for_principal(
             db,
             account_id=account_id,
             principal_type=agent.session_source_type,
             principal_id=agent.session_source_id,
         )
-
-        return {
-            "session_count": int(session_count or 0),
-            "total_requests": int(usage_row.request_count or 0),
-            "successful_requests": int(usage_row.success_count or 0),
-            "failed_requests": int(usage_row.error_count or 0),
-            "prompt_tokens": int(usage_row.prompt_tokens or 0),
-            "completion_tokens": int(usage_row.completion_tokens or 0),
-            "total_tokens": int(usage_row.total_tokens or 0),
-            "estimated_cost": float(usage_row.estimated_cost or 0.0),
-            "latest_model_alias": (
-                latest_usage.latest_model_alias
-                if latest_usage
-                else usage_row.latest_model_alias
-            ),
-            "latest_provider_name": (
-                latest_usage.latest_provider_name
-                if latest_usage
-                else usage_row.latest_provider_name
-            ),
-            "last_request_at": (
-                latest_usage.last_request_at
-                if latest_usage
-                else usage_row.last_request_at
-            ),
-        }
 
     def get_usage_by_model_for_account(
         self, db: Session, *, account_id: str, agent_id: str, limit: int = 10
@@ -601,6 +615,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
                     "estimated_cost"
                 ),
+                func.max(ApiUsage.timestamp).label("last_request_at"),
             )
             .filter(
                 ApiUsage.account_id == account_id,
@@ -628,6 +643,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                 "completion_tokens": int(row.completion_tokens or 0),
                 "total_tokens": int(row.total_tokens or 0),
                 "estimated_cost": float(row.estimated_cost or 0.0),
+                "last_request_at": row.last_request_at,
             }
             for row in rows
         ]
@@ -671,6 +687,7 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             "owner_user_id": str(row.owner_user_id) if row.owner_user_id else None,
             "owner_username": row.owner_username,
             "owner_email": row.owner_email,
+            "agent_kind": row.agent_kind,
             "display_name": row.display_name,
             "session_source_type": row.session_source_type,
             "session_source_id": row.session_source_id,

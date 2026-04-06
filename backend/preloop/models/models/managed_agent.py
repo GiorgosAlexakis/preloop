@@ -12,6 +12,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .account import Account
+    from .managed_agent_ai_model_binding import ManagedAgentAIModelBinding
     from .managed_agent_credential import ManagedAgentCredential
     from .managed_agent_enrollment import ManagedAgentEnrollment
     from .runtime_session import RuntimeSession
@@ -49,6 +50,7 @@ class ManagedAgent(Base):
         nullable=True,
         index=True,
     )
+    agent_kind: Mapped[str] = mapped_column(String(64), nullable=False)
     session_source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     session_source_id: Mapped[str] = mapped_column(String(255), nullable=False)
     session_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -81,6 +83,11 @@ class ManagedAgent(Base):
     )
     enrollments: Mapped[List["ManagedAgentEnrollment"]] = relationship(
         "ManagedAgentEnrollment",
+        back_populates="managed_agent",
+        cascade="all, delete-orphan",
+    )
+    model_bindings: Mapped[List["ManagedAgentAIModelBinding"]] = relationship(
+        "ManagedAgentAIModelBinding",
         back_populates="managed_agent",
         cascade="all, delete-orphan",
     )

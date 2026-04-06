@@ -24,6 +24,7 @@ from .plan import Plan, Subscription, MonthlyUsage
 from .issue_relationship import IssueRelationship
 from .issue_set import IssueSet
 from .managed_agent import ManagedAgent
+from .managed_agent_ai_model_binding import ManagedAgentAIModelBinding
 from .managed_agent_credential import ManagedAgentCredential
 from .managed_agent_enrollment import ManagedAgentEnrollment
 from .tool_configuration import ToolConfiguration, ApprovalWorkflow
@@ -84,6 +85,7 @@ __all__ = [
     "IssueRelationship",
     "IssueSet",
     "ManagedAgent",
+    "ManagedAgentAIModelBinding",
     "ManagedAgentCredential",
     "ManagedAgentEnrollment",
     "ToolConfiguration",

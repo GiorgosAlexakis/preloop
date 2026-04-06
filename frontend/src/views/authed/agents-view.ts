@@ -86,6 +86,7 @@ export class AgentsView extends LitElement {
   private initialPinchDistance = 0;
   private initialPinchScale = 1;
   private activePointers = new Map<number, PointerEvent>();
+  private resizeObserver = new ResizeObserver(() => this.resetView());
 
   private unsubscribeRealtime?: () => void;
   private refreshTimer: number | null = null;
@@ -260,6 +261,19 @@ export class AgentsView extends LitElement {
         -webkit-box-orient: vertical;
         line-height: 1.4;
       }
+      .agent-speech-bubble.tool-bubble {
+        background: var(--sl-color-neutral-100);
+        color: var(--sl-color-neutral-800);
+        border: 1px solid var(--sl-color-neutral-300);
+        box-shadow: 0 4px 12px rgba(var(--sl-color-warning-500-rgb), 0.15);
+      }
+      .agent-speech-bubble.tool-bubble::after {
+        border-color: var(--sl-color-neutral-300) transparent transparent
+          transparent;
+      }
+      .agent-speech-bubble.tool-bubble .speech-source {
+        color: var(--sl-color-warning-600);
+      }
 
       /* Canvas specific styles */
       .page-canvas-wrapper .content-bounds {
@@ -267,6 +281,7 @@ export class AgentsView extends LitElement {
         max-width: 80rem;
         margin: 0 auto;
         padding: 1rem 2rem 0 2rem;
+        box-sizing: border-box;
       }
       .page-canvas-wrapper {
         display: flex;
@@ -445,6 +460,9 @@ export class AgentsView extends LitElement {
 
     void this.loadAgents();
     this.connectRealtime();
+    requestAnimationFrame(() => {
+      this.resizeObserver.observe(this);
+    });
   }
 
   updated(changedProperties: Map<string, unknown>) {
@@ -463,6 +481,7 @@ export class AgentsView extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.unsubscribeRealtime?.();
+    this.resizeObserver.disconnect();
     if (this.refreshTimer !== null) {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -852,12 +871,19 @@ export class AgentsView extends LitElement {
 
     const messages = request.messages;
     if (Array.isArray(messages) && messages.length > 0) {
+      // Find the last non-assistant message or just the last message
       const lastMsg: any = messages[messages.length - 1];
       if (lastMsg.content) {
-        text =
-          typeof lastMsg.content === 'string'
-            ? lastMsg.content
-            : JSON.stringify(lastMsg.content);
+        if (Array.isArray(lastMsg.content)) {
+          const textPart = lastMsg.content.find(
+            (part: any) => part.type === 'text'
+          );
+          text = textPart ? textPart.text : JSON.stringify(lastMsg.content);
+        } else if (typeof lastMsg.content === 'string') {
+          text = lastMsg.content;
+        } else {
+          text = JSON.stringify(lastMsg.content);
+        }
       }
     } else if (request.prompt) {
       text =
@@ -867,7 +893,7 @@ export class AgentsView extends LitElement {
     }
 
     if (text) {
-      return { text: text.substring(0, 300), source: 'Agent' };
+      return { text: text.substring(0, 300), source: 'User' };
     }
     return null;
   }
@@ -1287,14 +1313,16 @@ export class AgentsView extends LitElement {
           <div class="title-row">
             <div style="display: flex; gap: 12px; align-items: flex-start;">
               ${renderAgentIcon(
-                agent.session_source_type,
+                agent.agent_kind || agent.session_source_type,
                 'font-size: 24px; color: var(--sl-color-neutral-500); margin-top: 2px;'
               )}
               <div>
                 <div class="agent-name">${agent.display_name}</div>
                 <div class="agent-meta">
-                  ${this.getSourceLabel(agent.session_source_type)} ·
-                  ${agent.session_source_id}
+                  ${this.getSourceLabel(
+                    agent.agent_kind || agent.session_source_type
+                  )}
+                  · ${agent.session_source_id}
                 </div>
               </div>
             </div>
@@ -1612,7 +1640,7 @@ export class AgentsView extends LitElement {
                     y2="${pos.y - offsetY}"
                     stroke="${mcpEnabled
                       ? toolActive
-                        ? 'var(--sl-color-success-500)'
+                        ? 'var(--sl-color-warning-300)'
                         : 'var(--sl-color-warning-500)'
                       : 'var(--sl-color-neutral-300)'}"
                     stroke-width="${toolActive
@@ -1643,6 +1671,8 @@ export class AgentsView extends LitElement {
                     class="agent-speech-bubble ${liveActivity?.currentBubble &&
                     Date.now() - liveActivity.currentBubble.timestamp < 6000
                       ? 'visible'
+                      : ''} ${liveActivity?.currentBubble?.source === 'Tool'
+                      ? 'tool-bubble'
                       : ''}"
                   >
                     <div class="speech-source">
@@ -1661,7 +1691,7 @@ export class AgentsView extends LitElement {
                         style="display: flex; align-items: center; gap: 8px; overflow: hidden;"
                       >
                         ${renderAgentIcon(
-                          agent.session_source_type,
+                          agent.agent_kind || agent.session_source_type,
                           'flex-shrink: 0; color: var(--sl-color-neutral-500);'
                         )}
                         <strong
@@ -1891,7 +1921,7 @@ export class AgentsView extends LitElement {
         <div class="content-bounds">
           <div
             class="header"
-            style="align-items: flex-start; justify-content: space-between;"
+            style="display: flex; flex-wrap: wrap; gap: var(--sl-spacing-medium); align-items: flex-start; justify-content: space-between;"
           >
             <div>
               <h1>Agents</h1>
@@ -1937,7 +1967,7 @@ export class AgentsView extends LitElement {
               @submit=${this.handleSearchSubmit}
             >
               <sl-input
-                placeholder="Search name, tags:env=prod, owner:dimo"
+                placeholder="Search name, tags:env=prod, owner:username"
                 clearable
                 .value=${this.searchQuery}
                 @sl-input=${this.handleSearchInput}

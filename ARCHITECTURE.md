@@ -180,6 +180,8 @@ The Tools page has been redesigned from a card-based layout to a tree-style list
 *   **Shared Enrollment Engine:** `preloop agents enroll <agent>` and discovery-triggered onboarding both create or reuse a managed runtime identity, import representable MCP servers, mint a durable credential, back up the local config, and rewrite the local agent to use Preloop-managed endpoints.
 *   **OpenClaw Coverage:** The current OpenClaw adapter supports legacy and newer config locations, JSON5 parsing, gateway-backed model rewrites, and conservative import of command-backed MCP entries such as `mcporter` when an upstream URL can be inferred safely.
 *   **Credential Boundary:** OpenClaw model credentials may be declared inline under `models.providers` or indirectly through `auth.profiles`; the enrollment path imports model metadata either way, but profile-backed provider secrets may still require manual configuration inside Preloop.
+*   **Durable Identity:** `ManagedAgent.agent_kind` is now stored alongside `session_source_type` so operator UX and reporting do not depend on an active runtime session to recover the agent family.
+*   **Explicit Model Association:** Onboarding now persists direct managed-agent to AI-model bindings instead of inferring one configured model indirectly from `AIModel.meta_data`.
 
 ### Secret Service
 *   **Purpose:** Provider-agnostic custody and resolution of model credentials.
@@ -189,6 +191,8 @@ The Tools page has been redesigned from a card-based layout to a tree-style list
 
 ### preloop.models (`./backend/preloop/models`)
 *   **Purpose:** Data modeling and database interaction layer.
+*   **Current Agent/Model Shape:** `AIModel` remains the durable flat row for provider, model identifier, endpoint, and credential reference, while `ManagedAgentAIModelBinding` carries explicit per-agent config slots and primary/default selection.
+*   **Deferred Normalization:** Full provider-profile normalization is intentionally deferred until agent UX and policy semantics for many-model agents stabilize; the current migration keeps compatibility fields and avoids a broader schema split.
 *   **Technology:** SQLAlchemy for ORM, Pydantic for data validation/schemas.
 *   **Database:** Defines schema for PostgreSQL, including tables for organizations, projects, issues, embeddings, etc.
 *   **Vector Store:** Integrates with PGVector for storing and querying issue embeddings.

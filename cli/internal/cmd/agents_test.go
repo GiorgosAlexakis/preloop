@@ -2009,6 +2009,56 @@ func TestSyncManagedAgentRuntimeArtifactsInstallsGeminiLauncher(t *testing.T) {
 	}
 }
 
+func TestSyncManagedAgentRuntimeArtifactsReplacesLegacyGeminiLauncher(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	launcherDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(launcherDir, 0o755); err != nil {
+		t.Fatalf("failed to create launcher dir: %v", err)
+	}
+	originalDir := filepath.Join(home, "orig-bin")
+	if err := os.MkdirAll(originalDir, 0o755); err != nil {
+		t.Fatalf("failed to create original bin dir: %v", err)
+	}
+	originalPath := filepath.Join(originalDir, "gemini")
+	if err := os.WriteFile(
+		originalPath,
+		[]byte("#!/usr/bin/env bash\nprintf '%s|%s' \"$GEMINI_API_KEY\" \"$GOOGLE_GEMINI_BASE_URL\"\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("failed to write fake gemini executable: %v", err)
+	}
+	legacyWrapper := filepath.Join(launcherDir, "gemini")
+	if err := os.WriteFile(
+		legacyWrapper,
+		[]byte("#!/bin/zsh\nset -eu\nif [[ -f \"$HOME/.preloop/agents/runtime/gemini-cli.env\" ]]; then\n  source \"$HOME/.preloop/agents/runtime/gemini-cli.env\"\nfi\nexec "+shellSingleQuote(originalPath)+" \"$@\"\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("failed to write legacy gemini wrapper: %v", err)
+	}
+	t.Setenv(
+		"PATH",
+		launcherDir+string(os.PathListSeparator)+originalDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	if err := syncManagedAgentRuntimeArtifacts(
+		AgentConfig{Name: "Gemini CLI"},
+		"https://preloop.example",
+		"gemini-durable-token",
+	); err != nil {
+		t.Fatalf("expected legacy gemini wrapper to be replaced, got: %v", err)
+	}
+
+	data, err := os.ReadFile(legacyWrapper)
+	if err != nil {
+		t.Fatalf("failed to read replaced gemini wrapper: %v", err)
+	}
+	if !strings.Contains(string(data), preloopManagedLauncherMarker) {
+		t.Fatalf("expected replaced gemini wrapper to include managed marker, got %q", string(data))
+	}
+}
+
 func TestSyncManagedAgentRuntimeArtifactsInstallsCodexLauncher(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -2049,6 +2099,42 @@ func TestSyncManagedAgentRuntimeArtifactsInstallsCodexLauncher(t *testing.T) {
 	}
 	if got := string(output); got != "codex-durable-token" {
 		t.Fatalf("unexpected codex launcher env output: %q", got)
+	}
+}
+
+func TestRemoveManagedAgentRuntimeArtifactsRemovesLegacyGeminiLauncher(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	runtimeDir := filepath.Join(home, ".preloop", "agents", "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatalf("failed to create runtime dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "gemini-cli.env"), []byte("export GEMINI_API_KEY='x'\n"), 0o600); err != nil {
+		t.Fatalf("failed to write runtime env file: %v", err)
+	}
+
+	launcherDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(launcherDir, 0o755); err != nil {
+		t.Fatalf("failed to create launcher dir: %v", err)
+	}
+	legacyWrapper := filepath.Join(launcherDir, "gemini")
+	if err := os.WriteFile(
+		legacyWrapper,
+		[]byte("#!/bin/zsh\nsource \"$HOME/.preloop/agents/runtime/gemini-cli.env\"\nexec /usr/bin/env true\n"),
+		0o755,
+	); err != nil {
+		t.Fatalf("failed to write legacy gemini wrapper: %v", err)
+	}
+
+	if err := removeManagedAgentRuntimeArtifacts(AgentConfig{Name: "Gemini CLI"}); err != nil {
+		t.Fatalf("unexpected remove error: %v", err)
+	}
+	if _, err := os.Stat(legacyWrapper); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy gemini wrapper to be removed, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "gemini-cli.env")); !os.IsNotExist(err) {
+		t.Fatalf("expected gemini runtime env file to be removed, got err=%v", err)
 	}
 }
 

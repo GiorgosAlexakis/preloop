@@ -106,6 +106,32 @@ type aiModelCreateRequest struct {
 	MetaData        map[string]interface{} `json:"meta_data,omitempty"`
 }
 
+type managedAgentModelBindingSummary struct {
+	ID              string `json:"id"`
+	AIModelID       string `json:"ai_model_id"`
+	BindingType     string `json:"binding_type"`
+	ConfigKey       string `json:"config_key"`
+	GatewayAlias    string `json:"gateway_alias"`
+	IsPrimary       bool   `json:"is_primary"`
+	Status          string `json:"status"`
+	ProviderName    string `json:"provider_name"`
+	ModelIdentifier string `json:"model_identifier"`
+	AIModelName     string `json:"ai_model_name"`
+}
+
+type managedAgentModelBindingSyncItem struct {
+	AIModelID    string `json:"ai_model_id"`
+	BindingType  string `json:"binding_type"`
+	ConfigKey    string `json:"config_key"`
+	GatewayAlias string `json:"gateway_alias"`
+	IsPrimary    bool   `json:"is_primary"`
+	Status       string `json:"status"`
+}
+
+type managedAgentModelBindingSyncRequest struct {
+	Bindings []managedAgentModelBindingSyncItem `json:"bindings"`
+}
+
 type managedGatewayUpstream struct {
 	SourceAgent       string
 	SourceProviderID  string
@@ -134,9 +160,8 @@ func (u *managedGatewayUpstream) CanRouteThroughGateway() bool {
 		len(u.CredentialPayload) > 0
 }
 
-type openClawParsedConfig struct {
-	Document        map[string]interface{}
-	MCPServers      map[string]MCPDef
+type openClawConfiguredModel struct {
+	ConfigKey       string
 	ModelRef        string
 	ModelAlias      string
 	ModelID         string
@@ -148,7 +173,26 @@ type openClawParsedConfig struct {
 	ProviderRegion  string
 	UsesAmbientAuth bool
 	ModelCatalog    map[string]interface{}
+	IsPrimary       bool
 	Notes           []string
+}
+
+type openClawParsedConfig struct {
+	Document         map[string]interface{}
+	MCPServers       map[string]MCPDef
+	ModelRef         string
+	ModelAlias       string
+	ModelID          string
+	ProviderID       string
+	ProviderName     string
+	ProviderAPI      string
+	ProviderBaseURL  string
+	ProviderAPIKey   string
+	ProviderRegion   string
+	UsesAmbientAuth  bool
+	ModelCatalog     map[string]interface{}
+	ConfiguredModels []openClawConfiguredModel
+	Notes            []string
 }
 
 type bedrockCredentialPayload struct {
@@ -280,13 +324,12 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	}
 
 	var aiModelNotes []string
+	modelBindings := make([]managedAgentModelBindingSyncItem, 0)
 	if strings.EqualFold(strings.TrimSpace(agent.Name), "openclaw") {
 		parsed, err := parseOpenClawConfig(agent.ConfigPath)
 		if err != nil {
 			return err
 		}
-		gatewayURL, _ := resolveOpenClawGateway(baseURL, parsed.ProviderName, parsed.ModelAlias)
-
 		if parsed.ProviderAPIKey == "" && !parsed.UsesAmbientAuth {
 			if !opts.SkipConfirmation && !opts.AutoApprove {
 				fmt.Fprintf(opts.Output, "\n[Action Required] OpenClaw model %s requires an API key for gateway routing.\n", parsed.ModelAlias) //nolint:errcheck
@@ -301,12 +344,12 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			}
 		}
 
-		_, aiModelNotes, err = syncOpenClawAIModel(
+		modelBindings, aiModelNotes, err = syncOpenClawAIModels(
 			client,
 			managedAgent,
 			agent,
 			parsed,
-			gatewayURL,
+			baseURL,
 		)
 		if err != nil {
 			return err
@@ -330,7 +373,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			plan.Notes = append(plan.Notes, upstream.Notes...)
 		}
 		if upstream != nil && upstream.CanRouteThroughGateway() {
-			_, gatewayNotes, gatewayErr := syncManagedGatewayAIModel(
+			syncedModel, gatewayNotes, gatewayErr := syncManagedGatewayAIModel(
 				client,
 				managedAgent,
 				agent,
@@ -341,6 +384,18 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 				return gatewayErr
 			}
 			plan.Notes = append(plan.Notes, gatewayNotes...)
+			if syncedModel != nil {
+				modelBindings = []managedAgentModelBindingSyncItem{
+					{
+						AIModelID:    syncedModel.ID,
+						BindingType:  "configured",
+						ConfigKey:    managedGatewayBindingConfigKey(agent),
+						GatewayAlias: upstream.ManagedModelAlias,
+						IsPrimary:    true,
+						Status:       "gateway_ready",
+					},
+				}
+			}
 			plan, err = applyManagedGatewayForAgent(
 				plan,
 				agent,
@@ -353,6 +408,11 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			}
 		} else if note := unresolvedManagedGatewayNote(agent, upstream); note != "" {
 			plan.Notes = append(plan.Notes, note)
+		}
+	}
+	if len(modelBindings) > 0 {
+		if _, err := syncManagedAgentModelBindings(client, managedAgent.ID, modelBindings); err != nil {
+			return err
 		}
 	}
 
@@ -982,72 +1042,63 @@ func parseOpenClawConfig(path string) (*openClawParsedConfig, error) {
 	}
 
 	mcpServers := parseServerMapFromDocument(document)
-	modelRef := extractOpenClawPrimaryModel(document)
-	providerID, modelID := splitOpenClawModelRef(modelRef)
-	providerDocument := document
+	sourceDocument := document
 	notes := []string{}
+	modelRef := extractOpenClawPrimaryModel(document)
+	providerID, _ := splitOpenClawModelRef(modelRef)
 	if strings.EqualFold(providerID, openClawManagedProviderID) {
 		if discovered := loadOpenClawDiscoveredConfig(path); discovered != nil {
-			providerDocument = discovered
-			discoveredModelRef := extractOpenClawPrimaryModel(discovered)
-			if discoveredProviderID, discoveredModelID := splitOpenClawModelRef(discoveredModelRef); discoveredProviderID != "" && discoveredModelID != "" {
-				providerID = discoveredProviderID
-				modelID = discoveredModelID
-				notes = append(notes, "Recovered OpenClaw upstream model settings from the saved discovered config.")
-			}
-		}
-		if strings.EqualFold(providerID, openClawManagedProviderID) {
-			if upstreamProviderID, upstreamModelID := splitOpenClawModelRef(modelID); upstreamProviderID != "" && upstreamModelID != "" {
-				providerID = upstreamProviderID
-				modelID = upstreamModelID
-			}
+			sourceDocument = discovered
+			notes = append(
+				notes,
+				"Recovered OpenClaw upstream model settings from the saved discovered config.",
+			)
 		}
 	}
 
-	providerLookupID := resolveOpenClawProviderLookupID(providerDocument, providerID)
-	providerName := inferOpenClawProviderName(
-		providerLookupID,
-		lookupString(providerDocument, "models", "providers", providerLookupID, "api"),
-	)
-	providerRegion := resolveOpenClawProviderRegion(providerDocument, providerLookupID)
-	apiKey, usesAmbientAuth, resolvedNote := resolveOpenClawProviderCredentials(
-		providerDocument,
-		providerLookupID,
-		providerName,
-		providerRegion,
-	)
-	if resolvedNote != "" {
-		notes = append(notes, resolvedNote)
+	configuredModels := extractOpenClawConfiguredModels(sourceDocument)
+	for _, configuredModel := range configuredModels {
+		notes = append(notes, configuredModel.Notes...)
+	}
+	if len(configuredModels) == 0 && strings.TrimSpace(modelRef) != "" {
+		configuredModels = append(
+			configuredModels,
+			resolveOpenClawConfiguredModel(
+				sourceDocument,
+				"legacy.configured_model",
+				modelRef,
+				true,
+			),
+		)
 	}
 
-	providerBaseURL := lookupString(
-		providerDocument,
-		"models",
-		"providers",
-		providerLookupID,
-		"baseUrl",
-	)
-	if strings.EqualFold(providerID, openClawManagedProviderID) {
-		providerBaseURL = ""
+	primaryModel := openClawConfiguredModel{}
+	for _, configuredModel := range configuredModels {
+		if configuredModel.IsPrimary {
+			primaryModel = configuredModel
+			break
+		}
+	}
+	if strings.TrimSpace(primaryModel.ModelAlias) == "" && len(configuredModels) > 0 {
+		primaryModel = configuredModels[0]
 	}
 
 	return &openClawParsedConfig{
-		Document:     document,
-		MCPServers:   mcpServers,
-		ModelRef:     modelRef,
-		ModelAlias:   buildOpenClawGatewayAlias(providerID, modelID),
-		ModelID:      modelID,
-		ProviderID:   providerID,
-		ProviderName: providerName,
-		ProviderAPI: pickOpenClawGatewayAPI(
-			lookupString(providerDocument, "models", "providers", providerLookupID, "api"),
-		),
-		ProviderBaseURL: providerBaseURL,
-		ProviderAPIKey:  apiKey,
-		ProviderRegion:  providerRegion,
-		UsesAmbientAuth: usesAmbientAuth,
-		ModelCatalog:    findOpenClawModelCatalog(providerDocument, providerLookupID, modelID),
-		Notes:           notes,
+		Document:         document,
+		MCPServers:       mcpServers,
+		ModelRef:         primaryModel.ModelRef,
+		ModelAlias:       primaryModel.ModelAlias,
+		ModelID:          primaryModel.ModelID,
+		ProviderID:       primaryModel.ProviderID,
+		ProviderName:     primaryModel.ProviderName,
+		ProviderAPI:      primaryModel.ProviderAPI,
+		ProviderBaseURL:  primaryModel.ProviderBaseURL,
+		ProviderAPIKey:   primaryModel.ProviderAPIKey,
+		ProviderRegion:   primaryModel.ProviderRegion,
+		UsesAmbientAuth:  primaryModel.UsesAmbientAuth,
+		ModelCatalog:     primaryModel.ModelCatalog,
+		ConfiguredModels: configuredModels,
+		Notes:            notes,
 	}, nil
 }
 
@@ -2561,38 +2612,37 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 	}
 
 	managedServerURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
-	gatewayURL, gatewayAPI := resolveOpenClawGateway(baseURL, parsed.ProviderName, parsed.ModelAlias)
-
 	mcp := ensureObjectPath(managedDoc, "mcp")
 	mcp["servers"] = map[string]interface{}{
 		"preloop": openClawManagedMCPAdapter{}.BuildManagedServer(baseURL, token),
 	}
 
-	models := ensureObjectPath(managedDoc, "models")
 	managedModelRef := ""
-	if parsed.ModelAlias != "" {
-		models["mode"] = "replace"
-		models["providers"] = map[string]interface{}{
-			openClawManagedProviderID: buildOpenClawManagedProvider(
-				parsed,
-				gatewayURL,
-				gatewayAPI,
-				token,
-			),
+	providerModels, gatewayURL, gatewayAPI, providerNotes := selectOpenClawManagedProviderModels(parsed, baseURL)
+	notes := append([]string{}, parsed.Notes...)
+	notes = append(notes, providerNotes...)
+	if len(providerModels) > 0 {
+		providers := ensureObjectPath(ensureObjectPath(managedDoc, "models"), "providers")
+		providers[openClawManagedProviderID] = buildOpenClawManagedProvider(
+			providerModels,
+			gatewayURL,
+			gatewayAPI,
+			token,
+		)
+		rewriteMap := make(map[string]string, len(providerModels))
+		for _, providerModel := range providerModels {
+			rewriteMap[providerModel.ModelRef] = openClawManagedProviderID + "/" + providerModel.ModelAlias
+			if providerModel.IsPrimary && managedModelRef == "" {
+				managedModelRef = rewriteMap[providerModel.ModelRef]
+			}
 		}
-		managedModelAlias := parsed.ModelAlias
-		if strings.EqualFold(parsed.ProviderID, openClawManagedProviderID) {
-			managedModelAlias = parsed.ModelID
-		}
-		managedModelRef = openClawManagedProviderID + "/" + managedModelAlias
-		rewriteOpenClawModelTargets(managedDoc, managedModelRef)
+		rewriteOpenClawModelTargets(managedDoc, rewriteMap)
 	}
 
-	notes := append([]string{}, parsed.Notes...)
 	if managedModelRef == "" {
 		notes = append(
 			notes,
-			"OpenClaw config did not declare an active model; MCP was managed but no model rewrite was applied.",
+			"OpenClaw MCP was managed, but no configured model could be rewritten to the Preloop gateway.",
 		)
 	} else {
 		notes = append(
@@ -2617,9 +2667,6 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 	sanitizeConfigSnapshot(sanitizedManaged)
 
 	managedModelAlias := parsed.ModelAlias
-	if strings.EqualFold(parsed.ProviderID, openClawManagedProviderID) {
-		managedModelAlias = parsed.ModelID
-	}
 
 	return managedMCPEnrollmentPlan{
 		Agent:               agent,
@@ -2635,35 +2682,115 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 	}, nil
 }
 
-func buildOpenClawManagedProvider(
+func selectOpenClawManagedProviderModels(
 	parsed *openClawParsedConfig,
+	baseURL string,
+) ([]openClawConfiguredModel, string, string, []string) {
+	if parsed == nil {
+		return nil, "", "", nil
+	}
+	configuredModels := parsed.ConfiguredModels
+	if len(configuredModels) == 0 && strings.TrimSpace(parsed.ModelAlias) != "" {
+		configuredModels = []openClawConfiguredModel{
+			{
+				ModelRef:        parsed.ModelRef,
+				ModelAlias:      parsed.ModelAlias,
+				ModelID:         parsed.ModelID,
+				ProviderID:      parsed.ProviderID,
+				ProviderName:    parsed.ProviderName,
+				ProviderAPI:     parsed.ProviderAPI,
+				ProviderBaseURL: parsed.ProviderBaseURL,
+				ProviderAPIKey:  parsed.ProviderAPIKey,
+				ProviderRegion:  parsed.ProviderRegion,
+				UsesAmbientAuth: parsed.UsesAmbientAuth,
+				ModelCatalog:    parsed.ModelCatalog,
+				IsPrimary:       true,
+			},
+		}
+	}
+	if len(configuredModels) == 0 {
+		return nil, "", "", nil
+	}
+
+	primaryModel := configuredModels[0]
+	for _, candidate := range configuredModels {
+		if candidate.IsPrimary {
+			primaryModel = candidate
+			break
+		}
+	}
+	gatewayURL, gatewayAPI := resolveOpenClawGateway(
+		baseURL,
+		primaryModel.ProviderName,
+		primaryModel.ModelAlias,
+	)
+	selected := make([]openClawConfiguredModel, 0, len(configuredModels))
+	notes := make([]string, 0)
+	seenAliases := map[string]bool{}
+	for _, candidate := range configuredModels {
+		if strings.TrimSpace(candidate.ModelAlias) == "" {
+			continue
+		}
+		if !candidate.UsesAmbientAuth && strings.TrimSpace(candidate.ProviderAPIKey) == "" {
+			continue
+		}
+		candidateGatewayURL, candidateGatewayAPI := resolveOpenClawGateway(
+			baseURL,
+			candidate.ProviderName,
+			candidate.ModelAlias,
+		)
+		if candidateGatewayURL != gatewayURL || candidateGatewayAPI != gatewayAPI {
+			notes = append(
+				notes,
+				fmt.Sprintf(
+					"OpenClaw model %s was imported into Preloop but left on its original provider because it requires a different gateway transport than the active managed model.",
+					candidate.ModelAlias,
+				),
+			)
+			continue
+		}
+		if seenAliases[candidate.ModelAlias] {
+			continue
+		}
+		seenAliases[candidate.ModelAlias] = true
+		selected = append(selected, candidate)
+	}
+	return selected, gatewayURL, gatewayAPI, notes
+}
+
+func buildOpenClawManagedProvider(
+	configuredModels []openClawConfiguredModel,
 	gatewayURL string,
 	gatewayAPI string,
 	token string,
 ) map[string]interface{} {
-	modelEntry := map[string]interface{}{
-		"id":   parsed.ModelAlias,
-		"name": parsed.ModelAlias,
+	modelEntries := make([]interface{}, 0, len(configuredModels))
+	for _, configuredModel := range configuredModels {
+		modelEntry := map[string]interface{}{
+			"id":   configuredModel.ModelAlias,
+			"name": configuredModel.ModelAlias,
+		}
+		for key, value := range configuredModel.ModelCatalog {
+			modelEntry[key] = value
+		}
+		modelEntry["id"] = configuredModel.ModelAlias
+		if _, ok := modelEntry["name"].(string); !ok {
+			modelEntry["name"] = configuredModel.ModelAlias
+		}
+		modelEntry["api"] = gatewayAPI
+		modelEntries = append(modelEntries, modelEntry)
 	}
-	for key, value := range parsed.ModelCatalog {
-		modelEntry[key] = value
-	}
-	modelEntry["id"] = parsed.ModelAlias
-	if _, ok := modelEntry["name"].(string); !ok {
-		modelEntry["name"] = parsed.ModelAlias
-	}
-	modelEntry["api"] = gatewayAPI
 
 	return map[string]interface{}{
 		"baseUrl":    gatewayURL,
 		"apiKey":     token,
 		"api":        gatewayAPI,
 		"authHeader": true,
-		"models":     []interface{}{modelEntry},
+		"models":     modelEntries,
 	}
 }
 
-func syncOpenClawAIModel(
+func syncSingleOpenClawAIModel(
 	client *api.Client,
 	managedAgent *managedAgentSummary,
 	agent AgentConfig,
@@ -2769,6 +2896,90 @@ func syncOpenClawAIModel(
 		fmt.Sprintf("Imported AI model %q for gateway alias %s.", created.Name, managedModelAlias),
 	)
 	return &created, notes, nil
+}
+
+func syncOpenClawAIModels(
+	client *api.Client,
+	managedAgent *managedAgentSummary,
+	agent AgentConfig,
+	parsed *openClawParsedConfig,
+	baseURL string,
+) ([]managedAgentModelBindingSyncItem, []string, error) {
+	if parsed == nil {
+		return nil, nil, nil
+	}
+
+	configuredModels := append([]openClawConfiguredModel{}, parsed.ConfiguredModels...)
+	if len(configuredModels) == 0 && strings.TrimSpace(parsed.ModelAlias) != "" {
+		configuredModels = append(
+			configuredModels,
+			openClawConfiguredModel{
+				ConfigKey:       "legacy.configured_model",
+				ModelRef:        parsed.ModelRef,
+				ModelAlias:      parsed.ModelAlias,
+				ModelID:         parsed.ModelID,
+				ProviderID:      parsed.ProviderID,
+				ProviderName:    parsed.ProviderName,
+				ProviderAPI:     parsed.ProviderAPI,
+				ProviderBaseURL: parsed.ProviderBaseURL,
+				ProviderAPIKey:  parsed.ProviderAPIKey,
+				ProviderRegion:  parsed.ProviderRegion,
+				UsesAmbientAuth: parsed.UsesAmbientAuth,
+				ModelCatalog:    parsed.ModelCatalog,
+				IsPrimary:       true,
+			},
+		)
+	}
+
+	bindings := make([]managedAgentModelBindingSyncItem, 0, len(configuredModels))
+	notes := make([]string, 0)
+	for _, configuredModel := range configuredModels {
+		tempParsed := &openClawParsedConfig{
+			ModelRef:        configuredModel.ModelRef,
+			ModelAlias:      configuredModel.ModelAlias,
+			ModelID:         configuredModel.ModelID,
+			ProviderID:      configuredModel.ProviderID,
+			ProviderName:    configuredModel.ProviderName,
+			ProviderAPI:     configuredModel.ProviderAPI,
+			ProviderBaseURL: configuredModel.ProviderBaseURL,
+			ProviderAPIKey:  configuredModel.ProviderAPIKey,
+			ProviderRegion:  configuredModel.ProviderRegion,
+			UsesAmbientAuth: configuredModel.UsesAmbientAuth,
+			ModelCatalog:    configuredModel.ModelCatalog,
+		}
+		modelGatewayURL, _ := resolveOpenClawGateway(
+			baseURL,
+			configuredModel.ProviderName,
+			configuredModel.ModelAlias,
+		)
+		model, modelNotes, err := syncSingleOpenClawAIModel(
+			client,
+			managedAgent,
+			agent,
+			tempParsed,
+			modelGatewayURL,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		notes = append(notes, modelNotes...)
+		if model == nil {
+			continue
+		}
+		status := "unresolved_credentials"
+		if model.HasAPIKey || aiModelUsesAmbientProviderCredentials(model) {
+			status = "gateway_ready"
+		}
+		bindings = append(bindings, managedAgentModelBindingSyncItem{
+			AIModelID:    model.ID,
+			BindingType:  "configured",
+			ConfigKey:    configuredModel.ConfigKey,
+			GatewayAlias: configuredModel.ModelAlias,
+			IsPrimary:    configuredModel.IsPrimary,
+			Status:       status,
+		})
+	}
+	return bindings, notes, nil
 }
 
 func syncManagedGatewayAIModel(
@@ -2900,6 +3111,37 @@ func syncManagedGatewayAIModel(
 		),
 	)
 	return &created, notes, nil
+}
+
+func syncManagedAgentModelBindings(
+	client *api.Client,
+	managedAgentID string,
+	bindings []managedAgentModelBindingSyncItem,
+) ([]managedAgentModelBindingSummary, error) {
+	if client == nil || strings.TrimSpace(managedAgentID) == "" {
+		return nil, nil
+	}
+	payload := managedAgentModelBindingSyncRequest{Bindings: bindings}
+	var response []managedAgentModelBindingSummary
+	if err := client.Put(
+		"/api/v1/agents/"+managedAgentID+"/model-bindings",
+		payload,
+		&response,
+	); err != nil {
+		return nil, fmt.Errorf("failed to sync managed agent model bindings: %w", err)
+	}
+	return response, nil
+}
+
+func managedGatewayBindingConfigKey(agent AgentConfig) string {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "claude code":
+		return "env.ANTHROPIC_MODEL"
+	case "gemini cli":
+		return "model.name"
+	default:
+		return "model"
+	}
 }
 
 func aiModelUsesAmbientProviderCredentials(model *aiModelResponse) bool {
@@ -3292,7 +3534,7 @@ func syncManagedAgentLauncher(commandName, envFileName string, exports map[strin
 		return fmt.Errorf("failed to locate %s executable for managed launcher: %w", commandName, err)
 	}
 	if existing, err := os.ReadFile(launcherPath); err == nil {
-		if !strings.Contains(string(existing), preloopManagedLauncherMarker) {
+		if !isManagedAgentLauncherScript(string(existing), envFileName) {
 			return fmt.Errorf(
 				"refusing to overwrite existing %s launcher at %s because it is not managed by Preloop",
 				commandName,
@@ -3326,7 +3568,7 @@ func removeManagedAgentLauncher(commandName, envFileName string) error {
 		return err
 	}
 	if existing, err := os.ReadFile(launcherPath); err == nil {
-		if strings.Contains(string(existing), preloopManagedLauncherMarker) {
+		if isManagedAgentLauncherScript(string(existing), envFileName) {
 			if err := os.Remove(launcherPath); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("failed to remove managed launcher: %w", err)
 			}
@@ -3351,6 +3593,24 @@ func managedAgentLauncherPath(commandName string) (string, error) {
 		return "", fmt.Errorf("failed to resolve home directory: %w", err)
 	}
 	return filepath.Join(homeDir, ".local", "bin", commandName), nil
+}
+
+func isManagedAgentLauncherScript(script, envFileName string) bool {
+	if strings.Contains(script, preloopManagedLauncherMarker) {
+		return true
+	}
+	normalized := strings.ReplaceAll(script, "\\", "/")
+	legacyNeedles := []string{
+		"/.preloop/agents/runtime/" + envFileName,
+		"$HOME/.preloop/agents/runtime/" + envFileName,
+		"${HOME}/.preloop/agents/runtime/" + envFileName,
+	}
+	for _, needle := range legacyNeedles {
+		if strings.Contains(normalized, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveManagedAgentExecutablePath(commandName, launcherPath string) (string, error) {
@@ -3755,6 +4015,93 @@ func extractOpenClawPrimaryModel(document map[string]interface{}) string {
 	return ""
 }
 
+func extractOpenClawConfiguredModels(document map[string]interface{}) []openClawConfiguredModel {
+	if document == nil {
+		return nil
+	}
+
+	type modelRef struct {
+		ConfigKey string
+		ModelRef  string
+		IsPrimary bool
+	}
+
+	refs := make([]modelRef, 0)
+	addSelector := func(value interface{}, basePath string, defaultPrimary bool) {
+		switch typed := value.(type) {
+		case string:
+			if trimmed := strings.TrimSpace(typed); trimmed != "" {
+				refs = append(refs, modelRef{
+					ConfigKey: basePath + ".model",
+					ModelRef:  trimmed,
+					IsPrimary: defaultPrimary,
+				})
+			}
+		case map[string]interface{}:
+			if primary, _ := typed["primary"].(string); strings.TrimSpace(primary) != "" {
+				refs = append(refs, modelRef{
+					ConfigKey: basePath + ".model.primary",
+					ModelRef:  strings.TrimSpace(primary),
+					IsPrimary: true,
+				})
+			}
+			if fallbacks, ok := typed["fallbacks"].([]interface{}); ok {
+				for index, item := range fallbacks {
+					fallback, _ := item.(string)
+					if strings.TrimSpace(fallback) == "" {
+						continue
+					}
+					refs = append(refs, modelRef{
+						ConfigKey: fmt.Sprintf("%s.model.fallbacks[%d]", basePath, index),
+						ModelRef:  strings.TrimSpace(fallback),
+						IsPrimary: false,
+					})
+				}
+			}
+		}
+	}
+
+	addSelector(lookupValue(document, "agents", "defaults", "model"), "agents.defaults", true)
+	addSelector(lookupValue(document, "agent", "model"), "agent", len(refs) == 0)
+	if agentsList, ok := lookupValue(document, "agents", "list").([]interface{}); ok {
+		for index, item := range agentsList {
+			entry, ok := asObjectMap(item)
+			if !ok {
+				continue
+			}
+			identifier := lookupString(entry, "id")
+			if identifier == "" {
+				identifier = fmt.Sprintf("%d", index)
+			}
+			addSelector(entry["model"], fmt.Sprintf("agents.list[%s]", identifier), false)
+		}
+	}
+
+	if len(refs) == 0 {
+		return nil
+	}
+
+	results := make([]openClawConfiguredModel, 0, len(refs))
+	seenKeys := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if seenKeys[ref.ConfigKey] {
+			continue
+		}
+		seenKeys[ref.ConfigKey] = true
+		resolved := resolveOpenClawConfiguredModel(
+			document,
+			ref.ConfigKey,
+			ref.ModelRef,
+			ref.IsPrimary,
+		)
+		if strings.TrimSpace(resolved.ModelAlias) == "" {
+			continue
+		}
+		results = append(results, resolved)
+	}
+	return results
+}
+
 func splitOpenClawModelRef(modelRef string) (string, string) {
 	trimmed := strings.TrimSpace(modelRef)
 	if trimmed == "" {
@@ -3775,6 +4122,55 @@ func buildOpenClawGatewayAlias(providerID, modelID string) string {
 		return providerID
 	}
 	return providerID + "/" + modelID
+}
+
+func resolveOpenClawConfiguredModel(
+	document map[string]interface{},
+	configKey string,
+	modelRef string,
+	isPrimary bool,
+) openClawConfiguredModel {
+	providerID, modelID := splitOpenClawModelRef(modelRef)
+	if strings.EqualFold(providerID, openClawManagedProviderID) {
+		if upstreamProviderID, upstreamModelID := splitOpenClawModelRef(modelID); upstreamProviderID != "" && upstreamModelID != "" {
+			providerID = upstreamProviderID
+			modelID = upstreamModelID
+		}
+	}
+
+	providerLookupID := resolveOpenClawProviderLookupID(document, providerID)
+	providerName := inferOpenClawProviderName(
+		providerLookupID,
+		lookupString(document, "models", "providers", providerLookupID, "api"),
+	)
+	providerRegion := resolveOpenClawProviderRegion(document, providerLookupID)
+	apiKey, usesAmbientAuth, resolvedNote := resolveOpenClawProviderCredentials(
+		document,
+		providerLookupID,
+		providerName,
+		providerRegion,
+	)
+	notes := []string{}
+	if resolvedNote != "" {
+		notes = append(notes, resolvedNote)
+	}
+
+	return openClawConfiguredModel{
+		ConfigKey:       configKey,
+		ModelRef:        strings.TrimSpace(modelRef),
+		ModelAlias:      buildOpenClawGatewayAlias(providerID, modelID),
+		ModelID:         modelID,
+		ProviderID:      providerID,
+		ProviderName:    providerName,
+		ProviderAPI:     pickOpenClawGatewayAPI(lookupString(document, "models", "providers", providerLookupID, "api")),
+		ProviderBaseURL: lookupString(document, "models", "providers", providerLookupID, "baseUrl"),
+		ProviderAPIKey:  apiKey,
+		ProviderRegion:  providerRegion,
+		UsesAmbientAuth: usesAmbientAuth,
+		ModelCatalog:    findOpenClawModelCatalog(document, providerLookupID, modelID),
+		IsPrimary:       isPrimary,
+		Notes:           notes,
+	}
 }
 
 func inferOpenClawProviderName(providerID, api string) string {
@@ -4494,8 +4890,8 @@ func findOpenClawModelCatalog(
 	return nil
 }
 
-func rewriteOpenClawModelTargets(document map[string]interface{}, managedModelRef string) {
-	rewriteOpenClawModelSelector(document, managedModelRef, "agents", "defaults")
+func rewriteOpenClawModelTargets(document map[string]interface{}, managedModelRefs map[string]string) {
+	rewriteOpenClawModelSelector(document, managedModelRefs, "agents", "defaults")
 
 	agentsList, ok := lookupValue(document, "agents", "list").([]interface{})
 	if ok {
@@ -4504,7 +4900,7 @@ func rewriteOpenClawModelTargets(document map[string]interface{}, managedModelRe
 			if !ok {
 				continue
 			}
-			rewriteOpenClawModelSelector(entry, managedModelRef)
+			rewriteOpenClawModelSelector(entry, managedModelRefs)
 		}
 	}
 
@@ -4513,8 +4909,17 @@ func rewriteOpenClawModelTargets(document map[string]interface{}, managedModelRe
 	} {
 		if container, ok := asObjectMap(lookupValue(document, path...)); ok {
 			clearMap(container)
-			container[managedModelRef] = map[string]interface{}{
-				"alias": managedModelRef,
+			for _, configuredModel := range extractOpenClawConfiguredModels(document) {
+				if strings.TrimSpace(configuredModel.ModelRef) == "" {
+					continue
+				}
+				resolvedRef := configuredModel.ModelRef
+				if managedRef := managedModelRefs[configuredModel.ModelRef]; strings.TrimSpace(managedRef) != "" {
+					resolvedRef = managedRef
+				}
+				container[resolvedRef] = map[string]interface{}{
+					"alias": resolvedRef,
+				}
 			}
 		}
 	}
@@ -4522,23 +4927,36 @@ func rewriteOpenClawModelTargets(document map[string]interface{}, managedModelRe
 
 func rewriteOpenClawModelSelector(
 	root map[string]interface{},
-	managedModelRef string,
+	managedModelRefs map[string]string,
 	path ...string,
 ) {
 	container := ensureObjectPath(root, path...)
 	current, exists := container["model"]
 	if !exists || current == nil {
-		container["model"] = managedModelRef
 		return
 	}
 	switch typed := current.(type) {
 	case string:
-		container["model"] = managedModelRef
+		if managedRef := managedModelRefs[strings.TrimSpace(typed)]; strings.TrimSpace(managedRef) != "" {
+			container["model"] = managedRef
+		}
 	case map[string]interface{}:
-		typed["primary"] = managedModelRef
-		delete(typed, "fallbacks")
+		if primary, _ := typed["primary"].(string); strings.TrimSpace(primary) != "" {
+			if managedRef := managedModelRefs[strings.TrimSpace(primary)]; strings.TrimSpace(managedRef) != "" {
+				typed["primary"] = managedRef
+			}
+		}
+		if fallbacks, ok := typed["fallbacks"].([]interface{}); ok {
+			for index, item := range fallbacks {
+				fallback, _ := item.(string)
+				if managedRef := managedModelRefs[strings.TrimSpace(fallback)]; strings.TrimSpace(managedRef) != "" {
+					fallbacks[index] = managedRef
+				}
+			}
+			typed["fallbacks"] = fallbacks
+		}
 	default:
-		container["model"] = managedModelRef
+		return
 	}
 }
 

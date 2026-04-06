@@ -97,6 +97,7 @@ def test_account_agents_endpoint_lists_onboarded_agents(client, db_session, test
     assert len(body["items"]) == 1
     item = body["items"][0]
     assert item["display_name"] == "Claude Code Workspace"
+    assert item["agent_kind"] == "claude_code"
     assert item["session_source_type"] == "claude_code"
     assert item["session_source_id"] == "workspace-123"
     assert item["session_reference"] == "claude-session-abc"
@@ -185,11 +186,104 @@ def test_account_agents_endpoint_exposes_configured_model_alias(
     body = response.json()
     assert body["items"][0]["configured_model_alias"] == "zai/glm-5-turbo"
     assert body["items"][0]["configured_model_id"] == str(ai_model.id)
+    assert (
+        body["items"][0]["configured_models"][0]["gateway_alias"] == "zai/glm-5-turbo"
+    )
+    assert body["items"][0]["configured_models"][0]["ai_model_id"] == str(ai_model.id)
     assert body["items"][0]["onboarding_state"] == "fully_onboarded"
 
     detail_response = client.get(f"/api/v1/agents/{body['items'][0]['id']}")
     assert detail_response.status_code == 200
     assert detail_response.json()["agent"]["configured_model_id"] == str(ai_model.id)
+    assert (
+        detail_response.json()["agent"]["configured_models"][0]["gateway_alias"]
+        == "zai/glm-5-turbo"
+    )
+
+
+def test_account_agent_model_bindings_endpoint_replaces_bindings(
+    client, db_session, test_user
+):
+    """Managed-agent bindings should be explicitly replaceable through the API."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "opencode",
+            "session_source_id": "workspace-bindings",
+            "runtime_principal_name": "OpenCode Workspace",
+        },
+    )
+    assert token_response.status_code == 201
+
+    agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="opencode",
+        session_source_id="workspace-bindings",
+    )
+    assert agent is not None
+
+    primary_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "OpenAI GPT-5.4",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5.4",
+        },
+        account_id=test_user.account_id,
+    )
+    fallback_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "OpenAI GPT-4.1",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+        },
+        account_id=test_user.account_id,
+    )
+
+    response = client.put(
+        f"/api/v1/agents/{agent.id}/model-bindings",
+        json={
+            "bindings": [
+                {
+                    "ai_model_id": str(primary_model.id),
+                    "binding_type": "configured",
+                    "config_key": "model.primary",
+                    "gateway_alias": "openai/gpt-5.4",
+                    "is_primary": True,
+                    "status": "gateway_ready",
+                },
+                {
+                    "ai_model_id": str(fallback_model.id),
+                    "binding_type": "configured",
+                    "config_key": "model.fallbacks[0]",
+                    "gateway_alias": "openai/gpt-4.1",
+                    "is_primary": False,
+                    "status": "gateway_ready",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    bindings = response.json()
+    assert [binding["gateway_alias"] for binding in bindings] == [
+        "openai/gpt-5.4",
+        "openai/gpt-4.1",
+    ]
+
+    detail_response = client.get(f"/api/v1/agents/{agent.id}")
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert body["agent"]["configured_model_alias"] == "openai/gpt-5.4"
+    assert body["agent"]["configured_model_id"] == str(primary_model.id)
+    assert [
+        binding["config_key"] for binding in body["agent"]["configured_models"]
+    ] == [
+        "model.primary",
+        "model.fallbacks[0]",
+    ]
 
 
 def test_account_agents_endpoint_uses_most_recent_model_alias(

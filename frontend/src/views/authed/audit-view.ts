@@ -455,8 +455,12 @@ export class AuditView extends AuthedElement {
         return `Policy: Allow${d.rule_description ? ` — ${d.rule_description}` : ''}`;
       case 'policy_deny':
         return `Policy: Deny${d.rule_description ? ` — ${d.rule_description}` : ''}`;
-      case 'policy_require_approval':
-        return `Policy: Require Approval${d.rule_description ? ` — ${d.rule_description}` : ''}`;
+      case 'policy_require_approval': {
+        const desc = d.rule_description?.includes('Rule matched: None')
+          ? 'Default Rule'
+          : d.rule_description;
+        return `Policy: Require Approval${desc ? ` — ${desc}` : ''}`;
+      }
       case 'approval_created': {
         const timeout = d.timeout_seconds
           ? ` (timeout: ${Math.round(d.timeout_seconds / 60)}min)`
@@ -530,6 +534,9 @@ export class AuditView extends AuthedElement {
           'Gateway';
         if (event.status === 'budget_denied') {
           return `${providerLabel} budget denied: ${modelLabel}`;
+        }
+        if (event.status === 'success' || event.status === 'executed') {
+          return `${providerLabel} request succeeded: ${modelLabel}`;
         }
         return `${providerLabel} request failed: ${modelLabel}`;
       }
@@ -775,6 +782,9 @@ export class AuditView extends AuthedElement {
 
         ${expanded
           ? html`
+              ${hasSubs && isToolCall
+                ? this._renderStorySummary(group)
+                : nothing}
               ${this._renderEventDetails(event.details)}
               ${hasSubs
                 ? html`
@@ -787,6 +797,101 @@ export class AuditView extends AuthedElement {
                 : nothing}
             `
           : nothing}
+      </div>
+    `;
+  }
+
+  private _renderStorySummary(group: AuditGroup) {
+    if (!group.sub_events.length) return nothing;
+
+    const toolName =
+      group.primary_event.details?.tool_name ||
+      group.primary_event.resource_id ||
+      'a tool';
+    let story = `The agent requested the ${toolName} tool. `;
+
+    let policySubevent = null;
+    let approvalSubevent = null;
+    let approvalResolutionSubevent = null;
+    let escalationSubevent = null;
+
+    for (const sub of group.sub_events) {
+      if (sub.action.startsWith('policy_')) policySubevent = sub;
+      else if (sub.action === 'approval_created') approvalSubevent = sub;
+      else if (sub.action === 'approval_escalated') escalationSubevent = sub;
+      else if (
+        sub.action === 'approval_approved' ||
+        sub.action === 'approval_denied' ||
+        sub.action === 'approval_expired'
+      ) {
+        approvalResolutionSubevent = sub;
+      }
+    }
+
+    if (policySubevent) {
+      const rd = policySubevent.details?.rule_description;
+      const isNone =
+        rd &&
+        (rd.includes('Rule matched: None') ||
+          rd.includes('No specific rule matched') ||
+          rd.includes('No access rules defined'));
+      const ruleDesc = isNone ? 'Default fallback policy' : rd || 'Policy';
+
+      if (policySubevent.action === 'policy_allow') {
+        story += `${ruleDesc} automatically allowed the request. `;
+      } else if (policySubevent.action === 'policy_deny') {
+        story += `${ruleDesc} denied the request. `;
+      } else if (policySubevent.action === 'policy_require_approval') {
+        story += `${ruleDesc} required approval. `;
+      }
+    }
+
+    if (approvalSubevent) {
+      story += `An approval request was created. `;
+      if (escalationSubevent) {
+        story += `The request was later escalated. `;
+      }
+      if (approvalResolutionSubevent) {
+        const u = approvalResolutionSubevent.details?.approver_id
+          ? this._getUserDisplay(approvalResolutionSubevent.details.approver_id)
+          : 'A user';
+        if (approvalResolutionSubevent.action === 'approval_approved') {
+          story += `${u} approved it. `;
+        } else if (approvalResolutionSubevent.action === 'approval_denied') {
+          story += `${u} declined it. `;
+        } else if (approvalResolutionSubevent.action === 'approval_expired') {
+          story += `The approval request timed out. `;
+        }
+      } else {
+        story += `It is currently pending approval. `;
+      }
+    }
+
+    if (
+      group.outcome === 'success' ||
+      group.outcome === 'executed' ||
+      group.outcome === 'allow'
+    ) {
+      if (
+        !approvalSubevent ||
+        approvalResolutionSubevent?.action === 'approval_approved' ||
+        !policySubevent ||
+        policySubevent.action === 'policy_allow'
+      ) {
+        story += `The tool was successfully executed.`;
+      }
+    }
+
+    return html`
+      <div
+        class="story-summary"
+        style="padding: 12px 16px; background: var(--sl-color-neutral-50); border-radius: var(--sl-border-radius-medium); font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-700); margin-bottom: 12px; border: 1px solid var(--sl-color-neutral-200);"
+      >
+        <sl-icon
+          name="book"
+          style="margin-right: 6px; color: var(--sl-color-neutral-500);"
+        ></sl-icon>
+        <strong>Summary:</strong> ${story}
       </div>
     `;
   }

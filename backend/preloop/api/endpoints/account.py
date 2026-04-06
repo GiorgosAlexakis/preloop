@@ -17,6 +17,7 @@ from preloop.models.crud import (
     crud_ai_model,
     crud_api_key,
     crud_managed_agent,
+    crud_managed_agent_ai_model_binding,
     crud_managed_agent_credential,
     crud_managed_agent_enrollment,
     crud_runtime_session,
@@ -40,6 +41,8 @@ from preloop.schemas.gateway_usage import (
     ManagedAgentEnrollmentCreateRequest,
     ManagedAgentEnrollmentRestoreRequest,
     ManagedAgentEnrollmentSummary,
+    ManagedAgentModelBindingSummary,
+    ManagedAgentModelBindingSyncRequest,
     ManagedAgentEnrollmentValidateRequest,
     ManagedAgentServerActivitySummary,
     ManagedAgentSummary,
@@ -260,6 +263,75 @@ def _managed_agent_configured_model_id(
     return None
 
 
+def _managed_agent_binding_summary(binding: Any) -> ManagedAgentModelBindingSummary:
+    """Normalize one explicit binding row for API responses."""
+    ai_model = getattr(binding, "ai_model", None)
+    return ManagedAgentModelBindingSummary(
+        id=str(binding.id),
+        ai_model_id=str(binding.ai_model_id) if binding.ai_model_id else None,
+        binding_type=binding.binding_type,
+        config_key=binding.config_key,
+        gateway_alias=binding.gateway_alias,
+        is_primary=binding.is_primary,
+        status=binding.status,
+        provider_name=getattr(ai_model, "provider_name", None),
+        model_identifier=getattr(ai_model, "model_identifier", None),
+        ai_model_name=getattr(ai_model, "name", None),
+        first_seen_at=binding.first_seen_at,
+        last_seen_at=binding.last_seen_at,
+    )
+
+
+def _managed_agent_configured_models(
+    db: Session,
+    *,
+    account_id: str,
+    agent_id: str,
+    latest_enrollment: Optional[dict],
+) -> list[ManagedAgentModelBindingSummary]:
+    """Return configured-model bindings with compatibility fallback."""
+    binding_rows = crud_managed_agent_ai_model_binding.list_for_agent(
+        db,
+        account_id=account_id,
+        agent_id=agent_id,
+        include_inactive=False,
+    )
+    if binding_rows:
+        return [_managed_agent_binding_summary(binding) for binding in binding_rows]
+
+    configured_alias = _managed_agent_configured_model_alias(latest_enrollment)
+    configured_model_id = _managed_agent_configured_model_id(
+        db,
+        account_id=account_id,
+        agent_id=agent_id,
+        configured_model_alias=configured_alias,
+    )
+    if configured_alias is None and configured_model_id is None:
+        return []
+
+    ai_model = None
+    if configured_model_id is not None:
+        try:
+            ai_model = crud_ai_model.get(db, id=configured_model_id)
+        except Exception:
+            ai_model = None
+
+    return [
+        ManagedAgentModelBindingSummary(
+            id=f"legacy-{agent_id}-{configured_alias or 'configured'}",
+            ai_model_id=configured_model_id,
+            binding_type="configured",
+            config_key="legacy.configured_model",
+            gateway_alias=configured_alias or "",
+            is_primary=True,
+            status="gateway_ready" if configured_model_id else "configured",
+            provider_name=getattr(ai_model, "provider_name", None),
+            model_identifier=getattr(ai_model, "model_identifier", None),
+            ai_model_name=getattr(ai_model, "name", None),
+        )
+    ]
+
+
 def _managed_agent_live_validation_state(
     latest_enrollment: Optional[dict],
 ) -> tuple[bool, Optional[bool], str, Optional[datetime]]:
@@ -323,12 +395,33 @@ def _enrich_managed_agent_summary(
     summary["configured_model_alias"] = _managed_agent_configured_model_alias(
         latest_enrollment_summary
     )
+    summary["configured_models"] = [
+        binding.model_dump(mode="json")
+        for binding in _managed_agent_configured_models(
+            db,
+            account_id=account_id,
+            agent_id=summary["id"],
+            latest_enrollment=latest_enrollment_summary,
+        )
+    ]
+    primary_binding = next(
+        (
+            binding
+            for binding in summary["configured_models"]
+            if binding.get("is_primary")
+        ),
+        None,
+    )
+    if primary_binding and primary_binding.get("gateway_alias"):
+        summary["configured_model_alias"] = primary_binding["gateway_alias"]
     summary["configured_model_id"] = _managed_agent_configured_model_id(
         db,
         account_id=account_id,
         agent_id=summary["id"],
         configured_model_alias=summary["configured_model_alias"],
     )
+    if primary_binding and primary_binding.get("ai_model_id"):
+        summary["configured_model_id"] = primary_binding["ai_model_id"]
     return summary
 
 
@@ -683,6 +776,68 @@ async def get_account_managed_agent(
             status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
         )
     return response
+
+
+@router.get(
+    "/agents/{agent_id}/model-bindings",
+    response_model=list[ManagedAgentModelBindingSummary],
+)
+async def list_account_managed_agent_model_bindings(
+    agent_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """List explicit AI model bindings for one managed agent."""
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+    return _managed_agent_configured_models(
+        db,
+        account_id=str(account.id),
+        agent_id=agent_id,
+        latest_enrollment=None,
+    )
+
+
+@router.put(
+    "/agents/{agent_id}/model-bindings",
+    response_model=list[ManagedAgentModelBindingSummary],
+)
+async def replace_account_managed_agent_model_bindings(
+    agent_id: str,
+    payload: ManagedAgentModelBindingSyncRequest,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Replace explicit AI model bindings for one managed agent."""
+    agent = crud_managed_agent.get_for_account(
+        db, account_id=str(account.id), agent_id=agent_id
+    )
+    if agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Managed agent not found"
+        )
+
+    for binding in payload.bindings:
+        ai_model = crud_ai_model.get(db, id=binding.ai_model_id)
+        if ai_model is None or str(ai_model.account_id) != str(account.id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"AI model {binding.ai_model_id} does not belong to the current account",
+            )
+
+    rows = crud_managed_agent_ai_model_binding.replace_for_agent(
+        db,
+        account_id=str(account.id),
+        agent_id=agent_id,
+        bindings=[binding.model_dump() for binding in payload.bindings],
+        commit=True,
+    )
+    return [_managed_agent_binding_summary(binding) for binding in rows]
 
 
 @router.get(

@@ -44,6 +44,41 @@ class GatewayUsageByModel(BaseModel):
     request_count: int = 0
     token_usage: GatewayTokenUsage
     estimated_cost: float = 0.0
+    last_request_at: Optional[datetime] = None
+
+
+class ManagedAgentModelBindingSummary(BaseModel):
+    """One configured AI model binding for a managed agent."""
+
+    id: str
+    ai_model_id: Optional[str] = None
+    binding_type: str
+    config_key: str
+    gateway_alias: str
+    is_primary: bool = False
+    status: str
+    provider_name: Optional[str] = None
+    model_identifier: Optional[str] = None
+    ai_model_name: Optional[str] = None
+    first_seen_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+
+
+class ManagedAgentModelBindingSyncItem(BaseModel):
+    """Upsert payload for one managed-agent model binding."""
+
+    ai_model_id: str
+    binding_type: str = "configured"
+    config_key: str
+    gateway_alias: str
+    is_primary: bool = False
+    status: str = "gateway_ready"
+
+
+class ManagedAgentModelBindingSyncRequest(BaseModel):
+    """Replace request for one managed agent's configured model bindings."""
+
+    bindings: List[ManagedAgentModelBindingSyncItem] = Field(default_factory=list)
 
 
 class GatewayUsageByFlow(BaseModel):
@@ -178,6 +213,7 @@ class ManagedAgentSummary(BaseModel):
     owner_user_id: Optional[str] = None
     owner_username: Optional[str] = None
     owner_email: Optional[str] = None
+    agent_kind: Optional[str] = None
     display_name: str
     session_source_type: str
     session_source_id: str
@@ -197,6 +233,9 @@ class ManagedAgentSummary(BaseModel):
     estimated_cost: float = 0.0
     configured_model_alias: Optional[str] = None
     configured_model_id: Optional[str] = None
+    configured_models: List[ManagedAgentModelBindingSummary] = Field(
+        default_factory=list
+    )
     latest_model_alias: Optional[str] = None
     latest_provider_name: Optional[str] = None
     last_request_at: Optional[datetime] = None

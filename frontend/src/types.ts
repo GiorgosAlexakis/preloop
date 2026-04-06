@@ -256,6 +256,7 @@ export interface ManagedAgentSummary {
   owner_user_id: string | null;
   owner_username: string | null;
   owner_email: string | null;
+  agent_kind?: string | null;
   display_name: string;
   session_source_type: string;
   session_source_id: string;
@@ -283,6 +284,7 @@ export interface ManagedAgentSummary {
   estimated_cost: number;
   configured_model_alias: string | null;
   configured_model_id?: string | null;
+  configured_models?: ManagedAgentModelBindingSummary[];
   latest_model_alias: string | null;
   latest_provider_name: string | null;
   last_request_at: string | null;
@@ -303,6 +305,21 @@ export interface ManagedAgentSummary {
     | 'failed'
     | string;
   last_validated_at: string | null;
+}
+
+export interface ManagedAgentModelBindingSummary {
+  id: string;
+  ai_model_id: string | null;
+  binding_type: string;
+  config_key: string;
+  gateway_alias: string;
+  is_primary: boolean;
+  status: string;
+  provider_name?: string | null;
+  model_identifier?: string | null;
+  ai_model_name?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
 }
 
 export interface ManagedAgentUsageAggregate {

@@ -35,6 +35,7 @@ import type {
   AccountRuntimeSessionDetailResponse,
   GatewayUsageByModel,
   ManagedAgentDetailResponse,
+  ManagedAgentModelBindingSummary,
   ManagedAgentServerActivitySummary,
   ManagedAgentSummary,
   ManagedAgentToolActivitySummary,
@@ -593,12 +594,40 @@ export class AgentDetailView extends LitElement {
     }
   }
 
+  private getConfiguredModelBindings(): ManagedAgentModelBindingSummary[] {
+    return this.agent?.configured_models || [];
+  }
+
+  private getPrimaryConfiguredModelAlias(): string | null {
+    const primaryBinding = this.getConfiguredModelBindings().find(
+      (binding) => binding.is_primary
+    );
+    return (
+      primaryBinding?.gateway_alias?.trim() ||
+      this.agent?.configured_model_alias?.trim() ||
+      null
+    );
+  }
+
+  private getConfiguredModelBinding(
+    model: string
+  ): ManagedAgentModelBindingSummary | null {
+    return (
+      this.getConfiguredModelBindings().find(
+        (binding) => binding.gateway_alias === model
+      ) || null
+    );
+  }
+
   private getDisplayedAgentModels(): string[] {
-    const configuredModel = this.agent?.configured_model_alias?.trim();
+    const configuredModel = this.getPrimaryConfiguredModelAlias();
     const budgets = this.getParsedModelBudgets();
     const models = new Set<string>();
 
     if (configuredModel) models.add(configuredModel);
+    for (const binding of this.getConfiguredModelBindings()) {
+      if (binding.gateway_alias) models.add(binding.gateway_alias);
+    }
 
     for (const model of this.governance?.allowed_models || []) {
       if (model) models.add(model);
@@ -631,8 +660,13 @@ export class AgentDetailView extends LitElement {
   }
 
   private getUsageForDisplayedModel(model: string): GatewayUsageByModel | null {
-    const isConfiguredModel = model === this.agent?.configured_model_alias;
-    const configuredModelId = this.agent?.configured_model_id?.trim();
+    const configuredBinding = this.getConfiguredModelBinding(model);
+    const isConfiguredModel = !!configuredBinding;
+    const configuredModelId =
+      configuredBinding?.ai_model_id?.trim() ||
+      (model === this.getPrimaryConfiguredModelAlias()
+        ? this.agent?.configured_model_id?.trim()
+        : null);
     if (isConfiguredModel && configuredModelId) {
       return (
         this.usageByModel.find(
@@ -648,8 +682,14 @@ export class AgentDetailView extends LitElement {
   }
 
   private getDisplayedModelId(model: string): string | null {
-    const isConfiguredModel = model === this.agent?.configured_model_alias;
-    if (isConfiguredModel && this.agent?.configured_model_id?.trim()) {
+    const configuredBinding = this.getConfiguredModelBinding(model);
+    if (configuredBinding?.ai_model_id?.trim()) {
+      return configuredBinding.ai_model_id.trim();
+    }
+    if (
+      model === this.getPrimaryConfiguredModelAlias() &&
+      this.agent?.configured_model_id?.trim()
+    ) {
       return this.agent.configured_model_id.trim();
     }
     return this.getUsageForDisplayedModel(model)?.ai_model_id?.trim() || null;
@@ -1168,7 +1208,7 @@ export class AgentDetailView extends LitElement {
           style="display: flex; align-items: center; color: var(--sl-color-neutral-600);"
         >
           ${renderAgentIcon(
-            this.agent.session_source_type,
+            this.agent.agent_kind || this.agent.session_source_type,
             'font-size: 1.2em; display: block;'
           )}
         </div>
@@ -1194,8 +1234,10 @@ export class AgentDetailView extends LitElement {
             <div
               style="color: var(--sl-color-neutral-500); font-size: 0.9rem; margin-top: 4px;"
             >
-              ${this.getSourceLabel(this.agent.session_source_type)} ·
-              ${this.agent.session_source_id}
+              ${this.getSourceLabel(
+                this.agent.agent_kind || this.agent.session_source_type
+              )}
+              · ${this.agent.session_source_id}
               ${this.agent.session_reference
                 ? ` · ${this.agent.session_reference}`
                 : ''}
@@ -1374,7 +1416,10 @@ export class AgentDetailView extends LitElement {
                   ${this.agent.configured_model_alias || 'None'}
                 </div>
                 <div class="meta-line">
-                  Latest used ${aggregate?.latest_model_alias || 'None yet'}
+                  ${this.agent.configured_models &&
+                  this.agent.configured_models.length > 1
+                    ? `${this.agent.configured_models.length - 1} additional configured model${this.agent.configured_models.length > 2 ? 's' : ''}`
+                    : `Latest used ${aggregate?.latest_model_alias || 'None yet'}`}
                 </div>
               </div>
               <div class="stat-card">

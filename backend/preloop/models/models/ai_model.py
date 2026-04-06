@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .account import Account
     from .flow import Flow
     from .issue_set import IssueSet
+    from .managed_agent_ai_model_binding import ManagedAgentAIModelBinding
     from .secret_reference import SecretReference
 
 
@@ -61,6 +62,11 @@ class AIModel(Base):
     )
     flows: Mapped[List["Flow"]] = relationship(back_populates="ai_model")
     issue_sets: Mapped[List["IssueSet"]] = relationship(back_populates="ai_model")
+    managed_agent_bindings: Mapped[List["ManagedAgentAIModelBinding"]] = relationship(
+        "ManagedAgentAIModelBinding",
+        back_populates="ai_model",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def uses_ambient_credentials(self) -> bool:

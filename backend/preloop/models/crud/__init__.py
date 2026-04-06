@@ -18,6 +18,7 @@ from ..models import (
     IssueSet,
     GatewayUsageSearchDocument,
     ManagedAgent,
+    ManagedAgentAIModelBinding,
     ManagedAgentCredential,
     ManagedAgentEnrollment,
     RuntimeSession,
@@ -47,6 +48,7 @@ from .issue_compliance_result import (
 from .issue_relationship import CRUDIssueRelationship
 from .issue_set import CRUDIssueSet
 from .managed_agent import CRUDManagedAgent
+from .managed_agent_ai_model_binding import CRUDManagedAgentAIModelBinding
 from .managed_agent_credential import CRUDManagedAgentCredential
 from .managed_agent_enrollment import CRUDManagedAgentEnrollment
 from .tool_configuration import CRUDToolConfiguration
@@ -121,6 +123,9 @@ crud_gateway_usage_search_document = CRUDGatewayUsageSearchDocument(
     GatewayUsageSearchDocument
 )
 crud_managed_agent = CRUDManagedAgent(ManagedAgent)
+crud_managed_agent_ai_model_binding = CRUDManagedAgentAIModelBinding(
+    ManagedAgentAIModelBinding
+)
 crud_managed_agent_credential = CRUDManagedAgentCredential(ManagedAgentCredential)
 crud_managed_agent_enrollment = CRUDManagedAgentEnrollment(ManagedAgentEnrollment)
 crud_runtime_session = CRUDRuntimeSession(RuntimeSession)
@@ -155,6 +160,7 @@ __all__ = [
     "CRUDIssueSet",
     "CRUDGatewayUsageSearchDocument",
     "CRUDManagedAgent",
+    "CRUDManagedAgentAIModelBinding",
     "CRUDManagedAgentCredential",
     "CRUDManagedAgentEnrollment",
     "CRUDToolConfiguration",
@@ -198,6 +204,7 @@ __all__ = [
     "crud_issue_set",
     "crud_gateway_usage_search_document",
     "crud_managed_agent",
+    "crud_managed_agent_ai_model_binding",
     "crud_managed_agent_credential",
     "crud_managed_agent_enrollment",
     "crud_tool_configuration",

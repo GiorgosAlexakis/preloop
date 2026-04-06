@@ -335,6 +335,7 @@ class ModelGatewayUsageService:
                 total_tokens=row["total_tokens"],
             ),
             estimated_cost=row["estimated_cost"],
+            last_request_at=row.get("last_request_at"),
         )
 
     @staticmethod
