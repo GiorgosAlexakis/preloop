@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
 from preloop.services.model_gateway_errors import ModelGatewayAPIError
+from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
 from preloop.services.openai_gateway import OpenAIGatewayService
 
 
@@ -31,8 +32,8 @@ class GeminiGatewayService(OpenAIGatewayService):
 
     def get_model(self, model_name: str) -> Dict[str, Any]:
         """Return Gemini-compatible metadata for one model alias."""
-        self._resolve_requested_model(model_name, provider="gemini")
-        return self._to_gemini_model_metadata(model_name)
+        resolved_model_alias = self._resolve_gemini_model_alias(model_name)
+        return self._to_gemini_model_metadata(resolved_model_alias)
 
     def generate_content(
         self, model_name: str, payload: Dict[str, Any]
@@ -135,6 +136,7 @@ class GeminiGatewayService(OpenAIGatewayService):
     def _translate_generate_content_request(
         self, model_name: str, payload: Dict[str, Any]
     ) -> Dict[str, Any]:
+        resolved_model_alias = self._resolve_gemini_model_alias(model_name)
         contents = payload.get("contents")
         if not isinstance(contents, list) or not contents:
             raise ModelGatewayAPIError(
@@ -144,7 +146,7 @@ class GeminiGatewayService(OpenAIGatewayService):
             )
 
         translated_payload: Dict[str, Any] = {
-            "model": model_name,
+            "model": resolved_model_alias,
             "input": self._translate_contents(contents),
         }
 
@@ -441,15 +443,42 @@ class GeminiGatewayService(OpenAIGatewayService):
 
     @staticmethod
     def _to_gemini_model_metadata(model_alias: str) -> Dict[str, Any]:
+        public_model_name = GeminiGatewayService._public_model_name(model_alias)
         return {
-            "name": f"models/{model_alias}",
-            "displayName": model_alias,
+            "name": f"models/{public_model_name}",
+            "displayName": public_model_name,
             "description": "Preloop Gemini-compatible gateway model alias",
             "supportedGenerationMethods": [
                 "generateContent",
                 "streamGenerateContent",
             ],
         }
+
+    def _resolve_gemini_model_alias(self, model_name: str) -> str:
+        requested_name = self._public_model_name(model_name)
+        matches: List[str] = []
+        for ai_model in self._get_account_models():
+            runtime = resolve_ai_model_runtime(ai_model)
+            alias = runtime.model_gateway_model_alias
+            if not alias:
+                continue
+            if alias == requested_name:
+                return alias
+            if self._public_model_name(alias) == requested_name:
+                matches.append(alias)
+
+        if len(matches) == 1:
+            return matches[0]
+
+        self._resolve_requested_model(requested_name, provider="gemini")
+        return requested_name
+
+    @staticmethod
+    def _public_model_name(model_alias: str) -> str:
+        model_alias = model_alias.removeprefix("models/").strip()
+        if "/" in model_alias:
+            _, model_alias = model_alias.split("/", 1)
+        return model_alias
 
     @staticmethod
     def _to_gemini_usage_metadata(usage: Dict[str, Any]) -> Dict[str, int]:

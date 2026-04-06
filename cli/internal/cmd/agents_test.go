@@ -743,6 +743,84 @@ func TestParseGeminiManagedGatewayUpstreamUsesEncryptedStoredAPIKey(t *testing.T
 	}
 }
 
+func TestParseGeminiManagedGatewayUpstreamRecoversFromManagedConfig(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	oldUser := os.Getenv("USER")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("USER", "preloop-gemini-test"); err != nil {
+		t.Fatalf("failed to set USER: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+		_ = os.Setenv("USER", oldUser)
+	}()
+
+	configPath := filepath.Join(home, ".gemini", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create gemini dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"apiKey":"agt_managed","baseUrl":"https://preloop.example/gemini","model":{"name":"gemini-3-flash-preview"},"security":{"auth":{"selectedType":"gemini-api-key"}}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write managed gemini config: %v", err)
+	}
+
+	blob, err := json.Marshal(map[string]interface{}{
+		"serverName": "default-api-key",
+		"token": map[string]interface{}{
+			"accessToken": "gemini-stored-secret",
+			"tokenType":   "ApiKey",
+		},
+		"updatedAt": 1712224800000,
+	})
+	if err != nil {
+		t.Fatalf("failed to encode Gemini credential blob: %v", err)
+	}
+	store, err := json.Marshal(map[string]map[string]string{
+		geminiAPIKeyServiceName: {
+			geminiAPIKeyAccountName: string(blob),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to encode Gemini credential store: %v", err)
+	}
+	encryptedStore, err := encryptGeminiCredentialStoreForTest(string(store))
+	if err != nil {
+		t.Fatalf("failed to encrypt Gemini credential store: %v", err)
+	}
+	credentialsPath := filepath.Join(home, ".gemini", "gemini-credentials.json")
+	if err := os.WriteFile(credentialsPath, []byte(encryptedStore), 0600); err != nil {
+		t.Fatalf("failed to write Gemini credential store: %v", err)
+	}
+
+	upstream, err := parseGeminiManagedGatewayUpstream(
+		AgentConfig{Name: "Gemini CLI", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream Gemini model to be recovered")
+	}
+	if upstream.ManagedModelAlias != "google/gemini-3-flash-preview" {
+		t.Fatalf("unexpected managed Gemini model alias: %#v", upstream.ManagedModelAlias)
+	}
+	if upstream.APIKey != "gemini-stored-secret" {
+		t.Fatalf("expected Gemini API key from secure storage, got %#v", upstream.APIKey)
+	}
+	if upstream.APIEndpoint != "" {
+		t.Fatalf("expected managed Gemini config to avoid reusing Preloop baseUrl, got %#v", upstream.APIEndpoint)
+	}
+	if !strings.Contains(strings.Join(upstream.Notes, " "), "already pointed at Preloop") {
+		t.Fatalf("expected note about recovering from managed config, got %#v", upstream.Notes)
+	}
+}
+
 func TestParseClaudeManagedGatewayUpstreamUsesRecentSessionModel(t *testing.T) {
 	home := t.TempDir()
 	oldHome := os.Getenv("HOME")
@@ -1925,7 +2003,7 @@ func TestApplyGeminiManagedGatewayConfiguresSettings(t *testing.T) {
 		t.Fatalf("unexpected gateway apply error: %v", err)
 	}
 
-	if got := plan.ManagedDocument["baseUrl"]; got != "https://preloop.example/gemini/v1beta" {
+	if got := plan.ManagedDocument["baseUrl"]; got != "https://preloop.example/gemini" {
 		t.Fatalf("unexpected Gemini baseUrl: %#v", got)
 	}
 	if got := plan.ManagedDocument["apiKey"]; got != "gemini-durable-token" {
@@ -1952,7 +2030,7 @@ func TestGenericAdapterValidateManagedConfigSupportsGeminiGateway(t *testing.T) 
 				},
 			},
 		},
-		"baseUrl": "https://preloop.example/gemini/v1beta",
+		"baseUrl": "https://preloop.example/gemini",
 		"apiKey":  "durable-token",
 		"model": map[string]interface{}{
 			"name": "gemini-3.1-pro-preview",
@@ -2004,7 +2082,7 @@ func TestSyncManagedAgentRuntimeArtifactsInstallsGeminiLauncher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("managed gemini launcher failed: %v (%s)", err, string(output))
 	}
-	if got := string(output); got != "gemini-durable-token|https://preloop.example/gemini/v1beta" {
+	if got := string(output); got != "gemini-durable-token|https://preloop.example/gemini" {
 		t.Fatalf("unexpected gemini launcher env output: %q", got)
 	}
 }

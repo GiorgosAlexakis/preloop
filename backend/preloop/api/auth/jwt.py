@@ -514,12 +514,36 @@ async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[
     """
     if not token:
         return None
+
     try:
-        # The get_current_user function contains all the necessary logic
-        # for decoding JWTs, checking API keys, and verifying the user.
-        # We call it directly with the token.
-        user = await get_current_user(token=token)
-        return user
+        # Check API key first if it doesn't look like a JWT
+        if "." not in token:
+            api_key = crud_api_key.get_by_key(db_session, key=token)
+            if api_key:
+                user = _authenticate_with_api_key(db_session, api_key)
+                return user
+
+        # Fallback to JWT
+        token_data = decode_token(token)
+        if isinstance(token_data, dict) and token_data.get("refresh", False):
+            return None
+
+        user_id_str = getattr(token_data, "sub", "")
+        if not user_id_str:
+            return None
+
+        try:
+            import uuid
+
+            user_id = uuid.UUID(user_id_str)
+        except ValueError:
+            return None
+
+        user = db_session.query(User).filter(User.id == user_id).first()
+        if user and user.is_active:
+            return user
+
     except Exception:
-        # If any exception occurs during authentication, we simply return None.
-        return None
+        pass
+
+    return None

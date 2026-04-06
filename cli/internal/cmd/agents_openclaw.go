@@ -1294,6 +1294,8 @@ func parseGeminiManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 	}
 
 	notes := []string{}
+	baseURL := strings.TrimSpace(lookupString(document, "baseUrl"))
+	managedBaseURL := strings.Contains(strings.ToLower(baseURL), "preloop")
 	modelRef := strings.TrimSpace(lookupString(document, "model"))
 	if modelRef == "" {
 		if modelConfig, ok := asObjectMap(document["model"]); ok {
@@ -1303,8 +1305,11 @@ func parseGeminiManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 	if looksManagedGatewayModelRef(modelRef) && modelRef != "" {
 		modelRef = ""
 	}
-	if strings.Contains(strings.ToLower(lookupString(document, "baseUrl")), "preloop") {
-		return nil, nil
+	if managedBaseURL {
+		notes = append(
+			notes,
+			"Gemini CLI is already pointed at Preloop; recovering upstream credentials from local secure storage instead of the managed settings file.",
+		)
 	}
 	if modelRef == "" {
 		if recentModel := resolveGeminiRecentModelRef(); recentModel != "" {
@@ -1343,11 +1348,16 @@ func parseGeminiManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 	}
 
 	return &managedGatewayUpstream{
-		SourceAgent:       "gemini",
-		SourceProviderID:  providerID,
-		ProviderName:      "google",
-		ModelIdentifier:   modelID,
-		APIEndpoint:       normalizeAIModelEndpoint(lookupString(document, "baseUrl")),
+		SourceAgent:      "gemini",
+		SourceProviderID: providerID,
+		ProviderName:     "google",
+		ModelIdentifier:  modelID,
+		APIEndpoint: normalizeAIModelEndpoint(func() string {
+			if managedBaseURL {
+				return ""
+			}
+			return baseURL
+		}()),
 		APIKey:            apiKey,
 		ManagedModelAlias: managedAlias,
 		Notes:             notes,
@@ -1680,8 +1690,11 @@ func resolveGeminiRecentModelRef() string {
 }
 
 func resolveGeminiAPIKey(document map[string]interface{}) (string, string) {
-	if apiKey := resolveConfigSecret(document["apiKey"]); apiKey != "" {
-		return apiKey, ""
+	baseURL := strings.TrimSpace(lookupString(document, "baseUrl"))
+	if !strings.Contains(strings.ToLower(baseURL), "preloop") {
+		if apiKey := resolveConfigSecret(document["apiKey"]); apiKey != "" {
+			return apiKey, ""
+		}
 	}
 	for _, envKey := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"} {
 		if value := strings.TrimSpace(os.Getenv(envKey)); value != "" {
@@ -3486,7 +3499,7 @@ func syncManagedAgentRuntimeArtifacts(agent AgentConfig, baseURL, token string) 
 			map[string]string{
 				"GEMINI_API_KEY":         token,
 				"GOOGLE_API_KEY":         token,
-				"GOOGLE_GEMINI_BASE_URL": strings.TrimRight(baseURL, "/") + "/gemini/v1beta",
+				"GOOGLE_GEMINI_BASE_URL": strings.TrimRight(baseURL, "/") + "/gemini",
 			},
 		)
 	case "codex cli":

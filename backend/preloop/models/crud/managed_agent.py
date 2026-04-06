@@ -348,7 +348,8 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         *,
         account_id: str,
         query: Optional[str] = None,
-        session_source_type: Optional[str] = None,
+        agent_kind: Optional[str] = None,
+        last_seen_after: Optional[datetime] = None,
         status: str = "all",
         tags: Optional[dict[str, str]] = None,
         owner_username: Optional[str] = None,
@@ -375,10 +376,19 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
                     self.model.session_reference.ilike(normalized_query),
                 )
             )
-        if session_source_type:
-            base_query = base_query.filter(
-                self.model.session_source_type == session_source_type
+        if agent_kind:
+            if "," in agent_kind:
+                kinds = [k.strip() for k in agent_kind.split(",") if k.strip()]
+                base_query = base_query.filter(self.model.agent_kind.in_(kinds))
+            else:
+                base_query = base_query.filter(self.model.agent_kind == agent_kind)
+        if last_seen_after:
+            last_seen_utc = (
+                last_seen_after.astimezone(UTC).replace(tzinfo=None)
+                if last_seen_after.tzinfo
+                else last_seen_after
             )
+            base_query = base_query.filter(self.model.last_seen_at >= last_seen_utc)
         if owner_username:
             base_query = base_query.filter(User.username == owner_username)
         if tags:

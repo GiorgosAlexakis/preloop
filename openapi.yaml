@@ -794,14 +794,23 @@ paths:
             minLength: 1
           - type: 'null'
           title: Query
-      - name: session_source_type
+      - name: agent_kind
         in: query
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          title: Session Source Type
+          title: Agent Kind
+      - name: last_seen_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Seen After
       - name: status
         in: query
         required: false
@@ -6908,11 +6917,17 @@ components:
           - type: string
           - type: 'null'
           title: Query
-        session_source_type:
+        agent_kind:
           anyOf:
           - type: string
           - type: 'null'
-          title: Session Source Type
+          title: Agent Kind
+        last_seen_after:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Seen After
         status:
           type: string
           title: Status
@@ -8830,6 +8845,12 @@ components:
           type: string
           format: date-time
           title: Updated At
+        execution_stats:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Execution Stats
       type: object
       required:
       - id

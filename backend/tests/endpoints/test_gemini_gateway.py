@@ -65,6 +65,31 @@ def test_list_models_returns_gemini_shape(app, client, db_session, test_user):
     ]
 
 
+def test_list_models_strips_provider_prefix_from_gateway_alias(
+    app, client, db_session, test_user
+):
+    """Gemini model listing should expose the client-facing short model name."""
+    from preloop.api.endpoints.gemini_gateway import get_gemini_gateway_auth_context
+
+    _create_gateway_model(
+        db_session,
+        test_user.account_id,
+        model_alias="google/gemini-2.5-pro",
+    )
+    app.dependency_overrides[get_gemini_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="gateway-token", user=test_user)
+    )
+
+    response = client.get(
+        "/gemini/v1beta/models", headers={"x-goog-api-key": "ignored"}
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["models"][0]["name"] == "models/gemini-2.5-pro"
+    assert payload["models"][0]["displayName"] == "gemini-2.5-pro"
+
+
 def test_generate_content_translates_text_request_to_gateway(
     app, client, db_session, test_user
 ):
@@ -122,6 +147,43 @@ def test_generate_content_translates_text_request_to_gateway(
     assert kwargs["temperature"] == 0.25
     assert kwargs["max_tokens"] == 64
     assert kwargs["stop"] == ["DONE"]
+
+
+def test_generate_content_resolves_provider_prefixed_gateway_alias(
+    app, client, db_session, test_user
+):
+    """Gemini requests should match stored gateway aliases even when they omit provider prefixes."""
+    from preloop.api.endpoints.gemini_gateway import get_gemini_gateway_auth_context
+
+    _create_gateway_model(
+        db_session,
+        test_user.account_id,
+        model_alias="google/gemini-2.5-pro",
+    )
+    app.dependency_overrides[get_gemini_gateway_auth_context] = lambda: (
+        ModelGatewayAuthContext(token="gateway-token", user=test_user)
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.litellm.completion",
+        return_value={
+            "id": "chatcmpl_123",
+            "created": 1710000000,
+            "choices": [
+                {"message": {"role": "assistant", "content": "Hello from Preloop"}}
+            ],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12},
+        },
+    ) as mock_completion:
+        response = client.post(
+            "/gemini/v1beta/models/gemini-2.5-pro:generateContent",
+            headers={"x-goog-api-key": "ignored"},
+            json={"contents": [{"role": "user", "parts": [{"text": "Hello"}]}]},
+        )
+
+    assert response.status_code == 200
+    kwargs = mock_completion.call_args.kwargs
+    assert kwargs["model"] == "openai/gpt-5"
 
 
 def test_generate_content_translates_tools_and_function_call_parts(

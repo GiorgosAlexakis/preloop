@@ -1047,9 +1047,9 @@ export class DashboardView extends AuthedElement {
         </div>
 
         <div class="welcome-content">
-          Preloop helps you automate your workflow with AI-powered agents,
-          intelligent issue management, and seamless tool integration. Here's
-          how to get started:
+          Preloop helps you automate your workflow safely by deploying
+          event-driven flows, or by onboarding existing agents. Here's how to
+          get started:
         </div>
 
         <div
@@ -1435,7 +1435,7 @@ export class DashboardView extends AuthedElement {
     return html`
       <sl-card class="content-card">
         <div class="card-header">
-          <div class="card-title">Sessions needing attention</div>
+          <div class="card-title">Top sessions by usage</div>
           <a class="row-link" href="/console/runtime-sessions">Investigate</a>
         </div>
         <div class="list">
@@ -1899,13 +1899,6 @@ export class DashboardView extends AuthedElement {
             </div>
 
             ${this.renderRecentFlowExecutionsCard()}
-
-            <div class="control-plane-grid">
-              ${this.renderBudgetHealthCard()}
-              ${this.renderGatewayFailuresCard()}
-              ${this.renderAuditExceptionsCard()} ${this.renderTopModelsCard()}
-              ${this.renderSessionsAttentionCard()}
-            </div>
           </div>
         </div>
 
@@ -1918,6 +1911,11 @@ export class DashboardView extends AuthedElement {
           ?open=${this.showSetupDialog}
           @close=${() => (this.showSetupDialog = false)}
         ></mcp-setup-dialog>
+      </div>
+      <div class="control-plane-grid">
+        ${this.renderBudgetHealthCard()} ${this.renderGatewayFailuresCard()}
+        ${this.renderAuditExceptionsCard()} ${this.renderTopModelsCard()}
+        ${this.renderSessionsAttentionCard()}
       </div>
     `;
   }

@@ -55,7 +55,7 @@ def test_user(db_session: Session, test_account: Account) -> User:
 
 
 @pytest.fixture
-def test_flow(db_session: Session, test_account: Account) -> Flow:
+def test_flow(db_session: Session, test_account: Account, test_user: User) -> Flow:
     """Create a test flow."""
     from preloop.models.crud import crud_flow
 
@@ -832,6 +832,37 @@ class TestFlowExecutionOrchestrator:
             stored_key.context_data["runtime_principal"]["username"]
             == test_user.username
         )
+
+    @pytest.mark.asyncio
+    async def test_bearer_token_end_to_end(
+        self,
+        db_session: Session,
+        test_flow: Flow,
+        test_user: User,
+        mock_nats_client,
+    ):
+        orchestrator = FlowExecutionOrchestrator(
+            db=db_session,
+            flow_id=test_flow.id,
+            trigger_event_data={"source": "test"},
+            nats_client=mock_nats_client,
+        )
+        orchestrator.flow = test_flow
+        from uuid import uuid4
+
+        execution_id = uuid4()
+        orchestrator.execution_log = type(
+            "ExecutionLogStub", (), {"id": execution_id}
+        )()
+
+        token, key_id = orchestrator._create_temporary_api_token()
+        assert token is not None
+
+        from preloop.services.model_gateway_auth import authenticate_bearer_token
+
+        res = await authenticate_bearer_token(token, db_session)
+        assert res is not None
+        assert res.user.id == test_user.id
 
     @pytest.mark.asyncio
     async def test_temporary_api_token_cleanup_token_not_found(

@@ -2326,7 +2326,7 @@ func normalizeGeminiGatewayModelAlias(modelRef string) string {
 
 func applyGeminiManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, modelAlias string) (managedMCPEnrollmentPlan, error) {
 	plan.ManagedDocument["apiKey"] = token
-	plan.ManagedDocument["baseUrl"] = strings.TrimRight(baseURL, "/") + "/gemini/v1beta"
+	plan.ManagedDocument["baseUrl"] = strings.TrimRight(baseURL, "/") + "/gemini"
 	modelConfig, ok := asObjectMap(plan.ManagedDocument["model"])
 	if !ok {
 		modelConfig = make(map[string]interface{})
@@ -3175,7 +3175,7 @@ func (a genericManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface
 		}
 	}
 	if strings.EqualFold(strings.TrimSpace(a.agent.Name), "gemini cli") {
-		expectedGatewayURL := strings.TrimRight(baseURL, "/") + "/gemini/v1beta"
+		expectedGatewayURL := strings.TrimRight(baseURL, "/") + "/gemini"
 		result["expected_gateway_url"] = expectedGatewayURL
 		result["gateway_provider_ok"] = false
 		result["gateway_base_url_ok"] = false

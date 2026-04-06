@@ -3,6 +3,13 @@ import * as yaml from 'js-yaml';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BrandConfig } from './src/brand-config';
+import {
+  get_canonical_url,
+  get_meta_for_route,
+  get_route_from_filename,
+  get_static_routes_with_options,
+  get_structured_data_for_route,
+} from './src/brand-seo';
 
 /**
  * Options for the brand plugin
@@ -87,6 +94,11 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         product_hunt: (brandConfig.landing as any).product_hunt || null,
         featured_video: (brandConfig.landing as any).featured_video || null,
       };
+      const aiActReadinessMdPath = path.resolve(
+        contentBasePath,
+        `${brandKey}/ai-act-readiness.md`
+      );
+      const hasAiActReadinessPage = fs.existsSync(aiActReadinessMdPath);
 
       // Add JSON file to bundle
       this.emitFile({
@@ -98,7 +110,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       this.emitFile({
         type: 'asset',
         fileName: 'sitemap.xml',
-        source: generateSitemapXml(brandConfig),
+        source: generateSitemapXml(brandConfig, hasAiActReadinessPage),
       });
 
       this.emitFile({
@@ -110,7 +122,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       this.emitFile({
         type: 'asset',
         fileName: 'llms.txt',
-        source: generateLlmsTxt(brandConfig),
+        source: generateLlmsTxt(brandConfig, hasAiActReadinessPage),
       });
 
       // Generate static HTML fragments for dynamic loading
@@ -135,7 +147,12 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
 
       // Copy brand-specific markdown files to dist/content/ for dynamic loading
       // Use the brand key (e.g., 'preloop') to find content folder
-      const contentFiles = ['privacy.md', 'terms.md', 'whatis-mcp.md'];
+      const contentFiles = [
+        'privacy.md',
+        'terms.md',
+        'whatis-mcp.md',
+        'ai-act-readiness.md',
+      ];
 
       for (const file of contentFiles) {
         const contentFilePath = path.resolve(contentBasePath, `${brandKey}/${file}`);
@@ -168,6 +185,15 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
       const termsHTML = await loadMarkdownContent(contentBasePath, brandKey, 'terms');
       const whatisMcpHTML = await loadMarkdownContent(contentBasePath, brandKey, 'whatis-mcp');
+      const edition = (brandConfig as any).edition || 'saas';
+      const aiActReadinessMdPath = path.resolve(
+        contentBasePath,
+        `${brandKey}/ai-act-readiness.md`
+      );
+      const hasAiActReadinessPage = fs.existsSync(aiActReadinessMdPath);
+      const aiActReadinessHTML = hasAiActReadinessPage
+        ? await loadMarkdownContent(contentBasePath, brandKey, 'ai-act-readiness')
+        : '';
 
       // Generate privacy.html with proper meta tags and content
       const privacyPage = generateFullHtmlPage(indexHtml, '/privacy', brandConfig, privacyHTML);
@@ -181,9 +207,25 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       const whatisMcpPage = generateFullHtmlPage(indexHtml, '/whatis-mcp', brandConfig, whatisMcpHTML);
       fs.writeFileSync(path.resolve(outDirPath, 'whatis-mcp.html'), whatisMcpPage);
 
+      if (edition === 'saas' && hasAiActReadinessPage) {
+        // Generate ai-act-readiness.html
+        const aiActReadinessPage = generateFullHtmlPage(
+          indexHtml,
+          '/ai-act-readiness',
+          brandConfig,
+          aiActReadinessHTML
+        );
+        fs.writeFileSync(
+          path.resolve(outDirPath, 'ai-act-readiness.html'),
+          aiActReadinessPage
+        );
+      }
+
       // Generate additional pages for SaaS editions
-      const edition = (brandConfig as any).edition || 'saas';
       const generatedPages = ['privacy.html', 'terms.html', 'whatis-mcp.html'];
+      if (edition === 'saas' && hasAiActReadinessPage) {
+        generatedPages.push('ai-act-readiness.html');
+      }
 
       if (edition === 'saas') {
         // Generate pricing.html
@@ -206,6 +248,14 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
             fs.copyFileSync(aboutMdPath, path.resolve(contentDir, 'about.md'));
           }
         }
+
+        if (hasAiActReadinessPage) {
+          const contentDir = path.resolve(outDirPath, 'content');
+          fs.copyFileSync(
+            aiActReadinessMdPath,
+            path.resolve(contentDir, 'ai-act-readiness.md')
+          );
+        }
       }
 
       console.log(`✓ Generated standalone HTML pages: ${generatedPages.join(', ')}`);
@@ -214,10 +264,11 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
     async transformIndexHtml(html, ctx) {
       // Determine which route we're rendering based on the filename
       const filename = ctx.filename || '';
-      const route = getRouteFromFilename(filename);
+      const route = get_route_from_filename(filename);
 
       // Get route-specific metadata
-      const meta = getMetaForRoute(route, brandConfig);
+      const meta = get_meta_for_route(route, brandConfig);
+      const canonicalUrl = get_canonical_url(route, brandConfig);
 
       // Replace <title>
       html = html.replace(
@@ -258,13 +309,13 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       // Replace Open Graph URL
       html = html.replace(
         /<meta property="og:url" content=".*?">/,
-        `<meta property="og:url" content="https://${brandConfig.domain}${route}">`
+        `<meta property="og:url" content="${canonicalUrl}">`
       );
 
       html = upsertHeadTag(
         html,
         /<link rel="canonical" href=".*?">/,
-        `<link rel="canonical" href="https://${brandConfig.domain}${route}">`
+        `<link rel="canonical" href="${canonicalUrl}">`
       );
 
       html = upsertHeadTag(
@@ -303,6 +354,8 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         `<meta name="twitter:creator" content="${brandConfig.social.twitter}">`
       );
 
+      html = upsertStructuredDataTag(html, route, brandConfig);
+
       // Replace favicon
       html = html.replace(
         /\/images\/favicon\.png/g,
@@ -336,7 +389,11 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
             '<lit-app></lit-app>',
             `<lit-app data-ssr-route="/"><landing-view>${slottedContent}</landing-view></lit-app>`
           );
-        } else if (route === '/privacy' || route === '/pricing') {
+        } else if (
+          route === '/privacy' ||
+          route === '/pricing' ||
+          route === '/ai-act-readiness'
+        ) {
           // Static pages: inject static-view-wrapper with content
           html = html.replace(
             '<lit-app></lit-app>',
@@ -354,108 +411,6 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       return html;
     },
   };
-}
-
-/**
- * Determine route from HTML filename
- */
-function getRouteFromFilename(filename: string): string {
-  if (filename.includes('index.html')) {
-    return '/';
-  } else if (filename.includes('privacy.html')) {
-    return '/privacy';
-  } else if (filename.includes('pricing.html')) {
-    return '/pricing';
-  }
-  return '/';
-}
-
-/**
- * Get route-specific metadata
- */
-type RouteMeta = {
-  title: string;
-  description: string;
-  keywords: string;
-  og_image: string;
-  og_title: string;
-  og_description: string;
-};
-
-function getMetaForRoute(route: string, config: BrandConfig): RouteMeta {
-  const meta = config.landing?.meta || {};
-  const defaultTitle = meta.title || config.name || 'Preloop';
-  const defaultDescription = meta.description || '';
-  const defaultKeywords = meta.keywords || '';
-  const defaultOgImage = meta.og_image || '';
-  const defaultOgTitle = (meta as any).og_title || defaultTitle;
-  const defaultOgDescription = (meta as any).og_description || defaultDescription;
-
-  switch (route) {
-    case '/':
-      return {
-        title: defaultTitle,
-        description: defaultDescription,
-        keywords: defaultKeywords,
-        og_image: defaultOgImage,
-        og_title: defaultOgTitle,
-        og_description: defaultOgDescription,
-      };
-    case '/privacy':
-      return {
-        title: `Privacy Policy - ${config.name}`,
-        description: `${config.name} Privacy Policy - Learn how we protect your data.`,
-        keywords: `${config.name}, Privacy Policy, Data Protection`,
-        og_image: defaultOgImage,
-        og_title: `Privacy Policy - ${config.name}`,
-        og_description: `${config.name} Privacy Policy - Learn how we protect your data.`,
-      };
-    case '/pricing':
-      return {
-        title: `Pricing - ${config.name}`,
-        description: `${config.name} Pricing - Choose the plan that fits your team.`,
-        keywords: `${config.name}, Pricing, Plans, Subscription`,
-        og_image: defaultOgImage,
-        og_title: `Pricing - ${config.name}`,
-        og_description: `${config.name} Pricing - Choose the plan that fits your team.`,
-      };
-    case '/terms':
-      return {
-        title: `Terms of Service - ${config.name}`,
-        description: `${config.name} Terms of Service - Read our terms and conditions.`,
-        keywords: `${config.name}, Terms of Service, Legal`,
-        og_image: defaultOgImage,
-        og_title: `Terms of Service - ${config.name}`,
-        og_description: `${config.name} Terms of Service - Read our terms and conditions.`,
-      };
-    case '/whatis-mcp':
-      return {
-        title: `What is MCP? - ${config.name}`,
-        description: `Learn about the Model Context Protocol (MCP) and how ${config.name} leverages it.`,
-        keywords: `${config.name}, MCP, Model Context Protocol, AI`,
-        og_image: defaultOgImage,
-        og_title: `What is MCP? - ${config.name}`,
-        og_description: `Learn about the Model Context Protocol (MCP) and how ${config.name} leverages it.`,
-      };
-    case '/about':
-      return {
-        title: `About - ${config.name}`,
-        description: `Learn about ${config.name} and our mission to make AI automation responsible and human-centered.`,
-        keywords: `${config.name}, About, Company, Team, Mission`,
-        og_image: defaultOgImage,
-        og_title: `About - ${config.name}`,
-        og_description: `Learn about ${config.name} and our mission to make AI automation responsible and human-centered.`,
-      };
-    default:
-      return {
-        title: defaultTitle,
-        description: defaultDescription,
-        keywords: defaultKeywords,
-        og_image: defaultOgImage,
-        og_title: defaultOgTitle,
-        og_description: defaultOgDescription,
-      };
-  }
 }
 
 /**
@@ -592,6 +547,9 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
       // Pricing page - will load markdown content
       return generatePricingContent(config);
 
+    case '/ai-act-readiness':
+      return await loadMarkdownContent(contentBasePath, brandKey, 'ai-act-readiness');
+
     default:
       return '';
   }
@@ -607,7 +565,8 @@ function generateFullHtmlPage(
   config: BrandConfig,
   content: string
 ): string {
-  const meta = getMetaForRoute(route, config);
+  const meta = get_meta_for_route(route, config);
+  const canonicalUrl = get_canonical_url(route, config);
   let html = indexHtml;
 
   // Replace <title>
@@ -649,13 +608,13 @@ function generateFullHtmlPage(
   // Replace Open Graph URL
   html = html.replace(
     /<meta property="og:url" content=".*?">/,
-    `<meta property="og:url" content="https://${config.domain}${route}">`
+    `<meta property="og:url" content="${canonicalUrl}">`
   );
 
   html = upsertHeadTag(
     html,
     /<link rel="canonical" href=".*?">/,
-    `<link rel="canonical" href="https://${config.domain}${route}">`
+    `<link rel="canonical" href="${canonicalUrl}">`
   );
 
   html = upsertHeadTag(
@@ -682,6 +641,8 @@ function generateFullHtmlPage(
     `<meta name="twitter:image" content="${meta.og_image}">`
   );
 
+  html = upsertStructuredDataTag(html, route, config);
+
   // Replace <lit-app> with content-wrapped version
   // Handle both empty <lit-app></lit-app> and <lit-app>...</lit-app> with existing content
   html = html.replace(
@@ -700,18 +661,33 @@ function upsertHeadTag(html: string, pattern: RegExp, tag: string): string {
   return html.replace('</head>', `  ${tag}\n</head>`);
 }
 
-function getStaticRoutes(config: BrandConfig): string[] {
-  const routes = ['/', '/privacy', '/terms', '/whatis-mcp'];
+function upsertStructuredDataTag(
+  html: string,
+  route: string,
+  config: BrandConfig
+): string {
+  const structuredData = JSON.stringify(
+    get_structured_data_for_route(route, config)
+  )
+    .replaceAll('<', '\\u003c')
+    .replaceAll('</script', '<\\/script');
 
-  if (((config as any).edition || 'saas') === 'saas') {
-    routes.push('/pricing', '/about');
-  }
-
-  return routes;
+  return upsertHeadTag(
+    html,
+    /<script id="preloop-structured-data" type="application\/ld\+json">[\s\S]*?<\/script>/,
+    `<script id="preloop-structured-data" type="application/ld+json">${structuredData}</script>`
+  );
 }
 
-function generateSitemapXml(config: BrandConfig): string {
-  const urls = getStaticRoutes(config)
+function generateSitemapXml(
+  config: BrandConfig,
+  includeAiActReadiness: boolean
+): string {
+  const routes = get_static_routes_with_options(
+    config,
+    includeAiActReadiness
+  );
+  const urls = routes
     .map(
       (route) => `  <url>\n    <loc>https://${config.domain}${route}</loc>\n  </url>`
     )
@@ -724,9 +700,16 @@ function generateRobotsTxt(config: BrandConfig): string {
   return `User-agent: *\nAllow: /\n\nSitemap: https://${config.domain}/sitemap.xml\n`;
 }
 
-function generateLlmsTxt(config: BrandConfig): string {
+function generateLlmsTxt(
+  config: BrandConfig,
+  includeAiActReadiness: boolean
+): string {
   const meta = config.landing?.meta || {};
   const hero = config.landing?.hero || {};
+  const routes = get_static_routes_with_options(
+    config,
+    includeAiActReadiness
+  );
 
   return [
     `# ${config.name}`,
@@ -734,7 +717,7 @@ function generateLlmsTxt(config: BrandConfig): string {
     meta.description || '',
     '',
     'Primary pages:',
-    ...getStaticRoutes(config).map((route) => `- https://${config.domain}${route}`),
+    ...routes.map((route) => `- https://${config.domain}${route}`),
     '',
     'Primary calls to action:',
     `- ${hero.cta_primary || 'Sign up'} -> https://${config.domain}/register`,

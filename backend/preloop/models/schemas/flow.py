@@ -146,6 +146,7 @@ class FlowResponse(FlowBase):
     prompt_customized: bool = False
     tools_customized: bool = False
     preset_update_available: bool = False
+    execution_stats: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -24,12 +24,16 @@ import {
   getAccountAgents,
   removeAccountAgent,
   getAccountGatewayUsageSummary,
+  getFlows,
+  getFlowExecutions,
+  getAIModels,
   type ManagedAgentListParams,
 } from '../../api';
 import type {
   AccountManagedAgentListResponse,
   ManagedAgentSummary,
   AccountGatewayUsageSummaryResponse,
+  AIModel,
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
@@ -41,8 +45,11 @@ export class AgentsView extends LitElement {
   @state() private loading = true;
   @state() private error: string | null = null;
   @state() private searchQuery = '';
-  @state() private sessionSourceType = 'all';
-  @state() private status = 'all';
+  @state() private agentKinds: string[] = ['all'];
+  @state() private lastSeenAfter = 'all';
+  @state() private flows: any[] = [];
+  @state() private aiModels: AIModel[] = [];
+
   @state() private actionAgentId: string | null = null;
   @state() private liveActivity: Record<
     string,
@@ -54,6 +61,7 @@ export class AgentsView extends LitElement {
       lastMessageSource?: string;
       currentBubble?: { text: string; source: string; timestamp: number };
       messageQueue?: { text: string; source: string; timestamp: number }[];
+      processTimeoutId?: any;
     }
   > = {};
 
@@ -122,6 +130,7 @@ export class AgentsView extends LitElement {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
         gap: var(--sl-spacing-large);
+        padding: 1rem 1rem 0 2rem;
       }
       .agent-card::part(base) {
         height: 100%;
@@ -235,6 +244,12 @@ export class AgentsView extends LitElement {
         opacity: 1;
         animation: bubble-bounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       }
+      @media (prefers-color-scheme: dark) {
+        .flow-icon {
+          filter: invert(0.8) hue-rotate(180deg);
+        }
+      }
+
       @keyframes bubble-bounce {
         0% {
           transform: translateX(-50%) translateY(10px) scale(0.9);
@@ -276,12 +291,15 @@ export class AgentsView extends LitElement {
       }
 
       /* Canvas specific styles */
-      .page-canvas-wrapper .content-bounds {
+      .content-bounds {
         width: 100%;
         max-width: 80rem;
         margin: 0 auto;
-        padding: 1rem 2rem 0 2rem;
+        padding: 1rem 1rem 0 2rem;
         box-sizing: border-box;
+      }
+      .page-canvas-wrapper .content-bounds {
+        /* Any overrides for canvas wrapper */
       }
       .page-canvas-wrapper {
         display: flex;
@@ -530,9 +548,43 @@ export class AgentsView extends LitElement {
     this.error = null;
 
     const params: ManagedAgentListParams = {
-      status: this.status as 'all' | 'active' | 'ended',
       limit: 50,
     };
+
+    // If 'all' is selected, clear agentKind param for backend. If specific kinds are selected, send comma separated.
+    const selectedAgentKinds = this.agentKinds.includes('all')
+      ? []
+      : this.agentKinds.filter((k) => k !== 'flows');
+    if (selectedAgentKinds.length > 0) {
+      params.agentKind = selectedAgentKinds.join(',');
+    } else if (!this.agentKinds.includes('all')) {
+      params.agentKind = '__none__'; // Send a dummy value so no agents match this request
+    }
+    // We handle the 'flows' display separately in frontend if not 'all'
+    const includeFlows =
+      this.agentKinds.includes('all') || this.agentKinds.includes('flows');
+
+    if (this.lastSeenAfter !== 'all') {
+      const now = Date.now();
+      let ms = 0;
+      switch (this.lastSeenAfter) {
+        case 'last_10_minutes':
+          ms = 10 * 60 * 1000;
+          break;
+        case 'last_1_hour':
+          ms = 60 * 60 * 1000;
+          break;
+        case 'last_24_hours':
+          ms = 24 * 60 * 60 * 1000;
+          break;
+        case 'last_7_days':
+          ms = 7 * 24 * 60 * 60 * 1000;
+          break;
+      }
+      if (ms > 0) {
+        params.lastSeenAfter = new Date(now - ms).toISOString();
+      }
+    }
 
     let queryPart = this.searchQuery.trim();
     if (queryPart) {
@@ -559,15 +611,21 @@ export class AgentsView extends LitElement {
       if (ownerUsername) params.ownerUsername = ownerUsername;
     }
 
-    if (this.sessionSourceType !== 'all')
-      params.sessionSourceType = this.sessionSourceType;
-
     try {
       // Parallel fetch
-      const [agentsData, gatewayData] = await Promise.all([
-        getAccountAgents(params),
-        getAccountGatewayUsageSummary(),
-      ]);
+      const [agentsData, gatewayData, flowsData, modelsData] =
+        await Promise.all([
+          getAccountAgents(params),
+          getAccountGatewayUsageSummary(),
+          getFlows(),
+          getAIModels().catch(() => [] as AIModel[]),
+        ]);
+
+      // Handle custom local empty case for dummy filter
+      if (params.agentKind === '__none__') {
+        agentsData.items = [];
+        agentsData.total = 0;
+      }
 
       // Check if a new agent was registered while the dialog is open
       if (
@@ -595,6 +653,40 @@ export class AgentsView extends LitElement {
       this.agents = agentsData;
       this.previousAgentCount = agentsData.items.length;
       this.gatewaySummary = gatewayData;
+
+      // Filter flows locally if lastSeenAfter is set (since backend getFlows doesn't support it)
+      let activeFlows = includeFlows
+        ? Array.isArray(flowsData)
+          ? flowsData
+          : (flowsData as any).items || []
+        : [];
+      if (this.lastSeenAfter !== 'all') {
+        const now = Date.now();
+        let ms = 0;
+        switch (this.lastSeenAfter) {
+          case 'last_10_minutes':
+            ms = 10 * 60 * 1000;
+            break;
+          case 'last_1_hour':
+            ms = 60 * 60 * 1000;
+            break;
+          case 'last_24_hours':
+            ms = 24 * 60 * 60 * 1000;
+            break;
+          case 'last_7_days':
+            ms = 7 * 24 * 60 * 60 * 1000;
+            break;
+        }
+        this.flows = activeFlows.filter((f: any) => {
+          const t = new Date(
+            f.execution_stats?.last_seen_at || f.created_at
+          ).getTime();
+          return now - t <= ms;
+        });
+      } else {
+        this.flows = activeFlows;
+      }
+
       this.initializeNodePositions(shouldForceReset);
     } catch (error) {
       console.error('Failed to load managed agents or gateway summary:', error);
@@ -609,7 +701,7 @@ export class AgentsView extends LitElement {
 
   private initializeNodePositions(forceReset = false) {
     if (!this.agents) return;
-    const items = this.agents.items;
+    const items = [...(this.agents?.items || []), ...this.flows];
     let didChange = false;
     let newPositions = forceReset ? {} : { ...this.nodePositions };
 
@@ -746,20 +838,39 @@ export class AgentsView extends LitElement {
   private handleSearchInput(event: Event): void {
     const target = event.target as HTMLInputElement;
     this.searchQuery = target.value;
-  }
 
-  private handleSourceTypeChange(event: CustomEvent): void {
-    this.sessionSourceType = event.detail.value || 'all';
-    void this.loadAgents();
-  }
-
-  private handleStatusChange(event: CustomEvent): void {
-    this.status = event.detail.value || 'all';
-    void this.loadAgents();
+    // Add debounce for search query filtering
+    if ((this as any)._searchTimeout)
+      clearTimeout((this as any)._searchTimeout);
+    (this as any)._searchTimeout = setTimeout(() => {
+      void this.loadAgents();
+    }, 400);
   }
 
   private handleSearchSubmit(event: Event): void {
     event.preventDefault();
+    void this.loadAgents();
+  }
+
+  private handleAgentKindChange(kind: string, checked: boolean): void {
+    if (kind === 'all') {
+      this.agentKinds = checked ? ['all'] : [];
+    } else {
+      let updated = [...this.agentKinds].filter((k) => k !== 'all');
+      if (checked) {
+        if (!updated.includes(kind)) updated.push(kind);
+      } else {
+        updated = updated.filter((k) => k !== kind);
+      }
+      this.agentKinds = updated.length === 0 ? ['all'] : updated;
+    }
+
+    void this.loadAgents();
+  }
+
+  private handleLastSeenAfterChange(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    this.lastSeenAfter = target.value || 'all';
     void this.loadAgents();
   }
 
@@ -830,6 +941,7 @@ export class AgentsView extends LitElement {
   }
 
   private getOnboardingDescription(agent: ManagedAgentSummary): string {
+    if (agent.total_requests > 0) return '';
     if (agent.onboarding_state === 'fully_onboarded') {
       return 'Tool calls and model traffic both flow through Preloop.';
     }
@@ -867,16 +979,37 @@ export class AgentsView extends LitElement {
   private extractPreviewFromRequest(
     request: any
   ): { text: string; source: string } | null {
+    console.log(
+      '[Canvas] extractPreviewFromRequest parsing API JSON Payload',
+      request
+    );
     let text = '';
 
-    const messages = request.messages;
+    const messages = request.messages || request.input || [];
     if (Array.isArray(messages) && messages.length > 0) {
+      const lastItem: any = messages[messages.length - 1];
+      if (lastItem.role === 'assistant' && Array.isArray(lastItem.content)) {
+        const toolUsePart = lastItem.content.find(
+          (part: any) => part.type === 'tool_use' || part.type === 'tool_call'
+        );
+        if (toolUsePart) {
+          console.log(
+            '[Canvas] extractPreviewFromRequest found tool use:',
+            toolUsePart.name
+          );
+          return { text: `Running: ${toolUsePart.name}`, source: 'Tool' };
+        }
+      }
+
       // Find the last non-assistant message or just the last message
-      const lastMsg: any = messages[messages.length - 1];
+      const userMsg = [...messages]
+        .reverse()
+        .find((m: any) => m.role === 'user');
+      const lastMsg: any = userMsg || lastItem;
       if (lastMsg.content) {
         if (Array.isArray(lastMsg.content)) {
           const textPart = lastMsg.content.find(
-            (part: any) => part.type === 'text'
+            (part: any) => part.type === 'text' || part.type === 'input_text'
           );
           text = textPart ? textPart.text : JSON.stringify(lastMsg.content);
         } else if (typeof lastMsg.content === 'string') {
@@ -893,6 +1026,10 @@ export class AgentsView extends LitElement {
     }
 
     if (text) {
+      console.log(
+        '[Canvas] extractPreviewFromRequest resolving bubble display:',
+        text.substring(0, 50) + '...'
+      );
       return { text: text.substring(0, 300), source: 'User' };
     }
     return null;
@@ -933,6 +1070,16 @@ export class AgentsView extends LitElement {
       state.currentBubble &&
       Date.now() - state.currentBubble.timestamp < 2400
     ) {
+      if ((state.messageQueue || []).length > 0 && !state.processTimeoutId) {
+        const timeoutId = setTimeout(() => {
+          this.liveActivity[agentId].processTimeoutId = null;
+          this.processBubbleQueue(agentId);
+        }, 2500);
+        this.liveActivity = {
+          ...this.liveActivity,
+          [agentId]: { ...state, processTimeoutId: timeoutId as any },
+        };
+      }
       return;
     }
 
@@ -943,37 +1090,100 @@ export class AgentsView extends LitElement {
         ...state,
         currentBubble: nextBubble,
         messageQueue: queue.slice(1),
+        processTimeoutId: null,
       };
+
+      // Set the next state
       this.liveActivity = { ...this.liveActivity, [agentId]: nextState };
 
-      setTimeout(() => this.processBubbleQueue(agentId), 2500);
+      // Schedule clearing/next item
+      const timeoutId = setTimeout(() => {
+        this.liveActivity[agentId].processTimeoutId = null;
+        this.processBubbleQueue(agentId);
+      }, 2500);
+      this.liveActivity[agentId].processTimeoutId = timeoutId as any;
+
       setTimeout(() => this.requestUpdate(), 6000);
     }
   }
 
   private handleGatewayActivity(message: any): void {
-    console.debug('Gateway Activity received:', message);
     const payload = message?.payload ?? {};
-    const agentId = payload.managed_agent_id;
-    if (!agentId || !this.agents) return;
     const type = message?.type;
+
+    console.log(`[Canvas/Dashboard] Raw Event received: ${type}`, message);
+
+    let agentId = payload.managed_agent_id || payload.flow_id;
+    const sessionId =
+      payload.session_id ||
+      payload.runtime_session_id ||
+      message.runtime_session_id;
+
+    if (!agentId && payload.execution_id) {
+      const flowExec = this.flows.find(
+        (f: any) => f.id === payload.flow_id || f.id === payload.execution_id
+      );
+      if (flowExec) agentId = flowExec.id;
+    }
+    if (!agentId && sessionId) {
+      const agentWithSession = (this.agents?.items || []).find(
+        (a: any) => a.runtime_session_id === sessionId
+      );
+      if (agentWithSession) agentId = agentWithSession.id;
+    }
+
+    if (!agentId) {
+      console.log(
+        '[Canvas] Cannot resolve agentId for event. managed: ',
+        payload.managed_agent_id,
+        ' session: ',
+        sessionId
+      );
+      return;
+    }
 
     let preview: { text: string; source: string } | undefined = undefined;
 
     if (type === 'model_gateway_request_started' && payload.request) {
       preview = this.extractPreviewFromRequest(payload.request) || undefined;
+    } else if (type === 'model_gateway_call_started' && payload.request) {
+      preview = this.extractPreviewFromRequest(payload.request) || undefined;
+    } else if (type === 'flow_execution_started') {
+      preview = {
+        text: payload.resolved_input_prompt || 'User triggered flow...',
+        source: 'User',
+      };
     } else if (
-      type === 'model_gateway_call' &&
+      (type === 'model_gateway_call' ||
+        type === 'model_gateway_call_completed') &&
       payload.conversation_preview?.messages?.length > 0
     ) {
       const messages = payload.conversation_preview.messages;
       const last = messages[messages.length - 1];
       preview = {
-        text: last.text,
+        text: last.text || '(No text)',
         source: last.source === 'request' ? 'Agent' : 'AI Model',
       };
-    } else if (type === 'mcp_call') {
-      const toolName = payload.tool_name || 'Tool';
+    } else if (
+      (payload.messages &&
+        Array.isArray(payload.messages) &&
+        payload.messages.length > 0) ||
+      (payload.input &&
+        Array.isArray(payload.input) &&
+        payload.input.length > 0)
+    ) {
+      preview = this.extractPreviewFromRequest(payload) || undefined;
+    } else if (
+      type === 'mcp_call' ||
+      type === 'mcp_call_started' ||
+      type === 'tool_execution_started' ||
+      type === 'mcp_tool_call' ||
+      type === 'mcp_gateway_call_started' ||
+      type === 'mcp_gateway_call' ||
+      (type && (type.includes('tool') || type.includes('mcp')))
+    ) {
+      const toolName =
+        payload.tool_name || payload.name || payload.action || 'Tool';
       const serverName = payload.server_name ? payload.server_name + '/' : '';
       const status = payload.status === 'failed' ? 'Failed: ' : 'Running: ';
       preview = {
@@ -992,13 +1202,17 @@ export class AgentsView extends LitElement {
       lastActivityAt: null,
     };
 
-    // Note: enqueueBubble may have just updated `this.liveActivity[agentId]`. We must re-read it.
     const current = this.liveActivity[agentId] ?? previous;
+    const t = type || '';
+    const isModelCall =
+      t.includes('model_gateway_call') || preview?.source === 'AI Model';
+    const isToolCall =
+      t.includes('mcp') || t.includes('tool') || preview?.source === 'Tool';
 
     const next = {
       ...current,
-      modelCalls: previous.modelCalls + (type === 'model_gateway_call' ? 1 : 0),
-      toolCalls: previous.toolCalls + (type === 'mcp_call' ? 1 : 0),
+      modelCalls: previous.modelCalls + (isModelCall ? 1 : 0),
+      toolCalls: previous.toolCalls + (isToolCall ? 1 : 0),
       lastActivityAt:
         payload.timestamp ??
         payload.last_activity_at ??
@@ -1010,8 +1224,8 @@ export class AgentsView extends LitElement {
 
     this.liveActivity = { ...this.liveActivity, [agentId]: next };
     this.agents = {
-      ...this.agents,
-      items: this.agents.items.map((agent) =>
+      ...(this.agents as any),
+      items: this.agents!.items.map((agent) =>
         agent.id !== agentId
           ? agent
           : {
@@ -1160,33 +1374,34 @@ export class AgentsView extends LitElement {
   }
 
   private resetView() {
-    if (!this.agents || this.agents.items.length === 0) {
-      this.scale = 1;
-      this.translateX = window.innerWidth / 2;
-      this.translateY = window.innerHeight / 2;
-      return;
-    }
-
-    // Force recalculation of node positions based on the algorithm
-    this.initializeNodePositions(true);
-
+    const items = [...(this.agents?.items || []), ...this.flows];
     const bounds = this.shadowRoot
       ?.querySelector('.canvas-viewport')
       ?.getBoundingClientRect();
 
     if (!bounds || bounds.width === 0) {
       this.scale = 1;
-      this.translateX = window.innerWidth / 2;
-      this.translateY = window.innerHeight / 2;
+      this.translateX = bounds ? bounds.width / 2 : window.innerWidth / 2;
+      this.translateY = bounds ? bounds.height / 2 : window.innerHeight / 2;
       return;
     }
+
+    if (items.length === 0) {
+      this.scale = 1;
+      this.translateX = bounds.width / 2;
+      this.translateY = bounds.height / 2;
+      return;
+    }
+
+    // Force recalculation of node positions based on the algorithm
+    this.initializeNodePositions(true);
 
     // Find bounding box of all nodes
     let minX = 0,
       maxX = 0,
       minY = 0,
       maxY = 0;
-    this.agents.items.forEach((agent) => {
+    items.forEach((agent) => {
       const pos = this.nodePositions[agent.id];
       if (pos) {
         minX = Math.min(minX, pos.x);
@@ -1277,7 +1492,12 @@ export class AgentsView extends LitElement {
 
       // If we didn't drag it, it's a click to route.
       if (!this.dragHasMoved) {
-        Router.go(`/console/agents/${encodeURIComponent(id)}`);
+        const isFlow = this.flows.some((f: any) => f.id === id);
+        if (isFlow) {
+          Router.go(`/console/flows/${encodeURIComponent(id)}`);
+        } else {
+          Router.go(`/console/agents/${encodeURIComponent(id)}`);
+        }
       } else {
         localStorage.setItem(
           'preloop.agents.canvas_positions',
@@ -1342,6 +1562,44 @@ export class AgentsView extends LitElement {
             </div>
           </div>
 
+          ${(agent as any)?.ai_model_id ||
+          (agent as any)?.configured_model_alias ||
+          (agent as any)?.latest_model_alias
+            ? html`
+                <div
+                  style="font-size: 0.85rem; color: var(--sl-color-neutral-700); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"
+                >
+                  <sl-icon
+                    name="cpu"
+                    style="color: var(--sl-color-primary-500);"
+                  ></sl-icon>
+                  <strong>Model:</strong>
+                  <a
+                    href="/console/settings/ai-models/${encodeURIComponent(
+                      (agent as any).ai_model_id ||
+                        (agent as any).configured_model_id ||
+                        'unknown'
+                    )}"
+                    style="color: inherit; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;"
+                    @pointerdown="${(e: Event) => e.stopPropagation()}"
+                  >
+                    ${(() => {
+                      const mId = (agent as any).ai_model_id;
+                      if (mId) {
+                        const model = this.aiModels.find((m) => m.id === mId);
+                        if (model && model.name) return model.name;
+                      }
+                      return (
+                        (agent as any).ai_model_name ||
+                        (agent as any).configured_model_alias ||
+                        (agent as any).latest_model_alias ||
+                        mId
+                      );
+                    })()}
+                  </a>
+                </div>
+              `
+            : ''}
           ${agent.owner_username
             ? html`
                 <div
@@ -1575,233 +1833,342 @@ export class AgentsView extends LitElement {
               </div>
             </div>
 
-            ${this.agents?.items.map((agent: ManagedAgentSummary) => {
-              const pos = this.nodePositions[agent.id] || { x: 250, y: 250 };
-              const liveActivity = this.liveActivity[agent.id];
-              const liveTotal = liveActivity
-                ? liveActivity.modelCalls + liveActivity.toolCalls
-                : 0;
-              const mcpEnabled = this.isMcpConfigured(agent);
-              const modelEnabled = this.isModelConfigured(agent);
-              const modelActive = !!(
-                liveActivity?.modelCalls &&
-                liveActivity?.lastActivityAt &&
-                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
-                  2000
-              );
-              const toolActive = !!(
-                liveActivity?.toolCalls &&
-                liveActivity?.lastActivityAt &&
-                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
-                  2000
-              );
-              const isGlowing =
-                liveTotal > 0 &&
-                liveActivity &&
-                Date.now() -
-                  new Date(liveActivity.lastActivityAt || 0).getTime() <
-                  2000;
-              const distance = Math.max(
-                Math.sqrt(pos.x * pos.x + pos.y * pos.y),
-                1
-              );
-              const offsetX = (-pos.y / distance) * 8;
-              const offsetY = (pos.x / distance) * 8;
+            ${[...(this.agents?.items || []), ...this.flows].map(
+              (item: any) => {
+                const isFlow =
+                  'flow_status' in item ||
+                  ('name' in item && !('display_name' in item));
+                const agent = isFlow ? null : (item as ManagedAgentSummary);
+                const flowName = isFlow ? item.name : '';
+                const flowNode = isFlow ? (item as any) : null;
+                const liveExecs = isFlow
+                  ? item.execution_stats?.running_execs || 0
+                  : 0;
+                const totalExecs = isFlow
+                  ? item.execution_stats?.total_execs || 0
+                  : 0;
+                const totalSpend = isFlow ? 0 : 0; // Not available easily anymore, omit for now.
+                const lastSeenFlow = isFlow
+                  ? item.execution_stats?.last_seen_at
+                  : null;
 
-              return html`
-                <svg
-                  class="connection-line ${this.draggingNodeId === agent.id
-                    ? 'dragging'
-                    : ''}"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <line
-                    x1="${offsetX}"
-                    y1="${offsetY}"
-                    x2="${pos.x + offsetX}"
-                    y2="${pos.y + offsetY}"
-                    stroke="${modelEnabled
-                      ? modelActive
-                        ? 'var(--sl-color-success-500)'
-                        : 'var(--sl-color-primary-500)'
-                      : 'var(--sl-color-neutral-300)'}"
-                    stroke-width="${modelActive
-                      ? '3'
-                      : modelEnabled
-                        ? '2'
-                        : '1.25'}"
-                    stroke-dasharray="${modelEnabled ? '0' : '6 6'}"
-                    opacity="${modelEnabled ? '1' : '0.55'}"
-                  />
-                  <line
-                    x1="${-offsetX}"
-                    y1="${-offsetY}"
-                    x2="${pos.x - offsetX}"
-                    y2="${pos.y - offsetY}"
-                    stroke="${mcpEnabled
-                      ? toolActive
-                        ? 'var(--sl-color-warning-300)'
-                        : 'var(--sl-color-warning-500)'
-                      : 'var(--sl-color-neutral-300)'}"
-                    stroke-width="${toolActive
-                      ? '3'
-                      : mcpEnabled
-                        ? '2'
-                        : '1.25'}"
-                    stroke-dasharray="${mcpEnabled ? '5 4' : '6 6'}"
-                    opacity="${mcpEnabled ? '1' : '0.55'}"
-                  />
-                </svg>
+                const pos = this.nodePositions[item.id] || { x: 250, y: 250 };
+                const liveActivity = this.liveActivity[item.id];
+                const liveTotal = liveActivity
+                  ? liveActivity.modelCalls + liveActivity.toolCalls
+                  : 0;
+                const mcpEnabled = isFlow
+                  ? true
+                  : this.isMcpConfigured(agent as any);
+                const modelEnabled = isFlow
+                  ? true
+                  : this.isModelConfigured(agent as any);
+                const modelActive = !!(
+                  liveActivity?.modelCalls &&
+                  liveActivity?.lastActivityAt &&
+                  Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
+                    2000
+                );
+                const toolActive = !!(
+                  liveActivity?.toolCalls &&
+                  liveActivity?.lastActivityAt &&
+                  Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
+                    2000
+                );
+                const isGlowing =
+                  liveTotal > 0 &&
+                  liveActivity &&
+                  Date.now() -
+                    new Date(liveActivity.lastActivityAt || 0).getTime() <
+                    2000;
+                const distance = Math.max(
+                  Math.sqrt(pos.x * pos.x + pos.y * pos.y),
+                  1
+                );
+                const offsetX = (-pos.y / distance) * 8;
+                const offsetY = (pos.x / distance) * 8;
 
-                <div
-                  class="agent-node ${this.draggingNodeId === agent.id
-                    ? 'dragging'
-                    : ''}"
-                  style=${styleMap({ left: `${pos.x}px`, top: `${pos.y}px` })}
-                  @pointerdown=${(e: PointerEvent) =>
-                    this.handleNodePointerDown(e, agent.id)}
-                  @pointermove=${(e: PointerEvent) =>
-                    this.handleNodePointerMove(e, agent.id)}
-                  @pointerup=${(e: PointerEvent) =>
-                    this.handleNodePointerUp(e, agent.id)}
-                  @pointercancel=${(e: PointerEvent) =>
-                    this.handleNodePointerUp(e, agent.id)}
-                >
-                  <div
-                    class="agent-speech-bubble ${liveActivity?.currentBubble &&
-                    Date.now() - liveActivity.currentBubble.timestamp < 6000
-                      ? 'visible'
-                      : ''} ${liveActivity?.currentBubble?.source === 'Tool'
-                      ? 'tool-bubble'
+                return html`
+                  <svg
+                    class="connection-line ${this.draggingNodeId === item.id
+                      ? 'dragging'
                       : ''}"
+                    xmlns="http://www.w3.org/2000/svg"
                   >
-                    <div class="speech-source">
-                      ${liveActivity?.currentBubble?.source || 'Agent'}
-                    </div>
-                    <div class="speech-text">
-                      ${liveActivity?.currentBubble?.text || ''}
-                    </div>
-                  </div>
-                  <sl-card>
-                    <div
-                      slot="header"
-                      style="display: flex; justify-content: space-between; align-items: center;"
-                    >
+                    <line
+                      x1="${offsetX}"
+                      y1="${offsetY}"
+                      x2="${pos.x + offsetX}"
+                      y2="${pos.y + offsetY}"
+                      stroke="${isFlow
+                        ? 'var(--sl-color-primary-500)'
+                        : modelEnabled
+                          ? modelActive
+                            ? 'var(--sl-color-success-500)'
+                            : 'var(--sl-color-primary-500)'
+                          : 'var(--sl-color-neutral-300)'}"
+                      stroke-width="${isFlow
+                        ? '2'
+                        : modelActive
+                          ? '3'
+                          : modelEnabled
+                            ? '2'
+                            : '1.25'}"
+                      stroke-dasharray="${modelEnabled ? '0' : '6 6'}"
+                      opacity="${modelEnabled ? '1' : '0.55'}"
+                    />
+                    <line
+                      x1="${-offsetX}"
+                      y1="${-offsetY}"
+                      x2="${pos.x - offsetX}"
+                      y2="${pos.y - offsetY}"
+                      stroke="${mcpEnabled
+                        ? toolActive
+                          ? 'var(--sl-color-warning-300)'
+                          : 'var(--sl-color-warning-500)'
+                        : 'var(--sl-color-neutral-300)'}"
+                      stroke-width="${toolActive
+                        ? '3'
+                        : mcpEnabled
+                          ? '2'
+                          : '1.25'}"
+                      stroke-dasharray="${mcpEnabled ? '5 4' : '6 6'}"
+                      opacity="${mcpEnabled ? '1' : '0.55'}"
+                    />
+                  </svg>
+
+                  <div
+                    class="agent-node ${this.draggingNodeId === item.id
+                      ? 'dragging'
+                      : ''}"
+                    style=${styleMap({ left: `${pos.x}px`, top: `${pos.y}px` })}
+                    @pointerdown=${(e: PointerEvent) =>
+                      this.handleNodePointerDown(e, item.id)}
+                    @pointermove=${(e: PointerEvent) =>
+                      this.handleNodePointerMove(e, item.id)}
+                    @pointerup=${(e: PointerEvent) =>
+                      this.handleNodePointerUp(e, item.id)}
+                    @pointercancel=${(e: PointerEvent) =>
+                      this.handleNodePointerUp(e, item.id)}
+                  >
+                    ${html`
                       <div
-                        style="display: flex; align-items: center; gap: 8px; overflow: hidden;"
+                        class="agent-speech-bubble ${liveActivity?.currentBubble &&
+                        Date.now() - liveActivity.currentBubble.timestamp < 6000
+                          ? 'visible'
+                          : ''} ${liveActivity?.currentBubble?.source === 'Tool'
+                          ? 'tool-bubble'
+                          : ''}"
                       >
-                        ${renderAgentIcon(
-                          agent.agent_kind || agent.session_source_type,
-                          'flex-shrink: 0; color: var(--sl-color-neutral-500);'
-                        )}
-                        <strong
-                          style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px;"
-                          >${agent.display_name}</strong
-                        >
+                        <div class="speech-source">
+                          ${liveActivity?.currentBubble?.source || 'Agent'}
+                        </div>
+                        <div class="speech-text">
+                          ${liveActivity?.currentBubble?.text || ''}
+                        </div>
                       </div>
-                      ${liveTotal > 0
-                        ? html`<sl-badge variant="success" pulse
-                            >Live</sl-badge
-                          >`
-                        : agent.activity_status === 'active_now'
-                          ? html`<sl-badge variant="success">Active</sl-badge>`
+                      <sl-card>
+                        <div
+                          slot="header"
+                          style="display: flex; justify-content: space-between; align-items: center;"
+                        >
+                          <div
+                            style="display: flex; gap: 8px; overflow: hidden;"
+                          >
+                            ${isFlow && flowNode?.agent_type
+                              ? renderAgentIcon(
+                                  flowNode.agent_type,
+                                  'flex-shrink: 0; color: var(--sl-color-neutral-500); width: 20px; height: 20px;'
+                                )
+                              : isFlow
+                                ? html`<img
+                                    src="/images/flow.svg"
+                                    class="flow-icon"
+                                    style="width: 20px; height: 20px; flex-shrink: 0;"
+                                    alt="Flow"
+                                  />`
+                                : renderAgentIcon(
+                                    agent?.agent_kind ||
+                                      agent?.session_source_type,
+                                    'flex-shrink: 0; color: var(--sl-color-neutral-500); width: 20px; height: 20px;'
+                                  )}
+                            <strong
+                              style="font-size: 1rem; word-break: break-word; line-height: 1.2;"
+                              >${isFlow
+                                ? flowName
+                                : agent?.display_name}</strong
+                            >
+                          </div>
+                          ${liveTotal > 0
+                            ? html`<sl-badge variant="success" pulse
+                                >Live</sl-badge
+                              >`
+                            : agent?.activity_status === 'active_now' || isFlow
+                              ? html`<sl-badge variant="success"
+                                  >Active</sl-badge
+                                >`
+                              : ''}
+                        </div>
+                        <div
+                          style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; word-break: break-all;"
+                        >
+                          ${isFlow
+                            ? html`<span title="Description"
+                                >${flowNode?.description || ''}</span
+                              >`
+                            : agent?.session_source_id}
+                        </div>
+                        ${!isFlow && agent?.owner_username
+                          ? html` <div
+                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                            >
+                              <sl-icon
+                                name="person-circle"
+                                style="color: var(--sl-color-primary-500);"
+                              ></sl-icon>
+                              ${agent.owner_username}
+                            </div>`
                           : ''}
-                    </div>
-                    <div
-                      style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; word-break: break-all;"
-                    >
-                      ${agent.session_source_id}
-                    </div>
-                    ${agent.owner_username
-                      ? html` <div
-                          style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                        >
-                          <sl-icon
-                            name="person-circle"
-                            style="color: var(--sl-color-primary-500);"
-                          ></sl-icon>
-                          ${agent.owner_username}
-                        </div>`
-                      : ''}
-                    ${agent.tags && Object.keys(agent.tags).length > 0
-                      ? html` <div
-                          style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"
-                        >
-                          ${Object.entries(agent.tags)
-                            .slice(0, 3)
-                            .map(
-                              ([k, v]) => html`
-                                <div
-                                  style="font-size: 0.65rem; background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 10px; color: var(--sl-color-neutral-700); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                                >
-                                  <span style="opacity: 0.7">${k}</span>${v &&
-                                  v !== 'true'
-                                    ? html`<span
-                                          style="opacity: 0.4; margin: 0 2px;"
-                                          >=</span
-                                        >${v}`
-                                    : ''}
-                                </div>
-                              `
-                            )}
-                          ${Object.keys(agent.tags).length > 3
-                            ? html`<div
-                                style="font-size: 0.65rem; padding: 2px;"
+                        ${isFlow && flowNode?.agent_type
+                          ? html` <div
+                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                            >
+                              <sl-icon
+                                name="robot"
+                                style="color: var(--sl-color-primary-500);"
+                              ></sl-icon>
+                              ${flowNode.agent_type}
+                            </div>`
+                          : ''}
+                        ${!isFlow && (agent as any)?.ai_model_id
+                          ? html` <div
+                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                            >
+                              <sl-icon
+                                name="cpu"
+                                style="color: var(--sl-color-primary-500);"
+                              ></sl-icon>
+                              <a
+                                href="/console/settings/ai-models/${encodeURIComponent(
+                                  (agent as any).ai_model_id
+                                )}"
+                                style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
+                                @click=${(e: Event) => e.stopPropagation()}
+                                >${(agent as any).ai_model_id}</a
                               >
-                                +${Object.keys(agent.tags).length - 3}
-                              </div>`
-                            : ''}
-                        </div>`
-                      : ''}
-                    <div
-                      style="font-size: 0.78rem; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
-                    >
-                      ${this.getOnboardingDescription(agent)}
-                    </div>
-                    <div
-                      style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; border-top: 1px solid var(--sl-color-neutral-200); padding-top: 8px;"
-                    >
-                      <div style="display: flex; flex-direction: column;">
-                        <span
-                          style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                          >Reqs</span
+                            </div>`
+                          : ''}
+                        ${isFlow && flowNode?.ai_model_id
+                          ? html` <div
+                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                            >
+                              <sl-icon
+                                name="cpu"
+                                style="color: var(--sl-color-primary-500);"
+                              ></sl-icon>
+                              <a
+                                href="/console/settings/ai-models/${encodeURIComponent(
+                                  flowNode.ai_model_id
+                                )}"
+                                style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
+                                @click=${(e: Event) => e.stopPropagation()}
+                                >${flowNode.ai_model_id}</a
+                              >
+                            </div>`
+                          : ''}
+                        ${!isFlow &&
+                        agent?.tags &&
+                        Object.keys(agent.tags).length > 0
+                          ? html` <div
+                              style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"
+                            >
+                              ${Object.entries(agent.tags)
+                                .slice(0, 3)
+                                .map(
+                                  ([k, v]) => html`
+                                    <div
+                                      style="font-size: 0.65rem; background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 10px; color: var(--sl-color-neutral-700); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                                    >
+                                      <span style="opacity: 0.7">${k}</span
+                                      >${v && v !== 'true'
+                                        ? html`<span
+                                              style="opacity: 0.4; margin: 0 2px;"
+                                              >=</span
+                                            >${v}`
+                                        : ''}
+                                    </div>
+                                  `
+                                )}
+                              ${Object.keys(agent.tags).length > 3
+                                ? html`<div
+                                    style="font-size: 0.65rem; padding: 2px;"
+                                  >
+                                    +${Object.keys(agent.tags).length - 3}
+                                  </div>`
+                                : ''}
+                            </div>`
+                          : ''}
+                        ${!isFlow && agent
+                          ? html` <div
+                              style="font-size: 0.78rem; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
+                            >
+                              ${this.getOnboardingDescription(agent)}
+                            </div>`
+                          : ''}
+                        <div
+                          style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; border-top: 1px solid var(--sl-color-neutral-200); padding-top: 8px;"
                         >
-                        <strong>${agent.total_requests}</strong>
-                      </div>
-                      <div
-                        style="display: flex; flex-direction: column; text-align: center;"
-                      >
-                        <span
-                          style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                          >Spend</span
-                        >
-                        <strong
-                          >${this.formatMoney(agent.estimated_cost)}</strong
-                        >
-                      </div>
-                      <div
-                        style="display: flex; flex-direction: column; text-align: right;"
-                      >
-                        <span
-                          style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                          >Last Seen</span
-                        >
-                        <span style="font-weight: 600;"
-                          >${new Date(
-                            liveActivity?.lastActivityAt ||
-                              agent.last_seen_at ||
-                              0
-                          ).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}</span
-                        >
-                      </div>
-                    </div>
-                  </sl-card>
-                </div>
-              `;
-            })}
+                          <div style="display: flex; flex-direction: column;">
+                            <span
+                              style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                              >${isFlow ? 'Execs' : 'Reqs'}</span
+                            >
+                            <strong
+                              >${isFlow
+                                ? totalExecs
+                                : agent?.total_requests}</strong
+                            >
+                          </div>
+                          <div
+                            style="display: flex; flex-direction: column; text-align: center;"
+                          >
+                            <span
+                              style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                              >Spend</span
+                            >
+                            <strong
+                              >${this.formatMoney(
+                                isFlow ? totalSpend : agent?.estimated_cost || 0
+                              )}</strong
+                            >
+                          </div>
+                          <div
+                            style="display: flex; flex-direction: column; text-align: right;"
+                          >
+                            <span
+                              style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                              >Last Seen</span
+                            >
+                            <span style="font-weight: 600;"
+                              >${new Date(
+                                liveActivity?.lastActivityAt ||
+                                  (isFlow
+                                    ? lastSeenFlow
+                                    : agent?.last_seen_at) ||
+                                  0
+                              ).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}</span
+                            >
+                          </div>
+                        </div>
+                      </sl-card>
+                    `}
+                  </div>
+                `;
+              }
+            )}
           </div>
         </div>
       </div>
@@ -1921,7 +2288,7 @@ export class AgentsView extends LitElement {
         <div class="content-bounds">
           <div
             class="header"
-            style="display: flex; flex-wrap: wrap; gap: var(--sl-spacing-medium); align-items: flex-start; justify-content: space-between;"
+            style="display: flex; flex-wrap: wrap; gap: var(--sl-spacing-medium); align-items: flex-start; justify-content: space-between; margin-bottom: var(--sl-spacing-large);"
           >
             <div>
               <h1>Agents</h1>
@@ -1942,7 +2309,6 @@ export class AgentsView extends LitElement {
           </div>
 
           <div
-            class="px-6 mb-4 flex-none"
             style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
           >
             <div style="display: flex; justify-content: flex-end; width: 100%;">
@@ -1975,29 +2341,54 @@ export class AgentsView extends LitElement {
                 <sl-icon name="search" slot="prefix"></sl-icon>
               </sl-input>
 
-              <sl-select
-                value=${this.sessionSourceType}
-                @sl-change=${this.handleSourceTypeChange}
-              >
-                <sl-option value="all">All Types</sl-option>
-                <sl-option value="openclaw">OpenClaw</sl-option>
-                <sl-option value="cli">CLI</sl-option>
-              </sl-select>
+              <sl-dropdown stay-open-on-select>
+                <sl-button slot="trigger" caret variant="default">
+                  Agent Kinds
+                  (${this.agentKinds.length === 1 &&
+                  this.agentKinds[0] === 'all'
+                    ? 'All'
+                    : this.agentKinds.length})
+                </sl-button>
+                <div
+                  style="padding: var(--sl-spacing-medium); background: var(--sl-panel-background-color); border: solid 1px var(--sl-panel-border-color); border-radius: var(--sl-border-radius-medium); box-shadow: var(--sl-shadow-large); display: flex; flex-direction: column; gap: var(--sl-spacing-small); min-width: 200px;"
+                >
+                  ${[
+                    { value: 'all', label: 'All Agents' },
+                    { value: 'flows', label: 'Flows' },
+                    { value: 'openclaw', label: 'OpenClaw' },
+                    { value: 'opencode', label: 'OpenCode' },
+                    { value: 'claude_code', label: 'Claude Code' },
+                    { value: 'codex', label: 'Codex CLI' },
+                    { value: 'gemini_cli', label: 'Gemini CLI' },
+                    { value: 'cursor', label: 'Cursor' },
+                    { value: 'windsurf', label: 'Windsurf' },
+                  ].map(
+                    (kind) => html`
+                      <sl-checkbox
+                        .checked=${this.agentKinds.includes(kind.value)}
+                        @sl-change=${(e: any) =>
+                          this.handleAgentKindChange(
+                            kind.value,
+                            e.target.checked
+                          )}
+                      >
+                        ${kind.label}
+                      </sl-checkbox>
+                    `
+                  )}
+                </div>
+              </sl-dropdown>
 
               <sl-select
-                value=${this.status}
-                @sl-change=${this.handleStatusChange}
+                value=${this.lastSeenAfter}
+                @sl-change=${this.handleLastSeenAfterChange}
               >
-                <sl-option value="all">All</sl-option>
-                <sl-option value="active">Active</sl-option>
-                <sl-option value="ended">Ended</sl-option>
+                <sl-option value="all">All Time</sl-option>
+                <sl-option value="last_10_minutes">Last 10 minutes</sl-option>
+                <sl-option value="last_1_hour">Last 1 hour</sl-option>
+                <sl-option value="last_24_hours">Last 24 hours</sl-option>
+                <sl-option value="last_7_days">Last 7 days</sl-option>
               </sl-select>
-              <sl-button
-                type="submit"
-                variant="default"
-                style="margin-top: auto;"
-                >Filter</sl-button
-              >
             </form>
           </div>
 

@@ -263,6 +263,30 @@ export class LitApp extends LitElement {
           return commands.component('public-pricing-view');
         },
       },
+      {
+        path: '/ai-act-readiness',
+        action: (context, commands) => {
+          // Check if we have SSR content for this EXACT route on first load
+          const outlet = this.renderRoot.querySelector('main');
+          const existingWrapper = outlet?.querySelector('static-view-wrapper');
+          const ssrRoute = this.getAttribute('data-ssr-route');
+
+          if (
+            existingWrapper &&
+            ssrRoute === '/ai-act-readiness' &&
+            !this.hasNavigated
+          ) {
+            // Reuse SSR content on first load only
+            this.hasNavigated = true;
+            return existingWrapper;
+          }
+
+          // Load markdown dynamically
+          const view = commands.component('static-view') as any;
+          view.src = '/content/ai-act-readiness.md';
+          return view;
+        },
+      },
       { path: '/welcome', component: 'welcome-view' },
       {
         path: '/console',

@@ -786,19 +786,22 @@ class FlowExecutionOrchestrator:
             principal_user = None
             if account.primary_user_id:
                 principal_user = crud_user.get(self.db, id=account.primary_user_id)
+                if principal_user and not principal_user.is_active:
+                    principal_user = None  # Fall back to other active users
 
             if not principal_user:
-                # Fall back to the first available user for older accounts that
-                # do not have `primary_user_id` populated yet.
+                # Fall back to the first available active user for older accounts that
+                # do not have `primary_user_id` populated yet, or if primary is inactive.
                 users = crud_user.get_by_account(
                     self.db, account_id=self.flow.account_id
                 )
-                if users:
-                    principal_user = users[0]
+                active_users = [u for u in users if u.is_active]
+                if active_users:
+                    principal_user = active_users[0]
 
             if not principal_user:
                 logger.warning(
-                    f"No users found for account {self.flow.account_id}, "
+                    f"No active users found for account {self.flow.account_id}, "
                     f"cannot create API token"
                 )
                 return None, None

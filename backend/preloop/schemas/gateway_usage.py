@@ -378,7 +378,8 @@ class AccountManagedAgentListResponse(BaseModel):
     """Account-scoped managed-agent registry response."""
 
     query: Optional[str] = None
-    session_source_type: Optional[str] = None
+    agent_kind: Optional[str] = None
+    last_seen_after: Optional[datetime] = None
     status: str = "all"
     total: int = 0
     limit: int = 20

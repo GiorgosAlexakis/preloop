@@ -353,7 +353,8 @@ export interface ManagedAgentToolActivitySummary {
 
 export interface AccountManagedAgentListResponse {
   query: string | null;
-  session_source_type: string | null;
+  agent_kind: string | null;
+  last_seen_after: string | null;
   status: 'all' | 'active' | 'ended';
   total: number;
   limit: number;

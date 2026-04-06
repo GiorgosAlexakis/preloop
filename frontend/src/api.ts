@@ -256,7 +256,8 @@ export interface ManagedAgentListParams {
   query?: string;
   tags?: string;
   ownerUsername?: string;
-  sessionSourceType?: string;
+  agentKind?: string;
+  lastSeenAfter?: string;
   status?: 'all' | 'active' | 'ended';
   limit?: number;
   offset?: number;
@@ -354,8 +355,11 @@ function buildManagedAgentListQuery(
   if (params.ownerUsername) {
     queryParams.set('owner_username', params.ownerUsername);
   }
-  if (params.sessionSourceType) {
-    queryParams.set('session_source_type', params.sessionSourceType);
+  if (params.agentKind) {
+    queryParams.set('agent_kind', params.agentKind);
+  }
+  if (params.lastSeenAfter) {
+    queryParams.set('last_seen_after', params.lastSeenAfter);
   }
   if (params.status) {
     queryParams.set('status', params.status);
