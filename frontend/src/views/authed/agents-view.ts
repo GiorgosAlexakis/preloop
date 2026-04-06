@@ -1975,23 +1975,18 @@ export class AgentsView extends LitElement {
                           <div
                             style="display: flex; gap: 8px; overflow: hidden;"
                           >
-                            ${isFlow && flowNode?.agent_type
-                              ? renderAgentIcon(
-                                  flowNode.agent_type,
+                            ${isFlow
+                              ? html`<img
+                                  src="/images/flow.svg"
+                                  class="flow-icon"
+                                  style="width: 20px; height: 20px; flex-shrink: 0;"
+                                  alt="Flow"
+                                />`
+                              : renderAgentIcon(
+                                  agent?.agent_kind ||
+                                    agent?.session_source_type,
                                   'flex-shrink: 0; color: var(--sl-color-neutral-500); width: 20px; height: 20px;'
-                                )
-                              : isFlow
-                                ? html`<img
-                                    src="/images/flow.svg"
-                                    class="flow-icon"
-                                    style="width: 20px; height: 20px; flex-shrink: 0;"
-                                    alt="Flow"
-                                  />`
-                                : renderAgentIcon(
-                                    agent?.agent_kind ||
-                                      agent?.session_source_type,
-                                    'flex-shrink: 0; color: var(--sl-color-neutral-500); width: 20px; height: 20px;'
-                                  )}
+                                )}
                             <strong
                               style="font-size: 1rem; word-break: break-word; line-height: 1.2;"
                               >${isFlow
@@ -2033,10 +2028,10 @@ export class AgentsView extends LitElement {
                           ? html` <div
                               style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
                             >
-                              <sl-icon
-                                name="robot"
-                                style="color: var(--sl-color-primary-500);"
-                              ></sl-icon>
+                              ${renderAgentIcon(
+                                flowNode.agent_type,
+                                'color: var(--sl-color-primary-500); width: 14px; height: 14px;'
+                              )}
                               ${flowNode.agent_type}
                             </div>`
                           : ''}
