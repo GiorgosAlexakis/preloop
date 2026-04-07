@@ -1831,8 +1831,19 @@ export class FlowExecutionView extends LitElement {
         </div>
         <div
           slot="main-column"
-          style="display: flex; justify-content: flex-end; flex: 1; min-width: 0;"
+          style="display: flex; justify-content: flex-end; flex: 1; min-width: 0; gap: 8px;"
         >
+          ${isRunning
+            ? html`
+                <sl-button
+                  size="small"
+                  variant="danger"
+                  @click=${this.stopExecution}
+                >
+                  <sl-icon slot="prefix" name="x-circle"></sl-icon> Cancel
+                </sl-button>
+              `
+            : ''}
           ${this.canRetry()
             ? html`
                 <sl-button
