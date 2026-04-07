@@ -445,9 +445,7 @@ export class PublicPricingView extends LitElement {
               <h1 class="fw-bold">
                 <span class="gradient-product">Pricing</span>
               </h1>
-              <p class="lead">
-                Start your 30-day free trial today. No credit card required.
-              </p>
+              <p class="lead">Start your 14-day free trial today.</p>
             </div>
           </div>
 

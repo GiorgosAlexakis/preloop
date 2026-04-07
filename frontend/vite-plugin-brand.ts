@@ -449,25 +449,25 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
 
     <!-- Feature slots -->
     ${features
-      .map(
-        (feature, idx) => `
+          .map(
+            (feature, idx) => `
     <div slot="feature-${idx}" data-title="${feature.title || ''}" data-text="${feature.text || ''}" data-video="${feature.videoUrl || ''}" data-img="${feature.placeholderImg || ''}">
       <h3>${feature.title || ''}</h3>
       <p>${feature.text || ''}</p>
     </div>`
-      )
-      .join('\n')}
+          )
+          .join('\n')}
 
     <!-- FAQ slots -->
     ${faqs
-      .map(
-        (faq, idx) => `
+          .map(
+            (faq, idx) => `
     <div slot="faq-${idx}" data-q="${faq.q || ''}" data-a="${faq.a || ''}">
       <h3>${faq.q || ''}</h3>
       <p>${faq.a || ''}</p>
     </div>`
-      )
-      .join('\n')}
+          )
+          .join('\n')}
 
     <!-- Get Started section slots -->
     <span slot="get-started-title">${getStarted.title || ''}</span>
@@ -476,22 +476,22 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
 
     <!-- Get Started feature slots -->
     ${getStartedFeatures
-      .map(
-        (feature, idx) => `
+          .map(
+            (feature, idx) => `
     <div slot="get-started-feature-${idx}" data-icon="${feature.icon || ''}" data-title="${feature.title || ''}" data-text="${feature.text || ''}">
       <h3>${feature.title || ''}</h3>
       <p>${feature.text || ''}</p>
     </div>`
-      )
-      .join('\n')}
+          )
+          .join('\n')}
 
     <!-- MCP Setup slots -->
     <span slot="mcp-setup-title">${getStarted.mcp_setup_title || ''}</span>
 
     <!-- MCP Config slots -->
     ${mcpConfigs
-      .map(
-        (mcpConfig, idx) => `
+          .map(
+            (mcpConfig, idx) => `
     <div slot="mcp-config-${idx}"
          data-ide="${mcpConfig.ide || ''}"
          data-ide-name="${mcpConfig.ide_name || ''}"
@@ -501,14 +501,14 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
          data-setup-instructions="${(mcpConfig.setup_instructions || '').replace(/"/g, '&quot;')}">
       <pre><code>${mcpConfig.code || ''}</code></pre>
     </div>`
-      )
-      .join('\n')}
+          )
+          .join('\n')}
 
     <!-- Product Hunt slot -->
     ${(() => {
-      const productHunt = (config.landing as any).product_hunt;
-      if (productHunt?.enabled) {
-        return `
+          const productHunt = (config.landing as any).product_hunt;
+          if (productHunt?.enabled) {
+            return `
     <div slot="product-hunt"
          data-enabled="true"
          data-post-id="${productHunt.post_id || ''}"
@@ -517,15 +517,15 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
         <img alt="Preloop - The MCP Governance Layer | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=${productHunt.post_id}&amp;theme=${productHunt.theme}" />
       </a>
     </div>`;
-      }
-      return '';
-    })()}
+          }
+          return '';
+        })()}
 
     <!-- Featured Video slot -->
     ${(() => {
-      const featuredVideo = (config.landing as any).featured_video;
-      if (featuredVideo?.enabled) {
-        return `
+          const featuredVideo = (config.landing as any).featured_video;
+          if (featuredVideo?.enabled) {
+            return `
     <div slot="featured-video"
          data-enabled="true"
          data-title="${featuredVideo.title || ''}"
@@ -534,9 +534,9 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
       ${featuredVideo.title ? `<h2>${featuredVideo.title}</h2>` : ''}
       <iframe width="560" height="315" src="${featuredVideo.youtube_embed}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
     </div>`;
-      }
-      return '';
-    })()}
+          }
+          return '';
+        })()}
   `;
 
     case '/privacy':
@@ -866,7 +866,7 @@ function generatePricingContent(config: BrandConfig): string {
             <li>Approval escalation</li>
             <li>Slack &amp; Mattermost notifications</li>
             <li>Audit logging</li>
-            <li>30-day free trial</li>
+            <li>14-day free trial</li>
             <li>Email support</li>
           </ul>
           <a href="/register">Start Free Trial</a>
@@ -897,7 +897,7 @@ function generatePricingContent(config: BrandConfig): string {
         <p>We accept all major credit cards and can invoice for annual plans.</p>
 
         <h3>Is there a free trial?</h3>
-        <p>Yes, the Teams plan comes with a 30-day free trial. No credit card required.</p>
+        <p>Yes, the Teams plan comes with a 14-day free trial.</p>
 
         <h3>Is the Open Source edition really free?</h3>
         <p>Yes! ${config.name} is open source under the Apache 2.0 license. You can self-host it for free with no limitations on usage.</p>

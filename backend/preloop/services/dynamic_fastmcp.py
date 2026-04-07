@@ -95,8 +95,8 @@ class DynamicFastMCP(FastMCP):
         self._user_context_provider = provider
         logger.info("User context provider registered")
 
-    async def _list_tools(self, context=None) -> list[Tool]:
-        """Override FastMCP's _list_tools to filter based on user context.
+    async def list_tools(self, *, run_middleware: bool = True) -> list[Tool]:
+        """Override FastMCP's list_tools to filter based on user context.
 
         This method is called by FastMCP's protocol handler to get the list
         of available tools. We filter the full tool list based on the current
@@ -105,12 +105,12 @@ class DynamicFastMCP(FastMCP):
         Phase 1B: Now includes proxied tools from external MCP servers.
 
         Args:
-            context: MiddlewareContext (FastMCP 2.13.0+), ignored for now
+            run_middleware: Whether to run middleware (passed to super)
 
         Returns:
             List of tools available to the current user
         """
-        logger.info("!!! _list_tools called - ENTRY POINT !!!")
+        logger.info("!!! list_tools called - ENTRY POINT !!!")
         # Get current user context
         user_context = self._get_current_user_context()
         logger.info(f"!!! Got user context: {user_context} !!!")
@@ -127,7 +127,9 @@ class DynamicFastMCP(FastMCP):
         available_tools = []
 
         # Add built-in tools (filtered by tracker requirements metadata)
-        default_tools = await super()._list_tools(context)
+        default_tools = [
+            t for t in await super().list_tools(run_middleware=run_middleware)
+        ]
         # Filter out internal proxied tool names (they start with "account_")
         builtin_tools = [t for t in default_tools if not t.name.startswith("account_")]
 
@@ -166,10 +168,18 @@ class DynamicFastMCP(FastMCP):
             f"{len(default_tools) - len(builtin_tools)} internal names)"
         )
 
+        if user_context.mcp_tools_cache is not None:
+            logger.info("Returning cached tools from UserContext")
+            return user_context.mcp_tools_cache
+
         # Add proxied tools from external MCP servers (Phase 1B)
         # Now with dynamic registration for streaming approval support
+        proxied_tools_data = []
+        justification_modes = {}
+        account_meta = {}
+
         try:
-            # Run sync DB calls in a thread to avoid blocking the event loop.
+            # Parallelize all three DB lookups required for tool listing
             def _fetch_proxied_tools():
                 db = next(get_db())
                 try:
@@ -181,10 +191,48 @@ class DynamicFastMCP(FastMCP):
                 finally:
                     db.close()
 
-            logger.info("Fetching proxied tools via executor...")
-            proxied_tools_data = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _fetch_proxied_tools),
-                timeout=30,
+            def _fetch_tool_configs():
+                db = next(get_db())
+                try:
+                    configs = crud_tool_configuration.get_multi_by_account(
+                        db, account_id=str(user_context.account_id), limit=1000
+                    )
+                    return {
+                        tc.tool_name: tc.justification_mode
+                        for tc in configs
+                        if tc.justification_mode in ("optional", "required")
+                    }
+                finally:
+                    db.close()
+
+            def _fetch_account_meta():
+                db = next(get_db())
+                try:
+                    acc = (
+                        db.query(Account)
+                        .filter(Account.id == user_context.account_id)
+                        .first()
+                    )
+                    return getattr(acc, "meta_data", {})
+                finally:
+                    db.close()
+
+            logger.info("Fetching DB metadata for list_tools concurrently...")
+            loop = asyncio.get_event_loop()
+            (
+                proxied_tools_data,
+                justification_modes,
+                account_meta,
+            ) = await asyncio.gather(
+                asyncio.wait_for(
+                    loop.run_in_executor(None, _fetch_proxied_tools), timeout=30
+                ),
+                asyncio.wait_for(
+                    loop.run_in_executor(None, _fetch_tool_configs), timeout=30
+                ),
+                asyncio.wait_for(
+                    loop.run_in_executor(None, _fetch_account_meta), timeout=30
+                ),
             )
             logger.info(f"Fetched {len(proxied_tools_data)} proxied tools")
 
@@ -223,12 +271,12 @@ class DynamicFastMCP(FastMCP):
                     # Track as registered
                     self._registered_proxied_tools.add(internal_name)
 
-                    # Always track the mapping for name translation
+                # Always track the mapping for name translation
                 self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
                 self._proxied_tool_server_names[mcp_tool.name] = mcp_server.name
 
-                # Now get all registered tools and map back to original names
-            all_registered = await super()._list_tools(context)
+            # Now get all registered tools and map back to original names
+            all_registered = await super().list_tools(run_middleware=run_middleware)
             logger.info(
                 f"Total registered tools after dynamic registration: {len(all_registered)}"
             )
@@ -280,31 +328,8 @@ class DynamicFastMCP(FastMCP):
             )
 
         # ── Inject justification parameter based on ToolConfiguration ────
+        # ── Inject justification parameter based on ToolConfiguration ────
         try:
-
-            def _fetch_tool_configs():
-                db = next(get_db())
-                try:
-                    configs = crud_tool_configuration.get_multi_by_account(
-                        db,
-                        account_id=str(user_context.account_id),
-                        limit=1000,
-                    )
-                    # Extract just the fields we need to avoid detached-instance
-                    # errors once the session is closed.
-                    return {
-                        tc.tool_name: tc.justification_mode
-                        for tc in configs
-                        if tc.justification_mode in ("optional", "required")
-                    }
-                finally:
-                    db.close()
-
-            justification_modes = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _fetch_tool_configs),
-                timeout=30,
-            )
-
             modified_tools = []
             for tool in available_tools:
                 j_mode = justification_modes.get(tool.name)
@@ -351,24 +376,6 @@ class DynamicFastMCP(FastMCP):
 
         # ── Apply subject governance to filter out disabled tools ─────────
         try:
-
-            def _fetch_account_meta():
-                db = next(get_db())
-                try:
-                    acc = (
-                        db.query(Account)
-                        .filter(Account.id == user_context.account_id)
-                        .first()
-                    )
-                    return getattr(acc, "meta_data", {})
-                finally:
-                    db.close()
-
-            account_meta = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _fetch_account_meta),
-                timeout=30,
-            )
-
             subject_context = {
                 "api_key_id": user_context.api_key_id,
                 "managed_agent_id": getattr(user_context, "managed_agent_id", None),
@@ -391,6 +398,7 @@ class DynamicFastMCP(FastMCP):
         for tool in available_tools:
             logger.info(f"  - {tool.name}")
 
+        user_context.mcp_tools_cache = available_tools
         return available_tools
 
     def _get_current_user_context(self) -> Optional[UserContext]:
@@ -613,7 +621,15 @@ async def {internal_name}({params_str}) -> str:
 
         return wrapper
 
-    async def _call_tool(self, context):
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict | None = None,
+        *,
+        version=None,
+        run_middleware: bool = True,
+        task_meta=None,
+    ):
         """Override tool execution for access validation and name translation.
 
         This is called by FastMCP's protocol handler before executing a tool.
@@ -624,7 +640,11 @@ async def {internal_name}({params_str}) -> str:
         for both builtin and proxied tools, allowing streaming progress updates.
 
         Args:
-            context: MiddlewareContext[CallToolRequestParams] from FastMCP 2.13.0+
+            name: Name of the tool
+            arguments: Arguments derived from FastMCP
+            version: Optional Tool Version
+            run_middleware: Whether to run middleware
+            task_meta: Optional Background Task Metadata
 
         Returns:
             ToolResult from tool execution
@@ -632,18 +652,15 @@ async def {internal_name}({params_str}) -> str:
         from fastmcp.tools.tool import ToolResult
         from mcp.types import TextContent
 
-        # Extract tool name and arguments from context
-        name = context.message.name
-        arguments = context.message.arguments or {}
+        arguments = arguments or {}
 
         # Extract justification from arguments before it reaches the tool function.
-        # Justification is injected into the schema by _list_tools() but isn't part
+        # Justification is injected into the schema by list_tools() but isn't part
         # of the actual tool's function signature.
         justification = arguments.pop("justification", None)
         _justification_var.set(justification)
-        context.message.arguments = arguments
 
-        logger.info(f"!!! _call_tool called for tool: {name} !!!")
+        logger.info(f"!!! call_tool called for tool: {name} !!!")
 
         # Get current user context
         user_context = self._get_current_user_context()
@@ -730,7 +747,7 @@ async def {internal_name}({params_str}) -> str:
             )
 
         # Check if user has access to this tool
-        available_tools = await self._list_tools(context=None)
+        available_tools = await self.list_tools(run_middleware=run_middleware)
         if not any(tool.name == name for tool in available_tools):
             logger.warning(
                 f"User {user_context.username} attempted to call "
@@ -822,21 +839,26 @@ async def {internal_name}({params_str}) -> str:
             safe_account_id = user_context.account_id.replace("-", "_")
             internal_name = f"account_{safe_account_id}_{name}"
             logger.info(f"Translating proxied tool name: {name} -> {internal_name}")
-            # Modify context with translated name
-            context.message.name = internal_name
-
+            # Modify target name for the FastMCP router
+            name = internal_name
         else:
             # Builtin tool - call with original name
             logger.info(f"Calling builtin tool: {name}")
 
-        # Call parent with (possibly modified) context
+        # Call parent
         import time
 
         start_time = time.monotonic()
         exec_status = "executed"
         exec_error: Optional[str] = None
         try:
-            result = await super()._call_tool(context)
+            result = await super().call_tool(
+                name,
+                arguments,
+                version=version,
+                run_middleware=run_middleware,
+                task_meta=task_meta,
+            )
         except Exception as e:
             exec_status = "failed"
             exec_error = str(e)

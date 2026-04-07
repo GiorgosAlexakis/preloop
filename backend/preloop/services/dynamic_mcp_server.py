@@ -136,6 +136,7 @@ class UserContext:
         api_key_id: Optional[str] = None,
         api_key_name: Optional[str] = None,
         managed_agent_id: Optional[str] = None,
+        mcp_tools_cache: Optional[List[Any]] = None,
     ):
         self.user_id = user_id
         self.account_id = account_id
@@ -154,6 +155,7 @@ class UserContext:
         self.api_key_id = api_key_id
         self.api_key_name = api_key_name
         self.managed_agent_id = managed_agent_id
+        self.mcp_tools_cache = mcp_tools_cache
 
 
 class DynamicMCPServer:
