@@ -4,7 +4,6 @@ import logging
 import re
 from typing import Dict
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from preloop.models import models
@@ -69,40 +68,9 @@ class ExecutionMetricsService:
 
     def _get_gateway_usage(self, execution: models.FlowExecution) -> Dict:
         """Return explicit gateway usage totals for an execution when available."""
-        row = (
-            self.db.query(
-                func.count(models.ApiUsage.id).label("api_requests"),
-                func.coalesce(func.sum(models.ApiUsage.prompt_tokens), 0).label(
-                    "prompt_tokens"
-                ),
-                func.coalesce(func.sum(models.ApiUsage.completion_tokens), 0).label(
-                    "completion_tokens"
-                ),
-                func.coalesce(func.sum(models.ApiUsage.total_tokens), 0).label(
-                    "total_tokens"
-                ),
-                func.coalesce(func.sum(models.ApiUsage.estimated_cost), 0.0).label(
-                    "estimated_cost"
-                ),
-                func.count(models.ApiUsage.estimated_cost).label("priced_requests"),
-            )
-            .filter(
-                models.ApiUsage.action_type == "model_gateway",
-                models.ApiUsage.flow_execution_id == execution.id,
-            )
-            .one()
-        )
+        from preloop.models.crud import crud_api_usage
 
-        return {
-            "api_requests": int(row.api_requests or 0),
-            "token_usage": {
-                "total_tokens": int(row.total_tokens or 0),
-                "input_tokens": int(row.prompt_tokens or 0),
-                "output_tokens": int(row.completion_tokens or 0),
-            },
-            "estimated_cost": round(float(row.estimated_cost or 0.0), 6),
-            "has_pricing": int(row.priced_requests or 0) > 0,
-        }
+        return crud_api_usage.get_gateway_usage_for_execution(self.db, execution.id)
 
     def _count_tool_calls(self, execution: models.FlowExecution) -> int:
         """Count tool calls from execution logs.
@@ -203,50 +171,9 @@ class ExecutionMetricsService:
         Returns:
             Number of API requests
         """
-        explicit_count = (
-            self.db.query(models.ApiUsage)
-            .filter(models.ApiUsage.flow_execution_id == execution.id)
-            .count()
-        )
-        if explicit_count:
-            logger.info(
-                f"Found {explicit_count} explicitly attributed API requests for execution {execution.id}"
-            )
-            return explicit_count
+        from preloop.models.crud import crud_api_usage
 
-        if not execution.start_time:
-            return 0
-
-        # Get the flow and its owner
-        flow = (
-            self.db.query(models.Flow)
-            .filter(models.Flow.id == execution.flow_id)
-            .first()
-        )
-
-        if not flow or not flow.account_id:
-            return 0
-
-        # Get the first user in the account (the one who owns the API key)
-        account = (
-            self.db.query(models.Account)
-            .filter(models.Account.id == flow.account_id)
-            .first()
-        )
-
-        if not account or not account.users:
-            return 0
-
-        # Get API usage for the execution timeframe
-        query = self.db.query(models.ApiUsage).filter(
-            models.ApiUsage.user_id.in_([u.id for u in account.users]),
-            models.ApiUsage.timestamp >= execution.start_time,
-        )
-
-        if execution.end_time:
-            query = query.filter(models.ApiUsage.timestamp <= execution.end_time)
-
-        count = query.count()
+        count = crud_api_usage.count_by_execution_timeframe(self.db, execution)
 
         logger.info(
             f"Found {count} API requests for execution {execution.id} "

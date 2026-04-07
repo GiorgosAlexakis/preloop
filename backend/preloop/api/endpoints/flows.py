@@ -129,31 +129,8 @@ def read_flows(
     )
 
     if flows:
-        from sqlalchemy import func, case
-        from preloop.models.models.flow_execution import FlowExecution
-
         flow_ids = [f.id for f in flows]
-        stats = (
-            db.query(
-                FlowExecution.flow_id,
-                func.count(FlowExecution.id).label("total_execs"),
-                func.sum(
-                    case(
-                        (
-                            FlowExecution.status.in_(
-                                ["PENDING", "INITIALIZING", "STARTING", "RUNNING"]
-                            ),
-                            1,
-                        ),
-                        else_=0,
-                    )
-                ).label("running_execs"),
-                func.max(FlowExecution.updated_at).label("last_seen_at"),
-            )
-            .filter(FlowExecution.flow_id.in_(flow_ids))
-            .group_by(FlowExecution.flow_id)
-            .all()
-        )
+        stats = crud_flow_execution.get_execution_stats_for_flows(db, flow_ids)
 
         stats_map = {
             s.flow_id: {

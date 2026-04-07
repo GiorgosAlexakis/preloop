@@ -686,3 +686,114 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             }
             for row in rows
         ]
+
+    def get_gateway_usage_for_execution(
+        self,
+        db: Session,
+        execution_id: str,
+    ) -> Dict[str, Any]:
+        """Return explicit gateway usage totals for an execution when available."""
+        row = (
+            db.query(
+                func.count(ApiUsage.id).label("api_requests"),
+                func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label(
+                    "prompt_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+                    "completion_tokens"
+                ),
+                func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+                func.count(ApiUsage.estimated_cost).label("priced_requests"),
+            )
+            .filter(
+                ApiUsage.action_type == "model_gateway",
+                ApiUsage.flow_execution_id == execution_id,
+            )
+            .one()
+        )
+
+        return {
+            "api_requests": int(row.api_requests or 0),
+            "token_usage": {
+                "total_tokens": int(row.total_tokens or 0),
+                "input_tokens": int(row.prompt_tokens or 0),
+                "output_tokens": int(row.completion_tokens or 0),
+            },
+            "estimated_cost": round(float(row.estimated_cost or 0.0), 6),
+            "has_pricing": int(row.priced_requests or 0) > 0,
+        }
+
+    def count_by_execution_timeframe(
+        self,
+        db: Session,
+        execution: Any,
+    ) -> int:
+        """Count API requests made during execution timeframe."""
+        from preloop.models import models
+
+        explicit_count = (
+            db.query(ApiUsage)
+            .filter(ApiUsage.flow_execution_id == execution.id)
+            .count()
+        )
+        if explicit_count:
+            return explicit_count
+
+        if not execution.start_time:
+            return 0
+
+        # Get the flow and its owner
+        flow = db.query(models.Flow).filter(models.Flow.id == execution.flow_id).first()
+
+        if not flow or not flow.account_id:
+            return 0
+
+        # Get the first user in the account (the one who owns the API key)
+        account = (
+            db.query(models.Account)
+            .filter(models.Account.id == flow.account_id)
+            .first()
+        )
+
+        if not account or not account.users:
+            return 0
+
+        # Get API usage for the execution timeframe
+        query = db.query(ApiUsage).filter(
+            ApiUsage.user_id.in_([u.id for u in account.users]),
+            ApiUsage.timestamp >= execution.start_time,
+        )
+
+        if execution.end_time:
+            query = query.filter(ApiUsage.timestamp <= execution.end_time)
+
+        return query.count()
+
+    def get_gateway_spend(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        start: datetime,
+        flow_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
+        model_alias: Optional[str] = None,
+    ) -> float:
+        query = db.query(func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)).filter(
+            ApiUsage.action_type == "model_gateway",
+            ApiUsage.account_id == account_id,
+            ApiUsage.timestamp >= start,
+        )
+        if flow_id:
+            query = query.filter(ApiUsage.flow_id == flow_id)
+        if api_key_id:
+            query = query.filter(ApiUsage.api_key_id == api_key_id)
+        if runtime_principal_id:
+            query = query.filter(ApiUsage.runtime_principal_id == runtime_principal_id)
+        if model_alias:
+            query = query.filter(ApiUsage.model_alias == model_alias)
+        return float(query.scalar() or 0.0)

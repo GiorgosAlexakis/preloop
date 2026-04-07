@@ -23,6 +23,7 @@ import {
   formatUTCDateTime,
   calculateDuration,
 } from '../../utils/date';
+import '../../components/preloop-gateway-event.ts';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
@@ -1493,270 +1494,6 @@ export class FlowExecutionView extends LitElement {
     `;
   }
 
-  private renderGatewayField(label: string, value: unknown) {
-    return html`
-      <div class="gateway-event-field">
-        <div class="gateway-event-label">${label}</div>
-        <div class="gateway-event-value">${value ?? 'n/a'}</div>
-      </div>
-    `;
-  }
-
-  private getGatewayModelLabel(event: FlowGatewayEvent): string {
-    return (
-      event.payload.model_alias ||
-      event.payload.requested_model ||
-      event.payload.metadata?.requested_model ||
-      'Unknown model'
-    );
-  }
-
-  private getGatewayProviderLabel(event: FlowGatewayEvent): string {
-    return (
-      event.payload.provider_name ||
-      event.payload.gateway_provider ||
-      event.payload.metadata?.provider ||
-      'Unknown provider'
-    );
-  }
-
-  private getGatewayOutcomeVariant(outcome?: string | null) {
-    switch (outcome) {
-      case 'success':
-        return 'success';
-      case 'budget_denied':
-        return 'warning';
-      case 'error':
-        return 'danger';
-      default:
-        return 'neutral';
-    }
-  }
-
-  private formatGatewayOutcome(outcome?: string | null): string {
-    if (!outcome) {
-      return 'Unknown';
-    }
-    return outcome
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
-  private formatGatewayCost(cost?: number | null): string {
-    if (typeof cost !== 'number' || Number.isNaN(cost)) {
-      return 'n/a';
-    }
-    if (cost === 0) {
-      return '$0.00';
-    }
-    return cost >= 0.01 ? `$${cost.toFixed(2)}` : `$${cost.toFixed(4)}`;
-  }
-
-  private formatGatewayTokens(tokens?: number | null): string {
-    if (typeof tokens !== 'number' || Number.isNaN(tokens)) {
-      return 'n/a';
-    }
-    return tokens.toLocaleString();
-  }
-
-  private formatGatewayPayload(payload: unknown): string {
-    return JSON.stringify(payload, null, 2);
-  }
-
-  private handleGatewaySearchQueryChange(event: Event) {
-    this.gatewaySearchQuery = (
-      event.target as HTMLInputElement & { value: string }
-    ).value;
-  }
-
-  private getGatewaySearchText(event: FlowGatewayEvent): string {
-    const payload = event.payload || {};
-    const previewText = this.getGatewayPreviewMessages(payload)
-      .map(
-        (message) =>
-          `${message.source || ''} ${message.role || ''} ${message.text || ''}`
-      )
-      .join('\n');
-
-    return [
-      event.type,
-      event.timestamp || '',
-      payload.endpoint || '',
-      payload.endpoint_kind || '',
-      payload.model_alias || '',
-      payload.requested_model || '',
-      payload.provider_name || '',
-      payload.gateway_provider || '',
-      payload.error_detail || '',
-      payload.message || '',
-      previewText,
-      this.formatGatewayPayload(payload),
-    ]
-      .filter(Boolean)
-      .join('\n')
-      .toLowerCase();
-  }
-
-  private getFilteredGatewayEvents(): FlowGatewayEvent[] {
-    const query = this.gatewaySearchQuery.trim().toLowerCase();
-    if (!query) {
-      return this.gatewayEvents;
-    }
-    return this.gatewayEvents.filter((event) =>
-      this.getGatewaySearchText(event).includes(query)
-    );
-  }
-
-  private formatGatewayLabel(value?: string | null): string {
-    if (!value) {
-      return 'Unknown';
-    }
-    return value
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
-  private getGatewayPreviewMessages(
-    payload: FlowGatewayEventPayload
-  ): FlowGatewayConversationPreviewMessage[] {
-    return Array.isArray(payload.conversation_preview?.messages)
-      ? payload.conversation_preview?.messages
-      : [];
-  }
-
-  private renderGatewayCapturePolicy(payload: FlowGatewayEventPayload) {
-    const policy = payload.capture_policy;
-    if (!policy) {
-      return '';
-    }
-
-    return html`
-      <div class="payload-section-title">Capture Policy</div>
-      <div class="gateway-capture-policy">
-        <div class="gateway-capture-grid">
-          ${this.renderGatewayField(
-            'Content',
-            policy.content_capture_enabled
-              ? 'Preview captured'
-              : 'Preview redacted'
-          )}
-          ${this.renderGatewayField(
-            'Max Preview',
-            typeof policy.max_preview_chars === 'number'
-              ? `${policy.max_preview_chars} chars`
-              : 'n/a'
-          )}
-          ${this.renderGatewayField(
-            'Conversation',
-            policy.conversation_preview_available
-              ? 'Available'
-              : 'Not available'
-          )}
-        </div>
-        <div class="gateway-badges">
-          ${policy.sensitive_fields_redacted
-            ? html`<sl-badge pill>Sensitive fields redacted</sl-badge>`
-            : ''}
-          ${policy.content_redacted
-            ? html`<sl-badge pill variant="warning">Content redacted</sl-badge>`
-            : ''}
-          ${policy.content_truncated
-            ? html`<sl-badge pill variant="warning"
-                >Content truncated</sl-badge
-              >`
-            : ''}
-        </div>
-      </div>
-    `;
-  }
-
-  private renderGatewayPreviewMessage(
-    message: FlowGatewayConversationPreviewMessage
-  ) {
-    const previewText = message.text
-      ? message.text
-      : message.redacted
-        ? 'Content redacted by capture policy.'
-        : 'No text content captured.';
-
-    return html`
-      <div class="conversation-preview-message">
-        <div class="conversation-preview-header">
-          <div class="conversation-preview-title">
-            ${this.formatGatewayLabel(message.source)}
-            ${this.formatGatewayLabel(message.role)}
-          </div>
-          <div class="gateway-badges">
-            ${message.redacted
-              ? html`<sl-badge pill variant="warning">Redacted</sl-badge>`
-              : ''}
-            ${message.truncated
-              ? html`<sl-badge pill variant="warning">Truncated</sl-badge>`
-              : ''}
-            ${typeof message.original_length === 'number'
-              ? html`
-                  <sl-badge pill variant="neutral">
-                    ${message.original_length.toLocaleString()} chars
-                  </sl-badge>
-                `
-              : ''}
-          </div>
-        </div>
-        <pre
-          class="conversation-preview-text ${message.redacted
-            ? 'conversation-preview-redacted'
-            : ''}"
-        >
-${previewText}</pre
-        >
-        ${message.truncated
-          ? html`
-              <div class="search-summary">
-                This stored preview was truncated before display.
-              </div>
-            `
-          : ''}
-      </div>
-    `;
-  }
-
-  private renderGatewayConversationPreview(payload: FlowGatewayEventPayload) {
-    const messages = this.getGatewayPreviewMessages(payload);
-    const metadata = payload.conversation_preview?.metadata;
-
-    return html`
-      <div class="payload-section-title">Conversation Preview</div>
-      <div class="gateway-badges" style="margin-bottom: 12px;">
-        <sl-badge pill>${messages.length} messages</sl-badge>
-        ${metadata?.has_redacted_content
-          ? html`<sl-badge pill variant="warning"
-              >Contains redactions</sl-badge
-            >`
-          : ''}
-        ${metadata?.has_truncated_content
-          ? html`<sl-badge pill variant="warning"
-              >Contains truncation</sl-badge
-            >`
-          : ''}
-      </div>
-      ${messages.length > 0
-        ? html`
-            <div class="conversation-preview-list">
-              ${messages.map((message) =>
-                this.renderGatewayPreviewMessage(message)
-              )}
-            </div>
-          `
-        : html`
-            <div class="payload-block" style="margin-bottom: 16px;">
-              <pre>No conversation preview captured for this event.</pre>
-            </div>
-          `}
-    `;
-  }
-
   private renderGatewayEventsPanel() {
     const filteredEvents = this.getFilteredGatewayEvents();
     const query = this.gatewaySearchQuery.trim();
@@ -1850,99 +1587,82 @@ ${previewText}</pre
     `;
   }
 
+  private formatGatewayPayload(payload: unknown): string {
+    return JSON.stringify(payload, null, 2);
+  }
+
+  private handleGatewaySearchQueryChange(event: Event) {
+    this.gatewaySearchQuery = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private getGatewaySearchText(event: FlowGatewayEvent): string {
+    const payload = event.payload || {};
+    const previewText = this.getGatewayPreviewMessages(payload)
+      .map(
+        (message) =>
+          `${message.source || ''} ${message.role || ''} ${message.text || ''}`
+      )
+      .join('\n');
+
+    return [
+      event.type,
+      event.timestamp || '',
+      payload.endpoint || '',
+      payload.endpoint_kind || '',
+      payload.model_alias || '',
+      payload.requested_model || '',
+      payload.provider_name || '',
+      payload.gateway_provider || '',
+      payload.error_detail || '',
+      payload.message || '',
+      previewText,
+      this.formatGatewayPayload(payload),
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .toLowerCase();
+  }
+
+  private getFilteredGatewayEvents(): FlowGatewayEvent[] {
+    const query = this.gatewaySearchQuery.trim().toLowerCase();
+    if (!query) {
+      return this.gatewayEvents;
+    }
+    return this.gatewayEvents.filter((event) =>
+      this.getGatewaySearchText(event).includes(query)
+    );
+  }
+
+  private formatGatewayLabel(value?: string | null): string {
+    if (!value) {
+      return 'Unknown';
+    }
+    return value
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  private getGatewayPreviewMessages(
+    payload: FlowGatewayEventPayload
+  ): FlowGatewayConversationPreviewMessage[] {
+    return Array.isArray(payload.conversation_preview?.messages)
+      ? payload.conversation_preview?.messages
+      : [];
+  }
+
   private renderGatewayEvent(event: FlowGatewayEvent) {
-    const payload = event.payload;
-    const timestamp = event.timestamp
-      ? html`
-          <sl-tooltip content=${formatUTCDateTime(event.timestamp)}>
-            <span>${formatLocalTime(event.timestamp)}</span>
-          </sl-tooltip>
-        `
-      : 'Unknown';
-
     return html`
-      <sl-details
-        class="gateway-event"
-        @sl-show=${() => this.handleGatewayEventExpand(event.id)}
-      >
-        <div slot="summary" class="gateway-event-summary">
-          ${this.renderGatewayField('Timestamp', timestamp)}
-          ${this.renderGatewayField('Model', this.getGatewayModelLabel(event))}
-          ${this.renderGatewayField(
-            'Provider',
-            this.getGatewayProviderLabel(event)
-          )}
-          ${this.renderGatewayField(
-            'Outcome',
-            html`
-              <sl-badge
-                variant=${this.getGatewayOutcomeVariant(payload.outcome)}
-              >
-                ${this.formatGatewayOutcome(payload.outcome)}
-              </sl-badge>
-            `
-          )}
-          ${this.renderGatewayField(
-            'Cost',
-            this.formatGatewayCost(payload.estimated_cost)
-          )}
-          ${this.renderGatewayField(
-            'Tokens',
-            this.formatGatewayTokens(payload.total_tokens)
-          )}
-        </div>
-
-        <div class="gateway-event-meta">
-          ${this.renderGatewayField(
-            'HTTP',
-            payload.status_code
-              ? `${payload.method || 'POST'} ${payload.status_code}`
-              : payload.method || 'n/a'
-          )}
-          ${this.renderGatewayField(
-            'Endpoint',
-            payload.endpoint_kind || payload.endpoint || 'n/a'
-          )}
-          ${this.renderGatewayField(
-            'Duration',
-            typeof payload.duration_ms === 'number'
-              ? `${payload.duration_ms} ms`
-              : 'n/a'
-          )}
-          ${this.renderGatewayField(
-            'Prompt Tokens',
-            this.formatGatewayTokens(payload.prompt_tokens)
-          )}
-          ${this.renderGatewayField(
-            'Completion Tokens',
-            this.formatGatewayTokens(payload.completion_tokens)
-          )}
-          ${this.renderGatewayField(
-            'Finish Reason',
-            payload.finish_reason || 'n/a'
-          )}
-          ${this.renderGatewayField(
-            'Request ID',
-            payload.upstream_request_id || 'n/a'
-          )}
-        </div>
-
-        ${payload.error_detail
-          ? html`
-              <sl-alert variant="danger" open style="margin-bottom: 16px;">
-                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-                ${payload.error_detail}
-              </sl-alert>
-            `
-          : ''}
-        ${this.renderGatewayCapturePolicy(payload)}
-        ${this.renderGatewayConversationPreview(payload)}
-
-        <div class="payload-section-title">Event Payload</div>
-        <div class="payload-block">
-          <pre>${this.formatGatewayPayload(payload)}</pre>
-        </div>
-      </sl-details>
+      <preloop-gateway-event
+        .event=${{ ...event }}
+        @gateway-event-expand=${(e: CustomEvent) => {
+          if (e.detail.expanded) {
+            this.handleGatewayEventExpand(event.id);
+          }
+        }}
+      ></preloop-gateway-event>
     `;
   }
 

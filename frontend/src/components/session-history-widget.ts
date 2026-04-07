@@ -13,6 +13,7 @@ import {
 import type { FlowGatewayEvent } from '../types';
 import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
 import './json-tree.js';
+import './preloop-gateway-event.ts';
 
 @customElement('session-history-widget')
 export class SessionHistoryWidget extends LitElement {
@@ -311,133 +312,18 @@ export class SessionHistoryWidget extends LitElement {
   }
 
   private _renderEvent(sessionId: string, event: FlowGatewayEvent) {
-    const payload = event.payload || {};
-    const isTool = event.type === 'tool_call';
-    const isModel = event.type === 'model_gateway_call';
-
-    let title = event.type;
-    let icon = 'activity';
-    let borderColor = 'var(--sl-color-neutral-300)';
-
-    if (isTool) {
-      title = `Tool Call: ${payload.tool_name || 'Unknown'}`;
-      icon = 'tools';
-      borderColor = 'var(--sl-color-primary-500)';
-    } else if (isModel) {
-      title = `Model: ${payload.model_alias || payload.requested_model || 'Unknown'}`;
-      icon = 'cpu';
-      borderColor = 'var(--sl-color-success-500)';
-    }
-
     return html`
-      <div class="event-item" style="border-left-color: ${borderColor}">
-        <div class="event-title">
-          <sl-icon name=${icon}></sl-icon>
-          ${title}
-          ${payload.outcome
-            ? html`<sl-badge
-                variant=${payload.outcome === 'error' ? 'danger' : 'neutral'}
-                >${payload.outcome}</sl-badge
-              >`
-            : ''}
-        </div>
-        <div class="event-meta">
-          ${this._formatDate(event.timestamp)}
-          ${payload.estimated_cost
-            ? `· $${payload.estimated_cost.toFixed(4)}`
-            : ''}
-          ${payload.total_tokens ? `· ${payload.total_tokens} tokens` : ''}
-        </div>
-        ${payload.error_detail
-          ? html`<div
-              style="color: var(--sl-color-danger-600); margin-top: 4px;"
-            >
-              ${payload.error_detail}
-            </div>`
-          : ''}
-
-        <sl-details
-          summary="View Payload"
-          style="margin-top: var(--sl-spacing-small);"
-          @sl-show=${() => this._handleEventShow(sessionId, String(event.id))}
-        >
-          ${this.loadingEventDetails.has(String(event.id))
-            ? html`
-                <div class="loading-state">
-                  <sl-spinner></sl-spinner> Loading details...
-                </div>
-              `
-            : this.errorEventDetails[event.id]
-              ? html`
-                  <div
-                    class="empty-state"
-                    style="color: var(--sl-color-danger-600)"
-                  >
-                    ${this.errorEventDetails[event.id]}
-                  </div>
-                `
-              : this.loadedEventDetails[event.id]
-                ? (() => {
-                    const detailPayload =
-                      this.loadedEventDetails[event.id].payload || {};
-                    return html`
-                      ${detailPayload.request
-                        ? html`
-                            <div
-                              style="font-weight: bold; margin-bottom: 8px; color: var(--sl-color-neutral-700);"
-                            >
-                              Prompt / Request Context
-                            </div>
-                            <json-tree
-                              .data=${detailPayload.request}
-                              .initiallyExpanded=${true}
-                              @json-tree-scroll-target=${this
-                                ._handleScrollTarget}
-                            ></json-tree>
-                          `
-                        : ''}
-                      ${detailPayload.response
-                        ? html`
-                            <div
-                              style="font-weight: bold; margin-top: 16px; margin-bottom: 8px; color: var(--sl-color-neutral-700);"
-                            >
-                              Model Completion / Logic Execution
-                            </div>
-                            <json-tree
-                              .data=${detailPayload.response}
-                              .initiallyExpanded=${true}
-                              @json-tree-scroll-target=${this
-                                ._handleScrollTarget}
-                            ></json-tree>
-                          `
-                        : detailPayload.outcome === 'error' ||
-                            event.type === 'model_gateway_request_started'
-                          ? html`
-                              <div
-                                class="${event.type ===
-                                'model_gateway_request_started'
-                                  ? 'empty-state'
-                                  : 'empty-state danger'}"
-                                style="${event.type ===
-                                'model_gateway_request_started'
-                                  ? ''
-                                  : 'color: var(--sl-color-danger-600); border: 1px solid var(--sl-color-danger-200); background: var(--sl-color-danger-50); border-radius: var(--sl-border-radius-medium); padding: var(--sl-spacing-small);'}"
-                              >
-                                ${event.type === 'model_gateway_request_started'
-                                  ? 'Waiting for model response...'
-                                  : 'No response received. The gateway request failed or timed out.'}
-                              </div>
-                            `
-                          : html`
-                              <div class="empty-state">
-                                No response payload provided
-                              </div>
-                            `}
-                    `;
-                  })()
-                : null}
-        </sl-details>
-      </div>
+      <preloop-gateway-event
+        .event=${event}
+        .expanded=${this.activeSessionId === sessionId &&
+        (this.loadedEventDetails[event.id] !== undefined ||
+          this.loadingEventDetails.has(String(event.id)))}
+        @gateway-event-expand=${(e: CustomEvent) => {
+          if (e.detail.expanded) {
+            this._handleEventShow(sessionId, String(event.id));
+          }
+        }}
+      ></preloop-gateway-event>
     `;
   }
 

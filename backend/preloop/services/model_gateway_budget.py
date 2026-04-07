@@ -8,14 +8,12 @@ import math
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from preloop.config import settings
 from preloop.models.crud import crud_account, crud_ai_model, crud_api_usage, crud_flow
 from preloop.models.crud.plan import subscription as crud_subscription
 from preloop.models.models.ai_model import AIModel
-from preloop.models.models.api_usage import ApiUsage
 from preloop.models.models.flow import Flow
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
 from preloop.services.model_pricing import estimate_ai_model_usage_cost
@@ -208,22 +206,15 @@ class ModelGatewayBudgetService:
         runtime_principal_id: Optional[str] = None,
         model_alias: Optional[str] = None,
     ) -> float:
-        query = self.db.query(
-            func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
-        ).filter(
-            ApiUsage.action_type == "model_gateway",
-            ApiUsage.account_id == account_id,
-            ApiUsage.timestamp >= start,
+        return crud_api_usage.get_gateway_spend(
+            self.db,
+            account_id=account_id,
+            start=start,
+            flow_id=flow_id,
+            api_key_id=api_key_id,
+            runtime_principal_id=runtime_principal_id,
+            model_alias=model_alias,
         )
-        if flow_id:
-            query = query.filter(ApiUsage.flow_id == flow_id)
-        if api_key_id:
-            query = query.filter(ApiUsage.api_key_id == api_key_id)
-        if runtime_principal_id:
-            query = query.filter(ApiUsage.runtime_principal_id == runtime_principal_id)
-        if model_alias:
-            query = query.filter(ApiUsage.model_alias == model_alias)
-        return float(query.scalar() or 0.0)
 
     def _get_trial_hosted_model_spend(
         self, *, account_id: str, start: datetime, end: datetime

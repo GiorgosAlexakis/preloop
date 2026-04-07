@@ -660,6 +660,17 @@ export class AgentsView extends LitElement {
           ? flowsData
           : (flowsData as any).items || []
         : [];
+
+      // Filter flows locally by query
+      if (params.query) {
+        const lowerQuery = params.query.toLowerCase();
+        activeFlows = activeFlows.filter(
+          (f: any) =>
+            (f.name && f.name.toLowerCase().includes(lowerQuery)) ||
+            (f.description && f.description.toLowerCase().includes(lowerQuery))
+        );
+      }
+
       if (this.lastSeenAfter !== 'all') {
         const now = Date.now();
         let ms = 0;
@@ -1513,15 +1524,37 @@ export class AgentsView extends LitElement {
   }
 
   // --- RENDERING ---
-  private renderAgentCard(agent: ManagedAgentSummary) {
-    const detailUrl = `/console/agents/${encodeURIComponent(agent.id)}`;
-    const liveActivity = this.liveActivity[agent.id];
+  private renderAgentCard(item: any) {
+    const isFlow =
+      'flow_status' in item || ('name' in item && !('display_name' in item));
+    const agent = isFlow ? null : (item as ManagedAgentSummary);
+    const flowNode = isFlow ? (item as any) : null;
+    const itemId = isFlow ? item.id : agent?.id;
+    const detailUrl = isFlow
+      ? `/console/flows/${encodeURIComponent(item.id)}`
+      : `/console/agents/${encodeURIComponent(agent!.id)}`;
+    const liveActivity = this.liveActivity[itemId];
     const liveTotal =
       (liveActivity?.modelCalls || 0) + (liveActivity?.toolCalls || 0);
 
     const isGlowing =
       liveActivity?.lastActivityAt &&
       Date.now() - new Date(liveActivity.lastActivityAt).getTime() < 2000;
+
+    const displayName = isFlow ? item.name : agent?.display_name;
+    const agentKind = isFlow
+      ? 'flow'
+      : agent?.agent_kind || agent?.session_source_type;
+    const sessionSourceId = isFlow
+      ? flowNode?.description || ''
+      : agent?.session_source_id;
+    const totalRequests = isFlow
+      ? flowNode?.execution_stats?.total_execs || 0
+      : agent?.total_requests;
+    const estimatedCost = isFlow ? 0 : agent?.estimated_cost;
+    const lastSeen = isFlow
+      ? flowNode?.execution_stats?.last_seen_at
+      : agent?.last_seen_at;
 
     return html`
       <sl-card
@@ -1532,39 +1565,76 @@ export class AgentsView extends LitElement {
         <div class="card-stack">
           <div class="title-row">
             <div style="display: flex; gap: 12px; align-items: flex-start;">
-              ${renderAgentIcon(
-                agent.agent_kind || agent.session_source_type,
-                'font-size: 24px; color: var(--sl-color-neutral-500); margin-top: 2px;'
-              )}
-              <div>
-                <div class="agent-name">${agent.display_name}</div>
-                <div class="agent-meta">
-                  ${this.getSourceLabel(
-                    agent.agent_kind || agent.session_source_type
+              ${isFlow
+                ? html`<img
+                    src="/images/flow.svg"
+                    class="flow-icon"
+                    style="width: 24px; height: 24px; flex-shrink: 0; margin-top: 2px;"
+                    alt="Flow"
+                  />`
+                : renderAgentIcon(
+                    agentKind,
+                    'font-size: 24px; color: var(--sl-color-neutral-500); margin-top: 2px;'
                   )}
-                  · ${agent.session_source_id}
+              <div>
+                <div class="agent-name">${displayName}</div>
+                <div class="agent-meta">
+                  ${isFlow ? 'Flow' : this.getSourceLabel(agentKind)}
+                  ${sessionSourceId ? ` · ${sessionSourceId}` : ''}
                 </div>
               </div>
             </div>
             <div class="badges">
-              <sl-badge variant="${this.getOnboardingVariant(agent)}"
-                >${this.getOnboardingLabel(agent)}</sl-badge
-              >
-              <sl-badge variant="${this.getLifecycleVariant(agent)}"
-                >${this.getLifecycleLabel(agent)}</sl-badge
-              >
-              <sl-badge variant="${this.getLiveValidationVariant(agent)}"
-                >${this.getLiveValidationLabel(agent)}</sl-badge
-              >
+              ${!isFlow
+                ? html`
+                    <sl-badge variant="${this.getOnboardingVariant(agent!)}"
+                      >${this.getOnboardingLabel(agent!)}</sl-badge
+                    >
+                    <sl-badge variant="${this.getLifecycleVariant(agent!)}"
+                      >${this.getLifecycleLabel(agent!)}</sl-badge
+                    >
+                    <sl-badge variant="${this.getLiveValidationVariant(agent!)}"
+                      >${this.getLiveValidationLabel(agent!)}</sl-badge
+                    >
+                  `
+                : html`
+                    <sl-badge
+                      variant=${!isFlow
+                        ? ''
+                        : flowNode?.flow_status === 'active'
+                          ? 'success'
+                          : 'neutral'}
+                      >${!isFlow
+                        ? ''
+                        : flowNode?.flow_status === 'active'
+                          ? 'Active'
+                          : 'Inactive'}</sl-badge
+                    >
+                  `}
               ${liveTotal
                 ? html`<sl-badge variant="primary">Live ${liveTotal}</sl-badge>`
                 : null}
             </div>
           </div>
 
-          ${(agent as any)?.ai_model_id ||
-          (agent as any)?.configured_model_alias ||
-          (agent as any)?.latest_model_alias
+          ${isFlow && flowNode?.agent_type
+            ? html`
+                <div
+                  style="font-size: 0.85rem; color: var(--sl-color-neutral-700); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"
+                >
+                  ${renderAgentIcon(
+                    flowNode.agent_type,
+                    'color: var(--sl-color-primary-500); width: 14px; height: 14px;'
+                  )}
+                  <strong>Agent Type:</strong> ${flowNode.agent_type}
+                </div>
+              `
+            : ''}
+          ${(isFlow && flowNode?.ai_model_id) ||
+          (!isFlow &&
+            ((agent as any)?.ai_model_id ||
+              (agent as any)?.configured_model_alias ||
+              (agent as any)?.latest_model_alias))
             ? html`
                 <div
                   style="font-size: 0.85rem; color: var(--sl-color-neutral-700); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"
@@ -1576,23 +1646,26 @@ export class AgentsView extends LitElement {
                   <strong>Model:</strong>
                   <a
                     href="/console/settings/ai-models/${encodeURIComponent(
-                      (agent as any).ai_model_id ||
-                        (agent as any).configured_model_id ||
-                        'unknown'
+                      isFlow
+                        ? flowNode!.ai_model_id
+                        : (agent as any)?.ai_model_id ||
+                            (agent as any)?.configured_model_id ||
+                            'unknown'
                     )}"
                     style="color: inherit; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;"
                     @pointerdown="${(e: Event) => e.stopPropagation()}"
                   >
                     ${(() => {
-                      const mId = (agent as any).ai_model_id;
+                      if (isFlow) return flowNode!.ai_model_id;
+                      const mId = (agent as any)?.ai_model_id;
                       if (mId) {
                         const model = this.aiModels.find((m) => m.id === mId);
                         if (model && model.name) return model.name;
                       }
                       return (
-                        (agent as any).ai_model_name ||
-                        (agent as any).configured_model_alias ||
-                        (agent as any).latest_model_alias ||
+                        (agent as any)?.ai_model_name ||
+                        (agent as any)?.configured_model_alias ||
+                        (agent as any)?.latest_model_alias ||
                         mId
                       );
                     })()}
@@ -1600,7 +1673,7 @@ export class AgentsView extends LitElement {
                 </div>
               `
             : ''}
-          ${agent.owner_username
+          ${!isFlow && agent?.owner_username
             ? html`
                 <div
                   style="font-size: 0.85rem; color: var(--sl-color-neutral-700); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"
@@ -1609,16 +1682,16 @@ export class AgentsView extends LitElement {
                     name="person-circle"
                     style="color: var(--sl-color-primary-500);"
                   ></sl-icon>
-                  <strong>Owner:</strong> ${agent.owner_username}
+                  <strong>Owner:</strong> ${agent!.owner_username}
                 </div>
               `
             : ''}
-          ${agent.tags && Object.keys(agent.tags).length > 0
+          ${!isFlow && agent?.tags && Object.keys(agent!.tags).length > 0
             ? html`
                 <div
                   style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;"
                 >
-                  ${Object.entries(agent.tags).map(
+                  ${Object.entries(agent!.tags).map(
                     ([k, v]) => html`
                       <sl-badge
                         variant="neutral"
@@ -1641,7 +1714,7 @@ export class AgentsView extends LitElement {
           <div
             style="font-size: 0.85rem; color: var(--sl-color-neutral-600); margin-bottom: 12px;"
           >
-            ${this.getOnboardingDescription(agent)}
+            ${isFlow ? '' : this.getOnboardingDescription(agent!)}
           </div>
 
           ${liveActivity?.lastMessagePreview
@@ -1662,54 +1735,67 @@ export class AgentsView extends LitElement {
                 </div>
               `
             : ''}
+          ${!isFlow
+            ? html`
+                <div class="metric-row">
+                  <span class="label">Preloop MCP Proxy</span>
+                  <span class="value"
+                    >${agent!.mcp_proxy_configured
+                      ? 'Configured'
+                      : 'Missing'}</span
+                  >
+                </div>
+                <div class="metric-row">
+                  <span class="label">Preloop Model Gateway</span>
+                  <span class="value"
+                    >${agent!.model_gateway_configured
+                      ? 'Configured'
+                      : 'Missing'}</span
+                  >
+                </div>
+                <div class="metric-row">
+                  <span class="label">Estimated Cost</span>
+                  <span class="value">${this.formatMoney(estimatedCost!)}</span>
+                </div>
+              `
+            : ''}
 
           <div class="metric-row">
-            <span class="label">Preloop MCP Proxy</span>
-            <span class="value"
-              >${agent.mcp_proxy_configured ? 'Configured' : 'Missing'}</span
-            >
+            <span class="label">${isFlow ? 'Executions' : 'Requests'}</span>
+            <span class="value">${totalRequests}</span>
           </div>
-          <div class="metric-row">
-            <span class="label">Preloop Model Gateway</span>
-            <span class="value"
-              >${agent.model_gateway_configured
-                ? 'Configured'
-                : 'Missing'}</span
-            >
-          </div>
-          <div class="metric-row">
-            <span class="label">Requests</span>
-            <span class="value">${agent.total_requests}</span>
-          </div>
-          <div class="metric-row">
-            <span class="label">Estimated Cost</span>
-            <span class="value">${this.formatMoney(agent.estimated_cost)}</span>
-          </div>
+
           <div class="metric-row">
             <span class="label">Last Seen</span>
             <span class="value"
               >${this.formatDateTime(
-                liveActivity?.lastActivityAt || agent.last_seen_at
+                liveActivity?.lastActivityAt || lastSeen
               )}</span
             >
           </div>
 
           <div class="action-row">
-            <span class="label">Inspect, rename, or remove</span>
+            <span class="label"
+              >Inspect${!isFlow ? ', rename, or remove' : ''}</span
+            >
             <div class="badges">
-              <sl-button
-                size="small"
-                variant="danger"
-                ?loading=${this.actionAgentId === agent.id}
-                @click=${() => this.removeAgent(agent)}
-              >
-                Remove
-              </sl-button>
+              ${!isFlow
+                ? html`
+                    <sl-button
+                      size="small"
+                      variant="danger"
+                      ?loading=${this.actionAgentId === agent?.id}
+                      @click=${() => this.removeAgent(agent!)}
+                    >
+                      Remove
+                    </sl-button>
+                  `
+                : ''}
               <sl-button
                 size="small"
                 variant="default"
                 @click=${() => Router.go(detailUrl)}
-                >View Agent</sl-button
+                >View ${isFlow ? 'Flow' : 'Agent'}</sl-button
               >
             </div>
           </div>
@@ -2397,15 +2483,17 @@ export class AgentsView extends LitElement {
           ? this.renderCanvas()
           : html`
               <div class="cards">
-                ${(!this.agents || this.agents.items.length === 0) &&
+                ${(!this.agents ||
+                  (this.agents.items.length === 0 &&
+                    this.flows.length === 0)) &&
                 !this.loading
                   ? html`
                       <div class="empty-state">
-                        No agents found matching your query.
+                        No agents or flows found matching your query.
                       </div>
                     `
-                  : this.agents?.items.map((agent) =>
-                      this.renderAgentCard(agent)
+                  : [...(this.agents?.items || []), ...this.flows].map((item) =>
+                      this.renderAgentCard(item)
                     )}
               </div>
             `}
