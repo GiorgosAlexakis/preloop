@@ -32,6 +32,8 @@ def mock_current_user():
 @pytest.fixture
 def db_session_mock():
     """Create a mock database session."""
+    from preloop.models.db.session import get_db_session
+
     with patch("preloop.api.auth.router.get_db_session") as mock_get_db:
         db_session = MagicMock(spec=Session)
 
@@ -41,7 +43,15 @@ def db_session_mock():
         db_session.close = MagicMock()
 
         mock_get_db.side_effect = lambda: iter([db_session])
+
+        # Override the dependency for FastAPI routers
+        app.dependency_overrides[get_db_session] = lambda: db_session
+
         yield db_session
+
+        # Clean up
+        if get_db_session in app.dependency_overrides:
+            del app.dependency_overrides[get_db_session]
 
 
 def test_create_api_key_success(db_session_mock, mock_current_user):

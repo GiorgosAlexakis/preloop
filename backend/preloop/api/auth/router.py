@@ -1257,33 +1257,25 @@ async def list_api_keys(
 async def get_api_key_governance(
     key_id: UUID,
     current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> SubjectGovernanceResponse:
-    session_generator = get_db_session()
-    session = next(session_generator)
-    try:
-        key = crud_api_key.get_by_id_and_user(
-            session, key_id=key_id, username=current_user.username
-        )
-        if key is None:
-            raise HTTPException(status_code=404, detail="API key not found")
-        account = crud_account.get(session, id=current_user.account_id)
-        return SubjectGovernanceResponse(
-            subject_type=SUBJECT_TYPE_API_KEYS,
-            subject_id=str(key_id),
-            config=SubjectGovernanceConfig.model_validate(
-                get_subject_governance(
-                    (account.meta_data or {}) if account else {},
-                    subject_type=SUBJECT_TYPE_API_KEYS,
-                    subject_id=str(key_id),
-                )
-            ),
-        )
-    finally:
-        session.close()
-        try:
-            next(session_generator, None)
-        except StopIteration:
-            pass
+    key = crud_api_key.get_by_id_and_user(
+        db, key_id=key_id, username=current_user.username
+    )
+    if key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+    account = crud_account.get(db, id=current_user.account_id)
+    return SubjectGovernanceResponse(
+        subject_type=SUBJECT_TYPE_API_KEYS,
+        subject_id=str(key_id),
+        config=SubjectGovernanceConfig.model_validate(
+            get_subject_governance(
+                (account.meta_data or {}) if account else {},
+                subject_type=SUBJECT_TYPE_API_KEYS,
+                subject_id=str(key_id),
+            )
+        ),
+    )
 
 
 @router.put(
@@ -1294,44 +1286,36 @@ async def update_api_key_governance(
     key_id: UUID,
     payload: SubjectGovernanceConfig,
     current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> SubjectGovernanceResponse:
-    session_generator = get_db_session()
-    session = next(session_generator)
-    try:
-        key = crud_api_key.get_by_id_and_user(
-            session, key_id=key_id, username=current_user.username
-        )
-        if key is None:
-            raise HTTPException(status_code=404, detail="API key not found")
-        account = crud_account.get(session, id=current_user.account_id)
-        if account is None:
-            raise HTTPException(status_code=404, detail="Account not found")
-        account.meta_data = set_subject_governance(
-            account.meta_data or {},
-            subject_type=SUBJECT_TYPE_API_KEYS,
-            subject_id=str(key_id),
-            config=payload.model_dump(),
-        )
-        session.add(account)
-        session.commit()
-        session.refresh(account)
-        return SubjectGovernanceResponse(
-            subject_type=SUBJECT_TYPE_API_KEYS,
-            subject_id=str(key_id),
-            config=SubjectGovernanceConfig.model_validate(
-                get_subject_governance(
-                    account.meta_data or {},
-                    subject_type=SUBJECT_TYPE_API_KEYS,
-                    subject_id=str(key_id),
-                )
-            ),
-        )
-    finally:
-        session.close()
-        try:
-            next(session_generator, None)
-        except StopIteration:
-            pass
+    key = crud_api_key.get_by_id_and_user(
+        db, key_id=key_id, username=current_user.username
+    )
+    if key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+    account = crud_account.get(db, id=current_user.account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    account.meta_data = set_subject_governance(
+        account.meta_data or {},
+        subject_type=SUBJECT_TYPE_API_KEYS,
+        subject_id=str(key_id),
+        config=payload.model_dump(),
+    )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return SubjectGovernanceResponse(
+        subject_type=SUBJECT_TYPE_API_KEYS,
+        subject_id=str(key_id),
+        config=SubjectGovernanceConfig.model_validate(
+            get_subject_governance(
+                account.meta_data or {},
+                subject_type=SUBJECT_TYPE_API_KEYS,
+                subject_id=str(key_id),
+            )
+        ),
+    )
 
 
 @router.get("/api-keys/debug", response_model=List[ApiKeyResponse])
