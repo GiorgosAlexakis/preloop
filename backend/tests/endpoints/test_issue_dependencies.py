@@ -9,6 +9,7 @@ from preloop.api.endpoints.issue_dependencies import (
     DependencyResponse,
 )
 from preloop.models.models import Issue, AIModel, Project, Account
+from preloop.services.secret_service import ResolvedSecret
 
 
 @pytest.fixture
@@ -62,6 +63,7 @@ def test_detect_issue_dependencies_success(
     mock_ai_model = MagicMock(spec=AIModel)
     mock_ai_model.model_identifier = "gpt-4"
     mock_ai_model.api_key = "fake-key"
+    mock_ai_model.credentials_secret = None
     mock_crud_ai_model.get_default_active_model.return_value = mock_ai_model
 
     # Mock IssueSet to simulate a cache miss
@@ -105,3 +107,70 @@ def test_detect_issue_dependencies_success(
     )
     mock_openai_client.return_value.chat.completions.create.assert_called_once()
     mock_crud_issue_set.create_and_remove_subsets.assert_called_once()
+
+
+def test_detect_issue_dependencies_uses_secret_service_credentials(
+    mock_issues: list[MagicMock], mocker: MockerFixture
+):
+    """Dependency detection should resolve credentials through SecretService."""
+    issue_ids = [issue.id for issue in mock_issues]
+    request = DependencyRequest(issue_ids=issue_ids)
+    mock_user = MagicMock(spec=Account)
+    mock_user.id = "user-123"
+    mock_user.account_id = "account-123"
+
+    mock_crud_issue = mocker.patch(
+        "preloop.api.endpoints.issue_dependencies.crud_issue"
+    )
+    mock_crud_issue.get.side_effect = mock_issues
+
+    mock_crud_ai_model = mocker.patch(
+        "preloop.api.endpoints.issue_dependencies.crud_ai_model"
+    )
+    mock_ai_model = MagicMock(spec=AIModel)
+    mock_ai_model.id = "model-123"
+    mock_ai_model.model_identifier = "gpt-4"
+    mock_ai_model.api_key = "legacy-plaintext-key"
+    mock_ai_model.credentials_secret = None
+    mock_crud_ai_model.get_default_active_model.return_value = mock_ai_model
+
+    mock_crud_issue_set = mocker.patch(
+        "preloop.api.endpoints.issue_dependencies.crud_issue_set"
+    )
+    mock_crud_issue_set.get_supersets_by_issues.return_value = []
+
+    mock_secret_service = MagicMock()
+    mock_secret_service.resolve_ai_model_api_key.return_value = ResolvedSecret(
+        value="resolved-external-key",
+        backend_type="openbao_kv_v2",
+    )
+    mocker.patch(
+        "preloop.api.endpoints.issue_dependencies.get_secret_service",
+        return_value=mock_secret_service,
+    )
+
+    mock_openai_client = mocker.patch(
+        "preloop.api.endpoints.issue_dependencies.openai.OpenAI"
+    )
+    mock_completion = MagicMock()
+    mock_completion.choices = [
+        MagicMock(message=MagicMock(content=json.dumps({"dependencies": []})))
+    ]
+    mock_openai_client.return_value.chat.completions.create.return_value = (
+        mock_completion
+    )
+
+    mock_settings = MagicMock()
+    mock_settings.PROMPTS_FILE = "/path/to/prompts.yml"
+    mocker.patch(
+        "preloop.api.endpoints.issue_dependencies.load_dependencies_prompts_config",
+        return_value={"dependency_detection_v1": {"system": "Test prompt"}},
+    )
+
+    result = detect_issue_dependencies(
+        request=request, db=MagicMock(), current_user=mock_user, settings=mock_settings
+    )
+
+    assert isinstance(result, DependencyResponse)
+    mock_secret_service.resolve_ai_model_api_key.assert_called_once_with(mock_ai_model)
+    mock_openai_client.assert_called_once_with(api_key="resolved-external-key")

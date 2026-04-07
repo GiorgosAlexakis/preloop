@@ -24,11 +24,11 @@ worker:
   # Worker resources (background tasks)
   resources:
     requests:
-      cpu: "200m"
-      memory: "256Mi"
+      cpu: "500m"
+      memory: "512Mi"
     limits:
-      cpu: "1"
-      memory: "1Gi"
+      cpu: "2"
+      memory: "2Gi"
 
 console:
   repository: ghcr.io/preloop/console
@@ -89,11 +89,11 @@ ingress:
 api:
   resources:
     requests:
-      cpu: "200m"
-      memory: "256Mi"
+      cpu: "500m"
+      memory: "512Mi"
     limits:
-      cpu: "1"
-      memory: "1Gi"
+      cpu: "2"
+      memory: "2Gi"
 
 # Scheduler resources
 scheduler:
@@ -115,7 +115,23 @@ monitor:
       cpu: "500m"
       memory: "512Mi"
 
-# Autoscaling configuration
+# Gateway resources
+gateway:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 80
+
+# Autoscaling configuration (API)
 autoscaling:
   enabled: false
   minReplicas: 1
@@ -136,6 +152,7 @@ affinity: {}
 environment:
   preloopUrl: "https://preloop.ai"
   debug: false
+  modelGatewayCaptureContent: true
   # Skip execution recovery on startup (useful for debugging startup issues)
   skipExecutionRecovery: false
   # Database settings

@@ -10,7 +10,7 @@ import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import './theme-switcher.ts';
-import * as api from '../api.ts';
+import * as api from '../api';
 import { Router } from '@vaadin/router';
 import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
 
@@ -258,6 +258,9 @@ export class ConsoleHeader extends LitElement {
       font-size: 2rem;
       margin-bottom: 0.5rem;
       opacity: 0.5;
+    }
+    .theme-switcher-container {
+      text-align: center;
     }
   `;
 
@@ -1009,6 +1012,11 @@ export class ConsoleHeader extends LitElement {
               label="User Menu"
             ></sl-icon-button>
             <sl-menu>
+              <div class="theme-switcher-container">
+                <theme-switcher></theme-switcher>
+              </div>
+              <sl-divider></sl-divider>
+
               <div class="user-info">
                 <div class="user-name">
                   ${this._user?.full_name || this._user?.username}

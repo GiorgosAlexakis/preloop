@@ -9,11 +9,15 @@ describe('AddTrackerModal', () => {
   let sandbox: SinonSandbox;
 
   beforeEach(() => {
+    localStorage.setItem('accessToken', 'test-access-token');
+    localStorage.setItem('refreshToken', 'test-refresh-token');
     sandbox = sinon.createSandbox();
+    sandbox.stub(window, 'fetch').resolves(new Response(JSON.stringify([])));
   });
 
   afterEach(() => {
     sandbox.restore();
+    localStorage.clear();
   });
 
   const setupStubs = (el: AddTrackerModal) => {

@@ -1,16 +1,20 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -20,14 +24,16 @@ import (
 )
 
 const (
-	// OAuth callback port for local server
-	callbackPort = 8484
-
 	// OAuth paths
 	authorizePath = "/oauth/authorize"
 	tokenPath     = "/oauth/token"
 	userInfoPath  = "/api/v1/users/me"
+
+	cliOAuthClientID       = "cli"
+	manualOAuthRedirectURI = "urn:ietf:wg:oauth:2.0:oob"
 )
+
+var errLoopbackCallbackUnavailable = errors.New("loopback callback unavailable")
 
 // TokenResponse represents the OAuth token response.
 type TokenResponse struct {
@@ -59,13 +65,24 @@ var authLoginCmd = &cobra.Command{
 	Long: `Authenticate with your Preloop account.
 
 With --token: saves the provided API token directly (no server required).
-Without --token: opens a browser for OAuth authentication.
+Without --token: starts OAuth authentication. The CLI automatically uses a
+loopback callback on local machines and a copy/paste flow on SSH or headless hosts.
 
 Examples:
-  preloop auth login --token <your-token>
-  preloop auth login --token <your-token> --url http://localhost:8000
-  preloop auth login                          # OAuth browser flow`,
+  preloop login --token <your-token>
+  preloop login --token <your-token> --url http://localhost:8000
+  PRELOOP_URL=https://review.preloop.ai preloop login --headless
+  preloop login
+  preloop login --headless`,
 	RunE: runAuthLogin,
+}
+
+// loginCmd is a root-level alias for auth login.
+var loginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Authenticate with Preloop",
+	Long:  authLoginCmd.Long,
+	RunE:  runAuthLogin,
 }
 
 // authLogoutCmd represents the auth logout command.
@@ -102,7 +119,12 @@ Examples:
 	RunE: runAuthToken,
 }
 
-var loginToken string
+var (
+	loginToken    string
+	loginHeadless bool
+	loginLoopback bool
+	loginCode     string
+)
 
 func init() {
 	authCmd.AddCommand(authLoginCmd)
@@ -110,7 +132,8 @@ func init() {
 	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authTokenCmd)
 
-	authLoginCmd.Flags().StringVar(&loginToken, "token", "", "API access token (skip OAuth and save directly)")
+	configureLoginFlags(authLoginCmd)
+	configureLoginFlags(loginCmd)
 }
 
 // runAuthLogin handles both token-based and OAuth login.
@@ -128,38 +151,65 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		return runTokenLogin(token)
 	}
 
-	// No token provided — fall back to OAuth browser flow
-	return runOAuthLogin()
+	if loginLoopback && loginHeadless {
+		return fmt.Errorf("--loopback and --headless cannot be used together")
+	}
+	if loginLoopback && loginCode != "" {
+		return fmt.Errorf("--code can only be used with the headless login flow")
+	}
+
+	baseURL, err := resolveConfiguredAPIURL()
+	if err != nil {
+		return err
+	}
+
+	if shouldUseHeadlessOAuth() {
+		return runHeadlessOAuthLogin(baseURL)
+	}
+
+	if err := runLoopbackOAuthLogin(baseURL); err != nil {
+		if errors.Is(err, errLoopbackCallbackUnavailable) && !loginLoopback {
+			fallbackReason := err
+			if unwrapped := errors.Unwrap(err); unwrapped != nil {
+				fallbackReason = unwrapped
+			}
+			fmt.Printf("Loopback callback unavailable: %v\n", fallbackReason)
+			fmt.Println("Falling back to the headless copy/paste login flow...")
+			return runHeadlessOAuthLogin(baseURL)
+		}
+		return err
+	}
+
+	return nil
 }
 
 // runTokenLogin saves a token directly to the config file.
 func runTokenLogin(token string) error {
-	// Determine the API URL to persist (flag > current config > default)
-	apiURL := FlagURL
-	if apiURL == "" {
-		cfg, err := config.Load()
-		if err == nil && cfg.APIURL != "" {
-			apiURL = cfg.APIURL
-		} else {
-			apiURL = config.DefaultAPIURL
-		}
+	apiURL, err := resolveConfiguredAPIURL()
+	if err != nil {
+		return err
 	}
 
-	// Save token and URL to config
+	client := api.NewClientWithToken(apiURL, token)
+	var userInfo UserInfo
+	if err := client.Get(userInfoPath, &userInfo); err != nil {
+		if err := config.SetTokens(token, ""); err != nil {
+			return fmt.Errorf("failed to save token: %w", err)
+		}
+		if err := config.SetAPIURL(apiURL); err != nil {
+			return fmt.Errorf("failed to save API URL: %w", err)
+		}
+
+		fmt.Println("Token saved (could not verify — server may be unreachable)")
+		fmt.Printf("  API URL: %s\n", apiURL)
+		return nil
+	}
+
 	if err := config.SetTokens(token, ""); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
 	}
 	if err := config.SetAPIURL(apiURL); err != nil {
 		return fmt.Errorf("failed to save API URL: %w", err)
-	}
-
-	// Verify the token by fetching user info
-	client := api.NewClientWithToken(apiURL, token)
-	var userInfo UserInfo
-	if err := client.Get(userInfoPath, &userInfo); err != nil {
-		fmt.Println("Token saved (could not verify — server may be unreachable)")
-		fmt.Printf("  API URL: %s\n", apiURL)
-		return nil
 	}
 
 	fmt.Println("Authenticated successfully!")
@@ -172,36 +222,59 @@ func runTokenLogin(token string) error {
 	return nil
 }
 
-// runOAuthLogin implements the OAuth browser login flow.
-func runOAuthLogin() error {
-	// Load config to get API URL
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+func configureLoginFlags(command *cobra.Command) {
+	command.Flags().StringVar(&loginToken, "token", "", "API access token (skip OAuth and save directly)")
+	command.Flags().BoolVar(&loginHeadless, "headless", false, "use copy/paste OAuth for SSH or no-GUI environments")
+	command.Flags().BoolVar(&loginLoopback, "loopback", false, "force the local loopback callback OAuth flow")
+	command.Flags().StringVar(&loginCode, "code", "", "authorization code from a previous headless OAuth login")
+}
+
+func shouldUseHeadlessOAuth() bool {
+	if loginHeadless || loginCode != "" {
+		return true
+	}
+	if loginLoopback {
+		return false
 	}
 
-	baseURL := cfg.APIURL
-	if baseURL == "" {
-		baseURL = api.DefaultBaseURL
-	}
-	if FlagURL != "" {
-		baseURL = FlagURL
+	if isSSHSession() {
+		return true
 	}
 
-	// Generate state for CSRF protection
+	if runtime.GOOS == "linux" {
+		return os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == ""
+	}
+
+	return false
+}
+
+func isSSHSession() bool {
+	return os.Getenv("SSH_CONNECTION") != "" ||
+		os.Getenv("SSH_CLIENT") != "" ||
+		os.Getenv("SSH_TTY") != ""
+}
+
+func buildAuthorizationURL(baseURL, redirectURI, state string) string {
+	values := url.Values{}
+	values.Set("client_id", cliOAuthClientID)
+	values.Set("response_type", "code")
+	values.Set("redirect_uri", redirectURI)
+	values.Set("state", state)
+	return fmt.Sprintf("%s%s?%s", baseURL, authorizePath, values.Encode())
+}
+
+func runLoopbackOAuthLogin(baseURL string) error {
 	state, err := generateState()
 	if err != nil {
 		return fmt.Errorf("failed to generate state: %w", err)
 	}
 
-	// Channel to receive the authorization code
 	codeChan := make(chan string, 1)
 	errChan := make(chan error, 1)
 
-	// Start local HTTP server to receive the callback
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", callbackPort))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return fmt.Errorf("failed to start callback server: %w", err)
+		return fmt.Errorf("%w: %v", errLoopbackCallbackUnavailable, err)
 	}
 
 	server := &http.Server{
@@ -209,61 +282,101 @@ func runOAuthLogin() error {
 			handleOAuthCallback(w, r, state, codeChan, errChan)
 		}),
 	}
-
-	// Start server in background
 	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			errChan <- fmt.Errorf("callback server error: %w", err)
+		if serveErr := server.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
+			errChan <- fmt.Errorf("callback server error: %w", serveErr)
 		}
 	}()
+	defer server.Shutdown(context.Background()) //nolint:errcheck
 
-	// Build authorization URL
-	redirectURI := fmt.Sprintf("http://localhost:%d/callback", callbackPort)
-	authURL := fmt.Sprintf("%s%s?response_type=code&redirect_uri=%s&state=%s",
-		baseURL,
-		authorizePath,
-		url.QueryEscape(redirectURI),
-		url.QueryEscape(state),
-	)
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("failed to determine callback address")
+	}
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", addr.Port)
+	authURL := buildAuthorizationURL(baseURL, redirectURI, state)
 
 	fmt.Println("Opening browser for authentication...")
 	fmt.Printf("If the browser doesn't open, please visit:\n%s\n\n", authURL)
 
-	// Open browser
 	if err := openBrowser(authURL); err != nil {
 		fmt.Printf("Warning: Could not open browser: %v\n", err)
 	}
 
 	fmt.Println("Waiting for authentication...")
 
-	// Wait for callback or timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	var code string
 	select {
 	case code = <-codeChan:
-		// Successfully received code
 	case err := <-errChan:
-		server.Shutdown(context.Background())
 		return err
 	case <-ctx.Done():
-		server.Shutdown(context.Background())
 		return fmt.Errorf("authentication timed out")
 	}
 
-	// Shutdown the callback server
-	server.Shutdown(context.Background())
+	return finishOAuthLogin(baseURL, code, redirectURI)
+}
 
-	// Exchange code for tokens
+func runHeadlessOAuthLogin(baseURL string) error {
+	state, err := generateState()
+	if err != nil {
+		return fmt.Errorf("failed to generate state: %w", err)
+	}
+
+	redirectURI := manualOAuthRedirectURI
+	authURL := buildAuthorizationURL(baseURL, redirectURI, state)
+
+	code := strings.TrimSpace(loginCode)
+	if code == "" {
+		fmt.Println("Open this URL in a browser to sign in:")
+		fmt.Println(authURL)
+		fmt.Println()
+		fmt.Println("After approving access, copy the one-time code shown by Preloop and paste it here.")
+
+		if !stdinIsTerminal() {
+			return fmt.Errorf(
+				"cannot prompt for an authorization code without a terminal - rerun with --code <value>",
+			)
+		}
+
+		reader := bufio.NewReader(os.Stdin)
+		code, err = promptForTextInput(reader, os.Stdout, "Authorization code: ")
+		if err != nil {
+			return fmt.Errorf("failed to read authorization code: %w", err)
+		}
+	}
+	if code == "" {
+		return fmt.Errorf("authorization code is required")
+	}
+
+	return finishOAuthLogin(baseURL, code, redirectURI)
+}
+
+func finishOAuthLogin(baseURL, code, redirectURI string) error {
 	fmt.Println("Exchanging code for tokens...")
-
 	tokenResp, err := exchangeCodeForTokens(baseURL, code, redirectURI)
 	if err != nil {
 		return fmt.Errorf("failed to exchange code for tokens: %w", err)
 	}
 
-	// Save tokens to config
+	client := api.NewClientWithToken(baseURL, tokenResp.AccessToken)
+	var userInfo UserInfo
+	if err := client.Get(userInfoPath, &userInfo); err != nil {
+		if err := config.SetTokens(tokenResp.AccessToken, tokenResp.RefreshToken); err != nil {
+			return fmt.Errorf("failed to save tokens: %w", err)
+		}
+		if err := config.SetAPIURL(baseURL); err != nil {
+			return fmt.Errorf("failed to save API URL: %w", err)
+		}
+
+		fmt.Println("\nSuccessfully authenticated!")
+		fmt.Printf("API URL: %s\n", baseURL)
+		return nil
+	}
+
 	if err := config.SetTokens(tokenResp.AccessToken, tokenResp.RefreshToken); err != nil {
 		return fmt.Errorf("failed to save tokens: %w", err)
 	}
@@ -271,22 +384,22 @@ func runOAuthLogin() error {
 		return fmt.Errorf("failed to save API URL: %w", err)
 	}
 
-	// Fetch and display user info
-	client := api.NewClientWithToken(baseURL, tokenResp.AccessToken)
-	var userInfo UserInfo
-	if err := client.Get(userInfoPath, &userInfo); err != nil {
-		// Still successful login, just can't get user info
-		fmt.Println("\nSuccessfully authenticated!")
-		return nil
-	}
-
 	fmt.Println("\nSuccessfully authenticated!")
 	fmt.Printf("Logged in as: %s (%s)\n", userInfo.Name, userInfo.Email)
 	if userInfo.Organization != "" {
 		fmt.Printf("Organization: %s\n", userInfo.Organization)
 	}
+	fmt.Printf("API URL: %s\n", baseURL)
 
 	return nil
+}
+
+func stdinIsTerminal() bool {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
 // runAuthLogout clears stored credentials.
@@ -313,18 +426,31 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 
 	if cfg.AccessToken == "" {
 		fmt.Println("Not authenticated")
-		fmt.Println("Run 'preloop auth login --token <your-token>' to authenticate")
+		fmt.Println("Run 'preloop login --token <your-token>' to authenticate")
 		return nil
 	}
 
 	// Create API client and fetch user info
-	client := api.NewClientWithToken(cfg.APIURL, cfg.AccessToken)
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to initialize API client: %w", err)
+	}
+	if FlagToken == "" && cfg.RefreshToken != "" {
+		if err := client.RefreshAccessToken(); err != nil {
+			fmt.Println("Authenticated (stored login could not be refreshed)")
+			fmt.Printf("  API URL: %s\n", cfg.APIURL)
+			fmt.Printf("  Error:   %v\n", err)
+			fmt.Println("Run 'preloop login' to re-authenticate")
+			return nil
+		}
+	}
 
 	var userInfo UserInfo
 	if err := client.Get(userInfoPath, &userInfo); err != nil {
 		fmt.Println("Authenticated (token may be invalid or server unreachable)")
 		fmt.Printf("  API URL: %s\n", cfg.APIURL)
-		fmt.Println("Run 'preloop auth login --token <your-token>' to re-authenticate")
+		fmt.Printf("  Error:   %v\n", err)
+		fmt.Println("Run 'preloop login --token <your-token>' to re-authenticate")
 		return nil
 	}
 
@@ -347,11 +473,21 @@ func runAuthToken(cmd *cobra.Command, args []string) error {
 	}
 
 	if cfg.AccessToken == "" {
-		return fmt.Errorf("not authenticated - run 'preloop auth login --token <your-token>' first")
+		return fmt.Errorf("not authenticated - run 'preloop login --token <your-token>' first")
+	}
+
+	client, err := api.NewClient(FlagToken, FlagURL)
+	if err != nil {
+		return fmt.Errorf("failed to initialize API client: %w", err)
+	}
+	if FlagToken == "" && cfg.RefreshToken != "" {
+		if err := client.RefreshAccessToken(); err != nil {
+			return fmt.Errorf("stored login expired - run 'preloop login' again: %w", err)
+		}
 	}
 
 	// Print just the token with no newline for scripting
-	fmt.Print(cfg.AccessToken)
+	fmt.Print(client.Token())
 	return nil
 }
 
@@ -364,7 +500,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 		errDesc := query.Get("error_description")
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>%s: %s</p><p>You can close this window.</p></body></html>", errMsg, errDesc)
+		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>%s: %s</p><p>You can close this window.</p></body></html>", errMsg, errDesc) //nolint:errcheck
 		errChan <- fmt.Errorf("OAuth error: %s - %s", errMsg, errDesc)
 		return
 	}
@@ -374,7 +510,7 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 	if state != expectedState {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>Invalid state parameter</p><p>You can close this window.</p></body></html>")
+		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>Invalid state parameter</p><p>You can close this window.</p></body></html>") //nolint:errcheck
 		errChan <- fmt.Errorf("invalid state parameter")
 		return
 	}
@@ -384,15 +520,15 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 	if code == "" {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>No authorization code received</p><p>You can close this window.</p></body></html>")
+		fmt.Fprintf(w, "<html><body><h1>Authentication Failed</h1><p>No authorization code received</p><p>You can close this window.</p></body></html>") //nolint:errcheck
 		errChan <- fmt.Errorf("no authorization code received")
 		return
 	}
 
 	// Success
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `<html>
+	_, _ = fmt.Fprintf(w, `<html>
 <head>
 	<style>
 		body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); }
@@ -427,7 +563,7 @@ func exchangeCodeForTokens(baseURL, code, redirectURI string) (*TokenResponse, e
 	if err != nil {
 		return nil, fmt.Errorf("token request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token request failed with status %d", resp.StatusCode)

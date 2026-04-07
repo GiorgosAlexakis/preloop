@@ -15,6 +15,25 @@ from .container import ContainerAgentExecutor
 logger = logging.getLogger(__name__)
 
 
+def _opencode_provider_local_model_id(model: str, provider: str) -> str:
+    """
+    Return the model id used inside OpenCode's provider.models map.
+
+    Strips a single leading ``{provider}/`` prefix so registry keys stay
+    provider-local (OpenCode resolves models against the suffix of the
+    top-level ``model`` field, not a duplicated ``provider/provider/...`` path).
+    """
+    m = (model or "").strip()
+    p = (provider or "").strip().lower()
+    if not m or not p:
+        return m
+    prefix = f"{p}/"
+    if m.lower().startswith(prefix):
+        rest = m[len(prefix) :].strip()
+        return rest if rest else m
+    return m
+
+
 class OpenCodeAgent(ContainerAgentExecutor):
     """
     OpenCode CLI agent executor.
@@ -110,7 +129,15 @@ class OpenCodeAgent(ContainerAgentExecutor):
             f"agent_config.model={agent_model}"
         )
 
-        model = model_identifier or agent_model
+        model = (
+            (
+                execution_context.get("model_gateway_model_alias")
+                if execution_context.get("model_gateway_enabled")
+                else None
+            )
+            or model_identifier
+            or agent_model
+        )
         if not model:
             raise ValueError(
                 "No model specified for OpenCode agent. "
@@ -437,21 +464,42 @@ exit $OPENCODE_EXIT_CODE
         Returns:
             Configuration dict to be serialized as opencode.json
         """
-        model_endpoint = execution_context.get("model_endpoint") or ""
+        gateway_enabled = bool(execution_context.get("model_gateway_enabled"))
+        effective_model_provider = (
+            execution_context.get("model_gateway_provider")
+            if gateway_enabled
+            else model_provider or execution_context.get("model_provider")
+        ) or "anthropic"
+        effective_model_provider = str(effective_model_provider).strip().lower()
+
+        if gateway_enabled:
+            model_endpoint = execution_context.get("model_gateway_url") or ""
+        else:
+            model_endpoint = execution_context.get("model_endpoint") or ""
 
         # Fallback: resolve endpoint from environment if not set in the AI model.
-        if not model_endpoint and model_provider and model_provider != "openai":
-            env_key = f"{model_provider.upper().replace('-', '_')}_API_BASE"
+        if (
+            not model_endpoint
+            and effective_model_provider
+            and effective_model_provider != "openai"
+        ):
+            env_key = f"{effective_model_provider.upper().replace('-', '_')}_API_BASE"
             model_endpoint = os.getenv(env_key) or os.getenv("CUSTOM_API_BASE", "")
 
+        # Local model id for provider registry lookup (must match the suffix of
+        # ``model_qualified``, never a duplicated ``{provider}/{provider}/...``).
+        model_local_id = _opencode_provider_local_model_id(
+            model, effective_model_provider
+        )
         # OpenCode splits the model field on "/" to get providerID/modelID.
         # Without the slash, it treats the entire string as the provider.
-        model_qualified = f"{model_provider}/{model}"
+        model_qualified = f"{effective_model_provider}/{model_local_id}"
 
         config: Dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
             "model": model_qualified,
             "autoupdate": False,
+            "permission": "allow",
             "mcp": {
                 "preloop": {
                     "type": "remote",
@@ -471,18 +519,45 @@ exit $OPENCODE_EXIT_CODE
         #   options.baseURL – API endpoint
         #   models – map of model-id → {name}
         if model_endpoint:
-            config["provider"] = {
-                model_provider: {
-                    "npm": "@ai-sdk/openai-compatible",
-                    "options": {
-                        "baseURL": model_endpoint,
-                        "apiKey": "$OPENAI_API_KEY",
-                    },
-                    "models": {
-                        model: {"name": model},
-                    },
+            if gateway_enabled and model_provider in ("google", "gemini"):
+                config["provider"] = {
+                    effective_model_provider: {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "options": {
+                            "baseURL": model_endpoint,
+                            "apiKey": "$OPENAI_API_KEY",
+                        },
+                        "models": {
+                            model_local_id: {"name": model},
+                        },
+                    }
                 }
-            }
+            elif not gateway_enabled and model_provider in ("google", "gemini"):
+                config["provider"] = {
+                    effective_model_provider: {
+                        "npm": "@ai-sdk/google",
+                        "options": {
+                            "baseURL": model_endpoint,
+                            "apiKey": "$GOOGLE_API_KEY",
+                        },
+                        "models": {
+                            model_local_id: {"name": model},
+                        },
+                    }
+                }
+            else:
+                config["provider"] = {
+                    effective_model_provider: {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "options": {
+                            "baseURL": model_endpoint,
+                            "apiKey": "$OPENAI_API_KEY",
+                        },
+                        "models": {
+                            model_local_id: {"name": model},
+                        },
+                    }
+                }
 
         return config
 
@@ -570,7 +645,19 @@ exit $OPENCODE_EXIT_CODE
 
         # Add API key for the configured provider
         model_provider = execution_context.get("model_provider", "anthropic").lower()
-        if "model_api_key" in execution_context:
+        if execution_context.get("model_gateway_enabled"):
+            gateway_provider = (
+                execution_context.get("model_gateway_provider") or "preloop"
+            ).lower()
+            gateway_token = execution_context.get("model_gateway_token")
+            if gateway_token:
+                provider_env_key = (
+                    f"{gateway_provider.upper().replace('-', '_')}_API_KEY"
+                )
+                env[provider_env_key] = gateway_token
+                env["OPENAI_API_KEY"] = gateway_token
+                env["PRELOOP_MODEL_GATEWAY_TOKEN"] = gateway_token
+        elif "model_api_key" in execution_context:
             # Set the provider-specific env var
             provider_env_key = f"{model_provider.upper().replace('-', '_')}_API_KEY"
             env[provider_env_key] = execution_context["model_api_key"]

@@ -32,6 +32,38 @@ interface Subscription {
   current_period_end: string;
 }
 
+interface HostedModelUsageRow {
+  ai_model_id: string | null;
+  model_name: string;
+  model_alias: string | null;
+  tier: string | null;
+  provider_name: string | null;
+  request_count: number;
+  total_tokens: number;
+  estimated_cost: number;
+}
+
+interface BillingSummary {
+  subscription: Subscription | null;
+  plan: Plan | null;
+  trial: {
+    is_trialing: boolean;
+    days: number;
+    requires_payment_method: boolean;
+    hosted_model_hard_cap_usd: number | null;
+  };
+  hosted_models: {
+    billing_period_start: string;
+    billing_period_end: string;
+    included_limit_usd: number | null;
+    active_limit_usd: number | null;
+    current_usage_usd: number;
+    remaining_limit_usd: number | null;
+    extra_credit_price_per_usd: number;
+    models: HostedModelUsageRow[];
+  };
+}
+
 @customElement('account-view')
 export class AccountView extends LitElement {
   @state() private accountOrganization: AccountOrganization | null = null;
@@ -41,6 +73,7 @@ export class AccountView extends LitElement {
   @state() private orgSuccessMessage = '';
   @state() private orgErrorMessage = '';
   @state() private subscription: Subscription | null = null;
+  @state() private _billingSummary: BillingSummary | null = null;
   @state() private _publicPlans: Plan[] = [];
   @state() private _customPlans: Plan[] = [];
   @state() private _loading = true;
@@ -90,18 +123,17 @@ export class AccountView extends LitElement {
           method: 'POST',
         });
 
-        const [subRes, publicPlansRes, customPlansRes] = await Promise.all([
-          fetchWithAuth('/api/v1/billing/subscription'),
+        const [summaryRes, publicPlansRes, customPlansRes] = await Promise.all([
+          fetchWithAuth('/api/v1/billing/summary'),
           fetchWithAuth('/api/v1/billing/plans'),
           fetchWithAuth('/api/v1/billing/custom-plans'),
         ]);
 
-        if (subRes.status === 404) {
-          this.subscription = null;
-        } else if (subRes.ok) {
-          this.subscription = await subRes.json();
+        if (summaryRes.ok) {
+          this._billingSummary = await summaryRes.json();
+          this.subscription = this._billingSummary?.subscription ?? null;
         } else {
-          throw new Error('Failed to load subscription details.');
+          throw new Error('Failed to load billing summary.');
         }
 
         if (publicPlansRes.ok) {
@@ -125,6 +157,25 @@ export class AccountView extends LitElement {
     } finally {
       this._loading = false;
     }
+  }
+
+  private _formatUsd(value: number | null | undefined) {
+    if (value === null || value === undefined) {
+      return 'Not configured';
+    }
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: value < 10 ? 2 : 0,
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+
+  private _formatExtraCreditPrice(value: number | null | undefined) {
+    if (value === null || value === undefined) {
+      return 'Not configured';
+    }
+    return `${this._formatUsd(value)} per additional $1.00 of built-in model usage`;
   }
 
   private async _handleSaveOrganization() {
@@ -304,6 +355,74 @@ export class AccountView extends LitElement {
         margin: 1rem 0;
         color: var(--sl-color-danger-600);
       }
+
+      .usage-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      .usage-metric {
+        padding: 0.875rem;
+        border-radius: 12px;
+        border: 1px solid var(--sl-color-neutral-200);
+        background: var(--sl-color-neutral-0);
+      }
+
+      .usage-label {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.85rem;
+        margin-bottom: 0.35rem;
+      }
+
+      .usage-value {
+        color: var(--sl-color-neutral-900);
+        font-size: 1rem;
+        font-weight: 700;
+      }
+
+      .usage-note {
+        margin-top: 1rem;
+        color: var(--sl-color-neutral-700);
+      }
+
+      .usage-models {
+        margin-top: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .usage-model-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--sl-color-neutral-200);
+      }
+
+      .usage-model-row:first-child {
+        border-top: none;
+        padding-top: 0;
+      }
+
+      .usage-model-name {
+        font-weight: 600;
+        color: var(--sl-color-neutral-900);
+      }
+
+      .usage-model-meta {
+        color: var(--sl-color-neutral-600);
+        font-size: 0.9rem;
+      }
+
+      .usage-model-cost {
+        font-weight: 700;
+        color: var(--sl-color-neutral-900);
+        white-space: nowrap;
+      }
     `,
   ];
 
@@ -337,10 +456,14 @@ export class AccountView extends LitElement {
 
     const isProprietary = this.features?.features['billing'] === true;
     const availablePlans = [...this._customPlans, ...this._publicPlans];
-    const currentPlanName = this.subscription?.plan_id
-      ? (availablePlans.find((p) => p.id === this.subscription?.plan_id)
-          ?.name ?? 'Free')
-      : 'Free';
+    const currentPlanName = this._billingSummary?.plan?.name
+      ? this._billingSummary.plan.name
+      : this.subscription?.plan_id
+        ? (availablePlans.find((p) => p.id === this.subscription?.plan_id)
+            ?.name ?? 'Free')
+        : 'Free';
+    const hostedSummary = this._billingSummary?.hosted_models;
+    const trialSummary = this._billingSummary?.trial;
 
     return html`
       <view-header headerText="Account" width="narrow"></view-header>
@@ -428,16 +551,119 @@ export class AccountView extends LitElement {
                     : html`<div class="date">
                         You are currently on the Free plan.
                       </div>`}
+                  ${trialSummary?.is_trialing
+                    ? html`
+                        <div class="date">
+                          Trial cap for built-in models:
+                          ${this._formatUsd(
+                            trialSummary.hosted_model_hard_cap_usd
+                          )}
+                        </div>
+                      `
+                    : ''}
                   <div class="actions">
                     <sl-button
                       size="medium"
                       variant="primary"
+                      ?disabled=${!this.subscription}
                       @click=${this._handleManageSubscription}
                     >
                       Manage in Stripe
                     </sl-button>
                   </div>
                 </div>
+
+                ${hostedSummary
+                  ? html`
+                      <div class="card">
+                        <div class="current-row">
+                          <span class="plan-name">Built-in model usage</span>
+                        </div>
+                        <div class="date">
+                          Current billing period ends
+                          ${new Date(
+                            hostedSummary.billing_period_end
+                          ).toLocaleDateString()}
+                        </div>
+                        <div class="usage-grid">
+                          <div class="usage-metric">
+                            <div class="usage-label">Plan limit</div>
+                            <div class="usage-value">
+                              ${this._formatUsd(
+                                hostedSummary.included_limit_usd
+                              )}
+                            </div>
+                          </div>
+                          <div class="usage-metric">
+                            <div class="usage-label">Current active cap</div>
+                            <div class="usage-value">
+                              ${this._formatUsd(hostedSummary.active_limit_usd)}
+                            </div>
+                          </div>
+                          <div class="usage-metric">
+                            <div class="usage-label">Usage so far</div>
+                            <div class="usage-value">
+                              ${this._formatUsd(
+                                hostedSummary.current_usage_usd
+                              )}
+                            </div>
+                          </div>
+                          <div class="usage-metric">
+                            <div class="usage-label">Remaining before cap</div>
+                            <div class="usage-value">
+                              ${this._formatUsd(
+                                hostedSummary.remaining_limit_usd
+                              )}
+                            </div>
+                          </div>
+                          <div class="usage-metric">
+                            <div class="usage-label">Extra credits</div>
+                            <div class="usage-value">
+                              ${this._formatExtraCreditPrice(
+                                hostedSummary.extra_credit_price_per_usd
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div class="usage-note">
+                          Built-in models are Preloop-managed hosted models.
+                          BYOK usage is not counted here.
+                        </div>
+                        <div class="usage-models">
+                          ${hostedSummary.models.length > 0
+                            ? hostedSummary.models.map(
+                                (model) => html`
+                                  <div class="usage-model-row">
+                                    <div>
+                                      <div class="usage-model-name">
+                                        ${model.model_name}
+                                      </div>
+                                      <div class="usage-model-meta">
+                                        ${model.request_count}
+                                        request${model.request_count === 1
+                                          ? ''
+                                          : 's'}
+                                        · ${model.total_tokens.toLocaleString()}
+                                        tokens
+                                        ${model.tier ? `· ${model.tier}` : ''}
+                                      </div>
+                                    </div>
+                                    <div class="usage-model-cost">
+                                      ${this._formatUsd(model.estimated_cost)}
+                                    </div>
+                                  </div>
+                                `
+                              )
+                            : html`
+                                <div class="usage-note">
+                                  No built-in model usage recorded in this
+                                  billing period yet.
+                                </div>
+                              `}
+                        </div>
+                      </div>
+                    `
+                  : ''}
 
                 <div>
                   <billing-toggle

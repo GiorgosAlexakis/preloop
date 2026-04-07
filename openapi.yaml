@@ -331,6 +331,97 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
+  /api/v1/auth/runtime-sessions/token:
+    post:
+      tags:
+      - Auth
+      summary: Create Runtime Session Token
+      description: Create a short-lived runtime token bound to a shared runtime session.
+      operationId: create_runtime_session_token_api_v1_auth_runtime_sessions_token_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSessionTokenCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionTokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/auth/api-keys/{key_id}/governance:
+    get:
+      tags:
+      - Auth
+      summary: Get Api Key Governance
+      operationId: get_api_key_governance_api_v1_auth_api_keys__key_id__governance_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Auth
+      summary: Update Api Key Governance
+      operationId: update_api_key_governance_api_v1_auth_api_keys__key_id__governance_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubjectGovernanceConfig'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/auth/api-keys/debug:
     get:
       tags:
@@ -518,6 +609,1129 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/account/gateway-usage/summary:
+    get:
+      tags:
+      - Account
+      summary: Get Account Gateway Usage Summary
+      description: Get account-scoped model gateway usage summary.
+      operationId: get_account_gateway_usage_summary_api_v1_account_gateway_usage_summary_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGatewayUsageSummaryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/gateway-usage/search:
+    get:
+      tags:
+      - Account
+      summary: Search Account Gateway Usage
+      description: Search or list indexed gateway interactions for the current account.
+      operationId: search_account_gateway_usage_api_v1_account_gateway_usage_search_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: provider_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+      - name: model_alias
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+      - name: flow_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+      - name: runtime_session_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+      - name: runtime_principal_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+      - name: api_key_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Id
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents:
+    get:
+      tags:
+      - Account
+      summary: List Account Managed Agents
+      description: List enrolled external agents for the current account.
+      operationId: list_account_managed_agents_api_v1_agents_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: agent_kind
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Kind
+      - name: last_seen_after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Seen After
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|ended)$
+          default: all
+          title: Status
+      - name: owner_username
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Username
+      - name: tags
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tags
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountManagedAgentListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/extract-name:
+    post:
+      tags:
+      - Account
+      summary: Extract Agent Name
+      description: 'Extract agent name from IDENTITY.md content using LLM.
+
+
+        If the CLI regex parsing fails, it falls back to this endpoint which uses
+
+        the account''s default configured AI model to intelligently infer the name.'
+      operationId: extract_agent_name_api_v1_agents_extract_name_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentNameExtractionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentNameExtractionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/agents/{agent_id}:
+    get:
+      tags:
+      - Account
+      summary: Get Account Managed Agent
+      description: Return one enrolled external agent for the current account.
+      operationId: get_account_managed_agent_api_v1_agents__agent_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Account
+      summary: Update Account Managed Agent
+      description: Update managed-agent ownership or lifecycle controls.
+      operationId: update_account_managed_agent_api_v1_agents__agent_id__patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Account
+      summary: Delete Account Managed Agent
+      description: Remove one managed-agent registry entry without touching the actual
+        agent.
+      operationId: delete_account_managed_agent_api_v1_agents__agent_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/model-bindings:
+    get:
+      tags:
+      - Account
+      summary: List Account Managed Agent Model Bindings
+      description: List explicit AI model bindings for one managed agent.
+      operationId: list_account_managed_agent_model_bindings_api_v1_agents__agent_id__model_bindings_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedAgentModelBindingSummary'
+                title: Response List Account Managed Agent Model Bindings Api V1 Agents  Agent
+                  Id  Model Bindings Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Account
+      summary: Replace Account Managed Agent Model Bindings
+      description: Replace explicit AI model bindings for one managed agent.
+      operationId: replace_account_managed_agent_model_bindings_api_v1_agents__agent_id__model_bindings_put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentModelBindingSyncRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedAgentModelBindingSummary'
+                title: Response Replace Account Managed Agent Model Bindings Api V1
+                  Agents  Agent Id  Model Bindings Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/governance:
+    get:
+      tags:
+      - Account
+      summary: Get Account Managed Agent Governance
+      operationId: get_account_managed_agent_governance_api_v1_agents__agent_id__governance_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Account
+      summary: Update Account Managed Agent Governance
+      operationId: update_account_managed_agent_governance_api_v1_agents__agent_id__governance_put
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubjectGovernanceConfig'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectGovernanceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/credentials:
+    get:
+      tags:
+      - Account
+      summary: List Account Managed Agent Credentials
+      description: List durable credentials for one managed agent.
+      operationId: list_account_managed_agent_credentials_api_v1_agents__agent_id__credentials_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+                title: Response List Account Managed Agent Credentials Api V1 Agents  Agent
+                  Id  Credentials Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Account
+      summary: Create Account Managed Agent Credential
+      description: Create a durable credential for one managed agent.
+      operationId: create_account_managed_agent_credential_api_v1_agents__agent_id__credentials_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentCredentialCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentCredentialCreateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/credentials/{credential_id}:
+    delete:
+      tags:
+      - Account
+      summary: Revoke Account Managed Agent Credential
+      description: Revoke one durable credential for a managed agent.
+      operationId: revoke_account_managed_agent_credential_api_v1_agents__agent_id__credentials__credential_id__delete
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Credential Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/enrollments:
+    get:
+      tags:
+      - Account
+      summary: List Account Managed Agent Enrollments
+      description: List durable enrollment records for one managed agent.
+      operationId: list_account_managed_agent_enrollments_api_v1_agents__agent_id__enrollments_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+                title: Response List Account Managed Agent Enrollments Api V1 Agents  Agent
+                  Id  Enrollments Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Account
+      summary: Create Account Managed Agent Enrollment
+      description: Persist one enrollment record for a managed agent.
+      operationId: create_account_managed_agent_enrollment_api_v1_agents__agent_id__enrollments_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentEnrollmentCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/enrollments/{enrollment_id}/validate:
+    post:
+      tags:
+      - Account
+      summary: Validate Account Managed Agent Enrollment
+      description: Persist validation state for one managed-agent enrollment.
+      operationId: validate_account_managed_agent_enrollment_api_v1_agents__agent_id__enrollments__enrollment_id__validate_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      - name: enrollment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Enrollment Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentEnrollmentValidateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/enrollments/{enrollment_id}/restore:
+    post:
+      tags:
+      - Account
+      summary: Restore Account Managed Agent Enrollment
+      description: Persist restore state for one managed-agent enrollment.
+      operationId: restore_account_managed_agent_enrollment_api_v1_agents__agent_id__enrollments__enrollment_id__restore_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      - name: enrollment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Enrollment Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedAgentEnrollmentRestoreRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions:
+    get:
+      tags:
+      - Account
+      summary: List Account Runtime Sessions
+      description: List runtime sessions for the current account.
+      operationId: list_account_runtime_sessions_api_v1_runtime_sessions_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|ended)$
+          default: all
+          title: Status
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRuntimeSessionListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}:
+    get:
+      tags:
+      - Account
+      summary: Get Account Runtime Session Detail
+      description: Return one runtime session detail summary without heavy arrays.
+      operationId: get_account_runtime_session_detail_api_v1_runtime_sessions__runtime_session_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRuntimeSessionDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Account
+      summary: Update Account Runtime Session
+      description: Update runtime-session lifecycle controls for the current account.
+      operationId: update_account_runtime_session_api_v1_runtime_sessions__runtime_session_id__patch
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSessionUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/interactions:
+    get:
+      tags:
+      - Account
+      summary: Get Account Session Interactions
+      description: Paginated search across captured interactions for this session.
+      operationId: get_account_session_interactions_api_v1_runtime_sessions__runtime_session_id__interactions_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: interaction_query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Interaction Query
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: interaction_limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Interaction Limit
+      - name: interaction_offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Interaction Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/activity:
+    get:
+      tags:
+      - Account
+      summary: Get Account Session Activity Timeline
+      description: Activity timeline overview for this session.
+      operationId: get_account_session_activity_timeline_api_v1_runtime_sessions__runtime_session_id__activity_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionActivityListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/gateway-events:
+    get:
+      tags:
+      - Account
+      summary: Get Account Runtime Session Gateway Events
+      description: Return stored gateway events (chat histories) for one runtime session.
+      operationId: get_account_runtime_session_gateway_events_api_v1_runtime_sessions__runtime_session_id__gateway_events_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: tail
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Account Runtime Session Gateway Events Api V1
+                  Runtime Sessions  Runtime Session Id  Gateway Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/gateway-events/{activity_id}:
+    get:
+      tags:
+      - Account
+      summary: Get Account Runtime Session Gateway Event Detail
+      description: Return the raw, massive stored gateway event JSON detail for one
+        runtime session activity.
+      operationId: get_account_runtime_session_gateway_event_detail_api_v1_runtime_sessions__runtime_session_id__gateway_events__activity_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: activity_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Activity Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Account Runtime Session Gateway Event Detail Api
+                  V1 Runtime Sessions  Runtime Session Id  Gateway Events  Activity
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/account/telemetry/dashboard:
+    get:
+      tags:
+      - Account
+      summary: Get Dashboard Telemetry
+      description: Aggregate high-level metrics for the new global dashboard.
+      operationId: get_dashboard_telemetry_api_v1_account_telemetry_dashboard_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardTelemetryResponse'
       security:
       - bearerAuth: []
   /api/v1/account/deletion-request:
@@ -3527,6 +4741,237 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-models/{model_id}/summary:
+    get:
+      tags:
+      - AI Models
+      - AI Models
+      summary: Get AI Model Usage Summary
+      description: Return model-scoped gateway usage totals for one AI model.
+      operationId: get_ai_model_usage_summary_api_v1_ai_models__model_id__summary_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Model Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIModelGatewayUsageSummaryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-models/{model_id}/runtime-sessions:
+    get:
+      tags:
+      - AI Models
+      - AI Models
+      summary: List AI Model Runtime Sessions
+      description: List runtime sessions that used one durable AI model.
+      operationId: list_ai_model_runtime_sessions_api_v1_ai_models__model_id__runtime_sessions_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Model Id
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|ended)$
+          default: all
+          title: Status
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRuntimeSessionListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai-models/{model_id}/interactions:
+    get:
+      tags:
+      - AI Models
+      - AI Models
+      summary: List AI Model Interactions
+      description: List indexed gateway interactions scoped to one AI model.
+      operationId: list_ai_model_interactions_api_v1_ai_models__model_id__interactions_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Model Id
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+          title: Query
+      - name: runtime_session_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+      - name: session_source_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGatewayUsageSearchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/ai-models/providers/{provider}/available-models:
     get:
       tags:
@@ -3575,68 +5020,6 @@ paths:
                   type: string
                 title: Response Get Provider Available Models Api V1 Ai Models Providers  Provider  Available
                   Models Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - bearerAuth: []
-  /api/v1/version:
-    get:
-      tags:
-      - Version
-      summary: Get Version Info
-      description: 'Returns the server version information and logs the client version.
-
-
-        Accepts an optional `X-Client-Version` header from the client.
-
-        If an `Authorization: Bearer <token>` header is provided and valid,
-
-        the associated account ID will also be logged.'
-      operationId: get_version_info_api_v1_version_get
-      parameters:
-      - name: X-Client-Version
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Version
-      - name: X-Client-Organization
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Organization
-      - name: X-Client-Project
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Client-Project
-      - name: X-Additional-Info
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Additional-Info
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VersionInfo'
         '422':
           description: Validation Error
           content:
@@ -3890,9 +5273,12 @@ paths:
         \ (if finished).\n\nFor running executions, fetches logs directly from the\
         \ Docker/Kubernetes container.\nFor finished executions, returns persisted\
         \ logs from the database.\n\nArgs:\n    execution_id: ID of the execution\n\
-        \    tail: Number of recent log lines to retrieve, or None for all logs\n\n\
-        Returns:\n    Dictionary with:\n    - logs: List of log lines\n    - source:\
-        \ Where logs were fetched from (\"container\" or \"database\")"
+        \    tail: Number of recent log lines to retrieve, or None for all logs\n\
+        \    skip: Number of logs to skip (for pagination)\n    limit: Number of logs\
+        \ to return (for pagination)\n\nReturns:\n    Dictionary with:\n    - logs:\
+        \ List of log lines\n    - source: Where logs were fetched from (\"container\"\
+        \ or \"database\")\n    - has_more: Boolean indicating if there are more logs\
+        \ (if paginated)"
       operationId: get_flow_execution_logs_api_v1_flows_executions__execution_id__logs_get
       security:
       - bearerAuth: []
@@ -3912,6 +5298,21 @@ paths:
           - type: integer
           - type: 'null'
           title: Tail
+      - name: skip
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Skip
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Limit
       responses:
         '200':
           description: Successful Response
@@ -3922,6 +5323,94 @@ paths:
                 additionalProperties: true
                 title: Response Get Flow Execution Logs Api V1 Flows Executions  Execution
                   Id  Logs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/gateway-events:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Execution Gateway Events
+      description: Get normalized model gateway events for a flow execution.
+      operationId: get_flow_execution_gateway_events_api_v1_flows_executions__execution_id__gateway_events_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      - name: tail
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tail
+      - name: metadata_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Metadata Only
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Flow Execution Gateway Events Api V1 Flows Executions  Execution
+                  Id  Gateway Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/executions/{execution_id}/gateway-events/{event_id}:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Execution Gateway Event
+      description: Get a single normalized model gateway event.
+      operationId: get_flow_execution_gateway_event_api_v1_flows_executions__execution_id__gateway_events__event_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: execution_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Execution Id
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Flow Execution Gateway Event Api V1 Flows Executions  Execution
+                  Id  Gateway Events  Event Id  Get
         '422':
           description: Validation Error
           content:
@@ -3960,6 +5449,54 @@ paths:
                 additionalProperties: true
                 title: Response Get Flow Execution Metrics Api V1 Flows Executions  Execution
                   Id  Metrics Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/flows/{flow_id}/gateway-usage/summary:
+    get:
+      tags:
+      - Flows
+      summary: Get Flow Gateway Usage Summary
+      description: Get model gateway usage summary for a flow.
+      operationId: get_flow_gateway_usage_summary_api_v1_flows__flow_id__gateway_usage_summary_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: flow_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Flow Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowGatewayUsageSummaryResponse'
         '422':
           description: Validation Error
           content:
@@ -4812,6 +6349,39 @@ components:
           - type: 'null'
           title: Api Key
           description: API key for the model provider
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+          description: Optional inline credential envelope type, e.g. 'oauth_openai_codex'
+        credential_payload:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credential Payload
+          description: Optional inline credential payload for non-API-key auth, stored
+            encrypted when provided
+        credentials_backend_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials Backend Type
+          description: Optional external credential backend type, e.g. 'vault_kv_v2'
+        credentials_external_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials External Ref
+          description: Optional external secret reference for provider credentials
+        credentials_meta_data:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credentials Meta Data
+          description: Optional metadata for external secret backends, e.g. field/version
         is_default:
           type: boolean
           title: Is Default
@@ -4838,42 +6408,96 @@ components:
       - model_identifier
       title: AIModelCreate
       description: Schema for creating a new AIModel entry.
+    AIModelGatewayUsageSummaryResponse:
+      properties:
+        ai_model_id:
+          type: string
+          title: Ai Model Id
+        model_name:
+          type: string
+          title: Model Name
+        provider_name:
+          type: string
+          title: Provider Name
+        model_identifier:
+          type: string
+          title: Model Identifier
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        requests_by_day:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByDay'
+          type: array
+          title: Requests By Day
+        usage_by_session:
+          items:
+            $ref: '#/components/schemas/GatewayUsageBySession'
+          type: array
+          title: Usage By Session
+      type: object
+      required:
+      - ai_model_id
+      - model_name
+      - provider_name
+      - model_identifier
+      - period_start
+      - period_end
+      - token_usage
+      title: AIModelGatewayUsageSummaryResponse
+      description: Gateway usage summary for one durable AI model.
     AIModelRead:
       properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+          description: Primary key
         name:
           type: string
           title: Name
-          description: User-defined name for this model configuration
         description:
           anyOf:
           - type: string
           - type: 'null'
           title: Description
-          description: Optional description
         provider_name:
           type: string
           title: Provider Name
-          description: e.g., 'openai', 'anthropic'
         model_identifier:
           type: string
           title: Model Identifier
-          description: Standardized identifier, e.g., 'gpt-4-turbo'
         api_endpoint:
           anyOf:
           - type: string
           - type: 'null'
           title: Api Endpoint
-          description: URL for the model's API, if not standard
-        api_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Api Key
-          description: API key for the model provider
         is_default:
           type: boolean
           title: Is Default
-          description: Indicates if this is the default model for the account
           default: false
         model_parameters:
           anyOf:
@@ -4881,31 +6505,54 @@ components:
             type: object
           - type: 'null'
           title: Model Parameters
-          description: Optional, for model-specific parameters like temperature, max_tokens
         meta_data:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
           title: Meta Data
-          description: Optional, for custom fields, labels, etc.
-        id:
-          type: string
-          format: uuid
-          title: Id
-          description: Primary key
         account_id:
           anyOf:
           - type: string
           - type: 'null'
           title: Account Id
           description: Account this model belongs to
+        credentials_secret_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Credentials Secret Id
+          description: Secret reference ID for model credentials
+        credentials_backend_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials Backend Type
+          description: Backend type used for credential storage
+        credentials_external_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials External Ref
+          description: External secret reference when using a non-local backend
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+          description: Logical credential type stored for the model
+        has_api_key:
+          type: boolean
+          title: Has Api Key
+          description: Whether this model has credentials configured
+          default: false
       type: object
       required:
+      - id
       - name
       - provider_name
       - model_identifier
-      - id
       title: AIModelRead
       description: Schema for reading AIModel entries, including timestamps.
     AIModelUpdate:
@@ -4940,6 +6587,33 @@ components:
           - type: string
           - type: 'null'
           title: Api Key
+        credential_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential Type
+        credential_payload:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credential Payload
+        credentials_backend_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials Backend Type
+        credentials_external_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credentials External Ref
+        credentials_meta_data:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Credentials Meta Data
         is_default:
           anyOf:
           - type: boolean
@@ -5157,6 +6831,239 @@ components:
       type: object
       title: AccountDetailsUpdate
       description: Account details update request.
+    AccountGatewayUsageSearchResponse:
+      properties:
+        period_start:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Period End
+        query:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Query
+        total:
+          type: integer
+          title: Total
+          default: 0
+        limit:
+          type: integer
+          title: Limit
+          default: 20
+        offset:
+          type: integer
+          title: Offset
+          default: 0
+        items:
+          items:
+            $ref: '#/components/schemas/GatewayUsageSearchResultItem'
+          type: array
+          title: Items
+      type: object
+      title: AccountGatewayUsageSearchResponse
+      description: Account-scoped gateway interaction search results.
+    AccountGatewayUsageSummaryResponse:
+      properties:
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        budget:
+          $ref: '#/components/schemas/GatewayBudgetSummary'
+        requests_by_day:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByDay'
+          type: array
+          title: Requests By Day
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+        usage_by_flow:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByFlow'
+          type: array
+          title: Usage By Flow
+        usage_by_session:
+          items:
+            $ref: '#/components/schemas/GatewayUsageBySession'
+          type: array
+          title: Usage By Session
+      type: object
+      required:
+      - period_start
+      - period_end
+      - token_usage
+      - budget
+      title: AccountGatewayUsageSummaryResponse
+      description: Account-scoped gateway usage summary.
+    AccountManagedAgentListResponse:
+      properties:
+        query:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Query
+        agent_kind:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Kind
+        last_seen_after:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Seen After
+        status:
+          type: string
+          title: Status
+          default: all
+        total:
+          type: integer
+          title: Total
+          default: 0
+        limit:
+          type: integer
+          title: Limit
+          default: 20
+        offset:
+          type: integer
+          title: Offset
+          default: 0
+        items:
+          items:
+            $ref: '#/components/schemas/ManagedAgentSummary'
+          type: array
+          title: Items
+      type: object
+      title: AccountManagedAgentListResponse
+      description: Account-scoped managed-agent registry response.
+    AccountRuntimeSessionDetailResponse:
+      properties:
+        period_start:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Period End
+        session:
+          $ref: '#/components/schemas/RuntimeSessionSummary'
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+      type: object
+      required:
+      - session
+      title: AccountRuntimeSessionDetailResponse
+      description: One runtime session detail summary. (Interactions and activity
+        moved to sub-endpoints).
+    AccountRuntimeSessionListResponse:
+      properties:
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        query:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Query
+        session_source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+        status:
+          type: string
+          title: Status
+          default: all
+        total:
+          type: integer
+          title: Total
+          default: 0
+        limit:
+          type: integer
+          title: Limit
+          default: 20
+        offset:
+          type: integer
+          title: Offset
+          default: 0
+        items:
+          items:
+            $ref: '#/components/schemas/RuntimeSessionSummary'
+          type: array
+          title: Items
+      type: object
+      required:
+      - period_start
+      - period_end
+      title: AccountRuntimeSessionListResponse
+      description: Account-scoped runtime session explorer list response.
+    AgentNameExtractionRequest:
+      properties:
+        identity_content:
+          type: string
+          title: Identity Content
+      type: object
+      required:
+      - identity_content
+      title: AgentNameExtractionRequest
+      description: Request to extract an agent's name from IDENTITY.md content.
+    AgentNameExtractionResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: AgentNameExtractionResponse
+      description: Extracted agent name.
     ApiKeyCreate:
       properties:
         name:
@@ -5256,6 +7163,46 @@ components:
             format: date-time
           - type: 'null'
           title: Last Used At
+        managed_agent_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Managed Agent Id
+        runtime_principal_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Type
+        runtime_principal_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Name
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+        activity_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Activity Status
+        recent_model_calls:
+          type: integer
+          title: Recent Model Calls
+          default: 0
+        recent_tool_calls:
+          type: integer
+          title: Recent Tool Calls
+          default: 0
       type: object
       required:
       - id
@@ -6323,6 +8270,27 @@ components:
       type: object
       title: CustomCommands
       description: Configuration for custom commands (admin-only).
+    DashboardTelemetryResponse:
+      properties:
+        active_agents:
+          type: integer
+          title: Active Agents
+          default: 0
+        total_tool_calls:
+          type: integer
+          title: Total Tool Calls
+          default: 0
+        daily_cost:
+          type: number
+          title: Daily Cost
+          default: 0.0
+        success_rate:
+          type: number
+          title: Success Rate
+          default: 0.0
+      type: object
+      title: DashboardTelemetryResponse
+      description: Aggregate high-level metrics for the global dashboard control plane.
     EmailVerificationRequest:
       properties:
         token:
@@ -6685,6 +8653,63 @@ components:
       - created_at
       - updated_at
       title: FlowExecutionResponse
+    FlowGatewayUsageSummaryResponse:
+      properties:
+        flow_id:
+          type: string
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        budget:
+          $ref: '#/components/schemas/GatewayBudgetSummary'
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+        usage_by_execution:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByExecution'
+          type: array
+          title: Usage By Execution
+      type: object
+      required:
+      - flow_id
+      - period_start
+      - period_end
+      - token_usage
+      - budget
+      title: FlowGatewayUsageSummaryResponse
+      description: Flow-scoped gateway usage summary.
     FlowResponse:
       properties:
         name:
@@ -6838,6 +8863,12 @@ components:
           type: string
           format: date-time
           title: Updated At
+        execution_stats:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Execution Stats
       type: object
       required:
       - id
@@ -6997,6 +9028,364 @@ components:
           default: false
       type: object
       title: FlowUpdate
+    GatewayBudgetSummary:
+      properties:
+        monthly_limit_usd:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Monthly Limit Usd
+        soft_limit_usd:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Soft Limit Usd
+        current_spend_usd:
+          type: number
+          title: Current Spend Usd
+          default: 0.0
+        soft_limit_exceeded:
+          type: boolean
+          title: Soft Limit Exceeded
+          default: false
+        hard_limit_exceeded:
+          type: boolean
+          title: Hard Limit Exceeded
+          default: false
+      type: object
+      title: GatewayBudgetSummary
+      description: Budget snapshot for gateway usage.
+    GatewayTokenUsage:
+      properties:
+        prompt_tokens:
+          type: integer
+          title: Prompt Tokens
+          default: 0
+        completion_tokens:
+          type: integer
+          title: Completion Tokens
+          default: 0
+        total_tokens:
+          type: integer
+          title: Total Tokens
+          default: 0
+      type: object
+      title: GatewayTokenUsage
+      description: Token usage totals.
+    GatewayUsageByDay:
+      properties:
+        date:
+          type: string
+          title: Date
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        total_tokens:
+          type: integer
+          title: Total Tokens
+          default: 0
+      type: object
+      required:
+      - date
+      title: GatewayUsageByDay
+      description: Daily usage aggregate.
+    GatewayUsageByExecution:
+      properties:
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageByExecution
+      description: Usage aggregate grouped by flow execution.
+    GatewayUsageByFlow:
+      properties:
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageByFlow
+      description: Usage aggregate grouped by flow.
+    GatewayUsageByModel:
+      properties:
+        ai_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Id
+        model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageByModel
+      description: Usage aggregate grouped by model.
+    GatewayUsageBySession:
+      properties:
+        ai_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Id
+        runtime_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+        session_source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+        session_source_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Id
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        request_count:
+          type: integer
+          title: Request Count
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - token_usage
+      title: GatewayUsageBySession
+      description: Recent usage aggregate grouped by execution-backed session slices.
+    GatewayUsageSearchResultItem:
+      properties:
+        api_usage_id:
+          type: string
+          title: Api Usage Id
+        ai_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Id
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        status_code:
+          type: integer
+          title: Status Code
+        outcome:
+          type: string
+          title: Outcome
+        endpoint:
+          type: string
+          title: Endpoint
+        method:
+          type: string
+          title: Method
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Alias
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        runtime_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+        session_source_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Type
+        session_source_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        runtime_principal_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Type
+        runtime_principal_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Name
+        auth_subject_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auth Subject Type
+        api_key_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Id
+        api_key_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Name
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        excerpt:
+          type: string
+          title: Excerpt
+        meta_data:
+          additionalProperties: true
+          type: object
+          title: Meta Data
+      type: object
+      required:
+      - api_usage_id
+      - timestamp
+      - status_code
+      - outcome
+      - endpoint
+      - method
+      - token_usage
+      - excerpt
+      title: GatewayUsageSearchResultItem
+      description: One account-scoped gateway interaction search hit.
     GeneratePolicyFromAuditRequest:
       properties:
         start_date:
@@ -7756,6 +10145,785 @@ components:
       - updated_at
       title: MCPToolResponse
       description: Schema for MCP tool response.
+    ManagedAgentCredentialCreateRequest:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        expires_in_days:
+          anyOf:
+          - type: integer
+            maximum: 3650.0
+            minimum: 1.0
+          - type: 'null'
+          title: Expires In Days
+          default: 365
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+      type: object
+      required:
+      - name
+      title: ManagedAgentCredentialCreateRequest
+      description: Request to create a durable credential for one managed agent.
+    ManagedAgentCredentialCreateResponse:
+      properties:
+        credential:
+          $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+        token:
+          type: string
+          title: Token
+      type: object
+      required:
+      - credential
+      - token
+      title: ManagedAgentCredentialCreateResponse
+      description: One-time response payload for a newly created agent credential.
+    ManagedAgentCredentialSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        api_key_id:
+          type: string
+          title: Api Key Id
+        created_by_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created By User Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        credential_type:
+          type: string
+          title: Credential Type
+        status:
+          type: string
+          title: Status
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+        key_prefix:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Key Prefix
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        last_issued_at:
+          type: string
+          format: date-time
+          title: Last Issued At
+        last_used_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Used At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+        revoked_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Revoked Reason
+      type: object
+      required:
+      - id
+      - api_key_id
+      - name
+      - credential_type
+      - status
+      - created_at
+      - updated_at
+      - last_issued_at
+      title: ManagedAgentCredentialSummary
+      description: Durable credential metadata for one managed agent.
+    ManagedAgentDetailResponse:
+      properties:
+        agent:
+          $ref: '#/components/schemas/ManagedAgentSummary'
+        aggregate:
+          $ref: '#/components/schemas/ManagedAgentUsageAggregate'
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+        activity_by_server:
+          items:
+            $ref: '#/components/schemas/ManagedAgentServerActivitySummary'
+          type: array
+          title: Activity By Server
+        activity_by_tool:
+          items:
+            $ref: '#/components/schemas/ManagedAgentToolActivitySummary'
+          type: array
+          title: Activity By Tool
+        sessions:
+          items:
+            $ref: '#/components/schemas/RuntimeSessionSummary'
+          type: array
+          title: Sessions
+        credentials:
+          items:
+            $ref: '#/components/schemas/ManagedAgentCredentialSummary'
+          type: array
+          title: Credentials
+        enrollments:
+          items:
+            $ref: '#/components/schemas/ManagedAgentEnrollmentSummary'
+          type: array
+          title: Enrollments
+      type: object
+      required:
+      - agent
+      - aggregate
+      title: ManagedAgentDetailResponse
+      description: One managed agent plus its recent runtime session history.
+    ManagedAgentEnrollmentCreateRequest:
+      properties:
+        enrollment_type:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Enrollment Type
+        adapter_key:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Adapter Key
+        status:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Status
+          default: pending
+        target_config_path:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          title: Target Config Path
+        discovered_config:
+          additionalProperties: true
+          type: object
+          title: Discovered Config
+        managed_config:
+          additionalProperties: true
+          type: object
+          title: Managed Config
+        backup_metadata:
+          additionalProperties: true
+          type: object
+          title: Backup Metadata
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+        restore_available:
+          type: boolean
+          title: Restore Available
+          default: false
+        last_applied_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Applied At
+        last_validated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Validated At
+        last_restored_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Restored At
+      type: object
+      required:
+      - enrollment_type
+      title: ManagedAgentEnrollmentCreateRequest
+      description: Request to persist an enrollment record for one managed agent.
+    ManagedAgentEnrollmentRestoreRequest:
+      properties:
+        status:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Status
+          default: restored
+        backup_metadata:
+          additionalProperties: true
+          type: object
+          title: Backup Metadata
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+      type: object
+      title: ManagedAgentEnrollmentRestoreRequest
+      description: Request to mark one enrollment as restored.
+    ManagedAgentEnrollmentSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        created_by_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created By User Id
+        enrollment_type:
+          type: string
+          title: Enrollment Type
+        adapter_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Adapter Key
+        status:
+          type: string
+          title: Status
+        target_config_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Config Path
+        discovered_config:
+          additionalProperties: true
+          type: object
+          title: Discovered Config
+        managed_config:
+          additionalProperties: true
+          type: object
+          title: Managed Config
+        backup_metadata:
+          additionalProperties: true
+          type: object
+          title: Backup Metadata
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+        restore_available:
+          type: boolean
+          title: Restore Available
+          default: false
+        last_applied_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Applied At
+        last_validated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Validated At
+        last_restored_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Restored At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - enrollment_type
+      - status
+      - created_at
+      - updated_at
+      title: ManagedAgentEnrollmentSummary
+      description: Durable enrollment state for one managed agent.
+    ManagedAgentEnrollmentValidateRequest:
+      properties:
+        status:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Status
+          default: validated
+        validation_result:
+          additionalProperties: true
+          type: object
+          title: Validation Result
+      type: object
+      title: ManagedAgentEnrollmentValidateRequest
+      description: Request to update validation state for one enrollment.
+    ManagedAgentModelBindingSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        ai_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Id
+        binding_type:
+          type: string
+          title: Binding Type
+        config_key:
+          type: string
+          title: Config Key
+        gateway_alias:
+          type: string
+          title: Gateway Alias
+        is_primary:
+          type: boolean
+          title: Is Primary
+          default: false
+        status:
+          type: string
+          title: Status
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        model_identifier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Identifier
+        ai_model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ai Model Name
+        first_seen_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: First Seen At
+        last_seen_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Seen At
+      type: object
+      required:
+      - id
+      - binding_type
+      - config_key
+      - gateway_alias
+      - status
+      title: ManagedAgentModelBindingSummary
+      description: One configured AI model binding for a managed agent.
+    ManagedAgentModelBindingSyncItem:
+      properties:
+        ai_model_id:
+          type: string
+          title: Ai Model Id
+        binding_type:
+          type: string
+          title: Binding Type
+          default: configured
+        config_key:
+          type: string
+          title: Config Key
+        gateway_alias:
+          type: string
+          title: Gateway Alias
+        is_primary:
+          type: boolean
+          title: Is Primary
+          default: false
+        status:
+          type: string
+          title: Status
+          default: gateway_ready
+      type: object
+      required:
+      - ai_model_id
+      - config_key
+      - gateway_alias
+      title: ManagedAgentModelBindingSyncItem
+      description: Upsert payload for one managed-agent model binding.
+    ManagedAgentModelBindingSyncRequest:
+      properties:
+        bindings:
+          items:
+            $ref: '#/components/schemas/ManagedAgentModelBindingSyncItem'
+          type: array
+          title: Bindings
+      type: object
+      title: ManagedAgentModelBindingSyncRequest
+      description: Replace request for one managed agent's configured model bindings.
+    ManagedAgentServerActivitySummary:
+      properties:
+        server_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Server Name
+        call_count:
+          type: integer
+          title: Call Count
+          default: 0
+        successful_calls:
+          type: integer
+          title: Successful Calls
+          default: 0
+        failed_calls:
+          type: integer
+          title: Failed Calls
+          default: 0
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+      type: object
+      title: ManagedAgentServerActivitySummary
+      description: Historical tool activity grouped by MCP server for one managed
+        agent.
+    ManagedAgentSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        runtime_session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Session Id
+        owner_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner User Id
+        owner_username:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Username
+        owner_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Email
+        agent_kind:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Kind
+        display_name:
+          type: string
+          title: Display Name
+        session_source_type:
+          type: string
+          title: Session Source Type
+        session_source_id:
+          type: string
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        enrolled_via:
+          type: string
+          title: Enrolled Via
+        managed_mcp_servers:
+          items:
+            type: string
+          type: array
+          title: Managed Mcp Servers
+        lifecycle_state:
+          type: string
+          title: Lifecycle State
+          default: active
+        lifecycle_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lifecycle Reason
+        lifecycle_updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Lifecycle Updated At
+        is_active_now:
+          type: boolean
+          title: Is Active Now
+          default: false
+        activity_status:
+          type: string
+          title: Activity Status
+          default: idle
+        last_seen_at:
+          type: string
+          format: date-time
+          title: Last Seen At
+        started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Started At
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        configured_model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Configured Model Alias
+        configured_model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Configured Model Id
+        configured_models:
+          items:
+            $ref: '#/components/schemas/ManagedAgentModelBindingSummary'
+          type: array
+          title: Configured Models
+        latest_model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Model Alias
+        latest_provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Provider Name
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+        mcp_proxy_configured:
+          type: boolean
+          title: Mcp Proxy Configured
+          default: false
+        model_gateway_configured:
+          type: boolean
+          title: Model Gateway Configured
+          default: false
+        onboarding_state:
+          type: string
+          title: Onboarding State
+          default: incomplete
+        live_validation_supported:
+          type: boolean
+          title: Live Validation Supported
+          default: false
+        live_validation_passed:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Live Validation Passed
+        live_validation_status:
+          type: string
+          title: Live Validation Status
+          default: unsupported
+        last_validated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Validated At
+        tags:
+          additionalProperties:
+            type: string
+          type: object
+          title: Tags
+      type: object
+      required:
+      - id
+      - display_name
+      - session_source_type
+      - session_source_id
+      - enrolled_via
+      - last_seen_at
+      title: ManagedAgentSummary
+      description: Read-only summary for one enrolled external agent.
+    ManagedAgentToolActivitySummary:
+      properties:
+        server_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Server Name
+        tool_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Name
+        call_count:
+          type: integer
+          title: Call Count
+          default: 0
+        successful_calls:
+          type: integer
+          title: Successful Calls
+          default: 0
+        failed_calls:
+          type: integer
+          title: Failed Calls
+          default: 0
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+      type: object
+      title: ManagedAgentToolActivitySummary
+      description: Historical tool activity grouped by MCP server and tool name.
+    ManagedAgentUpdateRequest:
+      properties:
+        owner_user_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner User Id
+        display_name:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Display Name
+        lifecycle_action:
+          anyOf:
+          - type: string
+            pattern: ^(suspend|resume|decommission|reenroll)$
+          - type: 'null'
+          title: Lifecycle Action
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        tags:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Tags
+      type: object
+      title: ManagedAgentUpdateRequest
+      description: Operator-driven updates for one managed agent.
+    ManagedAgentUsageAggregate:
+      properties:
+        session_count:
+          type: integer
+          title: Session Count
+          default: 0
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        latest_model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Model Alias
+        latest_provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Provider Name
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - token_usage
+      title: ManagedAgentUsageAggregate
+      description: Historical usage aggregate across all sessions for one managed
+        agent.
     MobileDeviceRegistration:
       properties:
         platform:
@@ -8608,6 +11776,303 @@ components:
       - EXCLUDE
       title: RuleType
       description: Enum for rule types.
+    RuntimeSessionActivityItem:
+      properties:
+        activity_type:
+          type: string
+          title: Activity Type
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        title:
+          type: string
+          title: Title
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        api_usage_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Usage Id
+        tool_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tool Name
+        server_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Server Name
+        auth_subject_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Auth Subject Type
+        api_key_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Id
+        api_key_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Api Key Name
+        estimated_cost:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimated Cost
+        total_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Total Tokens
+      type: object
+      required:
+      - activity_type
+      - timestamp
+      - title
+      title: RuntimeSessionActivityItem
+      description: One activity item in a runtime session timeline.
+    RuntimeSessionActivityListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RuntimeSessionActivityItem'
+          type: array
+          title: Items
+      type: object
+      title: RuntimeSessionActivityListResponse
+      description: List of activity items for a runtime session.
+    RuntimeSessionSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        session_source_type:
+          type: string
+          title: Session Source Type
+        session_source_id:
+          type: string
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+        runtime_principal_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Type
+        runtime_principal_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Name
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        last_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Activity At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        flow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Id
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+        flow_execution_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Execution Id
+        latest_model_alias:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Model Alias
+        latest_provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latest Provider Name
+        is_active_now:
+          type: boolean
+          title: Is Active Now
+          default: false
+        activity_status:
+          type: string
+          title: Activity Status
+          default: idle
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        last_request_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Request At
+      type: object
+      required:
+      - id
+      - session_source_type
+      - session_source_id
+      - started_at
+      - token_usage
+      title: RuntimeSessionSummary
+      description: Aggregated runtime session summary for explorer views.
+    RuntimeSessionTokenCreate:
+      properties:
+        session_source_type:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Session Source Type
+        session_source_id:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Session Reference
+        runtime_principal_id:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Runtime Principal Name
+        expires_in_minutes:
+          type: integer
+          maximum: 1440.0
+          minimum: 1.0
+          title: Expires In Minutes
+          default: 120
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+        allowed_mcp_tools:
+          items: {}
+          type: array
+          title: Allowed Mcp Tools
+        allowed_mcp_servers:
+          items:
+            type: string
+          type: array
+          title: Allowed Mcp Servers
+      type: object
+      required:
+      - session_source_type
+      - session_source_id
+      title: RuntimeSessionTokenCreate
+      description: Request model for minting a runtime-scoped session token.
+    RuntimeSessionTokenResponse:
+      properties:
+        runtime_session_id:
+          type: string
+          format: uuid
+          title: Runtime Session Id
+        token:
+          type: string
+          title: Token
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        session_source_type:
+          type: string
+          title: Session Source Type
+        session_source_id:
+          type: string
+          title: Session Source Id
+        session_reference:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Reference
+      type: object
+      required:
+      - runtime_session_id
+      - token
+      - expires_at
+      - session_source_type
+      - session_source_id
+      title: RuntimeSessionTokenResponse
+      description: Response model for a minted runtime-scoped session token.
+    RuntimeSessionUpdateRequest:
+      properties:
+        action:
+          type: string
+          pattern: ^(end)$
+          title: Action
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      required:
+      - action
+      title: RuntimeSessionUpdateRequest
+      description: Operator-driven updates for one runtime session.
     ScopeType:
       type: string
       enum:
@@ -8651,6 +12116,50 @@ components:
       - item
       - similarity
       title: SearchResultItem
+    SubjectGovernanceConfig:
+      properties:
+        allowed_models:
+          items:
+            type: string
+          type: array
+          title: Allowed Models
+        model_budgets:
+          additionalProperties:
+            additionalProperties: true
+            type: object
+          type: object
+          title: Model Budgets
+        tool_rules:
+          additionalProperties:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+          type: object
+          title: Tool Rules
+        tool_enabled_overrides:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Tool Enabled Overrides
+      type: object
+      title: SubjectGovernanceConfig
+    SubjectGovernanceResponse:
+      properties:
+        subject_type:
+          type: string
+          title: Subject Type
+        subject_id:
+          type: string
+          title: Subject Id
+        config:
+          $ref: '#/components/schemas/SubjectGovernanceConfig'
+      type: object
+      required:
+      - subject_type
+      - subject_id
+      - config
+      title: SubjectGovernanceResponse
     TestConnectionRequest:
       properties:
         organization:
@@ -9402,29 +12911,6 @@ components:
       - msg
       - type
       title: ValidationError
-    VersionInfo:
-      properties:
-        server_version:
-          type: string
-          title: Server Version
-          description: Current version of the Preloop server.
-        min_client_version:
-          type: string
-          title: Min Client Version
-          description: Minimum required version for clients connecting to this Preloop
-            server.
-        max_client_version:
-          type: string
-          title: Max Client Version
-          description: Maximum recommended version for clients connecting to this
-            Preloop server.
-      type: object
-      required:
-      - server_version
-      - min_client_version
-      - max_client_version
-      title: VersionInfo
-      description: Schema for returning version information.
     WebhookConfig:
       properties:
         webhook_secret:

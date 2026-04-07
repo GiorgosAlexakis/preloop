@@ -321,11 +321,15 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
         # Non-tool events (auth, config_change, permission_check) are standalone.
         primary_actions = [
             "tool_call",
+            "model_gateway_request",
             "authentication",
             "configuration_change",
             "permission_check",
             "role_assigned",
             "role_removed",
+            "runtime_session_created",
+            "runtime_session_updated",
+            "runtime_session_ended",
         ]
 
         primary_query = db.query(AuditLog).filter(

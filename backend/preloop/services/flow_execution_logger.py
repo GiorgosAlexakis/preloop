@@ -1,12 +1,26 @@
 """Service for logging flow execution details including MCP tool usage and agent actions."""
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from preloop.utils.redaction import redact_dict
 
 logger = logging.getLogger(__name__)
+
+MCP_TOOL_PATTERNS = [
+    re.compile(
+        r"(?:calling\s+(?:(?:mcp\s+)?tool:?\s+)?|tool\s+call:?\s+|mcp\s+tool:?\s+|called\s+tool:?\s+)"
+        r"(?<!/)\b(?P<server>[A-Za-z0-9._-]+)/(?P<tool>[A-Za-z0-9._:-]+)\b(?!/)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:using|running)\s+(?:(?:mcp\s+)?tool\s+)"
+        r"(?<!/)\b(?P<server>[A-Za-z0-9._-]+)/(?P<tool>[A-Za-z0-9._:-]+)\b(?!/)",
+        re.IGNORECASE,
+    ),
+]
 
 
 class FlowExecutionLogger:
@@ -196,7 +210,13 @@ class FlowExecutionLogger:
         for line in log_lines:
             # Look for MCP tool call patterns
             # Example: "Calling MCP tool: preloop-mcp/search_issues with args: {...}"
-            if "MCP" in line or "tool call" in line.lower():
+            line_lower = line.lower()
+            if (
+                "mcp" in line_lower
+                or "tool call" in line_lower
+                or "called tool" in line_lower
+                or ("calling" in line_lower and "/" in line)
+            ):
                 self._try_extract_mcp_call(line)
 
             # Look for action patterns
@@ -209,23 +229,42 @@ class FlowExecutionLogger:
 
     def _try_extract_mcp_call(self, line: str):
         """Try to extract MCP call information from a log line."""
-        # This is a basic heuristic parser
-        # A production version would use more sophisticated parsing
         try:
-            # Basic pattern matching - can be enhanced
-            if "/" in line:
-                parts = line.split("/")
-                if len(parts) >= 2:
-                    server_name = parts[-2].split()[-1]
-                    tool_name = parts[-1].split()[0]
-                    self.log_mcp_tool_call(
-                        server_name=server_name,
-                        tool_name=tool_name,
-                        arguments={},
-                        status="detected",
-                    )
+            normalized_line = line.strip()
+            if not normalized_line:
+                return
+
+            for pattern in MCP_TOOL_PATTERNS:
+                match = pattern.search(normalized_line)
+                if not match:
+                    continue
+
+                server_name = match.group("server").strip()
+                tool_name = match.group("tool").strip()
+                if not self._looks_like_mcp_identifier(server_name, tool_name):
+                    continue
+
+                self.log_mcp_tool_call(
+                    server_name=server_name,
+                    tool_name=tool_name,
+                    arguments={},
+                    status="detected",
+                )
+                return
         except Exception as e:
             logger.debug(f"Could not parse MCP call from line: {line[:100]} - {e}")
+
+    def _looks_like_mcp_identifier(self, server_name: str, tool_name: str) -> bool:
+        """Return True when the parsed server/tool pair looks like a real MCP call."""
+        if not server_name or not tool_name:
+            return False
+        if server_name.lower() in {"http", "https"}:
+            return False
+        if re.fullmatch(r"v\d+", tool_name, re.IGNORECASE):
+            return False
+        if "://" in server_name or "://" in tool_name:
+            return False
+        return True
 
     def _try_extract_file_creation(self, line: str):
         """Try to extract file creation information from a log line."""

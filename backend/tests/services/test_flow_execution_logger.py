@@ -380,6 +380,16 @@ class TestPrivateParsers:
         assert len(logger.mcp_usage_logs) == 1
         # Exact parsing behavior depends on implementation
         assert logger.mcp_usage_logs[0]["status"] == "detected"
+        assert logger.mcp_usage_logs[0]["server_name"] == "server-name"
+        assert logger.mcp_usage_logs[0]["tool_name"] == "tool-name"
+
+    def test_try_extract_mcp_call_ignores_url_version_suffix(self):
+        """URL fragments like /v1 should not be treated as tool calls."""
+        logger = FlowExecutionLogger()
+
+        logger._try_extract_mcp_call("POST https://example.com/mcp/v1")
+
+        assert logger.mcp_usage_logs == []
 
     def test_try_extract_mcp_call_invalid(self):
         """Test extracting MCP call from invalid line."""

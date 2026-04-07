@@ -32,13 +32,13 @@ export class ConsoleShell extends LitElement {
   private _featuresLoaded = false;
 
   @state()
-  private hasTrackers = false;
-
-  @state()
   private _sidebarOpen = false;
 
   @state()
   private _isMobile = false;
+
+  @state()
+  private _fullBleed = false;
 
   private _mediaQuery?: MediaQueryList;
   private _mediaQueryHandler?: (e: MediaQueryListEvent) => void;
@@ -148,11 +148,32 @@ export class ConsoleShell extends LitElement {
       .main-content {
         overflow-y: auto;
         padding: 1rem 2rem 2rem 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .main-content.full-bleed {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .main-content > ::slotted(*) {
+        width: 100%;
+        max-width: 80rem;
+      }
+
+      .main-content.full-bleed > ::slotted(*) {
+        max-width: none;
+        height: 100%;
       }
 
       @media (max-width: 768px) {
         .main-content {
           padding: 1rem;
+        }
+        .main-content.full-bleed {
+          padding: 0;
         }
       }
 
@@ -206,6 +227,10 @@ export class ConsoleShell extends LitElement {
     window.addEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
     });
+    window.addEventListener(
+      'vaadin-router-location-changed',
+      this._handleLocationChanged
+    );
     this._mediaQuery = window.matchMedia(
       `(max-width: ${SIDEBAR_BREAKPOINT}px)`
     );
@@ -232,40 +257,6 @@ export class ConsoleShell extends LitElement {
     } finally {
       this._featuresLoaded = true;
     }
-
-    // Check for trackers
-    await this._checkTrackers();
-  }
-
-  private _trackerCheckInterval?: number;
-
-  private async _checkTrackers() {
-    try {
-      const response = await fetch('/api/v1/trackers', {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
-        },
-      });
-      if (response.ok) {
-        const trackers = await response.json();
-        this.hasTrackers = Array.isArray(trackers) && trackers.length > 0;
-      }
-    } catch (error) {
-      // Silently fail - user might not have permission or network error
-      console.debug('Could not check trackers:', error);
-    }
-  }
-
-  /**
-   * Check if any analytics features are enabled (enterprise plugin).
-   * Used to gate the Issues menu in OSS builds.
-   */
-  private _hasAnyAnalyticsFeature(): boolean {
-    return !!(
-      this.features.issue_compliance ||
-      this.features.issue_duplicates ||
-      this.features.issue_dependencies
-    );
   }
 
   private _handleSidebarToggle = () => {
@@ -276,6 +267,10 @@ export class ConsoleShell extends LitElement {
     if (this._isMobile) {
       this._sidebarOpen = false;
     }
+  };
+
+  private _handleLocationChanged = () => {
+    this._fullBleed = false;
   };
 
   updated(changedProperties: Map<string, unknown>) {
@@ -294,10 +289,11 @@ export class ConsoleShell extends LitElement {
     window.removeEventListener('show-upgrade-modal', () => {
       (this._upgradeModal as any).show();
     });
+    window.removeEventListener(
+      'vaadin-router-location-changed',
+      this._handleLocationChanged
+    );
     this._mediaQuery?.removeEventListener('change', this._mediaQueryHandler!);
-    if (this._trackerCheckInterval) {
-      clearInterval(this._trackerCheckInterval);
-    }
     super.disconnectedCallback();
   }
 
@@ -337,10 +333,49 @@ export class ConsoleShell extends LitElement {
                   <span class="sidebar-label">Overview</span>
                 </sl-menu-item>
               </a>
+              <a href="/console/agents" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="robot" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Agents</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/flows" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Flows</span>
+                </sl-menu-item>
+              </a>
               <a href="/console/tools" @click=${this._closeSidebar}>
                 <sl-menu-item>
                   <sl-icon name="tools" slot="prefix"></sl-icon>
                   <span class="sidebar-label">Tools</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/trackers" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Trackers</span>
+                </sl-menu-item>
+              </a>
+              <a
+                href="/console/settings/ai-models"
+                @click=${this._closeSidebar}
+              >
+                <sl-menu-item>
+                  <sl-icon name="cpu" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Models</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/runtime-sessions" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="collection" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Sessions</span>
+                </sl-menu-item>
+              </a>
+              <a href="/console/approvals" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="shield-check" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Approvals</span>
                 </sl-menu-item>
               </a>
               ${this._featuresLoaded
@@ -353,66 +388,8 @@ export class ConsoleShell extends LitElement {
                         </sl-menu-item>
                       </a>
                     `
-                  : html`
-                      <a href="/console/approvals" @click=${this._closeSidebar}>
-                        <sl-menu-item>
-                          <sl-icon name="shield-check" slot="prefix"></sl-icon>
-                          <span class="sidebar-label">Approvals</span>
-                        </sl-menu-item>
-                      </a>
-                    `
+                  : ''
                 : ''}
-              <!-- Governance is now integrated into the Tools page -->
-              <a href="/console/flows" @click=${this._closeSidebar}>
-                <sl-menu-item>
-                  <sl-icon src="/images/flow.svg" slot="prefix"></sl-icon>
-                  <span class="sidebar-label">Flows</span>
-                </sl-menu-item>
-              </a>
-              <a href="/console/trackers" @click=${this._closeSidebar}>
-                <sl-menu-item>
-                  <sl-icon src="/images/git.svg" slot="prefix"></sl-icon>
-                  <span class="sidebar-label">Trackers</span>
-                </sl-menu-item>
-              </a>
-              ${this.hasTrackers && this._hasAnyAnalyticsFeature()
-                ? html`<sl-details>
-                    <span slot="summary">
-                      <sl-icon
-                        name="kanban"
-                        style="padding-right: 6px;"
-                      ></sl-icon>
-                      <span class="sidebar-label">Issues</span>
-                    </span>
-                    <sl-menu>
-                      ${this.features.issue_duplicates
-                        ? html`<a
-                            href="/console/issues"
-                            @click=${this._closeSidebar}
-                          >
-                            <sl-menu-item>Similarity</sl-menu-item>
-                          </a>`
-                        : ''}
-                      ${this.features.issue_compliance
-                        ? html`<a
-                            href="/console/issues/compliance"
-                            @click=${this._closeSidebar}
-                          >
-                            <sl-menu-item>Compliance</sl-menu-item>
-                          </a>`
-                        : ''}
-                      ${this.features.issue_dependencies
-                        ? html`<a
-                            href="/console/issues/dependencies"
-                            @click=${this._closeSidebar}
-                          >
-                            <sl-menu-item>Dependencies</sl-menu-item>
-                          </a>`
-                        : ''}
-                    </sl-menu>
-                  </sl-details>`
-                : ''}
-
               <sl-details>
                 <span slot="summary">
                   <sl-icon name="gear" style="padding-right: 6px;"></sl-icon>
@@ -451,13 +428,6 @@ export class ConsoleShell extends LitElement {
                       </a>`
                     : ''}
                   <a
-                    href="/console/settings/ai-models"
-                    @click=${this._closeSidebar}
-                  >
-                    <sl-menu-item>AI Models</sl-menu-item>
-                  </a>
-
-                  <a
                     href="/console/settings/api-keys"
                     @click=${this._closeSidebar}
                   >
@@ -478,7 +448,11 @@ export class ConsoleShell extends LitElement {
               @click=${this._handleSidebarToggle}
             ></sl-icon-button>
           </console-header>
-          <div class="main-content">
+          <div
+            class="main-content ${this._fullBleed ? 'full-bleed' : ''}"
+            @request-full-bleed=${(e: CustomEvent) =>
+              (this._fullBleed = !!e.detail)}
+          >
             <slot></slot>
           </div>
         </div>

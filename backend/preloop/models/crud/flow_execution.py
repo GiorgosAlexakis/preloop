@@ -250,6 +250,37 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
             query = query.join(Flow).filter(Flow.account_id == account_id)
         return query.all()
 
+    def get_execution_stats_for_flows(
+        self, db: Session, flow_ids: List[Any]
+    ) -> List[Any]:
+        """Get execution statistics for a list of flow IDs."""
+        from sqlalchemy import func, case
+
+        return (
+            db.query(
+                self.model.flow_id,
+                func.count(self.model.id).label("total_execs"),
+                func.sum(
+                    case(
+                        (
+                            self.model.status.in_(
+                                ["PENDING", "INITIALIZING", "STARTING", "RUNNING"]
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("running_execs"),
+                func.coalesce(func.sum(self.model.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+                func.max(self.model.updated_at).label("last_seen_at"),
+            )
+            .filter(self.model.flow_id.in_(flow_ids))
+            .group_by(self.model.flow_id)
+            .all()
+        )
+
     def append_log(
         self, db: Session, execution_id: str, log_data: dict, *, commit: bool = True
     ) -> None:

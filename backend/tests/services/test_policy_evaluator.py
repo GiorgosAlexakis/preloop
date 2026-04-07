@@ -13,6 +13,58 @@ from preloop.services.policy_evaluator import (
 
 
 @pytest.fixture(autouse=True)
+def patch_crud(monkeypatch):
+    class FakeCRUDConfig:
+        def get(self, db, **kwargs):
+            return db.query().filter().first()
+
+        def get_by_tool_name(self, db, **kwargs):
+            return db.query().filter().first()
+
+    class FakeCRUDRules:
+        def get_multi_by_config(self, db, **kwargs):
+            return db.query().filter().order_by().all()
+
+    class FakeCRUDAccount:
+        def get(self, db, **kwargs):
+            mock_account = MagicMock()
+            mock_account.meta_data = {}
+            return mock_account
+
+    import preloop.services.policy_evaluator as pe
+
+    monkeypatch.setattr(pe, "crud_tool_configuration", FakeCRUDConfig())
+    monkeypatch.setattr(pe, "crud_tool_access_rule", FakeCRUDRules())
+    monkeypatch.setattr(pe, "crud_account", FakeCRUDAccount())
+
+    async def fake_get_tool_config_by_id_async(db, **kwargs):
+        res = await db.execute()
+        return res.scalar_one_or_none()
+
+    async def fake_get_tool_config_by_tool_name_async(db, **kwargs):
+        res = await db.execute()
+        return res.scalar_one_or_none()
+
+    async def fake_get_multi_by_config_async(db, **kwargs):
+        res = await db.execute()
+        return res.scalars().all()
+
+    async def fake_get_meta_data_async(db, **kwargs):
+        return {}
+
+    monkeypatch.setattr(
+        pe, "get_tool_config_by_id_async", fake_get_tool_config_by_id_async
+    )
+    monkeypatch.setattr(
+        pe,
+        "get_tool_config_by_tool_name_async",
+        fake_get_tool_config_by_tool_name_async,
+    )
+    monkeypatch.setattr(pe, "get_multi_by_config_async", fake_get_multi_by_config_async)
+    monkeypatch.setattr(pe, "get_meta_data_async", fake_get_meta_data_async)
+
+
+@pytest.fixture(autouse=True)
 def mock_audit_logging():
     """Suppress audit logging in tests."""
     with patch(
@@ -386,12 +438,16 @@ class TestEvaluatePolicyAsync:
         mock_config.approval_workflow_id = None
 
         mock_db = MagicMock()
+        account_result = MagicMock()
+        account_result.scalar_one_or_none.return_value = {}
         config_result = MagicMock()
         config_result.scalar_one_or_none.return_value = mock_config
         rules_result = MagicMock()
         rules_result.scalars.return_value.all.return_value = []
 
-        mock_db.execute = AsyncMock(side_effect=[config_result, rules_result])
+        mock_db.execute = AsyncMock(
+            side_effect=[account_result, config_result, rules_result]
+        )
 
         action, approval_id, desc = await evaluate_policy_async(
             db=mock_db,

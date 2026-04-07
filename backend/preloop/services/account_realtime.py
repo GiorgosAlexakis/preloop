@@ -1,0 +1,89 @@
+"""Helpers for account-scoped realtime control-plane events."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from preloop.sync.services.event_bus import get_nats_client
+
+logger = logging.getLogger(__name__)
+
+ACCOUNT_TOPIC_FLOW_EXECUTIONS = "flow_executions"
+ACCOUNT_TOPIC_APPROVALS = "approvals"
+ACCOUNT_TOPIC_ACTIVITY = "activity"
+ACCOUNT_TOPIC_RUNTIME_SESSIONS = "runtime_sessions"
+ACCOUNT_TOPIC_MANAGED_AGENTS = "managed_agents"
+ACCOUNT_TOPIC_GATEWAY_ACTIVITY = "gateway_activity"
+ACCOUNT_TOPIC_BUDGET_HEALTH = "budget_health"
+ACCOUNT_TOPIC_AUDIT = "audit"
+
+ACCOUNT_REALTIME_TOPICS = {
+    ACCOUNT_TOPIC_FLOW_EXECUTIONS,
+    ACCOUNT_TOPIC_APPROVALS,
+    ACCOUNT_TOPIC_ACTIVITY,
+    ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+    ACCOUNT_TOPIC_MANAGED_AGENTS,
+    ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+    ACCOUNT_TOPIC_BUDGET_HEALTH,
+    ACCOUNT_TOPIC_AUDIT,
+}
+
+
+def build_account_event(
+    *,
+    account_id: str,
+    topic: str,
+    event_type: str,
+    payload: Optional[dict[str, Any]] = None,
+    timestamp: Optional[datetime] = None,
+    **fields: Any,
+) -> dict[str, Any]:
+    """Build one normalized account-scoped realtime event."""
+    event: dict[str, Any] = {
+        "account_id": str(account_id),
+        "topic": topic,
+        "type": event_type,
+        "timestamp": (timestamp or datetime.now(timezone.utc)).isoformat(),
+        "payload": payload or {},
+    }
+    for key, value in fields.items():
+        if value is not None:
+            event[key] = value
+    return event
+
+
+def emit_account_event(event: dict[str, Any]) -> None:
+    """Publish one account-scoped realtime event when an event loop exists."""
+    if not event.get("account_id") or not event.get("topic"):
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        from preloop.tools.utils import run_async
+
+        try:
+            run_async(_publish_account_event(event))
+        except Exception:
+            logger.exception("Failed to publish account realtime event synchronously")
+        return
+    loop.create_task(_publish_account_event(event))
+
+
+async def _publish_account_event(event: dict[str, Any]) -> None:
+    account_id = event.get("account_id")
+    if not account_id:
+        return
+    try:
+        nats_client = await get_nats_client()
+        if not nats_client or not nats_client.is_connected:
+            return
+        await nats_client.publish(
+            f"account-updates.{account_id}",
+            json.dumps(event).encode(),
+        )
+    except Exception:
+        logger.exception("Failed to publish account realtime event")

@@ -7,6 +7,7 @@ from typing import Dict
 from sqlalchemy.orm import Session
 
 from preloop.models import models
+from preloop.services.model_pricing import estimate_ai_model_usage_cost
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,9 @@ class ExecutionMetricsService:
             - estimated_cost: Estimated cost based on token usage (0.0 if no pricing)
             - has_pricing: Whether pricing is configured in AI model metadata
         """
-        execution = (
-            self.db.query(models.FlowExecution)
-            .filter(models.FlowExecution.id == execution_id)
-            .first()
-        )
+        from preloop.models.crud import crud_flow_execution
+
+        execution = crud_flow_execution.get(self.db, id=execution_id)
 
         if not execution:
             raise ValueError(f"Execution {execution_id} not found")
@@ -43,14 +42,19 @@ class ExecutionMetricsService:
         # Parse logs for tool calls
         tool_calls = self._count_tool_calls(execution)
 
-        # Parse codex logs for token usage
-        token_usage = self._parse_token_usage(execution)
-
         # Query API usage for this execution
-        api_requests = self._count_api_requests(execution)
+        gateway_usage = self._get_gateway_usage(execution)
+        api_requests = gateway_usage["api_requests"]
 
-        # Calculate estimated cost
-        estimated_cost, has_pricing = self._calculate_cost(execution, token_usage)
+        if api_requests > 0:
+            token_usage = gateway_usage["token_usage"]
+            estimated_cost = gateway_usage["estimated_cost"]
+            has_pricing = gateway_usage["has_pricing"]
+        else:
+            # Fall back to legacy log parsing when the execution did not use
+            # explicit gateway attribution.
+            token_usage = self._parse_token_usage(execution)
+            estimated_cost, has_pricing = self._calculate_cost(execution, token_usage)
 
         return {
             "tool_calls": tool_calls,
@@ -59,6 +63,12 @@ class ExecutionMetricsService:
             "estimated_cost": estimated_cost,
             "has_pricing": has_pricing,
         }
+
+    def _get_gateway_usage(self, execution: models.FlowExecution) -> Dict:
+        """Return explicit gateway usage totals for an execution when available."""
+        from preloop.models.crud import crud_api_usage
+
+        return crud_api_usage.get_gateway_usage_for_execution(self.db, execution.id)
 
     def _count_tool_calls(self, execution: models.FlowExecution) -> int:
         """Count tool calls from execution logs.
@@ -150,7 +160,8 @@ class ExecutionMetricsService:
         """Count API requests made during execution timeframe.
 
         Uses the execution's start_time and end_time to filter ApiUsage records
-        by the user who owns the flow.
+        by the user who owns the flow. Prefer explicit flow_execution_id
+        attribution when gateway request records are available.
 
         Args:
             execution: FlowExecution model
@@ -158,39 +169,9 @@ class ExecutionMetricsService:
         Returns:
             Number of API requests
         """
-        if not execution.start_time:
-            return 0
+        from preloop.models.crud import crud_api_usage
 
-        # Get the flow and its owner
-        flow = (
-            self.db.query(models.Flow)
-            .filter(models.Flow.id == execution.flow_id)
-            .first()
-        )
-
-        if not flow or not flow.account_id:
-            return 0
-
-        # Get the first user in the account (the one who owns the API key)
-        account = (
-            self.db.query(models.Account)
-            .filter(models.Account.id == flow.account_id)
-            .first()
-        )
-
-        if not account or not account.users:
-            return 0
-
-        # Get API usage for the execution timeframe
-        query = self.db.query(models.ApiUsage).filter(
-            models.ApiUsage.user_id.in_([u.id for u in account.users]),
-            models.ApiUsage.timestamp >= execution.start_time,
-        )
-
-        if execution.end_time:
-            query = query.filter(models.ApiUsage.timestamp <= execution.end_time)
-
-        count = query.count()
+        count = crud_api_usage.count_by_execution_timeframe(self.db, execution)
 
         logger.info(
             f"Found {count} API requests for execution {execution.id} "
@@ -221,60 +202,30 @@ class ExecutionMetricsService:
             return (0.0, False)
 
         # Get the flow and AI model
-        flow = (
-            self.db.query(models.Flow)
-            .filter(models.Flow.id == execution.flow_id)
-            .first()
-        )
+        from preloop.models.crud import crud_flow
+
+        flow = crud_flow.get(self.db, id=execution.flow_id)
 
         if not flow or not flow.ai_model_id:
             # No pricing available - return 0 cost
             return (0.0, False)
 
-        ai_model = (
-            self.db.query(models.AIModel)
-            .filter(models.AIModel.id == flow.ai_model_id)
-            .first()
-        )
+        from preloop.models.crud import crud_ai_model
+
+        ai_model = crud_ai_model.get(self.db, id=flow.ai_model_id)
 
         if not ai_model:
             return (0.0, False)
 
-        # Check for pricing in meta_data or model_parameters
-        pricing = None
-
-        if ai_model.meta_data and isinstance(ai_model.meta_data, dict):
-            pricing = ai_model.meta_data.get("pricing")
-
-        if (
-            not pricing
-            and ai_model.model_parameters
-            and isinstance(ai_model.model_parameters, dict)
-        ):
-            pricing = ai_model.model_parameters.get("pricing")
-
-        if pricing and isinstance(pricing, dict):
+        resolved_cost = estimate_ai_model_usage_cost(
+            ai_model,
+            prompt_tokens=token_usage.get("input_tokens", 0),
+            completion_tokens=token_usage.get("output_tokens", 0),
+            total_tokens=total_tokens,
+        )
+        if resolved_cost is not None:
             has_pricing = True
-            # Calculate based on input/output tokens if available
-            input_tokens = token_usage.get("input_tokens", 0)
-            output_tokens = token_usage.get("output_tokens", 0)
-
-            input_price_per_1k = pricing.get("input_price_per_1k", 0)
-            output_price_per_1k = pricing.get("output_price_per_1k", 0)
-
-            if (
-                input_price_per_1k
-                and output_price_per_1k
-                and (input_tokens or output_tokens)
-            ):
-                total_cost = (input_tokens / 1000.0) * input_price_per_1k + (
-                    output_tokens / 1000.0
-                ) * output_price_per_1k
-            else:
-                # Use average price per token
-                price_per_1k = pricing.get("price_per_1k", 0)
-                if price_per_1k:
-                    total_cost = (total_tokens / 1000.0) * price_per_1k
+            total_cost = float(resolved_cost)
 
         if has_pricing:
             logger.info(

@@ -1,19 +1,25 @@
 import uuid
 import secrets
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from preloop.models import schemas
+from preloop.models.crud import crud_account, crud_runtime_session_activity
 from preloop.models.crud.flow import CRUDFlow
 from preloop.models.crud.flow_execution import CRUDFlowExecution
 from preloop.models.db.session import get_db_session as get_db
 from preloop.api.auth import get_current_active_user
 from preloop.models.models.user import User
+from preloop.schemas.gateway_usage import FlowGatewayUsageSummaryResponse
+from preloop.services.model_gateway_usage import ModelGatewayUsageService
 from preloop.utils.hashing import compute_content_hash
 from preloop.utils.audit import log_config_change
 from preloop.utils.permissions import require_permission
+from preloop.models.crud.flow_execution_log import crud_flow_execution_log
+
 
 router = APIRouter()
 
@@ -121,6 +127,32 @@ def read_flows(
     flows = crud_flow.get_multi(
         db, account_id=current_user.account_id, skip=skip, limit=limit
     )
+
+    if flows:
+        flow_ids = [f.id for f in flows]
+        stats = crud_flow_execution.get_execution_stats_for_flows(db, flow_ids)
+
+        stats_map = {
+            s.flow_id: {
+                "total_execs": s.total_execs,
+                "running_execs": int(s.running_execs or 0),
+                "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,
+                "estimated_cost": float(s.estimated_cost or 0.0),
+            }
+            for s in stats
+        }
+
+        for flow in flows:
+            flow.execution_stats = stats_map.get(
+                flow.id,
+                {
+                    "total_execs": 0,
+                    "running_execs": 0,
+                    "last_seen_at": None,
+                    "estimated_cost": 0.0,
+                },
+            )
+
     return flows
 
 
@@ -254,6 +286,26 @@ def read_flow_execution(
     )
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    if not execution.mcp_usage_logs:
+        rows = crud_runtime_session_activity.list_tool_calls_for_flow_execution(
+            db,
+            account_id=current_user.account_id,
+            flow_execution_id=execution.id,
+        )
+        if rows:
+            execution.mcp_usage_logs = [
+                {
+                    "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                    "tool_name": row.tool_name,
+                    "server_name": row.server_name,
+                    "status": row.status,
+                    "summary": row.summary,
+                    **(row.metadata_ or {}),
+                }
+                for row in rows
+            ]
+
     return execution
 
 
@@ -265,6 +317,8 @@ async def get_flow_execution_logs(
     execution_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
     tail: int | None = None,
+    skip: int = 0,
+    limit: int | None = None,
 ) -> Dict[str, Any]:
     """Get execution logs from the container (if running) or database (if finished).
 
@@ -274,11 +328,14 @@ async def get_flow_execution_logs(
     Args:
         execution_id: ID of the execution
         tail: Number of recent log lines to retrieve, or None for all logs
+        skip: Number of logs to skip (for pagination)
+        limit: Number of logs to return (for pagination)
 
     Returns:
         Dictionary with:
         - logs: List of log lines
         - source: Where logs were fetched from ("container" or "database")
+        - has_more: Boolean indicating if there are more logs (if paginated)
     """
     from preloop.agents.container import ContainerAgentExecutor
     from preloop.agents.codex import CodexAgent
@@ -347,7 +404,7 @@ async def get_flow_execution_logs(
                     }
                 )
 
-            return {"logs": formatted_logs, "source": "container"}
+            return {"logs": formatted_logs, "source": "container", "has_more": False}
 
         except Exception as e:
             import logging
@@ -365,17 +422,38 @@ async def get_flow_execution_logs(
 
     # For finished executions or if container logs failed, return database logs.
     # Prefer the normalized flow_execution_log table; fall back to legacy JSONB column.
-    from preloop.models.models.flow_execution_log import FlowExecutionLog
-    from sqlalchemy import select
 
-    log_query = (
-        select(FlowExecutionLog)
-        .filter(FlowExecutionLog.execution_id == execution_id)
-        .order_by(FlowExecutionLog.timestamp.asc())
+    # If using pagination, default to ascending order
+    # If neither tail nor limit is provided, use limit=5000 to prevent massive payloads
+    actual_limit = limit if limit is not None else (tail if tail is not None else 5000)
+
+    # Fetch one extra row to determine if there are more
+    query_limit = actual_limit + 1 if actual_limit else None
+
+    log_rows = crud_flow_execution_log.get_by_execution_id(
+        db,
+        execution_id,
+        tail=query_limit
+        if getattr(execution, "status", "") != "RUNNING" and tail is not None
+        else (tail if getattr(execution, "status", "") == "RUNNING" else None),
+        desc=tail is not None,  # If tail is used, query descending
+        skip=skip,
+        limit=query_limit if tail is None else None,
     )
-    log_rows = db.execute(log_query).scalars().all()
+
+    has_more = False
+    if query_limit is not None and len(log_rows) > actual_limit:
+        has_more = True
+        if tail is not None:
+            # If tail is used, the extra row is the oldest (at the start of the reversed list)
+            log_rows = log_rows[1:]
+        else:
+            # If limit is used, the extra row is the newest (at the end of the list)
+            log_rows = log_rows[:actual_limit]
 
     if log_rows:
+        # DB returns logs chronologically (oldest first).
+        # Crud layer already handles reversing if tail+desc was used.
         logs = [
             {
                 "execution_id": str(row.execution_id),
@@ -385,12 +463,95 @@ async def get_flow_execution_logs(
             }
             for row in log_rows
         ]
-        return {"logs": logs, "source": "database"}
+        return {"logs": logs, "source": "database", "has_more": has_more}
     elif execution.execution_logs and isinstance(execution.execution_logs, list):
         # Legacy fallback for executions logged before the migration
-        return {"logs": execution.execution_logs, "source": "database"}
+        return {
+            "logs": execution.execution_logs,
+            "source": "database",
+            "has_more": False,
+        }
     else:
-        return {"logs": [], "source": "database"}
+        return {"logs": [], "source": "database", "has_more": False}
+
+
+@router.get("/flows/executions/{execution_id}/gateway-events")
+@require_permission("view_flows")
+def get_flow_execution_gateway_events(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    tail: int | None = None,
+    metadata_only: bool = False,
+) -> Dict[str, Any]:
+    """Get normalized model gateway events for a flow execution."""
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    actual_tail = tail if tail is not None else 5000
+    rows = crud_flow_execution_log.get_by_execution_id(
+        db, execution_id, tail=actual_tail, desc=True
+    )
+
+    events = []
+    # Reverse rows so chronological order is maintained (oldest to newest)
+    for row in reversed(rows):
+        payload = row.metadata_ or {}
+        if metadata_only:
+            # Strip large payload objects for metadata-only response
+            # Need to avoid mutating the original dict if it's tied to SQLAlchemy
+            payload = payload.copy()
+            payload.pop("conversation_preview", None)
+            payload.pop("tools", None)
+            payload.pop("result", None)
+            payload.pop("stream_events", None)
+        else:
+            payload = {**payload, "message": row.message}
+
+        events.append(
+            {
+                "id": str(row.id),
+                "execution_id": str(row.execution_id),
+                "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                "type": row.log_type or "log",
+                "payload": payload,
+            }
+        )
+    return {"logs": events, "source": "database"}
+
+
+@router.get("/flows/executions/{execution_id}/gateway-events/{event_id}")
+@require_permission("view_flows")
+def get_flow_execution_gateway_event(
+    *,
+    db: Session = Depends(get_db),
+    execution_id: uuid.UUID,
+    event_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Get a single normalized model gateway event."""
+    execution = crud_flow_execution.get(
+        db=db, id=execution_id, account_id=current_user.account_id
+    )
+    if not execution:
+        raise HTTPException(status_code=404, detail="Flow execution not found")
+
+    row = crud_flow_execution_log.get_event_by_id(db, execution_id, event_id)
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Gateway event not found")
+
+    return {
+        "id": str(row.id),
+        "execution_id": str(row.execution_id),
+        "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+        "type": row.log_type or "log",
+        "payload": {**(row.metadata_ or {}), "message": row.message},
+    }
 
 
 @router.get("/flows/executions/{execution_id}/metrics")
@@ -438,6 +599,36 @@ def get_flow_execution_metrics(
             "estimated_cost": 0.0,
             "has_pricing": False,
         }
+
+
+@router.get(
+    "/flows/{flow_id}/gateway-usage/summary",
+    response_model=FlowGatewayUsageSummaryResponse,
+)
+@require_permission("view_flows")
+def get_flow_gateway_usage_summary(
+    *,
+    db: Session = Depends(get_db),
+    flow_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+):
+    """Get model gateway usage summary for a flow."""
+    flow = crud_flow.get(db=db, id=flow_id, account_id=current_user.account_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Flow not found")
+
+    account = crud_account.get(db, id=current_user.account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    return ModelGatewayUsageService(db).get_flow_summary(
+        account=account,
+        flow=flow,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 @router.post("/flows/executions/{execution_id}/command")

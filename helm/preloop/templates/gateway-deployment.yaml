@@ -1,0 +1,247 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "preloop.fullname" . }}-gateway
+  labels:
+    {{- include "preloop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+    app: gateway
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "preloop.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "preloop.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "preloop.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: PRELOOP_URL
+              value: {{ .Values.environment.preloopUrl | quote }}
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "8000"
+            - name: DEBUG
+              value: {{ .Values.environment.debug | quote }}
+            - name: MODEL_GATEWAY_CAPTURE_CONTENT
+              value: {{ .Values.environment.modelGatewayCaptureContent | quote }}
+            - name: DATABASE_URL
+              value: {{ include "preloop.databaseUrl" . }}
+            - name: AGENT_EXECUTION_NAMESPACE
+              value: {{ .Values.agentExecution.namespace.create | ternary .Values.agentExecution.namespace.name .Release.Namespace | quote }}
+            - name: USE_KUBERNETES
+              value: "true"
+            {{- if .Values.environment.skipExecutionRecovery }}
+            - name: SKIP_EXECUTION_RECOVERY
+              value: "true"
+            {{- end }}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: jwt-secret
+            {{- if .Values.security.encryptionKey }}
+            - name: SECURITY__ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: encryption-key
+            {{- end }}
+            - name: JWT_ALGORITHM
+              value: {{ .Values.environment.jwtAlgorithm | quote }}
+            - name: ACCESS_TOKEN_EXPIRE_MINUTES
+              value: {{ .Values.environment.jwtExpireMinutes | quote }}
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: LOG_FORMAT
+              value: "json"
+            {{- if .Values.config.openai.apiKey }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: openai-api-key
+            {{- end }}
+            {{- if .Values.config.anthropic.apiKey }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: anthropic-api-key
+            {{- end }}
+            {{- if .Values.config.smtp.host }}
+            - name: SMTP_HOST
+              value: {{ .Values.config.smtp.host | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.config.smtp.port | quote }}
+            - name: SMTP_USERNAME
+              value: {{ .Values.config.smtp.username | quote }}
+            - name: SMTP_PASSWORD
+              value: {{ .Values.config.smtp.password | quote }}
+            - name: SMTP_FROM
+              value: {{ .Values.config.smtp.from | quote }}
+            - name: SMTP_FROM_NAME
+              value: {{ .Values.config.smtp.fromName | quote }}
+            {{- end }}
+            - name: NATS_URL
+              value: {{ $.Values.nats.url | default (printf "nats://%s-nats:4222" $.Release.Name) }}
+            {{- if $.Values.sentry.enabled }}
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" $ }}
+                  key: sentry-dsn
+            {{- end }}
+            - name: PROFILING_ENABLED
+              value: {{ .Values.profiling.enabled | quote }}
+            - name: STRIPE_SECRET_KEY
+              value: {{ .Values.stripe.secretKey | quote }}
+            - name: STRIPE_WEBHOOK_SECRET
+              value: {{ .Values.stripe.webhookSecret | quote }}
+            {{- if .Values.apns.enabled }}
+            - name: APNS_TEAM_ID
+              value: {{ .Values.apns.teamId | quote }}
+            - name: APNS_KEY_ID
+              value: {{ .Values.apns.keyId | quote }}
+            - name: APNS_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: apns-auth-key
+            - name: APNS_BUNDLE_ID
+              value: {{ .Values.apns.bundleId | quote }}
+            - name: APNS_USE_SANDBOX
+              value: {{ .Values.apns.useSandbox | quote }}
+            {{- end }}
+            {{- if .Values.notifications.productTeamEmail }}
+            - name: PRODUCT_TEAM_EMAIL
+              value: {{ .Values.notifications.productTeamEmail | quote }}
+            {{- end }}
+            {{- if .Values.notifications.slackWebhookUrl }}
+            - name: SLACK_WEBHOOK_URL
+              value: {{ .Values.notifications.slackWebhookUrl | quote }}
+            {{- end }}
+            {{- if .Values.notifications.mattermostWebhookUrl }}
+            - name: MATTERMOST_WEBHOOK_URL
+              value: {{ .Values.notifications.mattermostWebhookUrl | quote }}
+            {{- end }}
+            {{- if .Values.fcm.enabled }}
+            - name: FCM_CREDENTIALS_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: fcm-credentials-json
+            {{- end }}
+            {{- if .Values.githubApp.enabled }}
+            - name: GITHUB_APP_ID
+              value: {{ .Values.githubApp.appId | quote }}
+            - name: GITHUB_APP_CLIENT_ID
+              value: {{ .Values.githubApp.clientId | quote }}
+            - name: GITHUB_APP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-client-secret
+            - name: GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-private-key
+            - name: GITHUB_APP_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: github-app-webhook-secret
+            - name: GITHUB_APP_SLUG
+              value: {{ .Values.githubApp.slug | quote }}
+            {{- end }}
+            {{- if .Values.googleOauth.enabled }}
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              value: {{ .Values.googleOauth.clientId | quote }}
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: google-oauth-client-secret
+            {{- end }}
+            {{- if .Values.gitlabOauth.enabled }}
+            - name: GITLAB_OAUTH_CLIENT_ID
+              value: {{ .Values.gitlabOauth.clientId | quote }}
+            - name: GITLAB_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" . }}
+                  key: gitlab-oauth-client-secret
+            - name: GITLAB_OAUTH_BASE_URL
+              value: {{ .Values.gitlabOauth.baseUrl | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            {{- if .Values.profiling.enabled }}
+            - name: profiling-storage
+              mountPath: /tmp/profiling
+            {{- end }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/v1/ping
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+            successThreshold: 1
+            failureThreshold: 6
+      volumes:
+      {{- if .Values.profiling.enabled }}
+        - name: profiling-storage
+          persistentVolumeClaim:
+            claimName: {{ include "preloop.fullname" . }}-profiling
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

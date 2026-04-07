@@ -1,5 +1,6 @@
 """CRUD operations for AIModel model."""
 
+import json
 import uuid
 from typing import Dict, Optional
 
@@ -7,11 +8,77 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from preloop.models.models.ai_model import AIModel
+from preloop.models.crud.secret_reference import crud_secret_reference
+from preloop.services.secret_service import get_secret_service
 from .base import CRUDBase
 
 
 class CRUDAIModel(CRUDBase[AIModel]):
     """CRUD class for AIModel operations."""
+
+    @staticmethod
+    def _apply_secret_reference_fields(
+        db: Session,
+        *,
+        obj_data: Dict,
+        account_id,
+        secret_name: str,
+        existing_secret_id=None,
+    ) -> None:
+        """Resolve incoming credential fields into a SecretReference."""
+        api_key = obj_data.pop("api_key", None) if "api_key" in obj_data else None
+        credential_type = obj_data.pop("credential_type", None)
+        credential_payload = obj_data.pop("credential_payload", None)
+        credentials_backend_type = obj_data.pop("credentials_backend_type", None)
+        credentials_external_ref = obj_data.pop("credentials_external_ref", None)
+        credentials_meta_data = obj_data.pop("credentials_meta_data", None)
+
+        if api_key:
+            secret_ref = get_secret_service().create_local_secret_reference(
+                db,
+                account_id=account_id,
+                name=secret_name,
+                secret_kind="ai_model_api_key",
+                secret_value=api_key,
+                existing_secret_id=existing_secret_id,
+            )
+            obj_data["credentials_secret_id"] = secret_ref.id
+            obj_data["api_key"] = None
+            return
+
+        if credential_type or credential_payload is not None:
+            payload = dict(credential_payload or {})
+            payload["type"] = credential_type
+            secret_ref = get_secret_service().create_local_secret_reference(
+                db,
+                account_id=account_id,
+                name=secret_name,
+                secret_kind="ai_model_credentials",
+                secret_value=json.dumps(payload),
+                existing_secret_id=existing_secret_id,
+                meta_data={"credential_type": credential_type},
+            )
+            obj_data["credentials_secret_id"] = secret_ref.id
+            obj_data["api_key"] = None
+            return
+
+        if (
+            credentials_backend_type
+            or credentials_external_ref
+            or credentials_meta_data
+        ):
+            secret_ref = get_secret_service().create_external_secret_reference(
+                db,
+                account_id=account_id,
+                name=secret_name,
+                secret_kind="ai_model_api_key",
+                backend_type=credentials_backend_type,
+                external_ref=credentials_external_ref,
+                meta_data=credentials_meta_data,
+                existing_secret_id=existing_secret_id,
+            )
+            obj_data["credentials_secret_id"] = secret_ref.id
+            obj_data["api_key"] = None
 
     def get_default_active_model(
         self, db: Session, *, account_id: Optional[str] = None
@@ -41,12 +108,20 @@ class CRUDAIModel(CRUDBase[AIModel]):
         account_id: Optional[str] = None,
     ) -> AIModel:
         """Create a new AIModel, assigning it to an account."""
+        obj_data = dict(obj_in)
         if obj_in.get("is_default"):
             db.query(self.model).filter(
                 self.model.account_id == account_id, self.model.is_default
             ).update({"is_default": False})
 
-        db_obj = self.model(**obj_in, account_id=account_id)
+        self._apply_secret_reference_fields(
+            db,
+            obj_data=obj_data,
+            account_id=account_id,
+            secret_name=f"AI Model Credential: {obj_data.get('name', 'Unnamed Model')}",
+        )
+
+        db_obj = self.model(**obj_data, account_id=account_id)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
@@ -55,6 +130,18 @@ class CRUDAIModel(CRUDBase[AIModel]):
     def get_by_account(self, db: Session, *, account_id: str) -> list[AIModel]:
         """Get all AIModels for a specific account."""
         return db.query(self.model).filter(self.model.account_id == account_id).all()
+
+    def get_all_for_account(self, db: Session, *, account_id: str) -> list[AIModel]:
+        """Get all configured AIModels available to the account, including system defaults."""
+        return (
+            db.query(self.model)
+            .filter(
+                or_(
+                    self.model.account_id == account_id, self.model.account_id.is_(None)
+                )
+            )
+            .all()
+        )
 
     def update(
         self,
@@ -72,12 +159,38 @@ class CRUDAIModel(CRUDBase[AIModel]):
                 self.model.is_default,
             ).update({"is_default": False})
 
-        return super().update(db, db_obj=db_obj, obj_in=obj_in)
+        obj_data = dict(obj_in)
+        self._apply_secret_reference_fields(
+            db,
+            obj_data=obj_data,
+            account_id=db_obj.account_id,
+            secret_name=f"AI Model Credential: {obj_data.get('name', db_obj.name)}",
+            existing_secret_id=db_obj.credentials_secret_id,
+        )
 
-    def remove(self, db: Session, *, id: uuid.UUID) -> AIModel:
-        """Delete an AIModel."""
+        return super().update(db, db_obj=db_obj, obj_in=obj_data)
+
+    def remove(self, db: Session, *, id: uuid.UUID) -> Optional[AIModel]:
+        """Delete an AIModel and any unreferenced credential secret."""
         obj = db.get(self.model, id)
+        if obj is None:
+            return None
+
+        secret_id = obj.credentials_secret_id
         db.delete(obj)
+        db.flush()
+
+        if secret_id is not None:
+            remaining_reference = (
+                db.query(self.model.id)
+                .filter(self.model.credentials_secret_id == secret_id)
+                .first()
+            )
+            if remaining_reference is None:
+                secret_ref = crud_secret_reference.get(db, id=secret_id)
+                if secret_ref is not None:
+                    db.delete(secret_ref)
+
         db.commit()
         return obj
 

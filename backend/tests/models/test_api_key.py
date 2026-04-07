@@ -140,3 +140,26 @@ def test_validate_key(db_session, create_account, create_user):
         db_session, key=key.key, required_scopes=["admin:system"]
     )
     assert invalid_key is None
+
+
+def test_create_runtime_key_stores_hash_only(db_session, create_account, create_user):
+    """Runtime keys should validate without storing plaintext credentials."""
+    account = create_account()
+    user = create_user(account=account)
+
+    runtime_key, presented_value = crud_api_key.create_runtime_key(
+        db_session,
+        name="Flow Runtime Key",
+        account_id=account.id,
+        user_id=user.id,
+        scopes=["mcp:read"],
+        context_data={"flow_execution_id": "flow-exec-1"},
+    )
+
+    assert runtime_key.key is None
+    assert runtime_key.key_hash is not None
+    assert runtime_key.key_prefix == presented_value[:12]
+
+    validated = crud_api_key.validate_key(db_session, key=presented_value)
+    assert validated is not None
+    assert validated.id == runtime_key.id

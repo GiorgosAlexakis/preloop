@@ -1,18 +1,18 @@
-# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 21px;" height="18px" /> Preloop: The Policy Engine for AI Agents
+# <img alt="Preloop Logo" src="frontend/public/assets/preloop-badge.png" style="height: 21px;" height="18px" /> Preloop: AI Safety, Control, and Observability for AI Agents
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-Preloop is a comprehensive MCP firewall that gives you complete control over what AI agents can do. Define access policies, approval workflows, and audit trails. Allow, deny, or require approval based on conditions.
+Preloop is an AI safety and control platform for teams deploying AI agents into real workflows. It gives you policy enforcement, human approvals, observability, budget controls, and audit trails across both tool use and model traffic.
 
-Preloop is also evolving into an AI workforce control plane for managed runtimes. Flows can now route model traffic through a Preloop-owned OpenAI-compatible gateway so usage, spend, runtime identity, and budgets can be enforced centrally.
+Use Preloop as an MCP-native governance layer for tool access, an OpenAI-compatible and Anthropic-compatible gateway for managed model traffic, and a control plane for runtime identity, usage attribution, and operator visibility.
 
 
   <a href="https://youtu.be/yTtXn8WibTY" target="_blank" title="Watch the video">
     <img alt="Preloop Logo" src="frontend/public/assets/mcp-firewall.svg" alt="Watch the video" style="width: 100%; max-width: 1135px;" />
   </a>
 
-**Works with OpenClaw, Claude Code, Cursor, Codex, and any MCP-compatible agent.**
+**Works with OpenClaw, OpenCode, Claude Code, Codex CLI, Gemini CLI, Cursor, and any MCP-compatible agent or managed runtime.**
 
 > **Read the official documentation:** Full guides and tutorials are available at [docs.preloop.ai](https://docs.preloop.ai).
 
@@ -27,7 +27,7 @@ AI agents like Claude Code, Cursor, and OpenClaw are transforming how we work. B
 
 Most teams face an impossible choice: give AI full access and move fast (but dangerously), or lock everything down and lose the productivity gains.
 
-**Preloop solves this.** Define policies that allow safe operations, deny dangerous ones, and require human approval for everything in between. You stay in control. AI handles the routine work.
+**Preloop solves this.** You can govern what agents are allowed to do, route risky actions to the right human workflow, track every important decision, and keep model usage and spend visible in one place. You stay in control while AI handles the routine work.
 
 ## Core Capabilities
 
@@ -112,10 +112,46 @@ Preloop can terminate model traffic on behalf of managed runtimes instead of han
 - Per-request attribution to account, flow, flow execution, API key, and runtime principal
 - Token and estimated-cost accounting persisted to the gateway usage ledger
 - Account-level and flow-level budget enforcement with soft-limit annotations and hard stops
+- Subject-scoped allowed-model enforcement for managed-agent and API-key traffic
 - Product-facing usage summary endpoints for account and flow monitoring
 - Account-scoped runtime session explorer endpoints for browsing managed sessions beyond flows
+- Dashboard telemetry for active runtime sessions, recent tool calls, and daily model spend
 - Execution-scoped gateway event inspection via `GET /api/v1/flows/executions/{execution_id}/gateway-events`
 - Console surfaces for browsing recent runtime sessions and searching captured gateway interactions
+
+### Managed Agent Onboarding
+
+Preloop can discover and onboard existing local agents into the same control plane.
+
+- Start with `preloop agents discover`
+- Supported discovery targets include **OpenClaw**, **OpenCode**, **Claude Code**, **Codex CLI**, and **Gemini CLI**
+- Discovery is the entry point for managed onboarding and local-config inspection
+- On supported managed onboarding paths, Preloop can import the agent's configured AI models and MCP tools into your Preloop account
+- Preloop can then reconfigure the local agent to use the **Preloop Gateway** for model traffic and the **Preloop Tool Firewall** for governed tool access
+
+For OpenClaw, `preloop agents discover` can prompt to onboard newly discovered agents, while `preloop agents enroll openclaw` remains the explicit managed enrollment command. That flow can import the current model into Preloop, rewrite supported model settings to Preloop's OpenAI-compatible gateway, and reduce the local MCP config to a single managed `preloop` entry with backup/restore support.
+
+### Subject-Scoped Governance
+
+Preloop can apply governance rules at multiple subject layers instead of only at the account level:
+
+- Account defaults remain the broad fallback for tools and model access
+- Managed-agent governance can narrow tool visibility, tool rules, and model access for one enrolled runtime
+- API-key governance can further narrow behavior for one token, taking precedence over the managed-agent scope when both are present
+- Subject-scoped settings can control `allowed_models`, per-model budget metadata, ordered tool access rules, and explicit tool enable/disable overrides
+
+This subject context is propagated consistently through MCP tool listing, policy evaluation, and model gateway budget checks so one runtime token only sees and uses the tools and models intended for it.
+
+### Runtime Sessions and Managed Agents
+
+Preloop distinguishes between durable runtime identities and individual runtime sessions:
+
+- `ManagedAgent` is the durable identity for an enrolled CLI or desktop agent
+- `RuntimeSession` is the per-session activity record used for live status, recent activity, and observability
+- `session_source_type` and `session_source_id` identify where a session came from
+- `runtime_principal_type`, `runtime_principal_id`, and `runtime_principal_name` identify the durable owner of the session
+
+This separation lets one enrolled agent accumulate multiple sessions over time while preserving searchable gateway usage, MCP activity, audit events, and operator lifecycle controls per session.
 
 ### Secret Custody
 
@@ -364,6 +400,8 @@ Preloop includes a built-in OAuth 2.1 Authorization Server for MCP client authen
 - `GET /oauth/authorize` — Authorization endpoint (redirects to consent page)
 - `POST /oauth/token` — Token exchange (Authorization Code + PKCE for MCP, JWT for CLI)
 - `POST /oauth/revoke` — Token revocation
+
+The CLI also uses these endpoints. `preloop login` honors `PRELOOP_URL`, uses a loopback callback on local machines, and falls back to a copy/paste authorization-code flow on SSH or headless hosts.
 
 ### Docker Setup
 

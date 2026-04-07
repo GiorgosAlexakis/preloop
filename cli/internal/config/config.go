@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -94,6 +95,10 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	cfg.APIURL = normalizeAPIURL(cfg.APIURL)
+	if cfg.APIURL == "" {
+		cfg.APIURL = DefaultAPIURL
+	}
 	return &cfg, nil
 }
 
@@ -114,7 +119,7 @@ func Save(cfg *Config) error {
 
 	v.Set("access_token", cfg.AccessToken)
 	v.Set("refresh_token", cfg.RefreshToken)
-	v.Set("api_url", cfg.APIURL)
+	v.Set("api_url", normalizeAPIURL(cfg.APIURL))
 
 	if err := v.WriteConfig(); err != nil {
 		// If config file doesn't exist, create it
@@ -160,8 +165,7 @@ func SetAPIURL(apiURL string) error {
 		return err
 	}
 
-	cfg.APIURL = apiURL
-
+	cfg.APIURL = normalizeAPIURL(apiURL)
 	return Save(cfg)
 }
 
@@ -199,10 +203,13 @@ func Resolve(tokenOverride, urlOverride string) (*Config, error) {
 		cfg.APIURL = urlOverride
 	}
 
-	// Ensure default
+	cfg.APIURL = normalizeAPIURL(cfg.APIURL)
 	if cfg.APIURL == "" {
 		cfg.APIURL = DefaultAPIURL
 	}
-
 	return cfg, nil
+}
+
+func normalizeAPIURL(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }

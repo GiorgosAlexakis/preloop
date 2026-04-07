@@ -16,6 +16,7 @@ from uuid import UUID
 from preloop.services.approval_workflow_service import (
     create_default_approval_workflow_for_account,
 )
+from preloop.services.flow_presets_service import ensure_global_presets_exist_background
 from preloop.sync.tasks import notify_admins
 from preloop.utils.email import send_verification_email
 from preloop.utils.tokens import create_email_verification_token
@@ -297,8 +298,9 @@ def complete_new_account_setup(
     This should be called after creating a new account and its primary user.
     It handles:
     1. Sending verification email (if enabled)
-    2. Creating default approval workflow for the account
-    3. Notifying admins about the new signup
+    2. Ensuring global flow presets are available
+    3. Creating default approval workflow for the account
+    4. Notifying admins about the new signup
 
     Args:
         account_id: The new account's UUID.
@@ -325,7 +327,14 @@ def complete_new_account_setup(
         except Exception as e:
             logger.error(f"Failed to send verification email to {user_email}: {e}")
 
-    # 2. Create default approval workflow
+    # 2. Ensure global flow presets exist
+    try:
+        ensure_global_presets_exist_background()
+        logger.info("Global flow presets ensured for new account setup")
+    except Exception as e:
+        logger.error(f"Failed to ensure global flow presets: {e}")
+
+    # 3. Create default approval workflow
     try:
         create_default_approval_workflow_for_account(account_id, user_id)
         logger.info(f"Default approval workflow created for account {account_id}")
@@ -334,7 +343,7 @@ def complete_new_account_setup(
             f"Failed to create default approval workflow for account {account_id}: {e}"
         )
 
-    # 3. Notify admins about new signup
+    # 4. Notify admins about new signup
     try:
         notify_admins_new_user_signup(
             username=username,

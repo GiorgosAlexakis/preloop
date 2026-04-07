@@ -22,6 +22,7 @@ import '@shoelace-style/shoelace/dist/components/tag/tag.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import '../../components/view-header.ts';
 
 // Types
 interface AuditLog {
@@ -70,6 +71,10 @@ interface User {
 // Event type filter options
 const EVENT_TYPE_OPTIONS = [
   { value: 'tool_call', label: 'Tool Calls' },
+  { value: 'model_gateway_request', label: 'Gateway Requests' },
+  { value: 'runtime_session_created', label: 'Sessions Started' },
+  { value: 'runtime_session_updated', label: 'Sessions Updated' },
+  { value: 'runtime_session_ended', label: 'Sessions Ended' },
   { value: 'config:tool_configuration', label: 'Tool Enabled / Disabled' },
   { value: 'config:tool_rule', label: 'Rule Changes' },
   { value: 'config:approval_workflow', label: 'Approval Workflow Changes' },
@@ -86,6 +91,8 @@ const OUTCOME_OPTIONS = [
   { value: 'approved', label: 'Approved' },
   { value: 'declined', label: 'Declined' },
   { value: 'executed', label: 'Executed' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'budget_denied', label: 'Budget Denied' },
   { value: 'expired', label: 'Expired' },
 ];
 
@@ -222,6 +229,155 @@ export class AuditView extends AuthedElement {
     return parseUTCDate(ts).toLocaleString();
   }
 
+  private _formatActorLabel(event: AuditLog | SubEvent): string {
+    const actor =
+      'user_id' in event ? this._getUserDisplay(event.user_id) : 'System';
+    const apiKeyName = event.details?.api_key_name;
+    if (apiKeyName) {
+      return actor === 'System'
+        ? `API token ${apiKeyName}`
+        : `${actor} via ${apiKeyName}`;
+    }
+    return actor;
+  }
+
+  private _hasExpandableDetails(details: Record<string, any> | null): boolean {
+    if (!details) return false;
+    return Object.keys(details).some(
+      (key) =>
+        ![
+          'tool_name',
+          'duration_ms',
+          'execution_time_ms',
+          'decision',
+          'event',
+        ].includes(key)
+    );
+  }
+
+  private _formatDetailValue(value: unknown): string {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean')
+      return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  private _prettyDetailLabel(key: string): string {
+    return key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  private _renderDetailItem(label: string, value: unknown) {
+    const rendered = this._formatDetailValue(value);
+    if (!rendered) return nothing;
+    return html`
+      <div class="detail-item">
+        <span class="detail-label">${label}</span>
+        <span class="detail-value">${rendered}</span>
+      </div>
+    `;
+  }
+
+  private _renderJsonDetail(label: string, value: unknown) {
+    if (value == null) return nothing;
+    let rendered = '';
+    try {
+      rendered =
+        typeof value === 'string'
+          ? value
+          : JSON.stringify(value, null, 2) || '';
+    } catch {
+      rendered = String(value);
+    }
+    if (!rendered) return nothing;
+    return html`
+      <div class="detail-block">
+        <span class="detail-label">${label}</span>
+        <pre class="detail-json">${rendered}</pre>
+      </div>
+    `;
+  }
+
+  private _renderEventDetails(details: Record<string, any> | null) {
+    if (!details || !this._hasExpandableDetails(details)) return nothing;
+    const preferredKeys = [
+      'api_key_name',
+      'api_key_id',
+      'runtime_session_id',
+      'session_reference',
+      'session_source_type',
+      'session_source_id',
+      'runtime_principal_name',
+      'runtime_principal_type',
+      'runtime_principal_id',
+      'flow_execution_id',
+      'flow_id',
+      'api_usage_id',
+      'endpoint',
+      'endpoint_kind',
+      'status_code',
+      'requested_model',
+      'model_alias',
+      'provider_name',
+      'gateway_provider',
+      'auth_subject_type',
+      'upstream_request_id',
+      'error_type',
+      'error_detail',
+      'approval_workflow_id',
+      'approval_id',
+      'reason',
+      'timeout_seconds',
+      'condition_matched',
+      'correlation_id',
+      'execution_id',
+      'rule_description',
+      'permission',
+      'config_type',
+      'method',
+      'failure_reason',
+      'resource_type',
+      'resource_id',
+    ];
+    const renderedKeys = new Set<string>();
+    const preferredItems = preferredKeys
+      .filter((key) => details[key] != null && details[key] !== '')
+      .map((key) => {
+        renderedKeys.add(key);
+        return this._renderDetailItem(
+          this._prettyDetailLabel(key),
+          details[key]
+        );
+      });
+    const remainingItems = Object.entries(details)
+      .filter(
+        ([key, value]) =>
+          !renderedKeys.has(key) &&
+          value != null &&
+          typeof value !== 'object' &&
+          !['tool_name', 'decision', 'event'].includes(key)
+      )
+      .map(([key, value]) =>
+        this._renderDetailItem(this._prettyDetailLabel(key), value)
+      );
+
+    return html`
+      <div class="event-details">
+        ${preferredItems} ${remainingItems}
+        ${this._renderJsonDetail('Arguments', details.tool_args)}
+        ${this._renderJsonDetail('Budget', details.budget)}
+        ${this._renderJsonDetail('New Value', details.new_value)}
+        ${this._renderJsonDetail('Old Value', details.old_value)}
+      </div>
+    `;
+  }
+
   private _getOutcomeBadge(outcome: string): {
     variant: string;
     label: string;
@@ -240,8 +396,15 @@ export class AuditView extends AuthedElement {
         return { variant: 'warning', label: 'Approval Required' };
       case 'expired':
         return { variant: 'neutral', label: 'Expired' };
+      case 'created':
+        return { variant: 'success', label: 'Created' };
+      case 'updated':
+        return { variant: 'primary', label: 'Updated' };
       case 'failed':
+      case 'failure':
         return { variant: 'danger', label: 'Failed' };
+      case 'budget_denied':
+        return { variant: 'danger', label: 'Budget Denied' };
       case 'success':
         return { variant: 'success', label: 'Success' };
       case 'denied':
@@ -262,6 +425,8 @@ export class AuditView extends AuthedElement {
       case 'declined':
       case 'denied':
       case 'failed':
+      case 'failure':
+      case 'budget_denied':
         return 'var(--sl-color-danger-600)';
       case 'require_approval':
         return 'var(--sl-color-warning-600)';
@@ -272,11 +437,13 @@ export class AuditView extends AuthedElement {
 
   private _getActionIcon(action: string): string {
     if (action === 'tool_call') return 'terminal';
+    if (action === 'model_gateway_request') return 'cpu';
     if (action.startsWith('policy_')) return 'shield-check';
     if (action.startsWith('approval_')) return 'person-check';
     if (action === 'authentication') return 'key';
     if (action === 'configuration_change') return 'gear';
     if (action === 'permission_check') return 'lock';
+    if (action.startsWith('runtime_session_')) return 'activity';
     if (action.startsWith('role_')) return 'people';
     return 'info-circle';
   }
@@ -288,8 +455,12 @@ export class AuditView extends AuthedElement {
         return `Policy: Allow${d.rule_description ? ` — ${d.rule_description}` : ''}`;
       case 'policy_deny':
         return `Policy: Deny${d.rule_description ? ` — ${d.rule_description}` : ''}`;
-      case 'policy_require_approval':
-        return `Policy: Require Approval${d.rule_description ? ` — ${d.rule_description}` : ''}`;
+      case 'policy_require_approval': {
+        const desc = d.rule_description?.includes('Rule matched: None')
+          ? 'Default Rule'
+          : d.rule_description;
+        return `Policy: Require Approval${desc ? ` — ${desc}` : ''}`;
+      }
       case 'approval_created': {
         const timeout = d.timeout_seconds
           ? ` (timeout: ${Math.round(d.timeout_seconds / 60)}min)`
@@ -304,6 +475,12 @@ export class AuditView extends AuthedElement {
         return 'Approval expired (timed out)';
       case 'approval_escalated':
         return `Escalated${d.escalation_reason ? ` — ${d.escalation_reason}` : ''}`;
+      case 'runtime_session_created':
+        return 'Runtime session started';
+      case 'runtime_session_updated':
+        return 'Runtime session updated';
+      case 'runtime_session_ended':
+        return 'Runtime session ended';
       default:
         return sub.action.replace(/_/g, ' ');
     }
@@ -339,6 +516,30 @@ export class AuditView extends AuthedElement {
       }
       case 'permission_check':
         return `Permission: ${event.details?.permission || event.resource_id || 'check'}`;
+      case 'runtime_session_created':
+        return 'Runtime session started';
+      case 'runtime_session_updated':
+        return 'Runtime session updated';
+      case 'runtime_session_ended':
+        return 'Runtime session ended';
+      case 'model_gateway_request': {
+        const modelLabel =
+          event.details?.requested_model ||
+          event.details?.model_alias ||
+          event.resource_id ||
+          'request';
+        const providerLabel =
+          event.details?.gateway_provider ||
+          event.details?.provider_name ||
+          'Gateway';
+        if (event.status === 'budget_denied') {
+          return `${providerLabel} budget denied: ${modelLabel}`;
+        }
+        if (event.status === 'success' || event.status === 'executed') {
+          return `${providerLabel} request succeeded: ${modelLabel}`;
+        }
+        return `${providerLabel} request failed: ${modelLabel}`;
+      }
       case 'role_assigned':
         return `Role assigned: ${event.details?.role || ''}`;
       case 'role_removed':
@@ -359,6 +560,13 @@ export class AuditView extends AuthedElement {
     });
     if (entries.length > 3) parts.push('…');
     return parts.join(', ');
+  }
+
+  private _canExpandGroup(group: AuditGroup): boolean {
+    return (
+      group.sub_events.length > 0 ||
+      this._hasExpandableDetails(group.primary_event.details)
+    );
   }
 
   // ── Pagination ─────────────────────────────────────────────────────
@@ -385,27 +593,29 @@ export class AuditView extends AuthedElement {
 
   render() {
     return html`
-      <div class="audit-view">
-        <div class="page-header">
-          <h2>Audit Timeline</h2>
-          <span class="total-badge">${this._total} events</span>
-        </div>
-
-        ${this._renderFilterBar()}
-        ${this._loading
-          ? html`<div class="loading">
-              <sl-spinner style="font-size: 2rem;"></sl-spinner>
-            </div>`
-          : this._groups.length === 0
-            ? html`<div class="empty-state">
-                No audit events found matching your filters.
+      <view-header headerText="Audit Timeline" width="wide">
+        <sl-badge slot="title-prefix" pill variant="neutral"
+          >${this._total} events</sl-badge
+        >
+      </view-header>
+      <div class="column-layout wide">
+        <div class="main-column audit-view" style="padding-top: 0;">
+          ${this._renderFilterBar()}
+          ${this._loading
+            ? html`<div class="loading">
+                <sl-spinner style="font-size: 2rem;"></sl-spinner>
               </div>`
-            : html`
-                <div class="timeline">
-                  ${this._groups.map((g) => this._renderGroup(g))}
-                </div>
-                ${this._renderPagination()}
-              `}
+            : this._groups.length === 0
+              ? html`<div class="empty-state">
+                  No audit events found matching your filters.
+                </div>`
+              : html`
+                  <div class="timeline">
+                    ${this._groups.map((g) => this._renderGroup(g))}
+                  </div>
+                  ${this._renderPagination()}
+                `}
+        </div>
       </div>
     `;
   }
@@ -523,11 +733,13 @@ export class AuditView extends AuthedElement {
     const expanded = this._expandedGroups.has(key);
     const event = group.primary_event;
     const hasSubs = group.sub_events.length > 0;
+    const canExpand = this._canExpandGroup(group);
     const badge = this._getOutcomeBadge(group.outcome);
     const borderColor = this._getOutcomeColor(group.outcome);
     const isToolCall = event.action === 'tool_call';
     const argsSummary = isToolCall ? this._getArgsSummary(event.details) : '';
-    const execTime = event.details?.execution_time_ms;
+    const execTime =
+      event.details?.execution_time_ms ?? event.details?.duration_ms;
 
     return html`
       <div
@@ -535,8 +747,8 @@ export class AuditView extends AuthedElement {
         style="--group-color: ${borderColor}"
       >
         <div
-          class="primary-row ${hasSubs ? 'has-subs' : ''}"
-          @click=${() => hasSubs && this._toggleGroup(key)}
+          class="primary-row ${canExpand ? 'has-subs' : ''}"
+          @click=${() => canExpand && this._toggleGroup(key)}
         >
           <div class="row-left">
             <sl-icon
@@ -553,15 +765,13 @@ export class AuditView extends AuthedElement {
               ? html`<span class="exec-time">${execTime}ms</span>`
               : nothing}
             <sl-badge variant=${badge.variant} pill>${badge.label}</sl-badge>
-            <span class="user-name"
-              >${this._getUserDisplay(event.user_id)}</span
-            >
+            <span class="user-name">${this._formatActorLabel(event)}</span>
             <sl-tooltip content=${this._formatFullTimestamp(event.timestamp)}>
               <span class="timestamp"
                 >${this._formatTimestamp(event.timestamp)}</span
               >
             </sl-tooltip>
-            ${hasSubs
+            ${canExpand
               ? html`<sl-icon
                   name=${expanded ? 'chevron-up' : 'chevron-down'}
                   class="expand-icon"
@@ -570,13 +780,118 @@ export class AuditView extends AuthedElement {
           </div>
         </div>
 
-        ${hasSubs && expanded
+        ${expanded
           ? html`
-              <div class="sub-events">
-                ${group.sub_events.map((sub) => this._renderSubEvent(sub))}
-              </div>
+              ${hasSubs && isToolCall
+                ? this._renderStorySummary(group)
+                : nothing}
+              ${this._renderEventDetails(event.details)}
+              ${hasSubs
+                ? html`
+                    <div class="sub-events">
+                      ${group.sub_events.map((sub) =>
+                        this._renderSubEvent(sub)
+                      )}
+                    </div>
+                  `
+                : nothing}
             `
           : nothing}
+      </div>
+    `;
+  }
+
+  private _renderStorySummary(group: AuditGroup) {
+    if (!group.sub_events.length) return nothing;
+
+    const toolName =
+      group.primary_event.details?.tool_name ||
+      group.primary_event.resource_id ||
+      'a tool';
+    let story = `The agent requested the ${toolName} tool. `;
+
+    let policySubevent = null;
+    let approvalSubevent = null;
+    let approvalResolutionSubevent = null;
+    let escalationSubevent = null;
+
+    for (const sub of group.sub_events) {
+      if (sub.action.startsWith('policy_')) policySubevent = sub;
+      else if (sub.action === 'approval_created') approvalSubevent = sub;
+      else if (sub.action === 'approval_escalated') escalationSubevent = sub;
+      else if (
+        sub.action === 'approval_approved' ||
+        sub.action === 'approval_denied' ||
+        sub.action === 'approval_expired'
+      ) {
+        approvalResolutionSubevent = sub;
+      }
+    }
+
+    if (policySubevent) {
+      const rd = policySubevent.details?.rule_description;
+      const isNone =
+        rd &&
+        (rd.includes('Rule matched: None') ||
+          rd.includes('No specific rule matched') ||
+          rd.includes('No access rules defined'));
+      const ruleDesc = isNone ? 'Default fallback policy' : rd || 'Policy';
+
+      if (policySubevent.action === 'policy_allow') {
+        story += `${ruleDesc} automatically allowed the request. `;
+      } else if (policySubevent.action === 'policy_deny') {
+        story += `${ruleDesc} denied the request. `;
+      } else if (policySubevent.action === 'policy_require_approval') {
+        story += `${ruleDesc} required approval. `;
+      }
+    }
+
+    if (approvalSubevent) {
+      story += `An approval request was created. `;
+      if (escalationSubevent) {
+        story += `The request was later escalated. `;
+      }
+      if (approvalResolutionSubevent) {
+        const u = approvalResolutionSubevent.details?.approver_id
+          ? this._getUserDisplay(approvalResolutionSubevent.details.approver_id)
+          : 'A user';
+        if (approvalResolutionSubevent.action === 'approval_approved') {
+          story += `${u} approved it. `;
+        } else if (approvalResolutionSubevent.action === 'approval_denied') {
+          story += `${u} declined it. `;
+        } else if (approvalResolutionSubevent.action === 'approval_expired') {
+          story += `The approval request timed out. `;
+        }
+      } else {
+        story += `It is currently pending approval. `;
+      }
+    }
+
+    if (
+      group.outcome === 'success' ||
+      group.outcome === 'executed' ||
+      group.outcome === 'allow'
+    ) {
+      if (
+        !approvalSubevent ||
+        approvalResolutionSubevent?.action === 'approval_approved' ||
+        !policySubevent ||
+        policySubevent.action === 'policy_allow'
+      ) {
+        story += `The tool was successfully executed.`;
+      }
+    }
+
+    return html`
+      <div
+        class="story-summary"
+        style="padding: 12px 16px; background: var(--sl-color-neutral-50); border-radius: var(--sl-border-radius-medium); font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-700); margin-bottom: 12px; border: 1px solid var(--sl-color-neutral-200);"
+      >
+        <sl-icon
+          name="book"
+          style="margin-right: 6px; color: var(--sl-color-neutral-500);"
+        ></sl-icon>
+        <strong>Summary:</strong> ${story}
       </div>
     `;
   }
@@ -590,21 +905,27 @@ export class AuditView extends AuthedElement {
           name=${this._getActionIcon(sub.action)}
           class="sub-icon"
         ></sl-icon>
-        <span class="sub-label">${this._getSubEventLabel(sub)}</span>
-        ${sub.details?.condition_matched
-          ? html`<code class="condition-code"
-              >${sub.details.condition_matched}</code
-            >`
-          : nothing}
-        <span class="sub-spacer"></span>
-        <sl-badge variant=${badge.variant} pill size="small"
-          >${badge.label}</sl-badge
-        >
-        <sl-tooltip content=${this._formatFullTimestamp(sub.timestamp)}>
-          <span class="sub-timestamp"
-            >${this._formatTimestamp(sub.timestamp)}</span
-          >
-        </sl-tooltip>
+        <div class="sub-content">
+          <div class="sub-main-row">
+            <span class="sub-label">${this._getSubEventLabel(sub)}</span>
+            ${sub.details?.condition_matched
+              ? html`<code class="condition-code"
+                  >${sub.details.condition_matched}</code
+                >`
+              : nothing}
+            <span class="sub-spacer"></span>
+            <sl-badge variant=${badge.variant} pill size="small"
+              >${badge.label}</sl-badge
+            >
+            <span class="sub-actor">${this._formatActorLabel(sub)}</span>
+            <sl-tooltip content=${this._formatFullTimestamp(sub.timestamp)}>
+              <span class="sub-timestamp"
+                >${this._formatTimestamp(sub.timestamp)}</span
+              >
+            </sl-tooltip>
+          </div>
+          ${this._renderEventDetails(sub.details)}
+        </div>
       </div>
     `;
   }
@@ -811,6 +1132,40 @@ export class AuditView extends AuthedElement {
         width: 0.9rem;
       }
 
+      .event-details {
+        display: grid;
+        gap: 0.5rem;
+        padding: 0 0.75rem 0.75rem 2.25rem;
+        border-top: 1px solid var(--sl-color-neutral-100);
+        background: var(--sl-color-neutral-50);
+      }
+      .detail-item,
+      .detail-block {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+      }
+      .detail-label {
+        font-size: 0.68rem;
+        color: var(--sl-color-neutral-500);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .detail-value {
+        font-size: 0.78rem;
+        color: var(--sl-color-neutral-700);
+        word-break: break-word;
+      }
+      .detail-json {
+        margin: 0;
+        padding: 0.5rem;
+        background: var(--sl-color-neutral-0);
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: 6px;
+        font-size: 0.72rem;
+        overflow-x: auto;
+      }
+
       /* ── Sub-events ────────────────────────── */
       .sub-events {
         padding: 0 0 0.4rem 0;
@@ -824,6 +1179,7 @@ export class AuditView extends AuthedElement {
         font-size: 0.78rem;
         color: var(--sl-color-neutral-600);
         position: relative;
+        align-items: flex-start;
       }
 
       .connector {
@@ -850,6 +1206,19 @@ export class AuditView extends AuthedElement {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .sub-content {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-width: 0;
+      }
+      .sub-main-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        min-width: 0;
+      }
       .condition-code {
         font-size: 0.7rem;
         background: var(--sl-color-neutral-100);
@@ -861,6 +1230,14 @@ export class AuditView extends AuthedElement {
       }
       .sub-spacer {
         flex: 1;
+      }
+      .sub-actor {
+        font-size: 0.68rem;
+        color: var(--sl-color-neutral-500);
+        max-width: 170px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .sub-timestamp {
         font-size: 0.65rem;
@@ -908,6 +1285,9 @@ export class AuditView extends AuthedElement {
           justify-content: flex-end;
           margin-top: 0.25rem;
         }
+        .event-details {
+          padding-left: 1rem;
+        }
         .filter-bar {
           flex-direction: column;
         }
@@ -915,6 +1295,12 @@ export class AuditView extends AuthedElement {
         .filter-bar sl-select {
           max-width: 100%;
           flex: 1 1 100%;
+        }
+        .sub-main-row {
+          flex-wrap: wrap;
+        }
+        .sub-actor {
+          max-width: 100%;
         }
       }
     `,

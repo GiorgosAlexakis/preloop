@@ -109,7 +109,16 @@ class CodexAgent(ContainerAgentExecutor):
             f"agent_config.model={agent_model}"
         )
 
-        model = model_identifier or agent_model or "gpt-4"
+        model = (
+            (
+                execution_context.get("model_gateway_model_alias")
+                if execution_context.get("model_gateway_enabled")
+                else None
+            )
+            or model_identifier
+            or agent_model
+            or "gpt-4"
+        )
         codex_context["codex_model"] = model
 
         self.logger.info(f"Starting Codex CLI with model={model}")
@@ -279,12 +288,25 @@ class CodexAgent(ContainerAgentExecutor):
         """
         prompt = execution_context["prompt"]
         model = (
+            execution_context.get("model_gateway_model_alias")
+            if execution_context.get("model_gateway_enabled")
+            else None
+        ) or (
             execution_context.get("codex_model")
             or execution_context.get("model_identifier")
             or "gpt-4"
         )
-        model_provider = execution_context.get("model_provider", "openai").lower()
-        model_endpoint = execution_context.get("model_endpoint") or ""
+        model_provider = (
+            execution_context.get("model_gateway_provider")
+            if execution_context.get("model_gateway_enabled")
+            else execution_context.get("model_provider", "openai")
+        )
+        model_provider = (model_provider or "openai").lower()
+        model_endpoint = (
+            execution_context.get("model_gateway_url")
+            if execution_context.get("model_gateway_enabled")
+            else execution_context.get("model_endpoint")
+        ) or ""
 
         # Fallback: resolve endpoint from environment if not set in the AI model.
         # Checks {PROVIDER}_API_BASE (e.g. ZAI_API_BASE) then CUSTOM_API_BASE.
@@ -528,13 +550,13 @@ cat > ~/.codex/config.toml << EOF
 model_provider = "{provider_key}"
 model = "{model}"
 
+rmcp_client = true
+
 [model_providers.{provider_key}]
 name = "{model_provider.title()}"
 {base_url_line}
 env_key = "{env_key}"
 wire_api = "{wire_api}"
-
-rmcp_client = true
 
 [mcp_servers.preloop]
 url = "$PRELOOP_MCP_URL"
@@ -580,7 +602,17 @@ EOF"""
 
         # Add API key - use provider-specific env var for custom models
         model_provider = execution_context.get("model_provider", "openai").lower()
-        if "model_api_key" in execution_context:
+        if execution_context.get("model_gateway_enabled"):
+            gateway_provider = (
+                execution_context.get("model_gateway_provider") or "preloop"
+            ).lower()
+            gateway_token = execution_context.get("model_gateway_token")
+            if gateway_token:
+                custom_env_key = f"{gateway_provider.upper()}_API_KEY"
+                env[custom_env_key] = gateway_token
+                env["OPENAI_API_KEY"] = gateway_token
+                env["PRELOOP_MODEL_GATEWAY_TOKEN"] = gateway_token
+        elif "model_api_key" in execution_context:
             if model_provider == "openai" or not model_provider:
                 env["OPENAI_API_KEY"] = execution_context["model_api_key"]
             else:

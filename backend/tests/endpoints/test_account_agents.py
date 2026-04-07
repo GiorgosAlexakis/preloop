@@ -1,0 +1,924 @@
+"""Endpoint tests for managed-agent registry surfaces."""
+
+from datetime import UTC, datetime
+
+from preloop.api.endpoints.account import _managed_agent_onboarding_flags
+from preloop.models.crud import (
+    crud_ai_model,
+    crud_api_usage,
+    crud_managed_agent,
+    crud_managed_agent_enrollment,
+    crud_runtime_session,
+    crud_runtime_session_activity,
+)
+from preloop.models.models.mcp_server import MCPServer
+from preloop.models.models.mcp_tool import MCPTool
+
+
+def _create_active_mcp_server(db_session, account_id, *, name: str) -> MCPServer:
+    server = MCPServer(
+        account_id=account_id,
+        name=name,
+        url=f"https://{name}.example.com/mcp",
+        transport="http-streaming",
+        auth_type="none",
+        status="active",
+    )
+    db_session.add(server)
+    db_session.flush()
+    return server
+
+
+def _add_server_tool(db_session, server_id, *, tool_name: str) -> None:
+    db_session.add(
+        MCPTool(
+            mcp_server_id=server_id,
+            name=tool_name,
+            description=f"{tool_name} description",
+            input_schema={"type": "object"},
+            discovered_at=datetime.now(UTC).isoformat(),
+        )
+    )
+    db_session.flush()
+
+
+def test_account_agents_endpoint_lists_onboarded_agents(client, db_session, test_user):
+    """Account agents endpoint should expose registry entries created by onboarding."""
+    github_server = _create_active_mcp_server(
+        db_session, test_user.account_id, name="github"
+    )
+    _add_server_tool(db_session, github_server.id, tool_name="search_issues")
+
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-123",
+            "session_reference": "claude-session-abc",
+            "runtime_principal_name": "Claude Code Workspace",
+            "allowed_mcp_servers": ["github"],
+        },
+    )
+
+    assert token_response.status_code == 201
+    runtime_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-123",
+    )
+    assert runtime_session is not None
+
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=120,
+        completion_tokens=40,
+        total_tokens=160,
+        estimated_cost=0.12,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-123",
+        runtime_principal_name="Claude Code Workspace",
+    )
+
+    response = client.get("/api/v1/agents")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["display_name"] == "Claude Code Workspace"
+    assert item["agent_kind"] == "claude_code"
+    assert item["session_source_type"] == "claude_code"
+    assert item["session_source_id"] == "workspace-123"
+    assert item["session_reference"] == "claude-session-abc"
+    assert item["runtime_session_id"] == str(runtime_session.id)
+    assert item["managed_mcp_servers"] == ["github"]
+    assert item["total_requests"] == 1
+    assert item["estimated_cost"] == 0.12
+    assert item["latest_model_alias"] == "openai/gpt-5"
+    assert item["latest_provider_name"] == "openai"
+    assert item["onboarding_state"] == "incomplete"
+    assert item["mcp_proxy_configured"] is False
+    assert item["model_gateway_configured"] is False
+
+
+def test_account_agents_endpoint_exposes_configured_model_alias(
+    client, db_session, test_user
+):
+    """Managed agent summaries should expose the configured gateway model alias."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-opencode",
+            "session_reference": "claude-session-opencode",
+            "runtime_principal_name": "Claude Code Workspace",
+            "allowed_mcp_servers": [],
+        },
+    )
+
+    assert token_response.status_code == 201
+
+    agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="claude_code",
+        session_source_id="workspace-opencode",
+    )
+    assert agent is not None
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "OpenCode zai/glm-5-turbo",
+            "provider_name": "openai",
+            "model_identifier": "glm-5-turbo",
+            "meta_data": {
+                "gateway": {"enabled": True, "model_alias": "zai/glm-5-turbo"},
+                "managed_agent_id": str(agent.id),
+            },
+        },
+        account_id=test_user.account_id,
+    )
+
+    crud_managed_agent_enrollment.create_for_agent(
+        db_session,
+        account_id=test_user.account_id,
+        agent_id=agent.id,
+        created_by_user_id=test_user.id,
+        enrollment_type="cli_managed_config",
+        adapter_key="opencode",
+        status="active",
+        target_config_path="~/.config/opencode/config.json",
+        managed_config={
+            "mcp": {
+                "preloop": {
+                    "type": "remote",
+                    "url": "https://preloop.example/mcp/v1",
+                }
+            },
+            "model": "preloop/zai/glm-5-turbo",
+            "provider": {
+                "preloop": {
+                    "options": {
+                        "baseURL": "https://preloop.example/openai/v1",
+                        "apiKey": "agt_secret",
+                    }
+                }
+            },
+        },
+    )
+    db_session.commit()
+
+    response = client.get("/api/v1/agents")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"][0]["configured_model_alias"] == "zai/glm-5-turbo"
+    assert body["items"][0]["configured_model_id"] == str(ai_model.id)
+    assert (
+        body["items"][0]["configured_models"][0]["gateway_alias"] == "zai/glm-5-turbo"
+    )
+    assert body["items"][0]["configured_models"][0]["ai_model_id"] == str(ai_model.id)
+    assert body["items"][0]["onboarding_state"] == "fully_onboarded"
+
+    detail_response = client.get(f"/api/v1/agents/{body['items'][0]['id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["agent"]["configured_model_id"] == str(ai_model.id)
+    assert (
+        detail_response.json()["agent"]["configured_models"][0]["gateway_alias"]
+        == "zai/glm-5-turbo"
+    )
+
+
+def test_account_agent_model_bindings_endpoint_replaces_bindings(
+    client, db_session, test_user
+):
+    """Managed-agent bindings should be explicitly replaceable through the API."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "opencode",
+            "session_source_id": "workspace-bindings",
+            "runtime_principal_name": "OpenCode Workspace",
+        },
+    )
+    assert token_response.status_code == 201
+
+    agent = crud_managed_agent.get_by_source(
+        db_session,
+        account_id=str(test_user.account_id),
+        session_source_type="opencode",
+        session_source_id="workspace-bindings",
+    )
+    assert agent is not None
+
+    primary_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "OpenAI GPT-5.4",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5.4",
+        },
+        account_id=test_user.account_id,
+    )
+    fallback_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "OpenAI GPT-4.1",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+        },
+        account_id=test_user.account_id,
+    )
+
+    response = client.put(
+        f"/api/v1/agents/{agent.id}/model-bindings",
+        json={
+            "bindings": [
+                {
+                    "ai_model_id": str(primary_model.id),
+                    "binding_type": "configured",
+                    "config_key": "model.primary",
+                    "gateway_alias": "openai/gpt-5.4",
+                    "is_primary": True,
+                    "status": "gateway_ready",
+                },
+                {
+                    "ai_model_id": str(fallback_model.id),
+                    "binding_type": "configured",
+                    "config_key": "model.fallbacks[0]",
+                    "gateway_alias": "openai/gpt-4.1",
+                    "is_primary": False,
+                    "status": "gateway_ready",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    bindings = response.json()
+    assert [binding["gateway_alias"] for binding in bindings] == [
+        "openai/gpt-5.4",
+        "openai/gpt-4.1",
+    ]
+
+    detail_response = client.get(f"/api/v1/agents/{agent.id}")
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert body["agent"]["configured_model_alias"] == "openai/gpt-5.4"
+    assert body["agent"]["configured_model_id"] == str(primary_model.id)
+    assert [
+        binding["config_key"] for binding in body["agent"]["configured_models"]
+    ] == [
+        "model.primary",
+        "model.fallbacks[0]",
+    ]
+
+
+def test_account_agents_endpoint_uses_most_recent_model_alias(
+    client, db_session, test_user
+):
+    """Managed agent summaries should use the most recent usage row, not max(alias)."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-latest-model",
+            "session_reference": "claude-session-latest",
+            "runtime_principal_name": "Claude Code Workspace",
+            "allowed_mcp_servers": [],
+        },
+    )
+    assert token_response.status_code == 201
+
+    runtime_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-latest-model",
+    )
+    assert runtime_session is not None
+
+    older_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="zai/glm-5-turbo",
+        provider_name="openai",
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+        estimated_cost=0.25,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-latest-model",
+        runtime_principal_name="Claude Code Workspace",
+    )
+    newer_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="openai/gpt-5.4",
+        provider_name="openai",
+        prompt_tokens=50,
+        completion_tokens=10,
+        total_tokens=60,
+        estimated_cost=0.1,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-latest-model",
+        runtime_principal_name="Claude Code Workspace",
+    )
+    older_usage.timestamp = datetime(2026, 4, 3, 21, 0, tzinfo=UTC)
+    newer_usage.timestamp = datetime(2026, 4, 3, 21, 5, tzinfo=UTC)
+    db_session.add(older_usage)
+    db_session.add(newer_usage)
+    db_session.commit()
+
+    response = client.get("/api/v1/agents")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"][0]["latest_model_alias"] == "openai/gpt-5.4"
+
+
+def test_managed_agent_onboarding_flags_supports_codex_gateway_config():
+    """Codex custom-provider configs should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcp": {
+                    "servers": {
+                        "preloop": {
+                            "url": "https://preloop.example/mcp/v1",
+                            "transport": "http",
+                        }
+                    }
+                },
+                "model_provider": "preloop",
+                "model": "openai/gpt-5.4",
+                "model_providers": {
+                    "preloop": {
+                        "base_url": "https://preloop.example/openai/v1",
+                        "wire_api": "responses",
+                    }
+                },
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_supports_opencode_gateway_config():
+    """OpenCode provider configs should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcp": {
+                    "preloop": {
+                        "type": "remote",
+                        "url": "https://preloop.example/mcp/v1",
+                    }
+                },
+                "model": "preloop/openai/gpt-5.4",
+                "provider": {
+                    "preloop": {
+                        "options": {
+                            "baseURL": "https://preloop.example/openai/v1",
+                            "apiKey": "agt_secret",
+                        }
+                    }
+                },
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_supports_claude_gateway_config():
+    """Claude settings env overrides should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.example/mcp/v1"}},
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://preloop.example/anthropic",
+                    "ANTHROPIC_AUTH_TOKEN": "agt_secret",
+                    "ANTHROPIC_MODEL": "openai/gpt-5.4",
+                    "ANTHROPIC_CUSTOM_MODEL_OPTION": "openai/gpt-5.4",
+                },
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_supports_gemini_gateway_config():
+    """Gemini custom endpoint configs should count as full managed onboarding."""
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.example/mcp/v1"}},
+                "baseUrl": "https://preloop.example/gemini/v1beta",
+                "apiKey": "agt_secret",
+                "apiKeyHeader": "x-goog-api-key",
+                "model": {"name": "google/gemini-3.1-pro-preview"},
+            }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_account_agent_detail_endpoint_returns_one_agent(client, db_session, test_user):
+    """Managed agent detail endpoint should return the scoped registry summary."""
+    github_server = _create_active_mcp_server(
+        db_session, test_user.account_id, name="github"
+    )
+    _add_server_tool(db_session, github_server.id, tool_name="search_issues")
+
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-456",
+            "session_reference": "claude-session-def",
+            "runtime_principal_name": "Claude Code Workspace 2",
+            "allowed_mcp_servers": ["github"],
+        },
+    )
+
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    detail_response = client.get(f"/api/v1/agents/{agent_id}")
+
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert body["agent"]["id"] == agent_id
+    assert body["agent"]["display_name"] == "Claude Code Workspace 2"
+    assert body["agent"]["session_source_type"] == "claude_code"
+    assert body["agent"]["session_source_id"] == "workspace-456"
+    assert body["agent"]["managed_mcp_servers"] == ["github"]
+    assert len(body["sessions"]) == 1
+    assert body["sessions"][0]["session_source_id"] == "workspace-456"
+
+
+def test_account_agent_detail_endpoint_includes_session_history(
+    client, db_session, test_user
+):
+    """Managed agent detail should include multiple runtime sessions for one durable agent."""
+    principal_id = "claude-code-agent-1"
+
+    first_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-1",
+            "runtime_principal_id": principal_id,
+            "runtime_principal_name": "Claude Code Workspace",
+        },
+    )
+    second_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-2",
+            "runtime_principal_id": principal_id,
+            "runtime_principal_name": "Claude Code Workspace",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    first_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-1",
+    )
+    second_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-2",
+    )
+    assert first_session is not None
+    assert second_session is not None
+
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(first_session.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+        estimated_cost=0.25,
+        runtime_principal_type="claude_code",
+        runtime_principal_id=principal_id,
+        runtime_principal_name="Claude Code Workspace",
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=first_session.id,
+        server_name="github",
+        tool_name="search_issues",
+        status="success",
+        commit=False,
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=second_session.id,
+        server_name="github",
+        tool_name="search_issues",
+        status="failed",
+        summary="rate limited",
+        commit=False,
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=second_session.id,
+        server_name="jira",
+        tool_name="get_issue",
+        status="success",
+    )
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=429,
+        duration=0.2,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(second_session.id),
+        model_alias="openai/gpt-5-mini",
+        provider_name="openai",
+        prompt_tokens=50,
+        completion_tokens=10,
+        total_tokens=60,
+        estimated_cost=0.05,
+        runtime_principal_type="claude_code",
+        runtime_principal_id=principal_id,
+        runtime_principal_name="Claude Code Workspace",
+    )
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    body = list_response.json()
+    assert body["total"] == 1
+
+    agent_id = body["items"][0]["id"]
+    detail_response = client.get(f"/api/v1/agents/{agent_id}")
+
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert detail_body["agent"]["session_source_id"] == principal_id
+    assert detail_body["aggregate"]["session_count"] == 2
+    assert detail_body["aggregate"]["total_requests"] == 2
+    assert detail_body["aggregate"]["successful_requests"] == 1
+    assert detail_body["aggregate"]["failed_requests"] == 1
+    assert detail_body["aggregate"]["token_usage"]["prompt_tokens"] == 150
+    assert detail_body["aggregate"]["token_usage"]["completion_tokens"] == 30
+    assert detail_body["aggregate"]["token_usage"]["total_tokens"] == 180
+    assert detail_body["aggregate"]["estimated_cost"] == 0.3
+    assert len(detail_body["usage_by_model"]) == 2
+    assert detail_body["usage_by_model"][0]["model_alias"] == "openai/gpt-5"
+    assert detail_body["usage_by_model"][0]["provider_name"] == "openai"
+    assert detail_body["usage_by_model"][0]["request_count"] == 1
+    assert detail_body["usage_by_model"][0]["token_usage"]["total_tokens"] == 120
+    assert detail_body["usage_by_model"][1]["model_alias"] == "openai/gpt-5-mini"
+    assert detail_body["usage_by_model"][1]["request_count"] == 1
+    assert len(detail_body["activity_by_server"]) == 2
+    assert detail_body["activity_by_server"][0]["server_name"] == "github"
+    assert detail_body["activity_by_server"][0]["call_count"] == 2
+    assert detail_body["activity_by_server"][0]["successful_calls"] == 1
+    assert detail_body["activity_by_server"][0]["failed_calls"] == 1
+    assert detail_body["activity_by_tool"][0]["tool_name"] == "search_issues"
+    assert detail_body["activity_by_tool"][0]["server_name"] == "github"
+    assert detail_body["activity_by_tool"][0]["call_count"] == 2
+    assert detail_body["activity_by_tool"][1]["tool_name"] == "get_issue"
+    assert len(detail_body["sessions"]) == 2
+    assert [session["session_source_id"] for session in detail_body["sessions"]] == [
+        "workspace-2",
+        "workspace-1",
+    ]
+
+
+def test_account_agent_update_endpoint_controls_lifecycle_and_owner(
+    client, db_session, test_user
+):
+    """Managed agent update endpoint should support ownership and lifecycle controls."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-lifecycle",
+            "runtime_principal_name": "Lifecycle Agent",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    update_response = client.patch(
+        f"/api/v1/agents/{agent_id}",
+        json={
+            "owner_user_id": str(test_user.id),
+            "lifecycle_action": "suspend",
+            "reason": "maintenance window",
+        },
+    )
+
+    assert update_response.status_code == 200
+    body = update_response.json()
+    assert body["owner_user_id"] == str(test_user.id)
+    assert body["owner_username"] == test_user.username
+    assert body["lifecycle_state"] == "suspended"
+    assert body["lifecycle_reason"] == "maintenance window"
+    assert body["activity_status"] == "suspended"
+
+    reenroll_response = client.patch(
+        f"/api/v1/agents/{agent_id}",
+        json={"lifecycle_action": "reenroll"},
+    )
+    assert reenroll_response.status_code == 200
+    assert reenroll_response.json()["lifecycle_state"] == "active"
+
+
+def test_account_agent_detail_includes_credentials_and_enrollments(
+    client, db_session, test_user
+):
+    """Managed agent detail should expose durable credentials and enrollment state."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "openclaw",
+            "session_source_id": "openclaw-workspace",
+            "session_reference": "/Users/test/.openclaw/openclaw.json",
+            "runtime_principal_name": "OpenClaw Workspace",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    credential_response = client.post(
+        f"/api/v1/agents/{agent_id}/credentials",
+        json={
+            "name": "OpenClaw Durable Credential",
+            "description": "Primary managed credential",
+            "scopes": ["mcp:read", "mcp:write"],
+        },
+    )
+    assert credential_response.status_code == 201
+    credential_body = credential_response.json()
+    assert credential_body["token"].startswith("agt_")
+    assert credential_body["credential"]["name"] == "OpenClaw Durable Credential"
+
+    enrollment_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments",
+        json={
+            "enrollment_type": "cli_managed_config",
+            "adapter_key": "openclaw",
+            "status": "pending",
+            "target_config_path": "/Users/test/.openclaw/openclaw.json",
+            "discovered_config": {
+                "mcpServers": {"github": {"url": "https://example.com"}}
+            },
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.test/mcp"}}
+            },
+            "backup_metadata": {"path": "/tmp/openclaw.backup.json"},
+            "validation_result": {"dry_run": True},
+            "restore_available": True,
+        },
+    )
+    assert enrollment_response.status_code == 201
+
+    detail_response = client.get(f"/api/v1/agents/{agent_id}")
+    assert detail_response.status_code == 200
+    body = detail_response.json()
+    assert len(body["credentials"]) == 1
+    assert body["credentials"][0]["name"] == "OpenClaw Durable Credential"
+    assert body["credentials"][0]["status"] == "active"
+    assert len(body["enrollments"]) == 2
+    enrollment_types = {item["enrollment_type"] for item in body["enrollments"]}
+    assert enrollment_types == {"cli_managed_config", "runtime_session_bootstrap"}
+    cli_enrollment = next(
+        item
+        for item in body["enrollments"]
+        if item["enrollment_type"] == "cli_managed_config"
+    )
+    bootstrap_enrollment = next(
+        item
+        for item in body["enrollments"]
+        if item["enrollment_type"] == "runtime_session_bootstrap"
+    )
+    assert cli_enrollment["adapter_key"] == "openclaw"
+    assert body["agent"]["onboarding_state"] == "mcp_proxy_only"
+    assert body["agent"]["mcp_proxy_configured"] is True
+    assert body["agent"]["model_gateway_configured"] is False
+    assert (
+        bootstrap_enrollment["managed_config"]["runtime_session_id"]
+        == (token_response.json()["runtime_session_id"])
+    )
+
+    revoke_response = client.delete(
+        f"/api/v1/agents/{agent_id}/credentials/{credential_body['credential']['id']}"
+    )
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()["status"] == "revoked"
+
+    credentials_response = client.get(f"/api/v1/agents/{agent_id}/credentials")
+    assert credentials_response.status_code == 200
+    assert credentials_response.json()[0]["status"] == "revoked"
+
+
+def test_account_agent_delete_removes_registry_record(client, db_session, test_user):
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-delete-agent",
+            "runtime_principal_name": "Delete Me",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    delete_response = client.delete(f"/api/v1/agents/{agent_id}")
+    assert delete_response.status_code == 200
+
+    after_response = client.get("/api/v1/agents")
+    assert after_response.status_code == 200
+    assert after_response.json()["total"] == 0
+
+
+def test_account_agent_governance_round_trip(client, db_session, test_user):
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "openclaw",
+            "session_source_id": "openclaw-governance",
+            "runtime_principal_name": "Governed Agent",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    get_response = client.get(f"/api/v1/agents/{agent_id}/governance")
+    assert get_response.status_code == 200
+    assert get_response.json()["config"]["allowed_models"] == []
+
+    update_response = client.put(
+        f"/api/v1/agents/{agent_id}/governance",
+        json={
+            "allowed_models": ["openai/gpt-5"],
+            "model_budgets": {
+                "openai/gpt-5": {"monthly_usd_limit": 25, "soft_limit_usd": 20}
+            },
+            "tool_rules": {
+                "search_issues": [
+                    {
+                        "action": "require_approval",
+                        "condition_type": "simple",
+                        "condition_expression": "args.repo == 'private'",
+                    }
+                ]
+            },
+        },
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["config"]["allowed_models"] == ["openai/gpt-5"]
+    assert updated["config"]["model_budgets"]["openai/gpt-5"]["monthly_usd_limit"] == 25
+    assert updated["config"]["tool_rules"]["search_issues"][0]["action"] == (
+        "require_approval"
+    )
+
+    verify_response = client.get(f"/api/v1/agents/{agent_id}/governance")
+    assert verify_response.status_code == 200
+    assert verify_response.json()["config"] == updated["config"]
+
+
+def test_account_agent_enrollment_validate_and_restore(client, db_session, test_user):
+    """Managed agent enrollments should support validation and restore actions."""
+    token_response = client.post(
+        "/api/v1/auth/runtime-sessions/token",
+        json={
+            "session_source_type": "claude_code",
+            "session_source_id": "workspace-validate-restore",
+            "session_reference": "/Users/test/.claude/mcp-servers.json",
+            "runtime_principal_name": "Claude Code Workspace",
+        },
+    )
+    assert token_response.status_code == 201
+
+    list_response = client.get("/api/v1/agents")
+    assert list_response.status_code == 200
+    agent_id = list_response.json()["items"][0]["id"]
+
+    enrollment_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments",
+        json={
+            "enrollment_type": "cli_managed_config",
+            "adapter_key": "claude_code",
+            "status": "applied",
+            "target_config_path": "/Users/test/.claude/mcp-servers.json",
+            "discovered_config": {
+                "servers": {"github": {"url": "https://example.com"}}
+            },
+            "managed_config": {
+                "servers": {"preloop": {"url": "https://preloop.test/mcp/v1"}}
+            },
+            "backup_metadata": {"backup_path": "/tmp/claude.backup.json"},
+            "restore_available": True,
+        },
+    )
+    assert enrollment_response.status_code == 201
+    enrollment_id = enrollment_response.json()["id"]
+
+    validate_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments/{enrollment_id}/validate",
+        json={
+            "status": "validated",
+            "validation_result": {
+                "ok": True,
+                "checked": ["config_parse", "preloop_server_present"],
+            },
+        },
+    )
+    assert validate_response.status_code == 200
+    validate_body = validate_response.json()
+    assert validate_body["status"] == "validated"
+    assert validate_body["validation_result"]["ok"] is True
+    assert validate_body["last_validated_at"] is not None
+    assert validate_body["restore_available"] is True
+
+    restore_response = client.post(
+        f"/api/v1/agents/{agent_id}/enrollments/{enrollment_id}/restore",
+        json={
+            "backup_metadata": {
+                "backup_path": "/tmp/claude.backup.json",
+                "restored_by": "test",
+            },
+            "validation_result": {"restored": True},
+        },
+    )
+    assert restore_response.status_code == 200
+    restore_body = restore_response.json()
+    assert restore_body["status"] == "restored"
+    assert restore_body["restore_available"] is False
+    assert restore_body["backup_metadata"]["restored_by"] == "test"
+    assert restore_body["validation_result"]["restored"] is True
+    assert restore_body["last_restored_at"] is not None

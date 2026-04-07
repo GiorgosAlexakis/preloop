@@ -70,6 +70,13 @@ describe('ToolsView (approvals + conditions)', () => {
           });
         }
 
+        if (url.endsWith('/api/v1/ai-models') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
         // ToolListItem / loadCurrentUser() request
         if (url.endsWith('/api/v1/auth/users/me') && method === 'GET') {
           return new Response(JSON.stringify({ id: 'user-1' }), {
@@ -127,7 +134,10 @@ describe('ToolsView (approvals + conditions)', () => {
     );
     await element.updateComplete;
 
-    const toolItem = element.shadowRoot?.querySelector(
+    const editor = element.shadowRoot?.querySelector(
+      'tools-editor-component'
+    ) as HTMLElement;
+    const toolItem = editor.shadowRoot?.querySelector(
       'tool-list-item'
     ) as HTMLElement;
     expect(toolItem).to.exist;
@@ -137,7 +147,7 @@ describe('ToolsView (approvals + conditions)', () => {
     // Step 1: toggle enabled (auto-creates config since config_id is null)
     toolItem.dispatchEvent(
       new CustomEvent('toggle-enabled', {
-        detail: { tool: (element as any).tools[0] },
+        detail: (element as any).tools[0],
         bubbles: true,
         composed: true,
       })
@@ -223,6 +233,12 @@ describe('ToolsView – filter persistence', () => {
             headers: { 'Content-Type': 'application/json' },
           });
         }
+        if (url.endsWith('/api/v1/ai-models') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
         if (url.endsWith('/api/v1/auth/users/me') && method === 'GET') {
           return new Response(JSON.stringify({ id: 'user-1' }), {
             status: 200,
@@ -290,5 +306,334 @@ describe('ToolsView – filter persistence', () => {
     await el2.updateComplete;
 
     expect((el2 as any).activeFilter).to.equal('mcp');
+  });
+});
+
+describe('ToolsView – starter policy suggestions', () => {
+  let fetchStub: sinon.SinonStub;
+  let servers: any[];
+  let tools: any[];
+  let aiModels: any[];
+  let generatedYaml: string;
+  let generatedDiff: any;
+
+  beforeEach(() => {
+    localStorage.setItem('accessToken', 'test-access-token');
+    localStorage.setItem('refreshToken', 'test-refresh-token');
+
+    servers = [];
+    tools = [];
+    aiModels = [
+      {
+        id: 'model-1',
+        name: 'Default Model',
+        provider_name: 'openai',
+        model_identifier: 'gpt-test',
+        is_default: true,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+    generatedYaml = 'version: "1.0"\nmetadata:\n  name: starter-policy';
+    generatedDiff = {
+      has_changes: true,
+      summary: '2 change(s) detected',
+      changes: [
+        {
+          path: '$.tools.github_search_issues',
+          operation: 'modify',
+          old_value: { action: 'require_approval' },
+          new_value: { action: 'allow' },
+        },
+        {
+          path: '$.approval_workflows.github-approval',
+          operation: 'add',
+          new_value: { type: 'human' },
+        },
+      ],
+    };
+
+    fetchStub = sinon.stub(window, 'fetch');
+    fetchStub.callsFake(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const method = (init?.method || 'GET').toUpperCase();
+
+        if (url.endsWith('/api/v1/tools') && method === 'GET') {
+          return new Response(JSON.stringify(tools), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/mcp-servers') && method === 'GET') {
+          return new Response(JSON.stringify(servers), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/approval-workflows') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/features') && method === 'GET') {
+          return new Response(JSON.stringify({ features: {} }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/auth/users/me') && method === 'GET') {
+          return new Response(JSON.stringify({ id: 'user-1' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/ai-models') && method === 'GET') {
+          return new Response(JSON.stringify(aiModels), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/policies/generate') && method === 'POST') {
+          return new Response(
+            JSON.stringify({
+              yaml: generatedYaml,
+              warnings: ['Review mutating tools before applying.'],
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        if (url.endsWith('/api/v1/policies/diff') && method === 'POST') {
+          return new Response(JSON.stringify(generatedDiff), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/api/v1/policies/upload') && method === 'POST') {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        return new Response(
+          JSON.stringify({ detail: `Unhandled request: ${method} ${url}` }),
+          {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+    );
+  });
+
+  afterEach(() => {
+    fetchStub.restore();
+    localStorage.clear();
+    window.history.replaceState({}, '', window.location.pathname);
+  });
+
+  function makeServer(
+    id: string,
+    updatedAt: string,
+    name = 'GitHub MCP'
+  ): Record<string, unknown> {
+    return {
+      id,
+      name,
+      url: `https://${id}.example.com/mcp`,
+      transport: 'http-streaming',
+      auth_type: 'oauth',
+      status: 'active',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: updatedAt,
+    };
+  }
+
+  function makeTool(serverId: string, name = 'github_search_issues') {
+    return {
+      name,
+      description: 'Search issues in GitHub',
+      source: 'mcp',
+      source_id: serverId,
+      source_name: 'GitHub MCP',
+      schema: {},
+      is_enabled: true,
+      is_supported: true,
+      approval_workflow_id: null,
+      has_approval_condition: false,
+      config_id: null,
+      access_rules: [],
+    };
+  }
+
+  it('auto-opens a starter policy suggestion after server-added when tools are present', async () => {
+    const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el as any).loading, 'Initial load did not finish');
+
+    const server = makeServer('srv-1', '2026-02-01T00:00:00Z');
+    servers = [server];
+    tools = [makeTool('srv-1')];
+
+    await (el as any)._handleServerAdded(
+      new CustomEvent('server-added', { detail: { server } })
+    );
+
+    await waitUntil(
+      () => (el as any).showStarterPolicyDialog,
+      'Starter policy dialog did not open'
+    );
+    await waitUntil(
+      () => (el as any).starterPolicyYaml !== '',
+      'Starter policy YAML was not generated'
+    );
+
+    expect((el as any).starterPolicyServer.id).to.equal('srv-1');
+    const generateCall = fetchStub
+      .getCalls()
+      .find((call) =>
+        String(call.args[0]).endsWith('/api/v1/policies/generate')
+      );
+    expect(generateCall).to.exist;
+
+    const body = JSON.parse(
+      (generateCall!.args[1] as RequestInit).body as string
+    );
+    expect(body.include_current_config).to.equal(true);
+    expect(body.prompt).to.include('GitHub MCP');
+    expect(body.prompt).to.include('github_search_issues');
+    expect((el as any).starterPolicyDiff).to.deep.equal(generatedDiff);
+  });
+
+  it('requires review confirmation before applying the generated YAML', async () => {
+    servers = [makeServer('srv-1', '2026-02-01T00:00:00Z')];
+    tools = [makeTool('srv-1')];
+
+    const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el as any).loading, 'Initial load did not finish');
+    await el.updateComplete;
+
+    const editor = el.shadowRoot?.querySelector(
+      'tools-editor-component'
+    ) as HTMLElement;
+    const trigger = editor.shadowRoot?.querySelector(
+      'sl-icon-button[name="magic"]'
+    ) as HTMLElement | null;
+    expect(trigger).to.exist;
+    trigger!.click();
+
+    await waitUntil(
+      () => (el as any).starterPolicyYaml !== '',
+      'Starter policy YAML was not generated'
+    );
+    await waitUntil(
+      () => (el as any).starterPolicyDiff !== null,
+      'Starter policy diff was not generated'
+    );
+    await el.updateComplete;
+
+    const applyButton = Array.from(
+      el.shadowRoot!.querySelectorAll('sl-dialog sl-button')
+    ).find((button) => button.textContent?.trim().includes('Apply')) as
+      | HTMLElement
+      | undefined;
+    expect(applyButton).to.exist;
+    expect((applyButton as any).disabled).to.equal(true);
+
+    const reviewCheckbox = el.shadowRoot?.querySelector(
+      '.starter-policy-review-confirm'
+    ) as any;
+    expect(reviewCheckbox).to.exist;
+    (el as any).starterPolicyReviewConfirmed = true;
+
+    await el.updateComplete;
+    expect((applyButton as any).disabled).to.equal(false);
+
+    applyButton!.click();
+
+    await waitUntil(
+      () =>
+        fetchStub
+          .getCalls()
+          .some(
+            (call) =>
+              String(call.args[0]).endsWith('/api/v1/policies/upload') &&
+              String(
+                (call.args[1] as RequestInit | undefined)?.method || 'GET'
+              ).toUpperCase() === 'POST'
+          ),
+      'Policy upload request was not made'
+    );
+
+    await waitUntil(
+      () => (el as any).showStarterPolicyDialog === false,
+      'Starter policy dialog did not close'
+    );
+  });
+
+  it('keeps apply disabled when the generated policy matches current state', async () => {
+    servers = [makeServer('srv-1', '2026-02-01T00:00:00Z')];
+    tools = [makeTool('srv-1')];
+    generatedDiff = {
+      has_changes: false,
+      summary: 'No changes detected.',
+      changes: [],
+    };
+
+    const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+    await waitUntil(() => !(el as any).loading, 'Initial load did not finish');
+
+    const editor = el.shadowRoot?.querySelector(
+      'tools-editor-component'
+    ) as HTMLElement;
+    const trigger = editor.shadowRoot?.querySelector(
+      'sl-icon-button[name="magic"]'
+    ) as HTMLElement | null;
+    expect(trigger).to.exist;
+    trigger!.click();
+
+    await waitUntil(
+      () => (el as any).starterPolicyDiff !== null,
+      'Starter policy diff was not generated'
+    );
+    await el.updateComplete;
+
+    const applyButton = Array.from(
+      el.shadowRoot!.querySelectorAll('sl-dialog sl-button')
+    ).find((button) => button.textContent?.trim().includes('Apply')) as
+      | HTMLElement
+      | undefined;
+    expect(applyButton).to.exist;
+    expect((applyButton as any).disabled).to.equal(true);
+    expect(
+      el.shadowRoot?.textContent?.includes('No changes detected.')
+    ).to.equal(true);
+  });
+
+  it('uses the most recently updated MCP server after OAuth success', async () => {
+    servers = [
+      makeServer('srv-older', '2026-02-01T00:00:00Z', 'Older MCP'),
+      makeServer('srv-newer', '2026-02-03T00:00:00Z', 'Newer MCP'),
+    ];
+    tools = [makeTool('srv-newer', 'github_list_pull_requests')];
+    window.location.hash = '#setup_mcp=success';
+
+    const el = (await fixture(html`<tools-view></tools-view>`)) as ToolsView;
+
+    await waitUntil(
+      () => (el as any).showStarterPolicyDialog,
+      'Starter policy dialog did not open after OAuth success'
+    );
+    await waitUntil(
+      () => (el as any).starterPolicyYaml !== '',
+      'Starter policy YAML was not generated'
+    );
+
+    expect((el as any).starterPolicyServer.id).to.equal('srv-newer');
+    expect((el as any).oauthAlert).to.equal('success');
   });
 });

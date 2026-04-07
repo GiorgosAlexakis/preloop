@@ -4,51 +4,57 @@ import { router } from '../router';
 import { Router } from '@vaadin/router';
 import { activityTracker } from '../services/activity-tracker';
 import { getFeatures } from '../api';
-import '../views/public/landing-view.ts';
-import './static-view-wrapper.ts';
-import '../views/public/login-view.ts';
-import '../views/public/register-view.ts';
-import '../views/public/forgot-password-view.ts';
-import '../views/public/reset-password-view.ts';
-import '../views/public/verify-email-view.ts';
-import '../views/public/request-demo-view.ts';
-import '../views/public/delete-account-view.ts';
-import '../views/public/whatis-mcp-view.ts';
-import '../views/public/pricing-view.ts';
-import '../views/public/welcome-view.ts';
-import '../views/public/static-view.ts';
-import '../views/authed/console-shell.ts';
-import '../views/authed/dashboard-view.ts';
-import '../views/authed/trackers-view.ts';
-import '../views/authed/tools-view.ts';
-import '../views/authed/issues-view.ts';
-import '../views/authed/issues-compliance-view.ts';
-import '../views/authed/issues-dependencies-view.ts';
-import '../views/authed/issues/duplicates-view.ts';
-import '../views/authed/issues/assignments-view.ts';
-import '../views/authed/api-usage-view.ts';
-import '../views/authed/settings-view.ts';
-import '../views/authed/settings/api-keys-view.ts';
-import '../views/authed/settings/ai-models-view.ts';
-import '../views/authed/settings/profile-view.ts';
-import '../views/authed/settings/security-view.ts';
-import '../views/authed/settings/appearance-view.ts';
-import '../views/authed/settings/account-view.ts';
-import '../views/authed/settings/user-management-view.ts';
-import '../views/authed/settings/team-management-view.ts';
-import '../views/authed/settings/invitation-management-view.ts';
-import '../views/authed/notification-preferences-view.ts';
-import '../components/settings-tabs.ts';
-import '../views/authed/flows-view.ts';
-import '../views/authed/flow-view.ts';
-import '../views/authed/flow-executions-view.ts';
-import '../views/authed/flow-execution-view.ts';
-import '../views/authed/approval-view.ts';
-import '../views/authed/approvals-view.ts';
-import '../views/authed/policies-view.ts';
-import '../views/authed/audit-view.ts';
-import './app-header.ts';
-import './app-footer.ts';
+import '../views/public/landing-view';
+import './static-view-wrapper';
+import '../views/public/login-view';
+import '../views/public/register-view';
+import '../views/public/forgot-password-view';
+import '../views/public/reset-password-view';
+import '../views/public/verify-email-view';
+import '../views/public/request-demo-view';
+import '../views/public/delete-account-view';
+import '../views/public/whatis-mcp-view';
+import '../views/public/pricing-view';
+import '../views/public/welcome-view';
+import '../views/public/static-view';
+import '../views/authed/console-shell';
+import '../views/authed/dashboard-control-plane-view';
+import '../views/authed/trackers-view';
+import '../views/authed/tracker-detail-view';
+import '../views/authed/tools-view';
+import '../views/authed/issues-view';
+import '../views/authed/issues-compliance-view';
+import '../views/authed/issues-dependencies-view';
+import '../views/authed/issues/duplicates-view';
+import '../views/authed/issues/assignments-view';
+import '../views/authed/api-usage-view';
+import '../views/authed/settings-view';
+import '../views/authed/settings/api-keys-view';
+import '../views/authed/settings/ai-models-view';
+import '../views/authed/settings/ai-model-detail-view';
+import '../views/authed/settings/profile-view';
+import '../views/authed/settings/security-view';
+import '../views/authed/settings/appearance-view';
+import '../views/authed/settings/account-view';
+import '../views/authed/settings/user-management-view';
+import '../views/authed/settings/team-management-view';
+import '../views/authed/settings/invitation-management-view';
+import '../views/authed/notification-preferences-view';
+import '../components/settings-tabs';
+import '../views/authed/flows-view';
+import '../views/authed/flow-view';
+import '../views/authed/flow-executions-view';
+import '../views/authed/flow-execution-view';
+import '../views/authed/runtime-sessions-view';
+import '../views/authed/approval-view';
+import '../views/authed/approvals-view';
+import '../views/authed/policies-view';
+import '../views/authed/audit-view';
+import '../views/authed/agents-view';
+import '../views/authed/agent-detail-view';
+import '../views/authed/onboarding-view';
+import './app-header';
+import './app-footer';
 import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
 
 @customElement('lit-app')
@@ -257,6 +263,30 @@ export class LitApp extends LitElement {
           return commands.component('public-pricing-view');
         },
       },
+      {
+        path: '/ai-act-readiness',
+        action: (context, commands) => {
+          // Check if we have SSR content for this EXACT route on first load
+          const outlet = this.renderRoot.querySelector('main');
+          const existingWrapper = outlet?.querySelector('static-view-wrapper');
+          const ssrRoute = this.getAttribute('data-ssr-route');
+
+          if (
+            existingWrapper &&
+            ssrRoute === '/ai-act-readiness' &&
+            !this.hasNavigated
+          ) {
+            // Reuse SSR content on first load only
+            this.hasNavigated = true;
+            return existingWrapper;
+          }
+
+          // Load markdown dynamically
+          const view = commands.component('static-view') as any;
+          view.src = '/content/ai-act-readiness.md';
+          return view;
+        },
+      },
       { path: '/welcome', component: 'welcome-view' },
       {
         path: '/console',
@@ -345,7 +375,13 @@ export class LitApp extends LitElement {
         },
         children: [
           { path: '', component: 'dashboard-view' },
-          { path: 'trackers', component: 'trackers-view' },
+          {
+            path: 'trackers',
+            children: [
+              { path: '', component: 'trackers-view' },
+              { path: ':trackerId', component: 'tracker-detail-view' },
+            ],
+          },
           { path: 'tools', component: 'tools-view' },
           {
             path: 'issues',
@@ -370,12 +406,20 @@ export class LitApp extends LitElement {
               { path: ':flowId', component: 'flow-view' },
             ],
           },
+          { path: '/runtime-sessions', component: 'runtime-sessions-view' },
+          { path: '/agents', component: 'agents-view' },
+          { path: '/agents/:agentId', component: 'agent-detail-view' },
+          { path: '/onboarding', component: 'onboarding-view' },
           { path: '/api-usage', component: 'api-usage-view' },
           { path: 'settings', redirect: '/console/settings/profile' },
           { path: 'settings/profile', component: 'profile-view' },
           { path: 'settings/security', component: 'security-view' },
           { path: 'settings/api-keys', component: 'api-keys-view' },
           { path: 'settings/ai-models', component: 'ai-models-view' },
+          {
+            path: 'settings/ai-models/:modelId',
+            component: 'ai-model-detail-view',
+          },
           { path: 'settings/appearance', component: 'appearance-view' },
           { path: 'settings/account', component: 'account-view' },
           { path: 'settings/users', component: 'user-management-view' },

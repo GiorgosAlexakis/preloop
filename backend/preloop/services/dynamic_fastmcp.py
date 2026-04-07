@@ -25,6 +25,7 @@ from preloop.services.mcp_client_pool import get_mcp_client_pool
 from preloop.models.crud import crud_mcp_server, crud_tool_configuration
 from preloop.models.db.session import get_db_session as get_db
 from preloop.api.endpoints.tools import BUILTIN_TOOLS
+from preloop.services.subject_governance import is_tool_enabled_for_subject
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class DynamicFastMCP(FastMCP):
         )
         # Track proxied tool -> server mapping for routing
         self._proxied_tool_servers: Dict[str, str] = {}
+        self._proxied_tool_server_names: Dict[str, str] = {}
         # Track registered proxied tools to avoid re-registration
         self._registered_proxied_tools: set = set()
         logger.info("DynamicFastMCP initialized")
@@ -92,8 +94,8 @@ class DynamicFastMCP(FastMCP):
         self._user_context_provider = provider
         logger.info("User context provider registered")
 
-    async def _list_tools(self, context=None) -> list[Tool]:
-        """Override FastMCP's _list_tools to filter based on user context.
+    async def list_tools(self, *, run_middleware: bool = True) -> list[Tool]:
+        """Override FastMCP's list_tools to filter based on user context.
 
         This method is called by FastMCP's protocol handler to get the list
         of available tools. We filter the full tool list based on the current
@@ -102,12 +104,12 @@ class DynamicFastMCP(FastMCP):
         Phase 1B: Now includes proxied tools from external MCP servers.
 
         Args:
-            context: MiddlewareContext (FastMCP 2.13.0+), ignored for now
+            run_middleware: Whether to run middleware (passed to super)
 
         Returns:
             List of tools available to the current user
         """
-        logger.info("!!! _list_tools called - ENTRY POINT !!!")
+        logger.info("!!! list_tools called - ENTRY POINT !!!")
         # Get current user context
         user_context = self._get_current_user_context()
         logger.info(f"!!! Got user context: {user_context} !!!")
@@ -124,7 +126,9 @@ class DynamicFastMCP(FastMCP):
         available_tools = []
 
         # Add built-in tools (filtered by tracker requirements metadata)
-        default_tools = await super()._list_tools(context)
+        default_tools = [
+            t for t in await super().list_tools(run_middleware=run_middleware)
+        ]
         # Filter out internal proxied tool names (they start with "account_")
         builtin_tools = [t for t in default_tools if not t.name.startswith("account_")]
 
@@ -163,10 +167,18 @@ class DynamicFastMCP(FastMCP):
             f"{len(default_tools) - len(builtin_tools)} internal names)"
         )
 
+        if user_context.mcp_tools_cache is not None:
+            logger.info("Returning cached tools from UserContext")
+            return user_context.mcp_tools_cache
+
         # Add proxied tools from external MCP servers (Phase 1B)
         # Now with dynamic registration for streaming approval support
+        proxied_tools_data = []
+        justification_modes = {}
+        account_meta = {}
+
         try:
-            # Run sync DB calls in a thread to avoid blocking the event loop.
+            # Parallelize all three DB lookups required for tool listing
             def _fetch_proxied_tools():
                 db = next(get_db())
                 try:
@@ -178,10 +190,46 @@ class DynamicFastMCP(FastMCP):
                 finally:
                     db.close()
 
-            logger.info("Fetching proxied tools via executor...")
-            proxied_tools_data = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _fetch_proxied_tools),
-                timeout=30,
+            def _fetch_tool_configs():
+                db = next(get_db())
+                try:
+                    configs = crud_tool_configuration.get_multi_by_account(
+                        db, account_id=str(user_context.account_id), limit=1000
+                    )
+                    return {
+                        tc.tool_name: tc.justification_mode
+                        for tc in configs
+                        if tc.justification_mode in ("optional", "required")
+                    }
+                finally:
+                    db.close()
+
+            def _fetch_account_meta():
+                db = next(get_db())
+                try:
+                    from preloop.models.crud import crud_account
+
+                    acc = crud_account.get(db, id=user_context.account_id)
+                    return getattr(acc, "meta_data", {})
+                finally:
+                    db.close()
+
+            logger.info("Fetching DB metadata for list_tools concurrently...")
+            loop = asyncio.get_event_loop()
+            (
+                proxied_tools_data,
+                justification_modes,
+                account_meta,
+            ) = await asyncio.gather(
+                asyncio.wait_for(
+                    loop.run_in_executor(None, _fetch_proxied_tools), timeout=30
+                ),
+                asyncio.wait_for(
+                    loop.run_in_executor(None, _fetch_tool_configs), timeout=30
+                ),
+                asyncio.wait_for(
+                    loop.run_in_executor(None, _fetch_account_meta), timeout=30
+                ),
             )
             logger.info(f"Fetched {len(proxied_tools_data)} proxied tools")
 
@@ -220,11 +268,12 @@ class DynamicFastMCP(FastMCP):
                     # Track as registered
                     self._registered_proxied_tools.add(internal_name)
 
-                    # Always track the mapping for name translation
+                # Always track the mapping for name translation
                 self._proxied_tool_servers[mcp_tool.name] = str(mcp_server.id)
+                self._proxied_tool_server_names[mcp_tool.name] = mcp_server.name
 
-                # Now get all registered tools and map back to original names
-            all_registered = await super()._list_tools(context)
+            # Now get all registered tools and map back to original names
+            all_registered = await super().list_tools(run_middleware=run_middleware)
             logger.info(
                 f"Total registered tools after dynamic registration: {len(all_registered)}"
             )
@@ -276,31 +325,8 @@ class DynamicFastMCP(FastMCP):
             )
 
         # ── Inject justification parameter based on ToolConfiguration ────
+        # ── Inject justification parameter based on ToolConfiguration ────
         try:
-
-            def _fetch_tool_configs():
-                db = next(get_db())
-                try:
-                    configs = crud_tool_configuration.get_multi_by_account(
-                        db,
-                        account_id=str(user_context.account_id),
-                        limit=1000,
-                    )
-                    # Extract just the fields we need to avoid detached-instance
-                    # errors once the session is closed.
-                    return {
-                        tc.tool_name: tc.justification_mode
-                        for tc in configs
-                        if tc.justification_mode in ("optional", "required")
-                    }
-                finally:
-                    db.close()
-
-            justification_modes = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _fetch_tool_configs),
-                timeout=30,
-            )
-
             modified_tools = []
             for tool in available_tools:
                 j_mode = justification_modes.get(tool.name)
@@ -342,11 +368,34 @@ class DynamicFastMCP(FastMCP):
             )
 
         logger.info(
-            f"Returning {len(available_tools)} total tools for user {user_context.username}"
+            f"Returning {len(available_tools)} total tools for user {user_context.username} before governance filter"
         )
+
+        # ── Apply subject governance to filter out disabled tools ─────────
+        try:
+            subject_context = {
+                "api_key_id": user_context.api_key_id,
+                "managed_agent_id": getattr(user_context, "managed_agent_id", None),
+            }
+
+            final_tools = []
+            for tool in available_tools:
+                if is_tool_enabled_for_subject(
+                    account_meta, tool_name=tool.name, subject_context=subject_context
+                ):
+                    final_tools.append(tool)
+
+            available_tools = final_tools
+
+        except Exception as e:
+            logger.error(
+                f"Error filtering tools through subject governance: {e}", exc_info=True
+            )
+
         for tool in available_tools:
             logger.info(f"  - {tool.name}")
 
+        user_context.mcp_tools_cache = available_tools
         return available_tools
 
     def _get_current_user_context(self) -> Optional[UserContext]:
@@ -569,7 +618,15 @@ async def {internal_name}({params_str}) -> str:
 
         return wrapper
 
-    async def _call_tool(self, context):
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict | None = None,
+        *,
+        version=None,
+        run_middleware: bool = True,
+        task_meta=None,
+    ):
         """Override tool execution for access validation and name translation.
 
         This is called by FastMCP's protocol handler before executing a tool.
@@ -580,7 +637,11 @@ async def {internal_name}({params_str}) -> str:
         for both builtin and proxied tools, allowing streaming progress updates.
 
         Args:
-            context: MiddlewareContext[CallToolRequestParams] from FastMCP 2.13.0+
+            name: Name of the tool
+            arguments: Arguments derived from FastMCP
+            version: Optional Tool Version
+            run_middleware: Whether to run middleware
+            task_meta: Optional Background Task Metadata
 
         Returns:
             ToolResult from tool execution
@@ -588,18 +649,15 @@ async def {internal_name}({params_str}) -> str:
         from fastmcp.tools.tool import ToolResult
         from mcp.types import TextContent
 
-        # Extract tool name and arguments from context
-        name = context.message.name
-        arguments = context.message.arguments or {}
+        arguments = arguments or {}
 
         # Extract justification from arguments before it reaches the tool function.
-        # Justification is injected into the schema by _list_tools() but isn't part
+        # Justification is injected into the schema by list_tools() but isn't part
         # of the actual tool's function signature.
         justification = arguments.pop("justification", None)
         _justification_var.set(justification)
-        context.message.arguments = arguments
 
-        logger.info(f"!!! _call_tool called for tool: {name} !!!")
+        logger.info(f"!!! call_tool called for tool: {name} !!!")
 
         # Get current user context
         user_context = self._get_current_user_context()
@@ -686,7 +744,7 @@ async def {internal_name}({params_str}) -> str:
             )
 
         # Check if user has access to this tool
-        available_tools = await self._list_tools(context=None)
+        available_tools = await self.list_tools(run_middleware=run_middleware)
         if not any(tool.name == name for tool in available_tools):
             logger.warning(
                 f"User {user_context.username} attempted to call "
@@ -722,7 +780,25 @@ async def {internal_name}({params_str}) -> str:
                     tool_args=arguments,
                     account_id=uuid.UUID(user_context.account_id),
                     user_id=uuid.UUID(user_context.user_id),
+                    subject_context={
+                        "api_key_id": user_context.api_key_id,
+                        "managed_agent_id": getattr(
+                            user_context, "managed_agent_id", None
+                        ),
+                        "runtime_session_id": user_context.runtime_session_id,
+                        "runtime_principal_type": user_context.runtime_principal_type,
+                        "runtime_principal_id": user_context.runtime_principal_id,
+                        "runtime_principal_name": user_context.runtime_principal_name,
+                    },
                     correlation_id=correlation_id,
+                    extra_details={
+                        "runtime_session_id": user_context.runtime_session_id,
+                        "runtime_principal_type": user_context.runtime_principal_type,
+                        "runtime_principal_id": user_context.runtime_principal_id,
+                        "runtime_principal_name": user_context.runtime_principal_name,
+                        "api_key_id": user_context.api_key_id,
+                        "api_key_name": user_context.api_key_name,
+                    },
                 )
 
             logger.info(
@@ -760,22 +836,29 @@ async def {internal_name}({params_str}) -> str:
             safe_account_id = user_context.account_id.replace("-", "_")
             internal_name = f"account_{safe_account_id}_{name}"
             logger.info(f"Translating proxied tool name: {name} -> {internal_name}")
-            # Modify context with translated name
-            context.message.name = internal_name
-
+            # Modify target name for the FastMCP router
+            name = internal_name
         else:
             # Builtin tool - call with original name
             logger.info(f"Calling builtin tool: {name}")
 
-        # Call parent with (possibly modified) context
+        # Call parent
         import time
 
         start_time = time.monotonic()
         exec_status = "executed"
+        exec_error: Optional[str] = None
         try:
-            result = await super()._call_tool(context)
+            result = await super().call_tool(
+                name,
+                arguments,
+                version=version,
+                run_middleware=run_middleware,
+                task_meta=task_meta,
+            )
         except Exception as e:
             exec_status = "failed"
+            exec_error = str(e)
             raise
         finally:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -802,9 +885,173 @@ async def {internal_name}({params_str}) -> str:
                         duration_ms=elapsed_ms,
                         policy_decision=None,
                         rule_matched=None,
+                        correlation_id=correlation_id,
+                        runtime_session_id=user_context.runtime_session_id,
+                        runtime_principal_type=user_context.runtime_principal_type,
+                        runtime_principal_id=user_context.runtime_principal_id,
+                        runtime_principal_name=user_context.runtime_principal_name,
+                        api_key_id=user_context.api_key_id,
+                        api_key_name=user_context.api_key_name,
                     )
             except Exception as audit_err:
                 logger.debug(f"Failed to audit tool execution: {audit_err}")
+
+            # ── Runtime session activity persistence ──────────────────────
+            try:
+                if user_context.runtime_session_id:
+                    from preloop.models.crud import crud_runtime_session_activity
+                    from preloop.services.account_realtime import (
+                        ACCOUNT_TOPIC_AUDIT,
+                        ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+                        ACCOUNT_TOPIC_MANAGED_AGENTS,
+                        ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+                        build_account_event,
+                        emit_account_event,
+                    )
+                    from preloop.utils.redaction import redact_dict
+
+                    activity_status = "failed" if exec_status == "failed" else "success"
+                    server_name = self._proxied_tool_server_names.get(
+                        name, "preloop-mcp"
+                    )
+                    db = next(get_db())
+                    try:
+                        activity = crud_runtime_session_activity.log_tool_call(
+                            db,
+                            account_id=user_context.account_id,
+                            runtime_session_id=user_context.runtime_session_id,
+                            flow_execution_id=user_context.flow_execution_id,
+                            api_key_id=user_context.api_key_id,
+                            server_name=server_name,
+                            tool_name=name,
+                            status=activity_status,
+                            summary=exec_error,
+                            metadata={
+                                "correlation_id": correlation_id,
+                                "arguments": redact_dict(arguments),
+                            },
+                        )
+                        activity_timestamp = (
+                            activity.timestamp.isoformat()
+                            if activity.timestamp
+                            else None
+                        )
+                        managed_agent = None
+                        if (
+                            user_context.runtime_principal_type
+                            and user_context.runtime_principal_id
+                        ):
+                            from preloop.models.crud import crud_managed_agent
+
+                            managed_agent = crud_managed_agent.get_by_source(
+                                db,
+                                account_id=user_context.account_id,
+                                session_source_type=user_context.runtime_principal_type,
+                                session_source_id=user_context.runtime_principal_id,
+                            )
+                        emit_account_event(
+                            build_account_event(
+                                account_id=user_context.account_id,
+                                topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+                                event_type="runtime_session_updated",
+                                payload={
+                                    "runtime_session_id": str(
+                                        user_context.runtime_session_id
+                                    ),
+                                    "session_source_type": user_context.runtime_principal_type,
+                                    "session_source_id": user_context.runtime_principal_id,
+                                    "session_reference": user_context.runtime_principal_name,
+                                    "runtime_principal_type": user_context.runtime_principal_type,
+                                    "runtime_principal_id": user_context.runtime_principal_id,
+                                    "runtime_principal_name": user_context.runtime_principal_name,
+                                    "last_activity_at": activity_timestamp,
+                                    "tool_name": name,
+                                    "server_name": server_name,
+                                    "status": activity_status,
+                                },
+                                runtime_session_id=user_context.runtime_session_id,
+                                execution_id=user_context.flow_execution_id,
+                            )
+                        )
+                        emit_account_event(
+                            build_account_event(
+                                account_id=user_context.account_id,
+                                topic=ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
+                                event_type="mcp_call",
+                                payload={
+                                    "runtime_session_id": str(
+                                        user_context.runtime_session_id
+                                    ),
+                                    "runtime_principal_type": user_context.runtime_principal_type,
+                                    "runtime_principal_id": user_context.runtime_principal_id,
+                                    "runtime_principal_name": user_context.runtime_principal_name,
+                                    "managed_agent_id": str(managed_agent.id)
+                                    if managed_agent is not None
+                                    else user_context.managed_agent_id,
+                                    "api_key_id": user_context.api_key_id,
+                                    "api_key_name": user_context.api_key_name,
+                                    "server_name": server_name,
+                                    "tool_name": name,
+                                    "status": activity_status,
+                                    "summary": exec_error,
+                                    "correlation_id": correlation_id,
+                                    "timestamp": activity_timestamp,
+                                },
+                                runtime_session_id=user_context.runtime_session_id,
+                                execution_id=user_context.flow_execution_id,
+                            )
+                        )
+                        emit_account_event(
+                            build_account_event(
+                                account_id=user_context.account_id,
+                                topic=ACCOUNT_TOPIC_AUDIT,
+                                event_type="audit_event",
+                                payload={
+                                    "action": "tool_call",
+                                    "runtime_session_id": str(
+                                        user_context.runtime_session_id
+                                    ),
+                                    "runtime_principal_type": user_context.runtime_principal_type,
+                                    "runtime_principal_id": user_context.runtime_principal_id,
+                                    "runtime_principal_name": user_context.runtime_principal_name,
+                                    "tool_name": name,
+                                    "server_name": server_name,
+                                    "status": activity_status,
+                                    "correlation_id": correlation_id,
+                                },
+                                runtime_session_id=user_context.runtime_session_id,
+                                execution_id=user_context.flow_execution_id,
+                            )
+                        )
+                        if managed_agent is not None:
+                            emit_account_event(
+                                build_account_event(
+                                    account_id=user_context.account_id,
+                                    topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
+                                    event_type="managed_agent_updated",
+                                    payload={
+                                        "agent_id": str(managed_agent.id),
+                                        "runtime_session_id": str(
+                                            user_context.runtime_session_id
+                                        ),
+                                        "display_name": user_context.runtime_principal_name,
+                                        "session_source_type": user_context.runtime_principal_type,
+                                        "session_source_id": user_context.runtime_principal_id,
+                                        "last_seen_at": activity_timestamp,
+                                        "tool_name": name,
+                                        "server_name": server_name,
+                                        "status": activity_status,
+                                    },
+                                    runtime_session_id=user_context.runtime_session_id,
+                                    execution_id=user_context.flow_execution_id,
+                                )
+                            )
+                    finally:
+                        db.close()
+            except Exception as activity_err:
+                logger.debug(
+                    f"Failed to persist runtime session activity: {activity_err}"
+                )
 
         return result
 
@@ -871,9 +1118,22 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
 
         # Extract flow execution context from API key if present
         flow_execution_id = None
+        runtime_session_id = None
         allowed_flow_tools = None
+        runtime_principal_type = None
+        runtime_principal_id = None
+        runtime_principal_name = None
+        managed_agent_id = None
+        api_key_id = str(api_key.id) if api_key else None
+        api_key_name = api_key.name if api_key else None
         if api_key and api_key.context_data:
             flow_execution_id = api_key.context_data.get("flow_execution_id")
+            runtime_session_id = api_key.context_data.get("runtime_session_id")
+            managed_agent_id = api_key.context_data.get("managed_agent_id")
+            runtime_principal = api_key.context_data.get("runtime_principal") or {}
+            runtime_principal_type = runtime_principal.get("type")
+            runtime_principal_id = runtime_principal.get("id")
+            runtime_principal_name = runtime_principal.get("name")
             # Combine allowed_mcp_tools with tool names from allowed_mcp_servers
             allowed_mcp_tools = api_key.context_data.get("allowed_mcp_tools")
             if allowed_mcp_tools is not None:
@@ -903,14 +1163,25 @@ def create_user_context_from_scope(scope: dict) -> Optional[UserContext]:
             enabled_proxied_tools=[],
             tracker_types=user_tracker_types,
             flow_execution_id=flow_execution_id,
+            runtime_session_id=runtime_session_id,
             allowed_flow_tools=allowed_flow_tools,
+            runtime_principal_type=runtime_principal_type,
+            runtime_principal_id=runtime_principal_id,
+            runtime_principal_name=runtime_principal_name,
+            api_key_id=api_key_id,
+            api_key_name=api_key_name,
+            managed_agent_id=(
+                str(managed_agent_id) if managed_agent_id is not None else None
+            ),
         )
 
         logger.info(
             f"Created user context for {user.username} "
             f"(account: {user.account_id}), has_tracker={user_has_tracker}, "
             f"tracker_types={user_tracker_types}, "
-            f"flow_execution_id={flow_execution_id}"
+            f"flow_execution_id={flow_execution_id}, "
+            f"runtime_session_id={runtime_session_id}, "
+            f"runtime_principal={runtime_principal_type}:{runtime_principal_id}"
         )
 
         return user_context

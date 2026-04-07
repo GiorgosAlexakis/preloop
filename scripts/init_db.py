@@ -8,6 +8,7 @@ import sys
 import os
 import subprocess
 import logging
+import yaml
 
 import click
 from dotenv import load_dotenv
@@ -16,8 +17,10 @@ from sqlalchemy import text
 from preloop.models.db.session import get_engine, get_db_session
 from preloop.models.crud import crud_embedding_model
 from preloop.models.crud import crud_ai_model
+from preloop.models.models.ai_model import AIModel
 
 from preloop.models.db.vector_types import TRUNCATED_VECTOR_SIZE
+from preloop.models.models.plan import Plan
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +28,121 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _default_gateway_alias(
+    provider_name: str | None, model_identifier: str | None
+) -> str:
+    """Build the default gateway alias for one AI model."""
+    provider = (provider_name or "openai").strip().lower()
+    identifier = (model_identifier or "").strip()
+    return f"{provider}/{identifier}" if identifier else provider
+
+
+def _build_gateway_url(preloop_url: str | None) -> str:
+    """Build the public model gateway URL from the configured Preloop base URL."""
+    base_url = (preloop_url or "").strip().rstrip("/")
+    if not base_url:
+        return ""
+    return f"{base_url}/openai/v1"
+
+
+def _merge_gateway_meta(
+    meta_data: dict | None,
+    *,
+    provider_name: str | None,
+    model_identifier: str | None,
+    gateway_url: str,
+    provider_adapter: str = "preloop",
+) -> dict:
+    """Return AI model metadata with gateway routing enabled."""
+    merged = dict(meta_data or {})
+    gateway_meta = (
+        dict(merged.get("gateway")) if isinstance(merged.get("gateway"), dict) else {}
+    )
+    gateway_meta["enabled"] = True
+    gateway_meta["url"] = gateway_url
+    gateway_meta["provider_adapter"] = (
+        gateway_meta.get("provider_adapter") or provider_adapter
+    )
+    gateway_meta["model_alias"] = gateway_meta.get(
+        "model_alias"
+    ) or _default_gateway_alias(provider_name, model_identifier)
+    merged["gateway"] = gateway_meta
+    return merged
+
+
+def reconcile_ai_model_gateway_settings(
+    db_session,
+    *,
+    gateway_url: str,
+    provider_adapter: str = "preloop",
+) -> int:
+    """Enable gateway routing for existing AI models that already have credentials."""
+    updated_count = 0
+    for ai_model in db_session.query(AIModel).all():
+        if not (ai_model.api_key or ai_model.credentials_secret_id):
+            continue
+        updated_meta = _merge_gateway_meta(
+            ai_model.meta_data,
+            provider_name=ai_model.provider_name,
+            model_identifier=ai_model.model_identifier,
+            gateway_url=gateway_url,
+            provider_adapter=provider_adapter,
+        )
+        if updated_meta != (ai_model.meta_data or {}):
+            ai_model.meta_data = updated_meta
+            db_session.add(ai_model)
+            updated_count += 1
+    if updated_count:
+        db_session.commit()
+    return updated_count
+
+
+def seed_plan_catalog(db_session, project_root: str) -> None:
+    """Seed the local plan catalog from `plans.yaml` if needed."""
+    plans_file = os.path.join(project_root, "plans.yaml")
+    if not os.path.exists(plans_file):
+        click.echo("plans.yaml not found, skipping plan catalog initialization.")
+        return
+
+    with open(plans_file, "r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    plans = raw.get("plans") or []
+
+    for plan_data in plans:
+        if not isinstance(plan_data, dict) or not plan_data.get("id"):
+            continue
+        plan_id = str(plan_data["id"])
+        plan = db_session.query(Plan).filter(Plan.id == plan_id).first()
+        stripe_product_id = plan_data.get("stripe_product_id")
+        if stripe_product_id is None and (
+            plan_data.get("price_monthly") is not None
+            or plan_data.get("price_annually") is not None
+        ):
+            stripe_product_id = plan_id
+
+        if plan is None:
+            plan = Plan(
+                id=plan_id,
+                name=plan_data["name"],
+                price_monthly=plan_data.get("price_monthly"),
+                price_annually=plan_data.get("price_annually"),
+                is_active=True,
+                is_custom=False,
+                features=plan_data.get("features") or {},
+                stripe_product_id=stripe_product_id,
+            )
+            db_session.add(plan)
+        else:
+            plan.name = plan_data["name"]
+            plan.price_monthly = plan_data.get("price_monthly")
+            plan.price_annually = plan_data.get("price_annually")
+            plan.features = plan_data.get("features") or {}
+            if stripe_product_id is not None:
+                plan.stripe_product_id = stripe_product_id
+
+    db_session.commit()
 
 
 @click.command()
@@ -91,6 +209,10 @@ def init_db(force: bool):
         click.echo("Vector search index created successfully!")
         db_session = next(get_db_session())
 
+        click.echo("Initializing plan catalog from plans.yaml...")
+        seed_plan_catalog(db_session, project_root)
+        click.echo("Plan catalog initialized successfully!")
+
         # Initialize system roles and permissions
         click.echo("Initializing system roles and permissions...")
         # Import here to avoid circular imports
@@ -136,10 +258,11 @@ def init_db(force: bool):
 
         # AI model setup
         ai_provider = os.getenv("AI_PROVIDER", "openai")
-        ai_model_name = os.getenv("AI_MODEL_NAME", "o4-mini")
+        ai_model_name = os.getenv("AI_MODEL_NAME", "gpt-5.3-codex")
         ai_model_api_key = os.getenv("OPENAI_API_KEY")
         ai_model_api_url = os.getenv("AI_API_URL", "https://api.openai.com/v1")
         ai_model_version = os.getenv("AI_MODEL_VERSION", ai_model_name)
+        gateway_url = _build_gateway_url(os.getenv("PRELOOP_URL"))
 
         if ai_model_api_key:
             if not crud_ai_model.default_model_exists(db_session):
@@ -152,6 +275,13 @@ def init_db(force: bool):
                     "model_identifier": ai_model_version,
                     "is_default": True,
                 }
+                if gateway_url:
+                    ai_model_data["meta_data"] = _merge_gateway_meta(
+                        None,
+                        provider_name=ai_provider,
+                        model_identifier=ai_model_version,
+                        gateway_url=gateway_url,
+                    )
                 crud_ai_model.create_with_account(
                     db=db_session,
                     obj_in=ai_model_data,
@@ -162,6 +292,15 @@ def init_db(force: bool):
                 click.echo("Default AI model already exists, skipping.")
         else:
             click.echo("OPENAI_API_KEY not set, skipping AI model creation.")
+
+        if gateway_url:
+            updated_models = reconcile_ai_model_gateway_settings(
+                db_session,
+                gateway_url=gateway_url,
+            )
+            click.echo(
+                f"Ensured gateway routing metadata on {updated_models} AI model(s)."
+            )
 
     except Exception as e:
         click.echo(f"ERROR: Failed to initialize database: {str(e)}")

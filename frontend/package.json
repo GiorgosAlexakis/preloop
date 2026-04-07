@@ -1,18 +1,21 @@
 {
   "name": "preloop",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Preloop console frontend",
   "main": "src/main.ts",
   "overrides": {
     "static-eval": "^2.1.0",
     "minimist": "^1.2.8",
     "koa": "^2.16.4",
-    "fast-xml-parser": "^5.3.6"
+    "fast-xml-parser": "^5.5.7",
+    "picomatch": "^4.0.4",
+    "lodash-es": "^4.18.1"
   },
   "scripts": {
     "start": "npm run dev",
     "dev": "vite",
     "build": "vite build",
+    "build:watch": "vite build --watch",
     "preview": "vite preview",
     "test": "web-test-runner \"src/**/*.test.{ts,js}\"",
     "test:coverage": "web-test-runner \"src/**/*.test.{ts,js}\" --coverage",
@@ -71,7 +74,7 @@
     "@types/mocha": "^10.0.10",
     "@types/sinon": "^17.0.4",
     "@web/dev-server-esbuild": "^1.0.4",
-    "@web/test-runner": "^0.18.0",
+    "@web/test-runner": "^0.20.0",
     "@web/test-runner-playwright": "^0.11.1",
     "chai": "^5.0.0",
     "husky": "^9.0.11",
@@ -79,7 +82,7 @@
     "prettier": "^3.3.2",
     "sinon": "^21.0.0",
     "typescript": "^5.3.0",
-    "vite": "^7.3.1",
+    "vite": "^7.3.2",
     "vite-plugin-css-injected-by-js": "^3.3.0"
   },
   "lint-staged": {

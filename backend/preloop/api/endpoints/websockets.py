@@ -436,6 +436,12 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                     user = auth_user  # Update local reference
 
                     # Re-register with manager for account-based broadcasts
+                    subscribed_topics = (
+                        manager.get_subscriptions(manager_connection_id)
+                        if manager_connection_id
+                        else set()
+                    )
+
                     # Remove old anonymous registration first
                     if (
                         manager_connection_id
@@ -447,6 +453,8 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                     manager_connection_id = await manager.connect_with_account(
                         websocket, str(user.account_id)
                     )
+                    for topic in subscribed_topics:
+                        manager.subscribe(manager_connection_id, topic)
 
                     await websocket.send_json(
                         {
@@ -506,16 +514,60 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
                 elif message_type == "subscribe":
                     # Handle topic subscriptions
                     topic = data.get("topic")
+                    if (
+                        manager_connection_id is None
+                        or not isinstance(topic, str)
+                        or not manager.subscribe(manager_connection_id, topic)
+                    ):
+                        await websocket.send_json(
+                            {
+                                "type": "subscription_error",
+                                "topic": topic,
+                                "error": "Unsupported topic",
+                            }
+                        )
+                        continue
                     logger.info(f"Session {session.id} subscribed to topic: {topic}")
-                    # TODO: Implement topic-based subscription
+                    await websocket.send_json(
+                        {
+                            "type": "subscription_ack",
+                            "topic": topic,
+                            "action": "subscribed",
+                            "topics": sorted(
+                                manager.get_subscriptions(manager_connection_id)
+                            ),
+                        }
+                    )
 
                 elif message_type == "unsubscribe":
                     # Handle topic unsubscriptions
                     topic = data.get("topic")
+                    if (
+                        manager_connection_id is None
+                        or not isinstance(topic, str)
+                        or not manager.unsubscribe(manager_connection_id, topic)
+                    ):
+                        await websocket.send_json(
+                            {
+                                "type": "subscription_error",
+                                "topic": topic,
+                                "error": "Subscription not found",
+                            }
+                        )
+                        continue
                     logger.info(
                         f"Session {session.id} unsubscribed from topic: {topic}"
                     )
-                    # TODO: Implement topic-based unsubscription
+                    await websocket.send_json(
+                        {
+                            "type": "subscription_ack",
+                            "topic": topic,
+                            "action": "unsubscribed",
+                            "topics": sorted(
+                                manager.get_subscriptions(manager_connection_id)
+                            ),
+                        }
+                    )
 
                 elif message_type == "pong":
                     # Heartbeat response from client

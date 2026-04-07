@@ -271,12 +271,16 @@ class TestCompleteNewAccountSetup:
     @patch(
         "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
+    @patch(
+        "preloop.services.account_setup_service.ensure_global_presets_exist_background"
+    )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
     def test_completes_all_setup_tasks(
         self,
         mock_create_token,
         mock_send_email,
+        mock_ensure_presets,
         mock_create_policy,
         mock_notify,
     ):
@@ -298,6 +302,7 @@ class TestCompleteNewAccountSetup:
             user_email="test@test.com",
             token="test_token",
         )
+        mock_ensure_presets.assert_called_once_with()
         mock_create_policy.assert_called_once_with(account_id, user_id)
         mock_notify.assert_called_once()
 
@@ -305,12 +310,16 @@ class TestCompleteNewAccountSetup:
     @patch(
         "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
+    @patch(
+        "preloop.services.account_setup_service.ensure_global_presets_exist_background"
+    )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
     def test_skips_verification_email_when_disabled(
         self,
         mock_create_token,
         mock_send_email,
+        mock_ensure_presets,
         mock_create_policy,
         mock_notify,
     ):
@@ -328,6 +337,7 @@ class TestCompleteNewAccountSetup:
 
         mock_create_token.assert_not_called()
         mock_send_email.assert_not_called()
+        mock_ensure_presets.assert_called_once_with()
         mock_create_policy.assert_called_once()
         mock_notify.assert_called_once()
 
@@ -335,12 +345,16 @@ class TestCompleteNewAccountSetup:
     @patch(
         "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
+    @patch(
+        "preloop.services.account_setup_service.ensure_global_presets_exist_background"
+    )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
     def test_passes_optional_params_to_notify(
         self,
         mock_create_token,
         mock_send_email,
+        mock_ensure_presets,
         mock_create_policy,
         mock_notify,
     ):
@@ -374,12 +388,16 @@ class TestCompleteNewAccountSetup:
     @patch(
         "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
+    @patch(
+        "preloop.services.account_setup_service.ensure_global_presets_exist_background"
+    )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
     def test_handles_verification_email_error(
         self,
         mock_create_token,
         mock_send_email,
+        mock_ensure_presets,
         mock_create_policy,
         mock_notify,
     ):
@@ -398,6 +416,7 @@ class TestCompleteNewAccountSetup:
         )
 
         # Other tasks should still be called
+        mock_ensure_presets.assert_called_once_with()
         mock_create_policy.assert_called_once()
         mock_notify.assert_called_once()
 
@@ -405,12 +424,16 @@ class TestCompleteNewAccountSetup:
     @patch(
         "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
+    @patch(
+        "preloop.services.account_setup_service.ensure_global_presets_exist_background"
+    )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
     def test_handles_policy_creation_error(
         self,
         mock_create_token,
         mock_send_email,
+        mock_ensure_presets,
         mock_create_policy,
         mock_notify,
     ):
@@ -435,12 +458,49 @@ class TestCompleteNewAccountSetup:
     @patch(
         "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
     )
+    @patch(
+        "preloop.services.account_setup_service.ensure_global_presets_exist_background"
+    )
+    @patch("preloop.services.account_setup_service.send_verification_email")
+    @patch("preloop.services.account_setup_service.create_email_verification_token")
+    def test_handles_preset_ensure_error(
+        self,
+        mock_create_token,
+        mock_send_email,
+        mock_ensure_presets,
+        mock_create_policy,
+        mock_notify,
+    ):
+        """Test that preset setup errors are handled gracefully."""
+        account_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        mock_create_token.return_value = "token"
+        mock_ensure_presets.side_effect = Exception("Preset setup failed")
+
+        complete_new_account_setup(
+            account_id=account_id,
+            user_id=user_id,
+            user_email="test@test.com",
+            username="testuser",
+        )
+
+        mock_create_policy.assert_called_once()
+        mock_notify.assert_called_once()
+
+    @patch("preloop.services.account_setup_service.notify_admins_new_user_signup")
+    @patch(
+        "preloop.services.account_setup_service.create_default_approval_workflow_for_account"
+    )
+    @patch(
+        "preloop.services.account_setup_service.ensure_global_presets_exist_background"
+    )
     @patch("preloop.services.account_setup_service.send_verification_email")
     @patch("preloop.services.account_setup_service.create_email_verification_token")
     def test_handles_notification_error(
         self,
         mock_create_token,
         mock_send_email,
+        mock_ensure_presets,
         mock_create_policy,
         mock_notify,
     ):

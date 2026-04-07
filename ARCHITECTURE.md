@@ -114,6 +114,16 @@ The `Preloop Console` application is structured around a component-based archite
 *   **`vite.config.ts`**: Configuration for the Vite build tool.
 *   **`package.json`**: Defines project metadata, dependencies, and scripts for development, building, and testing.
 
+#### Tracker Detail Page (`src/views/authed/tracker-detail-view.ts`)
+
+The Tracker Detail page is the entry point for issue analytics. Clicking a tracker card in the Trackers list navigates to `/console/trackers/:trackerId`, which shows:
+
+*   **Tracker metadata:** Name, type, connection status, creation/update dates, URL, and scope rules.
+*   **Issue Analytics cards:** Conditional links to Similarity, Compliance, and Dependencies views, gated by feature flags (`issue_duplicates`, `issue_compliance`, `issue_dependencies`). Each link pre-filters to projects belonging to that tracker via `?projects=` query parameters.
+*   **Projects list:** All projects synced under this tracker.
+
+Issue analytics features are no longer accessible from the main sidebar — they are scoped to individual trackers via this detail page.
+
 #### Tools Page (`src/views/authed/tools-view.ts`)
 
 The Tools page has been redesigned from a card-based layout to a tree-style list view:
@@ -146,15 +156,32 @@ The Tools page has been redesigned from a card-based layout to a tree-style list
 *   **Streaming:** Supports SSE streaming for chat completions and responses.
 *   **Authentication:** Reuses short-lived runtime bearer tokens while preserving `ApiKey` context and runtime-principal metadata.
 *   **Accounting:** Persists token usage and estimated cost in `ApiUsage`.
-*   **Budget Enforcement:** Applies account-level and flow-level budget checks before upstream dispatch.
+*   **Budget Enforcement:** Applies account-level, flow-level, and subject-scoped allowed-model checks before upstream dispatch.
 *   **Observability:** Emits normalized model-call events with redaction-aware request/response payload capture, provider-neutral conversation previews, and optional indexing into a gateway search corpus.
-*   **Debug Surface:** Flow execution-scoped gateway events can already be queried via the flows API, and the longer-term direction is to generalize this into runtime-session observability beyond flows.
+*   **Debug Surface:** Flow execution-scoped gateway events can already be queried via the flows API, runtime-session explorers can query recent session activity directly, and the operator dashboard can aggregate active sessions, recent tool calls, and daily model spend.
+*   **Managed Agent Onboarding:** External agents such as OpenClaw can be enrolled so local model traffic is rewritten onto this gateway while local MCP configuration is narrowed to Preloop-managed proxy access.
+
+### Subject-Scoped Governance
+*   **Purpose:** Apply governance decisions against the concrete subject using the platform, not just the parent account.
+*   **Scope Chain:** Resolution currently walks the active API key first, then the linked managed agent, and finally falls back to account defaults.
+*   **Configuration Surface:** Subject-scoped governance can carry `allowed_models`, per-model budget metadata, ordered tool access rules, and `tool_enabled_overrides`.
+*   **Enforcement Points:** The same subject context is propagated through MCP tool listing, policy evaluation, and model gateway budget checks so one runtime token sees only the intended tools and models.
+*   **Primary Use Case:** Managed agent owners can grant a broad account-level tool catalog while restricting one enrolled desktop/CLI runtime to a tighter set of tools and models.
 
 ### Runtime Session Identity
 *   **Purpose:** Provide a shared identity layer for browsing, auditing, and searching managed runtime sessions across both flows and onboarded external agents.
 *   **Current Implementation:** A new additive `RuntimeSession` layer now uses flows as the first session source, bridged through `runtime_session_id`, `flow_execution_id`, runtime-principal metadata, and optional `agent_session_reference`.
 *   **Current Explorer Surface:** Account-scoped runtime session list/detail endpoints now expose recent managed sessions plus their captured gateway interactions so the console can drill from aggregate usage into one session timeline.
+*   **Operator Actions:** Operators can end a session explicitly, which updates runtime state, emits audit and runtime-session events, and refreshes managed-agent summaries derived from the same principal.
 *   **Target Direction:** Introduce a runtime-wide session abstraction that can represent flow executions, independent CLI/desktop agent sessions, and later enrolled workforce entities without making `flow_execution` the universal long-term session model.
+
+### Managed CLI/Desktop Agent Enrollment
+*   **Discovery Entry Point:** `preloop agents discover` can stay read-only (`--json`, `--no-onboard-prompt`) or hand off interactively into managed enrollment, with `--yes` available for auto-onboarding.
+*   **Shared Enrollment Engine:** `preloop agents enroll <agent>` and discovery-triggered onboarding both create or reuse a managed runtime identity, import representable MCP servers, mint a durable credential, back up the local config, and rewrite the local agent to use Preloop-managed endpoints.
+*   **OpenClaw Coverage:** The current OpenClaw adapter supports legacy and newer config locations, JSON5 parsing, gateway-backed model rewrites, and conservative import of command-backed MCP entries such as `mcporter` when an upstream URL can be inferred safely.
+*   **Credential Boundary:** OpenClaw model credentials may be declared inline under `models.providers` or indirectly through `auth.profiles`; the enrollment path imports model metadata either way, but profile-backed provider secrets may still require manual configuration inside Preloop.
+*   **Durable Identity:** `ManagedAgent.agent_kind` is now stored alongside `session_source_type` so operator UX and reporting do not depend on an active runtime session to recover the agent family.
+*   **Explicit Model Association:** Onboarding now persists direct managed-agent to AI-model bindings instead of inferring one configured model indirectly from `AIModel.meta_data`.
 
 ### Secret Service
 *   **Purpose:** Provider-agnostic custody and resolution of model credentials.
@@ -164,6 +191,8 @@ The Tools page has been redesigned from a card-based layout to a tree-style list
 
 ### preloop.models (`./backend/preloop/models`)
 *   **Purpose:** Data modeling and database interaction layer.
+*   **Current Agent/Model Shape:** `AIModel` remains the durable flat row for provider, model identifier, endpoint, and credential reference, while `ManagedAgentAIModelBinding` carries explicit per-agent config slots and primary/default selection.
+*   **Deferred Normalization:** Full provider-profile normalization is intentionally deferred until agent UX and policy semantics for many-model agents stabilize; the current migration keeps compatibility fields and avoids a broader schema split.
 *   **Technology:** SQLAlchemy for ORM, Pydantic for data validation/schemas.
 *   **Database:** Defines schema for PostgreSQL, including tables for organizations, projects, issues, embeddings, etc.
 *   **Vector Store:** Integrates with PGVector for storing and querying issue embeddings.
@@ -253,6 +282,8 @@ For detailed rules on how Organizations and Projects limit scope during syncing 
     *   Executes the tool logic, interacting with other Preloop services and `preloop.models` as needed.
     *   Formats the result into the standard MCP JSON response format.
 3.  **MCP Client:** Receives the HTTP response containing the tool's output.
+
+The `preloop tools list|describe|exec` CLI commands reuse this same `/mcp/v1` surface, so the backend remains the single source of truth for tool visibility and policy enforcement.
 
 ## Database Schema (Managed by preloop.models)
 

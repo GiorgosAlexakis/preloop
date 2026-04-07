@@ -13,8 +13,15 @@ from passlib.context import CryptContext
 
 from preloop.schemas.auth import TokenData
 from preloop.models.db.session import get_db_session
+from preloop.models.models.managed_agent import ManagedAgent
+from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.user import User
-from preloop.models.crud import crud_api_key
+from preloop.models.crud import (
+    crud_api_key,
+    crud_managed_agent,
+    crud_runtime_session,
+    crud_user,
+)
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
@@ -32,6 +39,148 @@ oauth2_scheme_optional = OAuth2PasswordBearer(
 
 # Logger
 logger = logging.getLogger(__name__)
+
+
+def _runtime_session_id_from_api_key(api_key: Any) -> Optional[uuid.UUID]:
+    """Return the runtime session UUID bound to an API key, if any."""
+    context_data = (
+        api_key.context_data if isinstance(api_key.context_data, dict) else {}
+    )
+    runtime_session_id = context_data.get("runtime_session_id")
+    if not runtime_session_id:
+        return None
+    try:
+        return uuid.UUID(str(runtime_session_id))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid runtime session token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+
+def _managed_agent_for_api_key(
+    session: Any, api_key: Any, runtime_session: Optional[RuntimeSession] = None
+) -> Optional[ManagedAgent]:
+    """Resolve the managed agent linked to an API key, if any."""
+    context_data = (
+        api_key.context_data if isinstance(api_key.context_data, dict) else {}
+    )
+    managed_agent_id = context_data.get("managed_agent_id")
+    if managed_agent_id:
+        return crud_managed_agent.get_for_account(
+            session, account_id=api_key.account_id, agent_id=managed_agent_id
+        )
+
+    runtime_principal = (
+        context_data.get("runtime_principal")
+        if isinstance(context_data.get("runtime_principal"), dict)
+        else {}
+    )
+    principal_type = runtime_principal.get("type")
+    principal_id = runtime_principal.get("id")
+    if runtime_session is not None:
+        principal_type = runtime_session.runtime_principal_type or principal_type
+        principal_id = runtime_session.runtime_principal_id or principal_id
+    if not principal_type or not principal_id:
+        return None
+    return crud_managed_agent.get_by_source(
+        session,
+        account_id=api_key.account_id,
+        session_source_type=principal_type,
+        session_source_id=principal_id,
+    )
+
+
+def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
+    """Validate an API key and return its active owner."""
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not api_key.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key is inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if api_key.is_expired:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    runtime_session_id = _runtime_session_id_from_api_key(api_key)
+    runtime_session = None
+    if runtime_session_id is not None:
+        runtime_session = crud_runtime_session.get_account_session(
+            session,
+            account_id=api_key.account_id,
+            runtime_session_id=runtime_session_id,
+        )
+        if runtime_session is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid runtime session token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if runtime_session.ended_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Runtime session has ended",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    context_data = (
+        api_key.context_data if isinstance(api_key.context_data, dict) else {}
+    )
+    managed_agent = _managed_agent_for_api_key(
+        session, api_key, runtime_session=runtime_session
+    )
+    if context_data.get("managed_agent_id"):
+        if managed_agent is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Managed agent credential is invalid",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if managed_agent.lifecycle_state != "active":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Managed agent is not active",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    elif managed_agent is not None and managed_agent.lifecycle_state != "active":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Managed agent is not active",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = crud_user.get(session, id=api_key.user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User associated with API key not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Inactive user",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    api_key.last_used_at = datetime.now(UTC)
+    session.add(api_key)
+    session.commit()
+    return user
 
 
 def get_password_hash(password: str) -> str:
@@ -157,40 +306,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
                         f"API key found: {api_key.name}, user_id: {api_key.user_id}"
                     )
 
-                    # Check if the API key has expired
-                    if api_key.is_expired:
-                        logger.warning(f"API key expired: {api_key.expires_at}")
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="API key has expired",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Get the user associated with this API key
-                    user = (
-                        session.query(User).filter(User.id == api_key.user_id).first()
-                    )
-
-                    if not user:
-                        logger.warning(f"User not found for API key: {api_key.user_id}")
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="User associated with API key not found",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    if not user.is_active:
-                        logger.warning(f"Inactive user for API key: {api_key.user_id}")
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Inactive user",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Update the last_used_at timestamp
-                    api_key.last_used_at = datetime.now(UTC)
-                    session.add(api_key)
-                    session.commit()
+                    user = _authenticate_with_api_key(session, api_key)
 
                     logger.info(
                         f"API key authentication successful for user: {user.username}"
@@ -252,7 +368,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
 
             try:
                 # Get user by ID
-                user = session.query(User).filter(User.id == user_id).first()
+                user = crud_user.get(session, id=user_id)
 
                 if not user:
                     raise HTTPException(
@@ -312,37 +428,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
                         f"API key found: {api_key.name}, user_id: {api_key.user_id}"
                     )
 
-                    # Check if the API key has expired
-                    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="API key has expired",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Get the user associated with this API key
-                    user = (
-                        session.query(User).filter(User.id == api_key.user_id).first()
-                    )
-
-                    if not user:
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="User associated with API key not found",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    if not user.is_active:
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Inactive user",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    # Update the last_used_at timestamp
-                    api_key.last_used_at = datetime.now(UTC)
-                    session.add(api_key)
-                    session.commit()
+                    user = _authenticate_with_api_key(session, api_key)
 
                     logger.info(
                         f"API key authentication successful for user: {user.username}"
@@ -422,12 +508,36 @@ async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[
     """
     if not token:
         return None
+
     try:
-        # The get_current_user function contains all the necessary logic
-        # for decoding JWTs, checking API keys, and verifying the user.
-        # We call it directly with the token.
-        user = await get_current_user(token=token)
-        return user
+        # Check API key first if it doesn't look like a JWT
+        if "." not in token:
+            api_key = crud_api_key.get_by_key(db_session, key=token)
+            if api_key:
+                user = _authenticate_with_api_key(db_session, api_key)
+                return user
+
+        # Fallback to JWT
+        token_data = decode_token(token)
+        if isinstance(token_data, dict) and token_data.get("refresh", False):
+            return None
+
+        user_id_str = getattr(token_data, "sub", "")
+        if not user_id_str:
+            return None
+
+        try:
+            import uuid
+
+            user_id = uuid.UUID(user_id_str)
+        except ValueError:
+            return None
+
+        user = crud_user.get(db_session, id=user_id)
+        if user and user.is_active:
+            return user
+
     except Exception:
-        # If any exception occurs during authentication, we simply return None.
-        return None
+        pass
+
+    return None

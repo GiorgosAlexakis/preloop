@@ -30,23 +30,12 @@ a:hover {
 }
 
 /* Max-width modifiers for different view types */
-.column-layout.narrow {
-    max-width: var(--console-container-max-width); /* 960px */
-    margin: 0 auto;
-}
-
-.column-layout.wide {
-    max-width: var(--console-container-large-max-width); /* 1200px */
-    margin: 0 auto;
-}
-
-.column-layout.extra-wide {
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
+.column-layout.narrow,
+.column-layout.wide,
+.column-layout.extra-wide,
 .column-layout.full-width {
     max-width: none;
+    margin: 0;
 }
 
 .main-column,
@@ -102,16 +91,18 @@ a:hover {
 
 .header h1 {
     text-align: left;
-    font-size: 2.2rem;
-    font-weight: 300;
-  }
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--sl-color-neutral-900);
+    margin: 0;
+}
 
 .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--sl-spacing-large);
-    min-height: 88.16px;
+    min-height: 48px;
 }
 
 

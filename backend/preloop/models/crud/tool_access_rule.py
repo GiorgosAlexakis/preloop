@@ -3,6 +3,7 @@
 from typing import Dict, List, Optional, Any
 
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
 
 from ..models.tool_access_rule import ToolAccessRule
 from .base import CRUDBase
@@ -193,3 +194,22 @@ class CRUDToolAccessRule(CRUDBase[ToolAccessRule]):
         )
         db.commit()
         return count
+
+
+async def get_multi_by_config_async(
+    db: Session,
+    *,
+    config_id: str,
+    account_id: str,
+    enabled_only: bool = False,
+) -> List[ToolAccessRule]:
+    """Async: Retrieve all access rules for a tool configuration, ordered by priority."""
+    query = select(ToolAccessRule).where(
+        ToolAccessRule.tool_configuration_id == config_id,
+        ToolAccessRule.account_id == account_id,
+    )
+    if enabled_only:
+        query = query.where(ToolAccessRule.is_enabled.is_(True))
+
+    result = await db.execute(query.order_by(ToolAccessRule.priority.asc()))
+    return result.scalars().all()

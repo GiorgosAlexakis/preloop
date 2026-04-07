@@ -10,6 +10,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const brand = process.env.VITE_BRAND || 'preloop';
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000';
 const adminProxyTarget = process.env.VITE_ADMIN_PROXY_TARGET || 'http://127.0.0.1:5175';
+const gatewayProxyTarget = process.env.VITE_GATEWAY_PROXY_TARGET || apiProxyTarget;
 
 /**
  * Default Vite configuration for Preloop Open Source / Self-Hosted edition
@@ -82,6 +83,16 @@ export default defineConfig({
       },
       '/docs': {
         target: apiProxyTarget,
+        changeOrigin: true,
+        ws: true,
+      },
+      '/openai': {
+        target: gatewayProxyTarget,
+        changeOrigin: true,
+        ws: true,
+      },
+      '/anthropic': {
+        target: gatewayProxyTarget,
         changeOrigin: true,
         ws: true,
       },

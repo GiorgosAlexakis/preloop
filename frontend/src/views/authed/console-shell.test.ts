@@ -42,8 +42,20 @@ describe('ConsoleShell', () => {
   let matchMediaStub: sinon.SinonStub;
 
   beforeEach(() => {
-    (window as unknown as { BRAND_CONFIG?: object }).BRAND_CONFIG =
-      BRAND_CONFIG_STUB;
+    (window as any).BRAND_CONFIG = {
+      name: 'Preloop',
+      domain: 'preloop.ai',
+      company: { legal_name: 'Preloop', address: '', city: '' },
+      branding: {
+        logo_light: '/logo.svg',
+        logo_dark: '/logo-dark.svg',
+        favicon: '/favicon.ico',
+        primary_color: '#000',
+        gradient_product: '',
+        gradient_ai: '',
+      },
+      social: { twitter: '', linkedin: '', instagram: '' },
+    };
     localStorage.setItem('accessToken', 'test-access-token');
     const mockMediaQuery = createMatchMediaStub(false); // desktop by default
     matchMediaStub = sinon
@@ -56,7 +68,7 @@ describe('ConsoleShell', () => {
           matches: false,
           addEventListener: () => {},
           removeEventListener: () => {},
-        } as MediaQueryList;
+        } as unknown as MediaQueryList;
       });
     fetchStub = sinon.stub(window, 'fetch');
     // Stub getFeatures (fetchPublic) and _checkTrackers (fetch with auth)
@@ -100,7 +112,7 @@ describe('ConsoleShell', () => {
     fetchStub.restore();
     matchMediaStub?.restore();
     localStorage.clear();
-    delete (window as unknown as { BRAND_CONFIG?: object }).BRAND_CONFIG;
+    delete (window as any).BRAND_CONFIG;
   });
 
   it('renders the component', async () => {
@@ -255,7 +267,7 @@ describe('ConsoleShell', () => {
             matches: false,
             addEventListener: () => {},
             removeEventListener: () => {},
-          } as MediaQueryList;
+          } as unknown as MediaQueryList;
         });
 
       const el = (await fixture(

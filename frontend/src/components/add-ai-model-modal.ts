@@ -19,6 +19,7 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
+import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 
 /**
  * Reusable AI model add/edit dialog.
@@ -68,9 +69,17 @@ export class AddAIModelModal extends LitElement {
   @state() private _isOtherModel = false;
   @state() private _isFetchingModels = false;
   @state() private _modelsFetchError: string | null = null;
+  /** When true, register this model for Preloop gateway routing (requires upstream API key). */
+  @state() private _preloopGatewayEnabled = true;
 
   private get _isEditing(): boolean {
     return !!this.model;
+  }
+
+  private get _canEnablePreloopGateway(): boolean {
+    const apiKey = (this._currentModel.api_key || '').trim();
+    const hasStoredKey = Boolean(this._isEditing && this.model?.has_api_key);
+    return apiKey.length > 0 || hasStoredKey;
   }
 
   // ── lifecycle ────────────────────────────────────────
@@ -86,8 +95,17 @@ export class AddAIModelModal extends LitElement {
   private _populateForm() {
     if (this.model) {
       this._currentModel = { ...this.model };
+      const gw = this.model.meta_data?.gateway;
+      if (gw && typeof gw === 'object' && 'enabled' in gw) {
+        this._preloopGatewayEnabled = Boolean(
+          (gw as { enabled?: boolean }).enabled
+        );
+      } else {
+        this._preloopGatewayEnabled = true;
+      }
     } else {
       this._currentModel = {};
+      this._preloopGatewayEnabled = true;
     }
     this._modelSuggestions = [];
     this._isOtherModel = false;
@@ -95,6 +113,31 @@ export class AddAIModelModal extends LitElement {
     this._isSubmitting = false;
     this._isFetchingModels = false;
     this._modelsFetchError = null;
+  }
+
+  /** Merge gateway routing metadata; gateway.enabled only when upstream credentials exist. */
+  private _buildMetaDataForSubmit(): Record<string, unknown> {
+    const existing =
+      this._isEditing &&
+      this.model?.meta_data &&
+      typeof this.model.meta_data === 'object'
+        ? { ...this.model.meta_data }
+        : {};
+    const provider = this._currentModel.provider_name;
+    const modelId = this._currentModel.model_identifier;
+    if (!provider || !modelId) {
+      return existing;
+    }
+    const gatewayEnabled =
+      this._preloopGatewayEnabled && this._canEnablePreloopGateway;
+    return {
+      ...existing,
+      gateway: {
+        enabled: gatewayEnabled,
+        provider_adapter: 'preloop',
+        model_alias: `${String(provider).toLowerCase()}/${modelId}`,
+      },
+    };
   }
 
   /** Read current input values directly from shadow DOM elements. */
@@ -234,14 +277,21 @@ export class AddAIModelModal extends LitElement {
       return;
     }
 
+    if (this._preloopGatewayEnabled && !this._canEnablePreloopGateway) {
+      this._formError =
+        'Preloop gateway routing needs upstream API credentials. Enter an API key or turn off gateway routing.';
+      return;
+    }
+
     this._isSubmitting = true;
 
     try {
+      const payload = {
+        ...this._currentModel,
+        meta_data: this._buildMetaDataForSubmit(),
+      };
       if (this._isEditing) {
-        const updated = await updateAIModel(
-          this._currentModel.id!,
-          this._currentModel
-        );
+        const updated = await updateAIModel(this._currentModel.id!, payload);
         this.dispatchEvent(
           new CustomEvent('model-updated', {
             detail: { model: updated },
@@ -250,7 +300,7 @@ export class AddAIModelModal extends LitElement {
           })
         );
       } else {
-        const created = await createAIModel(this._currentModel);
+        const created = await createAIModel(payload);
         this.dispatchEvent(
           new CustomEvent('model-created', {
             detail: { model: created },
@@ -365,6 +415,47 @@ export class AddAIModelModal extends LitElement {
                   </div>
                 `}
           </sl-input>
+
+          <div class="full-width">
+            <sl-checkbox
+              .checked=${this._preloopGatewayEnabled}
+              @sl-change=${(e: Event) => {
+                const el = e.target as { checked: boolean };
+                this._preloopGatewayEnabled = Boolean(el.checked);
+                this.requestUpdate();
+              }}
+              ?disabled=${this._isSubmitting}
+            >
+              Route inference through the Preloop gateway (OpenAI-compatible
+              /openai/v1)
+            </sl-checkbox>
+            <div
+              style="font-size: 0.875rem; color: var(--sl-color-neutral-600); margin-top: 0.35rem;"
+            >
+              ${this._currentModel.provider_name &&
+              this._currentModel.model_identifier
+                ? html`Gateway alias
+                    <code
+                      >${String(
+                        this._currentModel.provider_name
+                      ).toLowerCase()}/${this._currentModel
+                        .model_identifier}</code
+                    >`
+                : html`Save provider and model id to show the gateway alias.`}
+              ${!this._canEnablePreloopGateway && this._preloopGatewayEnabled
+                ? html`
+                    <sl-alert
+                      variant="warning"
+                      open
+                      style="margin-top: 0.5rem;"
+                    >
+                      Add an API key (or keep an existing one when editing) to
+                      enable gateway routing.
+                    </sl-alert>
+                  `
+                : ''}
+            </div>
+          </div>
 
           <div class="full-width">
             <sl-button

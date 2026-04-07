@@ -17,6 +17,9 @@ from .base import Base
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from .audit_log import AuditLog
+    from .managed_agent import ManagedAgent
+    from .managed_agent_credential import ManagedAgentCredential
+    from .managed_agent_enrollment import ManagedAgentEnrollment
     from .organization import Organization
     from .tracker import Tracker
     from .client_version_log import ClientVersionLog
@@ -34,6 +37,8 @@ if TYPE_CHECKING:
     from .github_app_installation import OAuthAppInstallation
     from .github_oauth_token import OAuthToken
     from .policy_snapshot import PolicySnapshot
+    from .runtime_session import RuntimeSession
+    from .secret_reference import SecretReference
 
 
 class Account(Base):
@@ -155,6 +160,25 @@ class Account(Base):
     # Policy versioning
     policy_snapshots: Mapped[List["PolicySnapshot"]] = relationship(
         "PolicySnapshot", back_populates="account", cascade="all, delete-orphan"
+    )
+    secret_references: Mapped[List["SecretReference"]] = relationship(
+        "SecretReference", back_populates="account", cascade="all, delete-orphan"
+    )
+    runtime_sessions: Mapped[List["RuntimeSession"]] = relationship(
+        "RuntimeSession", back_populates="account", cascade="all, delete-orphan"
+    )
+    managed_agents: Mapped[List["ManagedAgent"]] = relationship(
+        "ManagedAgent", back_populates="account", cascade="all, delete-orphan"
+    )
+    managed_agent_credentials: Mapped[List["ManagedAgentCredential"]] = relationship(
+        "ManagedAgentCredential",
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
+    managed_agent_enrollments: Mapped[List["ManagedAgentEnrollment"]] = relationship(
+        "ManagedAgentEnrollment",
+        back_populates="account",
+        cascade="all, delete-orphan",
     )
 
     # Many-to-many relationship helper for organizational roles

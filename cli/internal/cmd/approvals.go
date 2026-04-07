@@ -132,7 +132,7 @@ func runApprovalsList(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	var policies []ApprovalWorkflow
@@ -157,7 +157,7 @@ func runApprovalsList(cmd *cobra.Command, args []string) error {
 
 	default: // table
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tTOOL PATTERN\tAUTO-APPROVE\tACTIVE\tAPPROVERS")
+		fmt.Fprintln(w, "NAME\tTOOL PATTERN\tAUTO-APPROVE\tACTIVE\tAPPROVERS") //nolint:errcheck
 		for _, p := range policies {
 			autoApprove := "no"
 			if p.AutoApprove {
@@ -171,7 +171,7 @@ func runApprovalsList(cmd *cobra.Command, args []string) error {
 			if len(approvers) > 30 {
 				approvers = approvers[:27] + "..."
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 				p.Name, p.ToolPattern, autoApprove, active, approvers)
 		}
 		return w.Flush()
@@ -189,7 +189,7 @@ func runApprovalsPending(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	path := fmt.Sprintf("%s?status=pending&limit=%d", approvalRequestsPath, limit)
@@ -216,7 +216,7 @@ func runApprovalsPending(cmd *cobra.Command, args []string) error {
 
 	default: // table
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tTOOL\tREQUESTED BY\tAGE\tINPUT")
+		fmt.Fprintln(w, "ID\tTOOL\tREQUESTED BY\tAGE\tINPUT") //nolint:errcheck
 		for _, r := range requests {
 			age := formatDuration(time.Since(r.RequestedAt))
 			input := r.ToolInput
@@ -228,7 +228,7 @@ func runApprovalsPending(cmd *cobra.Command, args []string) error {
 			if len(id) > 12 {
 				id = id[:12]
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
 				id, r.ToolName, r.RequestedBy, age, input)
 		}
 		return w.Flush()
@@ -246,7 +246,7 @@ func runApprovalsApprove(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	path := fmt.Sprintf("%s/%s/approve", approvalRequestsPath, requestID)
@@ -281,7 +281,7 @@ func runApprovalsDeny(cmd *cobra.Command, args []string) error {
 	}
 
 	if !client.IsAuthenticated() {
-		return fmt.Errorf("not authenticated - run 'preloop auth login' first")
+		return fmt.Errorf("not authenticated - run 'preloop login' first")
 	}
 
 	path := fmt.Sprintf("%s/%s/decline", approvalRequestsPath, requestID)

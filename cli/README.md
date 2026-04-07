@@ -1,6 +1,6 @@
 # Preloop CLI
 
-Command-line interface for managing AI agent policies, approvals, and tool configurations.
+Command-line interface for managing AI agent policies, approvals, and MCP tools.
 
 ## Installation
 
@@ -27,10 +27,19 @@ Download the latest release from [GitHub Releases](https://github.com/preloop/pr
 
 ```bash
 # Authenticate with a token
-preloop auth login --token <your-token>
+preloop login --token <your-token>
 
 # Authenticate with a token and custom API URL
-preloop auth login --token <your-token> --url http://localhost:8000
+preloop login --token <your-token> --url http://localhost:8000
+
+# OAuth login on a local machine
+preloop login
+
+# OAuth login over SSH or on a headless host
+preloop login --headless
+
+# OAuth login against a custom environment
+PRELOOP_URL=https://review.preloop.ai preloop login --headless
 
 # Check authentication status
 preloop auth status
@@ -56,12 +65,17 @@ preloop approvals approve <request-id>
 ### Authentication
 
 ```bash
-preloop auth login --token <token>   # Save an API token
-preloop auth login                   # OAuth browser flow (coming soon)
+preloop login --token <token>        # Save an API token
+preloop login                        # Auto-select loopback or headless OAuth
+preloop login --headless             # Force copy/paste OAuth
+preloop login --loopback             # Force local loopback OAuth
+preloop auth login                   # Same as preloop login
 preloop auth logout                  # Log out and clear credentials
 preloop auth status                  # Show authentication status
 preloop auth token                   # Print token for scripting
 ```
+
+The login flow resolves the API URL in this order: `--url`, `PRELOOP_URL`, config file, then the default `https://preloop.ai`.
 
 ### Policy Management
 
@@ -74,14 +88,16 @@ preloop policy diff <file>             # Compare local vs remote policy
 preloop policy export <name>           # Export a policy to file
 ```
 
-### Tool Configuration
+### MCP Tools
 
 ```bash
-preloop tools list                     # List available tools
-preloop tools list --enabled           # List only enabled tools
-preloop tools enable <tool-name>       # Enable a tool
-preloop tools disable <tool-name>      # Disable a tool
+preloop tools list                               # List tools visible to this token
+preloop tools describe <tool-name>              # Show schema and description
+preloop tools exec <tool-name> --args '{"k":"v"}'
+preloop tools exec <tool-name> --args-file ./input.json
 ```
+
+`preloop tools` talks directly to the MCP endpoint, so the visible and executable tools are automatically filtered by the current token's policy. Agent tokens only see the tools they are allowed to use.
 
 ### Approvals
 
@@ -91,6 +107,39 @@ preloop approvals pending              # List pending approvals
 preloop approvals approve <id>         # Approve a request
 preloop approvals deny <id>            # Deny a request
 ```
+
+### Agents
+
+```bash
+preloop agents discover                 # Interactive discovery; can prompt to onboard
+preloop agents discover --json          # Emit discovery results as JSON
+preloop agents discover --no-onboard-prompt
+preloop agents discover --yes           # Auto-onboard newly discovered agents
+preloop agents enroll openclaw        # Apply managed enrollment for OpenClaw
+preloop agents enroll openclaw --dry-run
+preloop agents enroll openclaw --yes   # Skip the confirmation prompt
+preloop agents status openclaw         # Show local/remote managed state
+preloop agents validate openclaw       # Validate the managed config
+preloop agents restore openclaw        # Restore the most recent local backup
+preloop agents offboard openclaw       # Offboard and restore the local backup
+preloop agents offboard openclaw --yes --remove-model no --remove-mcp-servers no
+preloop agents offboard openclaw --yes --remove-model yes
+```
+
+`preloop agents discover` is the starting point for agent onboarding. In interactive terminals it can prompt to onboard newly discovered agents one by one. Use `--no-onboard-prompt` to keep discovery read-only in scripts/CI, or `--yes` to auto-onboard all new candidates. `preloop agents enroll openclaw` remains the explicit mutating command.
+
+Managed OpenClaw onboarding creates a durable managed credential, backs up the local config, replaces the local MCP config with a managed `preloop` entry, and may also import existing MCP servers plus rewrite supported model settings to Preloop's OpenAI-compatible gateway. Use `--dry-run` to preview changes first.
+
+`preloop agents offboard` restores the last local backup and removes the managed agent from Preloop. Cleanup of account-level resources is controlled separately:
+
+- `--remove-model ask|yes|no` controls whether an eligible AI model should also be removed from Preloop
+- `--remove-mcp-servers ask|yes|no` controls whether eligible MCP servers should also be removed from Preloop
+
+Both flags default to `ask`. With `--yes` alone, the CLI skips the main offboard confirmation but keeps eligible AI models and MCP servers unless you explicitly opt into removing them. Shared resources are protected automatically:
+
+- AI models are kept if they are still referenced by another managed agent or by any flow
+- MCP servers are kept if they are still referenced by another managed agent
+- Recently active shared resources are also skipped
 
 ### Version
 
@@ -114,22 +163,20 @@ api_url: http://localhost:8000
 All commands accept these flags:
 
 - `--token <token>` - Override the access token for this invocation
-- `--url <url>` - Override the API URL for this invocation
+- `--url <url>` - Override the API base URL for this invocation
 - `--verbose` / `-v` - Enable verbose output
 
 ### Environment Variables
 
 - `PRELOOP_TOKEN` - Override the access token
-- `PRELOOP_URL` - Override the API URL
+- `PRELOOP_URL` - Override the API base URL
 
 ### Resolution Priority
 
-Both token and URL are resolved in this order (highest priority first):
+Authentication and URL resolution use these rules:
 
-1. CLI flags (`--token`, `--url`)
-2. Environment variables (`PRELOOP_TOKEN`, `PRELOOP_URL`)
-3. Config file (`~/.preloop/config.yaml`)
-4. Defaults (`http://localhost:8000`)
+1. Token: `--token`, then `PRELOOP_TOKEN`, then the config file.
+2. API URL: `--url`, then `PRELOOP_URL`, then the config file, then `https://preloop.ai`.
 
 ## Development
 
@@ -173,9 +220,11 @@ cli/
 │   │   ├── root.go          # Root command
 │   │   ├── auth.go          # auth login/logout/status
 │   │   ├── policy.go        # policy validate/apply/diff/export/list
-│   │   ├── tools.go         # tools list/enable/disable
+│   │   ├── tools.go         # tools list/describe/exec
 │   │   ├── approvals.go     # approvals list/pending/approve/deny
 │   │   └── version.go       # version command
+│   ├── mcpclient/
+│   │   └── client.go        # Minimal MCP HTTP client
 │   └── version/
 │       └── check.go         # Daily version check logic
 ├── go.mod

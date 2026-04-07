@@ -47,6 +47,79 @@ def orchestrator(mock_db, mock_nats_client):
 class TestLogStreaming:
     """Test real-time log streaming to NATS."""
 
+    def test_detect_repeated_tool_cycle_identifies_alternating_loop(self):
+        """Alternating identical MCP actions should be flagged as a loop."""
+        signatures = [
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "update_pull_request",
+                    "arguments": {"pull_request": "mr-22", "add_reaction": "eyes"},
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "get_pull_request",
+                    "arguments": {"pull_request": "mr-22", "include_diff": True},
+                },
+                sort_keys=True,
+            ),
+        ] * 3
+
+        detection = FlowExecutionOrchestrator._detect_repeated_tool_cycle(signatures)
+
+        assert detection is not None
+        assert detection["pattern_length"] == 2
+        assert detection["repetitions"] == 3
+        assert detection["pattern"][0]["tool_name"] == "update_pull_request"
+        assert detection["pattern"][1]["tool_name"] == "get_pull_request"
+
+    @pytest.mark.asyncio
+    async def test_sync_runtime_tool_activity_metrics_updates_count_and_detects_loop(
+        self, orchestrator
+    ):
+        """Persisted runtime activity should drive live counts and loop detection."""
+        orchestrator._get_runtime_tool_activity_count = MagicMock(return_value=6)
+        orchestrator._get_recent_runtime_tool_activity_signatures = MagicMock(
+            return_value=[
+                json.dumps(
+                    {
+                        "server_name": "preloop-mcp",
+                        "tool_name": "update_pull_request",
+                        "arguments": {
+                            "pull_request": "mr-22",
+                            "add_reaction": "eyes",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    {
+                        "server_name": "preloop-mcp",
+                        "tool_name": "get_pull_request",
+                        "arguments": {
+                            "pull_request": "mr-22",
+                            "include_diff": True,
+                        },
+                    },
+                    sort_keys=True,
+                ),
+            ]
+            * 3
+        )
+        orchestrator._publish_update = AsyncMock()
+        orchestrator._persist_live_metrics = AsyncMock()
+
+        detection = await orchestrator._sync_runtime_tool_activity_metrics()
+
+        assert orchestrator.tool_calls_count == 6
+        assert detection is not None
+        assert detection["pattern_length"] == 2
+        orchestrator._publish_update.assert_awaited()
+        orchestrator._persist_live_metrics.assert_awaited()
+
     @pytest.mark.asyncio
     async def test_stream_logs_to_nats_success(self, orchestrator, mock_nats_client):
         """Test that logs are streamed to NATS."""
@@ -147,6 +220,83 @@ class TestLogStreaming:
             if b"agent_log_error" in call[0][1] or b"error" in call[0][1].lower()
         ]
         assert len(error_messages) > 0
+
+    @pytest.mark.asyncio
+    async def test_stream_logs_persists_live_tool_call_metrics(self, orchestrator):
+        """Tool call updates should persist live counters for page reloads."""
+        mock_agent_executor = AsyncMock()
+
+        async def mock_stream(session_reference):
+            yield "Tool call line"
+
+        mock_agent_executor.stream_logs = mock_stream
+        orchestrator._persist_live_metrics = AsyncMock()
+        orchestrator.execution_logger.parse_agent_logs = MagicMock(
+            side_effect=lambda lines: (
+                orchestrator.execution_logger.mcp_usage_logs.append(
+                    {"tool_name": "search"}
+                )
+            )
+        )
+
+        await orchestrator._stream_logs_to_nats(mock_agent_executor, "session-123")
+
+        assert orchestrator.tool_calls_count == 1
+        orchestrator._persist_live_metrics.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stream_logs_publishes_structured_mcp_call_event(self, orchestrator):
+        """Detected MCP calls should be published as structured live events."""
+        mock_agent_executor = AsyncMock()
+
+        async def mock_stream(session_reference):
+            yield "Calling github/create_issue with args"
+
+        mock_agent_executor.stream_logs = mock_stream
+        orchestrator._persist_live_metrics = AsyncMock()
+        orchestrator._publish_update = AsyncMock()
+
+        await orchestrator._stream_logs_to_nats(mock_agent_executor, "session-123")
+
+        published_types = [
+            call.args[0] for call in orchestrator._publish_update.await_args_list
+        ]
+        assert "mcp_call" in published_types
+        mcp_call_payloads = [
+            call.args[1]
+            for call in orchestrator._publish_update.await_args_list
+            if call.args[0] == "mcp_call"
+        ]
+        assert len(mcp_call_payloads) == 1
+        assert mcp_call_payloads[0]["server_name"] == "github"
+        assert mcp_call_payloads[0]["tool_name"] == "create_issue"
+        assert mcp_call_payloads[0]["status"] == "detected"
+
+    @pytest.mark.asyncio
+    async def test_persist_live_metrics_stores_mcp_usage_logs(
+        self, orchestrator, mock_db
+    ):
+        """Persisted live metrics should include tool activity details."""
+        orchestrator.tool_calls_count = 2
+        orchestrator.total_tokens = 99
+        orchestrator.estimated_cost = 0.12
+        orchestrator.execution_logger.mcp_usage_logs = [
+            {"timestamp": "2026-03-10T10:00:00Z", "tool_name": "search_issues"},
+            {"timestamp": "2026-03-10T10:00:01Z", "tool_name": "get_issue"},
+        ]
+
+        await orchestrator._persist_live_metrics()
+
+        assert orchestrator.execution_log.tool_calls_count == 2
+        assert orchestrator.execution_log.total_tokens == 99
+        assert orchestrator.execution_log.estimated_cost == 0.12
+        assert orchestrator.execution_log.mcp_usage_logs == [
+            {"timestamp": "2026-03-10T10:00:00Z", "tool_name": "search_issues"},
+            {"timestamp": "2026-03-10T10:00:01Z", "tool_name": "get_issue"},
+        ]
+        mock_db.add.assert_called_with(orchestrator.execution_log)
+        mock_db.commit.assert_called()
+        mock_db.refresh.assert_called_with(orchestrator.execution_log)
 
 
 class TestCommandListener:

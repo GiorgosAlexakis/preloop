@@ -1,11 +1,17 @@
 """Pydantic schemas for AIModel."""
 
 import uuid
-from typing import Dict, Optional
+from datetime import datetime
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from preloop.models.models.mixins import TimestampMixin
+from preloop.schemas.gateway_usage import (
+    GatewayTokenUsage,
+    GatewayUsageByDay,
+    GatewayUsageBySession,
+)
 
 
 class AIModelBase(BaseModel):
@@ -21,6 +27,31 @@ class AIModelBase(BaseModel):
         None, description="URL for the model's API, if not standard"
     )
     api_key: Optional[str] = Field(None, description="API key for the model provider")
+    credential_type: Optional[str] = Field(
+        None,
+        description=(
+            "Optional inline credential envelope type, e.g. 'oauth_openai_codex'"
+        ),
+    )
+    credential_payload: Optional[Dict] = Field(
+        None,
+        description=(
+            "Optional inline credential payload for non-API-key auth, stored "
+            "encrypted when provided"
+        ),
+    )
+    credentials_backend_type: Optional[str] = Field(
+        None,
+        description="Optional external credential backend type, e.g. 'vault_kv_v2'",
+    )
+    credentials_external_ref: Optional[str] = Field(
+        None,
+        description="Optional external secret reference for provider credentials",
+    )
+    credentials_meta_data: Optional[Dict] = Field(
+        None,
+        description="Optional metadata for external secret backends, e.g. field/version",
+    )
     is_default: bool = Field(
         False, description="Indicates if this is the default model for the account"
     )
@@ -36,7 +67,38 @@ class AIModelBase(BaseModel):
 class AIModelCreate(AIModelBase):
     """Schema for creating a new AIModel entry."""
 
-    pass
+    @model_validator(mode="after")
+    def validate_credentials(self):
+        has_inline_payload = (
+            self.credential_type is not None or self.credential_payload is not None
+        )
+        has_external = any(
+            value is not None
+            for value in (
+                self.credentials_backend_type,
+                self.credentials_external_ref,
+                self.credentials_meta_data,
+            )
+        )
+        if self.api_key and (has_external or has_inline_payload):
+            raise ValueError("api_key cannot be combined with other credential fields")
+        if has_inline_payload and has_external:
+            raise ValueError(
+                "credential_type/credential_payload cannot be combined with external credential fields"
+            )
+        if has_inline_payload and (
+            not self.credential_type or self.credential_payload is None
+        ):
+            raise ValueError(
+                "credential_type and credential_payload are required together"
+            )
+        if has_external and (
+            not self.credentials_backend_type or not self.credentials_external_ref
+        ):
+            raise ValueError(
+                "credentials_backend_type and credentials_external_ref are required together"
+            )
+        return self
 
 
 class AIModelUpdate(BaseModel):
@@ -48,17 +110,78 @@ class AIModelUpdate(BaseModel):
     model_identifier: Optional[str] = None
     api_endpoint: Optional[str] = None
     api_key: Optional[str] = None
+    credential_type: Optional[str] = None
+    credential_payload: Optional[Dict] = None
+    credentials_backend_type: Optional[str] = None
+    credentials_external_ref: Optional[str] = None
+    credentials_meta_data: Optional[Dict] = None
     is_default: Optional[bool] = None
     model_parameters: Optional[Dict] = None
     meta_data: Optional[Dict] = None
 
+    @model_validator(mode="after")
+    def validate_credentials(self):
+        has_inline_payload = (
+            self.credential_type is not None or self.credential_payload is not None
+        )
+        has_external = any(
+            value is not None
+            for value in (
+                self.credentials_backend_type,
+                self.credentials_external_ref,
+                self.credentials_meta_data,
+            )
+        )
+        if self.api_key and (has_external or has_inline_payload):
+            raise ValueError("api_key cannot be combined with other credential fields")
+        if has_inline_payload and has_external:
+            raise ValueError(
+                "credential_type/credential_payload cannot be combined with external credential fields"
+            )
+        if has_inline_payload and (
+            not self.credential_type or self.credential_payload is None
+        ):
+            raise ValueError(
+                "credential_type and credential_payload are required together"
+            )
+        if has_external and (
+            not self.credentials_backend_type or not self.credentials_external_ref
+        ):
+            raise ValueError(
+                "credentials_backend_type and credentials_external_ref are required together"
+            )
+        return self
 
-class AIModelInDBBase(AIModelBase, TimestampMixin):
+
+class AIModelInDBBase(TimestampMixin, BaseModel):
     """Base schema for AIModel entries as stored in the database."""
 
     id: uuid.UUID = Field(..., description="Primary key")
+    name: str
+    description: Optional[str] = None
+    provider_name: str
+    model_identifier: str
+    api_endpoint: Optional[str] = None
+    is_default: bool = False
+    model_parameters: Optional[Dict] = None
+    meta_data: Optional[Dict] = None
     account_id: Optional[uuid.UUID] = Field(
         None, description="Account this model belongs to"
+    )
+    credentials_secret_id: Optional[uuid.UUID] = Field(
+        None, description="Secret reference ID for model credentials"
+    )
+    credentials_backend_type: Optional[str] = Field(
+        None, description="Backend type used for credential storage"
+    )
+    credentials_external_ref: Optional[str] = Field(
+        None, description="External secret reference when using a non-local backend"
+    )
+    credential_type: Optional[str] = Field(
+        None, description="Logical credential type stored for the model"
+    )
+    has_api_key: bool = Field(
+        False, description="Whether this model has credentials configured"
     )
 
     @field_serializer("account_id")
@@ -73,3 +196,21 @@ class AIModelRead(AIModelInDBBase):
     """Schema for reading AIModel entries, including timestamps."""
 
     pass
+
+
+class AIModelGatewayUsageSummaryResponse(BaseModel):
+    """Gateway usage summary for one durable AI model."""
+
+    ai_model_id: str
+    model_name: str
+    provider_name: str
+    model_identifier: str
+    period_start: datetime
+    period_end: datetime
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    token_usage: GatewayTokenUsage
+    estimated_cost: float = 0.0
+    requests_by_day: List[GatewayUsageByDay] = Field(default_factory=list)
+    usage_by_session: List[GatewayUsageBySession] = Field(default_factory=list)

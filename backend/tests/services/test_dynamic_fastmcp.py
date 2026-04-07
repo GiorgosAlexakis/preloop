@@ -117,7 +117,7 @@ class TestListTools:
 
     async def test_list_tools_no_user_context(self, dynamic_mcp):
         """Test listing tools with no user context."""
-        result = await dynamic_mcp._list_tools()
+        result = await dynamic_mcp.list_tools()
 
         assert result == []
 
@@ -146,10 +146,10 @@ class TestListTools:
             ):
                 with patch.object(
                     FastMCP,
-                    "_list_tools",
+                    "list_tools",
                     new=AsyncMock(return_value=[]),
                 ):
-                    result = await dynamic_mcp._list_tools()
+                    result = await dynamic_mcp.list_tools()
 
         # User without tracker still may get builtin tools that don't require a tracker
         assert isinstance(result, list)
@@ -161,7 +161,7 @@ class TestListTools:
         # Ensure tracker types exist
         user_context.tracker_types = ["github"]
 
-        # Mock super()._list_tools() to return default tools
+        # Mock super().list_tools() to return default tools
         default_tools = [
             Tool(name="get_issue", description="Get issue", parameters={}),
             Tool(name="get_pull_request", description="Get PR", parameters={}),
@@ -178,10 +178,10 @@ class TestListTools:
             ):
                 with patch.object(
                     FastMCP,
-                    "_list_tools",
+                    "list_tools",
                     new=AsyncMock(return_value=default_tools),
                 ):
-                    result = await dynamic_mcp._list_tools()
+                    result = await dynamic_mcp.list_tools()
 
         # Should include tools compatible with tracker types (github)
         assert any(t.name == "get_issue" for t in result)
@@ -220,10 +220,10 @@ class TestListTools:
             ):
                 with patch.object(
                     FastMCP,
-                    "_list_tools",
+                    "list_tools",
                     new=AsyncMock(return_value=default_tools),
                 ):
-                    result = await dynamic_mcp._list_tools()
+                    result = await dynamic_mcp.list_tools()
 
         assert any(t.name == "request_approval" for t in result)
         assert not any(t.name == "get_issue" for t in result)
@@ -253,10 +253,10 @@ class TestListTools:
             ):
                 with patch.object(
                     FastMCP,
-                    "_list_tools",
+                    "list_tools",
                     new=AsyncMock(return_value=default_tools),
                 ):
-                    result = await dynamic_mcp._list_tools()
+                    result = await dynamic_mcp.list_tools()
 
         # Only public tool should be included
         assert len(result) == 1
@@ -300,10 +300,10 @@ class TestListTools:
             ):
                 with patch.object(
                     FastMCP,
-                    "_list_tools",
+                    "list_tools",
                     new=AsyncMock(return_value=default_tools),
                 ):
-                    result = await dynamic_mcp._list_tools()
+                    result = await dynamic_mcp.list_tools()
 
         assert result == []
 
@@ -336,15 +336,15 @@ class TestListTools:
                 "preloop.services.mcp_tool_discovery._get_proxied_tools_sync",
                 return_value=[(mock_mcp_server, mock_mcp_tool)],
             ):
-                # Mock super()._list_tools to return the "registered" internal tool
+                # Mock super().list_tools to return the "registered" internal tool
                 with patch.object(
                     FastMCP,
-                    "_list_tools",
+                    "list_tools",
                     new=AsyncMock(return_value=[registered_tool]),
                 ):
                     # Mock tool registration
                     with patch.object(dynamic_mcp, "tool", return_value=lambda x: x):
-                        result = await dynamic_mcp._list_tools()
+                        result = await dynamic_mcp.list_tools()
 
         # Should include proxied tool with original name (not internal name)
         assert any(t.name == "proxied_tool" for t in result)
@@ -366,29 +366,23 @@ class TestListTools:
             ):
                 with patch.object(
                     FastMCP,
-                    "_list_tools",
+                    "list_tools",
                     new=AsyncMock(return_value=[]),
                 ):
                     # Should not raise, just continue with default tools
-                    result = await dynamic_mcp._list_tools()
+                    result = await dynamic_mcp.list_tools()
 
         assert isinstance(result, list)
 
 
 class TestMCPCallTool:
-    """Test _call_tool method (FastMCP 2.13.0+)."""
+    """Test call_tool method (FastMCP 3.x+)."""
 
     async def test_call_tool_no_user_context(self, dynamic_mcp):
         """Test calling tool with no user context."""
         from fastmcp.tools.tool import ToolResult
 
-        # Create mock context for FastMCP 2.13.0+
-        mock_context = MagicMock()
-        mock_context.message = MagicMock()
-        mock_context.message.name = "tool1"
-        mock_context.message.arguments = {}
-
-        result = await dynamic_mcp._call_tool(mock_context)
+        result = await dynamic_mcp.call_tool("tool1", {})
 
         assert isinstance(result, ToolResult)
         assert len(result.content) == 1
@@ -400,14 +394,9 @@ class TestMCPCallTool:
 
         dynamic_mcp._user_context_provider = lambda: user_context
 
-        mock_context = MagicMock()
-        mock_context.message = MagicMock()
-        mock_context.message.name = "unauthorized_tool"
-        mock_context.message.arguments = {}
-
-        # Mock _list_tools to return empty list
-        with patch.object(dynamic_mcp, "_list_tools", return_value=[]):
-            result = await dynamic_mcp._call_tool(mock_context)
+        # Mock list_tools to return empty list
+        with patch.object(dynamic_mcp, "list_tools", return_value=[]):
+            result = await dynamic_mcp.call_tool("unauthorized_tool", {})
 
         assert isinstance(result, ToolResult)
         assert len(result.content) == 1
@@ -419,28 +408,23 @@ class TestMCPCallTool:
 
         dynamic_mcp._user_context_provider = lambda: user_context
 
-        mock_context = MagicMock()
-        mock_context.message = MagicMock()
-        mock_context.message.name = "builtin_tool"
-        mock_context.message.arguments = {}
-
-        # Mock _list_tools to include the tool
+        # Mock list_tools to include the tool
         available_tools = [
             Tool(name="builtin_tool", description="Builtin", parameters={})
         ]
 
-        with patch.object(dynamic_mcp, "_list_tools", return_value=available_tools):
-            # Mock super()._call_tool for FastMCP 2.13.0+
+        with patch.object(dynamic_mcp, "list_tools", return_value=available_tools):
+            # Mock super().call_tool for FastMCP 3.x
             mock_result = ToolResult(
                 content=[types.TextContent(type="text", text="Result")]
             )
             with patch.object(
                 dynamic_mcp.__class__.__bases__[0],
-                "_call_tool",
+                "call_tool",
                 new=AsyncMock(return_value=mock_result),
                 create=True,
             ):
-                result = await dynamic_mcp._call_tool(mock_context)
+                result = await dynamic_mcp.call_tool("builtin_tool", {})
 
         assert isinstance(result, ToolResult)
         assert result.content[0].text == "Result"
@@ -452,34 +436,34 @@ class TestMCPCallTool:
         dynamic_mcp._user_context_provider = lambda: user_context
         dynamic_mcp._proxied_tool_servers["proxied_tool"] = "server-id"
 
-        mock_context = MagicMock()
-        mock_context.message = MagicMock()
-        mock_context.message.name = "proxied_tool"
-        mock_context.message.arguments = {}
-
-        # Mock _list_tools to include the tool
+        # Mock list_tools to include the tool
         available_tools = [
             Tool(name="proxied_tool", description="Proxied", parameters={})
         ]
 
-        with patch.object(dynamic_mcp, "_list_tools", return_value=available_tools):
-            # Mock super()._call_tool to verify name translation
+        with patch.object(dynamic_mcp, "list_tools", return_value=available_tools):
+            # Mock super().call_tool to verify name translation
             mock_result = ToolResult(
                 content=[types.TextContent(type="text", text="Result")]
             )
             with patch.object(
                 dynamic_mcp.__class__.__bases__[0],
-                "_call_tool",
+                "call_tool",
                 new=AsyncMock(return_value=mock_result),
                 create=True,
             ) as mock_super:
-                result = await dynamic_mcp._call_tool(mock_context)
+                result = await dynamic_mcp.call_tool("proxied_tool", {})
 
-                # Verify internal name was used (context.message.name was modified)
+                # Verify internal name was used dynamically
                 safe_account_id = user_context.account_id.replace("-", "_")
                 expected_internal_name = f"account_{safe_account_id}_proxied_tool"
-                assert mock_context.message.name == expected_internal_name
-                mock_super.assert_called_once_with(mock_context)
+                mock_super.assert_called_once_with(
+                    expected_internal_name,
+                    {},
+                    version=None,
+                    run_middleware=True,
+                    task_meta=None,
+                )
 
 
 class TestCreateProxiedToolWrapper:
@@ -630,6 +614,11 @@ class TestHelperFunctions:
         mock_api_key.context_data = {
             "flow_execution_id": "flow-exec-1",
             "allowed_mcp_tools": [],
+            "runtime_principal": {
+                "type": "flow_execution",
+                "id": "flow-exec-1",
+                "name": "Test Flow",
+            },
         }
 
         # Use spec to make isinstance() work
@@ -654,3 +643,6 @@ class TestHelperFunctions:
         assert result is not None
         assert result.flow_execution_id == "flow-exec-1"
         assert result.allowed_flow_tools == []
+        assert result.runtime_principal_type == "flow_execution"
+        assert result.runtime_principal_id == "flow-exec-1"
+        assert result.runtime_principal_name == "Test Flow"

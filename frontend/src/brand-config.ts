@@ -32,6 +32,8 @@ export interface BrandMeta {
   extended_description?: string;
   keywords: string;
   og_image: string;
+  og_title?: string;
+  og_description?: string;
 }
 
 export interface BrandHero {

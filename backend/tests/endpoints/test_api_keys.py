@@ -32,6 +32,8 @@ def mock_current_user():
 @pytest.fixture
 def db_session_mock():
     """Create a mock database session."""
+    from preloop.models.db.session import get_db_session
+
     with patch("preloop.api.auth.router.get_db_session") as mock_get_db:
         db_session = MagicMock(spec=Session)
 
@@ -40,8 +42,16 @@ def db_session_mock():
         db_session.rollback = MagicMock()
         db_session.close = MagicMock()
 
-        mock_get_db.return_value = iter([db_session])
+        mock_get_db.side_effect = lambda: iter([db_session])
+
+        # Override the dependency for FastAPI routers
+        app.dependency_overrides[get_db_session] = lambda: db_session
+
         yield db_session
+
+        # Clean up
+        if get_db_session in app.dependency_overrides:
+            del app.dependency_overrides[get_db_session]
 
 
 def test_create_api_key_success(db_session_mock, mock_current_user):
@@ -229,3 +239,52 @@ def test_api_key_model_compatibility():
         if "user_id" in str(e):
             pytest.fail(f"ApiKey model does not accept user_id parameter: {e}")
         raise
+
+
+def test_api_key_governance_round_trip(db_session_mock, mock_current_user):
+    from preloop.api.auth.jwt import get_current_active_user
+
+    app.dependency_overrides[get_current_active_user] = lambda: mock_current_user
+
+    key_id = uuid.uuid4()
+    key = MagicMock(spec=ApiKey)
+    key.id = key_id
+    key.user_id = mock_current_user.id
+    key.account_id = mock_current_user.account_id
+    key.context_data = {}
+    query = MagicMock()
+    filter_result = MagicMock()
+    filter_result.first.return_value = key
+    query.filter.return_value = filter_result
+    db_session_mock.query.return_value = query
+
+    account = MagicMock()
+    account.meta_data = {}
+
+    try:
+        with patch("preloop.api.auth.router.crud_account.get", return_value=account):
+            get_response = client.get(f"/auth/api-keys/{key_id}/governance")
+            assert get_response.status_code == 200
+            assert get_response.json()["config"]["allowed_models"] == []
+
+            update_response = client.put(
+                f"/auth/api-keys/{key_id}/governance",
+                json={
+                    "allowed_models": ["openai/gpt-5"],
+                    "model_budgets": {"openai/gpt-5": {"monthly_usd_limit": 10}},
+                    "tool_rules": {"search_issues": [{"action": "require_approval"}]},
+                },
+            )
+            assert update_response.status_code == 200
+            body = update_response.json()
+            assert body["config"]["allowed_models"] == ["openai/gpt-5"]
+            assert (
+                body["config"]["model_budgets"]["openai/gpt-5"]["monthly_usd_limit"]
+                == 10
+            )
+            assert body["config"]["tool_rules"]["search_issues"][0]["action"] == (
+                "require_approval"
+            )
+            db_session_mock.commit.assert_called()
+    finally:
+        app.dependency_overrides.clear()

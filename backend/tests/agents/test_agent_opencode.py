@@ -134,6 +134,26 @@ class TestOpenCodeModelResolution:
             with patch.object(agent, "use_kubernetes", False):
                 await agent.start(context)
 
+    @pytest.mark.asyncio
+    async def test_gateway_model_alias_takes_priority(self):
+        """Gateway model alias takes priority when gateway transport is enabled."""
+        agent = OpenCodeAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_model_alias": "anthropic/claude-sonnet-4-5",
+            "model_identifier": "claude-sonnet-4-20250514",
+            "agent_config": {"model": "gpt-4o"},
+            "execution_id": "test-123",
+            "flow_id": "flow-1",
+        }
+        with patch.object(
+            agent, "_start_docker_container", new_callable=AsyncMock, return_value="cid"
+        ) as mock_start:
+            with patch.object(agent, "use_kubernetes", False):
+                await agent.start(context)
+                call_ctx = mock_start.call_args[0][0]
+                assert call_ctx["opencode_model"] == "anthropic/claude-sonnet-4-5"
+
 
 class TestOpenCodeBuildScript:
     """Test _build_opencode_script method."""
@@ -267,6 +287,51 @@ class TestOpenCodeBuildConfig:
         assert provider["options"]["apiKey"] == "$OPENAI_API_KEY"
         assert "model-1" in provider["models"]
 
+    def test_gateway_endpoint_uses_preloop_provider(self):
+        """Gateway-enabled config uses gateway provider and URL."""
+        agent = OpenCodeAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_url": "http://gateway.internal/openai/v1",
+            "model_gateway_provider": "preloop",
+        }
+        config = agent._build_opencode_config(
+            "openai/gpt-5", "anthropic", context, 600000
+        )
+        provider = config["provider"]["preloop"]
+        assert provider["options"]["baseURL"] == "http://gateway.internal/openai/v1"
+        assert "openai/gpt-5" in provider["models"]
+        assert config["model"] == "preloop/openai/gpt-5"
+
+    def test_gateway_strips_duplicate_provider_prefix_in_models_map(self):
+        """If alias already includes ``preloop/``, models keys stay provider-local."""
+        agent = OpenCodeAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_url": "http://gateway.internal/openai/v1",
+            "model_gateway_provider": "preloop",
+        }
+        config = agent._build_opencode_config(
+            "preloop/openai/gpt-5", "anthropic", context, 600000
+        )
+        assert config["model"] == "preloop/openai/gpt-5"
+        assert config["provider"]["preloop"]["models"] == {
+            "openai/gpt-5": {"name": "preloop/openai/gpt-5"}
+        }
+
+    def test_non_gateway_provider_fallback_uses_effective_provider(self):
+        """Direct-provider config derives provider consistently for env fallback."""
+        agent = OpenCodeAgent({})
+        with patch.dict(os.environ, {"GOOGLE_API_BASE": "https://google.example/v1"}):
+            config = agent._build_opencode_config(
+                "gemini-2.5-pro", "google", {}, 600000
+            )
+
+        assert config["model"] == "google/gemini-2.5-pro"
+        assert config["provider"]["google"]["options"]["baseURL"] == (
+            "https://google.example/v1"
+        )
+
     def test_no_endpoint_no_provider_config(self):
         """No provider config when no custom endpoint."""
         agent = OpenCodeAgent({})
@@ -343,6 +408,20 @@ class TestOpenCodePrepareEnvironment:
         env = await agent._prepare_environment(context)
         assert env["GOOGLE_API_KEY"] == "google-key-123"
         assert env["OPENAI_API_KEY"] == "google-key-123"
+
+    @pytest.mark.asyncio
+    async def test_gateway_token_sets_gateway_env(self):
+        """Gateway-enabled execution uses the short-lived gateway token."""
+        agent = OpenCodeAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_provider": "preloop",
+            "model_gateway_token": "gw-token-123",
+        }
+        env = await agent._prepare_environment(context)
+        assert env["PRELOOP_API_KEY"] == "gw-token-123"
+        assert env["OPENAI_API_KEY"] == "gw-token-123"
+        assert env["PRELOOP_MODEL_GATEWAY_TOKEN"] == "gw-token-123"
 
 
 class TestOpenCodeKubernetesStartup:

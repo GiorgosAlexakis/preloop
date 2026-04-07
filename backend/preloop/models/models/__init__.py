@@ -16,12 +16,17 @@ from .ai_model import AIModel
 from .flow import Flow
 from .flow_execution import FlowExecution
 from .flow_execution_log import FlowExecutionLog
+from .gateway_usage_search_document import GatewayUsageSearchDocument
 from .webhook import Webhook
 from .tracker_scope_rule import TrackerScopeRule
 from .issue_compliance_result import IssueComplianceResult
 from .plan import Plan, Subscription, MonthlyUsage
 from .issue_relationship import IssueRelationship
 from .issue_set import IssueSet
+from .managed_agent import ManagedAgent
+from .managed_agent_ai_model_binding import ManagedAgentAIModelBinding
+from .managed_agent_credential import ManagedAgentCredential
+from .managed_agent_enrollment import ManagedAgentEnrollment
 from .tool_configuration import ToolConfiguration, ApprovalWorkflow
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
@@ -39,6 +44,16 @@ from .instance import Instance
 from .github_app_installation import OAuthAppInstallation, GitHubAppInstallation
 from .github_oauth_token import OAuthToken, GitHubOAuthToken
 from .policy_snapshot import PolicySnapshot
+from .runtime_session import RuntimeSession
+from .runtime_session_activity import RuntimeSessionActivity
+from .secret_reference import SecretReference
+from .oauth_mcp_client import OAuthMCPClient
+from .oauth_mcp_token import (
+    OAuthMCPAuthorizationCode,
+    OAuthMCPAccessToken,
+    OAuthMCPRefreshToken,
+)
+from .budget import BudgetPolicy, BudgetSpendActivity, BudgetPeriod
 
 __all__ = [
     "Base",
@@ -60,6 +75,7 @@ __all__ = [
     "Flow",
     "FlowExecution",
     "FlowExecutionLog",
+    "GatewayUsageSearchDocument",
     "Webhook",
     "TrackerScopeRule",
     "IssueComplianceResult",
@@ -68,6 +84,10 @@ __all__ = [
     "MonthlyUsage",
     "IssueRelationship",
     "IssueSet",
+    "ManagedAgent",
+    "ManagedAgentAIModelBinding",
+    "ManagedAgentCredential",
+    "ManagedAgentEnrollment",
     "ToolConfiguration",
     "ApprovalWorkflow",
     "MCPServer",
@@ -96,4 +116,14 @@ __all__ = [
     "OAuthToken",
     "GitHubOAuthToken",  # Backward compatibility alias
     "PolicySnapshot",
+    "RuntimeSession",
+    "RuntimeSessionActivity",
+    "SecretReference",
+    "BudgetPolicy",
+    "BudgetSpendActivity",
+    "BudgetPeriod",
+    "OAuthMCPClient",
+    "OAuthMCPAuthorizationCode",
+    "OAuthMCPAccessToken",
+    "OAuthMCPRefreshToken",
 ]

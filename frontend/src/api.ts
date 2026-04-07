@@ -16,10 +16,42 @@ import type {
   ComplianceSuggestion,
   DependencyPair,
   DependencyResponse,
+  FlowGatewayEventsResponse,
+  FlowGatewayEvent,
+  AccountManagedAgentListResponse,
+  ManagedAgentDetailResponse,
+  ManagedAgentSummary,
+  ManagedAgentUpdateRequest,
+  SubjectGovernanceConfig,
+  SubjectGovernanceResponse,
+  AccountGatewayUsageSearchResponse,
+  AccountRuntimeSessionDetailResponse,
+  AccountRuntimeSessionListResponse,
+  RuntimeSessionSummary,
+  RuntimeSessionUpdateRequest,
+  RuntimeSessionActivityListResponse,
+  AccountGatewayUsageSummaryResponse,
+  FlowGatewayUsageSummaryResponse,
+  AIModelGatewayUsageSummaryResponse,
+  AIModelRuntimeSessionListResponse,
+  AIModelGatewayUsageSearchResponse,
+  AIModel,
+  DashboardTelemetryResponse,
 } from './types';
 
 // Global refresh promise to prevent concurrent refresh requests
 let refreshPromise: Promise<string | null> | null = null;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    // Notify the app when the accessToken is changed by another tab
+    if (event.key === 'accessToken') {
+      window.dispatchEvent(
+        new CustomEvent('auth-change', { bubbles: true, composed: true })
+      );
+    }
+  });
+}
 
 export function extractErrorMessage(
   errorData: any,
@@ -68,12 +100,27 @@ async function refreshToken(): Promise<string | null> {
       const data = await response.json();
       localStorage.setItem('accessToken', data.access_token);
       localStorage.setItem('refreshToken', data.refresh_token);
+
+      if (typeof window !== 'undefined') {
+        // Dispatch to current window
+        window.dispatchEvent(
+          new CustomEvent('auth-change', { bubbles: true, composed: true })
+        );
+      }
+
       return data.access_token;
     } catch (error) {
       console.error('Error refreshing token:', error);
       // Clear tokens and redirect to login
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('auth-change', { bubbles: true, composed: true })
+        );
+      }
+
       Router.go('/login');
       return null;
     } finally {
@@ -106,6 +153,16 @@ export async function fetchWithAuth(
 
   if (response.status === 401) {
     console.log('Access token expired, attempting to refresh...');
+
+    // If another tab or process already refreshed the token, use the new one directly
+    const currentToken = localStorage.getItem('accessToken');
+    if (currentToken && currentToken !== accessToken) {
+      console.log('Token was already refreshed, retrying request');
+      headers.set('Authorization', `Bearer ${currentToken}`);
+      options.headers = headers;
+      return fetch(url, options);
+    }
+
     const newAccessToken = await refreshToken();
     if (newAccessToken) {
       headers.set('Authorization', `Bearer ${newAccessToken}`);
@@ -159,6 +216,388 @@ export async function getApiUsageStats() {
   const response = await fetchWithAuth('/api/v1/auth/api-usage');
   if (!response.ok) {
     throw new Error('Failed to fetch API usage stats');
+  }
+  return response.json();
+}
+
+export interface GatewayUsageSummaryParams {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface GatewayUsageSearchParams extends GatewayUsageSummaryParams {
+  query?: string;
+  providerName?: string;
+  modelAlias?: string;
+  flowId?: string;
+  runtimeSessionId?: string;
+  sessionSourceType?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RuntimeSessionListParams extends GatewayUsageSummaryParams {
+  query?: string;
+  sessionSourceType?: string;
+  status?: 'all' | 'active' | 'ended';
+  limit?: number;
+  offset?: number;
+}
+
+export interface RuntimeSessionDetailParams {}
+
+export interface RuntimeSessionInteractionsParams {
+  interactionQuery?: string;
+  interactionLimit?: number;
+  interactionOffset?: number;
+}
+
+export interface ManagedAgentListParams {
+  query?: string;
+  tags?: string;
+  ownerUsername?: string;
+  agentKind?: string;
+  lastSeenAfter?: string;
+  status?: 'all' | 'active' | 'ended';
+  limit?: number;
+  offset?: number;
+}
+
+function buildGatewayUsageQuery(params: GatewayUsageSearchParams = {}): string {
+  const queryParams = new URLSearchParams();
+
+  if (params.startDate) {
+    queryParams.set('start_date', params.startDate);
+  }
+
+  if (params.endDate) {
+    queryParams.set('end_date', params.endDate);
+  }
+
+  if (params.query) {
+    queryParams.set('query', params.query);
+  }
+
+  if (params.providerName) {
+    queryParams.set('provider_name', params.providerName);
+  }
+
+  if (params.modelAlias) {
+    queryParams.set('model_alias', params.modelAlias);
+  }
+
+  if (params.flowId) {
+    queryParams.set('flow_id', params.flowId);
+  }
+
+  if (params.runtimeSessionId) {
+    queryParams.set('runtime_session_id', params.runtimeSessionId);
+  }
+
+  if (params.sessionSourceType) {
+    queryParams.set('session_source_type', params.sessionSourceType);
+  }
+
+  if (typeof params.limit === 'number') {
+    queryParams.set('limit', String(params.limit));
+  }
+
+  if (typeof params.offset === 'number') {
+    queryParams.set('offset', String(params.offset));
+  }
+
+  const queryString = queryParams.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
+function buildRuntimeSessionListQuery(
+  params: RuntimeSessionListParams = {}
+): string {
+  const queryParams = new URLSearchParams();
+
+  if (params.startDate) {
+    queryParams.set('start_date', params.startDate);
+  }
+  if (params.endDate) {
+    queryParams.set('end_date', params.endDate);
+  }
+  if (params.query) {
+    queryParams.set('query', params.query);
+  }
+  if (params.sessionSourceType) {
+    queryParams.set('session_source_type', params.sessionSourceType);
+  }
+  if (params.status) {
+    queryParams.set('status', params.status);
+  }
+  if (typeof params.limit === 'number') {
+    queryParams.set('limit', String(params.limit));
+  }
+  if (typeof params.offset === 'number') {
+    queryParams.set('offset', String(params.offset));
+  }
+
+  const queryString = queryParams.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
+function buildManagedAgentListQuery(
+  params: ManagedAgentListParams = {}
+): string {
+  const queryParams = new URLSearchParams();
+
+  if (params.query) {
+    queryParams.set('query', params.query);
+  }
+  if (params.tags) {
+    queryParams.set('tags', params.tags);
+  }
+  if (params.ownerUsername) {
+    queryParams.set('owner_username', params.ownerUsername);
+  }
+  if (params.agentKind) {
+    queryParams.set('agent_kind', params.agentKind);
+  }
+  if (params.lastSeenAfter) {
+    queryParams.set('last_seen_after', params.lastSeenAfter);
+  }
+  if (params.status) {
+    queryParams.set('status', params.status);
+  }
+  if (typeof params.limit === 'number') {
+    queryParams.set('limit', String(params.limit));
+  }
+  if (typeof params.offset === 'number') {
+    queryParams.set('offset', String(params.offset));
+  }
+
+  const queryString = queryParams.toString();
+  return queryString ? `?${queryString}` : '';
+}
+
+export async function getAccountGatewayUsageSummary(
+  params: GatewayUsageSummaryParams = {}
+): Promise<AccountGatewayUsageSummaryResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/account/gateway-usage/summary${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch account gateway usage summary');
+  }
+  return response.json();
+}
+
+export async function getDashboardTelemetry(): Promise<DashboardTelemetryResponse> {
+  const response = await fetchWithAuth('/api/v1/account/telemetry/dashboard');
+  if (!response.ok) {
+    throw new Error('Failed to fetch dashboard telemetry');
+  }
+  return response.json();
+}
+
+export async function getFlowGatewayUsageSummary(
+  flowId: string,
+  params: GatewayUsageSummaryParams = {}
+): Promise<FlowGatewayUsageSummaryResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/${flowId}/gateway-usage/summary${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch flow gateway usage summary');
+  }
+  return response.json();
+}
+
+export async function getAccountGatewayUsageSearch(
+  params: GatewayUsageSearchParams = {}
+): Promise<AccountGatewayUsageSearchResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/account/gateway-usage/search${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch account gateway usage search results');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessions(
+  params: RuntimeSessionListParams = {}
+): Promise<AccountRuntimeSessionListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions${buildRuntimeSessionListQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch sessions');
+  }
+  return response.json();
+}
+
+export async function getAccountAgents(
+  params: ManagedAgentListParams = {}
+): Promise<AccountManagedAgentListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/agents${buildManagedAgentListQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch managed agents');
+  }
+  return response.json();
+}
+
+export async function getAccountAgent(
+  agentId: string
+): Promise<ManagedAgentDetailResponse> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch managed agent');
+  }
+  return response.json();
+}
+
+export async function updateAccountAgent(
+  agentId: string,
+  payload: ManagedAgentUpdateRequest
+): Promise<ManagedAgentSummary> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update managed agent');
+  }
+  return response.json();
+}
+
+export async function removeAccountAgent(
+  agentId: string
+): Promise<{ message: string }> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to remove managed agent');
+  }
+  return response.json();
+}
+
+export async function getAgentGovernance(
+  agentId: string
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}/governance`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch agent governance');
+  }
+  return response.json();
+}
+
+export async function updateAgentGovernance(
+  agentId: string,
+  config: SubjectGovernanceConfig
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(`/api/v1/agents/${agentId}/governance`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update agent governance');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessionDetail(
+  runtimeSessionId: string,
+  _params: RuntimeSessionDetailParams = {}
+): Promise<AccountRuntimeSessionDetailResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch session detail');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessionInteractions(
+  runtimeSessionId: string,
+  params: RuntimeSessionInteractionsParams = {}
+): Promise<AccountGatewayUsageSearchResponse> {
+  const queryParams = new URLSearchParams();
+
+  if (params.interactionQuery) {
+    queryParams.set('interaction_query', params.interactionQuery);
+  }
+  if (typeof params.interactionLimit === 'number') {
+    queryParams.set('interaction_limit', String(params.interactionLimit));
+  }
+  if (typeof params.interactionOffset === 'number') {
+    queryParams.set('interaction_offset', String(params.interactionOffset));
+  }
+
+  const queryString = queryParams.toString();
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}/interactions${queryString ? `?${queryString}` : ''}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch session interactions');
+  }
+  return response.json();
+}
+
+export async function getAccountRuntimeSessionActivityTimeline(
+  runtimeSessionId: string
+): Promise<RuntimeSessionActivityListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}/activity`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch session activity timeline');
+  }
+  return response.json();
+}
+
+export async function updateAccountRuntimeSession(
+  runtimeSessionId: string,
+  payload: RuntimeSessionUpdateRequest
+): Promise<RuntimeSessionSummary> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to update session');
+  }
+  return response.json();
+}
+
+export async function getRuntimeSessionGatewayEvents(
+  sessionId: string,
+  tail?: number
+): Promise<FlowGatewayEventsResponse> {
+  const params = tail !== undefined ? `?tail=${tail}` : '';
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${sessionId}/gateway-events${params}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch runtime session gateway events');
+  }
+  return response.json();
+}
+
+export async function getRuntimeSessionGatewayEventDetail(
+  sessionId: string,
+  eventId: string
+): Promise<FlowGatewayEvent> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${sessionId}/gateway-events/${eventId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch runtime session gateway event detail');
   }
   return response.json();
 }
@@ -499,11 +938,49 @@ export async function deleteApiKey(keyId: string) {
   }
 }
 
+export async function getApiKeyGovernance(
+  keyId: string
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/auth/api-keys/${keyId}/governance`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch API key governance');
+  }
+  return response.json();
+}
+
+export async function updateApiKeyGovernance(
+  keyId: string,
+  config: SubjectGovernanceConfig
+): Promise<SubjectGovernanceResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/auth/api-keys/${keyId}/governance`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to update API key governance');
+  }
+  return response.json();
+}
+
 // AI Models
-export async function getAIModels() {
+export async function getAIModels(): Promise<AIModel[]> {
   const response = await fetchWithAuth('/api/v1/ai-models');
   if (!response.ok) {
     throw new Error('Failed to fetch AI models');
+  }
+  return response.json();
+}
+
+export async function getAIModel(modelId: string): Promise<AIModel> {
+  const response = await fetchWithAuth(`/api/v1/ai-models/${modelId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model');
   }
   return response.json();
 }
@@ -565,6 +1042,45 @@ export async function getAvailableModelsForProvider(
     throw new Error(
       extractErrorMessage(errorData, 'Failed to fetch available models')
     );
+  }
+  return response.json();
+}
+
+export async function getAIModelGatewayUsageSummary(
+  modelId: string,
+  params: GatewayUsageSummaryParams = {}
+): Promise<AIModelGatewayUsageSummaryResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/ai-models/${modelId}/summary${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model usage summary');
+  }
+  return response.json();
+}
+
+export async function getAIModelRuntimeSessions(
+  modelId: string,
+  params: RuntimeSessionListParams = {}
+): Promise<AIModelRuntimeSessionListResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/ai-models/${modelId}/runtime-sessions${buildRuntimeSessionListQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model runtime sessions');
+  }
+  return response.json();
+}
+
+export async function getAIModelGatewayUsageSearch(
+  modelId: string,
+  params: GatewayUsageSearchParams = {}
+): Promise<AIModelGatewayUsageSearchResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/ai-models/${modelId}/interactions${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch AI model interactions');
   }
   return response.json();
 }
@@ -681,17 +1197,58 @@ export async function getFlowExecutionMetrics(executionId: string): Promise<{
 
 export async function getFlowExecutionLogs(
   executionId: string,
-  tail?: number
+  options?: { tail?: number; skip?: number; limit?: number }
 ): Promise<{
   logs: any[];
   source: 'container' | 'database';
+  has_more?: boolean;
 }> {
-  const params = tail !== undefined ? `?tail=${tail}` : '';
-  const response = await fetchWithAuth(
-    `/api/v1/flows/executions/${executionId}/logs${params}`
-  );
+  const params = new URLSearchParams();
+  if (options?.tail !== undefined)
+    params.append('tail', options.tail.toString());
+  if (options?.skip !== undefined)
+    params.append('skip', options.skip.toString());
+  if (options?.limit !== undefined)
+    params.append('limit', options.limit.toString());
+
+  const queryString = params.toString();
+  const url = `/api/v1/flows/executions/${executionId}/logs${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetchWithAuth(url);
   if (!response.ok) {
     throw new Error('Failed to fetch execution logs');
+  }
+  return response.json();
+}
+
+export async function getFlowExecutionGatewayEvents(
+  executionId: string,
+  tail?: number,
+  metadataOnly: boolean = false
+): Promise<FlowGatewayEventsResponse> {
+  const params = new URLSearchParams();
+  if (tail !== undefined) params.append('tail', tail.toString());
+  if (metadataOnly) params.append('metadata_only', 'true');
+  const paramsStr = params.toString() ? `?${params.toString()}` : '';
+
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/gateway-events${paramsStr}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch execution gateway events');
+  }
+  return response.json();
+}
+
+export async function getFlowExecutionGatewayEvent(
+  executionId: string,
+  eventId: string
+): Promise<any> {
+  const response = await fetchWithAuth(
+    `/api/v1/flows/executions/${executionId}/gateway-events/${eventId}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch execution gateway event');
   }
   return response.json();
 }
@@ -1995,4 +2552,76 @@ export async function generatePolicyFromAudit(options?: {
     );
   }
   return response.json();
+}
+
+export interface BudgetPolicy {
+  id: string;
+  subject_type: string;
+  subject_id: string | null;
+  model_alias: string | null;
+  period: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'all_time';
+  hard_limit_usd: number | null;
+  soft_limit_usd: number | null;
+  notify_on_soft: boolean;
+  notify_on_hard: boolean;
+  notification_emails: string[] | null;
+}
+
+export interface BudgetPolicyCreate {
+  subject_type: string;
+  subject_id: string | null;
+  model_alias: string | null;
+  period: string;
+  hard_limit_usd: number | null;
+  soft_limit_usd: number | null;
+  notify_on_soft: boolean;
+  notify_on_hard: boolean;
+  notification_emails: string[] | null;
+}
+
+export async function getBudgetPolicies(
+  subject_type?: string,
+  subject_id?: string
+): Promise<BudgetPolicy[]> {
+  const params = new URLSearchParams();
+  if (subject_type) params.append('subject_type', subject_type);
+  if (subject_id) params.append('subject_id', subject_id);
+  const q = params.toString();
+  const response = await fetchWithAuth(
+    `/api/v1/budget/policies${q ? '?' + q : ''}`
+  );
+  if (!response.ok) throw new Error('Failed to fetch budget policies');
+  return response.json();
+}
+
+export async function createBudgetPolicy(
+  data: BudgetPolicyCreate
+): Promise<BudgetPolicy> {
+  const response = await fetchWithAuth('/api/v1/budget/policies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to create budget policy');
+  return response.json();
+}
+
+export async function updateBudgetPolicy(
+  id: string,
+  data: Partial<BudgetPolicyCreate>
+): Promise<BudgetPolicy> {
+  const response = await fetchWithAuth(`/api/v1/budget/policies/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error('Failed to update budget policy');
+  return response.json();
+}
+
+export async function deleteBudgetPolicy(id: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/budget/policies/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete budget policy');
 }

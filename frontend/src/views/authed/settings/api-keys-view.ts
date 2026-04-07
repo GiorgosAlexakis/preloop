@@ -1,21 +1,49 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { getApiKeys, createApiKey, deleteApiKey } from '../../../api';
-import type { ApiKey } from '../../../types';
+import {
+  getApiKeys,
+  createApiKey,
+  deleteApiKey,
+  getApprovalWorkflows,
+  getApiKeyGovernance,
+  getFeatures,
+  getTools,
+  updateApiKeyGovernance,
+} from '../../../api';
+import type { ApiKey, SubjectGovernanceConfig } from '../../../types';
+import type { AccessRuleSummary } from '../../../components/governance-rule-set-editor';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
+import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
+import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
+import '@shoelace-style/shoelace/dist/components/option/option.js';
+import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
 import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import type { SlMenuItem } from '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
+import type SlMenuItem from '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
+import '../../../components/governance-rule-set-editor.ts';
+import '../../../components/budget-policy-editor.ts';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 import { parseUTCDate } from '../../../utils/date';
+import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
+import {
+  normalizeScopedToolRules,
+  serializeScopedToolRules,
+  type ScopedToolRules,
+} from '../../../utils/scoped-governance';
+
+interface GovernanceToolDefinition {
+  name: string;
+  description?: string;
+  schema?: Record<string, unknown>;
+}
 
 @customElement('api-keys-view')
 export class ApiKeysView extends LitElement {
@@ -52,9 +80,62 @@ export class ApiKeysView extends LitElement {
   @state()
   private createError: string | null = null;
 
+  @state()
+  private governanceKeyId: string | null = null;
+
+  @state()
+  private governanceKeyName = '';
+
+  @state()
+  private governanceAllowedModels = '';
+
+  @state()
+  private governanceModelBudgets = '{}';
+
+  @state()
+  private governanceToolRules = '{}';
+
+  @state()
+  private scopedToolRules: ScopedToolRules = {};
+
+  @state()
+  private toolCatalog: GovernanceToolDefinition[] = [];
+
+  @state()
+  private approvalWorkflows: any[] = [];
+
+  @state()
+  private featureFlags: { [key: string]: boolean | string[] } = {};
+
+  @state()
+  private governanceToolToAdd = '';
+
+  @state()
+  private governanceCustomToolName = '';
+
+  @state()
+  private governanceError: string | null = null;
+
+  @state()
+  private liveActivity: Record<
+    string,
+    { modelCalls: number; toolCalls: number; lastActivityAt: string | null }
+  > = {};
+
+  private unsubscribeRealtime?: () => void;
+
   async connectedCallback() {
     super.connectedCallback();
-    await this.fetchApiKeys();
+    await Promise.all([
+      this.fetchApiKeys(),
+      this.fetchGovernanceEditorContext(),
+    ]);
+    this.connectRealtime();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unsubscribeRealtime?.();
   }
 
   async fetchApiKeys() {
@@ -68,6 +149,93 @@ export class ApiKeysView extends LitElement {
     } finally {
       this.isLoading = false;
     }
+  }
+
+  private async fetchGovernanceEditorContext(): Promise<void> {
+    try {
+      const [tools, workflows, features] = await Promise.all([
+        getTools(),
+        getApprovalWorkflows(),
+        getFeatures(),
+      ]);
+      this.toolCatalog = (tools || []).map((tool: any) => ({
+        name: tool.name,
+        description: tool.description,
+        schema:
+          tool.schema && typeof tool.schema === 'object'
+            ? tool.schema
+            : undefined,
+      }));
+      this.approvalWorkflows = workflows || [];
+      this.featureFlags = features?.features || {};
+    } catch (error) {
+      console.error('Failed to load governance editor context:', error);
+    }
+  }
+
+  private connectRealtime(): void {
+    const unsubscribe = unifiedWebSocketManager.subscribe(
+      'gateway_activity',
+      (message) => this.handleGatewayActivity(message)
+    );
+    this.unsubscribeRealtime = () => unsubscribe();
+    void unifiedWebSocketManager.connect();
+  }
+
+  private handleGatewayActivity(message: any): void {
+    const payload = message?.payload ?? {};
+    const keyId = payload.api_key_id;
+    if (!keyId || !this.apiKeys.some((key) => key.id === keyId)) {
+      return;
+    }
+    const type = message?.type;
+    const previous = this.liveActivity[keyId] ?? {
+      modelCalls: 0,
+      toolCalls: 0,
+      lastActivityAt: null,
+    };
+    const next = {
+      modelCalls: previous.modelCalls + (type === 'model_gateway_call' ? 1 : 0),
+      toolCalls: previous.toolCalls + (type === 'mcp_call' ? 1 : 0),
+      lastActivityAt:
+        payload.timestamp ??
+        payload.last_activity_at ??
+        previous.lastActivityAt ??
+        new Date().toISOString(),
+    };
+    this.liveActivity = {
+      ...this.liveActivity,
+      [keyId]: next,
+    };
+    this.apiKeys = this.apiKeys.map((key) =>
+      key.id !== keyId
+        ? key
+        : {
+            ...key,
+            activity_status: 'active_now',
+            last_activity_at: next.lastActivityAt,
+            last_used_at: next.lastActivityAt ?? key.last_used_at,
+            recent_model_calls:
+              (key.recent_model_calls ?? 0) +
+              (type === 'model_gateway_call' ? 1 : 0),
+            recent_tool_calls:
+              (key.recent_tool_calls ?? 0) + (type === 'mcp_call' ? 1 : 0),
+          }
+    );
+  }
+
+  private getActivityVariant(key: ApiKey): string {
+    if (key.activity_status === 'active_now') return 'success';
+    if (key.activity_status === 'recently_active') return 'primary';
+    if (key.activity_status === 'revoked') return 'danger';
+    return 'neutral';
+  }
+
+  private getActivityLabel(key: ApiKey): string {
+    if (key.activity_status === 'active_now') return 'Active now';
+    if (key.activity_status === 'recently_active') return 'Recently active';
+    if (key.activity_status === 'revoked') return 'Revoked';
+    return 'Idle';
   }
 
   async handleCreateApiKey() {
@@ -121,6 +289,215 @@ export class ApiKeysView extends LitElement {
       } catch (error) {
         console.error('Failed to delete API key:', error);
       }
+    }
+  }
+
+  private async openGovernanceDialog(key: ApiKey): Promise<void> {
+    this.governanceError = null;
+    this.governanceKeyId = key.id;
+    this.governanceKeyName = key.name;
+    try {
+      const response = await getApiKeyGovernance(key.id);
+      this.governanceAllowedModels = response.config.allowed_models.join(', ');
+      this.governanceModelBudgets = JSON.stringify(
+        response.config.model_budgets || {},
+        null,
+        2
+      );
+      this.scopedToolRules = normalizeScopedToolRules(
+        response.config.tool_rules
+      );
+      this.governanceToolRules = JSON.stringify(
+        response.config.tool_rules || {},
+        null,
+        2
+      );
+    } catch (error) {
+      this.governanceError =
+        error instanceof Error
+          ? error.message
+          : 'Failed to load API key governance';
+    }
+  }
+
+  private async saveGovernance(): Promise<void> {
+    if (!this.governanceKeyId) {
+      return;
+    }
+    this.governanceError = null;
+    try {
+      const config: SubjectGovernanceConfig = {
+        allowed_models: this.governanceAllowedModels
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        model_budgets: JSON.parse(this.governanceModelBudgets || '{}'),
+        tool_rules: serializeScopedToolRules(this.scopedToolRules),
+      };
+      const response = await updateApiKeyGovernance(
+        this.governanceKeyId,
+        config
+      );
+      this.governanceAllowedModels = response.config.allowed_models.join(', ');
+      this.governanceModelBudgets = JSON.stringify(
+        response.config.model_budgets || {},
+        null,
+        2
+      );
+      this.scopedToolRules = normalizeScopedToolRules(
+        response.config.tool_rules
+      );
+      this.governanceToolRules = JSON.stringify(
+        response.config.tool_rules || {},
+        null,
+        2
+      );
+    } catch (error) {
+      this.governanceError =
+        error instanceof Error
+          ? error.message
+          : 'Failed to update API key governance';
+    }
+  }
+
+  private getGovernanceTool(toolName: string): GovernanceToolDefinition | null {
+    return (
+      this.toolCatalog.find((tool) => tool.name === toolName.trim()) ?? null
+    );
+  }
+
+  private getAvailableGovernanceTools(): GovernanceToolDefinition[] {
+    const configured = new Set(Object.keys(this.scopedToolRules));
+    return this.toolCatalog.filter((tool) => !configured.has(tool.name));
+  }
+
+  private addGovernanceToolScope(): void {
+    const toolName = (
+      this.governanceCustomToolName.trim() || this.governanceToolToAdd.trim()
+    ).trim();
+    if (!toolName || this.scopedToolRules[toolName]) {
+      return;
+    }
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: [],
+    };
+    this.governanceToolToAdd = '';
+    this.governanceCustomToolName = '';
+    this.governanceToolRules = JSON.stringify(
+      serializeScopedToolRules(this.scopedToolRules),
+      null,
+      2
+    );
+  }
+
+  private removeGovernanceToolScope(toolName: string): void {
+    const nextRules = { ...this.scopedToolRules };
+    delete nextRules[toolName];
+    this.scopedToolRules = nextRules;
+    this.governanceToolRules = JSON.stringify(
+      serializeScopedToolRules(nextRules),
+      null,
+      2
+    );
+  }
+
+  private saveScopedToolRule(
+    toolName: string,
+    existingRule: AccessRuleSummary | null,
+    formData: {
+      action: 'allow' | 'deny' | 'require_approval';
+      condition_expression: string | null;
+      condition_type: 'simple' | 'cel';
+      description: string | null;
+      is_enabled: boolean;
+      approval_workflow_id: string | null;
+    }
+  ): void {
+    const currentRules = [...(this.scopedToolRules[toolName] || [])].sort(
+      (left, right) => left.priority - right.priority
+    );
+    const nextRules = existingRule
+      ? currentRules.map((rule) =>
+          rule.id === existingRule.id ? { ...rule, ...formData } : rule
+        )
+      : [
+          ...currentRules,
+          {
+            id: `scoped:${toolName}:${Date.now()}:${currentRules.length}`,
+            priority: currentRules.length,
+            ...formData,
+          },
+        ];
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: nextRules.map((rule, index) => ({
+        ...rule,
+        priority: index,
+      })),
+    };
+    this.governanceToolRules = JSON.stringify(
+      serializeScopedToolRules(this.scopedToolRules),
+      null,
+      2
+    );
+  }
+
+  private deleteScopedToolRule(toolName: string, ruleId: string): void {
+    const nextRules = (this.scopedToolRules[toolName] || [])
+      .filter((rule) => rule.id !== ruleId)
+      .map((rule, index) => ({
+        ...rule,
+        priority: index,
+      }));
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: nextRules,
+    };
+    this.governanceToolRules = JSON.stringify(
+      serializeScopedToolRules(this.scopedToolRules),
+      null,
+      2
+    );
+  }
+
+  private reorderScopedToolRules(
+    toolName: string,
+    reorderedRules: { id: string; priority: number }[]
+  ): void {
+    const priorities = new Map(
+      reorderedRules.map((rule) => [rule.id, rule.priority] as const)
+    );
+    const nextRules = [...(this.scopedToolRules[toolName] || [])]
+      .map((rule) => ({
+        ...rule,
+        priority: priorities.get(rule.id) ?? rule.priority,
+      }))
+      .sort((left, right) => left.priority - right.priority)
+      .map((rule, index) => ({
+        ...rule,
+        priority: index,
+      }));
+    this.scopedToolRules = {
+      ...this.scopedToolRules,
+      [toolName]: nextRules,
+    };
+    this.governanceToolRules = JSON.stringify(
+      serializeScopedToolRules(this.scopedToolRules),
+      null,
+      2
+    );
+  }
+
+  private async refreshGovernanceWorkflows(): Promise<void> {
+    try {
+      this.approvalWorkflows = await getApprovalWorkflows();
+    } catch (error) {
+      console.error('Failed to refresh approval workflows:', error);
+      this.governanceError =
+        error instanceof Error
+          ? error.message
+          : 'Failed to refresh approval workflows';
     }
   }
 
@@ -187,8 +564,10 @@ export class ApiKeysView extends LitElement {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Status</th>
                 <th>Created</th>
-                <th>Last Used</th>
+                <th>Last Activity</th>
+                <th>Recent Usage</th>
                 <th>Expires</th>
                 <th>Actions</th>
               </tr>
@@ -201,12 +580,25 @@ export class ApiKeysView extends LitElement {
                   <tr>
                     <td>${key.name}</td>
                     <td>
+                      <sl-badge variant=${this.getActivityVariant(key)}>
+                        ${this.getActivityLabel(key)}
+                      </sl-badge>
+                    </td>
+                    <td>
                       ${parseUTCDate(key.created_at).toLocaleDateString()}
                     </td>
                     <td>
-                      ${key.last_used_at
-                        ? parseUTCDate(key.last_used_at).toLocaleDateString()
+                      ${key.last_activity_at || key.last_used_at
+                        ? parseUTCDate(
+                            key.last_activity_at || key.last_used_at || ''
+                          ).toLocaleDateString()
                         : 'Never'}
+                    </td>
+                    <td>
+                      ${(key.recent_model_calls ?? 0) +
+                      (key.recent_tool_calls ?? 0)}
+                      (${key.recent_model_calls ?? 0} model /
+                      ${key.recent_tool_calls ?? 0} tool)
                     </td>
                     <td>
                       ${key.expires_at
@@ -219,6 +611,12 @@ export class ApiKeysView extends LitElement {
                         size="small"
                         @click=${() => this.handleDeleteApiKey(key.id)}
                         >Revoke</sl-button
+                      >
+                      <sl-button
+                        size="small"
+                        variant="default"
+                        @click=${() => this.openGovernanceDialog(key)}
+                        >Governance</sl-button
                       >
                     </td>
                   </tr>
@@ -331,6 +729,145 @@ export class ApiKeysView extends LitElement {
           autofocus
           @click=${() => (this.isShowKeyModalOpen = false)}
           >I have copied my key</sl-button
+        >
+      </sl-dialog>
+
+      <sl-dialog
+        label=${`Scoped Governance: ${this.governanceKeyName || 'API Key'}`}
+        .open=${Boolean(this.governanceKeyId)}
+        @sl-hide=${() => {
+          this.governanceKeyId = null;
+          this.governanceError = null;
+          this.scopedToolRules = {};
+          this.governanceToolToAdd = '';
+          this.governanceCustomToolName = '';
+        }}
+      >
+        ${this.governanceError
+          ? html`<sl-alert variant="danger" open style="margin-bottom: 1rem;">
+              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+              <strong>Error:</strong> ${this.governanceError}
+            </sl-alert>`
+          : null}
+        <sl-input
+          label="Allowed models"
+          placeholder="preloop/google/gemini-3.1-pro-preview, ..."
+          .value=${this.governanceAllowedModels}
+          @sl-input=${(event: Event) => {
+            this.governanceAllowedModels = (
+              event.target as HTMLInputElement
+            ).value;
+          }}
+          style="margin-bottom: 1rem;"
+        ></sl-input>
+        <div style="margin-bottom: 1rem;">
+          <budget-policy-editor
+            subjectType="api_key"
+            .subjectId=${this.governanceKeyId}
+          ></budget-policy-editor>
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <div
+            style="font-size: var(--sl-input-label-font-size-medium); font-weight: var(--sl-input-label-font-weight); margin-bottom: 0.5rem;"
+          >
+            Scoped tool rules
+          </div>
+          <div
+            style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem;"
+          >
+            <sl-select
+              placeholder="Choose a tool"
+              .value=${this.governanceToolToAdd}
+              @sl-change=${(event: Event) => {
+                this.governanceToolToAdd = (event.target as any).value || '';
+              }}
+            >
+              ${this.getAvailableGovernanceTools().map(
+                (tool) =>
+                  html`<sl-option value=${tool.name}>${tool.name}</sl-option>`
+              )}
+            </sl-select>
+            <sl-input
+              placeholder="Or enter a tool name"
+              .value=${this.governanceCustomToolName}
+              @sl-input=${(event: Event) => {
+                this.governanceCustomToolName = (
+                  event.target as HTMLInputElement
+                ).value;
+              }}
+            ></sl-input>
+            <sl-button
+              variant="default"
+              @click=${() => this.addGovernanceToolScope()}
+              >Add tool scope</sl-button
+            >
+          </div>
+          ${Object.keys(this.scopedToolRules).length === 0
+            ? html`<div class="form-help-text">
+                No scoped tool rules configured. Leave empty to inherit
+                account-wide tool policies.
+              </div>`
+            : Object.keys(this.scopedToolRules)
+                .sort()
+                .map((toolName) => {
+                  const tool = this.getGovernanceTool(toolName);
+                  return html`
+                    <sl-card style="margin-top: 0.75rem;">
+                      <div
+                        style="display:flex; justify-content:space-between; gap:12px; align-items:start; margin-bottom:0.75rem;"
+                      >
+                        <div>
+                          <div style="font-weight: 600;">${toolName}</div>
+                          ${tool?.description
+                            ? html`<div class="form-help-text">
+                                ${tool.description}
+                              </div>`
+                            : ''}
+                        </div>
+                        <sl-button
+                          size="small"
+                          variant="text"
+                          @click=${() =>
+                            this.removeGovernanceToolScope(toolName)}
+                        >
+                          Remove scope
+                        </sl-button>
+                      </div>
+                      <governance-rule-set-editor
+                        .toolName=${toolName}
+                        .toolSchema=${tool?.schema || null}
+                        .rules=${this.scopedToolRules[toolName] || []}
+                        .workflows=${this.approvalWorkflows}
+                        .features=${this.featureFlags}
+                        .emptyMessage=${'No scoped rules for this tool yet.'}
+                        @save-rule=${(event: CustomEvent) =>
+                          this.saveScopedToolRule(
+                            toolName,
+                            event.detail.existingRule,
+                            event.detail.formData
+                          )}
+                        @delete-rule=${(event: CustomEvent) =>
+                          this.deleteScopedToolRule(
+                            toolName,
+                            event.detail.rule.id
+                          )}
+                        @reorder-rules=${(event: CustomEvent) =>
+                          this.reorderScopedToolRules(
+                            toolName,
+                            event.detail.reorderedRules
+                          )}
+                        @workflow-created=${() =>
+                          void this.refreshGovernanceWorkflows()}
+                      ></governance-rule-set-editor>
+                    </sl-card>
+                  `;
+                })}
+        </div>
+        <sl-button slot="footer" @click=${() => (this.governanceKeyId = null)}
+          >Close</sl-button
+        >
+        <sl-button slot="footer" variant="primary" @click=${this.saveGovernance}
+          >Save governance</sl-button
         >
       </sl-dialog>
     `;

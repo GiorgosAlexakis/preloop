@@ -61,6 +61,24 @@ class TestGeminiModelResolution:
     """Test model resolution logic in start()."""
 
     @pytest.mark.asyncio
+    async def test_gateway_enabled_start_uses_gateway_model(self):
+        """Gemini should accept gateway-enabled execution contexts."""
+        agent = GeminiAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_identifier": "google/gemini-3.1-pro-preview",
+            "execution_id": "test-123",
+            "flow_id": "flow-1",
+        }
+        with patch.object(
+            agent, "_start_docker_container", new_callable=AsyncMock, return_value="cid"
+        ) as mock_start:
+            with patch.object(agent, "use_kubernetes", False):
+                await agent.start(context)
+                call_ctx = mock_start.call_args[0][0]
+                assert call_ctx["gemini_model"] == "google/gemini-3.1-pro-preview"
+
+    @pytest.mark.asyncio
     async def test_model_identifier_takes_priority(self):
         """model_identifier from AIModel takes priority over agent_config."""
         agent = GeminiAgent({})
@@ -168,6 +186,21 @@ class TestGeminiBuildScript:
         assert "-H" in script
         assert "$PRELOOP_API_TOKEN" in script
 
+    def test_script_includes_gateway_fallback_notice(self):
+        """Generated script should surface MCP-only compatibility mode."""
+        agent = GeminiAgent({})
+        context = {
+            "prompt": "test",
+            "execution_id": "exec-1",
+            "flow_name": "test-flow",
+            "model_gateway_requested": True,
+            "model_gateway_enabled": False,
+            "model_gateway_disabled_reason": "Gateway transport is unavailable for Gemini.",
+        }
+        script = agent._build_gemini_script(context)
+        assert "Gateway compatibility notice" in script
+        assert "Gateway transport is unavailable for Gemini." in script
+
     def test_prompt_with_single_quotes(self):
         """Prompt with single quotes is handled safely via base64 encoding."""
         import base64
@@ -189,12 +222,38 @@ class TestGeminiPrepareEnvironment:
     """Test _prepare_environment method."""
 
     @pytest.mark.asyncio
+    async def test_gateway_enabled_prepare_environment_sets_base_url_and_header(self):
+        """Gateway-enabled Gemini env prep should configure the managed endpoint."""
+        agent = GeminiAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_endpoint": "https://review.preloop.ai/gemini/v1beta",
+        }
+        env = await agent._prepare_environment(context)
+        assert env["GEMINI_API_BASE_URL"] == "https://review.preloop.ai/gemini/v1beta"
+        assert env["GEMINI_API_KEY_HEADER"] == "x-goog-api-key"
+
+    @pytest.mark.asyncio
     async def test_gemini_api_key(self):
         """Sets GEMINI_API_KEY from model_api_key."""
         agent = GeminiAgent({})
         context = {"model_api_key": "gemini-test-key"}
         env = await agent._prepare_environment(context)
         assert env["GEMINI_API_KEY"] == "gemini-test-key"
+
+    @pytest.mark.asyncio
+    async def test_gemini_base_url_from_model_endpoint(self):
+        """Sets GEMINI_API_BASE_URL when using a custom direct-provider endpoint."""
+        agent = GeminiAgent({})
+        context = {
+            "model_endpoint": "https://generativelanguage.googleapis.com/v1beta",
+            "model_gateway_enabled": False,
+        }
+        env = await agent._prepare_environment(context)
+        assert (
+            env["GEMINI_API_BASE_URL"]
+            == "https://generativelanguage.googleapis.com/v1beta"
+        )
 
     @pytest.mark.asyncio
     async def test_no_hardcoded_home(self):

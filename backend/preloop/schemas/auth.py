@@ -148,6 +148,39 @@ class ApiKeySummary(BaseModel):
     expires_at: Optional[datetime] = None
     scopes: List[Any] = []  # Can be strings or dicts (e.g., {"device_token": "..."})
     last_used_at: Optional[datetime] = None
+    managed_agent_id: Optional[UUID] = None
+    runtime_principal_type: Optional[str] = None
+    runtime_principal_id: Optional[str] = None
+    runtime_principal_name: Optional[str] = None
+    last_activity_at: Optional[datetime] = None
+    activity_status: Optional[str] = None
+    recent_model_calls: int = 0
+    recent_tool_calls: int = 0
+
+
+class RuntimeSessionTokenCreate(BaseModel):
+    """Request model for minting a runtime-scoped session token."""
+
+    session_source_type: str = Field(..., min_length=1, max_length=64)
+    session_source_id: str = Field(..., min_length=1, max_length=255)
+    session_reference: Optional[str] = Field(None, max_length=255)
+    runtime_principal_id: Optional[str] = Field(None, max_length=255)
+    runtime_principal_name: Optional[str] = Field(None, max_length=255)
+    expires_in_minutes: int = Field(default=120, ge=1, le=1440)
+    scopes: List[str] = Field(default_factory=lambda: ["mcp:read", "mcp:write"])
+    allowed_mcp_tools: List[Any] = Field(default_factory=list)
+    allowed_mcp_servers: List[str] = Field(default_factory=list)
+
+
+class RuntimeSessionTokenResponse(BaseModel):
+    """Response model for a minted runtime-scoped session token."""
+
+    runtime_session_id: UUID
+    token: str
+    expires_at: datetime
+    session_source_type: str
+    session_source_id: str
+    session_reference: Optional[str] = None
 
 
 class ApiUsageStatistics(BaseModel):

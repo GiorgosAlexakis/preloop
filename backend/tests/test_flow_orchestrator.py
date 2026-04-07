@@ -11,7 +11,13 @@ from preloop.agents.base import AgentStatus, AgentExecutionResult
 from preloop.models.models import Flow, Account
 from preloop.models.models.user import User
 from preloop.models.schemas.flow import FlowCreate
-from preloop.models.crud import crud_account, crud_user
+from preloop.models.crud import (
+    crud_account,
+    crud_api_key,
+    crud_flow,
+    crud_runtime_session,
+    crud_user,
+)
 
 
 @pytest.fixture
@@ -41,11 +47,15 @@ def test_user(db_session: Session, test_account: Account) -> User:
     user = crud_user.create(db_session, obj_in=user_data)
     db_session.flush()
     db_session.refresh(user)
+    test_account.primary_user_id = user.id
+    db_session.add(test_account)
+    db_session.commit()
+    db_session.refresh(test_account)
     return user
 
 
 @pytest.fixture
-def test_flow(db_session: Session, test_account: Account) -> Flow:
+def test_flow(db_session: Session, test_account: Account, test_user: User) -> Flow:
     """Create a test flow."""
     from preloop.models.crud import crud_flow
 
@@ -171,6 +181,14 @@ class TestFlowExecutionOrchestrator:
             assert (
                 "mock-openhands-session"
                 in orchestrator.execution_log.agent_session_reference
+            )
+            assert orchestrator.runtime_session is not None
+            assert orchestrator.runtime_session.session_source_type == "flow_execution"
+            assert orchestrator.runtime_session.session_source_id == str(
+                orchestrator.execution_log.id
+            )
+            assert orchestrator.runtime_session.session_reference == (
+                "mock-openhands-session-123"
             )
 
             # Verify NATS updates were published
@@ -768,6 +786,84 @@ class TestFlowExecutionOrchestrator:
             # but let's test the flow continues
             await orchestrator.run()
 
+    def test_create_temporary_api_token_uses_primary_user_and_runtime_context(
+        self,
+        db_session: Session,
+        test_flow: Flow,
+        test_user: User,
+        mock_nats_client,
+    ):
+        """Temporary flow credentials should use the primary account user and runtime context."""
+        orchestrator = FlowExecutionOrchestrator(
+            db=db_session,
+            flow_id=test_flow.id,
+            trigger_event_data={"source": "test"},
+            nats_client=mock_nats_client,
+        )
+        orchestrator.flow = test_flow
+        execution_id = uuid4()
+        orchestrator.execution_log = type(
+            "ExecutionLogStub", (), {"id": execution_id}
+        )()
+
+        token_value, token_id = orchestrator._create_temporary_api_token()
+
+        assert token_value is not None
+        assert token_id is not None
+
+        stored_key = crud_api_key.get(db_session, id=token_id)
+        assert stored_key is not None
+        assert stored_key.user_id == test_user.id
+        assert stored_key.key is None
+        assert stored_key.key_hash is not None
+        assert orchestrator.runtime_session is not None
+        runtime_session = crud_runtime_session.get_by_source(
+            db_session,
+            account_id=test_user.account_id,
+            session_source_type="flow_execution",
+            session_source_id=str(execution_id),
+        )
+        assert runtime_session is not None
+        assert stored_key.context_data["flow_execution_id"] == str(execution_id)
+        assert stored_key.context_data["runtime_session_id"] == str(runtime_session.id)
+        assert stored_key.context_data["runtime_principal"]["type"] == "flow_execution"
+        assert stored_key.context_data["runtime_principal"]["id"] == str(execution_id)
+        assert (
+            stored_key.context_data["runtime_principal"]["username"]
+            == test_user.username
+        )
+
+    @pytest.mark.asyncio
+    async def test_bearer_token_end_to_end(
+        self,
+        db_session: Session,
+        test_flow: Flow,
+        test_user: User,
+        mock_nats_client,
+    ):
+        orchestrator = FlowExecutionOrchestrator(
+            db=db_session,
+            flow_id=test_flow.id,
+            trigger_event_data={"source": "test"},
+            nats_client=mock_nats_client,
+        )
+        orchestrator.flow = test_flow
+        from uuid import uuid4
+
+        execution_id = uuid4()
+        orchestrator.execution_log = type(
+            "ExecutionLogStub", (), {"id": execution_id}
+        )()
+
+        token, key_id = orchestrator._create_temporary_api_token()
+        assert token is not None
+
+        from preloop.services.model_gateway_auth import authenticate_bearer_token
+
+        res = await authenticate_bearer_token(token, db_session)
+        assert res is not None
+        assert res.user.id == test_user.id
+
     @pytest.mark.asyncio
     async def test_temporary_api_token_cleanup_token_not_found(
         self,
@@ -1205,6 +1301,76 @@ class TestFlowExecutionOrchestrator:
             assert orchestrator.ai_model is not None
             assert orchestrator.ai_model.name == "Test Model"
             assert orchestrator.execution_log.status == "SUCCEEDED"
+
+    @pytest.mark.asyncio
+    async def test_gemini_flow_keeps_gateway_enabled_model_routing(
+        self,
+        db_session: Session,
+        mock_nats_client,
+        test_account: Account,
+    ):
+        """Gemini should now retain full gateway routing when configured."""
+        from preloop.models.models import AIModel
+        from uuid import uuid4
+
+        ai_model = AIModel(
+            id=str(uuid4()),
+            name="Gemini Gateway Model",
+            model_identifier="gemini-2.5-pro",
+            provider_name="google",
+            api_endpoint="https://generativelanguage.googleapis.com/v1beta",
+            api_key="gemini-secret",
+            model_parameters={},
+            meta_data={
+                "gateway": {
+                    "enabled": True,
+                    "url": "https://review.preloop.ai/openai/v1",
+                    "model_alias": "gemini/gemini-2.5-pro",
+                }
+            },
+        )
+        db_session.add(ai_model)
+        db_session.commit()
+
+        test_flow = crud_flow.create(
+            db=db_session,
+            flow_in=FlowCreate(
+                name="Gemini MCP-only Flow",
+                description="Test Gemini fallback",
+                trigger_event_source="github",
+                trigger_event_types=["issue_created"],
+                prompt_template="Handle {{payload.issue.title}}",
+                agent_type="gemini",
+                agent_config={},
+                account_id=test_account.id,
+                ai_model_id=str(ai_model.id),
+            ),
+            account_id=test_account.id,
+        )
+
+        orchestrator = FlowExecutionOrchestrator(
+            db=db_session,
+            flow_id=test_flow.id,
+            trigger_event_data={
+                "source": "github",
+                "type": "issue_created",
+                "payload": {"issue": {"title": "Test issue"}},
+            },
+            nats_client=mock_nats_client,
+        )
+        orchestrator._get_flow_details()
+        orchestrator.execution_log = type("ExecutionLogStub", (), {"id": uuid4()})()
+
+        execution_context = await orchestrator._prepare_execution_context()
+
+        assert execution_context["model_gateway_enabled"] is True
+        assert execution_context["model_provider"] == "preloop"
+        assert execution_context["model_identifier"] == "gemini/gemini-2.5-pro"
+        assert (
+            execution_context["model_endpoint"] == "https://review.preloop.ai/openai/v1"
+        )
+        assert execution_context["model_api_key"] is None
+        assert "model_gateway_disabled_reason" not in execution_context
 
     @pytest.mark.skip(
         reason="FK constraint prevents creating flow with non-existent AI model. "

@@ -20,6 +20,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from preloop.api.auth.permissions import require_permission
 from preloop.api.auth.jwt import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
@@ -40,11 +41,17 @@ from preloop.schemas.auth import (
     PasswordResetConfirmRequest,
     PasswordResetRequest,
     RefreshRequest,
+    RuntimeSessionTokenCreate,
+    RuntimeSessionTokenResponse,
     Token,
     User,
     AuthUserCreate,
     AuthUserResponse,
     AuthUserUpdate,
+)
+from preloop.schemas.subject_governance import (
+    SubjectGovernanceConfig,
+    SubjectGovernanceResponse,
 )
 from preloop.utils import get_client_ip
 from preloop.utils.email import send_password_reset_email
@@ -58,22 +65,281 @@ from preloop.models.crud import (
     crud_user,
     crud_api_key,
     crud_api_usage,
+    crud_managed_agent,
+    crud_managed_agent_enrollment,
+    crud_mcp_server,
     crud_role,
+    crud_runtime_session,
     crud_user_role,
 )
 from preloop.models.db.session import get_db_session
 from preloop.models.models.user import User as UserModel
 from preloop.models.models.api_key import ApiKey
 from pydantic import BaseModel
+from preloop.services.account_realtime import (
+    ACCOUNT_TOPIC_AUDIT,
+    ACCOUNT_TOPIC_MANAGED_AGENTS,
+    ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+    build_account_event,
+    emit_account_event,
+)
 from preloop.services.account_setup_service import (
     complete_new_account_setup_background,
     notify_admins_user_login_after_inactivity,
     should_notify_on_login,
 )
+from preloop.services.subject_governance import (
+    SUBJECT_TYPE_API_KEYS,
+    get_subject_governance,
+    set_subject_governance,
+)
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+RUNTIME_SESSION_SOURCE_TYPES = {
+    "claude_code",
+    "claude_desktop",
+    "openclaw",
+    "codex",
+    "gemini_cli",
+    "opencode",
+    "desktop_agent",
+    "custom",
+}
+RUNTIME_SESSION_ALLOWED_SCOPES = ("mcp:read", "mcp:write")
+API_KEY_ACTIVE_WINDOW = timedelta(minutes=10)
+API_KEY_RECENT_WINDOW = timedelta(hours=24)
+
+
+def _normalize_runtime_session_scopes(requested_scopes: List[str]) -> List[str]:
+    """Return a deduplicated runtime-safe scope list."""
+    if not requested_scopes:
+        return list(RUNTIME_SESSION_ALLOWED_SCOPES)
+
+    normalized_scopes: List[str] = []
+    invalid_scopes: List[str] = []
+    for scope in requested_scopes:
+        if not isinstance(scope, str):
+            invalid_scopes.append(str(scope))
+            continue
+        normalized_scope = scope.strip()
+        if (
+            not normalized_scope
+            or normalized_scope not in RUNTIME_SESSION_ALLOWED_SCOPES
+        ):
+            invalid_scopes.append(scope)
+            continue
+        if normalized_scope not in normalized_scopes:
+            normalized_scopes.append(normalized_scope)
+
+    if invalid_scopes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Runtime session tokens only support these scopes: "
+                + ", ".join(RUNTIME_SESSION_ALLOWED_SCOPES)
+            ),
+        )
+
+    return normalized_scopes or list(RUNTIME_SESSION_ALLOWED_SCOPES)
+
+
+def _api_key_activity_status(
+    last_activity_at: Optional[datetime], *, is_active: bool
+) -> str:
+    if not is_active:
+        return "revoked"
+    if last_activity_at is None:
+        return "idle"
+    observed_at = (
+        last_activity_at
+        if last_activity_at.tzinfo is not None
+        else last_activity_at.replace(tzinfo=UTC)
+    )
+    age = datetime.now(UTC) - observed_at.astimezone(UTC)
+    if age <= API_KEY_ACTIVE_WINDOW:
+        return "active_now"
+    if age <= API_KEY_RECENT_WINDOW:
+        return "recently_active"
+    return "idle"
+
+
+def _build_api_key_summary(session: Session, key: ApiKey) -> ApiKeySummary:
+    context_data = key.context_data if isinstance(key.context_data, dict) else {}
+    runtime_principal = (
+        context_data.get("runtime_principal")
+        if isinstance(context_data.get("runtime_principal"), dict)
+        else {}
+    )
+    recent_start = datetime.now(UTC) - API_KEY_RECENT_WINDOW
+    last_model_call = crud_api_usage.get_last_model_call_timestamp(
+        session, api_key_id=key.id
+    )
+    recent_model_calls = crud_api_usage.get_recent_model_calls_count(
+        session, api_key_id=key.id, recent_start=recent_start
+    )
+
+    from preloop.models.crud import crud_runtime_session_activity
+
+    last_tool_call = crud_runtime_session_activity.get_last_tool_call_timestamp(
+        session, api_key_id=key.id
+    )
+    recent_tool_calls = crud_runtime_session_activity.get_recent_tool_calls_count(
+        session, api_key_id=key.id, recent_start=recent_start
+    )
+    candidate_times = []
+    for value in (key.last_used_at, last_model_call, last_tool_call):
+        if value:
+            candidate_times.append(
+                value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+            )
+    last_activity_at = max(candidate_times) if candidate_times else None
+    managed_agent_id = context_data.get("managed_agent_id")
+    return ApiKeySummary(
+        id=key.id,
+        name=key.name,
+        created_at=key.created_at,
+        expires_at=key.expires_at,
+        scopes=key.scopes,
+        last_used_at=key.last_used_at,
+        managed_agent_id=UUID(str(managed_agent_id)) if managed_agent_id else None,
+        runtime_principal_type=runtime_principal.get("type"),
+        runtime_principal_id=runtime_principal.get("id"),
+        runtime_principal_name=runtime_principal.get("name"),
+        last_activity_at=last_activity_at,
+        activity_status=_api_key_activity_status(
+            last_activity_at, is_active=bool(key.is_active)
+        ),
+        recent_model_calls=int(recent_model_calls or 0),
+        recent_tool_calls=int(recent_tool_calls or 0),
+    )
+
+
+def _normalize_runtime_session_server_names(server_names: List[str]) -> List[str]:
+    """Return deduplicated MCP server names."""
+    normalized_names: List[str] = []
+    for server_name in server_names:
+        if not isinstance(server_name, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="allowed_mcp_servers must only contain strings",
+            )
+        normalized_name = server_name.strip()
+        if not normalized_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="allowed_mcp_servers must not contain empty names",
+            )
+        if normalized_name not in normalized_names:
+            normalized_names.append(normalized_name)
+    return normalized_names
+
+
+def _normalize_runtime_session_tool_names(requested_tools: List[Any]) -> List[str]:
+    """Extract requested tool names from strings or tool spec objects."""
+    normalized_names: List[str] = []
+    for tool in requested_tools:
+        tool_name: Optional[str]
+        if isinstance(tool, str):
+            tool_name = tool
+        elif isinstance(tool, dict):
+            candidate = tool.get("tool_name") or tool.get("name")
+            tool_name = candidate if isinstance(candidate, str) else None
+        else:
+            tool_name = None
+
+        if not tool_name or not tool_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "allowed_mcp_tools entries must be strings or objects with "
+                    "'tool_name' or 'name'"
+                ),
+            )
+
+        normalized_name = tool_name.strip()
+        if normalized_name not in normalized_names:
+            normalized_names.append(normalized_name)
+
+    return normalized_names
+
+
+def _resolve_runtime_session_tool_restrictions(
+    db: Session,
+    *,
+    account_id: UUID,
+    requested_server_names: List[str],
+    requested_tools: List[Any],
+) -> tuple[List[str], List[Dict[str, str]]]:
+    """Resolve caller input into account-authorized runtime MCP restrictions."""
+    normalized_server_names = _normalize_runtime_session_server_names(
+        requested_server_names
+    )
+    normalized_tool_names = _normalize_runtime_session_tool_names(requested_tools)
+
+    authorized_tool_names: List[str] = []
+    server_ids: List[UUID] = []
+    if normalized_server_names:
+        active_servers = crud_mcp_server.get_active_by_account(
+            db, account_id=str(account_id)
+        )
+        active_server_by_name = {server.name: server for server in active_servers}
+        missing_servers = [
+            server_name
+            for server_name in normalized_server_names
+            if server_name not in active_server_by_name
+        ]
+        if missing_servers:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "allowed_mcp_servers must reference active MCP servers in the "
+                    "current account"
+                ),
+            )
+
+        server_ids = [
+            active_server_by_name[server_name].id
+            for server_name in normalized_server_names
+        ]
+
+        from preloop.models.crud import crud_mcp_tool
+
+        fetched_tool_names = crud_mcp_tool.get_tool_names_by_server_ids(db, server_ids)
+        for name in fetched_tool_names:
+            if name not in authorized_tool_names:
+                authorized_tool_names.append(name)
+
+    if normalized_tool_names:
+        from preloop.models.crud import crud_tool_configuration
+
+        allowed_tool_names = crud_tool_configuration.get_enabled_tool_names(
+            db,
+            account_id=str(account_id),
+            tool_names=normalized_tool_names,
+            allowed_server_ids=server_ids,
+        )
+        missing_tool_names = [
+            tool_name
+            for tool_name in normalized_tool_names
+            if tool_name not in allowed_tool_names
+        ]
+        if missing_tool_names:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "allowed_mcp_tools must reference enabled tools in the current "
+                    "account"
+                ),
+            )
+        for tool_name in normalized_tool_names:
+            if tool_name not in authorized_tool_names:
+                authorized_tool_names.append(tool_name)
+
+    return normalized_server_names, [
+        {"tool_name": tool_name} for tool_name in authorized_tool_names
+    ]
 
 
 class OnboardingRequest(BaseModel):
@@ -666,6 +932,8 @@ async def create_api_key(
         new_key = ApiKey(
             name=key_data.name,
             key=key_value,
+            key_hash=crud_api_key.build_key_hash(key_value),
+            key_prefix=crud_api_key.build_key_prefix(key_value),
             scopes=key_data.scopes,
             account_id=current_user.account_id,
             user_id=current_user.id,
@@ -715,6 +983,244 @@ async def create_api_key(
             pass
 
 
+@router.post(
+    "/runtime-sessions/token",
+    response_model=RuntimeSessionTokenResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+@require_permission("execute_tools")
+async def create_runtime_session_token(
+    session_data: RuntimeSessionTokenCreate,
+    current_user: UserModel = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> RuntimeSessionTokenResponse:
+    """Create a short-lived runtime token bound to a shared runtime session."""
+    if session_data.session_source_type not in RUNTIME_SESSION_SOURCE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Unsupported session_source_type. Expected one of: "
+                + ", ".join(sorted(RUNTIME_SESSION_SOURCE_TYPES))
+            ),
+        )
+
+    scopes = _normalize_runtime_session_scopes(session_data.scopes)
+    allowed_mcp_servers, allowed_mcp_tools = _resolve_runtime_session_tool_restrictions(
+        db,
+        account_id=current_user.account_id,
+        requested_server_names=session_data.allowed_mcp_servers,
+        requested_tools=session_data.allowed_mcp_tools,
+    )
+
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(minutes=session_data.expires_in_minutes)
+    runtime_principal_id = (
+        session_data.runtime_principal_id or session_data.session_source_id
+    )
+    runtime_principal_name = (
+        session_data.runtime_principal_name
+        or session_data.session_reference
+        or runtime_principal_id
+    )
+    existing_managed_agent = crud_managed_agent.get_by_source(
+        db,
+        account_id=str(current_user.account_id),
+        session_source_type=session_data.session_source_type,
+        session_source_id=runtime_principal_id,
+    )
+    if (
+        existing_managed_agent is not None
+        and existing_managed_agent.lifecycle_state in {"suspended", "decommissioned"}
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Runtime token issuance is blocked for "
+                f"{existing_managed_agent.lifecycle_state} agents. "
+                "Resume or reenroll the agent first."
+            ),
+        )
+    existing_runtime_session = crud_runtime_session.get_by_source(
+        db,
+        account_id=current_user.account_id,
+        session_source_type=session_data.session_source_type,
+        session_source_id=session_data.session_source_id,
+    )
+
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db,
+        account_id=current_user.account_id,
+        session_source_type=session_data.session_source_type,
+        session_source_id=session_data.session_source_id,
+        session_reference=session_data.session_reference,
+        runtime_principal_type=session_data.session_source_type,
+        runtime_principal_id=runtime_principal_id,
+        runtime_principal_name=runtime_principal_name,
+        last_activity_at=now,
+        started_at=now,
+        reopen_if_ended=True,
+    )
+    managed_agent = crud_managed_agent.upsert_from_runtime_session(
+        db,
+        account_id=current_user.account_id,
+        runtime_session_id=runtime_session.id,
+        session_source_type=session_data.session_source_type,
+        session_source_id=runtime_principal_id,
+        display_name=runtime_principal_name,
+        session_reference=session_data.session_reference,
+        managed_mcp_servers=allowed_mcp_servers,
+        last_seen_at=now,
+    )
+    db.commit()
+    db.refresh(runtime_session)
+    db.refresh(managed_agent)
+    crud_managed_agent_enrollment.upsert_runtime_bootstrap(
+        db,
+        account_id=current_user.account_id,
+        agent_id=managed_agent.id,
+        created_by_user_id=current_user.id,
+        session_source_type=session_data.session_source_type,
+        session_source_id=session_data.session_source_id,
+        session_reference=session_data.session_reference,
+        display_name=runtime_principal_name,
+        managed_mcp_servers=allowed_mcp_servers,
+        runtime_session_id=runtime_session.id,
+        commit=False,
+    )
+
+    api_key, token_value = crud_api_key.create_runtime_key(
+        db,
+        name=f"Managed Agent {runtime_principal_name} [{runtime_principal_id}]",
+        account_id=current_user.account_id,
+        user_id=current_user.id,
+        scopes=scopes,
+        expires_at=expires_at,
+        context_data={
+            "runtime_session_id": str(runtime_session.id),
+            "managed_agent_id": str(managed_agent.id),
+            "allowed_mcp_tools": allowed_mcp_tools,
+            "allowed_mcp_servers": allowed_mcp_servers,
+            "runtime_principal": {
+                "type": session_data.session_source_type,
+                "id": runtime_principal_id,
+                "name": runtime_principal_name,
+                "user_id": str(current_user.id),
+                "username": current_user.username,
+            },
+        },
+    )
+
+    try:
+        from preloop.plugins.base import get_plugin_manager
+
+        plugin_manager = get_plugin_manager()
+        audit_service = plugin_manager.get_service("audit_service")
+        if audit_service:
+            event_name = "created" if existing_runtime_session is None else "updated"
+            audit_service.log_runtime_session_event(
+                db=db,
+                account_id=current_user.account_id,
+                runtime_session_id=runtime_session.id,
+                event=event_name,
+                session_source_type=runtime_session.session_source_type,
+                session_source_id=runtime_session.session_source_id,
+                session_reference=runtime_session.session_reference,
+                runtime_principal_type=runtime_session.runtime_principal_type,
+                runtime_principal_id=runtime_session.runtime_principal_id,
+                runtime_principal_name=runtime_session.runtime_principal_name,
+                api_key_id=api_key.id,
+                api_key_name=(
+                    f"Runtime Session {session_data.session_source_type}:"
+                    f"{session_data.session_source_id}"
+                ),
+                user_id=current_user.id,
+            )
+            emit_account_event(
+                build_account_event(
+                    account_id=str(current_user.account_id),
+                    topic=ACCOUNT_TOPIC_AUDIT,
+                    event_type="audit_event",
+                    payload={
+                        "action": f"runtime_session_{event_name}",
+                        "runtime_session_id": str(runtime_session.id),
+                        "session_source_type": runtime_session.session_source_type,
+                        "session_source_id": runtime_session.session_source_id,
+                        "session_reference": runtime_session.session_reference,
+                        "runtime_principal_type": runtime_session.runtime_principal_type,
+                        "runtime_principal_id": runtime_session.runtime_principal_id,
+                        "runtime_principal_name": runtime_session.runtime_principal_name,
+                        "api_key_id": str(api_key.id),
+                        "api_key_name": api_key.name,
+                    },
+                    runtime_session_id=str(runtime_session.id),
+                )
+            )
+    except Exception:
+        logger.debug("Failed to audit runtime session token creation", exc_info=True)
+
+    session_event_type = (
+        "runtime_session_created"
+        if existing_runtime_session is None
+        else "runtime_session_updated"
+    )
+    emit_account_event(
+        build_account_event(
+            account_id=str(current_user.account_id),
+            topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+            event_type=session_event_type,
+            payload={
+                "runtime_session_id": str(runtime_session.id),
+                "session_source_type": runtime_session.session_source_type,
+                "session_source_id": runtime_session.session_source_id,
+                "session_reference": runtime_session.session_reference,
+                "runtime_principal_type": runtime_session.runtime_principal_type,
+                "runtime_principal_id": runtime_session.runtime_principal_id,
+                "runtime_principal_name": runtime_session.runtime_principal_name,
+                "started_at": runtime_session.started_at.isoformat()
+                if runtime_session.started_at
+                else None,
+                "last_activity_at": runtime_session.last_activity_at.isoformat()
+                if runtime_session.last_activity_at
+                else None,
+            },
+            runtime_session_id=str(runtime_session.id),
+        )
+    )
+    emit_account_event(
+        build_account_event(
+            account_id=str(current_user.account_id),
+            topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
+            event_type=(
+                "managed_agent_created"
+                if existing_runtime_session is None
+                else "managed_agent_updated"
+            ),
+            payload={
+                "agent_id": str(managed_agent.id),
+                "runtime_session_id": str(managed_agent.runtime_session_id)
+                if managed_agent.runtime_session_id
+                else None,
+                "display_name": managed_agent.display_name,
+                "session_source_type": managed_agent.session_source_type,
+                "session_source_id": managed_agent.session_source_id,
+                "session_reference": managed_agent.session_reference,
+                "managed_mcp_servers": managed_agent.managed_mcp_servers,
+                "last_seen_at": managed_agent.last_seen_at.isoformat(),
+            },
+            runtime_session_id=str(runtime_session.id),
+        )
+    )
+
+    return RuntimeSessionTokenResponse(
+        runtime_session_id=runtime_session.id,
+        token=token_value,
+        expires_at=expires_at,
+        session_source_type=runtime_session.session_source_type,
+        session_source_id=runtime_session.session_source_id,
+        session_reference=runtime_session.session_reference,
+    )
+
+
 @router.get("/api-keys", response_model=List[ApiKeySummary])
 async def list_api_keys(
     current_user: AuthUserResponse = Depends(get_current_active_user),
@@ -734,17 +1240,7 @@ async def list_api_keys(
         # Get API keys using CRUD layer
         keys = crud_api_key.get_by_user(session, username=current_user.username)
 
-        return [
-            ApiKeySummary(
-                id=key.id,
-                name=key.name,
-                created_at=key.created_at,
-                expires_at=key.expires_at,
-                scopes=key.scopes,
-                last_used_at=key.last_used_at,
-            )
-            for key in keys
-        ]
+        return [_build_api_key_summary(session, key) for key in keys]
     finally:
         session.close()
         try:
@@ -752,6 +1248,74 @@ async def list_api_keys(
             next(session_generator, None)
         except StopIteration:
             pass
+
+
+@router.get(
+    "/api-keys/{key_id}/governance",
+    response_model=SubjectGovernanceResponse,
+)
+async def get_api_key_governance(
+    key_id: UUID,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> SubjectGovernanceResponse:
+    key = crud_api_key.get_by_id_and_user(
+        db, key_id=key_id, username=current_user.username
+    )
+    if key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+    account = crud_account.get(db, id=current_user.account_id)
+    return SubjectGovernanceResponse(
+        subject_type=SUBJECT_TYPE_API_KEYS,
+        subject_id=str(key_id),
+        config=SubjectGovernanceConfig.model_validate(
+            get_subject_governance(
+                (account.meta_data or {}) if account else {},
+                subject_type=SUBJECT_TYPE_API_KEYS,
+                subject_id=str(key_id),
+            )
+        ),
+    )
+
+
+@router.put(
+    "/api-keys/{key_id}/governance",
+    response_model=SubjectGovernanceResponse,
+)
+async def update_api_key_governance(
+    key_id: UUID,
+    payload: SubjectGovernanceConfig,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> SubjectGovernanceResponse:
+    key = crud_api_key.get_by_id_and_user(
+        db, key_id=key_id, username=current_user.username
+    )
+    if key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+    account = crud_account.get(db, id=current_user.account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    account.meta_data = set_subject_governance(
+        account.meta_data or {},
+        subject_type=SUBJECT_TYPE_API_KEYS,
+        subject_id=str(key_id),
+        config=payload.model_dump(),
+    )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return SubjectGovernanceResponse(
+        subject_type=SUBJECT_TYPE_API_KEYS,
+        subject_id=str(key_id),
+        config=SubjectGovernanceConfig.model_validate(
+            get_subject_governance(
+                account.meta_data or {},
+                subject_type=SUBJECT_TYPE_API_KEYS,
+                subject_id=str(key_id),
+            )
+        ),
+    )
 
 
 @router.get("/api-keys/debug", response_model=List[ApiKeyResponse])

@@ -56,8 +56,31 @@ services:
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PRELOOP_SERVICE_ROLE: api
     ports:
       - "8000:8000"
+    command: ./start.sh
+
+  gateway:
+    image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres/preloop
+      NATS_URL: nats://nats:4222
+      HOST: 0.0.0.0
+      PORT: 8000
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PRELOOP_SERVICE_ROLE: gateway
+    ports:
+      - "8001:8000"
     command: ./start.sh
 
   scheduler:
@@ -99,8 +122,11 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+      - gateway
     ports:
       - "3000:80"
+    environment:
+      GATEWAY_URL: http://gateway:8000
 
 volumes:
   postgres-data:

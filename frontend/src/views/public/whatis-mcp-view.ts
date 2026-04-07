@@ -2,8 +2,8 @@ import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '../../components/app-header.ts';
-import '../../components/app-footer.ts';
+import '../../components/app-header';
+import '../../components/app-footer';
 
 @customElement('whatis-mcp-view')
 export class WhatIsMcpView extends LitElement {

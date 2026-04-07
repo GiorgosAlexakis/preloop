@@ -1,9 +1,16 @@
 """Tests for AIModel model and CRUD operations."""
 
+import json
+
 from sqlalchemy.orm import Session
 
+from preloop.models.crud import ai_model as ai_model_crud_module
 from preloop.models.models import Account
+from preloop.models.models.secret_reference import SecretReference
 from preloop.models.crud import crud_ai_model
+from preloop.schemas.ai_model import AIModelRead
+from preloop.services import secret_service as secret_service_module
+from preloop.services.secret_service import SecretService, VAULT_KV_V2_BACKEND
 
 
 def test_create_ai_model(db_session: Session, create_account):
@@ -27,9 +34,158 @@ def test_create_ai_model(db_session: Session, create_account):
     assert ai_model.provider_name == "openai"
     assert ai_model.model_identifier == "gpt-4"
     assert ai_model.api_endpoint == "https://api.openai.com/v1"
-    assert ai_model.api_key == "test_key_123"
+    assert ai_model.api_key is None
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.has_api_key is True
+    assert ai_model.credentials_backend_type == "local_encrypted"
     assert ai_model.is_default is True
     assert ai_model.account_id == account.id
+
+
+def test_ai_model_with_ambient_credentials_counts_as_configured(
+    db_session: Session, create_account
+):
+    """Ambient provider credentials should surface as configured."""
+    account: Account = create_account()
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Ambient Bedrock Model",
+            "provider_name": "bedrock",
+            "model_identifier": "us.anthropic.claude-opus-4-6-v1",
+            "meta_data": {
+                "provider_runtime": {
+                    "ambient_credentials": True,
+                    "region": "us-east-1",
+                }
+            },
+        },
+        account_id=account.id,
+    )
+
+    assert ai_model.credentials_secret_id is None
+    assert ai_model.uses_ambient_credentials is True
+    assert ai_model.has_api_key is True
+    assert ai_model.credentials_backend_type == "ambient_provider"
+
+    response_model = AIModelRead.model_validate(ai_model)
+    assert response_model.has_api_key is True
+    assert response_model.credentials_backend_type == "ambient_provider"
+
+
+def test_create_system_default_ai_model_with_secret_reference(db_session: Session):
+    """System-wide default models should support secret-backed credentials."""
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "System Default Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1-mini",
+            "api_key": "system-default-secret",
+            "is_default": True,
+        },
+        account_id=None,
+    )
+
+    assert ai_model.account_id is None
+    assert ai_model.api_key is None
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.credentials_secret is not None
+    assert ai_model.credentials_secret.account_id is None
+    assert ai_model.credentials_secret.secret_kind == "ai_model_api_key"
+
+
+def test_create_ai_model_with_external_secret_reference(
+    db_session: Session, create_account, monkeypatch
+):
+    """External secret references should be stored and exposed on the model."""
+    account: Account = create_account()
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "enabled", True)
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2,
+        "url",
+        "https://vault.example.test",
+    )
+    monkeypatch.setattr(
+        secret_service_module.settings.vault_kv_v2, "token", "test-token"
+    )
+    monkeypatch.setattr(secret_service_module.settings.vault_kv_v2, "mount", "kv")
+
+    monkeypatch.setattr(
+        ai_model_crud_module,
+        "get_secret_service",
+        lambda: SecretService(),
+    )
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "External Secret Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+            "credentials_backend_type": VAULT_KV_V2_BACKEND,
+            "credentials_external_ref": "providers/openai/team-a",
+            "credentials_meta_data": {"field": "api_key", "version": 4},
+            "is_default": False,
+        },
+        account_id=account.id,
+    )
+
+    assert ai_model.api_key is None
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.has_api_key is True
+    assert ai_model.credentials_backend_type == VAULT_KV_V2_BACKEND
+    assert ai_model.credentials_external_ref == "providers/openai/team-a"
+    assert ai_model.credentials_secret is not None
+    assert ai_model.credentials_secret.backend_type == VAULT_KV_V2_BACKEND
+    assert ai_model.credentials_secret.external_ref == "providers/openai/team-a"
+    assert ai_model.credentials_secret.encrypted_value is None
+
+    response_model = AIModelRead.model_validate(ai_model)
+    assert response_model.credentials_backend_type == VAULT_KV_V2_BACKEND
+    assert response_model.credentials_external_ref == "providers/openai/team-a"
+    assert response_model.has_api_key is True
+
+
+def test_create_ai_model_with_structured_credentials(
+    db_session: Session, create_account
+):
+    """Structured inline credentials should be encrypted via SecretReference."""
+    account: Account = create_account()
+
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Codex OAuth Model",
+            "provider_name": "openai-codex",
+            "model_identifier": "gpt-5.4",
+            "credential_type": "oauth_openai_codex",
+            "credential_payload": {
+                "access": "access-token",
+                "refresh": "refresh-token",
+                "expires": 1893456000000,
+                "account_id": "acct-123",
+            },
+        },
+        account_id=account.id,
+    )
+
+    assert ai_model.api_key is None
+    assert ai_model.credentials_secret_id is not None
+    assert ai_model.credentials_secret is not None
+    assert ai_model.credentials_secret.secret_kind == "ai_model_credentials"
+    assert ai_model.credential_type == "oauth_openai_codex"
+
+    stored = json.loads(
+        SecretService().resolve_secret_reference(ai_model.credentials_secret).value
+    )
+    assert stored["type"] == "oauth_openai_codex"
+    assert stored["account_id"] == "acct-123"
+
+    response_model = AIModelRead.model_validate(ai_model)
+    assert response_model.credential_type == "oauth_openai_codex"
+    assert response_model.has_api_key is True
 
 
 def test_get_ai_models_by_account(db_session: Session, create_account):
@@ -111,6 +267,7 @@ def test_update_ai_model_and_default_logic(db_session: Session, create_account):
 
     assert model1.is_default is True
     assert model2.is_default is False
+    assert model2.credentials_secret_id is not None
 
     # Update m2 to be default, m1 should become non-default
     updated_m2 = crud_ai_model.update(
@@ -119,7 +276,8 @@ def test_update_ai_model_and_default_logic(db_session: Session, create_account):
     db_session.refresh(model1)  # Refresh m1 to get its updated state from the DB
 
     assert updated_m2.is_default is True
-    assert updated_m2.api_key == "test_key_456"
+    assert updated_m2.api_key is None
+    assert updated_m2.has_api_key is True
     assert model1.is_default is False
 
     # Update m1 to be default again
@@ -213,11 +371,14 @@ def test_delete_ai_model(db_session: Session, create_account):
         account_id=account.id,
     )
     model_id = model_to_delete.id
+    secret_id = model_to_delete.credentials_secret_id
+    assert secret_id is not None
 
     crud_ai_model.remove(db=db_session, id=model_id)
 
     retrieved_after_delete = crud_ai_model.get(db=db_session, id=model_id)
     assert retrieved_after_delete is None
+    assert db_session.get(SecretReference, secret_id) is None
 
     # Ensure other models for the same account are not affected
     surviving_model = crud_ai_model.create_with_account(
@@ -233,6 +394,45 @@ def test_delete_ai_model(db_session: Session, create_account):
         account_id=account.id,
     )
     assert crud_ai_model.get(db=db_session, id=surviving_model.id) is not None
+
+
+def test_delete_ai_model_preserves_shared_secret_reference(
+    db_session: Session, create_account
+):
+    """Deleting one model should not remove a secret still referenced elsewhere."""
+    account: Account = create_account()
+    primary_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Primary Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4",
+            "api_key": "shared-secret",
+            "is_default": False,
+        },
+        account_id=account.id,
+    )
+    shared_secret_id = primary_model.credentials_secret_id
+    assert shared_secret_id is not None
+
+    secondary_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Secondary Model",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4.1",
+            "is_default": False,
+        },
+        account_id=account.id,
+    )
+    secondary_model.credentials_secret_id = shared_secret_id
+    db_session.add(secondary_model)
+    db_session.commit()
+
+    crud_ai_model.remove(db=db_session, id=primary_model.id)
+
+    assert crud_ai_model.get(db=db_session, id=secondary_model.id) is not None
+    assert db_session.get(SecretReference, shared_secret_id) is not None
 
 
 def test_default_model_exists(db_session: Session):

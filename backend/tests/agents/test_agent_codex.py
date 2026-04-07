@@ -127,6 +127,26 @@ class TestCodexModelResolution:
                 call_ctx = mock_start.call_args[0][0]
                 assert call_ctx["codex_model"] == "gpt-4"
 
+    @pytest.mark.asyncio
+    async def test_gateway_model_alias_takes_priority(self):
+        """Gateway model alias takes priority when gateway transport is enabled."""
+        agent = CodexAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_model_alias": "openai/gpt-5",
+            "model_identifier": "gpt-4o",
+            "agent_config": {"model": "gpt-3.5"},
+            "execution_id": "test-123",
+            "flow_id": "flow-1",
+        }
+        with patch.object(
+            agent, "_start_docker_container", new_callable=AsyncMock, return_value="cid"
+        ) as mock_start:
+            with patch.object(agent, "use_kubernetes", False):
+                await agent.start(context)
+                call_ctx = mock_start.call_args[0][0]
+                assert call_ctx["codex_model"] == "openai/gpt-5"
+
 
 class TestCodexBuildScript:
     """Test _build_codex_script method."""
@@ -232,6 +252,12 @@ class TestCodexAuthConfig:
         assert "ANTHROPIC_API_KEY" in auth_block
         assert "anthropic" in auth_block
         assert 'base_url = "https://api.anthropic.com/v1"' in auth_block
+        assert auth_block.index("rmcp_client = true") < auth_block.index(
+            "[model_providers.anthropic]"
+        )
+        assert auth_block.index("rmcp_client = true") < auth_block.index(
+            "[mcp_servers.preloop]"
+        )
 
     def test_custom_provider_no_endpoint(self):
         """Custom provider without endpoint omits base_url."""
@@ -267,6 +293,20 @@ class TestCodexPrepareEnvironment:
         env = await agent._prepare_environment(context)
         assert env["ANTHROPIC_API_KEY"] == "ant-test-key"
         assert env["OPENAI_API_KEY"] == "ant-test-key"
+
+    @pytest.mark.asyncio
+    async def test_gateway_token_sets_gateway_env(self):
+        """Gateway-enabled execution uses the short-lived gateway token."""
+        agent = CodexAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_provider": "preloop",
+            "model_gateway_token": "gw-token-123",
+        }
+        env = await agent._prepare_environment(context)
+        assert env["PRELOOP_API_KEY"] == "gw-token-123"
+        assert env["OPENAI_API_KEY"] == "gw-token-123"
+        assert env["PRELOOP_MODEL_GATEWAY_TOKEN"] == "gw-token-123"
 
     @pytest.mark.asyncio
     async def test_language_runtime_env_vars(self):

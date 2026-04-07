@@ -7,14 +7,20 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime, Float, Integer, String
-
-from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
 
 if TYPE_CHECKING:
+    from .account import Account
+    from .ai_model import AIModel
+    from .api_key import ApiKey
+    from .flow import Flow
+    from .flow_execution import FlowExecution
+    from .gateway_usage_search_document import GatewayUsageSearchDocument
+    from .runtime_session import RuntimeSession
     from .user import User
 
 
@@ -41,16 +47,88 @@ class ApiUsage(Base):
         nullable=True,
         index=True,
     )
+    account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("account.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("api_key.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
     method: Mapped[str] = mapped_column(String(10), nullable=False)
     status_code: Mapped[int] = mapped_column(Integer, nullable=False)
     duration: Mapped[float] = mapped_column(Float, nullable=False)
     action_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    auth_subject_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    ai_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ai_model.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    flow_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("flow.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    flow_execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("flow_execution.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    runtime_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("runtime_session.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    model_alias: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    provider_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    upstream_request_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+    prompt_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    estimated_cost: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    runtime_principal_type: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+    runtime_principal_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+    runtime_principal_name: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+    meta_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False, index=True
     )
 
     # Relationships
+    account: Mapped[Optional["Account"]] = relationship("Account")
+    api_key: Mapped[Optional["ApiKey"]] = relationship("ApiKey")
+    ai_model: Mapped[Optional["AIModel"]] = relationship("AIModel")
+    flow: Mapped[Optional["Flow"]] = relationship("Flow")
+    flow_execution: Mapped[Optional["FlowExecution"]] = relationship("FlowExecution")
+    runtime_session: Mapped[Optional["RuntimeSession"]] = relationship(
+        "RuntimeSession", back_populates="api_usages"
+    )
+    gateway_search_document: Mapped[Optional["GatewayUsageSearchDocument"]] = (
+        relationship(
+            "GatewayUsageSearchDocument",
+            back_populates="api_usage",
+            uselist=False,
+            cascade="all, delete-orphan",
+        )
+    )
     user: Mapped[Optional["User"]] = relationship("User", back_populates="api_usages")
 
     def __repr__(self) -> str:

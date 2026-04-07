@@ -23,6 +23,14 @@ class PlanFeatures(BaseModel):
     custom_compliance_metrics_enabled: bool = Field(
         ..., description="Whether custom compliance metrics are enabled."
     )
+    hosted_models_monthly_limit_usd: Optional[float] = Field(
+        None,
+        description="Included monthly spend allowance for Preloop-hosted built-in models.",
+    )
+    extra_credit_price_per_usd: Optional[float] = Field(
+        None,
+        description="Customer-facing price for each additional USD of hosted-model usage.",
+    )
 
 
 class PlanBase(BaseModel):

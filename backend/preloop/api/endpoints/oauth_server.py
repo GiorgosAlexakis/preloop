@@ -6,7 +6,8 @@ Provides:
     POST /oauth/register   — Dynamic client registration (MCP clients)
     POST /oauth/revoke     — Token revocation
 
-The CLI uses /oauth/authorize + /oauth/token (no PKCE).
+The CLI uses /oauth/authorize + /oauth/token with either a loopback redirect
+or an out-of-band copy/paste redirect (no PKCE).
 MCP clients (Claude Desktop) discover these via /.well-known metadata.
 """
 
@@ -23,6 +24,10 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["OAuth Server"], include_in_schema=False)
+
+CLI_JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(
+    os.getenv("CLI_JWT_REFRESH_TOKEN_EXPIRE_DAYS", "365")
+)
 
 
 def _oauth_error(
@@ -313,7 +318,7 @@ async def _issue_jwt_tokens(db, db_code):
         expires_delta=access_token_expires,
     )
 
-    refresh_token_expires = timedelta(days=7)
+    refresh_token_expires = timedelta(days=CLI_JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     refresh_token = create_access_token(
         data={"sub": str(user.id), "scopes": [], "refresh": True},
         expires_delta=refresh_token_expires,
@@ -456,7 +461,7 @@ async def _handle_refresh_token(refresh_token_str: str, client_id: str):
                 data={"sub": token_data.sub, "scopes": token_data.scopes or []},
                 expires_delta=access_token_expires,
             )
-            refresh_token_expires = timedelta(days=7)
+            refresh_token_expires = timedelta(days=CLI_JWT_REFRESH_TOKEN_EXPIRE_DAYS)
             new_refresh = create_access_token(
                 data={
                     "sub": token_data.sub,

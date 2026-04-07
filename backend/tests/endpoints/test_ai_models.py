@@ -2,6 +2,7 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
 from preloop.api.endpoints import ai_models
@@ -42,7 +43,19 @@ async def test_create_ai_model(mock_account: Account, mocker: MockerFixture):
         new_callable=MagicMock,
     )
     mock_crud_ai_model.create_with_account.return_value = AIModelRead(
-        **ai_model_in.model_dump(), id=uuid.uuid4(), account_id=str(mock_account.id)
+        id=uuid.uuid4(),
+        name=ai_model_in.name,
+        description=ai_model_in.description,
+        provider_name=ai_model_in.provider_name,
+        model_identifier=ai_model_in.model_identifier,
+        api_endpoint=ai_model_in.api_endpoint,
+        is_default=False,
+        model_parameters=None,
+        meta_data=None,
+        account_id=str(mock_account.id),
+        credentials_secret_id=uuid.uuid4(),
+        credentials_backend_type="local_encrypted",
+        has_api_key=True,
     )
 
     # Act
@@ -128,8 +141,14 @@ async def test_update_ai_model(mock_account: Account, mocker: MockerFixture):
         description="A test AI model",
         provider_name="openai",
         model_identifier="gpt-4",
-        api_key="test_key",
+        api_endpoint=None,
+        is_default=False,
+        model_parameters=None,
+        meta_data=None,
         account_id=str(mock_account.account_id),
+        credentials_secret_id=uuid.uuid4(),
+        credentials_backend_type="local_encrypted",
+        has_api_key=True,
     )
 
     # Act
@@ -174,3 +193,30 @@ async def test_delete_ai_model(mock_account: Account, mocker: MockerFixture):
     # Assert
     mock_crud_ai_model.get.assert_called_once_with(db=mocker.ANY, id=model_id)
     mock_crud_ai_model.remove.assert_called_once_with(db=mocker.ANY, id=model_id)
+
+
+def test_ai_model_schema_rejects_mixed_inline_and_external_credentials():
+    """Schema validation should reject mixing api_key with external secret fields."""
+    with pytest.raises(ValidationError) as create_error:
+        AIModelCreate(
+            name="Mixed Credentials Model",
+            provider_name="openai",
+            model_identifier="gpt-4",
+            api_key="inline-key",
+            credentials_backend_type="vault_kv_v2",
+            credentials_external_ref="providers/openai/team-a",
+        )
+
+    with pytest.raises(ValidationError) as update_error:
+        AIModelUpdate(
+            api_key="inline-key",
+            credentials_backend_type="vault_kv_v2",
+            credentials_external_ref="providers/openai/team-a",
+        )
+
+    assert "api_key cannot be combined with other credential fields" in str(
+        create_error.value
+    )
+    assert "api_key cannot be combined with other credential fields" in str(
+        update_error.value
+    )
