@@ -57,6 +57,7 @@
     "@vaadin/tabs": "^24.3.0",
     "@vaadin/text-field": "^24.8.0",
     "@vaadin/vertical-layout": "^24.8.0",
+    "ansi-to-html": "^0.7.2",
     "chart.js": "^4.5.0",
     "deck.gl": "^9.1.12",
     "events": "^3.3.0",

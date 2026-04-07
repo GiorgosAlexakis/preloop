@@ -1,6 +1,10 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import AnsiToHtml from 'ansi-to-html';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+
+const ansiConverter = new AnsiToHtml({ escapeXML: true, newline: true });
 import consoleStyles from '../../styles/console-styles.css?inline';
 import {
   getFlowExecution,
@@ -2195,7 +2199,9 @@ ${log.payload.content}</pre
       return html`
         <div class="log-entry ${streamClass}">
           <span class="log-timestamp">${time}</span>
-          <span class="log-content">${content}</span>
+          <span class="log-content"
+            >${unsafeHTML(ansiConverter.toHtml(content))}</span
+          >
         </div>
       `;
     }

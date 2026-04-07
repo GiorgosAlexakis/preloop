@@ -425,7 +425,8 @@ echo "PRELOOP_AGENT_EXEC_START"
 
 # Run OpenCode with the prompt.
 # opencode run accepts messages as positional args and runs non-interactively.
-opencode run "$(cat /tmp/prompt.txt)"
+# The -y flag auto-approves all permission requests to avoid hangs.
+opencode run -y "$(cat /tmp/prompt.txt)"
 OPENCODE_EXIT_CODE=$?
 
 echo ""
