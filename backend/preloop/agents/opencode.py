@@ -526,6 +526,8 @@ exit $OPENCODE_EXIT_CODE
                         "options": {
                             "baseURL": model_endpoint,
                             "apiKey": "$OPENAI_API_KEY",
+                            "timeout": 120000,
+                            "chunkTimeout": 120000,
                         },
                         "models": {
                             model_local_id: {"name": model},
@@ -539,6 +541,8 @@ exit $OPENCODE_EXIT_CODE
                         "options": {
                             "baseURL": model_endpoint,
                             "apiKey": "$GOOGLE_API_KEY",
+                            "timeout": 120000,
+                            "chunkTimeout": 120000,
                         },
                         "models": {
                             model_local_id: {"name": model},
@@ -552,6 +556,8 @@ exit $OPENCODE_EXIT_CODE
                         "options": {
                             "baseURL": model_endpoint,
                             "apiKey": "$OPENAI_API_KEY",
+                            "timeout": 120000,
+                            "chunkTimeout": 120000,
                         },
                         "models": {
                             model_local_id: {"name": model},

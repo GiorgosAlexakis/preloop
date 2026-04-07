@@ -1095,18 +1095,16 @@ export class FlowExecutionView extends LitElement {
       }
 
       // Fetch execution metrics (for completed executions)
-      if (
-        this.execution &&
-        ['COMPLETED', 'FAILED', 'STOPPED', 'TIMEOUT'].includes(
-          this.execution.status
-        )
-      ) {
+      if (this.execution) {
         try {
           const metrics = await getFlowExecutionMetrics(this.executionId);
-          this.toolCalls = metrics.tool_calls;
-          this.budgetUsed = metrics.estimated_cost;
-          this.totalTokens = metrics.token_usage.total_tokens;
-          this.hasPricing = metrics.has_pricing;
+          this.toolCalls = Math.max(this.toolCalls, metrics.tool_calls);
+          this.budgetUsed = Math.max(this.budgetUsed, metrics.estimated_cost);
+          this.totalTokens = Math.max(
+            this.totalTokens,
+            metrics.token_usage.total_tokens
+          );
+          this.hasPricing = this.hasPricing || metrics.has_pricing;
           console.log('Loaded execution metrics:', metrics);
         } catch (error) {
           console.error('Failed to fetch execution metrics:', error);

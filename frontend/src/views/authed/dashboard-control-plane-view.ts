@@ -1101,13 +1101,6 @@ export class DashboardView extends AuthedElement {
                   <sl-icon slot="prefix" name="robot"></sl-icon>
                   View Agents
                 </sl-button>
-                <sl-button
-                  size="small"
-                  variant="text"
-                  href="/console/approvals"
-                >
-                  Approvals
-                </sl-button>
               </div>
             </div>
           </div>
