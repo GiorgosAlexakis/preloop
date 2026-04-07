@@ -255,8 +255,10 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
     ) -> List[Any]:
         """Get execution statistics for a list of flow IDs."""
         from sqlalchemy import func, case
+        from preloop.models.models.api_usage import ApiUsage
 
-        return (
+        # Fetch execution stats
+        exec_stats = (
             db.query(
                 self.model.flow_id,
                 func.count(self.model.id).label("total_execs"),
@@ -271,15 +273,42 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
                         else_=0,
                     )
                 ).label("running_execs"),
-                func.coalesce(func.sum(self.model.estimated_cost), 0.0).label(
-                    "estimated_cost"
-                ),
                 func.max(self.model.updated_at).label("last_seen_at"),
             )
             .filter(self.model.flow_id.in_(flow_ids))
             .group_by(self.model.flow_id)
             .all()
         )
+
+        flow_ids_str = [str(fid) for fid in flow_ids]
+
+        # Fetch cost stats from actual API usage
+        cost_stats = (
+            db.query(
+                ApiUsage.flow_id,
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
+            )
+            .filter(
+                ApiUsage.flow_id.in_(flow_ids),
+                ApiUsage.action_type == "model_gateway",
+            )
+            .group_by(ApiUsage.flow_id)
+            .all()
+        )
+
+        cost_map = {str(row.flow_id): row.estimated_cost for row in cost_stats}
+
+        class FlowStatResponse:
+            def __init__(self, row):
+                self.flow_id = row.flow_id
+                self.total_execs = row.total_execs
+                self.running_execs = row.running_execs
+                self.last_seen_at = row.last_seen_at
+                self.estimated_cost = cost_map.get(str(row.flow_id), 0.0)
+
+        return [FlowStatResponse(row) for row in exec_stats]
 
     def append_log(
         self, db: Session, execution_id: str, log_data: dict, *, commit: bool = True
