@@ -1262,7 +1262,7 @@ async def get_api_key_governance(
     session = next(session_generator)
     try:
         key = crud_api_key.get_by_id_and_user(
-            session, key_id=key_id, user_id=current_user.id
+            session, key_id=key_id, username=current_user.username
         )
         if key is None:
             raise HTTPException(status_code=404, detail="API key not found")
@@ -1299,7 +1299,7 @@ async def update_api_key_governance(
     session = next(session_generator)
     try:
         key = crud_api_key.get_by_id_and_user(
-            session, key_id=key_id, user_id=current_user.id
+            session, key_id=key_id, username=current_user.username
         )
         if key is None:
             raise HTTPException(status_code=404, detail="API key not found")

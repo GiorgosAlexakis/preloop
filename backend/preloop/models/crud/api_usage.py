@@ -798,6 +798,30 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.model_alias == model_alias)
         return float(query.scalar() or 0.0)
 
+    def get_dashboard_usage_stats(
+        self, db: Session, *, account_id: str, since: datetime
+    ) -> Dict[str, Any]:
+        """Aggregate high-level API usage metrics for dashboard telemetry."""
+        row = (
+            db.query(
+                func.sum(self.model.estimated_cost).label("estimated_cost"),
+                func.count(self.model.id).label("total_calls"),
+                func.sum(case((self.model.status_code < 400, 1), else_=0)).label(
+                    "success_calls"
+                ),
+            )
+            .filter(
+                self.model.account_id == account_id,
+                self.model.timestamp >= since,
+            )
+            .first()
+        )
+        return {
+            "estimated_cost": float(row.estimated_cost or 0.0) if row else 0.0,
+            "total_calls": int(row.total_calls or 0) if row else 0,
+            "success_calls": int(row.success_calls or 0) if row else 0,
+        }
+
     def get_last_model_call_timestamp(
         self, db: Session, api_key_id: str
     ) -> Optional[datetime]:

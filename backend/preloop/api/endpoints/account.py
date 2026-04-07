@@ -1812,37 +1812,23 @@ async def get_dashboard_telemetry(
 ):
     """Aggregate high-level metrics for the new global dashboard."""
     from datetime import datetime, timedelta, timezone
-    from sqlalchemy import select, func, case
-    from preloop.models.models.runtime_session import RuntimeSession
-    from preloop.models.models.api_usage import ApiUsage
+    from preloop.models.crud.runtime_session import crud_runtime_session
+    from preloop.models.crud.api_usage import crud_api_usage
 
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(days=1)
 
-    active_sessions = (
-        db.scalar(
-            select(func.count(RuntimeSession.id)).filter(
-                RuntimeSession.account_id == account.id,
-                RuntimeSession.ended_at.is_(None),
-            )
-        )
-        or 0
+    active_sessions = crud_runtime_session.count_active_sessions(
+        db, account_id=str(account.id)
     )
 
-    usage_stats = db.execute(
-        select(
-            func.sum(ApiUsage.estimated_cost),
-            func.count(ApiUsage.id),
-            func.sum(case((ApiUsage.status_code < 400, 1), else_=0)),
-        ).filter(
-            ApiUsage.account_id == account.id,
-            ApiUsage.timestamp >= day_ago,
-        )
-    ).first()
+    usage_stats = crud_api_usage.get_dashboard_usage_stats(
+        db, account_id=str(account.id), since=day_ago
+    )
 
-    cost = usage_stats[0] if usage_stats and usage_stats[0] else 0.0
-    total_calls = usage_stats[1] if usage_stats and usage_stats[1] else 0
-    success_calls = usage_stats[2] if usage_stats and usage_stats[2] else 0
+    cost = usage_stats.get("estimated_cost", 0.0)
+    total_calls = usage_stats.get("total_calls", 0)
+    success_calls = usage_stats.get("success_calls", 0)
 
     success_rate = (success_calls / total_calls * 100.0) if total_calls > 0 else 0.0
 

@@ -348,6 +348,17 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             .first()
         )
 
+    def count_active_sessions(self, db: Session, *, account_id: str) -> int:
+        """Count active (non-ended) runtime sessions for an account."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.ended_at.is_(None),
+            )
+            .count()
+        )
+
     def get_latest_by_principal(
         self,
         db: Session,
