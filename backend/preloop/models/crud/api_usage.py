@@ -797,3 +797,34 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         if model_alias:
             query = query.filter(ApiUsage.model_alias == model_alias)
         return float(query.scalar() or 0.0)
+
+    def get_last_model_call_timestamp(
+        self, db: Session, api_key_id: str
+    ) -> Optional[datetime]:
+        """Get the most recent timestamp of a model gateway call by this API key."""
+        return (
+            db.query(func.max(ApiUsage.timestamp))
+            .filter(
+                ApiUsage.api_key_id == api_key_id,
+                ApiUsage.action_type == "model_gateway",
+            )
+            .scalar()
+        )
+
+    def get_recent_model_calls_count(
+        self, db: Session, api_key_id: str, recent_start: datetime
+    ) -> int:
+        """Get the count of model gateway calls made by this API key since recent_start."""
+        return (
+            db.query(func.count(ApiUsage.id))
+            .filter(
+                ApiUsage.api_key_id == api_key_id,
+                ApiUsage.action_type == "model_gateway",
+                ApiUsage.timestamp >= recent_start,
+            )
+            .scalar()
+            or 0
+        )
+
+
+crud_api_usage = CRUDApiUsage(ApiUsage)

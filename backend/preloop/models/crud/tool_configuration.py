@@ -1,6 +1,6 @@
 """CRUD operations for ToolConfiguration model."""
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
@@ -80,6 +80,28 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
                 self.model.account_id == account_id,
                 self.model.tool_name == tool_name,
                 self.model.tool_source == tool_source,
+            )
+            .first()
+        )
+
+    def get_by_tool_name(
+        self, db: Session, account_id: str, tool_name: str
+    ) -> Optional[models.ToolConfiguration]:
+        """Retrieve a tool configuration by tool name and account.
+
+        Args:
+            db: The database session.
+            account_id: The ID of the account.
+            tool_name: The name of the tool.
+
+        Returns:
+            The tool configuration object if found, otherwise None.
+        """
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.tool_name == tool_name,
             )
             .first()
         )
@@ -297,6 +319,37 @@ class CRUDToolConfiguration(CRUDBase[models.ToolConfiguration]):
             .all()
         )
 
+    def get_enabled_tool_names(
+        self,
+        db: Session,
+        account_id: str,
+        tool_names: List[str],
+        allowed_server_ids: List[Any],
+    ) -> set[str]:
+        """Retrieve enabled tool names for an account given a requested list of tool names and allowed servers."""
+        from sqlalchemy import or_
+
+        query = db.query(self.model.tool_name).filter(
+            self.model.account_id == account_id,
+            self.model.is_enabled.is_(True),
+            self.model.tool_name.in_(tool_names),
+        )
+        if allowed_server_ids:
+            query = query.filter(
+                or_(
+                    self.model.mcp_server_id.is_(None),
+                    self.model.mcp_server_id.in_(allowed_server_ids),
+                )
+            )
+        else:
+            query = query.filter(self.model.mcp_server_id.is_(None))
+
+        rows = query.distinct().all()
+        return {row.tool_name for row in rows if row.tool_name}
+
+
+crud_tool_configuration = CRUDToolConfiguration()
+
 
 # Async helper functions
 async def get_tool_config_by_name_and_source_async(
@@ -321,6 +374,36 @@ async def get_tool_config_by_name_and_source_async(
             models.ToolConfiguration.account_id == account_id,
             models.ToolConfiguration.tool_name == tool_name,
             models.ToolConfiguration.tool_source == tool_source,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_tool_config_by_id_async(
+    db: Session,
+    account_id: str,
+    id: str,
+) -> Optional[models.ToolConfiguration]:
+    """Async: Retrieve a tool configuration by ID and account."""
+    result = await db.execute(
+        select(models.ToolConfiguration).where(
+            models.ToolConfiguration.account_id == account_id,
+            models.ToolConfiguration.id == id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_tool_config_by_tool_name_async(
+    db: Session,
+    account_id: str,
+    tool_name: str,
+) -> Optional[models.ToolConfiguration]:
+    """Async: Retrieve a tool configuration by tool name and account."""
+    result = await db.execute(
+        select(models.ToolConfiguration).where(
+            models.ToolConfiguration.account_id == account_id,
+            models.ToolConfiguration.tool_name == tool_name,
         )
     )
     return result.scalar_one_or_none()

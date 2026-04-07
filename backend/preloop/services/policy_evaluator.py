@@ -10,10 +10,19 @@ import re
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from preloop.models import models
+from preloop.models.crud import (
+    crud_account,
+    crud_tool_configuration,
+    crud_tool_access_rule,
+)
+from preloop.models.crud.account import get_meta_data_async
+from preloop.models.crud.tool_configuration import (
+    get_tool_config_by_id_async,
+    get_tool_config_by_tool_name_async,
+)
+from preloop.models.crud.tool_access_rule import get_multi_by_config_async
 from preloop.services.subject_governance import (
     get_scoped_tool_rules,
     is_tool_enabled_for_subject,
@@ -219,7 +228,7 @@ def evaluate_policy(
         - approval_workflow_id: Policy ID to use if action is 'require_approval'
         - matched_rule_description: Description of the matched rule (or reason for default)
     """
-    account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    account = crud_account.get(db, id=account_id)
     account_meta = (account.meta_data or {}) if account else {}
 
     if not is_tool_enabled_for_subject(
@@ -235,22 +244,12 @@ def evaluate_policy(
 
     # Get tool configuration
     if tool_configuration_id:
-        tool_config = (
-            db.query(models.ToolConfiguration)
-            .filter(
-                models.ToolConfiguration.id == tool_configuration_id,
-                models.ToolConfiguration.account_id == account_id,
-            )
-            .first()
+        tool_config = crud_tool_configuration.get(
+            db, id=tool_configuration_id, account_id=account_id
         )
     else:
-        tool_config = (
-            db.query(models.ToolConfiguration)
-            .filter(
-                models.ToolConfiguration.tool_name == tool_name,
-                models.ToolConfiguration.account_id == account_id,
-            )
-            .first()
+        tool_config = crud_tool_configuration.get_by_tool_name(
+            db, account_id=account_id, tool_name=tool_name
         )
 
     context = {
@@ -309,15 +308,11 @@ def evaluate_policy(
         return "allow", None, "No tool configuration found"
 
     # Load all access rules for this tool, ordered by priority (lower first)
-    rules = (
-        db.query(models.ToolAccessRule)
-        .filter(
-            models.ToolAccessRule.tool_configuration_id == tool_config.id,
-            models.ToolAccessRule.account_id == account_id,
-            models.ToolAccessRule.is_enabled == True,  # noqa: E712
-        )
-        .order_by(models.ToolAccessRule.priority.asc())
-        .all()
+    rules = crud_tool_access_rule.get_multi_by_config(
+        db,
+        config_id=tool_config.id,
+        account_id=account_id,
+        enabled_only=True,
     )
 
     logger.info(
@@ -742,10 +737,7 @@ async def evaluate_policy_async(
 
     See evaluate_policy for full documentation.
     """
-    account_result = await db.execute(
-        select(models.Account.meta_data).where(models.Account.id == account_id)
-    )
-    account_meta_data = account_result.scalar_one_or_none() or {}
+    account_meta_data = await get_meta_data_async(db, account_id=str(account_id))
 
     if not is_tool_enabled_for_subject(
         account_meta_data, tool_name=tool_name, subject_context=subject_context or {}
@@ -760,21 +752,13 @@ async def evaluate_policy_async(
 
     # Get tool configuration
     if tool_configuration_id:
-        result = await db.execute(
-            select(models.ToolConfiguration).where(
-                models.ToolConfiguration.id == tool_configuration_id,
-                models.ToolConfiguration.account_id == account_id,
-            )
+        tool_config = await get_tool_config_by_id_async(
+            db, id=tool_configuration_id, account_id=account_id
         )
-        tool_config = result.scalar_one_or_none()
     else:
-        result = await db.execute(
-            select(models.ToolConfiguration).where(
-                models.ToolConfiguration.tool_name == tool_name,
-                models.ToolConfiguration.account_id == account_id,
-            )
+        tool_config = await get_tool_config_by_tool_name_async(
+            db, account_id=account_id, tool_name=tool_name
         )
-        tool_config = result.scalar_one_or_none()
 
     context = {
         "tool_name": tool_name,
@@ -837,16 +821,12 @@ async def evaluate_policy_async(
         return "allow", None, "No tool configuration found"
 
     # Load all access rules for this tool, ordered by priority (lower first)
-    result = await db.execute(
-        select(models.ToolAccessRule)
-        .where(
-            models.ToolAccessRule.tool_configuration_id == tool_config.id,
-            models.ToolAccessRule.account_id == account_id,
-            models.ToolAccessRule.is_enabled == True,  # noqa: E712
-        )
-        .order_by(models.ToolAccessRule.priority.asc())
+    rules = await get_multi_by_config_async(
+        db,
+        config_id=tool_config.id,
+        account_id=account_id,
+        enabled_only=True,
     )
-    rules = result.scalars().all()
 
     if not rules:
         # No rules defined, check for legacy approval_workflow_id on tool config

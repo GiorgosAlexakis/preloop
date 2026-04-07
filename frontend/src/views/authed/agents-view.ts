@@ -1551,7 +1551,9 @@ export class AgentsView extends LitElement {
     const totalRequests = isFlow
       ? flowNode?.execution_stats?.total_execs || 0
       : agent?.total_requests;
-    const estimatedCost = isFlow ? 0 : agent?.estimated_cost;
+    const estimatedCost = isFlow
+      ? flowNode?.execution_stats?.estimated_cost || 0
+      : agent?.estimated_cost || 0;
     const lastSeen = isFlow
       ? flowNode?.execution_stats?.last_seen_at
       : agent?.last_seen_at;
@@ -1753,12 +1755,13 @@ export class AgentsView extends LitElement {
                       : 'Missing'}</span
                   >
                 </div>
-                <div class="metric-row">
-                  <span class="label">Estimated Cost</span>
-                  <span class="value">${this.formatMoney(estimatedCost!)}</span>
-                </div>
               `
             : ''}
+
+          <div class="metric-row">
+            <span class="label">Estimated Cost</span>
+            <span class="value">${this.formatMoney(estimatedCost!)}</span>
+          </div>
 
           <div class="metric-row">
             <span class="label">${isFlow ? 'Executions' : 'Requests'}</span>
@@ -1933,7 +1936,10 @@ export class AgentsView extends LitElement {
                 const totalExecs = isFlow
                   ? item.execution_stats?.total_execs || 0
                   : 0;
-                const totalSpend = isFlow ? 0 : 0; // Not available easily anymore, omit for now.
+                const totalSpend = isFlow
+                  ? item.execution_stats?.estimated_cost || 0
+                  : agent?.estimated_cost || 0;
+                const estimatedCost = totalSpend;
                 const lastSeenFlow = isFlow
                   ? item.execution_stats?.last_seen_at
                   : null;

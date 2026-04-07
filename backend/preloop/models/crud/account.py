@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
 
 from ..models.account import Account
 from .base import CRUDBase
@@ -124,3 +125,9 @@ class CRUDAccount(CRUDBase[Account]):
         if not account:
             return {}
         return {obj.organization_id: obj.role for obj in account.organizations}
+
+
+async def get_meta_data_async(db: Session, account_id: str) -> dict:
+    """Async: Get meta_data for an account by ID."""
+    result = await db.execute(select(Account.meta_data).where(Account.id == account_id))
+    return result.scalar_one_or_none() or {}

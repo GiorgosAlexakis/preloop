@@ -26,7 +26,6 @@ from preloop.models.crud import crud_mcp_server, crud_tool_configuration
 from preloop.models.db.session import get_db_session as get_db
 from preloop.api.endpoints.tools import BUILTIN_TOOLS
 from preloop.services.subject_governance import is_tool_enabled_for_subject
-from preloop.models.models.account import Account
 
 logger = logging.getLogger(__name__)
 
@@ -208,11 +207,9 @@ class DynamicFastMCP(FastMCP):
             def _fetch_account_meta():
                 db = next(get_db())
                 try:
-                    acc = (
-                        db.query(Account)
-                        .filter(Account.id == user_context.account_id)
-                        .first()
-                    )
+                    from preloop.models.crud import crud_account
+
+                    acc = crud_account.get(db, id=user_context.account_id)
                     return getattr(acc, "meta_data", {})
                 finally:
                     db.close()

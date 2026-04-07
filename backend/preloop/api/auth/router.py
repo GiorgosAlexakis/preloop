@@ -17,7 +17,6 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -74,12 +73,8 @@ from preloop.models.crud import (
     crud_user_role,
 )
 from preloop.models.db.session import get_db_session
-from preloop.models.models.mcp_tool import MCPTool
-from preloop.models.models.tool_configuration import ToolConfiguration
 from preloop.models.models.user import User as UserModel
 from preloop.models.models.api_key import ApiKey
-from preloop.models.models.api_usage import ApiUsage
-from preloop.models.models.runtime_session_activity import RuntimeSessionActivity
 from pydantic import BaseModel
 from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_AUDIT,
@@ -178,41 +173,20 @@ def _build_api_key_summary(session: Session, key: ApiKey) -> ApiKeySummary:
         else {}
     )
     recent_start = datetime.now(UTC) - API_KEY_RECENT_WINDOW
-    last_model_call = (
-        session.query(func.max(ApiUsage.timestamp))
-        .filter(
-            ApiUsage.api_key_id == key.id,
-            ApiUsage.action_type == "model_gateway",
-        )
-        .scalar()
+    last_model_call = crud_api_usage.get_last_model_call_timestamp(
+        session, api_key_id=key.id
     )
-    recent_model_calls = (
-        session.query(func.count(ApiUsage.id))
-        .filter(
-            ApiUsage.api_key_id == key.id,
-            ApiUsage.action_type == "model_gateway",
-            ApiUsage.timestamp >= recent_start,
-        )
-        .scalar()
-        or 0
+    recent_model_calls = crud_api_usage.get_recent_model_calls_count(
+        session, api_key_id=key.id, recent_start=recent_start
     )
-    last_tool_call = (
-        session.query(func.max(RuntimeSessionActivity.timestamp))
-        .filter(
-            RuntimeSessionActivity.api_key_id == key.id,
-            RuntimeSessionActivity.activity_type == "tool_call",
-        )
-        .scalar()
+
+    from preloop.models.crud import crud_runtime_session_activity
+
+    last_tool_call = crud_runtime_session_activity.get_last_tool_call_timestamp(
+        session, api_key_id=key.id
     )
-    recent_tool_calls = (
-        session.query(func.count(RuntimeSessionActivity.id))
-        .filter(
-            RuntimeSessionActivity.api_key_id == key.id,
-            RuntimeSessionActivity.activity_type == "tool_call",
-            RuntimeSessionActivity.timestamp >= recent_start,
-        )
-        .scalar()
-        or 0
+    recent_tool_calls = crud_runtime_session_activity.get_recent_tool_calls_count(
+        session, api_key_id=key.id, recent_start=recent_start
     )
     candidate_times = []
     for value in (key.last_used_at, last_model_call, last_tool_call):
@@ -329,32 +303,23 @@ def _resolve_runtime_session_tool_restrictions(
             active_server_by_name[server_name].id
             for server_name in normalized_server_names
         ]
-        server_tool_rows = (
-            db.query(MCPTool.name)
-            .filter(MCPTool.mcp_server_id.in_(server_ids))
-            .distinct()
-            .all()
-        )
-        for row in server_tool_rows:
-            if row.name not in authorized_tool_names:
-                authorized_tool_names.append(row.name)
+
+        from preloop.models.crud import crud_mcp_tool
+
+        fetched_tool_names = crud_mcp_tool.get_tool_names_by_server_ids(db, server_ids)
+        for name in fetched_tool_names:
+            if name not in authorized_tool_names:
+                authorized_tool_names.append(name)
 
     if normalized_tool_names:
-        allowed_tool_rows = (
-            db.query(ToolConfiguration.tool_name)
-            .filter(
-                ToolConfiguration.account_id == account_id,
-                ToolConfiguration.is_enabled.is_(True),
-                ToolConfiguration.tool_name.in_(normalized_tool_names),
-                or_(
-                    ToolConfiguration.mcp_server_id.is_(None),
-                    ToolConfiguration.mcp_server_id.in_(server_ids),
-                ),
-            )
-            .distinct()
-            .all()
+        from preloop.models.crud import crud_tool_configuration
+
+        allowed_tool_names = crud_tool_configuration.get_enabled_tool_names(
+            db,
+            account_id=str(account_id),
+            tool_names=normalized_tool_names,
+            allowed_server_ids=server_ids,
         )
-        allowed_tool_names = {row.tool_name for row in allowed_tool_rows}
         missing_tool_names = [
             tool_name
             for tool_name in normalized_tool_names
@@ -1296,10 +1261,8 @@ async def get_api_key_governance(
     session_generator = get_db_session()
     session = next(session_generator)
     try:
-        key = (
-            session.query(ApiKey)
-            .filter(ApiKey.id == key_id, ApiKey.user_id == current_user.id)
-            .first()
+        key = crud_api_key.get_by_id_and_user(
+            session, key_id=key_id, user_id=current_user.id
         )
         if key is None:
             raise HTTPException(status_code=404, detail="API key not found")
@@ -1335,10 +1298,8 @@ async def update_api_key_governance(
     session_generator = get_db_session()
     session = next(session_generator)
     try:
-        key = (
-            session.query(ApiKey)
-            .filter(ApiKey.id == key_id, ApiKey.user_id == current_user.id)
-            .first()
+        key = crud_api_key.get_by_id_and_user(
+            session, key_id=key_id, user_id=current_user.id
         )
         if key is None:
             raise HTTPException(status_code=404, detail="API key not found")

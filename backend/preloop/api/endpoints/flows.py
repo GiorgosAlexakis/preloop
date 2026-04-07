@@ -137,6 +137,7 @@ def read_flows(
                 "total_execs": s.total_execs,
                 "running_execs": int(s.running_execs or 0),
                 "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,
+                "estimated_cost": float(s.estimated_cost or 0.0),
             }
             for s in stats
         }
@@ -148,6 +149,7 @@ def read_flows(
                     "total_execs": 0,
                     "running_execs": 0,
                     "last_seen_at": None,
+                    "estimated_cost": 0.0,
                 },
             )
 
@@ -315,6 +317,8 @@ async def get_flow_execution_logs(
     execution_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
     tail: int | None = None,
+    skip: int = 0,
+    limit: int | None = None,
 ) -> Dict[str, Any]:
     """Get execution logs from the container (if running) or database (if finished).
 
@@ -324,11 +328,14 @@ async def get_flow_execution_logs(
     Args:
         execution_id: ID of the execution
         tail: Number of recent log lines to retrieve, or None for all logs
+        skip: Number of logs to skip (for pagination)
+        limit: Number of logs to return (for pagination)
 
     Returns:
         Dictionary with:
         - logs: List of log lines
         - source: Where logs were fetched from ("container" or "database")
+        - has_more: Boolean indicating if there are more logs (if paginated)
     """
     from preloop.agents.container import ContainerAgentExecutor
     from preloop.agents.codex import CodexAgent
@@ -397,7 +404,7 @@ async def get_flow_execution_logs(
                     }
                 )
 
-            return {"logs": formatted_logs, "source": "container"}
+            return {"logs": formatted_logs, "source": "container", "has_more": False}
 
         except Exception as e:
             import logging
@@ -415,15 +422,38 @@ async def get_flow_execution_logs(
 
     # For finished executions or if container logs failed, return database logs.
     # Prefer the normalized flow_execution_log table; fall back to legacy JSONB column.
-    # Ensure reasonable bounds for tail (default to 5000 if not provided to prevent massive payloads)
-    actual_tail = tail if tail is not None else 5000
+
+    # If using pagination, default to ascending order
+    # If neither tail nor limit is provided, use limit=5000 to prevent massive payloads
+    actual_limit = limit if limit is not None else (tail if tail is not None else 5000)
+
+    # Fetch one extra row to determine if there are more
+    query_limit = actual_limit + 1 if actual_limit else None
+
     log_rows = crud_flow_execution_log.get_by_execution_id(
-        db, execution_id, tail=actual_tail, desc=True
+        db,
+        execution_id,
+        tail=query_limit
+        if getattr(execution, "status", "") != "RUNNING" and tail is not None
+        else (tail if getattr(execution, "status", "") == "RUNNING" else None),
+        desc=tail is not None,  # If tail is used, query descending
+        skip=skip,
+        limit=query_limit if tail is None else None,
     )
 
+    has_more = False
+    if query_limit is not None and len(log_rows) > actual_limit:
+        has_more = True
+        if tail is not None:
+            # If tail is used, the extra row is the oldest (at the start of the reversed list)
+            log_rows = log_rows[1:]
+        else:
+            # If limit is used, the extra row is the newest (at the end of the list)
+            log_rows = log_rows[:actual_limit]
+
     if log_rows:
-        # DB returns descending (newest first), reverse it for chronological display
-        log_rows = list(reversed(log_rows))
+        # DB returns logs chronologically (oldest first).
+        # Crud layer already handles reversing if tail+desc was used.
         logs = [
             {
                 "execution_id": str(row.execution_id),
@@ -433,12 +463,16 @@ async def get_flow_execution_logs(
             }
             for row in log_rows
         ]
-        return {"logs": logs, "source": "database"}
+        return {"logs": logs, "source": "database", "has_more": has_more}
     elif execution.execution_logs and isinstance(execution.execution_logs, list):
         # Legacy fallback for executions logged before the migration
-        return {"logs": execution.execution_logs, "source": "database"}
+        return {
+            "logs": execution.execution_logs,
+            "source": "database",
+            "has_more": False,
+        }
     else:
-        return {"logs": [], "source": "database"}
+        return {"logs": [], "source": "database", "has_more": False}
 
 
 @router.get("/flows/executions/{execution_id}/gateway-events")

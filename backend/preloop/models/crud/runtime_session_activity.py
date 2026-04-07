@@ -329,5 +329,63 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             .all()
         )
 
+    def get_last_tool_call_timestamp(
+        self, db: Session, api_key_id: Any
+    ) -> Optional[datetime]:
+        """Get the most recent timestamp of a tool call by this API key."""
+        return (
+            db.query(func.max(self.model.timestamp))
+            .filter(
+                self.model.api_key_id == api_key_id,
+                self.model.activity_type == "tool_call",
+            )
+            .scalar()
+        )
+
+    def get_recent_tool_calls_count(
+        self, db: Session, api_key_id: Any, recent_start: datetime
+    ) -> int:
+        """Get the count of tool calls made by this API key since recent_start."""
+        return (
+            db.query(func.count(self.model.id))
+            .filter(
+                self.model.api_key_id == api_key_id,
+                self.model.activity_type == "tool_call",
+                self.model.timestamp >= recent_start,
+            )
+            .scalar()
+            or 0
+        )
+
+    def get_tool_call_count_by_flow_execution(
+        self, db: Session, flow_execution_id: Any
+    ) -> int:
+        """Count tool calls for a specific flow execution."""
+        return (
+            db.query(func.count(self.model.id))
+            .filter(
+                self.model.flow_execution_id == flow_execution_id,
+                self.model.activity_type == "tool_call",
+            )
+            .scalar()
+            or 0
+        )
+
+    def get_recent_successful_tool_calls_by_flow_execution(
+        self, db: Session, flow_execution_id: Any, limit: int = 12
+    ) -> list[RuntimeSessionActivity]:
+        """Return recent successful tool call activities for a flow execution."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.flow_execution_id == flow_execution_id,
+                self.model.activity_type == "tool_call",
+                self.model.status == "success",
+            )
+            .order_by(self.model.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
 
 crud_runtime_session_activity = CRUDRuntimeSessionActivity(RuntimeSessionActivity)

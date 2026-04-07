@@ -507,6 +507,15 @@ export class FlowExecutionView extends LitElement {
   private logs: FlowExecutionUpdate[] = [];
 
   @state()
+  private hasMoreLogs = false;
+
+  @state()
+  private logsSkip = 0;
+
+  @state()
+  private isFetchingMoreLogs = false;
+
+  @state()
   private gatewayEvents: FlowGatewayEvent[] = [];
 
   @state()
@@ -688,6 +697,65 @@ export class FlowExecutionView extends LitElement {
           'Execution is finished, not connecting to WebSocket stream'
         );
       }
+    }
+  }
+
+  async loadPreviousLogs() {
+    if (!this.executionId || !this.hasMoreLogs || this.isFetchingMoreLogs)
+      return;
+
+    this.isFetchingMoreLogs = true;
+    const FETCH_LIMIT = 500;
+
+    // We want to skip what we've already fetched.
+    this.logsSkip += FETCH_LIMIT;
+
+    try {
+      // Remember the current scroll position so we can restore it after adding logs at the top
+      const scrollElement =
+        this.logContainerRef ||
+        (this.shadowRoot?.querySelector('.log-container') as HTMLElement);
+      let prevScrollHeight = 0;
+      let prevScrollTop = 0;
+      if (scrollElement) {
+        prevScrollHeight = scrollElement.scrollHeight;
+        prevScrollTop = scrollElement.scrollTop;
+      }
+
+      const logsResult = await getFlowExecutionLogs(this.executionId, {
+        tail: FETCH_LIMIT,
+        skip: this.logsSkip,
+      });
+
+      if (
+        logsResult &&
+        Array.isArray(logsResult.logs) &&
+        logsResult.logs.length > 0
+      ) {
+        // Prepend new logs to the existing logs array
+        this.logs = [...logsResult.logs, ...this.logs];
+        this.hasMoreLogs = !!logsResult.has_more;
+
+        // Restore scroll position so content doesn't jump
+        if (scrollElement) {
+          // Wait for render cycle to complete
+          this.updateComplete.then(() => {
+            const newScrollHeight = scrollElement.scrollHeight;
+            scrollElement.scrollTop =
+              prevScrollTop + (newScrollHeight - prevScrollHeight);
+          });
+        }
+      } else {
+        // No more logs actually returned
+        this.hasMoreLogs = false;
+      }
+    } catch (error) {
+      console.error('Failed to load previous logs:', error);
+      // Revert skip on failure
+      this.logsSkip -= FETCH_LIMIT;
+    } finally {
+      this.isFetchingMoreLogs = false;
+      this.requestUpdate();
     }
   }
 
@@ -979,29 +1047,37 @@ export class FlowExecutionView extends LitElement {
       this.hydrateMetricsFromExecution();
 
       // Fetch logs
-      const logsResult = await getFlowExecutionLogs(this.executionId).catch(
-        (error) => {
-          console.error('Failed to fetch logs:', error);
-          if (
-            this.execution &&
-            this.execution.execution_logs &&
-            Array.isArray(this.execution.execution_logs)
-          ) {
-            console.log(
-              `Using fallback: Loaded ${this.execution.execution_logs.length} persisted logs from database`
-            );
-            return { logs: this.execution.execution_logs, source: 'fallback' };
-          }
-          console.log('No fallback logs available');
-          return { logs: [], source: 'none' };
+      const INITIAL_FETCH_LIMIT = 500;
+      this.logsSkip = 0;
+
+      const logsResult = await getFlowExecutionLogs(this.executionId, {
+        tail: INITIAL_FETCH_LIMIT,
+      }).catch((error) => {
+        console.error('Failed to fetch logs:', error);
+        if (
+          this.execution &&
+          this.execution.execution_logs &&
+          Array.isArray(this.execution.execution_logs)
+        ) {
+          console.log(
+            `Using fallback: Loaded ${this.execution.execution_logs.length} persisted logs from database`
+          );
+          return {
+            logs: this.execution.execution_logs,
+            source: 'fallback',
+            has_more: false,
+          };
         }
-      );
+        console.log('No fallback logs available');
+        return { logs: [], source: 'none', has_more: false };
+      });
 
       if (logsResult && Array.isArray(logsResult.logs)) {
         console.log(
           `Loaded ${logsResult.logs.length} logs from ${logsResult.source}`
         );
         this.logs = logsResult.logs;
+        this.hasMoreLogs = !!logsResult.has_more;
       }
       this.hydrateToolActivityLogs();
 
@@ -1944,6 +2020,22 @@ ${this.execution.resolved_input_prompt}</pre
                     </div>
 
                     <div class="log-container">
+                      ${this.hasMoreLogs
+                        ? html`
+                            <div
+                              style="text-align: center; padding: 10px 0; border-bottom: 1px solid var(--sl-color-neutral-200); margin-bottom: 10px;"
+                            >
+                              <sl-button
+                                size="small"
+                                variant="default"
+                                ?loading=${this.isFetchingMoreLogs}
+                                @click=${this.loadPreviousLogs}
+                              >
+                                Load Previous Logs
+                              </sl-button>
+                            </div>
+                          `
+                        : ''}
                       ${this.logs.length === 0
                         ? html`
                             <div class="empty-logs">

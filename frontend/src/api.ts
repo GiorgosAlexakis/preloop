@@ -1197,15 +1197,24 @@ export async function getFlowExecutionMetrics(executionId: string): Promise<{
 
 export async function getFlowExecutionLogs(
   executionId: string,
-  tail?: number
+  options?: { tail?: number; skip?: number; limit?: number }
 ): Promise<{
   logs: any[];
   source: 'container' | 'database';
+  has_more?: boolean;
 }> {
-  const params = tail !== undefined ? `?tail=${tail}` : '';
-  const response = await fetchWithAuth(
-    `/api/v1/flows/executions/${executionId}/logs${params}`
-  );
+  const params = new URLSearchParams();
+  if (options?.tail !== undefined)
+    params.append('tail', options.tail.toString());
+  if (options?.skip !== undefined)
+    params.append('skip', options.skip.toString());
+  if (options?.limit !== undefined)
+    params.append('limit', options.limit.toString());
+
+  const queryString = params.toString();
+  const url = `/api/v1/flows/executions/${executionId}/logs${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetchWithAuth(url);
   if (!response.ok) {
     throw new Error('Failed to fetch execution logs');
   }

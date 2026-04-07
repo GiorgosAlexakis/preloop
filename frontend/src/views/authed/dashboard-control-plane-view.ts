@@ -451,7 +451,6 @@ export class DashboardView extends AuthedElement {
         align-items: center;
         justify-content: space-between;
         gap: var(--sl-spacing-small);
-        margin-bottom: var(--sl-spacing-medium);
       }
 
       .card-title,
@@ -606,7 +605,6 @@ export class DashboardView extends AuthedElement {
           grid-template-columns: 1fr;
         }
       }
-
       @media (max-width: 800px) {
         .card-header,
         .card-header-with-action,
@@ -1618,11 +1616,12 @@ export class DashboardView extends AuthedElement {
       <sl-card>
         <div slot="header" class="card-header-with-action">
           <div class="chart-header">
-            <img
-              src="/images/mcp.png"
+            <sl-icon
+              src="/images/mcp.svg"
+              slot="prefix"
+              class="mcp-icon"
               alt="MCP"
-              style="width: 20px; height: 20px;"
-            />
+            ></sl-icon>
             MCP Server
             <sl-tooltip
               content="Built-in and external MCP tools for issue management and automation"

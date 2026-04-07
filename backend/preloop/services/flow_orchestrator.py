@@ -1509,17 +1509,10 @@ class FlowExecutionOrchestrator:
         if not self.execution_log:
             return self.tool_calls_count
 
-        from preloop.models.models.runtime_session_activity import (
-            RuntimeSessionActivity,
-        )
+        from preloop.models.crud import crud_runtime_session_activity
 
-        return (
-            self.db.query(RuntimeSessionActivity)
-            .filter(
-                RuntimeSessionActivity.flow_execution_id == self.execution_log.id,
-                RuntimeSessionActivity.activity_type == "tool_call",
-            )
-            .count()
+        return crud_runtime_session_activity.get_tool_call_count_by_flow_execution(
+            self.db, flow_execution_id=self.execution_log.id
         )
 
     def _get_recent_runtime_tool_activity_signatures(
@@ -1529,20 +1522,10 @@ class FlowExecutionOrchestrator:
         if not self.execution_log:
             return []
 
-        from preloop.models.models.runtime_session_activity import (
-            RuntimeSessionActivity,
-        )
+        from preloop.models.crud import crud_runtime_session_activity
 
-        activities = (
-            self.db.query(RuntimeSessionActivity)
-            .filter(
-                RuntimeSessionActivity.flow_execution_id == self.execution_log.id,
-                RuntimeSessionActivity.activity_type == "tool_call",
-                RuntimeSessionActivity.status == "success",
-            )
-            .order_by(RuntimeSessionActivity.timestamp.desc())
-            .limit(limit)
-            .all()
+        activities = crud_runtime_session_activity.get_recent_successful_tool_calls_by_flow_execution(
+            self.db, flow_execution_id=self.execution_log.id, limit=limit
         )
 
         signatures: list[str] = []
@@ -2159,6 +2142,26 @@ class FlowExecutionOrchestrator:
                         f"Using stored logs for output_summary ({len(output_summary)} chars)"
                     )
 
+            # Sync metrics one last time before final status
+            try:
+                from preloop.services.execution_metrics import ExecutionMetricsService
+
+                metrics_service = ExecutionMetricsService(self.db)
+                final_metrics = metrics_service.get_execution_metrics(
+                    str(self.execution_log.id)
+                )
+                self.tool_calls_count = final_metrics.get(
+                    "tool_calls", self.tool_calls_count
+                )
+                self.total_tokens = final_metrics.get("token_usage", {}).get(
+                    "total_tokens", self.total_tokens
+                )
+                self.estimated_cost = final_metrics.get(
+                    "estimated_cost", self.estimated_cost
+                )
+            except Exception as e:
+                logger.error(f"Failed to calculate final metrics for execution: {e}")
+
             await self._update_execution_log(
                 status=final_status,
                 model_output_summary=output_summary,
@@ -2204,6 +2207,30 @@ class FlowExecutionOrchestrator:
 
             if self.execution_log:
                 try:
+                    # Sync metrics one last time before final status
+                    try:
+                        from preloop.services.execution_metrics import (
+                            ExecutionMetricsService,
+                        )
+
+                        metrics_service = ExecutionMetricsService(self.db)
+                        final_metrics = metrics_service.get_execution_metrics(
+                            str(self.execution_log.id)
+                        )
+                        self.tool_calls_count = final_metrics.get(
+                            "tool_calls", self.tool_calls_count
+                        )
+                        self.total_tokens = final_metrics.get("token_usage", {}).get(
+                            "total_tokens", self.total_tokens
+                        )
+                        self.estimated_cost = final_metrics.get(
+                            "estimated_cost", self.estimated_cost
+                        )
+                    except Exception as metrics_error:
+                        logger.error(
+                            f"Failed to calculate final metrics for failed execution: {metrics_error}"
+                        )
+
                     await self._update_execution_log(
                         status="FAILED",
                         error_message=str(e),
@@ -2215,7 +2242,7 @@ class FlowExecutionOrchestrator:
                     self._sync_runtime_session(ended_at=datetime.now(timezone.utc))
                 except Exception as update_error:
                     logger.error(
-                        f"Failed to update execution log with error status: {update_error}",
+                        f"Failed to update execution log after error: {update_error}",
                         exc_info=True,
                     )
             else:

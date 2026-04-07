@@ -118,3 +118,22 @@ class CRUDMCPTool(CRUDBase[models.MCPTool]):
         )
         db.commit()
         return count
+
+    def get_tool_names_by_server_ids(
+        self,
+        db: Session,
+        server_ids: List[UUID],
+    ) -> List[str]:
+        """Retrieve distinct tool names for a set of MCP servers."""
+        if not server_ids:
+            return []
+        rows = (
+            db.query(self.model.name)
+            .filter(self.model.mcp_server_id.in_(server_ids))
+            .distinct()
+            .all()
+        )
+        return [row.name for row in rows if row.name]
+
+
+crud_mcp_tool = CRUDMCPTool()

@@ -271,6 +271,9 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
                         else_=0,
                     )
                 ).label("running_execs"),
+                func.coalesce(func.sum(self.model.estimated_cost), 0.0).label(
+                    "estimated_cost"
+                ),
                 func.max(self.model.updated_at).label("last_seen_at"),
             )
             .filter(self.model.flow_id.in_(flow_ids))

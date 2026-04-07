@@ -18,6 +18,8 @@ class CRUDFlowExecutionLog(CRUDBase[FlowExecutionLog]):
         execution_id: uuid.UUID,
         tail: Optional[int] = None,
         desc: bool = False,
+        skip: int = 0,
+        limit: Optional[int] = None,
     ) -> List[FlowExecutionLog]:
         query = select(FlowExecutionLog).filter(
             FlowExecutionLog.execution_id == execution_id,
@@ -28,8 +30,13 @@ class CRUDFlowExecutionLog(CRUDBase[FlowExecutionLog]):
         else:
             query = query.order_by(FlowExecutionLog.timestamp.asc())
 
+        if skip > 0:
+            query = query.offset(skip)
+
         if tail:
             query = query.limit(tail)
+        elif limit is not None:
+            query = query.limit(limit)
 
         rows = db.execute(query).scalars().all()
 
