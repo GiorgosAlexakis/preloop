@@ -32,11 +32,9 @@ class ExecutionMetricsService:
             - estimated_cost: Estimated cost based on token usage (0.0 if no pricing)
             - has_pricing: Whether pricing is configured in AI model metadata
         """
-        execution = (
-            self.db.query(models.FlowExecution)
-            .filter(models.FlowExecution.id == execution_id)
-            .first()
-        )
+        from preloop.models.crud import crud_flow_execution
+
+        execution = crud_flow_execution.get(self.db, id=execution_id)
 
         if not execution:
             raise ValueError(f"Execution {execution_id} not found")
@@ -204,21 +202,17 @@ class ExecutionMetricsService:
             return (0.0, False)
 
         # Get the flow and AI model
-        flow = (
-            self.db.query(models.Flow)
-            .filter(models.Flow.id == execution.flow_id)
-            .first()
-        )
+        from preloop.models.crud import crud_flow
+
+        flow = crud_flow.get(self.db, id=execution.flow_id)
 
         if not flow or not flow.ai_model_id:
             # No pricing available - return 0 cost
             return (0.0, False)
 
-        ai_model = (
-            self.db.query(models.AIModel)
-            .filter(models.AIModel.id == flow.ai_model_id)
-            .first()
-        )
+        from preloop.models.crud import crud_ai_model
+
+        ai_model = crud_ai_model.get(self.db, id=flow.ai_model_id)
 
         if not ai_model:
             return (0.0, False)

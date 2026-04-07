@@ -311,13 +311,18 @@ class TestNatsConsumer:
         mock_publisher.nc = mock_nc
         mock_get_publisher.return_value = mock_publisher
 
-        # Mock subscribe to capture the message handler
+        # Mock subscribe to capture the message handlers
         mock_sub = AsyncMock()
-        captured_handler = None
+        message_handler = None
+        persistence_handler = None
 
-        async def mock_subscribe(subject, cb):
-            nonlocal captured_handler
-            captured_handler = cb
+        async def mock_subscribe(subject, queue=None, cb=None, **kwargs):
+            nonlocal message_handler, persistence_handler
+            handler = cb or kwargs.get("cb")
+            if subject == "flow-updates.*" and queue == "log-persisters":
+                persistence_handler = handler
+            elif subject == "flow-updates.*" and not queue:
+                message_handler = handler
             return mock_sub
 
         mock_nc.subscribe = mock_subscribe
@@ -328,10 +333,11 @@ class TestNatsConsumer:
         # Give it time to subscribe
         await asyncio.sleep(0.1)
 
-        # Verify handler was captured
-        assert captured_handler is not None
+        # Verify handlers were captured
+        assert message_handler is not None
+        assert persistence_handler is not None
 
-        # Test the message handler
+        # Test the message handlers
         test_message = {
             "execution_id": "exec_123",
             "message": "Test update",
@@ -340,8 +346,8 @@ class TestNatsConsumer:
         mock_msg = MagicMock()
         mock_msg.data.decode.return_value = json.dumps(test_message)
 
-        # Call the handler
-        await captured_handler(mock_msg)
+        # Call the persistence handler to verify persistence
+        await persistence_handler(mock_msg)
 
         # Verify persist_execution_log was called
         assert mock_persist.called
@@ -388,9 +394,11 @@ class TestNatsConsumer:
 
         captured_handler = None
 
-        async def mock_subscribe(subject, cb):
+        async def mock_subscribe(subject, cb=None, **kwargs):
             nonlocal captured_handler
-            captured_handler = cb
+            # Capture the broadcasting handler for testing
+            if subject == "flow-updates.*" and not kwargs.get("queue"):
+                captured_handler = cb or kwargs.get("cb")
             return AsyncMock()
 
         mock_nc.subscribe = mock_subscribe
@@ -435,9 +443,10 @@ class TestNatsConsumer:
 
         captured_handler = None
 
-        async def mock_subscribe(subject, cb):
+        async def mock_subscribe(subject, cb=None, **kwargs):
             nonlocal captured_handler
-            captured_handler = cb
+            if subject == "flow-updates.*" and not kwargs.get("queue"):
+                captured_handler = cb or kwargs.get("cb")
             return AsyncMock()
 
         mock_nc.subscribe = mock_subscribe

@@ -11,13 +11,13 @@ logger = logging.getLogger(__name__)
 
 MCP_TOOL_PATTERNS = [
     re.compile(
-        r"(?:calling\s+(?:mcp\s+)?tool:?|tool\s+call:?|mcp\s+tool:?|called\s+tool:)\s*"
-        r"(?P<server>[A-Za-z0-9._-]+)/(?P<tool>[A-Za-z0-9._:-]+)",
+        r"(?:calling\s+(?:(?:mcp\s+)?tool:?\s+)?|tool\s+call:?\s+|mcp\s+tool:?\s+|called\s+tool:?\s+)"
+        r"(?<!/)\b(?P<server>[A-Za-z0-9._-]+)/(?P<tool>[A-Za-z0-9._:-]+)\b(?!/)",
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?:using|running)\s+(?:mcp\s+)?tool\s+"
-        r"\b(?P<server>[A-Za-z0-9._-]+)/(?P<tool>[A-Za-z0-9._:-]+)\b",
+        r"(?:using|running)\s+(?:(?:mcp\s+)?tool\s+)"
+        r"(?<!/)\b(?P<server>[A-Za-z0-9._-]+)/(?P<tool>[A-Za-z0-9._:-]+)\b(?!/)",
         re.IGNORECASE,
     ),
 ]
@@ -263,10 +263,6 @@ class FlowExecutionLogger:
         if re.fullmatch(r"v\d+", tool_name, re.IGNORECASE):
             return False
         if "://" in server_name or "://" in tool_name:
-            return False
-        if tool_name.lower().endswith(
-            (".py", ".go", ".ts", ".js", ".md", ".txt", ".json", ".yaml", ".yml")
-        ):
             return False
         return True
 

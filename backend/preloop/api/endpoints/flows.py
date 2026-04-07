@@ -415,9 +415,15 @@ async def get_flow_execution_logs(
 
     # For finished executions or if container logs failed, return database logs.
     # Prefer the normalized flow_execution_log table; fall back to legacy JSONB column.
-    log_rows = crud_flow_execution_log.get_by_execution_id(db, execution_id)
+    # Ensure reasonable bounds for tail (default to 5000 if not provided to prevent massive payloads)
+    actual_tail = tail if tail is not None else 5000
+    log_rows = crud_flow_execution_log.get_by_execution_id(
+        db, execution_id, tail=actual_tail, desc=True
+    )
 
     if log_rows:
+        # DB returns descending (newest first), reverse it for chronological display
+        log_rows = list(reversed(log_rows))
         logs = [
             {
                 "execution_id": str(row.execution_id),
@@ -452,12 +458,14 @@ def get_flow_execution_gateway_events(
     if not execution:
         raise HTTPException(status_code=404, detail="Flow execution not found")
 
+    actual_tail = tail if tail is not None else 5000
     rows = crud_flow_execution_log.get_by_execution_id(
-        db, execution_id, tail=tail, desc=True if tail else False
+        db, execution_id, tail=actual_tail, desc=True
     )
 
     events = []
-    for row in rows:
+    # Reverse rows so chronological order is maintained (oldest to newest)
+    for row in reversed(rows):
         payload = row.metadata_ or {}
         if metadata_only:
             # Strip large payload objects for metadata-only response

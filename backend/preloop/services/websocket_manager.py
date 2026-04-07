@@ -356,11 +356,6 @@ async def nats_consumer(manager: "WebSocketManager"):
             # Extract account_id for filtering
             account_id = data.get("account_id")
 
-            # Persist log messages to database
-            execution_id = data.get("execution_id")
-            if execution_id:
-                await persist_execution_log(execution_id, data)
-
             # Broadcast to WebSocket clients with account filtering
             # Only clients with matching account_id will receive the message
             if account_id:
@@ -370,7 +365,7 @@ async def nats_consumer(manager: "WebSocketManager"):
                 # (for backward compatibility during migration)
                 logger.warning(
                     f"Flow update message missing account_id: {data.get('type')} "
-                    f"for execution {execution_id}"
+                    f"for execution {data.get('execution_id')}"
                 )
                 await manager.broadcast_json(data)
 
@@ -400,10 +395,27 @@ async def nats_consumer(manager: "WebSocketManager"):
             except Exception:
                 pass
 
+    async def persistence_handler(msg: Msg):
+        try:
+            data = json.loads(msg.data.decode())
+            execution_id = data.get("execution_id")
+            if execution_id:
+                await persist_execution_log(execution_id, data)
+        except Exception as e:
+            logger.error(f"Error persisting log: {e}")
+
     try:
         # Subscribe to a wildcard subject to receive all flow updates
         flow_sub = await nats_client.subscribe("flow-updates.*", cb=message_handler)
         logger.info("Subscribed to NATS subject 'flow-updates.*'")
+
+        # Persist logs with a queue group so only one instance writes them to DB
+        await nats_client.subscribe(
+            "flow-updates.*", queue="log-persisters", cb=persistence_handler
+        )
+        logger.info(
+            "Subscribed to NATS subject 'flow-updates.*' with queue group 'log-persisters'"
+        )
 
         account_sub = await nats_client.subscribe(
             "account-updates.*", cb=message_handler

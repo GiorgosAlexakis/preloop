@@ -293,10 +293,18 @@ describe('FlowExecutionView', () => {
     );
     await element.updateComplete;
 
-    const content = (element.shadowRoot?.textContent || '').replace(
-      /\s+/g,
-      ' '
+    const gatewayEvents = Array.from(
+      element.shadowRoot?.querySelectorAll('preloop-gateway-event') || []
     );
+    const gatewayContent = gatewayEvents
+      .map((el) => el.shadowRoot?.textContent || '')
+      .join(' ');
+
+    const content = (
+      (element.shadowRoot?.textContent || '') +
+      ' ' +
+      gatewayContent
+    ).replace(/\s+/g, ' ');
 
     expect(content).to.contain('Gateway Events');
     expect(content).to.contain('openai/gpt-5');

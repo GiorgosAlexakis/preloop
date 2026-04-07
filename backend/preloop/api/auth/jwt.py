@@ -16,7 +16,12 @@ from preloop.models.db.session import get_db_session
 from preloop.models.models.managed_agent import ManagedAgent
 from preloop.models.models.runtime_session import RuntimeSession
 from preloop.models.models.user import User
-from preloop.models.crud import crud_api_key
+from preloop.models.crud import (
+    crud_api_key,
+    crud_managed_agent,
+    crud_runtime_session,
+    crud_user,
+)
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
@@ -63,13 +68,8 @@ def _managed_agent_for_api_key(
     )
     managed_agent_id = context_data.get("managed_agent_id")
     if managed_agent_id:
-        return (
-            session.query(ManagedAgent)
-            .filter(
-                ManagedAgent.id == managed_agent_id,
-                ManagedAgent.account_id == api_key.account_id,
-            )
-            .first()
+        return crud_managed_agent.get_for_account(
+            session, account_id=api_key.account_id, agent_id=managed_agent_id
         )
 
     runtime_principal = (
@@ -84,14 +84,11 @@ def _managed_agent_for_api_key(
         principal_id = runtime_session.runtime_principal_id or principal_id
     if not principal_type or not principal_id:
         return None
-    return (
-        session.query(ManagedAgent)
-        .filter(
-            ManagedAgent.account_id == api_key.account_id,
-            ManagedAgent.session_source_type == principal_type,
-            ManagedAgent.session_source_id == principal_id,
-        )
-        .first()
+    return crud_managed_agent.get_by_source(
+        session,
+        account_id=api_key.account_id,
+        session_source_type=principal_type,
+        session_source_id=principal_id,
     )
 
 
@@ -121,13 +118,10 @@ def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
     runtime_session_id = _runtime_session_id_from_api_key(api_key)
     runtime_session = None
     if runtime_session_id is not None:
-        runtime_session = (
-            session.query(RuntimeSession)
-            .filter(
-                RuntimeSession.id == runtime_session_id,
-                RuntimeSession.account_id == api_key.account_id,
-            )
-            .first()
+        runtime_session = crud_runtime_session.get_account_session(
+            session,
+            account_id=api_key.account_id,
+            runtime_session_id=runtime_session_id,
         )
         if runtime_session is None:
             raise HTTPException(
@@ -168,7 +162,7 @@ def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = session.query(User).filter(User.id == api_key.user_id).first()
+    user = crud_user.get(session, id=api_key.user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -374,7 +368,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
 
             try:
                 # Get user by ID
-                user = session.query(User).filter(User.id == user_id).first()
+                user = crud_user.get(session, id=user_id)
 
                 if not user:
                     raise HTTPException(
@@ -539,7 +533,7 @@ async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[
         except ValueError:
             return None
 
-        user = db_session.query(User).filter(User.id == user_id).first()
+        user = crud_user.get(db_session, id=user_id)
         if user and user.is_active:
             return user
 
