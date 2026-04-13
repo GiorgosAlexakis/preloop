@@ -99,6 +99,72 @@ class CRUDBudgetSpendActivity(CRUDBase[BudgetSpendActivity]):
         result = db.execute(query).scalar_one_or_none()
         return result if result is not None else 0.0
 
+    def get_spend_multi(
+        self,
+        db: Session,
+        account_id: uuid.UUID,
+        buckets: Sequence[
+            tuple[
+                str,
+                Optional[uuid.UUID],
+                Optional[str],
+                BudgetPeriod,
+                Optional[datetime],
+            ]
+        ],
+    ) -> dict[
+        tuple[
+            str, Optional[uuid.UUID], Optional[str], BudgetPeriod, Optional[datetime]
+        ],
+        float,
+    ]:
+        """Fetch multiple spend buckets at once."""
+        from sqlalchemy import or_, and_
+
+        if not buckets:
+            return {}
+
+        conditions = []
+        for s_type, s_id, m_alias, period, p_start in buckets:
+            conds = [
+                self.model.subject_type == s_type,
+                self.model.period == period,
+            ]
+            if s_id is not None:
+                conds.append(self.model.subject_id == s_id)
+            else:
+                conds.append(self.model.subject_id.is_(None))
+
+            if m_alias is not None:
+                conds.append(self.model.model_alias == m_alias)
+            else:
+                conds.append(self.model.model_alias.is_(None))
+
+            if p_start is not None:
+                conds.append(self.model.period_start == p_start)
+            else:
+                conds.append(self.model.period_start.is_(None))
+
+            conditions.append(and_(*conds))
+
+        query = select(
+            self.model.subject_type,
+            self.model.subject_id,
+            self.model.model_alias,
+            self.model.period,
+            self.model.period_start,
+            self.model.spend_usd,
+        ).where(self.model.account_id == account_id, or_(*conditions))
+
+        rows = db.execute(query).all()
+        result = {}
+        for r in rows:
+            result[
+                (r.subject_type, r.subject_id, r.model_alias, r.period, r.period_start)
+            ] = float(r.spend_usd or 0.0)
+
+        return result
+
 
 crud_budget_policy = CRUDBudgetPolicy(BudgetPolicy)
 crud_budget_spend = CRUDBudgetSpendActivity(BudgetSpendActivity)

@@ -425,7 +425,11 @@ echo "PRELOOP_AGENT_EXEC_START"
 
 # Run OpenCode with the prompt.
 # opencode run accepts messages as positional args and runs non-interactively.
-opencode run "$(cat /tmp/prompt.txt)"
+# TODO(reliability): If opencode supports reading from stdin or passing a file
+# directly, we should switch to that instead of positional args $(cat ...) to avoid E2BIG on very large prompts.
+# The -y flag auto-approves all permission requests to avoid hangs.
+# We use '--' to prevent argument injection if the prompt starts with a hyphen.
+opencode run -y -- "$(cat /tmp/prompt.txt)"
 OPENCODE_EXIT_CODE=$?
 
 echo ""
@@ -526,6 +530,8 @@ exit $OPENCODE_EXIT_CODE
                         "options": {
                             "baseURL": model_endpoint,
                             "apiKey": "$OPENAI_API_KEY",
+                            "timeout": 120000,
+                            "chunkTimeout": 120000,
                         },
                         "models": {
                             model_local_id: {"name": model},
@@ -539,6 +545,8 @@ exit $OPENCODE_EXIT_CODE
                         "options": {
                             "baseURL": model_endpoint,
                             "apiKey": "$GOOGLE_API_KEY",
+                            "timeout": 120000,
+                            "chunkTimeout": 120000,
                         },
                         "models": {
                             model_local_id: {"name": model},
@@ -552,6 +560,8 @@ exit $OPENCODE_EXIT_CODE
                         "options": {
                             "baseURL": model_endpoint,
                             "apiKey": "$OPENAI_API_KEY",
+                            "timeout": 120000,
+                            "chunkTimeout": 120000,
                         },
                         "models": {
                             model_local_id: {"name": model},

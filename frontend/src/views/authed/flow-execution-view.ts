@@ -1,6 +1,11 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
+import { AnsiUp } from 'ansi_up';
+import DOMPurify from 'dompurify';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+
+const ansiConverter = new AnsiUp();
 import consoleStyles from '../../styles/console-styles.css?inline';
 import {
   getFlowExecution,
@@ -1095,18 +1100,16 @@ export class FlowExecutionView extends LitElement {
       }
 
       // Fetch execution metrics (for completed executions)
-      if (
-        this.execution &&
-        ['COMPLETED', 'FAILED', 'STOPPED', 'TIMEOUT'].includes(
-          this.execution.status
-        )
-      ) {
+      if (this.execution) {
         try {
           const metrics = await getFlowExecutionMetrics(this.executionId);
-          this.toolCalls = metrics.tool_calls;
-          this.budgetUsed = metrics.estimated_cost;
-          this.totalTokens = metrics.token_usage.total_tokens;
-          this.hasPricing = metrics.has_pricing;
+          this.toolCalls = Math.max(this.toolCalls, metrics.tool_calls);
+          this.budgetUsed = Math.max(this.budgetUsed, metrics.estimated_cost);
+          this.totalTokens = Math.max(
+            this.totalTokens,
+            metrics.token_usage.total_tokens
+          );
+          this.hasPricing = this.hasPricing || metrics.has_pricing;
           console.log('Loaded execution metrics:', metrics);
         } catch (error) {
           console.error('Failed to fetch execution metrics:', error);
@@ -1831,8 +1834,19 @@ export class FlowExecutionView extends LitElement {
         </div>
         <div
           slot="main-column"
-          style="display: flex; justify-content: flex-end; flex: 1; min-width: 0;"
+          style="display: flex; justify-content: flex-end; flex: 1; min-width: 0; gap: 8px;"
         >
+          ${isRunning
+            ? html`
+                <sl-button
+                  size="small"
+                  variant="danger"
+                  @click=${this.stopExecution}
+                >
+                  <sl-icon slot="prefix" name="x-circle"></sl-icon> Cancel
+                </sl-button>
+              `
+            : ''}
           ${this.canRetry()
             ? html`
                 <sl-button
@@ -2186,7 +2200,11 @@ ${log.payload.content}</pre
       return html`
         <div class="log-entry ${streamClass}">
           <span class="log-timestamp">${time}</span>
-          <span class="log-content">${content}</span>
+          <span class="log-content"
+            >${unsafeHTML(
+              DOMPurify.sanitize(ansiConverter.ansi_to_html(content))
+            )}</span
+          >
         </div>
       `;
     }

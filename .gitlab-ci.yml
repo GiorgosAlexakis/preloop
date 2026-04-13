@@ -533,6 +533,7 @@ test:coverage:
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
     - helm dependency update ./helm/preloop
     - helm dependency build ./helm/preloop
+    - helm uninstall oss-$CI_COMMIT_REF_NAME --namespace ${NAMESPACE} || true
     - helm upgrade --install ${ENV_NAME} ./helm/preloop
       --namespace ${NAMESPACE}
       --set image.repository=${CI_REGISTRY_IMAGE}
@@ -602,7 +603,7 @@ deploy:test:
   variables:
     NAMESPACE: preloop-oss-test
     SEED_ENABLED: "true"
-    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
+    ENV_NAME: "oss-$CI_COMMIT_REF_SLUG"
     TARGET_DOMAIN: "oss-$CI_COMMIT_REF_NAME.test.preloop.ai"
   environment:
     name: oss-test/$CI_COMMIT_REF_NAME
@@ -621,7 +622,7 @@ deploy:review:
     on_stop: stop-review-env
   variables:
     NAMESPACE: preloop-review
-    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
+    ENV_NAME: "oss-$CI_COMMIT_REF_SLUG"
     SEED_ENABLED: "true"
     TARGET_DOMAIN: "oss-$CI_COMMIT_REF_NAME.review.preloop.ai"
 
@@ -707,7 +708,7 @@ stop-test-env:
   extends: .stop-env:template
   variables:
     NAMESPACE: "preloop-oss-test"
-    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
+    ENV_NAME: "oss-$CI_COMMIT_REF_SLUG"
   environment:
     name: oss-test/$CI_COMMIT_REF_NAME
 
@@ -717,7 +718,7 @@ stop-review-env:
   when: manual
   variables:
     NAMESPACE: "preloop-review"
-    ENV_NAME: "oss-$CI_COMMIT_REF_NAME"
+    ENV_NAME: "oss-$CI_COMMIT_REF_SLUG"
   environment:
     name: oss-review/$CI_COMMIT_REF_NAME
 

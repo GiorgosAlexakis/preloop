@@ -68,7 +68,7 @@ spec:
       database: {{ .Values.database.cnpg.bootstrap.initdb.database }}
       owner: {{ .Values.database.cnpg.bootstrap.initdb.owner }}
       secret:
-        name: {{ .Release.Name }}-db-user
+        name: {{ include "preloop.fullname" . }}-db-user
       postInitSQL:
         {{- if .Values.database.cnpg.pgvector.enabled }}
         - CREATE EXTENSION IF NOT EXISTS vector;

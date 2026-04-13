@@ -1922,340 +1922,337 @@ export class AgentsView extends LitElement {
               </div>
             </div>
 
-            ${[...(this.agents?.items || []), ...this.flows].map(
-              (item: any) => {
-                const isFlow =
-                  'flow_status' in item ||
-                  ('name' in item && !('display_name' in item));
-                const agent = isFlow ? null : (item as ManagedAgentSummary);
-                const flowName = isFlow ? item.name : '';
-                const flowNode = isFlow ? (item as any) : null;
-                const liveExecs = isFlow
-                  ? item.execution_stats?.running_execs || 0
-                  : 0;
-                const totalExecs = isFlow
-                  ? item.execution_stats?.total_execs || 0
-                  : 0;
-                const totalSpend = isFlow
-                  ? item.execution_stats?.estimated_cost || 0
-                  : agent?.estimated_cost || 0;
-                const estimatedCost = totalSpend;
-                const lastSeenFlow = isFlow
-                  ? item.execution_stats?.last_seen_at
-                  : null;
+            ${[
+              ...(this.agents?.items || []).filter(
+                (a: any) =>
+                  !this.flows.some((f: any) => f.id === a.session_source_id)
+              ),
+              ...this.flows,
+            ].map((item: any) => {
+              const isFlow =
+                'flow_status' in item ||
+                ('name' in item && !('display_name' in item));
+              const agent = isFlow ? null : (item as ManagedAgentSummary);
+              const flowName = isFlow ? item.name : '';
+              const flowNode = isFlow ? (item as any) : null;
+              const liveExecs = isFlow
+                ? item.execution_stats?.running_execs || 0
+                : 0;
+              const totalExecs = isFlow
+                ? item.execution_stats?.total_execs || 0
+                : 0;
+              const totalSpend = isFlow
+                ? item.execution_stats?.estimated_cost || 0
+                : agent?.estimated_cost || 0;
+              const estimatedCost = totalSpend;
+              const lastSeenFlow = isFlow
+                ? item.execution_stats?.last_seen_at
+                : null;
 
-                const pos = this.nodePositions[item.id] || { x: 250, y: 250 };
-                const liveActivity = this.liveActivity[item.id];
-                const liveTotal = liveActivity
-                  ? liveActivity.modelCalls + liveActivity.toolCalls
-                  : 0;
-                const mcpEnabled = isFlow
-                  ? true
-                  : this.isMcpConfigured(agent as any);
-                const modelEnabled = isFlow
-                  ? true
-                  : this.isModelConfigured(agent as any);
-                const modelActive = !!(
-                  liveActivity?.modelCalls &&
-                  liveActivity?.lastActivityAt &&
-                  Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
-                    2000
-                );
-                const toolActive = !!(
-                  liveActivity?.toolCalls &&
-                  liveActivity?.lastActivityAt &&
-                  Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
-                    2000
-                );
-                const isGlowing =
-                  liveTotal > 0 &&
-                  liveActivity &&
-                  Date.now() -
-                    new Date(liveActivity.lastActivityAt || 0).getTime() <
-                    2000;
-                const distance = Math.max(
-                  Math.sqrt(pos.x * pos.x + pos.y * pos.y),
-                  1
-                );
-                const offsetX = (-pos.y / distance) * 8;
-                const offsetY = (pos.x / distance) * 8;
+              const pos = this.nodePositions[item.id] || { x: 250, y: 250 };
+              const liveActivity = this.liveActivity[item.id];
+              const liveTotal = liveActivity
+                ? liveActivity.modelCalls + liveActivity.toolCalls
+                : 0;
+              const mcpEnabled = isFlow
+                ? true
+                : this.isMcpConfigured(agent as any);
+              const modelEnabled = isFlow
+                ? true
+                : this.isModelConfigured(agent as any);
+              const modelActive = !!(
+                liveActivity?.modelCalls &&
+                liveActivity?.lastActivityAt &&
+                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
+                  2000
+              );
+              const toolActive = !!(
+                liveActivity?.toolCalls &&
+                liveActivity?.lastActivityAt &&
+                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
+                  2000
+              );
+              const isGlowing =
+                liveTotal > 0 &&
+                liveActivity &&
+                Date.now() -
+                  new Date(liveActivity.lastActivityAt || 0).getTime() <
+                  2000;
+              const distance = Math.max(
+                Math.sqrt(pos.x * pos.x + pos.y * pos.y),
+                1
+              );
+              const offsetX = (-pos.y / distance) * 8;
+              const offsetY = (pos.x / distance) * 8;
 
-                return html`
-                  <svg
-                    class="connection-line ${this.draggingNodeId === item.id
-                      ? 'dragging'
-                      : ''}"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <line
-                      x1="${offsetX}"
-                      y1="${offsetY}"
-                      x2="${pos.x + offsetX}"
-                      y2="${pos.y + offsetY}"
-                      stroke="${isFlow
-                        ? 'var(--sl-color-primary-500)'
-                        : modelEnabled
-                          ? modelActive
-                            ? 'var(--sl-color-success-500)'
-                            : 'var(--sl-color-primary-500)'
-                          : 'var(--sl-color-neutral-300)'}"
-                      stroke-width="${isFlow
-                        ? '2'
-                        : modelActive
-                          ? '3'
-                          : modelEnabled
-                            ? '2'
-                            : '1.25'}"
-                      stroke-dasharray="${modelEnabled ? '0' : '6 6'}"
-                      opacity="${modelEnabled ? '1' : '0.55'}"
-                    />
-                    <line
-                      x1="${-offsetX}"
-                      y1="${-offsetY}"
-                      x2="${pos.x - offsetX}"
-                      y2="${pos.y - offsetY}"
-                      stroke="${mcpEnabled
-                        ? toolActive
-                          ? 'var(--sl-color-warning-300)'
-                          : 'var(--sl-color-warning-500)'
+              return html`
+                <svg
+                  class="connection-line ${this.draggingNodeId === item.id
+                    ? 'dragging'
+                    : ''}"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <line
+                    x1="${offsetX}"
+                    y1="${offsetY}"
+                    x2="${pos.x + offsetX}"
+                    y2="${pos.y + offsetY}"
+                    stroke="${isFlow
+                      ? 'var(--sl-color-primary-500)'
+                      : modelEnabled
+                        ? modelActive
+                          ? 'var(--sl-color-success-500)'
+                          : 'var(--sl-color-primary-500)'
                         : 'var(--sl-color-neutral-300)'}"
-                      stroke-width="${toolActive
+                    stroke-width="${isFlow
+                      ? '2'
+                      : modelActive
                         ? '3'
-                        : mcpEnabled
+                        : modelEnabled
                           ? '2'
                           : '1.25'}"
-                      stroke-dasharray="${mcpEnabled ? '5 4' : '6 6'}"
-                      opacity="${mcpEnabled ? '1' : '0.55'}"
-                    />
-                  </svg>
+                    stroke-dasharray="${modelEnabled ? '0' : '6 6'}"
+                    opacity="${modelEnabled ? '1' : '0.55'}"
+                  />
+                  <line
+                    x1="${-offsetX}"
+                    y1="${-offsetY}"
+                    x2="${pos.x - offsetX}"
+                    y2="${pos.y - offsetY}"
+                    stroke="${mcpEnabled
+                      ? toolActive
+                        ? 'var(--sl-color-warning-300)'
+                        : 'var(--sl-color-warning-500)'
+                      : 'var(--sl-color-neutral-300)'}"
+                    stroke-width="${toolActive
+                      ? '3'
+                      : mcpEnabled
+                        ? '2'
+                        : '1.25'}"
+                    stroke-dasharray="${mcpEnabled ? '5 4' : '6 6'}"
+                    opacity="${mcpEnabled ? '1' : '0.55'}"
+                  />
+                </svg>
 
-                  <div
-                    class="agent-node ${this.draggingNodeId === item.id
-                      ? 'dragging'
-                      : ''}"
-                    style=${styleMap({ left: `${pos.x}px`, top: `${pos.y}px` })}
-                    @pointerdown=${(e: PointerEvent) =>
-                      this.handleNodePointerDown(e, item.id)}
-                    @pointermove=${(e: PointerEvent) =>
-                      this.handleNodePointerMove(e, item.id)}
-                    @pointerup=${(e: PointerEvent) =>
-                      this.handleNodePointerUp(e, item.id)}
-                    @pointercancel=${(e: PointerEvent) =>
-                      this.handleNodePointerUp(e, item.id)}
-                  >
-                    ${html`
+                <div
+                  class="agent-node ${this.draggingNodeId === item.id
+                    ? 'dragging'
+                    : ''}"
+                  style=${styleMap({ left: `${pos.x}px`, top: `${pos.y}px` })}
+                  @pointerdown=${(e: PointerEvent) =>
+                    this.handleNodePointerDown(e, item.id)}
+                  @pointermove=${(e: PointerEvent) =>
+                    this.handleNodePointerMove(e, item.id)}
+                  @pointerup=${(e: PointerEvent) =>
+                    this.handleNodePointerUp(e, item.id)}
+                  @pointercancel=${(e: PointerEvent) =>
+                    this.handleNodePointerUp(e, item.id)}
+                >
+                  ${html`
+                    <div
+                      class="agent-speech-bubble ${liveActivity?.currentBubble &&
+                      Date.now() - liveActivity.currentBubble.timestamp < 6000
+                        ? 'visible'
+                        : ''} ${liveActivity?.currentBubble?.source === 'Tool'
+                        ? 'tool-bubble'
+                        : ''}"
+                    >
+                      <div class="speech-source">
+                        ${liveActivity?.currentBubble?.source || 'Agent'}
+                      </div>
+                      <div class="speech-text">
+                        ${liveActivity?.currentBubble?.text || ''}
+                      </div>
+                    </div>
+                    <sl-card>
                       <div
-                        class="agent-speech-bubble ${liveActivity?.currentBubble &&
-                        Date.now() - liveActivity.currentBubble.timestamp < 6000
-                          ? 'visible'
-                          : ''} ${liveActivity?.currentBubble?.source === 'Tool'
-                          ? 'tool-bubble'
-                          : ''}"
+                        slot="header"
+                        style="display: flex; justify-content: space-between; align-items: center;"
                       >
-                        <div class="speech-source">
-                          ${liveActivity?.currentBubble?.source || 'Agent'}
+                        <div style="display: flex; gap: 8px; overflow: hidden;">
+                          ${isFlow
+                            ? html`<img
+                                src="/images/flow.svg"
+                                class="flow-icon"
+                                style="width: 20px; height: 20px; flex-shrink: 0;"
+                                alt="Flow"
+                              />`
+                            : renderAgentIcon(
+                                agent?.agent_kind || agent?.session_source_type,
+                                'flex-shrink: 0; color: var(--sl-color-neutral-500); width: 20px; height: 20px;'
+                              )}
+                          <strong
+                            style="font-size: 1rem; word-break: break-word; line-height: 1.2;"
+                            >${isFlow ? flowName : agent?.display_name}</strong
+                          >
                         </div>
-                        <div class="speech-text">
-                          ${liveActivity?.currentBubble?.text || ''}
+                        ${liveTotal > 0
+                          ? html`<sl-badge variant="success" pulse
+                              >Live</sl-badge
+                            >`
+                          : agent?.activity_status === 'active_now' || isFlow
+                            ? html`<sl-badge variant="success"
+                                >Active</sl-badge
+                              >`
+                            : ''}
+                      </div>
+                      <div
+                        style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; word-break: break-all;"
+                      >
+                        ${isFlow
+                          ? html`<span title="Description"
+                              >${flowNode?.description || ''}</span
+                            >`
+                          : agent?.session_source_id}
+                      </div>
+                      ${!isFlow && agent?.owner_username
+                        ? html` <div
+                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                          >
+                            <sl-icon
+                              name="person-circle"
+                              style="color: var(--sl-color-primary-500);"
+                            ></sl-icon>
+                            ${agent.owner_username}
+                          </div>`
+                        : ''}
+                      ${isFlow && flowNode?.agent_type
+                        ? html` <div
+                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                          >
+                            ${renderAgentIcon(
+                              flowNode.agent_type,
+                              'color: var(--sl-color-primary-500); width: 14px; height: 14px;'
+                            )}
+                            ${flowNode.agent_type}
+                          </div>`
+                        : ''}
+                      ${!isFlow && (agent as any)?.ai_model_id
+                        ? html` <div
+                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                          >
+                            <sl-icon
+                              name="cpu"
+                              style="color: var(--sl-color-primary-500);"
+                            ></sl-icon>
+                            <a
+                              href="/console/settings/ai-models/${encodeURIComponent(
+                                (agent as any).ai_model_id
+                              )}"
+                              style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
+                              @click=${(e: Event) => e.stopPropagation()}
+                              >${(agent as any).ai_model_id}</a
+                            >
+                          </div>`
+                        : ''}
+                      ${isFlow && flowNode?.ai_model_id
+                        ? html` <div
+                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                          >
+                            <sl-icon
+                              name="cpu"
+                              style="color: var(--sl-color-primary-500);"
+                            ></sl-icon>
+                            <a
+                              href="/console/settings/ai-models/${encodeURIComponent(
+                                flowNode.ai_model_id
+                              )}"
+                              style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
+                              @click=${(e: Event) => e.stopPropagation()}
+                              >${flowNode.ai_model_id}</a
+                            >
+                          </div>`
+                        : ''}
+                      ${!isFlow &&
+                      agent?.tags &&
+                      Object.keys(agent.tags).length > 0
+                        ? html` <div
+                            style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"
+                          >
+                            ${Object.entries(agent.tags)
+                              .slice(0, 3)
+                              .map(
+                                ([k, v]) => html`
+                                  <div
+                                    style="font-size: 0.65rem; background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 10px; color: var(--sl-color-neutral-700); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                                  >
+                                    <span style="opacity: 0.7">${k}</span>${v &&
+                                    v !== 'true'
+                                      ? html`<span
+                                            style="opacity: 0.4; margin: 0 2px;"
+                                            >=</span
+                                          >${v}`
+                                      : ''}
+                                  </div>
+                                `
+                              )}
+                            ${Object.keys(agent.tags).length > 3
+                              ? html`<div
+                                  style="font-size: 0.65rem; padding: 2px;"
+                                >
+                                  +${Object.keys(agent.tags).length - 3}
+                                </div>`
+                              : ''}
+                          </div>`
+                        : ''}
+                      ${!isFlow && agent
+                        ? html` <div
+                            style="font-size: 0.78rem; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
+                          >
+                            ${this.getOnboardingDescription(agent)}
+                          </div>`
+                        : ''}
+                      <div
+                        style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; border-top: 1px solid var(--sl-color-neutral-200); padding-top: 8px;"
+                      >
+                        <div style="display: flex; flex-direction: column;">
+                          <span
+                            style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                            >${isFlow ? 'Execs' : 'Reqs'}</span
+                          >
+                          <strong
+                            >${isFlow
+                              ? totalExecs
+                              : agent?.total_requests}</strong
+                          >
+                        </div>
+                        <div
+                          style="display: flex; flex-direction: column; text-align: center;"
+                        >
+                          <span
+                            style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                            >Spend</span
+                          >
+                          <strong
+                            >${this.formatMoney(
+                              isFlow ? totalSpend : agent?.estimated_cost || 0
+                            )}</strong
+                          >
+                        </div>
+                        <div
+                          style="display: flex; flex-direction: column; text-align: right;"
+                        >
+                          <span
+                            style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                            >Last Seen</span
+                          >
+                          <span style="font-weight: 600;"
+                            >${new Date(
+                              liveActivity?.lastActivityAt ||
+                                (isFlow ? lastSeenFlow : agent?.last_seen_at) ||
+                                0
+                            ).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}</span
+                          >
                         </div>
                       </div>
-                      <sl-card>
-                        <div
-                          slot="header"
-                          style="display: flex; justify-content: space-between; align-items: center;"
-                        >
-                          <div
-                            style="display: flex; gap: 8px; overflow: hidden;"
-                          >
-                            ${isFlow
-                              ? html`<img
-                                  src="/images/flow.svg"
-                                  class="flow-icon"
-                                  style="width: 20px; height: 20px; flex-shrink: 0;"
-                                  alt="Flow"
-                                />`
-                              : renderAgentIcon(
-                                  agent?.agent_kind ||
-                                    agent?.session_source_type,
-                                  'flex-shrink: 0; color: var(--sl-color-neutral-500); width: 20px; height: 20px;'
-                                )}
-                            <strong
-                              style="font-size: 1rem; word-break: break-word; line-height: 1.2;"
-                              >${isFlow
-                                ? flowName
-                                : agent?.display_name}</strong
-                            >
-                          </div>
-                          ${liveTotal > 0
-                            ? html`<sl-badge variant="success" pulse
-                                >Live</sl-badge
-                              >`
-                            : agent?.activity_status === 'active_now' || isFlow
-                              ? html`<sl-badge variant="success"
-                                  >Active</sl-badge
-                                >`
-                              : ''}
-                        </div>
-                        <div
-                          style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; word-break: break-all;"
-                        >
-                          ${isFlow
-                            ? html`<span title="Description"
-                                >${flowNode?.description || ''}</span
-                              >`
-                            : agent?.session_source_id}
-                        </div>
-                        ${!isFlow && agent?.owner_username
-                          ? html` <div
-                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                            >
-                              <sl-icon
-                                name="person-circle"
-                                style="color: var(--sl-color-primary-500);"
-                              ></sl-icon>
-                              ${agent.owner_username}
-                            </div>`
-                          : ''}
-                        ${isFlow && flowNode?.agent_type
-                          ? html` <div
-                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                            >
-                              ${renderAgentIcon(
-                                flowNode.agent_type,
-                                'color: var(--sl-color-primary-500); width: 14px; height: 14px;'
-                              )}
-                              ${flowNode.agent_type}
-                            </div>`
-                          : ''}
-                        ${!isFlow && (agent as any)?.ai_model_id
-                          ? html` <div
-                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                            >
-                              <sl-icon
-                                name="cpu"
-                                style="color: var(--sl-color-primary-500);"
-                              ></sl-icon>
-                              <a
-                                href="/console/settings/ai-models/${encodeURIComponent(
-                                  (agent as any).ai_model_id
-                                )}"
-                                style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
-                                @click=${(e: Event) => e.stopPropagation()}
-                                >${(agent as any).ai_model_id}</a
-                              >
-                            </div>`
-                          : ''}
-                        ${isFlow && flowNode?.ai_model_id
-                          ? html` <div
-                              style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                            >
-                              <sl-icon
-                                name="cpu"
-                                style="color: var(--sl-color-primary-500);"
-                              ></sl-icon>
-                              <a
-                                href="/console/settings/ai-models/${encodeURIComponent(
-                                  flowNode.ai_model_id
-                                )}"
-                                style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
-                                @click=${(e: Event) => e.stopPropagation()}
-                                >${flowNode.ai_model_id}</a
-                              >
-                            </div>`
-                          : ''}
-                        ${!isFlow &&
-                        agent?.tags &&
-                        Object.keys(agent.tags).length > 0
-                          ? html` <div
-                              style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"
-                            >
-                              ${Object.entries(agent.tags)
-                                .slice(0, 3)
-                                .map(
-                                  ([k, v]) => html`
-                                    <div
-                                      style="font-size: 0.65rem; background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 10px; color: var(--sl-color-neutral-700); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                                    >
-                                      <span style="opacity: 0.7">${k}</span
-                                      >${v && v !== 'true'
-                                        ? html`<span
-                                              style="opacity: 0.4; margin: 0 2px;"
-                                              >=</span
-                                            >${v}`
-                                        : ''}
-                                    </div>
-                                  `
-                                )}
-                              ${Object.keys(agent.tags).length > 3
-                                ? html`<div
-                                    style="font-size: 0.65rem; padding: 2px;"
-                                  >
-                                    +${Object.keys(agent.tags).length - 3}
-                                  </div>`
-                                : ''}
-                            </div>`
-                          : ''}
-                        ${!isFlow && agent
-                          ? html` <div
-                              style="font-size: 0.78rem; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
-                            >
-                              ${this.getOnboardingDescription(agent)}
-                            </div>`
-                          : ''}
-                        <div
-                          style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; border-top: 1px solid var(--sl-color-neutral-200); padding-top: 8px;"
-                        >
-                          <div style="display: flex; flex-direction: column;">
-                            <span
-                              style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                              >${isFlow ? 'Execs' : 'Reqs'}</span
-                            >
-                            <strong
-                              >${isFlow
-                                ? totalExecs
-                                : agent?.total_requests}</strong
-                            >
-                          </div>
-                          <div
-                            style="display: flex; flex-direction: column; text-align: center;"
-                          >
-                            <span
-                              style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                              >Spend</span
-                            >
-                            <strong
-                              >${this.formatMoney(
-                                isFlow ? totalSpend : agent?.estimated_cost || 0
-                              )}</strong
-                            >
-                          </div>
-                          <div
-                            style="display: flex; flex-direction: column; text-align: right;"
-                          >
-                            <span
-                              style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                              >Last Seen</span
-                            >
-                            <span style="font-weight: 600;"
-                              >${new Date(
-                                liveActivity?.lastActivityAt ||
-                                  (isFlow
-                                    ? lastSeenFlow
-                                    : agent?.last_seen_at) ||
-                                  0
-                              ).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}</span
-                            >
-                          </div>
-                        </div>
-                      </sl-card>
-                    `}
-                  </div>
-                `;
-              }
-            )}
+                    </sl-card>
+                  `}
+                </div>
+              `;
+            })}
           </div>
         </div>
       </div>
@@ -2268,91 +2265,42 @@ export class AgentsView extends LitElement {
         label="Onboard Agents"
         ?open=${this.showOnboardingDialog}
         @sl-after-hide=${() => (this.showOnboardingDialog = false)}
-        style="--width: 650px;"
-      >
-        <sl-tab-group>
-          <sl-tab slot="nav" panel="cli">CLI SETUP</sl-tab>
-          <sl-tab slot="nav" panel="openclaw">OpenClaw Plugin</sl-tab>
-          <sl-tab slot="nav" panel="manual">Manual</sl-tab>
+        <div style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);">
+          <div style="line-height: 1.6;">
+            Welcome! The fastest way to onboard a local agent is using the Preloop CLI.<br>
+            It will automatically discover and register your agents, and securely route their traffic through the Preloop gateway.
+          </div>
 
-          <sl-tab-panel name="cli">
-            <div style="padding: var(--sl-spacing-large) 0 0 0;">
-              <div style="margin-bottom: var(--sl-spacing-medium);">
-                The Preloop CLI is the fastest way to register local agents.
-              </div>
-              <ol style="line-height: 2; margin: 0; padding-left: 20px;">
-                <li>
-                  <strong>Install CLI:</strong> Follow documentation to install
-                  the Preloop CLI.
-                </li>
-                <li>
-                  <strong>Authenticate:</strong> Run
-                  <code
-                    style="background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 4px;"
-                    >preloop login</code
-                  >
-                  <sl-copy-button value="preloop login"></sl-copy-button>
-                </li>
-                <li>
-                  <strong>Discover Agents:</strong> Run
-                  <code
-                    style="background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 4px;"
-                    >preloop agents discover</code
-                  >
-                  <sl-copy-button
-                    value="preloop agents discover"
-                  ></sl-copy-button>
-                </li>
-              </ol>
-            </div>
-          </sl-tab-panel>
+          <div style="margin-top: var(--sl-spacing-small);">
+            <strong>1. Install the CLI:</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+              curl -fsSL https://preloop.ai/install/cli | sh
+            </code>
+            <sl-copy-button value="curl -fsSL https://preloop.ai/install/cli | sh"></sl-copy-button>
+          </div>
 
-          <sl-tab-panel name="openclaw">
-            <div style="padding: var(--sl-spacing-large) 0 0 0;">
-              <div style="margin-bottom: var(--sl-spacing-medium);">
-                For users of OpenClaw, use the native plugin for smooth
-                integration.
-              </div>
-              <ol style="line-height: 2; margin: 0; padding-left: 20px;">
-                <li>
-                  <strong>Install Preloop Plugin:</strong> Find and install the
-                  Preloop Plugin for OpenClaw.
-                </li>
-                <li>
-                  <strong>Authenticate:</strong> Use the plugin interface to log
-                  in to Preloop.
-                </li>
-                <li>
-                  <strong>Complete Onboarding:</strong> Follow the on-screen
-                  flow to finish setup.
-                </li>
-              </ol>
-            </div>
-          </sl-tab-panel>
+          <div style="margin-top: var(--sl-spacing-small);">
+            <strong>2. Authenticate:</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+              preloop login
+            </code>
+            <sl-copy-button value="preloop login"></sl-copy-button>
+          </div>
 
-          <sl-tab-panel name="manual">
-            <div style="padding: var(--sl-spacing-large) 0 0 0;">
-              <ol style="line-height: 1.8; margin: 0; padding-left: 20px;">
-                <li style="margin-bottom: 8px;">
-                  Provide instructions on how to edit the configuration based on
-                  your specific agent framework.
-                </li>
-                <li style="margin-bottom: 8px;">
-                  Add your configured AI models and desired MCP servers to
-                  Preloop.
-                </li>
-                <li style="margin-bottom: 8px;">
-                  Create an Agent-Specific Preloop API key.
-                </li>
-                <li>
-                  Reconfigure your agent to use the AI model through the Preloop
-                  gateway, and tools through the Preloop MCP proxy (or Preloop
-                  CLI).
-                </li>
-              </ol>
-            </div>
-          </sl-tab-panel>
-        </sl-tab-group>
+          <div style="margin-top: var(--sl-spacing-small);">
+            <strong>3. Discover Agents:</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+              preloop agents discover
+            </code>
+            <sl-copy-button value="preloop agents discover"></sl-copy-button>
+          </div>
+        </div>
         <sl-button
           slot="footer"
           variant="primary"
