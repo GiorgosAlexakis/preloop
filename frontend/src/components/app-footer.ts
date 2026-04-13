@@ -130,8 +130,6 @@ export class AppFooter extends LitElement {
     const company = config.company;
     const social = config.social;
     const hasCompanyInfo = company?.legal_name || company?.address;
-    const hasSocialLinks =
-      social?.linkedin || social?.instagram || social?.twitter;
 
     return html`
       <div class="footer-container">

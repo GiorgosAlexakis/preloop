@@ -1,14 +1,11 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
-import * as AnsiToHtmlPkg from 'ansi-to-html';
+import { AnsiUp } from 'ansi_up';
+import DOMPurify from 'dompurify';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 
-const AnsiToHtml = (AnsiToHtmlPkg as any).default || AnsiToHtmlPkg;
-const ansiConverter = new (AnsiToHtml as any)({
-  escapeXML: true,
-  newline: true,
-});
+const ansiConverter = new AnsiUp();
 import consoleStyles from '../../styles/console-styles.css?inline';
 import {
   getFlowExecution,
@@ -2204,7 +2201,9 @@ ${log.payload.content}</pre
         <div class="log-entry ${streamClass}">
           <span class="log-timestamp">${time}</span>
           <span class="log-content"
-            >${unsafeHTML(ansiConverter.toHtml(content))}</span
+            >${unsafeHTML(
+              DOMPurify.sanitize(ansiConverter.ansi_to_html(content))
+            )}</span
           >
         </div>
       `;

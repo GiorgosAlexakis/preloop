@@ -425,6 +425,8 @@ echo "PRELOOP_AGENT_EXEC_START"
 
 # Run OpenCode with the prompt.
 # opencode run accepts messages as positional args and runs non-interactively.
+# TODO(reliability): If opencode supports reading from stdin or passing a file
+# directly, we should switch to that instead of positional args $(cat ...) to avoid E2BIG on very large prompts.
 # The -y flag auto-approves all permission requests to avoid hangs.
 # We use '--' to prevent argument injection if the prompt starts with a hyphen.
 opencode run -y -- "$(cat /tmp/prompt.txt)"
