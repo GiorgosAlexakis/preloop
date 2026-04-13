@@ -42,6 +42,7 @@ export class LandingView extends LitElement {
     text: string;
   }> = [];
   @state() private _mcpSetupTitle = '';
+  @state() private _cliSetup: Array<{ step: string; command: string }> = [];
   @state() private _extendedDescription = '';
   @state() private _featuresLayout: 'carousel' | 'grid' = 'grid';
   @state() private _billingEnabled = false;
@@ -297,13 +298,9 @@ export class LandingView extends LitElement {
     ) as HTMLElement | undefined;
     if (productHuntSlot) {
       const enabled = productHuntSlot.getAttribute('data-enabled') === 'true';
-      if (enabled) {
-        this._productHunt = {
-          enabled: true,
-          post_id: productHuntSlot.getAttribute('data-post-id') || '',
-          theme: productHuntSlot.getAttribute('data-theme') || 'light',
-        };
-      }
+      const postId = productHuntSlot.getAttribute('data-post-id') || '';
+      const theme = productHuntSlot.getAttribute('data-theme') || 'light';
+      this._productHunt = { enabled, post_id: postId, theme };
     }
 
     // Read Featured Video configuration from slot
@@ -312,15 +309,40 @@ export class LandingView extends LitElement {
     ) as HTMLElement | undefined;
     if (featuredVideoSlot) {
       const enabled = featuredVideoSlot.getAttribute('data-enabled') === 'true';
-      if (enabled) {
-        this._featuredVideo = {
-          enabled: true,
-          title: featuredVideoSlot.getAttribute('data-title') || '',
-          youtube_url: featuredVideoSlot.getAttribute('data-youtube-url') || '',
-          youtube_embed:
-            featuredVideoSlot.getAttribute('data-youtube-embed') || '',
-        };
+      const title = featuredVideoSlot.getAttribute('data-title') || '';
+      const youtubeUrl =
+        featuredVideoSlot.getAttribute('data-youtube-url') || '';
+      const youtubeEmbed =
+        featuredVideoSlot.getAttribute('data-youtube-embed') || '';
+      this._featuredVideo = {
+        enabled,
+        title,
+        youtube_url: youtubeUrl,
+        youtube_embed: youtubeEmbed,
+      };
+    }
+
+    // Read CLI setup configuration from slots
+    const cliSetup: Array<{ step: string; command: string }> = [];
+    for (let i = 0; i < 10; i++) {
+      const stepWrapper = children.find(
+        (el) => el.getAttribute('slot') === `cli-setup-${i}`
+      ) as HTMLElement | undefined;
+
+      if (stepWrapper) {
+        const step = stepWrapper.getAttribute('data-step') || '';
+        const command = stepWrapper.getAttribute('data-command') || '';
+
+        if (step && command) {
+          cliSetup.push({ step, command });
+        }
+      } else {
+        break;
       }
+    }
+
+    if (cliSetup.length > 0) {
+      this._cliSetup = cliSetup;
     }
 
     // Hide slotted elements (they stay in light DOM for SEO but are hidden)
@@ -337,7 +359,8 @@ export class LandingView extends LitElement {
           slot.startsWith('get-started-') ||
           slot === 'mcp-setup-title' ||
           slot === 'product-hunt' ||
-          slot === 'featured-video')
+          slot === 'featured-video' ||
+          slot.startsWith('cli-setup-'))
       ) {
         (el as HTMLElement).style.display = 'none';
       }
@@ -392,6 +415,7 @@ export class LandingView extends LitElement {
     this._getStartedLinkUrl = getStarted.link_url || '';
     this._getStartedFeatures = getStarted.features || [];
     this._mcpSetupTitle = getStarted.mcp_setup_title || '';
+    this._cliSetup = getStarted.cli_setup || [];
   }
 
   private _playVideo(index: number) {
@@ -525,17 +549,47 @@ export class LandingView extends LitElement {
           </div>
         </section>
 
-        ${this._extendedDescription
-          ? html`
-              <section class="extended-description-section main-section">
-                <div class="section-container">
-                  <a href="/register" title=${this._extendedDescription}
-                    ><img src="/assets/mcp-firewall2.svg"
-                  /></a>
-                </div>
-              </section>
-            `
-          : ''}
+        <section
+          class="supported-agents-section main-section"
+          style="padding-top: 1rem; padding-bottom: 2rem;"
+        >
+          <div class="section-container text-center">
+            <div
+              style="display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; align-items: center; opacity: 0.6;"
+            >
+              <img
+                src="/images/logos/openclaw.svg"
+                alt="OpenClaw"
+                style="height: 24px;"
+              />
+              <img
+                src="/images/logos/opencode.svg"
+                alt="OpenCode"
+                style="height: 24px;"
+              />
+              <img
+                src="/images/logos/claude.svg"
+                alt="Claude Code"
+                style="height: 24px;"
+              />
+              <img
+                src="/images/logos/codex.svg"
+                alt="Codex CLI"
+                style="height: 24px;"
+              />
+              <img
+                src="/images/logos/gemini-cli.svg"
+                alt="Gemini CLI"
+                style="height: 24px;"
+              />
+              <img
+                src="/images/logos/vscode.svg"
+                alt="Cursor"
+                style="height: 24px;"
+              />
+            </div>
+          </div>
+        </section>
         ${this._featuredVideo?.enabled
           ? html`
               <section class="featured-video-section main-section">
@@ -662,30 +716,51 @@ export class LandingView extends LitElement {
             `
           : this._featureSlides.length > 0
             ? html`
-                <section class="feature-section main-section" id="features">
-                  <div class="section-container">
-                    <h2 class="text-center">Features</h2>
-                    <div class="feature-grid three-col">
+                <section class="feature-grid-fallback main-section">
+                  <div class="section-container" style="max-width: 100%;">
+                    <div
+                      style="display: flex; flex-direction: column; gap: 8rem; margin-top: 4rem;"
+                    >
                       ${this._featureSlides.map(
-                        (slide) => html`
-                          <div class="feature-box">
+                        (slide, index) => html`
+                          <div
+                            style="display: flex; flex-direction: column; align-items: center; text-align: center;"
+                          >
+                            <div style="max-width: 800px; margin-bottom: 3rem;">
+                              <h3
+                                style="font-size: 2.2rem; margin-bottom: 1.5rem; font-weight: 500;"
+                              >
+                                ${slide.title}
+                              </h3>
+                              <p
+                                style="font-size: 1.25rem; color: var(--sl-color-neutral-400); line-height: 1.6;"
+                              >
+                                ${slide.text}
+                              </p>
+                            </div>
                             ${slide.placeholderImg
-                              ? html`<img
-                                  src=${slide.placeholderImg}
-                                  alt=${slide.title}
-                                />`
-                              : ''}
-                            <h3>${slide.title}</h3>
-                            <p>${slide.text}</p>
-                            ${slide.videoUrl
-                              ? html`<a
-                                  href=${slide.videoUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  class="video-link"
+                              ? html`<div
+                                  style="width: 100%; max-width: 1400px; margin: 0 auto; padding: 0 2rem;"
                                 >
-                                  <sl-icon name="play-circle"></sl-icon> Watch
-                                  Video
+                                  <img
+                                    src="${slide.placeholderImg}"
+                                    style="width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--sl-color-neutral-800); box-shadow: 0 20px 40px rgba(0,0,0,0.4);"
+                                    alt="${slide.title} preview"
+                                  />
+                                </div>`
+                              : ''}
+                            ${!this._showVideo[index] && slide.videoUrl
+                              ? html`<a
+                                  href="javascript:void(0)"
+                                  class="watch-video-link mt-3 d-inline-block"
+                                  @click=${() => this._playVideo(index)}
+                                  style="margin-top: 2rem; font-size: 1.1rem;"
+                                >
+                                  <sl-icon
+                                    name="play-circle"
+                                    style="vertical-align: middle;"
+                                  ></sl-icon>
+                                  Watch Video
                                 </a>`
                               : ''}
                           </div>
@@ -696,6 +771,38 @@ export class LandingView extends LitElement {
                 </section>
               `
             : ''}
+        ${this._extendedDescription
+          ? html`
+              <section
+                class="extended-description-section main-section"
+                style="padding-top: 3rem;"
+              >
+                <div class="section-container">
+                  <sl-carousel
+                    class="svg-slideshow"
+                    loop
+                    effect="fade"
+                    navigation
+                    pagination
+                  >
+                    <sl-carousel-item>
+                      <img src="/assets/direct.svg" alt="Direct Setup" />
+                    </sl-carousel-item>
+                    <sl-carousel-item>
+                      <img src="/assets/gateway.svg" alt="Model Gateway" />
+                    </sl-carousel-item>
+                    <sl-carousel-item>
+                      <a href="/register" title=${this._extendedDescription}
+                        ><img
+                          src="/assets/mcp-firewall2.svg"
+                          alt="MCP Firewall"
+                      /></a>
+                    </sl-carousel-item>
+                  </sl-carousel>
+                </div>
+              </section>
+            `
+          : ''}
         ${html`
           <section class="feature-section main-section" id="get-started">
             <div class="section-container">
@@ -726,69 +833,42 @@ export class LandingView extends LitElement {
                     )}
                   </div>`
                 : ``}
-              <ide-setup-tabs
-                .configs=${getIdeConfigs()}
-                defaultTab="claude-code"
-                helpText="The built-in MCP server provides access to all your enabled tools, including tools from external MCP servers."
-              ></ide-setup-tabs>
-            </div>
-          </section>
-        `}
-        ${html`
-          <section class="tools-section main-section">
-            <div class="section-container">
-              <h2 class="text-center">Works with the tools you use</h2>
-              <div class="tool-logos">
-                <sl-tooltip content="GitHub">
-                  <img
-                    src="/images/logos/github-mark-white.svg"
-                    alt="GitHub Logo"
-                    class="github-logo tool-logo"
-                  />
-                </sl-tooltip>
-                <sl-tooltip content="GitLab">
-                  <img
-                    src="/images/logos/gitlab-logo-700-rgb.svg"
-                    alt="GitLab Logo"
-                    class="gitlab-logo tool-logo"
-                  />
-                </sl-tooltip>
-                <sl-tooltip content="Jira">
-                  <img
-                    src="/images/logos/jira.webp"
-                    alt="Jira Logo"
-                    class="jira-logo tool-logo"
-                  />
-                </sl-tooltip>
-                <sl-tooltip content="Slack">
-                  <img
-                    src="/images/logos/slack-logo.svg"
-                    alt="Slack Logo"
-                    class="slack-logo tool-logo"
-                  />
-                </sl-tooltip>
-                <sl-tooltip content="Microsoft Teams">
-                  <img
-                    src="/images/logos/teams-logo.svg"
-                    alt="Microsoft Teams Logo"
-                    class="teams-logo tool-logo"
-                  />
-                </sl-tooltip>
-                <sl-tooltip content="Discord">
-                  <img
-                    src="/images/logos/discord-logo.svg"
-                    alt="Discord Logo"
-                    class="discord-logo tool-logo"
-                  />
-                </sl-tooltip>
-                <sl-tooltip content="Mattermost">
-                  <img
-                    src="/images/logos/mattermost-logo.svg"
-                    alt="Mattermost Logo"
-                    class="mattermost-logo tool-logo"
-                  />
-                </sl-tooltip>
-              </div>
+              ${this._cliSetup.length > 0
+                ? html`
+                    <div
+                      style="max-width: 65rem; margin: 3rem auto 0; text-align: left;"
+                    >
+                      <h3
+                        style="margin-bottom: 2rem; font-size: 1.5rem; text-align: center;"
+                      >
+                        ${this._mcpSetupTitle}
+                      </h3>
+                      <div
+                        style="background: var(--sl-color-neutral-950); padding: 2rem; border-radius: var(--sl-border-radius-large); color: white;"
+                      >
+                        ${this._cliSetup.map(
+                          (step) => html`
+                            <div style="margin-bottom: 1.5rem;">
+                              <div
+                                style="font-weight: 600; margin-bottom: 0.5rem; color: var(--sl-color-neutral-300);"
+                              >
+                                ${step.step}
+                              </div>
+                              <div
+                                style="display: flex; align-items: center; background: #000; padding: 1rem; border-radius: var(--sl-border-radius-medium); border: 1px solid var(--sl-color-neutral-800);"
+                              >
+                                <code
+                                  style="color: var(--sl-color-primary-400); flex: 1; font-size: 1.1rem; user-select: all;"
+                                  >${step.command}</code
+                                >
+                              </div>
+                            </div>
+                          `
+                        )}
+                      </div>
+                    </div>
+                  `
+                : ''}
             </div>
           </section>
         `}

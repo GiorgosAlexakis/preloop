@@ -124,6 +124,36 @@ class MCPClient:
                         raise
                 self._exit_stack = None
             raise
+        except BaseException as e:
+            # Catch BaseExceptionGroup which can be triggered when a TaskGroup
+            # receives a GeneratorExit alongside a real Exception (like HTTPStatusError)
+            target_exc = e
+            if type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup"):
+                # Extract the first normal Exception (e.g. HTTPStatusError)
+                # ignoring BaseExceptions like GeneratorExit
+                exceptions = getattr(e, "exceptions", [])
+                for exc in exceptions:
+                    if isinstance(exc, Exception):
+                        target_exc = exc
+                        break
+
+            logger.error(f"Failed to connect to MCP server at {self.url}: {target_exc}")
+            if self._exit_stack:
+                try:
+                    await self._exit_stack.aclose()
+                except Exception:
+                    pass
+                except RuntimeError as cleanup_error:
+                    # Ignore benign cancel scope errors during cleanup
+                    if "cancel scope" not in str(cleanup_error).lower():
+                        raise
+                self._exit_stack = None
+
+            # Only re-raise as Exception if we unwrapped an Exception.
+            # If it's pure BaseException (like KeyboardInterrupt), re-raise it perfectly.
+            if isinstance(target_exc, Exception):
+                raise target_exc
+            raise e
 
     async def close(self):
         """Close the connection to the MCP server."""
@@ -218,6 +248,20 @@ class MCPClient:
         except Exception as e:
             logger.error(f"Error listing tools: {e}", exc_info=True)
             raise
+        except BaseException as e:
+            target_exc = e
+            if type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup"):
+                exceptions = getattr(e, "exceptions", [])
+                for exc in exceptions:
+                    if isinstance(exc, Exception):
+                        target_exc = exc
+                        break
+
+            logger.error(f"Error listing tools: {target_exc}")
+
+            if isinstance(target_exc, Exception):
+                raise target_exc
+            raise e
 
     async def call_tool(
         self, tool_name: str, arguments: Dict[str, Any]
@@ -237,65 +281,89 @@ class MCPClient:
         if not self._connected or not self._session:
             raise RuntimeError("Client not connected. Call connect() first.")
 
-        # Use AsyncExitStack for proper cleanup ordering
-        async with AsyncExitStack() as stack:
-            # Create client connection
-            auth = None
-            headers = {}
-            if self.auth_type == "bearer" and "token" in self.auth_config:
+        try:
+            # Use AsyncExitStack for proper cleanup ordering
+            async with AsyncExitStack() as stack:
+                # Create client connection
+                auth = None
+                headers = {}
+                if self.auth_type == "bearer" and "token" in self.auth_config:
 
-                class BearerAuth(httpx.Auth):
-                    def __init__(self, token: str):
-                        self.token = token
+                    class BearerAuth(httpx.Auth):
+                        def __init__(self, token: str):
+                            self.token = token
 
-                    def auth_flow(self, request):
-                        request.headers["Authorization"] = f"Bearer {self.token}"
-                        yield request
+                        def auth_flow(self, request):
+                            request.headers["Authorization"] = f"Bearer {self.token}"
+                            yield request
 
-                auth = BearerAuth(self.auth_config["token"])
-            elif self.auth_type == "api_key" and "api_key" in self.auth_config:
-                key_name = self.auth_config.get("key_name", "X-API-Key")
-                headers[key_name] = self.auth_config["api_key"]
+                    auth = BearerAuth(self.auth_config["token"])
+                elif self.auth_type == "api_key" and "api_key" in self.auth_config:
+                    key_name = self.auth_config.get("key_name", "X-API-Key")
+                    headers[key_name] = self.auth_config["api_key"]
 
-            # Enter streams context and add to stack for cleanup
-            read_stream, write_stream, _ = await stack.enter_async_context(
-                streamablehttp_client(
-                    url=self.url,
-                    headers=headers if not auth else {},
-                    timeout=30.0,
-                    sse_read_timeout=60.0,
-                    auth=auth,
+                # Enter streams context and add to stack for cleanup
+                read_stream, write_stream, _ = await stack.enter_async_context(
+                    streamablehttp_client(
+                        url=self.url,
+                        headers=headers if not auth else {},
+                        timeout=30.0,
+                        sse_read_timeout=60.0,
+                        auth=auth,
+                    )
                 )
-            )
 
-            # Create and enter session context, add to stack
-            session = ClientSession(read_stream=read_stream, write_stream=write_stream)
-            await stack.enter_async_context(session)
-            await session.initialize()
+                # Create and enter session context, add to stack
+                session = ClientSession(
+                    read_stream=read_stream, write_stream=write_stream
+                )
+                await stack.enter_async_context(session)
+                await session.initialize()
 
-            # Execute tool call
-            result = await session.call_tool(name=tool_name, arguments=arguments)
+                # Execute tool call
+                result = await session.call_tool(name=tool_name, arguments=arguments)
 
-            # Convert to list and extract all data
-            content_list = []
-            for item in result.content:
-                if hasattr(item, "text"):
-                    content_list.append(types.TextContent(type="text", text=item.text))
-                elif hasattr(item, "data"):
-                    content_list.append(
-                        types.ImageContent(
-                            type="image",
-                            data=item.data,
-                            mimeType=getattr(item, "mimeType", "image/png"),
+                # Convert to list and extract all data
+                content_list = []
+                for item in result.content:
+                    if hasattr(item, "text"):
+                        content_list.append(
+                            types.TextContent(type="text", text=item.text)
                         )
-                    )
-                elif hasattr(item, "resource"):
-                    content_list.append(
-                        types.EmbeddedResource(type="resource", resource=item.resource)
-                    )
+                    elif hasattr(item, "data"):
+                        content_list.append(
+                            types.ImageContent(
+                                type="image",
+                                data=item.data,
+                                mimeType=getattr(item, "mimeType", "image/png"),
+                            )
+                        )
+                    elif hasattr(item, "resource"):
+                        content_list.append(
+                            types.EmbeddedResource(
+                                type="resource", resource=item.resource
+                            )
+                        )
 
-            return content_list
-            # AsyncExitStack will handle cleanup in reverse order automatically
+                return content_list
+                # AsyncExitStack will handle cleanup in reverse order automatically
+        except Exception as e:
+            logger.error(f"Error calling tool {tool_name}: {e}")
+            raise
+        except BaseException as e:
+            target_exc = e
+            if type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup"):
+                exceptions = getattr(e, "exceptions", [])
+                for exc in exceptions:
+                    if isinstance(exc, Exception):
+                        target_exc = exc
+                        break
+
+            logger.error(f"Error calling tool {tool_name}: {target_exc}")
+
+            if isinstance(target_exc, Exception):
+                raise target_exc
+            raise e
 
 
 class MCPClientPool:

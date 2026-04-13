@@ -71,6 +71,8 @@ export class AgentsView extends LitElement {
   @state() private showOnboardingDialog = false;
   // Used to track agents count from the last fetch to detect new registrations
   private previousAgentCount = -1;
+  // Tracks if the onboarding dialog was automatically opened at least once upon page load
+  private hasAutoOpenedOnboarding = false;
 
   // Switcher state
   @state() private currentView: 'cards' | 'canvas' = 'canvas';
@@ -653,6 +655,11 @@ export class AgentsView extends LitElement {
       this.agents = agentsData;
       this.previousAgentCount = agentsData.items.length;
       this.gatewaySummary = gatewayData;
+
+      if (!this.hasAutoOpenedOnboarding && this.previousAgentCount === 0) {
+        this.showOnboardingDialog = true;
+        this.hasAutoOpenedOnboarding = true;
+      }
 
       // Filter flows locally if lastSeenAfter is set (since backend getFlows doesn't support it)
       let activeFlows = includeFlows
@@ -2264,28 +2271,47 @@ export class AgentsView extends LitElement {
       <sl-dialog
         label="Onboard Agents"
         ?open=${this.showOnboardingDialog}
-        @sl-after-hide=${() => (this.showOnboardingDialog = false)}
-        <div style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);">
+        @sl-after-hide=${(e: Event) => {
+          if (e.target === e.currentTarget) {
+            this.showOnboardingDialog = false;
+          }
+        }}
+      >
+        <div
+          style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
+        >
           <div style="line-height: 1.6;">
-            Welcome! The fastest way to onboard a local agent is using the Preloop CLI.<br>
-            It will automatically discover and register your agents, and securely route their traffic through the Preloop gateway.
+            Welcome! The fastest way to onboard a local agent is using the
+            Preloop CLI.<br />
+            It will automatically discover and register your agents, and
+            securely route their traffic through the Preloop gateway.
           </div>
 
           <div style="margin-top: var(--sl-spacing-small);">
             <strong>1. Install the CLI:</strong>
           </div>
-          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
-            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+          <div
+            style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
+          >
+            <code
+              style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;"
+            >
               curl -fsSL https://preloop.ai/install/cli | sh
             </code>
-            <sl-copy-button value="curl -fsSL https://preloop.ai/install/cli | sh"></sl-copy-button>
+            <sl-copy-button
+              value="curl -fsSL https://preloop.ai/install/cli | sh"
+            ></sl-copy-button>
           </div>
 
           <div style="margin-top: var(--sl-spacing-small);">
             <strong>2. Authenticate:</strong>
           </div>
-          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
-            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+          <div
+            style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
+          >
+            <code
+              style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;"
+            >
               preloop login
             </code>
             <sl-copy-button value="preloop login"></sl-copy-button>
@@ -2294,8 +2320,12 @@ export class AgentsView extends LitElement {
           <div style="margin-top: var(--sl-spacing-small);">
             <strong>3. Discover Agents:</strong>
           </div>
-          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
-            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+          <div
+            style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
+          >
+            <code
+              style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;"
+            >
               preloop agents discover
             </code>
             <sl-copy-button value="preloop agents discover"></sl-copy-button>

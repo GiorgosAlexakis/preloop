@@ -77,7 +77,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       brandConfig.landing.faqs = brandConfig.landing.faqs || [];
       brandConfig.landing.get_started = brandConfig.landing.get_started || {} as any;
       brandConfig.landing.get_started.features = brandConfig.landing.get_started.features || [];
-      brandConfig.landing.get_started.mcp_configs = brandConfig.landing.get_started.mcp_configs || [];
+      brandConfig.landing.get_started.cli_setup = brandConfig.landing.get_started.cli_setup || [];
 
       console.log(`\n🎨 Building for brand: ${brandConfig.name} (${brandConfig.domain})\n`);
     },
@@ -425,7 +425,7 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
   const faqs = config.landing?.faqs || [];
   const getStarted = config.landing?.get_started || {};
   const getStartedFeatures = getStarted.features || [];
-  const mcpConfigs = getStarted.mcp_configs || [];
+  const cliSetup = getStarted.cli_setup || [];
 
   switch (route) {
     case '/':
@@ -488,18 +488,13 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
     <!-- MCP Setup slots -->
     <span slot="mcp-setup-title">${getStarted.mcp_setup_title || ''}</span>
 
-    <!-- MCP Config slots -->
-    ${mcpConfigs
+    <!-- CLI Setup slots -->
+    ${cliSetup
           .map(
-            (mcpConfig, idx) => `
-    <div slot="mcp-config-${idx}"
-         data-ide="${mcpConfig.ide || ''}"
-         data-ide-name="${mcpConfig.ide_name || ''}"
-         data-logo-path="${mcpConfig.logo_path || ''}"
-         data-logo-width="${mcpConfig.logo_width || ''}"
-         data-prerequisites='${JSON.stringify(mcpConfig.prerequisites || [])}'
-         data-setup-instructions="${(mcpConfig.setup_instructions || '').replace(/"/g, '&quot;')}">
-      <pre><code>${mcpConfig.code || ''}</code></pre>
+            (step, idx) => `
+    <div slot="cli-setup-${idx}"
+         data-step="${step.step || ''}"
+         data-command="${step.command || ''}">
     </div>`
           )
           .join('\n')}

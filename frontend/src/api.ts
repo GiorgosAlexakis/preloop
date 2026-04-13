@@ -152,6 +152,25 @@ export async function fetchWithAuth(
   let response = await fetch(url, options);
 
   if (response.status === 401) {
+    // Check if the 401 is actually a gateway upstream error (e.g., invalid Anthropic or OpenAI API key).
+    // Gateway errors return a JSON envelope with an 'error' object rather than FastAPI's 'detail'.
+    let isUpstreamGatewayError = false;
+    try {
+      const errorData = await response.clone().json();
+      if (errorData && typeof errorData === 'object' && 'error' in errorData) {
+        isUpstreamGatewayError = true;
+      }
+    } catch (e) {
+      // Ignore parse errors, assume it's a normal access token expiration
+    }
+
+    if (isUpstreamGatewayError) {
+      console.log(
+        'Gateway upstream returned 401, returning error directly without refreshing token'
+      );
+      return response;
+    }
+
     console.log('Access token expired, attempting to refresh...');
 
     // If another tab or process already refreshed the token, use the new one directly
