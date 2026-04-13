@@ -254,6 +254,9 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         self, db: Session, flow_ids: List[Any]
     ) -> List[Any]:
         """Get execution statistics for a list of flow IDs."""
+        if not flow_ids:
+            return []
+
         from sqlalchemy import func, case
         from preloop.models.models.api_usage import ApiUsage
 
@@ -279,8 +282,6 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
             .group_by(self.model.flow_id)
             .all()
         )
-
-        flow_ids_str = [str(fid) for fid in flow_ids]
 
         # Fetch cost stats from actual API usage
         cost_stats = (

@@ -185,45 +185,47 @@ export class AppFooter extends LitElement {
                   &copy; ${new Date().getFullYear()} ${config.name}
                 </span>
               `}
-          ${hasSocialLinks
-            ? html`
-                <div class="social-links">
-                  ${social.linkedin
-                    ? html`
-                        <sl-icon-button
-                          name="linkedin"
-                          label="LinkedIn"
-                          href="${social.linkedin}"
-                          target="_blank"
-                        ></sl-icon-button>
-                      `
-                    : ''}
-                  ${social.instagram
-                    ? html`
-                        <sl-icon-button
-                          name="instagram"
-                          label="Instagram"
-                          href="${social.instagram}"
-                          target="_blank"
-                        ></sl-icon-button>
-                      `
-                    : ''}
-                  ${social.twitter
-                    ? html`
-                        <sl-icon-button
-                          name="twitter-x"
-                          label="Twitter/X"
-                          href="https://twitter.com/${social.twitter.replace(
-                            '@',
-                            ''
-                          )}"
-                          target="_blank"
-                        ></sl-icon-button>
-                      `
-                    : ''}
-                </div>
-              `
-            : ''}
+          <div class="social-links">
+            <sl-icon-button
+              name="github"
+              label="GitHub"
+              href="https://github.com/preloop/preloop"
+              target="_blank"
+            ></sl-icon-button>
+            ${social?.linkedin
+              ? html`
+                  <sl-icon-button
+                    name="linkedin"
+                    label="LinkedIn"
+                    href="${social.linkedin}"
+                    target="_blank"
+                  ></sl-icon-button>
+                `
+              : ''}
+            ${social?.instagram
+              ? html`
+                  <sl-icon-button
+                    name="instagram"
+                    label="Instagram"
+                    href="${social.instagram}"
+                    target="_blank"
+                  ></sl-icon-button>
+                `
+              : ''}
+            ${social?.twitter
+              ? html`
+                  <sl-icon-button
+                    name="twitter-x"
+                    label="Twitter/X"
+                    href="https://twitter.com/${social.twitter.replace(
+                      '@',
+                      ''
+                    )}"
+                    target="_blank"
+                  ></sl-icon-button>
+                `
+              : ''}
+          </div>
         </div>
       </div>
     `;

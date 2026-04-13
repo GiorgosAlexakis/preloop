@@ -2265,91 +2265,42 @@ export class AgentsView extends LitElement {
         label="Onboard Agents"
         ?open=${this.showOnboardingDialog}
         @sl-after-hide=${() => (this.showOnboardingDialog = false)}
-        style="--width: 650px;"
-      >
-        <sl-tab-group>
-          <sl-tab slot="nav" panel="cli">CLI SETUP</sl-tab>
-          <sl-tab slot="nav" panel="openclaw">OpenClaw Plugin</sl-tab>
-          <sl-tab slot="nav" panel="manual">Manual</sl-tab>
+        <div style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);">
+          <div style="line-height: 1.6;">
+            Welcome! The fastest way to onboard a local agent is using the Preloop CLI.<br>
+            It will automatically discover and register your agents, and securely route their traffic through the Preloop gateway.
+          </div>
 
-          <sl-tab-panel name="cli">
-            <div style="padding: var(--sl-spacing-large) 0 0 0;">
-              <div style="margin-bottom: var(--sl-spacing-medium);">
-                The Preloop CLI is the fastest way to register local agents.
-              </div>
-              <ol style="line-height: 2; margin: 0; padding-left: 20px;">
-                <li>
-                  <strong>Install CLI:</strong> Follow documentation to install
-                  the Preloop CLI.
-                </li>
-                <li>
-                  <strong>Authenticate:</strong> Run
-                  <code
-                    style="background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 4px;"
-                    >preloop login</code
-                  >
-                  <sl-copy-button value="preloop login"></sl-copy-button>
-                </li>
-                <li>
-                  <strong>Discover Agents:</strong> Run
-                  <code
-                    style="background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 4px;"
-                    >preloop agents discover</code
-                  >
-                  <sl-copy-button
-                    value="preloop agents discover"
-                  ></sl-copy-button>
-                </li>
-              </ol>
-            </div>
-          </sl-tab-panel>
+          <div style="margin-top: var(--sl-spacing-small);">
+            <strong>1. Install the CLI:</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+              curl -fsSL https://preloop.ai/install/cli | sh
+            </code>
+            <sl-copy-button value="curl -fsSL https://preloop.ai/install/cli | sh"></sl-copy-button>
+          </div>
 
-          <sl-tab-panel name="openclaw">
-            <div style="padding: var(--sl-spacing-large) 0 0 0;">
-              <div style="margin-bottom: var(--sl-spacing-medium);">
-                For users of OpenClaw, use the native plugin for smooth
-                integration.
-              </div>
-              <ol style="line-height: 2; margin: 0; padding-left: 20px;">
-                <li>
-                  <strong>Install Preloop Plugin:</strong> Find and install the
-                  Preloop Plugin for OpenClaw.
-                </li>
-                <li>
-                  <strong>Authenticate:</strong> Use the plugin interface to log
-                  in to Preloop.
-                </li>
-                <li>
-                  <strong>Complete Onboarding:</strong> Follow the on-screen
-                  flow to finish setup.
-                </li>
-              </ol>
-            </div>
-          </sl-tab-panel>
+          <div style="margin-top: var(--sl-spacing-small);">
+            <strong>2. Authenticate:</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+              preloop login
+            </code>
+            <sl-copy-button value="preloop login"></sl-copy-button>
+          </div>
 
-          <sl-tab-panel name="manual">
-            <div style="padding: var(--sl-spacing-large) 0 0 0;">
-              <ol style="line-height: 1.8; margin: 0; padding-left: 20px;">
-                <li style="margin-bottom: 8px;">
-                  Provide instructions on how to edit the configuration based on
-                  your specific agent framework.
-                </li>
-                <li style="margin-bottom: 8px;">
-                  Add your configured AI models and desired MCP servers to
-                  Preloop.
-                </li>
-                <li style="margin-bottom: 8px;">
-                  Create an Agent-Specific Preloop API key.
-                </li>
-                <li>
-                  Reconfigure your agent to use the AI model through the Preloop
-                  gateway, and tools through the Preloop MCP proxy (or Preloop
-                  CLI).
-                </li>
-              </ol>
-            </div>
-          </sl-tab-panel>
-        </sl-tab-group>
+          <div style="margin-top: var(--sl-spacing-small);">
+            <strong>3. Discover Agents:</strong>
+          </div>
+          <div style="display: flex; align-items: center; gap: var(--sl-spacing-small);">
+            <code style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;">
+              preloop agents discover
+            </code>
+            <sl-copy-button value="preloop agents discover"></sl-copy-button>
+          </div>
+        </div>
         <sl-button
           slot="footer"
           variant="primary"
