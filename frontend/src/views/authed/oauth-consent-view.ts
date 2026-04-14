@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
-import { post } from '../../api';
+import { fetchWithAuth } from '../../api';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
@@ -118,15 +118,35 @@ export class OAuthConsentView extends LitElement {
     this.loading = true;
 
     try {
-      const resp = await post('/api/v1/auth/oauth-consent', {
-        client_id: this.clientId,
-        redirect_uri: this.redirectUri,
-        code_challenge: this.codeChallenge,
-        state: this.stateParam,
-        scopes: this.scopes,
-        redirect_uri_provided_explicitly: this.redirectUriProvidedExplicitly,
-        resource: this.resource,
+      const response = await fetchWithAuth('/api/v1/auth/oauth-consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: this.clientId,
+          redirect_uri: this.redirectUri,
+          code_challenge: this.codeChallenge,
+          state: this.stateParam,
+          scopes: this.scopes,
+          redirect_uri_provided_explicitly: this.redirectUriProvidedExplicitly,
+          resource: this.resource,
+        }),
       });
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to authorize client.';
+        try {
+          const errorData = await response.json();
+          if (errorData.detail) {
+            errorMessage =
+              typeof errorData.detail === 'string'
+                ? errorData.detail
+                : JSON.stringify(errorData.detail);
+          }
+        } catch (e) {}
+        throw new Error(errorMessage);
+      }
+
+      const resp = await response.json();
 
       if (resp.action === 'manual') {
         this.manualCode = resp.code;

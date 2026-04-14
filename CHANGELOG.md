@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CLI OAuth Flow**: Fixed missing authorization header in the SPA consent submit request preventing a 401 Unauthorized error during authorization, and corrected the post-login routing context so the consent flow resumes automatically after a required sign-in or sign-up.
 - **OAuth consent tests**: Updated test suite to validate the new SPA 307 temporary redirect flow for `GET /mcp/authorize/consent`, replacing obsolete Jinja template assertions.
 
 ## [0.9.0-rc.1] - 2026-04-14

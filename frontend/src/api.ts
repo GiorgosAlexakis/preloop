@@ -119,6 +119,17 @@ async function refreshToken(): Promise<string | null> {
         window.dispatchEvent(
           new CustomEvent('auth-change', { bubbles: true, composed: true })
         );
+        if (
+          !window.location.pathname.startsWith('/login') &&
+          !window.location.pathname.startsWith('/register')
+        ) {
+          localStorage.setItem(
+            'loginRedirect',
+            window.location.pathname +
+              window.location.search +
+              window.location.hash
+          );
+        }
       }
 
       Router.go('/login');
@@ -141,6 +152,16 @@ export async function fetchWithAuth(
   if (!accessToken) {
     // This case should ideally not be hit if the app is correctly protecting routes
     console.error('No access token found');
+    if (
+      typeof window !== 'undefined' &&
+      !window.location.pathname.startsWith('/login') &&
+      !window.location.pathname.startsWith('/register')
+    ) {
+      localStorage.setItem(
+        'loginRedirect',
+        window.location.pathname + window.location.search + window.location.hash
+      );
+    }
     Router.go('/login');
     throw new Error('Not authenticated');
   }
