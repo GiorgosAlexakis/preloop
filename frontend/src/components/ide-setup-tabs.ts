@@ -142,12 +142,14 @@ export class IdeSetupTabs extends LitElement {
                     <h4 style="margin-top: 0; margin-bottom: 1.5rem;">
                       ${activeConfig.ide_name} Setup
                     </h4>
-                    <h5>Prerequisites</h5>
-                    <ul>
-                      ${activeConfig.prerequisites.map(
-                        (prereq) => html`<li>${unsafeHTML(prereq)}</li>`
-                      )}
-                    </ul>
+                    ${activeConfig.prerequisites.length > 0
+                      ? html` <h5>Prerequisites</h5>
+                          <ul>
+                            ${activeConfig.prerequisites.map(
+                              (prereq) => html`<li>${unsafeHTML(prereq)}</li>`
+                            )}
+                          </ul>`
+                      : ``}
                     <h5>Setup</h5>
                     <p>${unsafeHTML(activeConfig.setup_instructions)}</p>
                     <div class="code-container">

@@ -1,10 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 680" width="100%" height="100%">
     <defs>
-        <radialGradient id="bg-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="#0f172a" />
-            <stop offset="100%" stop-color="#020617" />
-        </radialGradient>
-
         <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
             <circle cx="2" cy="2" r="1.5" fill="#1e293b" />
         </pattern>
