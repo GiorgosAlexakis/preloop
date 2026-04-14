@@ -92,16 +92,19 @@ case ":$PATH:" in
 esac
 
 echo ""
-printf "Would you like to login to Preloop now? [y/N] "
+printf "Would you like to login to Preloop now? [Y/n] "
 if read -r login_ans < /dev/tty 2>/dev/null; then
-  if [ "$login_ans" = "y" ] || [ "$login_ans" = "Y" ]; then
-    "${BIN_DIR}/preloop${EXT}" login || true
-    echo ""
-    printf "Would you like to discover and onboard local agents now? [y/N] "
-    if read -r discover_ans < /dev/tty 2>/dev/null; then
-      if [ "$discover_ans" = "y" ] || [ "$discover_ans" = "Y" ]; then
-        "${BIN_DIR}/preloop${EXT}" agents discover || true
+  if [ -z "$login_ans" ] || [ "$login_ans" = "y" ] || [ "$login_ans" = "Y" ]; then
+    if "${BIN_DIR}/preloop${EXT}" login < /dev/tty; then
+      echo ""
+      printf "Would you like to discover and onboard local agents now? [Y/n] "
+      if read -r discover_ans < /dev/tty 2>/dev/null; then
+        if [ -z "$discover_ans" ] || [ "$discover_ans" = "y" ] || [ "$discover_ans" = "Y" ]; then
+          "${BIN_DIR}/preloop${EXT}" agents discover < /dev/tty || true
+        fi
       fi
+    else
+      echo "Login encountered an error or was aborted."
     fi
   fi
 fi
