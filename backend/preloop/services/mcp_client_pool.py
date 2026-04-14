@@ -153,6 +153,14 @@ class MCPClient:
             # If it's pure BaseException (like KeyboardInterrupt), re-raise it perfectly.
             if isinstance(target_exc, Exception):
                 raise target_exc
+
+            # Convert SDK cancel scope BaseExceptions into standard Exceptions to prevent router 500s
+            if "cancel scope" in str(target_exc).lower() or type(e).__name__ in (
+                "ExceptionGroup",
+                "BaseExceptionGroup",
+            ):
+                raise ConnectionError(f"Connection aborted: {target_exc}")
+
             raise e
 
     async def close(self):
@@ -261,6 +269,13 @@ class MCPClient:
 
             if isinstance(target_exc, Exception):
                 raise target_exc
+
+            if "cancel scope" in str(target_exc).lower() or type(e).__name__ in (
+                "ExceptionGroup",
+                "BaseExceptionGroup",
+            ):
+                raise ConnectionError(f"Operation aborted: {target_exc}")
+
             raise e
 
     async def call_tool(
@@ -363,6 +378,13 @@ class MCPClient:
 
             if isinstance(target_exc, Exception):
                 raise target_exc
+
+            if "cancel scope" in str(target_exc).lower() or type(e).__name__ in (
+                "ExceptionGroup",
+                "BaseExceptionGroup",
+            ):
+                raise ConnectionError(f"Operation aborted: {target_exc}")
+
             raise e
 
 
