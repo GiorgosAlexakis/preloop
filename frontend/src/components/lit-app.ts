@@ -18,6 +18,7 @@ import '../views/public/pricing-view';
 import '../views/public/welcome-view';
 import '../views/public/static-view';
 import '../views/authed/console-shell';
+import '../views/authed/oauth-consent-view';
 import '../views/authed/dashboard-control-plane-view';
 import '../views/authed/trackers-view';
 import '../views/authed/tracker-detail-view';
@@ -358,6 +359,24 @@ export class LitApp extends LitElement {
             } else if (params.get('setup_tracker') === 'github') {
               // No billing — go straight to GitHub App installation
               this._autoStartGitHubAppInstall(accessToken);
+            } else {
+              // Standard OAuth entry point w/o setup blockers
+              const redirectPath = localStorage.getItem('loginRedirect');
+              if (redirectPath) {
+                localStorage.removeItem('loginRedirect');
+                setTimeout(() => {
+                  Router.go(redirectPath);
+                }, 0);
+              }
+            }
+          } else if (window.location.pathname === '/console') {
+            // Handled when returning from e.g. Stripe without an access token hash
+            const redirectPath = localStorage.getItem('loginRedirect');
+            if (redirectPath) {
+              localStorage.removeItem('loginRedirect');
+              setTimeout(() => {
+                Router.go(redirectPath);
+              }, 0);
             }
           }
 
@@ -435,6 +454,7 @@ export class LitApp extends LitElement {
           { path: 'pricing', component: 'pricing-view' },
           { path: 'approvals', component: 'approvals-view' },
           { path: 'approval/:requestId', component: 'approval-view' },
+          { path: 'authorize', component: 'oauth-consent-view' },
           {
             path: 'governance',
             action: (_context, commands) => {

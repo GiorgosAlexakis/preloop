@@ -1135,7 +1135,7 @@ export class LandingView extends LitElement {
                             prerequisites: [],
                             setup_instructions:
                               'Install the CLI to onboard existing agents or connect them manually.',
-                            code: 'curl -fsSL https://preloop.ai/install/cli | sh\n\npreloop login\n\npreloop agents discover',
+                            code: 'curl -fsSL https://preloop.ai/install/cli | sh',
                           },
                         ]}
                         defaultTab="cli"

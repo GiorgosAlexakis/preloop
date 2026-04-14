@@ -90,3 +90,18 @@ case ":$PATH:" in
     echo "Note: ${BIN_DIR} is not on your PATH."
     ;;
 esac
+
+echo ""
+printf "Would you like to login to Preloop now? [y/N] "
+if read -r login_ans < /dev/tty 2>/dev/null; then
+  if [ "$login_ans" = "y" ] || [ "$login_ans" = "Y" ]; then
+    "${BIN_DIR}/preloop${EXT}" login || true
+    echo ""
+    printf "Would you like to discover and onboard local agents now? [y/N] "
+    if read -r discover_ans < /dev/tty 2>/dev/null; then
+      if [ "$discover_ans" = "y" ] || [ "$discover_ans" = "Y" ]; then
+        "${BIN_DIR}/preloop${EXT}" agents discover || true
+      fi
+    fi
+  fi
+fi

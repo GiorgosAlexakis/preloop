@@ -44,11 +44,7 @@ brands:
         link_text: "See AI Act readiness guidance"
         link_url: "/ai-act-readiness"
 
-        mcp_setup_title: "Start with preloop agents discover, or connect Preloop manually"
+        mcp_setup_title: "Start with a simple CLI setup, or connect Preloop manually"
         cli_setup:
-          - step: "1. Install the CLI"
+          - step: "1. Install and Set Up"
             command: "curl -fsSL https://preloop.ai/install/cli | sh"
-          - step: "2. Authenticate"
-            command: "preloop login"
-          - step: "3. Discover Agents"
-            command: "preloop agents discover"

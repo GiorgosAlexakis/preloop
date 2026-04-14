@@ -16,11 +16,14 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from mcp.server.auth.provider import construct_redirect_uri
+from pydantic import BaseModel
+from urllib.parse import urlencode
 
 from preloop.models.db.session import get_db_session
+from preloop.api.auth.jwt import get_current_active_user
 
 logger = logging.getLogger(__name__)
 
@@ -144,34 +147,83 @@ async def consent_page(
     authorization flow. The user must enter their Preloop credentials to
     approve the authorization.
     """
-    # Validate client_id and redirect_uri
     validation = _validate_client_and_redirect(client_id, redirect_uri)
     if validation["error"]:
         return HTMLResponse(
             content=f"<h1>OAuth Error</h1><p>{html.escape(validation['error'])}</p>",
             status_code=400,
         )
-    client_name = validation["client_name"]
 
-    context = {
+    query_params = {
         "client_id": client_id,
-        "client_name": client_name,
         "redirect_uri": redirect_uri,
         "code_challenge": code_challenge,
         "state": state,
         "scopes": scopes,
         "redirect_uri_provided_explicitly": redirect_uri_provided_explicitly,
         "resource": resource,
-        "error": "",
-        "next_step_note": _manual_code_note(redirect_uri),
-        # JSON-encoded variants for safe use inside <script> blocks
-        "redirect_uri_json": redirect_uri,
-        "state_json": state,
-        "error_json": "",
+        "client_name": validation["client_name"],
     }
+    encoded = urlencode({k: v for k, v in query_params.items() if v})
+    return RedirectResponse(url=f"/console/authorize?{encoded}")
 
-    html_content = _render_template("oauth_authorize.html", context)
-    return HTMLResponse(content=html_content)
+
+class OAuthConsentRequest(BaseModel):
+    client_id: str
+    redirect_uri: str
+    code_challenge: str = ""
+    state: str = ""
+    scopes: str = ""
+    redirect_uri_provided_explicitly: str = "true"
+    resource: str = ""
+
+
+@router.post("/api/v1/auth/oauth-consent")
+async def api_oauth_authorize(
+    payload: OAuthConsentRequest, current_user=Depends(get_current_active_user)
+):
+    """Handle OAuth consent from the authenticated frontend SPA."""
+    validation = _validate_client_and_redirect(payload.client_id, payload.redirect_uri)
+    if validation["error"]:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail=validation["error"])
+
+    provider = _get_oauth_provider()
+    if not provider:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=500, detail="OAuth not configured")
+
+    scope_list = payload.scopes.split() if payload.scopes else []
+    code = provider.create_authorization_code_for_user(
+        client_id=payload.client_id,
+        user_id=current_user.id,
+        account_id=current_user.account_id,
+        redirect_uri=payload.redirect_uri,
+        redirect_uri_provided_explicitly=(
+            payload.redirect_uri_provided_explicitly == "true"
+        ),
+        code_challenge=payload.code_challenge,
+        scopes=scope_list,
+        resource=payload.resource or None,
+    )
+
+    logger.info(
+        f"OAuth consent granted via SPA: user={current_user.username}, client={payload.client_id}"
+    )
+
+    if payload.redirect_uri == _CLI_MANUAL_REDIRECT_URI:
+        return {"action": "manual", "code": code}
+
+    from mcp.server.auth.provider import construct_redirect_uri
+
+    redirect_url = construct_redirect_uri(
+        payload.redirect_uri,
+        code=code,
+        state=payload.state if payload.state else None,
+    )
+    return {"action": "redirect", "redirect_url": redirect_url}
 
 
 @router.post("/mcp/authorize/consent")
