@@ -116,16 +116,10 @@ class TestRenderTemplate:
 class TestConsentPageGet:
     """Tests for the GET consent page endpoint."""
 
-    def test_renders_html(self, client):
-        with (
-            patch(
-                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
-                return_value={"error": None, "client_name": "Test Client"},
-            ),
-            patch(
-                "preloop.api.endpoints.oauth_consent._render_template",
-                return_value="<html>OK</html>",
-            ),
+    def test_redirects_to_spa(self, client):
+        with patch(
+            "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+            return_value={"error": None, "client_name": "Test Client"},
         ):
             response = client.get(
                 "/mcp/authorize/consent",
@@ -134,63 +128,19 @@ class TestConsentPageGet:
                     "redirect_uri": "http://localhost/cb",
                     "code_challenge": "ch123",
                 },
+                follow_redirects=False,
             )
 
-        assert response.status_code == 200
-        assert "OK" in response.text
+        assert response.status_code == 307
+        assert response.headers["location"].startswith("/console/authorize")
+        assert "client_id=c1" in response.headers["location"]
 
-    def test_context_includes_json_variants(self, client):
-        """Context passed to _render_template should include _json keys for script safety."""
-        rendered_contexts = []
-
-        def capture_render(template_name, context):
-            rendered_contexts.append(context)
-            return "<html>test</html>"
-
-        with (
-            patch(
-                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
-                return_value={"error": None, "client_name": "Test Client"},
-            ),
-            patch(
-                "preloop.api.endpoints.oauth_consent._render_template",
-                side_effect=capture_render,
-            ),
+    def test_passes_params_in_redirect_url(self, client):
+        with patch(
+            "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+            return_value={"error": None, "client_name": "Test Client"},
         ):
-            client.get(
-                "/mcp/authorize/consent",
-                params={
-                    "client_id": "c1",
-                    "redirect_uri": "http://localhost/cb",
-                    "state": "s1",
-                },
-            )
-
-        ctx = rendered_contexts[0]
-        assert "redirect_uri_json" in ctx
-        assert "state_json" in ctx
-        assert "error_json" in ctx
-        assert ctx["redirect_uri_json"] == "http://localhost/cb"
-        assert ctx["state_json"] == "s1"
-
-    def test_passes_params_to_template(self, client):
-        rendered_contexts = []
-
-        def capture_render(template_name, context):
-            rendered_contexts.append(context)
-            return "<html>test</html>"
-
-        with (
-            patch(
-                "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
-                return_value={"error": None, "client_name": "Test Client"},
-            ),
-            patch(
-                "preloop.api.endpoints.oauth_consent._render_template",
-                side_effect=capture_render,
-            ),
-        ):
-            client.get(
+            response = client.get(
                 "/mcp/authorize/consent",
                 params={
                     "client_id": "test_client",
@@ -199,40 +149,36 @@ class TestConsentPageGet:
                     "state": "state_abc",
                     "scopes": "read write",
                 },
+                follow_redirects=False,
             )
 
-        assert len(rendered_contexts) == 1
-        ctx = rendered_contexts[0]
-        assert ctx["client_id"] == "test_client"
-        assert ctx["redirect_uri"] == "http://example.com/cb"
-        assert ctx["state"] == "state_abc"
-        assert ctx["scopes"] == "read write"
-        assert ctx["error"] == ""
+        assert response.status_code == 307
+        location = response.headers["location"]
+        assert "client_id=test_client" in location
+        assert "redirect_uri=http%3A%2F%2Fexample.com%2Fcb" in location
+        assert "state=state_abc" in location
+        assert "scopes=read+write" in location
 
-    def test_manual_cli_flow_adds_copy_paste_note(self, client):
-        rendered_contexts = []
-
-        def capture_render(template_name, context):
-            rendered_contexts.append(context)
-            return "<html>manual</html>"
-
+    def test_invalid_client_renders_error_html(self, client):
         with patch(
-            "preloop.api.endpoints.oauth_consent._render_template",
-            side_effect=capture_render,
+            "preloop.api.endpoints.oauth_consent._validate_client_and_redirect",
+            return_value={"error": "Invalid client", "client_name": ""},
         ):
             response = client.get(
                 "/mcp/authorize/consent",
                 params={
-                    "client_id": "cli",
-                    "redirect_uri": _CLI_MANUAL_REDIRECT_URI,
+                    "client_id": "invalid",
+                    "redirect_uri": "http://example.com/cb",
                 },
+                follow_redirects=False,
             )
 
-        assert response.status_code == 200
-        assert "paste back into the CLI" in rendered_contexts[0]["next_step_note"]
+        assert response.status_code == 400
+        assert "OAuth Error" in response.text
+        assert "Invalid client" in response.text
 
     def test_missing_required_params(self, client):
-        response = client.get("/mcp/authorize/consent")
+        response = client.get("/mcp/authorize/consent", follow_redirects=False)
         assert response.status_code == 422  # Validation error
 
 

@@ -60,6 +60,7 @@ export class LandingView extends LitElement {
   } | null = null;
   @state() private _activeAnimationIndex = 0;
   private _animationsObserver?: IntersectionObserver;
+  private _animTimer?: number;
 
   static styles = [
     css`
@@ -134,10 +135,33 @@ export class LandingView extends LitElement {
     this._animationsObserver = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          const idx = Number((entry.target as HTMLElement).dataset.animIndex);
+          if (isNaN(idx)) return;
+
           if (entry.isIntersecting) {
-            const idx = Number((entry.target as HTMLElement).dataset.animIndex);
-            if (!isNaN(idx)) {
-              this._activeAnimationIndex = idx;
+            this._activeAnimationIndex = idx;
+
+            if (this._animTimer) window.clearTimeout(this._animTimer);
+
+            // Advance to the next animation after 20 seconds if available
+            if (idx < 2) {
+              this._animTimer = window.setTimeout(() => {
+                const nextIdx = idx + 1;
+                const nextSpacer = this.renderRoot?.querySelector(
+                  `.animation-scroll-spacer[data-anim-index="${nextIdx}"]`
+                );
+                if (nextSpacer) {
+                  nextSpacer.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                  });
+                }
+              }, 20000);
+            }
+          } else {
+            // Clear the timer if we scroll away before the timer triggers
+            if (idx === this._activeAnimationIndex) {
+              if (this._animTimer) window.clearTimeout(this._animTimer);
             }
           }
         });
@@ -167,6 +191,7 @@ export class LandingView extends LitElement {
     super.disconnectedCallback();
     this._featuresObserver?.disconnect();
     this._animationsObserver?.disconnect();
+    if (this._animTimer) window.clearTimeout(this._animTimer);
   }
 
   private async _checkBillingEnabled() {
@@ -958,7 +983,7 @@ export class LandingView extends LitElement {
                                 2 ===
                               0
                                 ? 'row'
-                                : 'row-reverse'}; align-items: center; justify-content: center; gap: 6rem; padding: 4rem 1rem; height: 100%;"
+                                : 'row-reverse'}; align-items: center; justify-content: center; gap: 6rem; padding: 0 1rem; height: 100%;"
                             >
                               <div style="max-width: 450px; flex: 1;">
                                 <h3

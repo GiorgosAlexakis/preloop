@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **OAuth consent tests**: Updated test suite to validate the new SPA 307 temporary redirect flow for `GET /mcp/authorize/consent`, replacing obsolete Jinja template assertions.
+
 ## [0.9.0-rc.1] - 2026-04-14
+
+### Added
+
+- **Landing page UX**: Deployed SVG animation scrolltraps with a 20-second auto-scroll cycle to improve visual engagement.
+- **CLI Onboarding**: Unified the terminal installation copy (`curl | sh`) and refined the CLI setup tabs to enhance the onboarding experience.
+
+### Security
+
+- **Dependabot**: Bumped `golang.org/x/crypto` in the CLI module to address upstream vulnerabilities.
 
 ## [0.9.0-rc.0] - 2026-04-13
 
