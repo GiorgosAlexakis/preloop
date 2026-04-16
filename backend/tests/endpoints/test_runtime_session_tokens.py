@@ -167,8 +167,8 @@ def test_create_runtime_session_token_rejects_scope_escalation(client):
     assert "only support these scopes" in response.json()["detail"]
 
 
-def test_create_runtime_session_token_rejects_unknown_allowed_servers(client):
-    """Runtime session tokens should only accept active account MCP servers."""
+def test_create_runtime_session_token_ignores_unknown_allowed_servers(client):
+    """Runtime session tokens should ignore active account MCP servers rather than rejecting."""
     response = client.post(
         "/api/v1/auth/runtime-sessions/token",
         json={
@@ -178,8 +178,8 @@ def test_create_runtime_session_token_rejects_unknown_allowed_servers(client):
         },
     )
 
-    assert response.status_code == 400
-    assert "allowed_mcp_servers" in response.json()["detail"]
+    assert response.status_code == 201
+    assert "token" in response.json()
 
 
 def test_runtime_session_identity_is_account_scoped(db_session):

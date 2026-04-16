@@ -291,25 +291,25 @@ def _resolve_runtime_session_tool_restrictions(
             if server_name not in active_server_by_name
         ]
         if missing_servers:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "allowed_mcp_servers must reference active MCP servers in the "
-                    "current account"
-                ),
+            logger.warning(
+                f"Ignoring missing or inactive allowed_mcp_servers requested by runtime session: {missing_servers}"
             )
 
         server_ids = [
             active_server_by_name[server_name].id
             for server_name in normalized_server_names
+            if server_name in active_server_by_name
         ]
 
         from preloop.models.crud import crud_mcp_tool
 
-        fetched_tool_names = crud_mcp_tool.get_tool_names_by_server_ids(db, server_ids)
-        for name in fetched_tool_names:
-            if name not in authorized_tool_names:
-                authorized_tool_names.append(name)
+        if server_ids:
+            fetched_tool_names = crud_mcp_tool.get_tool_names_by_server_ids(
+                db, server_ids
+            )
+            for name in fetched_tool_names:
+                if name not in authorized_tool_names:
+                    authorized_tool_names.append(name)
 
     if normalized_tool_names:
         from preloop.models.crud import crud_tool_configuration
@@ -326,15 +326,15 @@ def _resolve_runtime_session_tool_restrictions(
             if tool_name not in allowed_tool_names
         ]
         if missing_tool_names:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "allowed_mcp_tools must reference enabled tools in the current "
-                    "account"
-                ),
+            logger.warning(
+                f"Ignoring missing or disabled allowed_mcp_tools requested by runtime session: {missing_tool_names}"
             )
+
         for tool_name in normalized_tool_names:
-            if tool_name not in authorized_tool_names:
+            if (
+                tool_name in allowed_tool_names
+                and tool_name not in authorized_tool_names
+            ):
                 authorized_tool_names.append(tool_name)
 
     return normalized_server_names, [
