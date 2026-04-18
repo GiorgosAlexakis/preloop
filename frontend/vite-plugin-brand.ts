@@ -9,7 +9,30 @@ import {
   get_route_from_filename,
   get_static_routes_with_options,
   get_structured_data_for_route,
+  VS_PAGE_META,
 } from './src/brand-seo';
+
+/**
+ * Enumerate competitor comparison slugs that have both a markdown file on
+ * disk AND a `VS_PAGE_META` registration. Kept as a plugin-scope helper so
+ * `generateBundle`, `closeBundle`, sitemap, and llms.txt all see the exact
+ * same set of slugs.
+ */
+function discover_vs_slugs(
+  contentBasePath: string,
+  brandKey: string
+): string[] {
+  const vsDir = path.resolve(contentBasePath, brandKey, 'vs');
+  if (!fs.existsSync(vsDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(vsDir)
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => name.replace(/\.md$/, ''))
+    .filter((slug) => Boolean(VS_PAGE_META[slug]))
+    .sort();
+}
 
 /**
  * Options for the brand plugin
@@ -35,12 +58,17 @@ export interface BrandPluginOptions {
  * @param brandKey - The brand key to use from brands.yaml (e.g., 'preloop')
  * @param options - Optional configuration for custom paths
  */
-export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}): Plugin {
+export function brandPlugin(
+  brandKey: string,
+  options: BrandPluginOptions = {}
+): Plugin {
   let brandConfig: BrandConfig;
 
   // Resolve paths - use options or defaults
-  const configPath = options.configPath || path.resolve(__dirname, 'brands.yaml');
-  const contentBasePath = options.contentPath || path.resolve(__dirname, 'content');
+  const configPath =
+    options.configPath || path.resolve(__dirname, 'brands.yaml');
+  const contentBasePath =
+    options.contentPath || path.resolve(__dirname, 'content');
   const outDirPath = options.outDir || path.resolve(__dirname, 'dist');
 
   return {
@@ -56,7 +84,9 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       const brands = yaml.load(brandsYaml) as any;
 
       if (!brands || !brands.brands) {
-        throw new Error('Invalid brands.yaml structure: brands.brands not found');
+        throw new Error(
+          'Invalid brands.yaml structure: brands.brands not found'
+        );
       }
 
       brandConfig = brands.brands[brandKey];
@@ -70,35 +100,52 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       // Apply defaults for missing optional fields
       brandConfig.company = brandConfig.company || {};
       brandConfig.social = brandConfig.social || {};
-      brandConfig.landing = brandConfig.landing || {} as any;
-      brandConfig.landing.meta = brandConfig.landing.meta || {} as any;
-      brandConfig.landing.hero = brandConfig.landing.hero || {} as any;
+      brandConfig.landing = brandConfig.landing || ({} as any);
+      brandConfig.landing.meta = brandConfig.landing.meta || ({} as any);
+      brandConfig.landing.hero = brandConfig.landing.hero || ({} as any);
       brandConfig.landing.features = brandConfig.landing.features || [];
       brandConfig.landing.faqs = brandConfig.landing.faqs || [];
-      brandConfig.landing.get_started = brandConfig.landing.get_started || {} as any;
-      brandConfig.landing.get_started.features = brandConfig.landing.get_started.features || [];
-      brandConfig.landing.get_started.cli_setup = brandConfig.landing.get_started.cli_setup || [];
+      brandConfig.landing.get_started =
+        brandConfig.landing.get_started || ({} as any);
+      brandConfig.landing.get_started.features =
+        brandConfig.landing.get_started.features || [];
+      brandConfig.landing.get_started.cli_setup =
+        brandConfig.landing.get_started.cli_setup || [];
+      brandConfig.landing.pricing = brandConfig.landing.pricing || ({} as any);
+      brandConfig.landing.pricing!.plans =
+        brandConfig.landing.pricing!.plans || [];
+      brandConfig.landing.pricing!.faqs =
+        brandConfig.landing.pricing!.faqs || [];
 
-      console.log(`\n🎨 Building for brand: ${brandConfig.name} (${brandConfig.domain})\n`);
+      console.log(
+        `\n🎨 Building for brand: ${brandConfig.name} (${brandConfig.domain})\n`
+      );
     },
 
     async generateBundle(options, bundle) {
       // Generate landing content JSON file with safe defaults
       const landingContent = {
         hero: brandConfig.landing.hero || {},
-        extended_description: brandConfig.landing.meta?.extended_description || '',
+        extended_description:
+          brandConfig.landing.meta?.extended_description || '',
         features_layout: brandConfig.landing.features_layout || 'grid',
         features: brandConfig.landing.features || [],
         faqs: brandConfig.landing.faqs || [],
         get_started: brandConfig.landing.get_started || {},
         product_hunt: (brandConfig.landing as any).product_hunt || null,
         featured_video: (brandConfig.landing as any).featured_video || null,
+        pricing: brandConfig.landing.pricing || null,
       };
       const aiActReadinessMdPath = path.resolve(
         contentBasePath,
         `${brandKey}/ai-act-readiness.md`
       );
       const hasAiActReadinessPage = fs.existsSync(aiActReadinessMdPath);
+      // Competitor comparison pages (/vs/<slug>) are SaaS-only.
+      const vsSlugsForRouting =
+        (brandConfig as any).edition === 'saas' || !(brandConfig as any).edition
+          ? discover_vs_slugs(contentBasePath, brandKey)
+          : [];
 
       // Add JSON file to bundle
       this.emitFile({
@@ -110,7 +157,11 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       this.emitFile({
         type: 'asset',
         fileName: 'sitemap.xml',
-        source: generateSitemapXml(brandConfig, hasAiActReadinessPage),
+        source: generateSitemapXml(
+          brandConfig,
+          hasAiActReadinessPage,
+          vsSlugsForRouting
+        ),
       });
 
       this.emitFile({
@@ -122,11 +173,19 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       this.emitFile({
         type: 'asset',
         fileName: 'llms.txt',
-        source: generateLlmsTxt(brandConfig, hasAiActReadinessPage),
+        source: generateLlmsTxt(
+          brandConfig,
+          hasAiActReadinessPage,
+          vsSlugsForRouting
+        ),
       });
 
       // Generate static HTML fragments for dynamic loading
-      const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
+      const privacyHTML = await loadMarkdownContent(
+        contentBasePath,
+        brandKey,
+        'privacy'
+      );
 
       this.emitFile({
         type: 'asset',
@@ -134,10 +193,13 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         source: privacyHTML,
       });
 
-      // Only generate pricing content for SaaS editions
+      // Only generate pricing content for SaaS editions with pricing enabled
       const edition = (brandConfig as any).edition || 'saas';
-      if (edition === 'saas') {
-        const pricingHTML = generatePricingContent(brandConfig);
+      if (
+        edition === 'saas' &&
+        brandConfig.landing.pricing?.enabled !== false
+      ) {
+        const pricingHTML = generatePricingSlottedContent(brandConfig);
         this.emitFile({
           type: 'asset',
           fileName: 'content/pricing.html',
@@ -155,12 +217,32 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       ];
 
       for (const file of contentFiles) {
-        const contentFilePath = path.resolve(contentBasePath, `${brandKey}/${file}`);
+        const contentFilePath = path.resolve(
+          contentBasePath,
+          `${brandKey}/${file}`
+        );
         if (fs.existsSync(contentFilePath)) {
           const markdown = fs.readFileSync(contentFilePath, 'utf-8');
           this.emitFile({
             type: 'asset',
             fileName: `content/${file}`,
+            source: markdown,
+          });
+        }
+      }
+
+      // Mirror competitor comparison markdown files into dist/content/vs/ so
+      // the SPA router can fetch them for client-side navigation to /vs/<slug>.
+      for (const slug of vsSlugsForRouting) {
+        const vsMdPath = path.resolve(
+          contentBasePath,
+          `${brandKey}/vs/${slug}.md`
+        );
+        if (fs.existsSync(vsMdPath)) {
+          const markdown = fs.readFileSync(vsMdPath, 'utf-8');
+          this.emitFile({
+            type: 'asset',
+            fileName: `content/vs/${slug}.md`,
             source: markdown,
           });
         }
@@ -174,7 +256,9 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       const indexHtmlPath = path.resolve(outDirPath, 'index.html');
 
       if (!fs.existsSync(indexHtmlPath)) {
-        console.warn(`index.html not found at ${indexHtmlPath}, cannot generate standalone HTML pages`);
+        console.warn(
+          `index.html not found at ${indexHtmlPath}, cannot generate standalone HTML pages`
+        );
         return;
       }
 
@@ -182,9 +266,21 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
 
       // Generate static markdown content HTML
       // Use brandKey for content folder lookup
-      const privacyHTML = await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
-      const termsHTML = await loadMarkdownContent(contentBasePath, brandKey, 'terms');
-      const whatisMcpHTML = await loadMarkdownContent(contentBasePath, brandKey, 'whatis-mcp');
+      const privacyHTML = await loadMarkdownContent(
+        contentBasePath,
+        brandKey,
+        'privacy'
+      );
+      const termsHTML = await loadMarkdownContent(
+        contentBasePath,
+        brandKey,
+        'terms'
+      );
+      const whatisMcpHTML = await loadMarkdownContent(
+        contentBasePath,
+        brandKey,
+        'whatis-mcp'
+      );
       const edition = (brandConfig as any).edition || 'saas';
       const aiActReadinessMdPath = path.resolve(
         contentBasePath,
@@ -192,20 +288,42 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       );
       const hasAiActReadinessPage = fs.existsSync(aiActReadinessMdPath);
       const aiActReadinessHTML = hasAiActReadinessPage
-        ? await loadMarkdownContent(contentBasePath, brandKey, 'ai-act-readiness')
+        ? await loadMarkdownContent(
+            contentBasePath,
+            brandKey,
+            'ai-act-readiness'
+          )
         : '';
 
       // Generate privacy.html with proper meta tags and content
-      const privacyPage = generateFullHtmlPage(indexHtml, '/privacy', brandConfig, privacyHTML);
+      const privacyPage = generateFullHtmlPage(
+        indexHtml,
+        '/privacy',
+        brandConfig,
+        privacyHTML
+      );
       fs.writeFileSync(path.resolve(outDirPath, 'privacy.html'), privacyPage);
 
       // Generate terms.html
-      const termsPage = generateFullHtmlPage(indexHtml, '/terms', brandConfig, termsHTML);
+      const termsPage = generateFullHtmlPage(
+        indexHtml,
+        '/terms',
+        brandConfig,
+        termsHTML
+      );
       fs.writeFileSync(path.resolve(outDirPath, 'terms.html'), termsPage);
 
       // Generate whatis-mcp.html
-      const whatisMcpPage = generateFullHtmlPage(indexHtml, '/whatis-mcp', brandConfig, whatisMcpHTML);
-      fs.writeFileSync(path.resolve(outDirPath, 'whatis-mcp.html'), whatisMcpPage);
+      const whatisMcpPage = generateFullHtmlPage(
+        indexHtml,
+        '/whatis-mcp',
+        brandConfig,
+        whatisMcpHTML
+      );
+      fs.writeFileSync(
+        path.resolve(outDirPath, 'whatis-mcp.html'),
+        whatisMcpPage
+      );
 
       if (edition === 'saas' && hasAiActReadinessPage) {
         // Generate ai-act-readiness.html
@@ -227,22 +345,44 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         generatedPages.push('ai-act-readiness.html');
       }
 
-      if (edition === 'saas') {
-        // Generate pricing.html
-        const pricingHTML = generatePricingContent(brandConfig);
-        const pricingPage = generateFullHtmlPage(indexHtml, '/pricing', brandConfig, pricingHTML);
+      if (
+        edition === 'saas' &&
+        brandConfig.landing.pricing?.enabled !== false
+      ) {
+        // Generate pricing.html with slotted SEO content that <public-pricing-view>
+        // projects into the interactive UI on hydration.
+        const pricingHTML = generatePricingSlottedContent(brandConfig);
+        const pricingPage = generateFullHtmlPage(
+          indexHtml,
+          '/pricing',
+          brandConfig,
+          pricingHTML
+        );
         fs.writeFileSync(path.resolve(outDirPath, 'pricing.html'), pricingPage);
         generatedPages.push('pricing.html');
 
         // Generate about.html
-        const aboutHTML = await loadMarkdownContent(contentBasePath, brandKey, 'about');
+        const aboutHTML = await loadMarkdownContent(
+          contentBasePath,
+          brandKey,
+          'about'
+        );
         if (aboutHTML) {
-          const aboutPage = generateFullHtmlPage(indexHtml, '/about', brandConfig, aboutHTML);
+          const aboutPage = generateFullHtmlPage(
+            indexHtml,
+            '/about',
+            brandConfig,
+            aboutHTML
+          );
           fs.writeFileSync(path.resolve(outDirPath, 'about.html'), aboutPage);
           generatedPages.push('about.html');
 
           // Also copy about.md to content folder for client-side navigation
-          const aboutMdPath = path.resolve(contentBasePath, brandKey, 'about.md');
+          const aboutMdPath = path.resolve(
+            contentBasePath,
+            brandKey,
+            'about.md'
+          );
           if (fs.existsSync(aboutMdPath)) {
             const contentDir = path.resolve(outDirPath, 'content');
             fs.copyFileSync(aboutMdPath, path.resolve(contentDir, 'about.md'));
@@ -256,9 +396,110 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
             path.resolve(contentDir, 'ai-act-readiness.md')
           );
         }
+
+        // Generate long-form resource pages (pillar articles). These live at
+        // /resources/<slug> and are sourced from content/<brand>/resources/.
+        const resourcePages = [
+          {
+            slug: 'ai-agent-control-plane-2026',
+            route: '/resources/ai-agent-control-plane-2026',
+          },
+        ];
+
+        for (const resource of resourcePages) {
+          const resourceMdPath = path.resolve(
+            contentBasePath,
+            brandKey,
+            `resources/${resource.slug}.md`
+          );
+          if (!fs.existsSync(resourceMdPath)) {
+            continue;
+          }
+
+          const resourceHTML = await loadMarkdownContent(
+            contentBasePath,
+            brandKey,
+            `resources/${resource.slug}`
+          );
+          const resourcePage = generateFullHtmlPage(
+            indexHtml,
+            resource.route,
+            brandConfig,
+            resourceHTML
+          );
+
+          const resourcesDir = path.resolve(outDirPath, 'resources');
+          if (!fs.existsSync(resourcesDir)) {
+            fs.mkdirSync(resourcesDir, { recursive: true });
+          }
+          fs.writeFileSync(
+            path.resolve(resourcesDir, `${resource.slug}.html`),
+            resourcePage
+          );
+          generatedPages.push(`resources/${resource.slug}.html`);
+
+          // Copy markdown to content/resources for client-side navigation
+          const contentResourcesDir = path.resolve(
+            outDirPath,
+            'content',
+            'resources'
+          );
+          if (!fs.existsSync(contentResourcesDir)) {
+            fs.mkdirSync(contentResourcesDir, { recursive: true });
+          }
+          fs.copyFileSync(
+            resourceMdPath,
+            path.resolve(contentResourcesDir, `${resource.slug}.md`)
+          );
+        }
+
+        // Generate competitor comparison landing pages at /vs/<slug>. Sources
+        // are markdown files under content/<brand>/vs/ that have a matching
+        // VS_PAGE_META registration. Each slug becomes a standalone crawlable
+        // dist/vs/<slug>.html plus a dist/content/vs/<slug>.md for SPA nav.
+        const vsSlugs = discover_vs_slugs(contentBasePath, brandKey);
+        if (vsSlugs.length > 0) {
+          const vsOutDir = path.resolve(outDirPath, 'vs');
+          const contentVsDir = path.resolve(outDirPath, 'content', 'vs');
+          if (!fs.existsSync(vsOutDir)) {
+            fs.mkdirSync(vsOutDir, { recursive: true });
+          }
+          if (!fs.existsSync(contentVsDir)) {
+            fs.mkdirSync(contentVsDir, { recursive: true });
+          }
+
+          for (const slug of vsSlugs) {
+            const vsMdPath = path.resolve(
+              contentBasePath,
+              brandKey,
+              `vs/${slug}.md`
+            );
+            if (!fs.existsSync(vsMdPath)) {
+              continue;
+            }
+
+            const vsHTML = await loadMarkdownContent(
+              contentBasePath,
+              brandKey,
+              `vs/${slug}`
+            );
+            const vsPage = generateFullHtmlPage(
+              indexHtml,
+              `/vs/${slug}`,
+              brandConfig,
+              vsHTML
+            );
+            fs.writeFileSync(path.resolve(vsOutDir, `${slug}.html`), vsPage);
+            generatedPages.push(`vs/${slug}.html`);
+
+            fs.copyFileSync(vsMdPath, path.resolve(contentVsDir, `${slug}.md`));
+          }
+        }
       }
 
-      console.log(`✓ Generated standalone HTML pages: ${generatedPages.join(', ')}`);
+      console.log(
+        `✓ Generated standalone HTML pages: ${generatedPages.join(', ')}`
+      );
     },
 
     async transformIndexHtml(html, ctx) {
@@ -276,81 +517,84 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
         `<title>${meta.title}</title>`
       );
 
-      // Replace meta description
+      // Replace meta description. index.html wraps the `content` attribute
+      // onto a second line (formatter-driven), so the regex must tolerate
+      // whitespace — including newlines — between attributes and inside the
+      // attribute value itself.
       html = html.replace(
-        /<meta name="description" content=".*?">/,
+        /<meta\s+name="description"\s+content="[\s\S]*?">/,
         `<meta name="description" content="${meta.description}">`
       );
 
       // Replace meta keywords
       html = html.replace(
-        /<meta name="keywords" content=".*?">/,
+        /<meta\s+name="keywords"\s+content="[\s\S]*?">/,
         `<meta name="keywords" content="${meta.keywords}">`
       );
 
       // Replace Open Graph title
       html = html.replace(
-        /<meta property="og:title" content=".*?">/,
+        /<meta\s+property="og:title"\s+content="[\s\S]*?">/,
         `<meta property="og:title" content="${meta.og_title}">`
       );
 
       // Replace Open Graph description
       html = html.replace(
-        /<meta property="og:description" content=".*?">/,
+        /<meta\s+property="og:description"\s+content="[\s\S]*?">/,
         `<meta property="og:description" content="${meta.og_description}">`
       );
 
       // Replace Open Graph image
       html = html.replace(
-        /<meta property="og:image" content=".*?">/,
+        /<meta\s+property="og:image"\s+content="[\s\S]*?">/,
         `<meta property="og:image" content="${meta.og_image}">`
       );
 
       // Replace Open Graph URL
       html = html.replace(
-        /<meta property="og:url" content=".*?">/,
+        /<meta\s+property="og:url"\s+content="[\s\S]*?">/,
         `<meta property="og:url" content="${canonicalUrl}">`
       );
 
       html = upsertHeadTag(
         html,
-        /<link rel="canonical" href=".*?">/,
+        /<link\s+rel="canonical"\s+href="[\s\S]*?">/,
         `<link rel="canonical" href="${canonicalUrl}">`
       );
 
       html = upsertHeadTag(
         html,
-        /<meta name="robots" content=".*?">/,
+        /<meta\s+name="robots"\s+content="[\s\S]*?">/,
         '<meta name="robots" content="index, follow">'
       );
 
       // Replace Twitter card title
       html = html.replace(
-        /<meta name="twitter:title" content=".*?">/,
+        /<meta\s+name="twitter:title"\s+content="[\s\S]*?">/,
         `<meta name="twitter:title" content="${meta.title}">`
       );
 
       // Replace Twitter card description
       html = html.replace(
-        /<meta name="twitter:description" content=".*?">/,
+        /<meta\s+name="twitter:description"\s+content="[\s\S]*?">/,
         `<meta name="twitter:description" content="${meta.description}">`
       );
 
       // Replace Twitter card image
       html = html.replace(
-        /<meta name="twitter:image" content=".*?">/,
+        /<meta\s+name="twitter:image"\s+content="[\s\S]*?">/,
         `<meta name="twitter:image" content="${meta.og_image}">`
       );
 
       // Replace Twitter site handle
       html = html.replace(
-        /<meta name="twitter:site" content=".*?">/,
+        /<meta\s+name="twitter:site"\s+content="[\s\S]*?">/,
         `<meta name="twitter:site" content="${brandConfig.social.twitter}">`
       );
 
       // Replace Twitter creator handle
       html = html.replace(
-        /<meta name="twitter:creator" content=".*?">/,
+        /<meta\s+name="twitter:creator"\s+content="[\s\S]*?">/,
         `<meta name="twitter:creator" content="${brandConfig.social.twitter}">`
       );
 
@@ -367,7 +611,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       const runtimeConfig = {
         name: brandConfig.name,
         domain: brandConfig.domain,
-        edition: (brandConfig as any).edition || 'saas',  // Default to 'saas' for backwards compatibility
+        edition: (brandConfig as any).edition || 'saas', // Default to 'saas' for backwards compatibility
         branding: brandConfig.branding,
         social: brandConfig.social,
         company: brandConfig.company,
@@ -381,7 +625,12 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
       html = html.replace('</head>', `${brandScript}\n</head>`);
 
       // Inject route-specific content for SSR
-      const slottedContent = await generateSlottedContentForRoute(route, brandConfig, brandKey, contentBasePath);
+      const slottedContent = await generateSlottedContentForRoute(
+        route,
+        brandConfig,
+        brandKey,
+        contentBasePath
+      );
       if (slottedContent) {
         if (route === '/') {
           // Landing page: inject landing-view with slots
@@ -389,10 +638,17 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
             '<lit-app></lit-app>',
             `<lit-app data-ssr-route="/"><landing-view>${slottedContent}</landing-view></lit-app>`
           );
+        } else if (route === '/pricing') {
+          // Pricing page: interactive component with slotted SEO fallback
+          html = html.replace(
+            '<lit-app></lit-app>',
+            `<lit-app data-ssr-route="${route}"><public-pricing-view>${slottedContent}</public-pricing-view></lit-app>`
+          );
         } else if (
           route === '/privacy' ||
-          route === '/pricing' ||
-          route === '/ai-act-readiness'
+          route === '/ai-act-readiness' ||
+          route === '/resources/ai-agent-control-plane-2026' ||
+          route.startsWith('/vs/')
         ) {
           // Static pages: inject static-view-wrapper with content
           html = html.replace(
@@ -401,10 +657,7 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
           );
         } else {
           // No SSR for other routes
-          html = html.replace(
-            '<lit-app></lit-app>',
-            `<lit-app></lit-app>`
-          );
+          html = html.replace('<lit-app></lit-app>', `<lit-app></lit-app>`);
         }
       }
 
@@ -417,7 +670,12 @@ export function brandPlugin(brandKey: string, options: BrandPluginOptions = {}):
  * Generate route-specific slotted HTML content for SEO
  * Content uses named slots that web components can consume
  */
-async function generateSlottedContentForRoute(route: string, config: BrandConfig, brandKey: string, contentBasePath: string): Promise<string> {
+async function generateSlottedContentForRoute(
+  route: string,
+  config: BrandConfig,
+  brandKey: string,
+  contentBasePath: string
+): Promise<string> {
   // Safe accessors with defaults
   const hero = config.landing?.hero || {};
   const meta = config.landing?.meta || {};
@@ -449,25 +707,25 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
 
     <!-- Feature slots -->
     ${features
-          .map(
-            (feature, idx) => `
+      .map(
+        (feature, idx) => `
     <div slot="feature-${idx}" data-title="${feature.title || ''}" data-text="${feature.text || ''}" data-video="${feature.videoUrl || ''}" data-img="${feature.placeholderImg || ''}">
       <h3>${feature.title || ''}</h3>
       <p>${feature.text || ''}</p>
     </div>`
-          )
-          .join('\n')}
+      )
+      .join('\n')}
 
     <!-- FAQ slots -->
     ${faqs
-          .map(
-            (faq, idx) => `
+      .map(
+        (faq, idx) => `
     <div slot="faq-${idx}" data-q="${faq.q || ''}" data-a="${faq.a || ''}">
       <h3>${faq.q || ''}</h3>
       <p>${faq.a || ''}</p>
     </div>`
-          )
-          .join('\n')}
+      )
+      .join('\n')}
 
     <!-- Get Started section slots -->
     <span slot="get-started-title">${getStarted.title || ''}</span>
@@ -476,34 +734,34 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
 
     <!-- Get Started feature slots -->
     ${getStartedFeatures
-          .map(
-            (feature, idx) => `
+      .map(
+        (feature, idx) => `
     <div slot="get-started-feature-${idx}" data-icon="${feature.icon || ''}" data-title="${feature.title || ''}" data-text="${feature.text || ''}">
       <h3>${feature.title || ''}</h3>
       <p>${feature.text || ''}</p>
     </div>`
-          )
-          .join('\n')}
+      )
+      .join('\n')}
 
     <!-- MCP Setup slots -->
     <span slot="mcp-setup-title">${getStarted.mcp_setup_title || ''}</span>
 
     <!-- CLI Setup slots -->
     ${cliSetup
-          .map(
-            (step, idx) => `
+      .map(
+        (step, idx) => `
     <div slot="cli-setup-${idx}"
          data-step="${step.step || ''}"
          data-command="${step.command || ''}">
     </div>`
-          )
-          .join('\n')}
+      )
+      .join('\n')}
 
     <!-- Product Hunt slot -->
     ${(() => {
-          const productHunt = (config.landing as any).product_hunt;
-          if (productHunt?.enabled) {
-            return `
+      const productHunt = (config.landing as any).product_hunt;
+      if (productHunt?.enabled) {
+        return `
     <div slot="product-hunt"
          data-enabled="true"
          data-post-id="${productHunt.post_id || ''}"
@@ -512,15 +770,15 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
         <img alt="Preloop - The MCP Governance Layer | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=${productHunt.post_id}&amp;theme=${productHunt.theme}" />
       </a>
     </div>`;
-          }
-          return '';
-        })()}
+      }
+      return '';
+    })()}
 
     <!-- Featured Video slot -->
     ${(() => {
-          const featuredVideo = (config.landing as any).featured_video;
-          if (featuredVideo?.enabled) {
-            return `
+      const featuredVideo = (config.landing as any).featured_video;
+      if (featuredVideo?.enabled) {
+        return `
     <div slot="featured-video"
          data-enabled="true"
          data-title="${featuredVideo.title || ''}"
@@ -529,9 +787,9 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
       ${featuredVideo.title ? `<h2>${featuredVideo.title}</h2>` : ''}
       <iframe width="560" height="315" src="${featuredVideo.youtube_embed}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
     </div>`;
-          }
-          return '';
-        })()}
+      }
+      return '';
+    })()}
   `;
 
     case '/privacy':
@@ -539,14 +797,46 @@ async function generateSlottedContentForRoute(route: string, config: BrandConfig
       return await loadMarkdownContent(contentBasePath, brandKey, 'privacy');
 
     case '/pricing':
-      // Pricing page - will load markdown content
-      return generatePricingContent(config);
+      // Pricing page - emit slotted light-DOM content that
+      // <public-pricing-view> can project for SEO and no-JS users.
+      return generatePricingSlottedContent(config);
 
     case '/ai-act-readiness':
-      return await loadMarkdownContent(contentBasePath, brandKey, 'ai-act-readiness');
+      return await loadMarkdownContent(
+        contentBasePath,
+        brandKey,
+        'ai-act-readiness'
+      );
 
-    default:
+    case '/resources/ai-agent-control-plane-2026':
+      return await loadMarkdownContent(
+        contentBasePath,
+        brandKey,
+        'resources/ai-agent-control-plane-2026'
+      );
+
+    default: {
+      // Competitor comparison landing pages at /vs/<slug>. Load the matching
+      // markdown fragment so the pre-rendered HTML ships with real content.
+      if (route.startsWith('/vs/')) {
+        const slug = route.slice('/vs/'.length);
+        if (slug && !slug.includes('/') && VS_PAGE_META[slug]) {
+          const vsMdPath = path.resolve(
+            contentBasePath,
+            brandKey,
+            `vs/${slug}.md`
+          );
+          if (fs.existsSync(vsMdPath)) {
+            return await loadMarkdownContent(
+              contentBasePath,
+              brandKey,
+              `vs/${slug}`
+            );
+          }
+        }
+      }
       return '';
+    }
   }
 }
 
@@ -565,84 +855,87 @@ function generateFullHtmlPage(
   let html = indexHtml;
 
   // Replace <title>
-  html = html.replace(
-    /<title>.*?<\/title>/,
-    `<title>${meta.title}</title>`
-  );
+  html = html.replace(/<title>.*?<\/title>/, `<title>${meta.title}</title>`);
 
-  // Replace meta description
+  // Replace meta description. The regex tolerates newlines and arbitrary
+  // whitespace between attributes because index.html sometimes wraps the
+  // `content` attribute onto its own line.
   html = html.replace(
-    /<meta name="description" content=".*?">/,
+    /<meta\s+name="description"\s+content="[\s\S]*?">/,
     `<meta name="description" content="${meta.description}">`
   );
 
   // Replace meta keywords
   html = html.replace(
-    /<meta name="keywords" content=".*?">/,
+    /<meta\s+name="keywords"\s+content="[\s\S]*?">/,
     `<meta name="keywords" content="${meta.keywords}">`
   );
 
   // Replace Open Graph title
   html = html.replace(
-    /<meta property="og:title" content=".*?">/,
+    /<meta\s+property="og:title"\s+content="[\s\S]*?">/,
     `<meta property="og:title" content="${meta.og_title}">`
   );
 
   // Replace Open Graph description
   html = html.replace(
-    /<meta property="og:description" content=".*?">/,
+    /<meta\s+property="og:description"\s+content="[\s\S]*?">/,
     `<meta property="og:description" content="${meta.og_description}">`
   );
 
   // Replace Open Graph image
   html = html.replace(
-    /<meta property="og:image" content=".*?">/,
+    /<meta\s+property="og:image"\s+content="[\s\S]*?">/,
     `<meta property="og:image" content="${meta.og_image}">`
   );
 
   // Replace Open Graph URL
   html = html.replace(
-    /<meta property="og:url" content=".*?">/,
+    /<meta\s+property="og:url"\s+content="[\s\S]*?">/,
     `<meta property="og:url" content="${canonicalUrl}">`
   );
 
   html = upsertHeadTag(
     html,
-    /<link rel="canonical" href=".*?">/,
+    /<link\s+rel="canonical"\s+href="[\s\S]*?">/,
     `<link rel="canonical" href="${canonicalUrl}">`
   );
 
   html = upsertHeadTag(
     html,
-    /<meta name="robots" content=".*?">/,
+    /<meta\s+name="robots"\s+content="[\s\S]*?">/,
     '<meta name="robots" content="index, follow">'
   );
 
   // Replace Twitter card title
   html = html.replace(
-    /<meta name="twitter:title" content=".*?">/,
+    /<meta\s+name="twitter:title"\s+content="[\s\S]*?">/,
     `<meta name="twitter:title" content="${meta.title}">`
   );
 
   // Replace Twitter card description
   html = html.replace(
-    /<meta name="twitter:description" content=".*?">/,
+    /<meta\s+name="twitter:description"\s+content="[\s\S]*?">/,
     `<meta name="twitter:description" content="${meta.description}">`
   );
 
   // Replace Twitter card image
   html = html.replace(
-    /<meta name="twitter:image" content=".*?">/,
+    /<meta\s+name="twitter:image"\s+content="[\s\S]*?">/,
     `<meta name="twitter:image" content="${meta.og_image}">`
   );
 
   html = upsertStructuredDataTag(html, route, config);
 
-  // Replace <lit-app> with content-wrapped version
-  // Handle both empty <lit-app></lit-app> and <lit-app>...</lit-app> with existing content
+  // Replace <lit-app> with content-wrapped version. The pricing route is
+  // special-cased: instead of the read-only static-view-wrapper, we wrap the
+  // slotted SEO content in <public-pricing-view> so the interactive pricing
+  // component can hydrate on top of it without losing the crawlable fallback.
+  const wrapperTag =
+    route === '/pricing' ? 'public-pricing-view' : 'static-view-wrapper';
   html = html.replace(
     /<lit-app[^>]*>[\s\S]*?<\/lit-app>/,
-    `<lit-app data-ssr-route="${route}"><static-view-wrapper>${content}</static-view-wrapper></lit-app>`
+    `<lit-app data-ssr-route="${route}"><${wrapperTag}>${content}</${wrapperTag}></lit-app>`
   );
 
   return html;
@@ -676,15 +969,18 @@ function upsertStructuredDataTag(
 
 function generateSitemapXml(
   config: BrandConfig,
-  includeAiActReadiness: boolean
+  includeAiActReadiness: boolean,
+  vsSlugs: string[] = []
 ): string {
   const routes = get_static_routes_with_options(
     config,
-    includeAiActReadiness
+    includeAiActReadiness,
+    vsSlugs
   );
   const urls = routes
     .map(
-      (route) => `  <url>\n    <loc>https://${config.domain}${route}</loc>\n  </url>`
+      (route) =>
+        `  <url>\n    <loc>https://${config.domain}${route}</loc>\n  </url>`
     )
     .join('\n');
 
@@ -697,13 +993,15 @@ function generateRobotsTxt(config: BrandConfig): string {
 
 function generateLlmsTxt(
   config: BrandConfig,
-  includeAiActReadiness: boolean
+  includeAiActReadiness: boolean,
+  vsSlugs: string[] = []
 ): string {
   const meta = config.landing?.meta || {};
   const hero = config.landing?.hero || {};
   const routes = get_static_routes_with_options(
     config,
-    includeAiActReadiness
+    includeAiActReadiness,
+    vsSlugs
   );
 
   return [
@@ -724,8 +1022,15 @@ function generateLlmsTxt(
 /**
  * Load and convert markdown file to HTML using marked
  */
-async function loadMarkdownContent(contentBasePath: string, brandName: string, filename: string): Promise<string> {
-  const contentPath = path.resolve(contentBasePath, `${brandName}/${filename}.md`);
+async function loadMarkdownContent(
+  contentBasePath: string,
+  brandName: string,
+  filename: string
+): Promise<string> {
+  const contentPath = path.resolve(
+    contentBasePath,
+    `${brandName}/${filename}.md`
+  );
 
   if (!fs.existsSync(contentPath)) {
     console.warn(`Warning: Markdown file not found at ${contentPath}`);
@@ -821,85 +1126,134 @@ async function loadMarkdownContent(contentBasePath: string, brandName: string, f
 
 // generatePrivacyContent removed - use loadMarkdownContent(brandKey, 'privacy') directly
 
+function escapeHtml(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function escapeAttr(value: string | number | null | undefined): string {
+  return escapeHtml(value);
+}
+
+function formatPlanPrice(plan: any): string {
+  if (plan.price_label) return plan.price_label;
+  const monthly = plan.price_monthly;
+  const annually = plan.price_annually;
+  if (
+    monthly === 0 &&
+    (annually === 0 || annually === null || annually === undefined)
+  ) {
+    return 'Free';
+  }
+  if (monthly === null || monthly === undefined) {
+    return 'Custom';
+  }
+  if (annually !== null && annually !== undefined) {
+    return `$${monthly} / user / month — or $${annually} / user / year`;
+  }
+  return `$${monthly} / user / month`;
+}
+
 /**
- * Generate pricing content for SEO
- * This content is rendered in the main DOM for search engine indexing.
- * The actual interactive pricing UI is handled by the public-pricing-view component.
+ * Generate SEO/crawler-friendly pricing HTML rendered into the light DOM as
+ * slotted children of <public-pricing-view>. The Lit component projects this
+ * content via `<slot>` until its interactive UI has hydrated.
+ *
+ * Output is kept as plain, crawlable HTML (<h1>, <h2>, <ul>, <a>), with one
+ * named slot per plan and per FAQ so the component can also read the
+ * structured data back into its JS state if needed.
  */
-function generatePricingContent(config: BrandConfig): string {
+function generatePricingSlottedContent(config: BrandConfig): string {
+  const pricing = config.landing?.pricing || ({} as any);
+  const plans = (pricing.plans || []) as any[];
+  const faqs = (pricing.faqs || []) as any[];
+  const title = pricing.title || `Pricing - ${config.name}`;
+  const lead = pricing.lead || 'Choose the plan that fits your team.';
+
+  const planBlocks = plans
+    .map((plan, idx) => {
+      const featureItems = (plan.features || [])
+        .map((f: string) => `<li>${escapeHtml(f)}</li>`)
+        .join('\n            ');
+      const price = formatPlanPrice(plan);
+      const cta = plan.cta_text || 'Learn more';
+      const ctaUrl = plan.cta_url || '/register';
+      const isExternal =
+        typeof ctaUrl === 'string' && ctaUrl.startsWith('http');
+      const target = isExternal
+        ? ' target="_blank" rel="noopener noreferrer"'
+        : '';
+      const description = plan.description
+        ? `<p class="plan-description">${escapeHtml(plan.description)}</p>`
+        : '';
+      const badge = plan.badge
+        ? `<span class="badge">${escapeHtml(plan.badge)}</span>`
+        : '';
+
+      return `
+        <div slot="plan-${idx}"
+             class="plan plan-${escapeAttr(plan.id)}${plan.highlight ? ' highlight' : ''}"
+             data-plan-id="${escapeAttr(plan.id)}"
+             data-plan-name="${escapeAttr(plan.name)}"
+             data-price-monthly="${escapeAttr(plan.price_monthly)}"
+             data-price-annually="${escapeAttr(plan.price_annually)}"
+             data-price-label="${escapeAttr(plan.price_label || '')}"
+             data-badge="${escapeAttr(plan.badge || '')}"
+             data-highlight="${plan.highlight ? 'true' : 'false'}"
+             data-cta-text="${escapeAttr(cta)}"
+             data-cta-url="${escapeAttr(ctaUrl)}"
+             data-description="${escapeAttr(plan.description || '')}"
+             data-features="${escapeAttr((plan.features || []).join('|'))}">
+          ${badge}
+          <h2>${escapeHtml(plan.name)}</h2>
+          <p class="price">${escapeHtml(price)}</p>
+          ${description}
+          <ul>
+            ${featureItems}
+          </ul>
+          <a class="plan-cta" href="${escapeAttr(ctaUrl)}"${target}>${escapeHtml(cta)}</a>
+        </div>`;
+    })
+    .join('\n');
+
+  const faqBlocks = faqs
+    .map(
+      (faq, idx) => `
+        <div slot="faq-${idx}"
+             class="faq-item"
+             data-q="${escapeAttr(faq.q)}"
+             data-a="${escapeAttr(faq.a)}">
+          <h3>${escapeHtml(faq.q)}</h3>
+          <p>${escapeHtml(faq.a)}</p>
+        </div>`
+    )
+    .join('\n');
+
   return `
     <article class="pricing-content">
-      <h1>Pricing - ${config.name}</h1>
-      <p class="lead">Choose the plan that fits your team</p>
+      <header class="pricing-header">
+        <h1>${escapeHtml(title)}</h1>
+        <p class="lead">${escapeHtml(lead)}</p>
+      </header>
 
       <section class="pricing-plans">
-        <div class="plan">
-          <h2>Open Source</h2>
-          <p class="price">Free</p>
-          <ul>
-            <li>Self-hosted deployment</li>
-            <li>MCP proxy &amp; tool management</li>
-            <li>Single-user approvals</li>
-            <li>Email &amp; mobile notifications</li>
-            <li>Issue tracker integration</li>
-            <li>Vector search &amp; duplicates</li>
-            <li>Agentic flows</li>
-            <li>Community support</li>
-          </ul>
-          <a href="https://github.com/preloop/preloop" target="_blank" rel="noopener noreferrer">View on GitHub</a>
-        </div>
-
-        <div class="plan">
-          <h2>Teams</h2>
-          <p class="price">$29/month or $290/year</p>
-          <ul>
-            <li>Everything in Open Source</li>
-            <li>Cloud-hosted (managed)</li>
-            <li>RBAC &amp; team management</li>
-            <li>CEL conditional approvals</li>
-            <li>Team-based approvals (quorum)</li>
-            <li>Approval escalation</li>
-            <li>Slack &amp; Mattermost notifications</li>
-            <li>Audit logging</li>
-            <li>14-day free trial</li>
-            <li>Email support</li>
-          </ul>
-          <a href="/register">Start Free Trial</a>
-        </div>
-
-        <div class="plan">
-          <h2>Enterprise</h2>
-          <p class="price">Custom pricing</p>
-          <ul>
-            <li>Everything in Teams</li>
-            <li>Self-hosted deployment option</li>
-            <li>SSO, OIDC, SCIM support</li>
-            <li>SLA commitments</li>
-            <li>Dedicated support channels</li>
-            <li>Priority feature requests</li>
-          </ul>
-          <a href="/request-demo">Contact Sales</a>
-        </div>
+        ${planBlocks}
       </section>
 
+      ${
+        faqs.length > 0
+          ? `
       <section class="pricing-faq">
         <h2>Frequently Asked Questions</h2>
-
-        <h3>Can I change plans later?</h3>
-        <p>Yes, you can upgrade or downgrade your plan at any time. Changes take effect immediately.</p>
-
-        <h3>What payment methods do you accept?</h3>
-        <p>We accept all major credit cards and can invoice for annual plans.</p>
-
-        <h3>Is there a free trial?</h3>
-        <p>Yes, the Teams plan comes with a 14-day free trial.</p>
-
-        <h3>Is the Open Source edition really free?</h3>
-        <p>Yes! ${config.name} is open source under the Apache 2.0 license. You can self-host it for free with no limitations on usage.</p>
-
-        <h3>What's the difference between Teams and Enterprise?</h3>
-        <p>Teams is cloud-hosted with all advanced approval features. Enterprise adds self-hosted deployment options, SSO/SCIM, admin dashboard, and dedicated support with SLA commitments.</p>
-      </section>
+        ${faqBlocks}
+      </section>`
+          : ''
+      }
     </article>
   `;
 }

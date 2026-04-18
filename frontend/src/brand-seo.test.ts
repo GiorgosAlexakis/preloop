@@ -2,6 +2,13 @@ import { expect } from '@open-wc/testing';
 
 import type { BrandConfig } from './brand-config';
 import {
+  buildAboutPageSchema,
+  buildArticleSchema,
+  buildFAQPageSchema,
+  buildOrganizationSchema,
+  buildProductSchema,
+  buildSoftwareApplicationSchema,
+  buildWebSiteSchema,
   get_meta_for_route,
   get_route_from_filename,
   get_static_routes_with_options,
@@ -68,6 +75,10 @@ const test_config: BrandConfig = {
         q: 'Can Preloop help with EU AI Act readiness?',
         a: 'Yes. See <a href="/ai-act-readiness">AI Act readiness with Preloop</a>.',
       },
+      {
+        q: 'Is Preloop open source?',
+        a: 'Yes, Apache 2.0 licensed.',
+      },
     ],
     get_started: {
       title: 'Onboard or connect your AI agent in minutes',
@@ -130,6 +141,221 @@ describe('brand-seo', () => {
     );
 
     expect(faq_page).to.exist;
-    expect(faq_page?.mainEntity).to.have.length(1);
+    expect(faq_page?.mainEntity).to.have.length(2);
+  });
+});
+
+describe('brand-seo builders', () => {
+  it('buildOrganizationSchema emits PostalAddress, sameAs, and logo from brand config', () => {
+    const org = buildOrganizationSchema(test_config);
+
+    expect(org['@type']).to.equal('Organization');
+    expect(org['@id']).to.equal('https://preloop.ai/#organization');
+    expect(org.name).to.equal('Preloop');
+    expect(org.legalName).to.equal('Spacecode.AI, Inc.');
+    expect(org.url).to.equal('https://preloop.ai/');
+    expect(org.logo).to.equal(
+      'https://preloop.ai/images/logos/preloop_logo_dark.svg'
+    );
+    expect(org.foundingDate).to.equal('2025');
+
+    const address = org.address as Record<string, string>;
+    expect(address['@type']).to.equal('PostalAddress');
+    expect(address.streetAddress).to.equal('28 Geary St STE 650 Suite #235');
+    expect(address.addressLocality).to.equal('San Francisco');
+    expect(address.addressRegion).to.equal('CA');
+    expect(address.postalCode).to.equal('94108');
+    expect(address.addressCountry).to.equal('US');
+
+    const same_as = org.sameAs as string[];
+    expect(same_as).to.include('https://github.com/preloop/preloop');
+    expect(same_as).to.include('https://twitter.com/preloopai');
+    expect(same_as).to.include('https://www.linkedin.com/company/preloop-ai/');
+    expect(same_as).to.include('https://www.instagram.com/preloop.ai');
+  });
+
+  it('buildWebSiteSchema references the Organization via @id', () => {
+    const website = buildWebSiteSchema(test_config);
+
+    expect(website['@type']).to.equal('WebSite');
+    expect(website.url).to.equal('https://preloop.ai/');
+    expect(website.name).to.equal('Preloop');
+    const publisher = website.publisher as Record<string, string>;
+    expect(publisher['@id']).to.equal('https://preloop.ai/#organization');
+  });
+
+  it('buildSoftwareApplicationSchema includes offers, featureList, and license', () => {
+    const app = buildSoftwareApplicationSchema(test_config);
+
+    expect(app['@type']).to.equal('SoftwareApplication');
+    expect(app.applicationCategory).to.equal('DeveloperApplication');
+    expect(app.applicationSubCategory).to.equal('AI Agent Governance');
+    expect(app.license).to.equal('https://www.apache.org/licenses/LICENSE-2.0');
+    expect(app.isAccessibleForFree).to.equal(true);
+    expect(app.downloadUrl).to.equal('https://github.com/preloop/preloop');
+
+    const alternate_names = app.alternateName as string[];
+    expect(alternate_names).to.include('Preloop MCP Firewall');
+
+    const offers = app.offers as Array<Record<string, string>>;
+    expect(offers).to.have.length(3);
+    expect(offers.map((o) => o.name)).to.deep.equal([
+      'Open Source',
+      'Teams',
+      'Enterprise',
+    ]);
+    expect(offers[0].price).to.equal('0');
+    expect(offers[1].price).to.equal('29');
+    expect(offers[2].category).to.equal('Custom');
+
+    const features = app.featureList as string[];
+    expect(features.length).to.be.greaterThan(5);
+    expect(features.some((f) => f.includes('MCP firewall'))).to.equal(true);
+    expect(features.some((f) => f.includes('Apache 2.0'))).to.equal(true);
+
+    // Aggregate rating must not appear unless real review data is wired up.
+    expect(app.aggregateRating).to.equal(undefined);
+  });
+
+  it('buildFAQPageSchema strips HTML from faq answers and mirrors config.landing.faqs', () => {
+    const faq_page = buildFAQPageSchema(test_config);
+
+    expect(faq_page).to.exist;
+    const main_entity = faq_page?.mainEntity as Array<Record<string, unknown>>;
+    expect(main_entity).to.have.length(2);
+    expect(main_entity[0].name).to.equal(test_config.landing.faqs[0].q);
+    const accepted = main_entity[0].acceptedAnswer as Record<string, string>;
+    expect(accepted.text).to.equal('Yes. See AI Act readiness with Preloop.');
+    expect(accepted.text).to.not.match(/</);
+  });
+
+  it('buildFAQPageSchema returns undefined when there are no faqs', () => {
+    const empty = buildFAQPageSchema({
+      ...test_config,
+      landing: { ...test_config.landing, faqs: [] },
+    });
+    expect(empty).to.equal(undefined);
+  });
+
+  it('buildAboutPageSchema references the organization via mainEntity @id', () => {
+    const about = buildAboutPageSchema(test_config);
+    expect(about['@type']).to.equal('AboutPage');
+    expect(about.url).to.equal('https://preloop.ai/about');
+    const main_entity = about.mainEntity as Record<string, string>;
+    expect(main_entity['@id']).to.equal('https://preloop.ai/#organization');
+  });
+
+  it('buildArticleSchema emits required Article fields and defaults datePublished', () => {
+    const article = buildArticleSchema(
+      test_config,
+      '/ai-act-readiness',
+      'Demo headline',
+      'Demo description',
+      { about: ['EU AI Act'] }
+    );
+
+    expect(article['@type']).to.equal('Article');
+    expect(article.headline).to.equal('Demo headline');
+    expect(article.description).to.equal('Demo description');
+    expect(article.url).to.equal('https://preloop.ai/ai-act-readiness');
+    expect(article.about).to.deep.equal(['EU AI Act']);
+    expect(article.datePublished).to.match(/^\d{4}-\d{2}-\d{2}$/);
+    expect(article.isAccessibleForFree).to.equal(true);
+  });
+
+  it('buildProductSchema falls back to default offers when pricing.plans absent', () => {
+    const product = buildProductSchema(test_config);
+    expect(product['@type']).to.equal('Product');
+    expect(product.url).to.equal('https://preloop.ai/pricing');
+    const offers = product.offers as Array<Record<string, string>>;
+    expect(offers).to.have.length(3);
+    expect(offers[0].name).to.equal('Open Source');
+  });
+
+  it('buildProductSchema uses config.landing.pricing.plans when available', () => {
+    const config_with_plans: BrandConfig = {
+      ...test_config,
+      landing: {
+        ...test_config.landing,
+        pricing: {
+          enabled: true,
+          plans: [
+            {
+              id: 'free',
+              name: 'Community',
+              price_monthly: 0,
+              price_annually: 0,
+              features: [],
+            },
+            {
+              id: 'teams',
+              name: 'Teams',
+              price_monthly: 49,
+              price_annually: 490,
+              description: 'Per user, monthly',
+              features: [],
+            },
+          ],
+        },
+      },
+    };
+
+    const product = buildProductSchema(config_with_plans);
+    const offers = product.offers as Array<Record<string, string>>;
+    expect(offers).to.have.length(2);
+    expect(offers[0].name).to.equal('Community');
+    expect(offers[0].category).to.equal('Free');
+    expect(offers[1].price).to.equal('49');
+    expect(offers[1].description).to.include('Per user');
+  });
+});
+
+describe('get_structured_data_for_route', () => {
+  it('returns an array of at least 3 entries for the landing route including SoftwareApplication and FAQPage', () => {
+    const entries = get_structured_data_for_route('/', test_config);
+
+    expect(Array.isArray(entries)).to.equal(true);
+    expect(entries.length).to.be.greaterThan(2);
+
+    const types = entries.map((entry) => entry['@type']);
+    expect(types).to.include('Organization');
+    expect(types).to.include('WebSite');
+    expect(types).to.include('SoftwareApplication');
+    expect(types).to.include('FAQPage');
+  });
+
+  it('uses Product schema for the pricing route', () => {
+    const entries = get_structured_data_for_route('/pricing', test_config);
+    const types = entries.map((entry) => entry['@type']);
+    expect(types).to.include('Organization');
+    expect(types).to.include('WebSite');
+    expect(types).to.include('Product');
+  });
+
+  it('uses AboutPage schema for the about route', () => {
+    const entries = get_structured_data_for_route('/about', test_config);
+    const types = entries.map((entry) => entry['@type']);
+    expect(types).to.include('AboutPage');
+  });
+
+  it('emits Organization + WebSite + WebPage for privacy and terms', () => {
+    for (const route of ['/privacy', '/terms']) {
+      const entries = get_structured_data_for_route(route, test_config);
+      const types = entries.map((entry) => entry['@type']);
+      expect(types).to.deep.equal(['Organization', 'WebSite', 'WebPage']);
+    }
+  });
+
+  it('emits an Article schema with mentions for /vs/<slug> routes', () => {
+    const entries = get_structured_data_for_route(
+      '/vs/aws-bedrock-agentcore',
+      test_config
+    );
+    const article = entries.find((entry) => entry['@type'] === 'Article');
+    expect(article).to.exist;
+    expect(article?.headline).to.equal('Preloop vs Aws Bedrock Agentcore');
+    const mentions = article?.mentions as Array<Record<string, string>>;
+    expect(mentions).to.have.length(2);
+    expect(mentions[0].name).to.equal('Aws Bedrock Agentcore');
   });
 });

@@ -35,6 +35,9 @@ preloop login --token <your-token> --url http://localhost:8000
 # OAuth login on a local machine
 preloop login
 
+# Create a Preloop account and authenticate the CLI in the same OAuth flow
+preloop signup
+
 # OAuth login over SSH or on a headless host
 preloop login --headless
 
@@ -69,7 +72,9 @@ preloop login --token <token>        # Save an API token
 preloop login                        # Auto-select loopback or headless OAuth
 preloop login --headless             # Force copy/paste OAuth
 preloop login --loopback             # Force local loopback OAuth
+preloop signup                       # Open the sign-up page, then authenticate the CLI
 preloop auth login                   # Same as preloop login
+preloop auth signup                  # Same as preloop signup
 preloop auth logout                  # Log out and clear credentials
 preloop auth status                  # Show authentication status
 preloop auth token                   # Print token for scripting

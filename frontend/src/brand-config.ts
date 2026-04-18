@@ -82,6 +82,34 @@ export interface BrandGetStarted {
   mcp_configs: BrandMCPConfig[];
 }
 
+export interface PricingPlan {
+  id: string;
+  name: string;
+  price_monthly: number | null;
+  price_annually: number | null;
+  price_label?: string;
+  badge?: string;
+  highlight?: boolean;
+  cta_text?: string;
+  cta_url?: string;
+  description?: string;
+  features: string[];
+}
+
+export interface PricingFAQ {
+  q: string;
+  a: string;
+}
+
+export interface PricingConfig {
+  enabled?: boolean;
+  title?: string;
+  lead?: string;
+  billing_toggle?: boolean;
+  plans: PricingPlan[];
+  faqs?: PricingFAQ[];
+}
+
 export interface BrandLanding {
   meta: BrandMeta;
   features_layout: 'carousel' | 'grid';
@@ -89,6 +117,7 @@ export interface BrandLanding {
   features: BrandFeature[];
   faqs: BrandFAQ[];
   get_started: BrandGetStarted;
+  pricing?: PricingConfig;
 }
 
 /**

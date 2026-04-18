@@ -85,6 +85,36 @@ var loginCmd = &cobra.Command{
 	RunE:  runAuthLogin,
 }
 
+// signupCmd opens the OAuth flow but lands the browser on the signup page so
+// the user can create an account first. Once the account is created and the
+// user is logged in, the existing OAuth consent flow takes over and finishes
+// authenticating the CLI - the same loopback (or copy/paste) callback as
+// 'preloop login'.
+var signupCmd = &cobra.Command{
+	Use:   "signup",
+	Short: "Create a Preloop account and authenticate the CLI",
+	Long: `Open the Preloop sign-up page in a browser and authenticate this CLI.
+
+This is the same end-to-end OAuth flow as 'preloop login', except that the
+browser is sent directly to the sign-up page instead of the sign-in page.
+After the user creates their account (or signs in if they already have one),
+the OAuth authorization page completes the CLI login automatically.
+
+Examples:
+  preloop signup
+  PRELOOP_URL=https://review.preloop.ai preloop signup`,
+	RunE: runAuthSignup,
+}
+
+// authSignupCmd is the 'preloop auth signup' subcommand alias for symmetry
+// with 'preloop auth login'.
+var authSignupCmd = &cobra.Command{
+	Use:   "signup",
+	Short: signupCmd.Short,
+	Long:  signupCmd.Long,
+	RunE:  runAuthSignup,
+}
+
 // authLogoutCmd represents the auth logout command.
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
@@ -124,16 +154,32 @@ var (
 	loginHeadless bool
 	loginLoopback bool
 	loginCode     string
+	// signupRequested tracks whether the current OAuth login flow was
+	// initiated via 'preloop signup'. When true, the browser is sent to the
+	// sign-up page first instead of the sign-in page.
+	signupRequested bool
 )
 
 func init() {
 	authCmd.AddCommand(authLoginCmd)
+	authCmd.AddCommand(authSignupCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authTokenCmd)
 
 	configureLoginFlags(authLoginCmd)
+	configureLoginFlags(authSignupCmd)
 	configureLoginFlags(loginCmd)
+	configureLoginFlags(signupCmd)
+}
+
+// runAuthSignup is the entry point for 'preloop signup'. It mirrors
+// runAuthLogin but flips the signup intent flag so that the OAuth authorize
+// URL routes the browser to the sign-up page first.
+func runAuthSignup(cmd *cobra.Command, args []string) error {
+	signupRequested = true
+	defer func() { signupRequested = false }()
+	return runAuthLogin(cmd, args)
 }
 
 // runAuthLogin handles both token-based and OAuth login.
@@ -260,6 +306,12 @@ func buildAuthorizationURL(baseURL, redirectURI, state string) string {
 	values.Set("response_type", "code")
 	values.Set("redirect_uri", redirectURI)
 	values.Set("state", state)
+	if signupRequested {
+		// The frontend OAuth consent view honors 'signup=1' to send
+		// unauthenticated users to the registration page instead of the
+		// sign-in page.
+		values.Set("signup", "1")
+	}
 	return fmt.Sprintf("%s%s?%s", baseURL, authorizePath, values.Encode())
 }
 
@@ -277,9 +329,11 @@ func runLoopbackOAuthLogin(baseURL string) error {
 		return fmt.Errorf("%w: %v", errLoopbackCallbackUnavailable, err)
 	}
 
+	successRedirectURL := buildPostAuthRedirectURL(baseURL)
+
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handleOAuthCallback(w, r, state, codeChan, errChan)
+			handleOAuthCallback(w, r, state, successRedirectURL, codeChan, errChan)
 		}),
 	}
 	go func() {
@@ -491,8 +545,25 @@ func runAuthToken(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// buildPostAuthRedirectURL returns the Preloop console URL the browser should
+// land on after the loopback OAuth callback succeeds. This brings the user to
+// the agents page so they can immediately see any onboarded agents instead of
+// being left on a generic localhost success page.
+func buildPostAuthRedirectURL(baseURL string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if trimmed == "" {
+		return ""
+	}
+	return trimmed + "/console/agents?cli=connected"
+}
+
 // handleOAuthCallback handles the OAuth callback from the browser.
-func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState string, codeChan chan<- string, errChan chan<- error) {
+//
+// On success the browser is redirected to successRedirectURL (typically the
+// Preloop console agents page) so the user lands somewhere useful instead of
+// staring at a localhost page. If successRedirectURL is empty the legacy
+// inline success card is rendered instead.
+func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState string, successRedirectURL string, codeChan chan<- string, errChan chan<- error) {
 	query := r.URL.Query()
 
 	// Check for errors
@@ -525,7 +596,21 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, expectedState s
 		return
 	}
 
-	// Success
+	if successRedirectURL != "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Location", successRedirectURL)
+		w.WriteHeader(http.StatusFound)
+		_, _ = fmt.Fprintf(w, `<!doctype html>
+<html><head>
+<meta http-equiv="refresh" content="0; url=%s">
+<title>Preloop CLI connected</title>
+</head><body>
+<p>CLI connected. <a href="%s">Continue to Preloop</a>...</p>
+</body></html>`, successRedirectURL, successRedirectURL)
+		codeChan <- code
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, `<html>

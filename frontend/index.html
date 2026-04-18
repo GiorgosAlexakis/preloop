@@ -28,6 +28,9 @@
   <meta name="twitter:image" content="/images/diagram.png">
   <link rel="shortcut icon" type="image/png" href="/assets/preloop-badge.png">
 
+  <!-- JSON-LD structured data (replaced per-route at build time by vite-plugin-brand) -->
+  <script id="preloop-structured-data" type="application/ld+json">[]</script>
+
   <!-- Shoelace Styles & Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/themes/light.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.1/cdn/themes/dark.css" />
@@ -42,13 +45,17 @@
 
     }
 
-    /* Hide unhydrated web components until they're defined */
+    /* Hide unhydrated web components until they're defined.
+       public-pricing-view is intentionally NOT listed here: its light-DOM
+       children are the crawler- and no-JS-fallback pricing page and must
+       remain visible while the Lit component upgrades. Once the component
+       is defined its shadow-root takes over rendering and the unslotted
+       light-DOM children are hidden automatically by the browser. */
     landing-view:not(:defined),
     static-view-wrapper:not(:defined),
     static-view:not(:defined),
     app-header:not(:defined),
-    app-footer:not(:defined),
-    public-pricing-view:not(:defined) {
+    app-footer:not(:defined) {
       opacity: 0;
       display: block;
     }

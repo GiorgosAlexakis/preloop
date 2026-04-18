@@ -87,8 +87,23 @@ describe('RegisterView', () => {
   });
 
   it('should not show an error message on successful registration', async () => {
-    // Stub fetch to simulate a successful registration
-    fetchStub.resolves(new Response(JSON.stringify({}), { status: 200 }));
+    // Stub fetch to simulate a successful registration AND a successful
+    // auto-login. After registering, the view tries to log the user in
+    // automatically so the CLI OAuth consent flow (and any other pending
+    // loginRedirect) can continue without bouncing through the sign-in page.
+    fetchStub.callsFake(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/v1/auth/token/json')) {
+        return new Response(
+          JSON.stringify({
+            access_token: 'test-token',
+            refresh_token: 'test-refresh',
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
 
     // Fill in the form fields
     const usernameInput = element.shadowRoot?.querySelector<any>('#username');
@@ -113,8 +128,11 @@ describe('RegisterView', () => {
     const errorMessage = element.shadowRoot?.querySelector('.error-message');
     expect(errorMessage).to.not.exist;
 
-    // Verify fetch was called
-    expect(fetchStub).to.have.been.calledOnce;
+    // Both /register and /token/json should have been called.
+    expect(fetchStub).to.have.been.calledTwice;
+    expect(localStorage.getItem('accessToken')).to.equal('test-token');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
   });
 
   it('should have a link to the login page', () => {

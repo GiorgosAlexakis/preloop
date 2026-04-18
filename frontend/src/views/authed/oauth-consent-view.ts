@@ -19,6 +19,7 @@ export class OAuthConsentView extends LitElement {
   @state() private error = '';
   @state() private manualCode = '';
   @state() private loading = false;
+  @state() private signupRequested = false;
 
   static styles = css`
     :host {
@@ -111,6 +112,27 @@ export class OAuthConsentView extends LitElement {
     this.resource = urlParams.get('resource') || '';
     this.redirectUriProvidedExplicitly =
       urlParams.get('redirect_uri_provided_explicitly') || 'true';
+    this.signupRequested = urlParams.get('signup') === '1';
+
+    // If the user is not authenticated, route them to the right entry point
+    // (sign-up if the CLI requested signup, otherwise sign-in) and remember
+    // this URL so they end up back on the consent page once they're logged
+    // in. Without this the user lands on a "Authorize" button they can't use
+    // and there is no obvious path forward for new users.
+    if (typeof window !== 'undefined' && !localStorage.getItem('accessToken')) {
+      try {
+        localStorage.setItem(
+          'loginRedirect',
+          window.location.pathname +
+            window.location.search +
+            window.location.hash
+        );
+      } catch (e) {
+        // Ignore localStorage failures - worst case the user has to navigate back manually.
+      }
+      const target = this.signupRequested ? '/register' : '/login';
+      Router.go(target);
+    }
   }
 
   private async handleAuthorize() {
@@ -180,8 +202,17 @@ export class OAuthConsentView extends LitElement {
             Copy this one-time code and paste it back into your application.
           </p>
           <div class="manual-code-box">${this.manualCode}</div>
-          <p style="font-size: var(--sl-font-size-small); margin-top: 2rem;">
-            You can securely close this window.
+          <div class="actions">
+            <sl-button
+              variant="primary"
+              size="large"
+              @click=${() => Router.go('/console/agents?cli=connected')}
+            >
+              Continue to your agents
+            </sl-button>
+          </div>
+          <p style="font-size: var(--sl-font-size-small); margin-top: 1.5rem;">
+            You can also securely close this window.
           </p>
         </div>
       `;

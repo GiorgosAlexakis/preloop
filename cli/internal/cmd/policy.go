@@ -370,6 +370,10 @@ func buildPolicyApplyConfirmationPrompt(diff *PolicyDiff) string {
 }
 
 func confirmAction(reader io.Reader, writer io.Writer, prompt string) (bool, error) {
+	if nonInteractiveAutoConfirm() {
+		fmt.Fprintf(writer, "%sy (PRELOOP_CONFIRM)\n", prompt) //nolint:errcheck
+		return true, nil
+	}
 	if _, err := fmt.Fprint(writer, prompt); err != nil {
 		return false, err
 	}
@@ -381,6 +385,19 @@ func confirmAction(reader io.Reader, writer io.Writer, prompt string) (bool, err
 
 	answer := strings.ToLower(strings.TrimSpace(input))
 	return answer == "y" || answer == "yes", nil
+}
+
+// nonInteractiveAutoConfirm returns true when the PRELOOP_CONFIRM env var is
+// set to a truthy value. When enabled, all interactive confirmation prompts
+// are auto-approved without reading from stdin. This is intended for use in
+// install scripts and unattended automation.
+func nonInteractiveAutoConfirm() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("PRELOOP_CONFIRM")))
+	switch v {
+	case "1", "y", "yes", "true", "on":
+		return true
+	}
+	return false
 }
 
 // runPolicyValidate validates a policy file.

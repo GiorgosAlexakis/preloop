@@ -79,3 +79,44 @@ func TestConfirmAction(t *testing.T) {
 		})
 	}
 }
+
+func TestConfirmAction_PreloopConfirmEnvAutoApproves(t *testing.T) {
+	t.Setenv("PRELOOP_CONFIRM", "1")
+	var output bytes.Buffer
+
+	// Provide an explicit "no" on stdin to prove the env var overrides it.
+	confirmed, err := confirmAction(
+		strings.NewReader("n\n"),
+		&output,
+		"Proceed? (y/N): ",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !confirmed {
+		t.Fatal("expected PRELOOP_CONFIRM=1 to auto-approve")
+	}
+	if !strings.Contains(output.String(), "PRELOOP_CONFIRM") {
+		t.Fatalf("expected output to mention PRELOOP_CONFIRM, got %q", output.String())
+	}
+}
+
+func TestNonInteractiveAutoConfirmRecognizesValues(t *testing.T) {
+	cases := map[string]bool{
+		"":      false,
+		"0":     false,
+		"no":    false,
+		"false": false,
+		"1":     true,
+		"y":     true,
+		"YES":   true,
+		"True":  true,
+		"on":    true,
+	}
+	for v, expected := range cases {
+		t.Setenv("PRELOOP_CONFIRM", v)
+		if got := nonInteractiveAutoConfirm(); got != expected {
+			t.Fatalf("PRELOOP_CONFIRM=%q: expected %t, got %t", v, expected, got)
+		}
+	}
+}

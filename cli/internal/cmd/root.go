@@ -68,6 +68,7 @@ func init() {
 
 	// Add subcommands
 	rootCmd.AddCommand(loginCmd)
+	rootCmd.AddCommand(signupCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(policyCmd)
 	rootCmd.AddCommand(toolsCmd)

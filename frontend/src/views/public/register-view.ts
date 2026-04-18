@@ -155,7 +155,44 @@ export class RegisterView extends LitElement {
         }
       }
 
-      // Only go to login if billing is disabled or if stripe fails and doesn't redirect
+      // Try to auto-log-in the user using the credentials they just submitted
+      // and continue any pending flow (eg. CLI OAuth consent at
+      // /console/authorize) instead of bouncing them back to the sign-in
+      // page. This is the seamless path for new users running
+      // `curl ... | sh` -> `preloop signup` -> sign up -> back to CLI.
+      try {
+        const authData = await post('/api/v1/auth/token/json', {
+          username,
+          password,
+        });
+        if (authData && authData.access_token) {
+          localStorage.setItem('accessToken', authData.access_token);
+          if (authData.refresh_token) {
+            localStorage.setItem('refreshToken', authData.refresh_token);
+          }
+          window.dispatchEvent(
+            new CustomEvent('auth-change', { bubbles: true, composed: true })
+          );
+          this._loading = false;
+          const redirectPath = localStorage.getItem('loginRedirect');
+          if (redirectPath) {
+            localStorage.removeItem('loginRedirect');
+            Router.go(redirectPath);
+          } else {
+            Router.go('/console');
+          }
+          return;
+        }
+      } catch (autoLoginError) {
+        // Silently fall back to the sign-in page below.
+        console.warn(
+          'Auto-login after registration failed, falling back to sign-in page',
+          autoLoginError
+        );
+      }
+
+      // Fallback: send the user to the sign-in page (loginRedirect, if set,
+      // is preserved across this navigation).
       this._loading = false;
       Router.go('/login?registered=true');
     } catch (error) {

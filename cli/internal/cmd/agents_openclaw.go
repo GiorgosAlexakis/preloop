@@ -277,11 +277,11 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	}
 
 	if !opts.SkipConfirmation && !opts.AutoApprove {
-		confirmed, err := confirmAction(
+		confirmed, err := confirmActionDefaultYes(
 			input,
 			output,
 			fmt.Sprintf(
-				"Apply managed Preloop onboarding for %s? (y/N): ",
+				"Apply managed Preloop onboarding for %s? (Y/n): ",
 				resolveAgentDisplayName(agent),
 			),
 		)
@@ -331,7 +331,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			return err
 		}
 		if parsed.ProviderAPIKey == "" && !parsed.UsesAmbientAuth {
-			if !opts.SkipConfirmation && !opts.AutoApprove {
+			if !opts.SkipConfirmation && !opts.AutoApprove && !nonInteractiveAutoConfirm() {
 				fmt.Fprintf(opts.Output, "\n[Action Required] OpenClaw model %s requires an API key for gateway routing.\n", parsed.ModelAlias) //nolint:errcheck
 				inputKey, err := promptForTextInput(
 					bufio.NewReader(opts.Input),
@@ -616,6 +616,10 @@ func defaultManagedLiveValidationResult(agent AgentConfig) map[string]interface{
 }
 
 func confirmActionDefaultYes(reader io.Reader, writer io.Writer, prompt string) (bool, error) {
+	if nonInteractiveAutoConfirm() {
+		fmt.Fprintf(writer, "%sy (PRELOOP_CONFIRM)\n", prompt) //nolint:errcheck
+		return true, nil
+	}
 	input, err := promptForTextInput(bufio.NewReader(reader), writer, prompt)
 	if err != nil {
 		return false, err

@@ -551,10 +551,10 @@ func promptToOnboardCandidates(
 			if agent.IsOnboarded {
 				action = "Re-onboard"
 			}
-			confirmed, err := confirmAction(
+			confirmed, err := confirmActionDefaultYes(
 				bufferedReader,
 				writer,
-				fmt.Sprintf("%s %s (%s) into managed Preloop access now? (y/N): ", action, agent.Name, resolveAgentDisplayName(agent)),
+				fmt.Sprintf("%s %s (%s) into managed Preloop access now? (Y/n): ", action, agent.Name, resolveAgentDisplayName(agent)),
 			)
 			if err != nil {
 				return fmt.Errorf("failed to read onboarding confirmation: %w", err)
@@ -582,7 +582,11 @@ func prepareAgentForEnrollment(
 	autoApprove bool,
 ) (AgentConfig, error) {
 	agent = normalizeDiscoveredAgent(agent)
-	if autoApprove {
+	if autoApprove || nonInteractiveAutoConfirm() {
+		agent.RuntimePrincipalID = generatedRuntimePrincipalID(
+			resolveAgentDisplayName(agent),
+			agent.ConfigPath,
+		)
 		return agent, nil
 	}
 

@@ -7,6 +7,17 @@ INSTALL_DIR="${INSTALL_DIR:-}"
 PRELOOP_DEFAULT_VERSION="${PRELOOP_DEFAULT_VERSION:-}"
 PRELOOP_VERSION="${PRELOOP_VERSION:-$PRELOOP_DEFAULT_VERSION}"
 
+# When PRELOOP_CONFIRM is set to a truthy value, every interactive prompt in
+# this script (and downstream `preloop` commands invoked from it) is treated
+# as if the user accepted the default. This makes the installer suitable for
+# unattended automation (CI, Dockerfiles, configuration management, etc.).
+preloop_confirm_set() {
+  case "$(printf '%s' "${PRELOOP_CONFIRM:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|y|yes|true|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 detect_os() {
   case "$(uname -s)" in
     Linux) echo "linux" ;;
@@ -58,6 +69,29 @@ resolve_install_dir() {
   fi
 }
 
+# prompt_default_yes prompts the user with a [Y/n] style question and writes
+# the answer (lower-cased, with empty input treated as "y") to stdout.
+# When PRELOOP_CONFIRM is set, the prompt is skipped and "y" is echoed.
+prompt_default_yes() {
+  prompt_text="$1"
+  if preloop_confirm_set; then
+    printf '%s y (PRELOOP_CONFIRM)\n' "$prompt_text"
+    echo "y"
+    return
+  fi
+  printf '%s ' "$prompt_text"
+  if read -r answer < /dev/tty 2>/dev/null; then
+    if [ -z "$answer" ]; then
+      echo "y"
+    else
+      printf '%s' "$answer" | tr '[:upper:]' '[:lower:]'
+    fi
+  else
+    # No tty - accept the default
+    echo "y"
+  fi
+}
+
 OS="$(detect_os)"
 ARCH="$(detect_arch)"
 VERSION="$(resolve_version)"
@@ -83,7 +117,9 @@ curl -fsSL "$URL" -o "${TMP_DIR}/preloop${EXT}"
 chmod +x "${TMP_DIR}/preloop${EXT}"
 mv "${TMP_DIR}/preloop${EXT}" "${BIN_DIR}/preloop${EXT}"
 
-echo "Installed preloop ${VERSION} to ${BIN_DIR}/preloop${EXT}"
+PRELOOP_BIN="${BIN_DIR}/preloop${EXT}"
+
+echo "Installed preloop ${VERSION} to ${PRELOOP_BIN}"
 case ":$PATH:" in
   *":${BIN_DIR}:"*) ;;
   *)
@@ -91,20 +127,70 @@ case ":$PATH:" in
     ;;
 esac
 
+# Step 1: discover local AI agents BEFORE asking the user to authenticate, so
+# they can see what Preloop found and decide whether to log in / sign up to
+# onboard them. The discover command itself is read-only and never mutates
+# local files or the user's account, so it is safe to run unconditionally.
+discovered_agents=0
 echo ""
-printf "Would you like to login to Preloop now? [Y/n] "
-if read -r login_ans < /dev/tty 2>/dev/null; then
-  if [ -z "$login_ans" ] || [ "$login_ans" = "y" ] || [ "$login_ans" = "Y" ]; then
-    if "${BIN_DIR}/preloop${EXT}" login < /dev/tty; then
-      echo ""
-      printf "Would you like to discover and onboard local agents now? [Y/n] "
-      if read -r discover_ans < /dev/tty 2>/dev/null; then
-        if [ -z "$discover_ans" ] || [ "$discover_ans" = "y" ] || [ "$discover_ans" = "Y" ]; then
-          "${BIN_DIR}/preloop${EXT}" agents discover < /dev/tty || true
-        fi
-      fi
-    else
-      echo "Login encountered an error or was aborted."
-    fi
+echo "Looking for AI agents on this machine..."
+if discover_output="$("$PRELOOP_BIN" agents discover --no-onboard-prompt 2>&1)"; then
+  printf '%s\n' "$discover_output"
+  if printf '%s' "$discover_output" | grep -q '^Found '; then
+    discovered_agents=1
   fi
+else
+  printf '%s\n' "$discover_output" >&2
+  echo "(Continuing - agent discovery is optional.)"
+fi
+
+# Step 2: offer to authenticate. If we found local agents we tell the user
+# explicitly that logging in lets us onboard them.
+echo ""
+if [ "$discovered_agents" = "1" ]; then
+  prompt="Sign in (or sign up) to Preloop now to onboard the agents above? [Y/s/n]"
+else
+  prompt="Sign in (or sign up) to Preloop now? [Y/s/n]"
+fi
+
+if preloop_confirm_set; then
+  printf '%s y (PRELOOP_CONFIRM)\n' "$prompt"
+  auth_choice="y"
+else
+  printf '%s ' "$prompt"
+  if read -r auth_choice < /dev/tty 2>/dev/null; then
+    auth_choice="$(printf '%s' "$auth_choice" | tr '[:upper:]' '[:lower:]')"
+    [ -z "$auth_choice" ] && auth_choice="y"
+  else
+    auth_choice="n"
+  fi
+fi
+
+auth_command=""
+case "$auth_choice" in
+  y|yes|l|login) auth_command="login" ;;
+  s|signup|register|r) auth_command="signup" ;;
+  *) auth_command="" ;;
+esac
+
+if [ -n "$auth_command" ]; then
+  if "$PRELOOP_BIN" "$auth_command" < /dev/tty; then
+    if [ "$discovered_agents" = "1" ]; then
+      echo ""
+      onboard_ans="$(prompt_default_yes "Onboard discovered agents now? [Y/n]")"
+      case "$onboard_ans" in
+        y|yes)
+          # `preloop agents discover` re-prints the listing and then walks
+          # through each candidate with a (Y/n) onboarding prompt. When
+          # PRELOOP_CONFIRM is set in the environment the inner prompts are
+          # auto-approved, matching the unattended behavior of this script.
+          "$PRELOOP_BIN" agents discover < /dev/tty || true
+          ;;
+      esac
+    fi
+  else
+    echo "Authentication encountered an error or was aborted."
+  fi
+else
+  echo "Skipped authentication. Run 'preloop login' or 'preloop signup' when you're ready."
 fi

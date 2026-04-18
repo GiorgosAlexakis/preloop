@@ -13,6 +13,16 @@ interface Plan {
   price_annually: number | null;
   features: string[];
   badge?: string;
+  highlight?: boolean;
+  cta_text?: string;
+  cta_url?: string;
+  description?: string;
+  price_label?: string;
+}
+
+interface PricingFaq {
+  q: string;
+  a: string;
 }
 
 @customElement('public-pricing-view')
@@ -21,60 +31,128 @@ export class PublicPricingView extends LitElement {
   @state() private _billingEnabled = false;
   @state() private _oauthSigninEnabled = false;
 
-  // Hardcoded plans - Open Source, Teams, and Enterprise
-  private _plans: Plan[] = [
-    {
-      id: 'opensource',
-      name: 'Open Source',
-      price_monthly: 0,
-      price_annually: 0,
-      features: [
-        'Self-hosted deployment',
-        'MCP proxy & tool management',
-        'Single-user approvals',
-        'Email, mobile, Slack & Mattermost notifications',
-        'Issue tracker integration',
-        'Vector search & duplicates',
-        'Agentic flows',
-        'Community support',
-      ],
-    },
-    {
-      id: 'teams',
-      name: 'Teams',
-      price_monthly: 29,
-      price_annually: 290, // ~24/mo when billed annually
-      features: [
-        'Everything in Open Source',
-        'Cloud-hosted (managed)',
-        'RBAC & team management',
-        'CEL conditional approvals',
-        'Team-based approvals (quorum)',
-        'Approval escalation',
-        'Audit logging',
-        '14-day trial (card required)',
-        'Email support',
-      ],
-    },
-    {
-      id: 'enterprise',
-      name: 'Enterprise',
-      price_monthly: null,
-      price_annually: null,
-      features: [
-        'Everything in Teams',
-        'Self-hosted deployment option',
-        'SSO, OIDC, SCIM support',
-        'SLA commitments',
-        'Dedicated support channels',
-        'Priority feature requests',
-      ],
-    },
-  ];
+  @state() private _plans: Plan[] = [];
+  @state() private _faqs: PricingFaq[] = [];
+  @state() private _title = 'Pricing';
+  @state() private _lead = 'Start your 14-day free trial today.';
+  @state() private _billingToggle = true;
+  @state() private _loaded = false;
 
   async connectedCallback() {
     super.connectedCallback();
+    await this._loadContent();
     await this._checkBillingEnabled();
+  }
+
+  private async _loadContent() {
+    try {
+      // Prefer slotted SEO content (SSR-injected light DOM) so we keep
+      // whatever was actually served to the user / crawler.
+      const children = Array.from(this.children);
+      const hasSlottedPlan = children.some((el) =>
+        el.getAttribute('slot')?.startsWith('plan-')
+      );
+
+      if (hasSlottedPlan) {
+        this._loadFromSlots(children);
+      } else {
+        await this._loadFromJson();
+      }
+    } catch (err) {
+      console.error('[pricing-view] Failed to load pricing content:', err);
+      // Best-effort fallback: try JSON if slots failed.
+      try {
+        await this._loadFromJson();
+      } catch (err2) {
+        console.error('[pricing-view] Failed to load pricing JSON:', err2);
+      }
+    } finally {
+      this._loaded = true;
+    }
+  }
+
+  private _loadFromSlots(children: Element[]) {
+    const plans: Plan[] = [];
+    for (let i = 0; i < 20; i++) {
+      const el = children.find(
+        (c) => c.getAttribute('slot') === `plan-${i}`
+      ) as HTMLElement | undefined;
+      if (!el) break;
+      const featuresAttr = el.getAttribute('data-features') || '';
+      const priceMonthlyRaw = el.getAttribute('data-price-monthly');
+      const priceAnnuallyRaw = el.getAttribute('data-price-annually');
+      const priceMonthly =
+        priceMonthlyRaw === '' || priceMonthlyRaw === null
+          ? null
+          : Number(priceMonthlyRaw);
+      const priceAnnually =
+        priceAnnuallyRaw === '' || priceAnnuallyRaw === null
+          ? null
+          : Number(priceAnnuallyRaw);
+      plans.push({
+        id: el.getAttribute('data-plan-id') || `plan-${i}`,
+        name: el.getAttribute('data-plan-name') || '',
+        price_monthly: Number.isFinite(priceMonthly)
+          ? (priceMonthly as number)
+          : null,
+        price_annually: Number.isFinite(priceAnnually)
+          ? (priceAnnually as number)
+          : null,
+        price_label: el.getAttribute('data-price-label') || undefined,
+        badge: el.getAttribute('data-badge') || undefined,
+        highlight: el.getAttribute('data-highlight') === 'true',
+        cta_text: el.getAttribute('data-cta-text') || undefined,
+        cta_url: el.getAttribute('data-cta-url') || undefined,
+        description: el.getAttribute('data-description') || undefined,
+        features: featuresAttr ? featuresAttr.split('|').filter(Boolean) : [],
+      });
+    }
+
+    const faqs: PricingFaq[] = [];
+    for (let i = 0; i < 30; i++) {
+      const el = children.find((c) => c.getAttribute('slot') === `faq-${i}`) as
+        | HTMLElement
+        | undefined;
+      if (!el) break;
+      const q = el.getAttribute('data-q') || '';
+      const a = el.getAttribute('data-a') || '';
+      if (q && a) faqs.push({ q, a });
+    }
+
+    if (plans.length) this._plans = plans;
+    if (faqs.length) this._faqs = faqs;
+  }
+
+  private async _loadFromJson() {
+    const response = await fetch('/landing-content.json');
+    if (!response.ok) {
+      throw new Error(`Failed to load pricing content: ${response.statusText}`);
+    }
+    const content = await response.json();
+    const pricing = content.pricing || {};
+    if (pricing.title) this._title = pricing.title;
+    if (pricing.lead) this._lead = pricing.lead;
+    if (typeof pricing.billing_toggle === 'boolean') {
+      this._billingToggle = pricing.billing_toggle;
+    }
+    if (Array.isArray(pricing.plans)) {
+      this._plans = pricing.plans.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        price_monthly: p.price_monthly ?? null,
+        price_annually: p.price_annually ?? null,
+        price_label: p.price_label,
+        badge: p.badge,
+        highlight: p.highlight,
+        cta_text: p.cta_text,
+        cta_url: p.cta_url,
+        description: p.description,
+        features: p.features || [],
+      }));
+    }
+    if (Array.isArray(pricing.faqs)) {
+      this._faqs = pricing.faqs;
+    }
   }
 
   private async _checkBillingEnabled() {
@@ -93,14 +171,25 @@ export class PublicPricingView extends LitElement {
     this._handleSignUp(e.detail.planId);
   }
 
+  private _planById(id: string): Plan | undefined {
+    return this._plans.find((p) => p.id === id);
+  }
+
   private async _handleSignUp(planId: string) {
+    const plan = this._planById(planId);
+
     if (planId === 'opensource') {
-      window.open('https://github.com/preloop/preloop', '_blank');
+      const url = plan?.cta_url || 'https://github.com/preloop/preloop';
+      if (/^https?:\/\//.test(url)) {
+        window.open(url, '_blank');
+      } else {
+        window.location.href = url;
+      }
       return;
     }
 
     if (planId === 'enterprise') {
-      window.location.href = '/request-demo';
+      window.location.href = plan?.cta_url || '/request-demo';
       return;
     }
 
@@ -420,11 +509,13 @@ export class PublicPricingView extends LitElement {
                     size="large"
                     @click=${() => this._handleSignUp(plan.id)}
                   >
-                    ${plan.id === 'enterprise'
-                      ? 'Contact Sales'
-                      : plan.id === 'opensource'
-                        ? 'View on GitHub'
-                        : 'Start Free Trial'}
+                    ${plan.cta_text
+                      ? plan.cta_text
+                      : plan.id === 'enterprise'
+                        ? 'Contact Sales'
+                        : plan.id === 'opensource'
+                          ? 'View on GitHub'
+                          : 'Start Free Trial'}
                   </sl-button>
                 </td>
               `
@@ -432,6 +523,32 @@ export class PublicPricingView extends LitElement {
           </tr>
         </tbody>
       </table>
+    `;
+  }
+
+  private _renderFaqs() {
+    if (!this._faqs.length) return '';
+    return html`
+      <section class="pricing-faq main-section">
+        <div class="section-container">
+          <h2 class="text-center">Frequently Asked Questions</h2>
+          <div class="faq-list">
+            ${this._faqs.map(
+              (faq) => html`
+                <details class="faq-item">
+                  <summary class="faq-question">
+                    <span>${faq.q}</span>
+                    <sl-icon name="chevron-down"></sl-icon>
+                  </summary>
+                  <div class="faq-answer">
+                    <div class="faq-answer-content">${faq.a}</div>
+                  </div>
+                </details>
+              `
+            )}
+          </div>
+        </div>
+      </section>
     `;
   }
 
@@ -443,23 +560,27 @@ export class PublicPricingView extends LitElement {
           <div class="section-container hero-inner">
             <div class="hero-content">
               <h1 class="fw-bold">
-                <span class="gradient-product">Pricing</span>
+                <span class="gradient-product">${this._title}</span>
               </h1>
-              <p class="lead">Start your 14-day free trial today.</p>
+              <p class="lead">${this._lead}</p>
             </div>
           </div>
 
           <div class="section-container">
-            <billing-toggle
-              .dark=${true}
-              .interval=${this._interval}
-              @interval-change=${(e: CustomEvent) =>
-                (this._interval = e.detail.value)}
-            ></billing-toggle>
-
-            ${this._renderCards()} ${this._renderTable()}
+            ${this._billingToggle
+              ? html`<billing-toggle
+                  .dark=${true}
+                  .interval=${this._interval}
+                  @interval-change=${(e: CustomEvent) =>
+                    (this._interval = e.detail.value)}
+                ></billing-toggle>`
+              : ''}
+            ${this._plans.length
+              ? html`${this._renderCards()} ${this._renderTable()}`
+              : ''}
           </div>
         </section>
+        ${this._renderFaqs()}
       </main>
       <app-footer></app-footer>
     `;

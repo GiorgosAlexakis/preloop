@@ -68,6 +68,83 @@ func TestRootIncludesLoginAlias(t *testing.T) {
 	t.Fatal("expected root command to include a login alias")
 }
 
+func TestRootIncludesSignupCommand(t *testing.T) {
+	for _, command := range rootCmd.Commands() {
+		if command.Name() == "signup" {
+			return
+		}
+	}
+
+	t.Fatal("expected root command to include a signup command")
+}
+
+func TestAuthIncludesSignupSubcommand(t *testing.T) {
+	for _, command := range authCmd.Commands() {
+		if command.Name() == "signup" {
+			return
+		}
+	}
+
+	t.Fatal("expected 'preloop auth' to include a signup subcommand")
+}
+
+func TestBuildAuthorizationURLAddsSignupFlagWhenSignupRequested(t *testing.T) {
+	originalSignup := signupRequested
+	t.Cleanup(func() { signupRequested = originalSignup })
+
+	signupRequested = false
+	loginURL := buildAuthorizationURL("https://example.test", "http://127.0.0.1:1234/cb", "abc")
+	if strings.Contains(loginURL, "signup=1") {
+		t.Fatalf("expected login URL not to contain signup=1, got %q", loginURL)
+	}
+
+	signupRequested = true
+	signupURL := buildAuthorizationURL("https://example.test", "http://127.0.0.1:1234/cb", "abc")
+	if !strings.Contains(signupURL, "signup=1") {
+		t.Fatalf("expected signup URL to contain signup=1, got %q", signupURL)
+	}
+}
+
+func TestBuildPostAuthRedirectURL(t *testing.T) {
+	cases := map[string]string{
+		"":                   "",
+		"https://preloop.ai": "https://preloop.ai/console/agents?cli=connected",
+		// Trailing slashes should be normalized.
+		"https://preloop.ai/": "https://preloop.ai/console/agents?cli=connected",
+	}
+	for input, expected := range cases {
+		if got := buildPostAuthRedirectURL(input); got != expected {
+			t.Fatalf("buildPostAuthRedirectURL(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}
+
+func TestHandleOAuthCallbackRedirectsToConsole(t *testing.T) {
+	codeChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+
+	req := httptest.NewRequest("GET", "/callback?code=the-code&state=expected-state", nil)
+	rec := httptest.NewRecorder()
+
+	handleOAuthCallback(rec, req, "expected-state", "https://preloop.ai/console/agents?cli=connected", codeChan, errChan)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect, got %d", rec.Code)
+	}
+	location := rec.Header().Get("Location")
+	if location != "https://preloop.ai/console/agents?cli=connected" {
+		t.Fatalf("unexpected Location header: %q", location)
+	}
+	select {
+	case got := <-codeChan:
+		if got != "the-code" {
+			t.Fatalf("expected callback to forward code, got %q", got)
+		}
+	default:
+		t.Fatal("expected authorization code to be sent on the channel")
+	}
+}
+
 func TestRunAuthStatusRefreshesStoredLoginBeforeFetchingUser(t *testing.T) {
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)

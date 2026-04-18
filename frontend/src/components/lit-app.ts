@@ -288,6 +288,64 @@ export class LitApp extends LitElement {
           return view;
         },
       },
+      {
+        // Competitor comparison landing pages at /vs/<slug>. One dynamic
+        // route handles every slug. Each slug is pre-rendered at build time
+        // (dist/vs/<slug>.html); this action reuses the SSR'd content on
+        // first load and falls back to fetching /content/vs/<slug>.md for
+        // client-side navigation.
+        path: '/vs/:slug',
+        action: (context, commands) => {
+          const outlet = this.renderRoot.querySelector('main');
+          const existingWrapper = outlet?.querySelector('static-view-wrapper');
+          const ssrRoute = this.getAttribute('data-ssr-route');
+          const slug = (context.params?.slug as string) || '';
+
+          // Reject obviously unsafe slug input (route params are strings but
+          // Vaadin Router does not constrain characters). Allow standard
+          // slug characters only.
+          if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug)) {
+            return commands.redirect('/');
+          }
+
+          if (
+            existingWrapper &&
+            ssrRoute === `/vs/${slug}` &&
+            !this.hasNavigated
+          ) {
+            this.hasNavigated = true;
+            return existingWrapper;
+          }
+
+          const view = commands.component('static-view') as any;
+          view.src = `/content/vs/${slug}.md`;
+          return view;
+        },
+      },
+      {
+        path: '/resources/ai-agent-control-plane-2026',
+        action: (context, commands) => {
+          // Check if we have SSR content for this EXACT route on first load
+          const outlet = this.renderRoot.querySelector('main');
+          const existingWrapper = outlet?.querySelector('static-view-wrapper');
+          const ssrRoute = this.getAttribute('data-ssr-route');
+
+          if (
+            existingWrapper &&
+            ssrRoute === '/resources/ai-agent-control-plane-2026' &&
+            !this.hasNavigated
+          ) {
+            // Reuse SSR content on first load only
+            this.hasNavigated = true;
+            return existingWrapper;
+          }
+
+          // Load markdown dynamically
+          const view = commands.component('static-view') as any;
+          view.src = '/content/resources/ai-agent-control-plane-2026.md';
+          return view;
+        },
+      },
       { path: '/welcome', component: 'welcome-view' },
       {
         path: '/console',
