@@ -38,6 +38,9 @@ export class LandingView extends LitElement {
   @state() private _ctaPrimary = '';
   @state() private _ctaSecondary = '';
   @state() private _ctaSecondaryUrl = '';
+  @state() private _heroInstall = '';
+  @state() private _heroInstallCaption = '';
+  @state() private _heroInstallCopied = false;
   @state() private _getStartedTitle = '';
   @state() private _getStartedLinkText = '';
   @state() private _getStartedLinkUrl = '';
@@ -324,6 +327,17 @@ export class LandingView extends LitElement {
     if (ctaSecondaryUrl)
       this._ctaSecondaryUrl = ctaSecondaryUrl.textContent || '';
 
+    const ctaInstall = children.find(
+      (el) => el.getAttribute('slot') === 'cta-install'
+    ) as HTMLElement | undefined;
+    if (ctaInstall) this._heroInstall = (ctaInstall.textContent || '').trim();
+
+    const ctaInstallCaption = children.find(
+      (el) => el.getAttribute('slot') === 'cta-install-caption'
+    ) as HTMLElement | undefined;
+    if (ctaInstallCaption)
+      this._heroInstallCaption = (ctaInstallCaption.textContent || '').trim();
+
     // Read extended description from light DOM slot
     const extendedDescription = children.find(
       (el) => el.getAttribute('slot') === 'extended-description'
@@ -534,6 +548,8 @@ export class LandingView extends LitElement {
     this._ctaPrimary = hero.cta_primary || '';
     this._ctaSecondary = hero.cta_secondary || '';
     this._ctaSecondaryUrl = hero.cta_secondary_url || '';
+    this._heroInstall = (hero.install_command || '').trim();
+    this._heroInstallCaption = (hero.install_caption || '').trim();
     this._extendedDescription = content.extended_description || '';
     this._featuresLayout = content.features_layout || 'grid';
 
@@ -634,6 +650,31 @@ export class LandingView extends LitElement {
     return url;
   }
 
+  private async _handleCopyHeroInstall() {
+    if (!this._heroInstall) return;
+    try {
+      await navigator.clipboard.writeText(this._heroInstall);
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = this._heroInstall;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        return;
+      }
+    }
+    this._heroInstallCopied = true;
+    window.setTimeout(() => {
+      this._heroInstallCopied = false;
+    }, 2000);
+  }
+
   private _handleFaqClick(e: Event) {
     e.preventDefault();
     const summary = e.currentTarget as HTMLElement;
@@ -717,6 +758,80 @@ export class LandingView extends LitElement {
                   >${this._ctaSecondary}</sl-button
                 >
               </div>
+              ${this._heroInstall
+                ? html`
+                    <div
+                      class="hero-install"
+                      role="group"
+                      aria-label="Install the Preloop CLI"
+                    >
+                      <div class="hero-install-or" aria-hidden="true">
+                        <span class="hero-install-or-line"></span>
+                        <span class="hero-install-or-text"
+                          >or install the CLI</span
+                        >
+                        <span class="hero-install-or-line"></span>
+                      </div>
+                      <div class="hero-install-row">
+                        <span class="hero-install-prompt" aria-hidden="true"
+                          >$</span
+                        >
+                        <code class="hero-install-cmd"
+                          >${this._heroInstall}</code
+                        >
+                        <button
+                          type="button"
+                          class="hero-install-copy"
+                          @click=${this._handleCopyHeroInstall}
+                          aria-label="Copy install command to clipboard"
+                          title="${this._heroInstallCopied
+                            ? 'Copied!'
+                            : 'Copy to clipboard'}"
+                        >
+                          ${this._heroInstallCopied
+                            ? html`
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="16"
+                                  height="16"
+                                  fill="currentColor"
+                                  viewBox="0 0 16 16"
+                                  aria-hidden="true"
+                                >
+                                  <path
+                                    d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"
+                                  />
+                                </svg>
+                                <span>Copied</span>
+                              `
+                            : html`
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="16"
+                                  height="16"
+                                  fill="currentColor"
+                                  viewBox="0 0 16 16"
+                                  aria-hidden="true"
+                                >
+                                  <path
+                                    d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"
+                                  />
+                                  <path
+                                    d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"
+                                  />
+                                </svg>
+                                <span>Copy</span>
+                              `}
+                        </button>
+                      </div>
+                      ${this._heroInstallCaption
+                        ? html`<p class="hero-install-caption">
+                            ${this._heroInstallCaption}
+                          </p>`
+                        : ''}
+                    </div>
+                  `
+                : ''}
             </div>
           </div>
         </section>

@@ -698,6 +698,8 @@ async function generateSlottedContentForRoute(
     <span slot="cta-primary">${hero.cta_primary || ''}</span>
     <span slot="cta-secondary">${hero.cta_secondary || ''}</span>
     <span slot="cta-secondary-url">${hero.cta_secondary_url || ''}</span>
+    ${(hero as any).install_command ? `<code slot="cta-install">${(hero as any).install_command}</code>` : ''}
+    ${(hero as any).install_caption ? `<span slot="cta-install-caption">${(hero as any).install_caption}</span>` : ''}
 
     <!-- Extended description slot (only if exists) -->
     ${meta.extended_description ? `<p slot="extended-description">${meta.extended_description}</p>` : ''}

@@ -43,6 +43,11 @@ export interface BrandHero {
   cta_primary_url?: string; // Optional - if set, primary CTA links here instead of signup
   cta_secondary: string;
   cta_secondary_url: string;
+  // Optional one-line install command rendered as a click-to-copy box below
+  // the hero CTAs (e.g. "curl -fsSL https://preloop.ai/install/cli | sh").
+  install_command?: string;
+  // Optional caption shown under the install command box.
+  install_caption?: string;
 }
 
 export interface BrandFeature {
