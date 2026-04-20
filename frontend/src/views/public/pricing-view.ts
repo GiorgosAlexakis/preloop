@@ -1,4 +1,5 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, state } from 'lit/decorators.js';
 import { fetchWithAuth, fetchPublic, getFeatures } from '../../api';
 import landingStyles from '../../styles/landing.css?inline';
@@ -526,22 +527,56 @@ export class PublicPricingView extends LitElement {
     `;
   }
 
+  private _handleFaqClick(e: Event) {
+    e.preventDefault();
+    const summary = e.currentTarget as HTMLElement;
+    const details = summary.parentElement as HTMLDetailsElement;
+    const answer = summary.nextElementSibling as HTMLElement | null;
+    if (!answer) return;
+
+    if (details.open) {
+      answer.style.height = `${answer.scrollHeight}px`;
+      requestAnimationFrame(() => {
+        answer.style.height = '0px';
+      });
+      answer.addEventListener(
+        'transitionend',
+        () => {
+          details.removeAttribute('open');
+        },
+        { once: true }
+      );
+    } else {
+      details.setAttribute('open', '');
+      answer.style.height = `${answer.scrollHeight}px`;
+      answer.addEventListener(
+        'transitionend',
+        () => {
+          if (details.open) {
+            answer.style.height = 'auto';
+          }
+        },
+        { once: true }
+      );
+    }
+  }
+
   private _renderFaqs() {
     if (!this._faqs.length) return '';
     return html`
-      <section class="pricing-faq main-section">
+      <section class="pricing-faq main-section faq-section">
         <div class="section-container">
           <h2 class="text-center">Frequently Asked Questions</h2>
           <div class="faq-list">
             ${this._faqs.map(
               (faq) => html`
                 <details class="faq-item">
-                  <summary class="faq-question">
+                  <summary class="faq-question" @click=${this._handleFaqClick}>
                     <span>${faq.q}</span>
                     <sl-icon name="chevron-down"></sl-icon>
                   </summary>
                   <div class="faq-answer">
-                    <div class="faq-answer-content">${faq.a}</div>
+                    <div class="faq-answer-content">${unsafeHTML(faq.a)}</div>
                   </div>
                 </details>
               `

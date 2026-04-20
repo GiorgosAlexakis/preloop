@@ -137,7 +137,7 @@ Examples:
 }
 
 var agentsEnrollCmd = &cobra.Command{
-	Use:     "onboard <agent>",
+	Use:     "onboard [agent]",
 	Aliases: []string{"enroll"},
 	Short:   "Onboard a discovered agent into managed MCP access",
 	Long: `Create or locate the managed agent identity in Preloop, create a durable
@@ -146,7 +146,7 @@ entry to the selected agent configuration.
 
 This is the mutating companion to 'preloop agents discover'. Use --dry-run to
 preview the planned config and account changes without writing anything.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runAgentsEnroll,
 }
 
@@ -178,9 +178,9 @@ var agentsRestoreCmd = &cobra.Command{
 }
 
 var agentsOffboardCmd = &cobra.Command{
-	Use:   "offboard <agent>",
+	Use:   "offboard [agent]",
 	Short: "Restore local config and remove managed enrollment",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runAgentsOffboard,
 }
 
@@ -404,19 +404,23 @@ func init() {
 	agentsCmd.AddCommand(agentsStarterPolicyCmd)
 
 	agentsDiscoverCmd.Flags().Bool("add", false, "deprecated: use 'preloop agents onboard <agent>' instead")
-	agentsDiscoverCmd.Flags().Bool("json", false, "output discovered agents as JSON")
-	agentsDiscoverCmd.Flags().Bool("no-onboard-prompt", false, "do not prompt to onboard discovered agents")
-	agentsDiscoverCmd.Flags().Bool("yes", false, "auto-approve interactive onboarding prompts")
-	_ = agentsDiscoverCmd.Flags().MarkDeprecated("add", "use 'preloop agents onboard <agent>'")
+agentsDiscoverCmd.Flags().BoolP("yes", "y", false, "auto-approve interactive onboarding prompts")
+	agentsDiscoverCmd.Flags().BoolP("force", "f", false, "alias for --yes")
+	_ = agentsDiscoverCmd.Flags().MarkDeprecated("add", "use 'preloop agents onboard [agent]'")
 	agentsEnrollCmd.Flags().Bool("dry-run", false, "preview account and config changes without writing")
-	agentsEnrollCmd.Flags().Bool("yes", false, "skip the onboarding confirmation prompt")
+	agentsEnrollCmd.Flags().BoolP("yes", "y", false, "skip the onboarding confirmation prompt")
+	agentsEnrollCmd.Flags().BoolP("force", "f", false, "alias for --yes")
+	agentsEnrollCmd.Flags().Bool("all", false, "onboard all discovered agents")
 	agentsEnrollCmd.Flags().Bool("live-validate", false, "after onboarding, run a supported live validation prompt through the agent")
 	agentsEnrollCmd.Flags().StringSlice("tags", []string{}, "add key-value tags to the enrolled agent (e.g., --tags ext=true,env=prod)")
 	agentsListCmd.Flags().Bool("json", false, "output managed agents as JSON")
 	agentsStatusCmd.Flags().Bool("json", false, "output managed status as JSON")
 	agentsValidateCmd.Flags().Bool("live", false, "run a supported live validation prompt in addition to config validation")
-	agentsRestoreCmd.Flags().Bool("yes", false, "skip the restore confirmation prompt")
-	agentsOffboardCmd.Flags().Bool("yes", false, "skip offboarding and cleanup confirmations")
+	agentsRestoreCmd.Flags().BoolP("yes", "y", false, "skip the restore confirmation prompt")
+	agentsRestoreCmd.Flags().BoolP("force", "f", false, "alias for --yes")
+	agentsOffboardCmd.Flags().BoolP("yes", "y", false, "skip offboarding and cleanup confirmations")
+	agentsOffboardCmd.Flags().BoolP("force", "f", false, "alias for --yes")
+	agentsOffboardCmd.Flags().Bool("all", false, "offboard all enrolled agents")
 	agentsOffboardCmd.Flags().String("remove-model", offboardCleanupAsk, "whether to remove an eligible AI model from Preloop as part of offboarding: ask, yes, or no")
 	agentsOffboardCmd.Flags().String("remove-mcp-servers", offboardCleanupAsk, "whether to remove eligible MCP servers from Preloop as part of offboarding: ask, yes, or no")
 	agentsStarterPolicyCmd.Flags().StringP("output", "o", "", "write generated policy YAML to a file")
@@ -651,11 +655,19 @@ func filterAgentsPendingEnrollment(client *api.Client, discovered []AgentConfig)
 	return candidates, nil
 }
 
+
+func isAutoApprove(cmd *cobra.Command) bool {
+	yes, _ := cmd.Flags().GetBool("yes")
+	force, _ := cmd.Flags().GetBool("force")
+	return yes || force || nonInteractiveAutoConfirm()
+}
+
 func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
-	autoApprove, _ := cmd.Flags().GetBool("yes")
+	autoApprove := isAutoApprove(cmd)
 	liveValidate, _ := cmd.Flags().GetBool("live-validate")
 	tagsInput, _ := cmd.Flags().GetStringSlice("tags")
+	runAll, _ := cmd.Flags().GetBool("all")
 
 	tags := make(map[string]string)
 	for _, kv := range tagsInput {
@@ -671,12 +683,8 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	agent, err := findDiscoveredAgent(discovered, args[0])
-	if err != nil {
-		return err
-	}
 
-	return executeManagedEnrollment(agent, managedEnrollmentOptions{
+	opts := managedEnrollmentOptions{
 		DryRun:           dryRun,
 		AutoApprove:      autoApprove,
 		LiveValidate:     liveValidate,
@@ -684,7 +692,61 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 		SkipConfirmation: false,
 		Input:            os.Stdin,
 		Output:           os.Stdout,
-	})
+	}
+
+	if len(args) == 0 {
+		client, err := api.NewClient(FlagToken, FlagURL)
+		if err != nil {
+			return err
+		}
+		candidates, err := filterAgentsPendingEnrollment(client, discovered)
+		if err != nil {
+			return err
+		}
+		if len(candidates) == 0 {
+			fmt.Println("No unenrolled agents found.")
+			return nil
+		}
+
+		if runAll {
+			if !autoApprove {
+				var names []string
+				for _, a := range candidates {
+					names = append(names, resolveAgentDisplayName(a))
+				}
+				confirmed, err := confirmActionDefaultYes(
+					bufio.NewReader(os.Stdin),
+					os.Stdout,
+					fmt.Sprintf("Onboard agents %s into managed Preloop access now? (Y/n): ", strings.Join(names, ", ")),
+				)
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					return nil
+				}
+			}
+			return promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, true, func(a AgentConfig) error {
+				agentOpts := opts
+				agentOpts.AutoApprove = true
+				agentOpts.SkipConfirmation = true
+				return executeManagedEnrollment(a, agentOpts)
+			})
+		}
+
+		return promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, autoApprove, func(a AgentConfig) error {
+			agentOpts := opts
+			agentOpts.SkipConfirmation = autoApprove
+			return executeManagedEnrollment(a, agentOpts)
+		})
+	}
+
+	agent, err := findDiscoveredAgent(discovered, args[0])
+	if err != nil {
+		return err
+	}
+
+	return executeManagedEnrollment(agent, opts)
 }
 
 func runAgentsStatus(cmd *cobra.Command, args []string) error {
@@ -1032,7 +1094,8 @@ type offboardCleanupCandidate struct {
 }
 
 func runAgentsOffboard(cmd *cobra.Command, args []string) error {
-	autoApprove, _ := cmd.Flags().GetBool("yes")
+	autoApprove := isAutoApprove(cmd)
+	runAll, _ := cmd.Flags().GetBool("all")
 	modelRemovalPolicy, err := cmd.Flags().GetString("remove-model")
 	if err != nil {
 		return err
@@ -1052,10 +1115,82 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	if len(args) == 0 {
+		client, err := api.NewClient(FlagToken, FlagURL)
+		if err != nil {
+			return fmt.Errorf("failed to create API client: %w", err)
+		}
+
+		var candidates []AgentConfig
+		for _, agent := range discovered {
+			if _, localErr := loadLocalEnrollmentState(agent); localErr == nil {
+				candidates = append(candidates, agent)
+			} else if detail, _ := getManagedAgentDetailForDiscovered(client, agent); detail != nil {
+				candidates = append(candidates, agent)
+			}
+		}
+
+		if len(candidates) == 0 {
+			fmt.Println("No enrolled agents found to offboard.")
+			return nil
+		}
+
+		if runAll {
+			if !autoApprove {
+				var names []string
+				for _, a := range candidates {
+					names = append(names, resolveAgentDisplayName(a))
+				}
+				confirmed, err := confirmActionDefaultYes(
+					bufio.NewReader(os.Stdin),
+					os.Stdout,
+					fmt.Sprintf("Offboard agents %s? (Y/n): ", strings.Join(names, ", ")),
+				)
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					return nil
+				}
+			}
+			for _, agent := range candidates {
+				if err := executeOffboard(agent, true, modelRemovalPolicy, serverRemovalPolicy); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
+		for _, agent := range candidates {
+			if !autoApprove {
+				confirmed, err := confirmActionDefaultYes(
+					bufio.NewReader(os.Stdin),
+					os.Stdout,
+					fmt.Sprintf("Offboard %s? (Y/n): ", resolveAgentDisplayName(agent)),
+				)
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					continue
+				}
+			}
+			if err := executeOffboard(agent, true, modelRemovalPolicy, serverRemovalPolicy); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	agent, err := findDiscoveredAgent(discovered, args[0])
 	if err != nil {
 		return err
 	}
+	return executeOffboard(agent, autoApprove, modelRemovalPolicy, serverRemovalPolicy)
+}
+
+func executeOffboard(agent AgentConfig, autoApprove bool, modelRemovalPolicy, serverRemovalPolicy string) error {
 	var backupPath string
 	state, err := loadLocalEnrollmentState(agent)
 	if err == nil {
@@ -1074,7 +1209,7 @@ func runAgentsOffboard(cmd *cobra.Command, args []string) error {
 	detail, _ = getManagedAgentDetailForDiscovered(client, agent)
 
 	if state == nil && detail == nil {
-		return fmt.Errorf("agent %q is not onboarded (no local state or remote managed agent found)", args[0])
+		return fmt.Errorf("agent %q is not onboarded (no local state or remote managed agent found)", agent.Name)
 	}
 
 	if !autoApprove {

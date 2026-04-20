@@ -22,14 +22,22 @@ export class StaticViewWrapper extends LitElement {
 
       main {
         flex: 1;
-        padding: 2rem;
-        max-width: 800px;
+        padding: 3.5rem 1.5rem 5rem;
+        max-width: 760px;
         margin: 0 auto;
         width: 100%;
       }
 
-      /* Styles for slotted article content are now in the article's inline <style> tag
-         in the light DOM, since ::slotted() can't style descendants */
+      @media (max-width: 640px) {
+        main {
+          padding: 2rem 1.25rem 3.5rem;
+        }
+      }
+
+      /* Styles for slotted article content live as an inline <style> tag
+         emitted alongside the article in the light DOM (see
+         loadMarkdownContent in vite-plugin-brand.ts). ::slotted() cannot
+         style descendants of slotted elements, so we cannot put them here. */
     `,
   ];
 

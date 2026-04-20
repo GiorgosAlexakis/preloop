@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Marketing & Positioning**: Positioned Preloop as an open-source AI agent control plane, added a native installation `curl | sh` command widget in the hero section, and added JSON-LD schemas for improved SEO.
+- **CLI Onboarding Automation**: Enhanced `preloop agents onboard` and `preloop agents offboard` to support robust non-interactive automation via new `-y`, `--yes`, `-f`, `--force` flags and the `PRELOOP_CONFIRM` environment variable.
+- **CLI Batch Operations**: The agent `onboard` and `offboard` CLI commands now support discovering and iterating through all matching agents when no arguments are provided. A new `--all` flag allows grouped confirmation prompts.
+
+### Fixed
+
+- **Authentication Flows**: Gracefully handle missing MCP servers during agent onboarding to prevent API 400 errors, and resolved an OAuth consent 401 and redirect flow loop.
+- **Install Scripts**: Updated the CLI installation scripts with default `Y/n` prompt behavior and ensured proper standard input redirection for deeply nested interactive scripts.
 ## [0.9.0-rc.2] - 2026-04-14
 
 ### Fixed
