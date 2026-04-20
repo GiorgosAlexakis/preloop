@@ -512,6 +512,8 @@ export class AgentDetailView extends LitElement {
         return 'Gemini CLI';
       case 'opencode':
         return 'OpenCode';
+      case 'hermes':
+        return 'Hermes';
       case 'desktop_agent':
         return 'Desktop Agent';
       case 'custom':

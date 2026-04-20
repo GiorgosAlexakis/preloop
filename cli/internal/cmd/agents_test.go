@@ -123,6 +123,7 @@ func TestRuntimeSessionSourceTypeForAgent(t *testing.T) {
 		"Claude Desktop": "claude_desktop",
 		"Codex CLI":      "codex",
 		"OpenClaw":       "openclaw",
+		"Hermes":         "hermes",
 		"Cursor":         "desktop_agent",
 	}
 

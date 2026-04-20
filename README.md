@@ -7,7 +7,7 @@
 
 Use Preloop to **onboard existing agents** with one command, and to **deploy event-driven agentic automations** with governed tools and budgets.
 
-**Works with [OpenClaw](https://github.com/openclaw/openclaw), Claude Code, Codex CLI, Cursor, Gemini CLI, [OpenCode](https://github.com/sst/opencode), Windsurf, and any MCP-compatible agent or managed runtime.**
+**Works with [OpenClaw](https://github.com/openclaw/openclaw), Claude Code, Codex CLI, Cursor, Gemini CLI, [Hermes](https://github.com/nousresearch/hermes-agent), [OpenCode](https://github.com/sst/opencode), Windsurf, and any MCP-compatible agent or managed runtime.**
 
 Run `preloop agents discover` and Preloop will find local agent configs, import representable MCP servers and model metadata, and transparently rewrite those agents to route tool calls through the **Preloop MCP Firewall** and model traffic through the **Preloop Gateway**. No SDK changes and no agent code changes required.
 
@@ -66,7 +66,7 @@ One command discovers and enrolls existing local agents into your control plane.
 preloop agents discover
 ```
 
-Preloop inspects local configurations for **Claude Code**, **Codex CLI**, **Cursor**, **Gemini CLI**, **[OpenClaw](https://github.com/openclaw/openclaw)**, **[OpenCode](https://github.com/sst/opencode)**, and other MCP-compatible runtimes, imports representable MCP servers and model metadata into your account, mints a durable credential, backs up the existing config, and rewrites the local agent to use Preloop-managed endpoints. Legacy and current config locations are supported, JSON5 parsing included. No SDK. No agent code changes.
+Preloop inspects local configurations for **Claude Code**, **Codex CLI**, **Cursor**, **Gemini CLI**, **[Hermes](https://github.com/nousresearch/hermes-agent)**, **[OpenClaw](https://github.com/openclaw/openclaw)**, **[OpenCode](https://github.com/sst/opencode)**, and other MCP-compatible runtimes, imports representable MCP servers and model metadata into your account, mints a durable credential, backs up the existing config, and rewrites the local agent to use Preloop-managed endpoints. Legacy and current config locations are supported, JSON5/YAML parsing included. No SDK. No agent code changes.
 
 ### Access Policies & Approval Workflows
 Define fine-grained access controls for any AI tool or operation. Tools support multiple ordered access rules that evaluate in priority order. When an AI attempts a protected operation, Preloop pauses and notifies you:

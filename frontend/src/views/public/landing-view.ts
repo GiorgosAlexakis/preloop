@@ -892,6 +892,14 @@ export class LandingView extends LitElement {
                 </div>
                 <div class="agent-marquee-item">
                   <img
+                    src="/images/logos/hermes.svg"
+                    alt="Hermes"
+                    style="height: 24px;"
+                  />
+                  Hermes
+                </div>
+                <div class="agent-marquee-item">
+                  <img
                     src="/images/logos/cursor.svg"
                     alt="Cursor"
                     style="height: 24px;"
@@ -963,6 +971,14 @@ export class LandingView extends LitElement {
                     style="height: 24px;"
                   />
                   Gemini CLI
+                </div>
+                <div class="agent-marquee-item">
+                  <img
+                    src="/images/logos/hermes.svg"
+                    alt="Hermes"
+                    style="height: 24px;"
+                  />
+                  Hermes
                 </div>
                 <div class="agent-marquee-item">
                   <img

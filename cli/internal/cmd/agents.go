@@ -111,6 +111,13 @@ var agentSpecs = []agentSpec{
 		BootstrapConfigPath: ".openclaw/openclaw.json",
 		Parser:              parseOpenClawMCP,
 	},
+	{
+		Name:                hermesAgentName,
+		ConfigPaths:         hermesConfigRelativePaths,
+		DetectionPaths:      hermesDetectionPaths,
+		BootstrapConfigPath: hermesBootstrapConfigPath,
+		Parser:              parseHermesConfig,
+	},
 }
 
 // agentsCmd is the top-level agent management command.
@@ -128,7 +135,7 @@ var agentsDiscoverCmd = &cobra.Command{
 MCP server configurations without mutating local files or your Preloop account.
 
 Supported agents: Claude Code, Cursor, Windsurf, VSCode/Copilot,
-                  Gemini CLI, OpenCode, Codex CLI, OpenClaw.
+                  Gemini CLI, OpenCode, Codex CLI, OpenClaw, Hermes.
 
 Examples:
   preloop agents discover
@@ -1791,6 +1798,8 @@ func runtimeSessionSourceTypeForAgent(agentName string) string {
 		return "gemini_cli"
 	case "opencode":
 		return "opencode"
+	case "hermes":
+		return hermesSourceType
 	default:
 		return "desktop_agent"
 	}
@@ -3449,6 +3458,8 @@ func managedMCPAdapterForAgent(agent AgentConfig) managedMCPAdapter {
 	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
 	case "openclaw":
 		return openClawManagedMCPAdapter{}
+	case "hermes":
+		return hermesManagedMCPAdapter{agent: agent}
 	default:
 		return genericManagedMCPAdapter{agent: agent}
 	}

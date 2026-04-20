@@ -314,6 +314,11 @@ test:unit:preloop-endpoints-auth-comprehensive:
   variables:
     TEST_PATHS: "backend/tests/endpoints/test_auth_comprehensive.py"
 
+test:unit:preloop-endpoints-runtime-session-tokens:
+  extends: .test:unit:template
+  variables:
+    TEST_PATHS: "backend/tests/endpoints/test_runtime_session_tokens.py"
+
 test:unit:preloop-endpoints-features:
   extends: .test:unit:template
   variables:
@@ -427,6 +432,7 @@ test:coverage:
     - test:unit:preloop-endpoints-api-keys
     - test:unit:preloop-endpoints-approval-requests
     - test:unit:preloop-endpoints-auth-comprehensive
+    - test:unit:preloop-endpoints-runtime-session-tokens
     - test:unit:preloop-endpoints-features
     - test:unit:preloop-endpoints-jwt
     - test:unit:preloop-endpoints-notification-preferences
@@ -683,6 +689,14 @@ test:integration:api:mcp:
   script:
     - pytest --confcutdir=tests/integration tests/integration/test_mcp.py -v -s
 
+test:integration:api:hermes:
+  extends: .test:integration:api:template
+  before_script:
+    - pip install pytest pytest-asyncio httpx dotenv mcp
+    - cd backend
+  script:
+    - pytest --confcutdir=tests/integration tests/integration/test_hermes_onboarding.py -v -s
+
 # =============================================================================
 # CLEANUP STAGE
 # =============================================================================
@@ -695,6 +709,7 @@ test:integration:api:mcp:
     - test:integration:api:gitlab
     - test:integration:api:jira
     - test:integration:api:mcp
+    - test:integration:api:hermes
   image: dtzar/helm-kubectl:3.13.2
   when: on_success
   allow_failure: true

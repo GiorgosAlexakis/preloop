@@ -720,7 +720,6 @@ export class AgentsView extends LitElement {
   private initializeNodePositions(forceReset = false) {
     if (!this.agents) return;
     const items = [...(this.agents?.items || []), ...this.flows];
-    let didChange = false;
     let newPositions = forceReset ? {} : { ...this.nodePositions };
 
     const unpositionedAgents = items.filter((a) => !newPositions[a.id]);
@@ -730,37 +729,20 @@ export class AgentsView extends LitElement {
       return;
     }
 
-    didChange = true;
     const isFirstTime = Object.keys(newPositions).length === 0;
+    const isFullLayout = forceReset || isFirstTime;
 
-    if ((forceReset || isFirstTime) && items.length > 3) {
-      // Polygon layout around the center (0,0)
-      newPositions = {};
-
-      const viewport = this.shadowRoot?.querySelector('.canvas-viewport');
-      const bounds = viewport
-        ? viewport.getBoundingClientRect()
-        : { width: window.innerWidth, height: window.innerHeight };
-
-      // Calculate a radius that pushes items to the edges of the screen comfortably
-      const maxRadiusX = Math.max(100, bounds.width / 2 - 200);
-      const maxRadiusY = Math.max(100, bounds.height / 2 - 160);
-      const adaptiveRadius = Math.min(maxRadiusX, maxRadiusY);
-
-      const radius = Math.max(adaptiveRadius, items.length * 60);
-      const angleStep = (2 * Math.PI) / items.length;
-
-      items.forEach((agent, i) => {
-        // Start from top (-90 degrees) and distribute evenly
-        const angle = -Math.PI / 2 + i * angleStep;
-        newPositions[agent.id] = {
-          x: Math.round(Math.cos(angle) * radius),
-          y: Math.round(Math.sin(angle) * radius),
-        };
-      });
+    if (isFullLayout) {
+      // Recompute the entire layout to fit the canvas viewport.
+      newPositions = this.computeFittedLayout(items);
     } else {
-      // Legacy corner/layer-based layout for <= 3 agents,
-      // or for appending a new agent without resetting existing layout
+      // Append new agents to the existing layout without disturbing what's
+      // already placed. Pick free slots that don't collide with current
+      // positions, expanding outward in rings around the gateway.
+      const takenCoords = new Set(
+        Object.values(newPositions).map((p) => `${p.x},${p.y}`)
+      );
+
       const directions = [
         { x: -1, y: -1 }, // Top Left
         { x: 1, y: -1 }, // Top Right
@@ -768,44 +750,223 @@ export class AgentsView extends LitElement {
         { x: 1, y: 1 }, // Bottom Right
       ];
 
-      // Build a set of taken coordinate strings to avoid exact overlaps
-      const takenCoords = new Set(
-        Object.values(newPositions).map((p) => `${p.x},${p.y}`)
-      );
-
       let nextSlotIndex = 0;
-      items.forEach((agent) => {
-        if (!newPositions[agent.id]) {
-          let found = false;
-          while (!found) {
-            const layer = Math.floor(nextSlotIndex / 4);
-            const posPos = nextSlotIndex % 4;
-            const dir = directions[posPos];
+      unpositionedAgents.forEach((agent) => {
+        let placed = false;
+        while (!placed) {
+          const layer = Math.floor(nextSlotIndex / 4);
+          const dir = directions[nextSlotIndex % 4];
+          const distance = 250 + layer * 200;
+          const x = dir.x * distance;
+          const y = dir.y * distance;
+          const coord = `${x},${y}`;
 
-            // base distance 250, increase by 200 per layer
-            const distance = 250 + layer * 200;
-            const x = dir.x * distance;
-            const y = dir.y * distance;
-            const coord = `${x},${y}`;
-
-            if (!takenCoords.has(coord)) {
-              newPositions[agent.id] = { x, y };
-              takenCoords.add(coord);
-              found = true;
-            }
-            nextSlotIndex++;
+          if (!takenCoords.has(coord)) {
+            newPositions[agent.id] = { x, y };
+            takenCoords.add(coord);
+            placed = true;
           }
+          nextSlotIndex++;
         }
       });
     }
 
-    if (didChange) {
-      localStorage.setItem(
-        'preloop.agents.canvas_positions',
-        JSON.stringify(newPositions)
-      );
-      this.animateNodePositions(newPositions);
+    localStorage.setItem(
+      'preloop.agents.canvas_positions',
+      JSON.stringify(newPositions)
+    );
+    this.animateNodePositions(newPositions);
+
+    if (isFullLayout) {
+      // Make sure the freshly-laid-out nodes are actually visible: pick a
+      // scale/translate that frames every card. We do this off the main
+      // animation tick so the positions object is already settled.
+      requestAnimationFrame(() => this.fitViewportToPositions(newPositions));
     }
+  }
+
+  /**
+   * Compute node positions that pack into the available canvas viewport.
+   *
+   * The layout is an ellipse (or several concentric ellipses for large
+   * fleets) sized to the viewport's actual aspect ratio so we don't waste
+   * horizontal real-estate on tall-but-narrow screens or vice versa. Cards
+   * stay outside a small halo around the gateway and inside the viewport
+   * edges, which keeps the topology readable without forcing the
+   * fit-to-view scale to shrink the cards into illegibility.
+   */
+  private computeFittedLayout(
+    items: Array<{ id: string }>
+  ): Record<string, { x: number; y: number }> {
+    const positions: Record<string, { x: number; y: number }> = {};
+    if (items.length === 0) return positions;
+
+    const viewport = this.shadowRoot?.querySelector('.canvas-viewport');
+    const bounds = viewport
+      ? viewport.getBoundingClientRect()
+      : { width: window.innerWidth, height: window.innerHeight };
+
+    // Approximate node footprint (matches the .agent-node card sizing).
+    const cardHalfWidth = 130;
+    const cardHalfHeight = 95;
+    const gatewayHalo = 110; // keep cards clear of the gateway pulse ring
+    const edgePadding = 32;
+
+    // Largest ellipse that keeps every card inside the viewport.
+    const rxMax = Math.max(
+      gatewayHalo + 40,
+      bounds.width / 2 - cardHalfWidth - edgePadding
+    );
+    const ryMax = Math.max(
+      gatewayHalo + 40,
+      bounds.height / 2 - cardHalfHeight - edgePadding
+    );
+
+    if (items.length <= 3) {
+      // For 1-3 nodes, scatter to the corners that exist in the canvas so
+      // the layout still feels balanced even on tiny viewports.
+      const directions = [
+        { x: 1, y: -1 }, // Top right
+        { x: -1, y: 1 }, // Bottom left
+        { x: 1, y: 1 }, // Bottom right
+      ];
+      items.forEach((agent, i) => {
+        const dir = directions[i % directions.length];
+        positions[agent.id] = {
+          x: Math.round(dir.x * rxMax),
+          y: Math.round(dir.y * ryMax),
+        };
+      });
+      return positions;
+    }
+
+    // Approximate ellipse circumference (Ramanujan's formula).
+    const ellipseCircumference = (a: number, b: number) =>
+      Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+
+    // Minimum chord between neighbouring cards on the same ring.
+    const minChord = 2 * cardHalfWidth + 30;
+
+    // Build candidate rings shrinking inward, each constrained so its
+    // minor axis still clears the gateway halo.
+    const buildRings = (count: number) => {
+      const rings: Array<{ rx: number; ry: number; capacity: number }> = [];
+      for (let k = 0; k < count; k++) {
+        const shrink = 1 - k * 0.32;
+        const rx = Math.max(gatewayHalo + 40, rxMax * shrink);
+        const ry = Math.max(gatewayHalo + 40, ryMax * shrink);
+        const capacity = Math.max(
+          1,
+          Math.floor(ellipseCircumference(rx, ry) / minChord)
+        );
+        rings.push({ rx, ry, capacity });
+      }
+      return rings;
+    };
+
+    // Pick the smallest number of rings (max 4) whose combined capacity
+    // covers all items without overcrowding any single ring.
+    const maxRings = 4;
+    let ringCount = 1;
+    let rings = buildRings(ringCount);
+    while (
+      ringCount < maxRings &&
+      rings.reduce((sum, r) => sum + r.capacity, 0) < items.length
+    ) {
+      ringCount++;
+      rings = buildRings(ringCount);
+    }
+
+    // Distribute items proportionally to each ring's capacity, with the
+    // outer ring soaking up any remainder so it stays the densest.
+    const totalCapacity = rings.reduce((s, r) => s + r.capacity, 0);
+    const itemsPerRing = rings.map((r) =>
+      Math.floor((items.length * r.capacity) / totalCapacity)
+    );
+    let remaining = items.length - itemsPerRing.reduce((s, n) => s + n, 0);
+    let cursor = 0;
+    while (remaining > 0) {
+      itemsPerRing[cursor % ringCount]++;
+      cursor++;
+      remaining--;
+    }
+
+    // Place the items ring by ring. Inner rings are rotated by half a
+    // step so they sit between the outer-ring positions, which keeps
+    // the visual density even.
+    let itemIdx = 0;
+    rings.forEach((ring, ri) => {
+      const n = itemsPerRing[ri];
+      if (n === 0) return;
+      const angleStep = (2 * Math.PI) / n;
+      const angleOffset = -Math.PI / 2 + (ri * angleStep) / 2;
+      for (let j = 0; j < n; j++) {
+        const angle = angleOffset + j * angleStep;
+        const item = items[itemIdx++];
+        positions[item.id] = {
+          x: Math.round(Math.cos(angle) * ring.rx),
+          y: Math.round(Math.sin(angle) * ring.ry),
+        };
+      }
+    });
+
+    return positions;
+  }
+
+  /**
+   * Adjust the viewport's scale/translate so every node in `positions`
+   * is visible with a comfortable margin. Caps the zoom at 1× so we
+   * never grow cards past their native size on huge displays.
+   */
+  private fitViewportToPositions(
+    positions: Record<string, { x: number; y: number }>
+  ) {
+    const viewport = this.shadowRoot?.querySelector(
+      '.canvas-viewport'
+    ) as HTMLElement | null;
+    const bounds = viewport?.getBoundingClientRect();
+    if (!bounds || bounds.width === 0 || bounds.height === 0) return;
+
+    const ids = Object.keys(positions);
+    if (ids.length === 0) {
+      this.scale = 1;
+      this.translateX = bounds.width / 2;
+      this.translateY = bounds.height / 2;
+      return;
+    }
+
+    let minX = 0;
+    let maxX = 0;
+    let minY = 0;
+    let maxY = 0;
+    for (const id of ids) {
+      const pos = positions[id];
+      if (!pos) continue;
+      if (pos.x < minX) minX = pos.x;
+      if (pos.x > maxX) maxX = pos.x;
+      if (pos.y < minY) minY = pos.y;
+      if (pos.y > maxY) maxY = pos.y;
+    }
+
+    // Account for the actual rendered card footprint plus a little visual
+    // breathing room so the labels under each card don't get clipped.
+    minX -= 150;
+    maxX += 150;
+    minY -= 120;
+    maxY += 140;
+
+    const contentWidth = Math.max(1, maxX - minX);
+    const contentHeight = Math.max(1, maxY - minY);
+    const scaleX = bounds.width / contentWidth;
+    const scaleY = bounds.height / contentHeight;
+    const targetScale = Math.max(0.35, Math.min(scaleX, scaleY, 1));
+
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+
+    this.scale = targetScale;
+    this.translateX = bounds.width / 2 - contentCenterX * targetScale;
+    this.translateY = bounds.height / 2 - contentCenterY * targetScale;
   }
 
   private animatePositionFrameId: number | null = null;
@@ -906,6 +1067,8 @@ export class AgentsView extends LitElement {
         return 'Gemini CLI';
       case 'opencode':
         return 'OpenCode';
+      case 'hermes':
+        return 'Hermes';
       case 'desktop_agent':
         return 'Desktop Agent';
       case 'custom':
@@ -1411,49 +1574,13 @@ export class AgentsView extends LitElement {
       return;
     }
 
-    // Force recalculation of node positions based on the algorithm
+    // Recompute layout to fit the current canvas, then frame the result.
+    // initializeNodePositions(true) will trigger a fit pass on the next
+    // animation frame; we also fit immediately against the freshly
+    // computed positions so the user sees the framing happen in lockstep
+    // with the position animation.
     this.initializeNodePositions(true);
-
-    // Find bounding box of all nodes
-    let minX = 0,
-      maxX = 0,
-      minY = 0,
-      maxY = 0;
-    items.forEach((agent) => {
-      const pos = this.nodePositions[agent.id];
-      if (pos) {
-        minX = Math.min(minX, pos.x);
-        maxX = Math.max(maxX, pos.x);
-        minY = Math.min(minY, pos.y);
-        maxY = Math.max(maxY, pos.y);
-      }
-    });
-
-    // Add padding for node dimensions (width ~250px, height ~150px) and visual padding
-    minX -= 180;
-    maxX += 180;
-    minY -= 150;
-    maxY += 150;
-
-    const contentWidth = maxX - minX;
-    const contentHeight = maxY - minY;
-
-    // Determine scale to fit
-    const scaleX = bounds.width / contentWidth;
-    const scaleY = bounds.height / contentHeight;
-    let targetScale = Math.min(scaleX, scaleY, 1); // Cap maximum zoom at 1x
-
-    // Ensure minimum reasonable zoom
-    targetScale = Math.max(targetScale, 0.2);
-
-    this.scale = targetScale;
-
-    // Center the bounding box in the viewport
-    const contentCenterX = (minX + maxX) / 2;
-    const contentCenterY = (minY + maxY) / 2;
-
-    this.translateX = bounds.width / 2 - contentCenterX * targetScale;
-    this.translateY = bounds.height / 2 - contentCenterY * targetScale;
+    this.fitViewportToPositions(this.nodePositions);
   }
 
   firstUpdated() {
@@ -2425,6 +2552,7 @@ export class AgentsView extends LitElement {
                     { value: 'claude_code', label: 'Claude Code' },
                     { value: 'codex', label: 'Codex CLI' },
                     { value: 'gemini_cli', label: 'Gemini CLI' },
+                    { value: 'hermes', label: 'Hermes' },
                     { value: 'cursor', label: 'Cursor' },
                     { value: 'windsurf', label: 'Windsurf' },
                   ].map(

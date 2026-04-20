@@ -121,7 +121,7 @@ def test_create_runtime_session_token_rejects_unknown_source_type(client):
     assert "Unsupported session_source_type" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("source_type", ["gemini_cli", "opencode"])
+@pytest.mark.parametrize("source_type", ["gemini_cli", "opencode", "hermes"])
 def test_create_runtime_session_token_accepts_managed_cli_source_types(
     client, db_session, test_user, source_type
 ):

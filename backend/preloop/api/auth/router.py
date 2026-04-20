@@ -104,6 +104,7 @@ RUNTIME_SESSION_SOURCE_TYPES = {
     "codex",
     "gemini_cli",
     "opencode",
+    "hermes",
     "desktop_agent",
     "custom",
 }

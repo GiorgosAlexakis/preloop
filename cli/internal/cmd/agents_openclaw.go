@@ -3474,6 +3474,9 @@ func loadAgentConfigDocument(agent AgentConfig) (map[string]interface{}, error) 
 		strings.EqualFold(filepath.Ext(agent.ConfigPath), ".toml") {
 		return loadTOMLDocument(agent.ConfigPath)
 	}
+	if isHermesAgent(agent) || isYAMLConfigPath(agent.ConfigPath) {
+		return loadHermesAgentConfigDocument(agent.ConfigPath)
+	}
 	if allowsSynthesizedEmptyConfig(agent) {
 		if _, err := os.Stat(agent.ConfigPath); err != nil {
 			if os.IsNotExist(err) {
@@ -3489,7 +3492,19 @@ func writeAgentConfigDocument(agent AgentConfig, doc map[string]interface{}) err
 		strings.EqualFold(filepath.Ext(agent.ConfigPath), ".toml") {
 		return writeTOMLDocument(agent.ConfigPath, doc)
 	}
+	if isHermesAgent(agent) || isYAMLConfigPath(agent.ConfigPath) {
+		return writeHermesAgentConfigDocument(agent.ConfigPath, doc)
+	}
 	return writeJSONDocument(agent.ConfigPath, doc)
+}
+
+// isYAMLConfigPath reports whether the given config path uses a YAML extension.
+// Hermes is currently the only YAML-based agent we onboard, but using the
+// extension as a fallback keeps the dispatch table robust if a Hermes
+// installation creates the alternate `.yml` filename.
+func isYAMLConfigPath(path string) bool {
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(path)))
+	return ext == ".yaml" || ext == ".yml"
 }
 
 const preloopManagedLauncherMarker = "# preloop-managed-wrapper"
@@ -3802,6 +3817,8 @@ func loadTOMLDocument(path string) (map[string]interface{}, error) {
 func allowsSynthesizedEmptyConfig(agent AgentConfig) bool {
 	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
 	case "opencode":
+		return true
+	case "hermes":
 		return true
 	default:
 		return false

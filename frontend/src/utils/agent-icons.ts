@@ -25,6 +25,8 @@ export function renderAgentIcon(
       return renderIcon('', '/images/logos/gemini-cli.svg');
     case 'opencode':
       return renderIcon('', '/images/logos/opencode.svg');
+    case 'hermes':
+      return renderIcon('', '/images/logos/hermes.svg');
     case 'desktop_agent':
       return renderIcon('pc-display');
     case 'custom':

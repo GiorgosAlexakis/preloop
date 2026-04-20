@@ -557,7 +557,7 @@ export function buildSoftwareApplicationSchema(
       'Runtime session observability',
       'Audit trail for security and compliance',
       "Zero-touch onboarding of existing agents via 'preloop agents discover'",
-      'Works with Claude Code, Codex CLI, Cursor, Gemini CLI, OpenClaw, OpenCode, and any MCP-compatible agent',
+      'Works with Claude Code, Codex CLI, Cursor, Gemini CLI, Hermes, OpenClaw, OpenCode, and any MCP-compatible agent',
       'Self-hostable (Docker, Kubernetes)',
       'Apache 2.0 open source license',
     ],
