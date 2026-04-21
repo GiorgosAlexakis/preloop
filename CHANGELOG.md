@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0-rc.3] - 2026-04-21
+
 ### Changed
 
 - **CLI Live Validation Now Runs By Default**: `preloop agents onboard` (and the discover-driven onboarding prompt) now runs an end-to-end live validation through the Preloop model gateway whenever the agent kind supports it (currently OpenClaw and Codex CLI). Previously `--live-validate` was opt-in *and* the interactive "Run live validation now?" prompt was suppressed for `--yes` / `--force` / `--all` / `PRELOOP_CONFIRM` and the entire discover-driven path, so any scripted re-onboard left supported agents stuck on **"Live check not run"** in the UI. The flag now defaults to `true` and a new `--skip-live-validate` flag (also exposed on `agents discover`) is the supported opt-out for automation that should never make a real model gateway request after onboarding. Live validation no longer depends on `SkipConfirmation` / `AutoApprove`, so `--all` batch onboards and discover-driven onboards now validate by default.
