@@ -323,12 +323,16 @@ class OpenAIGatewayService:
                 endpoint_kind="chat_completions",
             )
             if self._is_openai_codex_model(model):
-                response_dict = self._create_openai_codex_response(
+                raw_codex_response = self._create_openai_codex_response(
                     model,
                     self._build_openai_codex_payload_from_chat_completion(
                         payload=payload,
                         messages=messages,
+                        ai_model=model,
                     ),
+                )
+                response_dict = self._codex_response_to_chat_completion_dict(
+                    raw_codex_response
                 )
             else:
                 response = self._call_litellm(
@@ -961,6 +965,14 @@ class OpenAIGatewayService:
                 request_payload=payload,
                 endpoint_kind="chat_completions_stream",
             )
+            if self._is_openai_codex_model(model):
+                return self._stream_openai_codex_chat_completion(
+                    ai_model=model,
+                    payload=payload,
+                    messages=messages,
+                    started_at=started_at,
+                    budget_result=budget_result,
+                )
             upstream_stream = self._call_litellm(
                 model,
                 messages=messages,
@@ -1467,50 +1479,338 @@ class OpenAIGatewayService:
             upstream_payload["stream"] = True
         return upstream_payload
 
+    # Default ``instructions`` used when a chat-completions request targets a
+    # Codex OAuth model but provides no system message. Codex requires the
+    # ``instructions`` field to be a non-empty string, so we always supply one.
+    _DEFAULT_CODEX_INSTRUCTIONS = (
+        "You are a helpful assistant operating through the Preloop model "
+        "gateway. Follow the user's instructions carefully and use the "
+        "provided tools when appropriate."
+    )
+
     def _build_openai_codex_payload_from_chat_completion(
         self,
         *,
         payload: Dict[str, Any],
         messages: List[Dict[str, Any]],
+        ai_model: Optional[AIModel] = None,
     ) -> Dict[str, Any]:
-        upstream_payload: Dict[str, Any] = {
-            "model": payload.get("model"),
-            "input": [
+        """Translate a chat-completions payload into a Codex Responses-API one.
+
+        The OpenAI Codex backend exposes a Responses-API style endpoint, which
+        differs from chat-completions in three important ways:
+
+        1. System prompts are passed via the top-level ``instructions`` field,
+           not as a ``role: system`` message inside ``input``. The endpoint
+           rejects requests without ``instructions`` (HTTP 400 "Instructions
+           are required").
+        2. Tool calls produced by the assistant must be encoded as
+           ``function_call`` items, and tool results as ``function_call_output``
+           items, rather than as ``role: assistant``/``role: tool`` messages.
+        3. Assistant text must use the ``output_text`` content type while user
+           text uses ``input_text``.
+
+        This helper performs the lossless translation so chat-completions
+        clients (e.g. Hermes via ``provider: custom``) can transparently target
+        a Codex OAuth model, including across multi-turn tool conversations.
+        """
+
+        instructions_parts: List[str] = []
+        input_items: List[Dict[str, Any]] = []
+
+        for message in messages:
+            role = message.get("role")
+            text = self._content_to_text(message.get("content", ""))
+
+            if role == "system":
+                if text:
+                    instructions_parts.append(text)
+                continue
+
+            if role == "tool":
+                call_id = message.get("tool_call_id")
+                if not call_id:
+                    # Without a call_id we cannot link the result back to a
+                    # function_call, so drop it rather than send an item
+                    # Codex would reject.
+                    continue
+                input_items.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": str(call_id),
+                        "output": text,
+                    }
+                )
+                continue
+
+            if role == "assistant":
+                tool_calls = message.get("tool_calls") or []
+                if text:
+                    input_items.append(
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [
+                                {"type": "output_text", "text": text},
+                            ],
+                        }
+                    )
+                for tool_call in tool_calls:
+                    if not isinstance(tool_call, dict):
+                        continue
+                    function = tool_call.get("function") or {}
+                    call_id = tool_call.get("id") or function.get("id")
+                    if not call_id:
+                        continue
+                    arguments = function.get("arguments", "")
+                    if not isinstance(arguments, str):
+                        try:
+                            arguments = json.dumps(arguments)
+                        except (TypeError, ValueError):
+                            arguments = str(arguments)
+                    input_items.append(
+                        {
+                            "type": "function_call",
+                            "call_id": str(call_id),
+                            "name": function.get("name", ""),
+                            "arguments": arguments,
+                        }
+                    )
+                continue
+
+            # user / developer / function / unknown roles → input message
+            input_items.append(
                 {
                     "type": "message",
-                    "role": message.get("role"),
+                    "role": role or "user",
                     "content": [
-                        {
-                            "type": "input_text",
-                            "text": self._content_to_text(message.get("content", "")),
-                        }
+                        {"type": "input_text", "text": text},
                     ],
                 }
-                for message in messages
-            ],
+            )
+
+        # ``instructions`` is required by the Codex Responses endpoint. Prefer
+        # any explicit value passed through, then any synthesised system
+        # messages, and finally fall back to a generic default.
+        explicit_instructions = payload.get("instructions")
+        if isinstance(explicit_instructions, str) and explicit_instructions.strip():
+            instructions = explicit_instructions
+        elif instructions_parts:
+            instructions = "\n\n".join(instructions_parts)
+        else:
+            instructions = self._DEFAULT_CODEX_INSTRUCTIONS
+
+        upstream_payload: Dict[str, Any] = {
+            # The Codex Responses backend identifies models by the upstream
+            # provider's identifier (e.g. ``gpt-5-codex``), not the gateway
+            # alias the chat-completions client passed in.
+            "model": (
+                ai_model.model_identifier
+                if ai_model is not None
+                else payload.get("model")
+            ),
+            "input": input_items,
+            "instructions": instructions,
+            # Codex rejects requests without ``store: false`` (HTTP 400 "Store
+            # must be set to false"). The native codex-cli always sends this
+            # flag; we must replicate it for chat-completion clients too.
+            "store": False,
         }
         for key in (
             "temperature",
             "top_p",
             "max_output_tokens",
             "max_completion_tokens",
-            "tools",
-            "tool_choice",
             "parallel_tool_calls",
-            "instructions",
         ):
             if payload.get(key) is not None:
                 upstream_payload[key] = payload[key]
+
+        # Tools and tool_choice need shape translation: chat-completions nests
+        # the function spec under a ``function`` key, while the Codex Responses
+        # API expects the function fields (``name``, ``description``,
+        # ``parameters``, ``strict``) to be flattened onto the tool entry
+        # itself. Sending the chat-completions shape unchanged triggers
+        # ``HTTP 400: Missing required parameter: 'tools[0].name'``.
+        translated_tools = self._translate_chat_tools_to_codex(payload.get("tools"))
+        if translated_tools is not None:
+            upstream_payload["tools"] = translated_tools
+        translated_tool_choice = self._translate_chat_tool_choice_to_codex(
+            payload.get("tool_choice")
+        )
+        if translated_tool_choice is not None:
+            upstream_payload["tool_choice"] = translated_tool_choice
+
         return upstream_payload
+
+    @staticmethod
+    def _translate_chat_tools_to_codex(
+        tools: Any,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Convert chat-completions ``tools`` into Codex Responses-API form.
+
+        Chat-completions tools look like::
+
+            {"type": "function",
+             "function": {"name": ..., "description": ..., "parameters": ...}}
+
+        Codex (and the OpenAI Responses API in general) expects the function
+        spec to be flattened onto the tool entry itself::
+
+            {"type": "function", "name": ..., "description": ...,
+             "parameters": ..., "strict": ...}
+
+        Non-function tools (already in Responses-API form, or any other
+        ``type``) are passed through verbatim so we don't break any
+        future-Codex tool kind we don't yet know about.
+        """
+        if tools is None:
+            return None
+        if not isinstance(tools, list):
+            return tools  # type: ignore[return-value]
+
+        translated: List[Dict[str, Any]] = []
+        for tool in tools:
+            if not isinstance(tool, dict):
+                translated.append(tool)
+                continue
+            function = tool.get("function")
+            if tool.get("type") == "function" and isinstance(function, dict):
+                flattened: Dict[str, Any] = {"type": "function"}
+                if "name" in function:
+                    flattened["name"] = function["name"]
+                if "description" in function:
+                    flattened["description"] = function["description"]
+                if "parameters" in function:
+                    flattened["parameters"] = function["parameters"]
+                if "strict" in function:
+                    flattened["strict"] = function["strict"]
+                # Preserve any additional top-level fields the caller set
+                # directly on the tool entry (e.g. ``strict`` at the top
+                # level), but never let ``function`` leak through.
+                for key, value in tool.items():
+                    if key in {"function", "type"}:
+                        continue
+                    flattened.setdefault(key, value)
+                translated.append(flattened)
+            else:
+                translated.append(tool)
+        return translated
+
+    @staticmethod
+    def _translate_chat_tool_choice_to_codex(tool_choice: Any) -> Any:
+        """Convert chat-completions ``tool_choice`` into Codex/Responses form.
+
+        Chat-completions encodes a forced function call as
+        ``{"type": "function", "function": {"name": "foo"}}``. The Codex
+        Responses API expects ``{"type": "function", "name": "foo"}``. Plain
+        string values (``"auto"``, ``"none"``, ``"required"``) and any unknown
+        shapes are returned untouched.
+        """
+        if tool_choice is None:
+            return None
+        if not isinstance(tool_choice, dict):
+            return tool_choice
+        function = tool_choice.get("function")
+        if tool_choice.get("type") == "function" and isinstance(function, dict):
+            flattened: Dict[str, Any] = {"type": "function"}
+            if "name" in function:
+                flattened["name"] = function["name"]
+            return flattened
+        return tool_choice
+
+    def _codex_response_to_chat_completion_dict(
+        self, response_dict: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Convert a Codex/Responses-API response into chat-completion shape.
+
+        The OpenAI Codex backend returns Responses-API style payloads regardless
+        of the gateway endpoint we surface to clients. When a chat-completions
+        client (e.g. Hermes via ``provider: custom``) targets a Codex OAuth
+        model, we still need to emit an OpenAI chat-completions response. This
+        helper performs the lossless transcoding so downstream extractors that
+        expect ``choices[0].message`` continue to work.
+        """
+
+        assistant_text_parts: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        output_items = response_dict.get("output") or []
+        if isinstance(output_items, list):
+            for item in output_items:
+                if not isinstance(item, dict):
+                    continue
+                item_type = item.get("type")
+                if item_type == "message" and item.get("role") == "assistant":
+                    for part in item.get("content") or []:
+                        if not isinstance(part, dict):
+                            continue
+                        if part.get("type") in {"output_text", "text"}:
+                            assistant_text_parts.append(str(part.get("text", "")))
+                elif item_type == "function_call":
+                    call_id = (
+                        item.get("call_id")
+                        or item.get("id")
+                        or f"call_{len(tool_calls)}"
+                    )
+                    tool_calls.append(
+                        {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": item.get("name", ""),
+                                "arguments": item.get("arguments", ""),
+                            },
+                        }
+                    )
+
+        assistant_text = "".join(assistant_text_parts)
+        if not assistant_text:
+            fallback = response_dict.get("output_text")
+            if fallback:
+                assistant_text = str(fallback).strip()
+
+        message: Dict[str, Any] = {"role": "assistant", "content": assistant_text}
+        if tool_calls:
+            message["tool_calls"] = tool_calls
+
+        finish_reason = "tool_calls" if tool_calls and not assistant_text else "stop"
+
+        return {
+            "id": response_dict.get("id", f"chatcmpl_{int(time.time())}"),
+            "object": "chat.completion",
+            "created": response_dict.get(
+                "created", response_dict.get("created_at", int(time.time()))
+            ),
+            "choices": [
+                {
+                    "index": 0,
+                    "message": message,
+                    "finish_reason": finish_reason,
+                }
+            ],
+            "usage": response_dict.get("usage", {}),
+        }
 
     def _create_openai_codex_response(
         self, ai_model: AIModel, payload: Dict[str, Any]
     ) -> Dict[str, Any]:
+        """Call the Codex Responses backend and return the final response dict.
+
+        The Codex Responses backend now rejects non-streaming requests with
+        ``HTTP 400: Stream must be set to true``. We therefore always send
+        ``stream: true`` and consume the SSE stream until the terminal
+        ``response.completed`` event, whose ``response`` field contains the
+        fully assembled response object. Callers continue to receive a single
+        Responses-API style ``dict`` so the surrounding code is unchanged.
+        """
         credentials = self._resolve_openai_codex_credentials(ai_model)
-        upstream_payload = self._build_openai_codex_payload(ai_model, payload)
+        upstream_payload = self._build_openai_codex_payload(
+            ai_model, payload, stream=True
+        )
         headers = {
             "Authorization": f"Bearer {credentials.value}",
             "Content-Type": "application/json",
+            "Accept": "text/event-stream",
             "OpenAI-Beta": "responses=experimental",
             "chatgpt-account-id": str(credentials.payload.get("account_id")),
             "originator": "preloop",
@@ -1524,7 +1824,7 @@ class OpenAIGatewayService:
         )
         try:
             with urllib_request.urlopen(req, timeout=600) as response:
-                return json.loads(response.read().decode("utf-8"))
+                return self._aggregate_codex_sse_stream(response)
         except urllib_error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "ignore")
             raise ModelGatewayAPIError(
@@ -1544,6 +1844,230 @@ class OpenAIGatewayService:
                 status_code=502,
                 message="OpenAI Codex upstream returned invalid JSON",
             ) from exc
+
+    def _aggregate_codex_sse_stream(self, response: Any) -> Dict[str, Any]:
+        """Aggregate a Codex Responses SSE stream into a final response dict.
+
+        Codex (``chatgpt.com/backend-api/codex/responses``) emits typed SSE
+        events. We deliberately avoid trusting the terminal
+        ``response.completed`` event as the source of truth: that event is
+        known to embed the full ~30 KB system prompt and is therefore both
+        slow and prone to truncation across SSE buffers (see vercel/ai#14473
+        and the OpenAI Codex CLI's own SSE strategy of *skipping* truncated
+        ``response.*`` status events). Instead we incrementally build the
+        output from the small, reliable streaming events:
+
+        * ``response.output_item.added`` / ``response.output_item.done``
+          announce ``message`` and ``function_call`` items.
+        * ``response.output_text.delta`` / ``response.output_text.done``
+          carry assistant text per item.
+        * ``response.function_call_arguments.delta`` /
+          ``response.function_call_arguments.done`` carry the arguments JSON
+          per ``function_call`` item.
+        * ``response.failed`` / ``response.error`` carry upstream errors.
+
+        This matches the official Codex CLI behaviour and means tool-only
+        turns (which produce zero text deltas, only function-call argument
+        deltas) still surface their tool calls — the original failure mode
+        Hermes hit when asking ``pay $6 to Joe``.
+        """
+        items_by_id: Dict[str, Dict[str, Any]] = {}
+        item_order: List[str] = []
+        text_by_item: Dict[str, List[str]] = {}
+        args_by_item: Dict[str, List[str]] = {}
+        last_response_id: Optional[str] = None
+        usage: Optional[Dict[str, Any]] = None
+        completed_response: Optional[Dict[str, Any]] = None
+        upstream_error: Optional[Dict[str, Any]] = None
+
+        def _ensure_item(item_id: Optional[str], default: Dict[str, Any]) -> str:
+            key = item_id or f"_synthetic_{len(item_order)}"
+            if key not in items_by_id:
+                items_by_id[key] = default
+                item_order.append(key)
+            return key
+
+        for event in self._iter_sse_events(response):
+            event_type = event.get("type")
+
+            if event_type in {"response.created", "response.in_progress"}:
+                resp = event.get("response")
+                if isinstance(resp, dict):
+                    last_response_id = resp.get("id") or last_response_id
+                    maybe_usage = resp.get("usage")
+                    if isinstance(maybe_usage, dict):
+                        usage = maybe_usage
+                continue
+
+            if event_type in {
+                "response.output_item.added",
+                "response.output_item.done",
+            }:
+                item = event.get("item")
+                if not isinstance(item, dict):
+                    continue
+                item_id = item.get("id")
+                key = _ensure_item(item_id, item.copy())
+                # On ``done`` the item carries the complete state (e.g. final
+                # arguments string for a ``function_call``); merge it in.
+                if event_type == "response.output_item.done":
+                    items_by_id[key] = {**items_by_id[key], **item}
+                continue
+
+            if event_type == "response.output_text.delta":
+                item_id = event.get("item_id")
+                if not item_id:
+                    continue
+                delta = event.get("delta")
+                if isinstance(delta, str) and delta:
+                    text_by_item.setdefault(item_id, []).append(delta)
+                continue
+
+            if event_type == "response.output_text.done":
+                item_id = event.get("item_id")
+                final_text = event.get("text")
+                if item_id and isinstance(final_text, str):
+                    # Replace any deltas with the authoritative final text.
+                    text_by_item[item_id] = [final_text]
+                continue
+
+            if event_type == "response.function_call_arguments.delta":
+                item_id = event.get("item_id")
+                if not item_id:
+                    continue
+                delta = event.get("delta")
+                if isinstance(delta, str) and delta:
+                    args_by_item.setdefault(item_id, []).append(delta)
+                continue
+
+            if event_type == "response.function_call_arguments.done":
+                item_id = event.get("item_id")
+                final_args = event.get("arguments")
+                if item_id and isinstance(final_args, str):
+                    args_by_item[item_id] = [final_args]
+                continue
+
+            if event_type == "response.completed":
+                resp = event.get("response")
+                if isinstance(resp, dict):
+                    completed_response = resp
+                    last_response_id = resp.get("id") or last_response_id
+                    maybe_usage = resp.get("usage")
+                    if isinstance(maybe_usage, dict):
+                        usage = maybe_usage
+                continue
+
+            if event_type in {"response.failed", "response.error", "error"}:
+                resp = event.get("response") or event
+                if isinstance(resp, dict):
+                    upstream_error = resp.get("error") or resp
+                continue
+
+            # Unknown event type — ignore to stay forward-compatible with
+            # future Codex event kinds (reasoning summaries, web search, …).
+
+        if upstream_error is not None:
+            message = "Codex upstream returned an error"
+            if isinstance(upstream_error, dict):
+                message = (
+                    upstream_error.get("message")
+                    or upstream_error.get("detail")
+                    or message
+                )
+            raise ModelGatewayAPIError(
+                provider="openai",
+                status_code=502,
+                message=str(message),
+            )
+
+        # Materialise final ``output`` items from the per-item buffers.
+        output: List[Dict[str, Any]] = []
+        aggregate_text_parts: List[str] = []
+        for key in item_order:
+            item = dict(items_by_id[key])
+            item_type = item.get("type")
+            if item_type == "message":
+                text = "".join(text_by_item.get(item.get("id") or key, []))
+                if text:
+                    item["content"] = [{"type": "output_text", "text": text}]
+                    aggregate_text_parts.append(text)
+                else:
+                    item.setdefault("content", item.get("content") or [])
+                output.append(item)
+            elif item_type == "function_call":
+                args = "".join(args_by_item.get(item.get("id") or key, []))
+                if args or not item.get("arguments"):
+                    item["arguments"] = args
+                output.append(item)
+            else:
+                output.append(item)
+
+        # If we somehow never observed any items but ``response.completed``
+        # gave us a populated payload, prefer that as a last-resort fallback.
+        if not output and completed_response is not None:
+            return completed_response
+
+        aggregate_text = "".join(aggregate_text_parts)
+        return {
+            "id": last_response_id
+            or (completed_response or {}).get("id")
+            or f"resp_{int(time.time())}",
+            "output": output,
+            "output_text": aggregate_text,
+            "usage": usage or (completed_response or {}).get("usage") or {},
+        }
+
+    @staticmethod
+    def _iter_sse_events(response: Any) -> Iterator[Dict[str, Any]]:
+        """Yield decoded JSON event payloads from a Codex SSE stream.
+
+        Codex emits standard ``text/event-stream`` records: blank-line
+        delimited blocks of ``event:`` and ``data:`` fields. For our purposes
+        we only care about the JSON ``data:`` payload (the ``event:`` line
+        duplicates ``data.type`` so we read the type from the JSON).
+
+        Per the official Codex CLI strategy, JSON parse failures on individual
+        events are *skipped* rather than fatal — large ``response.completed``
+        events occasionally arrive truncated and we must keep consuming the
+        smaller delta events that follow.
+        """
+        data_lines: List[str] = []
+        for raw_line in response:
+            if isinstance(raw_line, bytes):
+                line = raw_line.decode("utf-8", "ignore")
+            else:
+                line = str(raw_line)
+            line = line.rstrip("\r\n")
+            if not line:
+                if data_lines:
+                    payload_text = "\n".join(data_lines).strip()
+                    data_lines = []
+                    if payload_text and payload_text != "[DONE]":
+                        try:
+                            yield json.loads(payload_text)
+                        except json.JSONDecodeError:
+                            logger.debug(
+                                "Skipping unparseable Codex SSE event (%d bytes)",
+                                len(payload_text),
+                            )
+                            continue
+                continue
+            if line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+            # Ignore ``event:``, ``id:``, comments, etc. — we read the type
+            # from the JSON payload itself.
+
+        if data_lines:
+            payload_text = "\n".join(data_lines).strip()
+            if payload_text and payload_text != "[DONE]":
+                try:
+                    yield json.loads(payload_text)
+                except json.JSONDecodeError:
+                    logger.debug(
+                        "Skipping unparseable trailing Codex SSE event (%d bytes)",
+                        len(payload_text),
+                    )
+                    return
 
     def _stream_openai_codex_response(
         self,
@@ -1682,6 +2206,210 @@ class OpenAIGatewayService:
                     error_detail=str(exc),
                     request_payload=payload,
                 )
+                raise
+
+        return event_stream()
+
+    def _stream_openai_codex_chat_completion(
+        self,
+        *,
+        ai_model: AIModel,
+        payload: Dict[str, Any],
+        messages: List[Dict[str, Any]],
+        started_at: float,
+        budget_result: Optional[BudgetCheckResult],
+    ) -> Iterator[str]:
+        """Fake-stream a Codex OAuth response as chat-completion SSE chunks.
+
+        The OpenAI Codex backend only exposes a synchronous Responses-style
+        endpoint, so we materialize the full reply once and emit it as a small
+        sequence of OpenAI-compatible ``chat.completion.chunk`` events. This
+        keeps clients that opt into ``stream=true`` against ``/openai/v1/chat/
+        completions`` (e.g. Hermes' ``provider: custom``) functional even when
+        the bound model uses ChatGPT OAuth credentials.
+        """
+
+        requested_model = (
+            payload.get("model")
+            or resolve_ai_model_runtime(ai_model).model_gateway_model_alias
+        )
+
+        def event_stream() -> Iterator[str]:
+            recorded = False
+            try:
+                upstream_payload = (
+                    self._build_openai_codex_payload_from_chat_completion(
+                        payload=payload,
+                        messages=messages,
+                        ai_model=ai_model,
+                    )
+                )
+                raw_codex_response = self._create_openai_codex_response(
+                    ai_model, upstream_payload
+                )
+                response_dict = self._codex_response_to_chat_completion_dict(
+                    raw_codex_response
+                )
+                response_id = response_dict.get("id", f"chatcmpl_{int(time.time())}")
+                created_at = int(response_dict.get("created", time.time()))
+                message = (response_dict.get("choices") or [{}])[0].get("message") or {}
+                assistant_text = self._content_to_text(message.get("content", ""))
+                tool_calls = message.get("tool_calls") or []
+                finish_reason = self._extract_finish_reason(response_dict) or "stop"
+                usage = self._normalize_usage(
+                    response_dict.get("usage"),
+                    prompt_key="prompt_tokens",
+                    completion_key="completion_tokens",
+                    output_names=("completion_tokens", "output_tokens"),
+                )
+
+                yield self._sse_event(
+                    {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_at,
+                        "model": requested_model,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"role": "assistant", "content": ""},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                )
+
+                if assistant_text:
+                    yield self._sse_event(
+                        {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_at,
+                            "model": requested_model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": assistant_text},
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                    )
+
+                if tool_calls:
+                    tool_call_deltas = []
+                    for index, tool_call in enumerate(tool_calls):
+                        function_payload = tool_call.get("function") or {}
+                        tool_call_deltas.append(
+                            {
+                                "index": index,
+                                "id": tool_call.get("id"),
+                                "type": "function",
+                                "function": {
+                                    "name": function_payload.get("name", ""),
+                                    "arguments": function_payload.get("arguments", ""),
+                                },
+                            }
+                        )
+                    yield self._sse_event(
+                        {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_at,
+                            "model": requested_model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"tool_calls": tool_call_deltas},
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                    )
+
+                yield self._sse_event(
+                    {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_at,
+                        "model": requested_model,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {},
+                                "finish_reason": finish_reason,
+                            }
+                        ],
+                        "usage": usage,
+                    }
+                )
+
+                response_payload = {
+                    "id": response_id,
+                    "object": "chat.completion",
+                    "created": created_at,
+                    "model": requested_model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": assistant_text,
+                                **({"tool_calls": tool_calls} if tool_calls else {}),
+                            },
+                            "finish_reason": finish_reason,
+                        }
+                    ],
+                    "usage": usage,
+                }
+                self._record_gateway_request(
+                    endpoint="/openai/v1/chat/completions",
+                    method="POST",
+                    status_code=200,
+                    duration=time.perf_counter() - started_at,
+                    ai_model=ai_model,
+                    requested_model=payload.get("model"),
+                    response_payload=response_payload,
+                    upstream_response=raw_codex_response,
+                    endpoint_kind="chat_completions_stream",
+                    budget_result=budget_result,
+                    request_payload=payload,
+                )
+                recorded = True
+                yield self._sse_done()
+            except ModelGatewayAPIError as exc:
+                if not recorded:
+                    self._record_gateway_request(
+                        endpoint="/openai/v1/chat/completions",
+                        method="POST",
+                        status_code=exc.status_code,
+                        duration=time.perf_counter() - started_at,
+                        ai_model=ai_model,
+                        requested_model=payload.get("model"),
+                        response_payload=None,
+                        upstream_response=None,
+                        endpoint_kind="chat_completions_stream",
+                        budget_result=budget_result,
+                        error_detail=exc.message,
+                        request_payload=payload,
+                    )
+                raise
+            except Exception as exc:
+                if not recorded:
+                    self._record_gateway_request(
+                        endpoint="/openai/v1/chat/completions",
+                        method="POST",
+                        status_code=502,
+                        duration=time.perf_counter() - started_at,
+                        ai_model=ai_model,
+                        requested_model=payload.get("model"),
+                        response_payload=None,
+                        upstream_response=None,
+                        endpoint_kind="chat_completions_stream",
+                        budget_result=budget_result,
+                        error_detail=str(exc),
+                        request_payload=payload,
+                    )
                 raise
 
         return event_stream()

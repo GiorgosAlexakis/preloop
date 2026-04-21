@@ -364,6 +364,51 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.info("Skipping instance registration (TESTING mode)")
 
+    # Repair legacy default approval workflows (skip in testing mode).
+    # Older builds created the per-account default workflow with
+    # ``approval_type="manual"`` and could leave it without any approver.
+    # Both make the workflow unusable: the dialog renders the type as blank,
+    # and approval requests routed through it have no one able to act on
+    # them. The repair pass is idempotent and safe to run on every boot.
+    if os.getenv("TESTING") != "true":
+        try:
+            from preloop.models.db.session import get_session_factory
+            from preloop.models.crud import crud_approval_workflow
+            from preloop.services.approval_workflow_service import (
+                repair_default_approval_workflow_for_account,
+            )
+
+            session_factory = get_session_factory()
+            scan_db = session_factory()
+            try:
+                broken = crud_approval_workflow.find_legacy_default_workflows(scan_db)
+            finally:
+                scan_db.close()
+
+            repaired = 0
+            for account_id in broken:
+                try:
+                    if repair_default_approval_workflow_for_account(account_id):
+                        repaired += 1
+                except Exception as inner_exc:  # pragma: no cover - defensive
+                    logger.warning(
+                        f"Default workflow repair failed for account "
+                        f"{account_id}: {inner_exc}"
+                    )
+
+            if broken:
+                logger.info(
+                    f"Default approval workflow repair pass complete: "
+                    f"scanned={len(broken)}, repaired={repaired}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Default approval workflow repair pass failed: {e}",
+                exc_info=True,
+            )
+    else:
+        logger.info("Skipping approval workflow repair pass (TESTING mode)")
+
     yield
 
     # Shutdown logic

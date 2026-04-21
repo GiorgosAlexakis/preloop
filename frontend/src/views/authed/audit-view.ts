@@ -10,6 +10,7 @@ import { html, css, unsafeCSS, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { AuthedElement, fetchWithAuth } from '../../api';
 import { parseUTCDate } from '../../utils/date';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
@@ -119,12 +120,73 @@ export class AuditView extends AuthedElement {
   @state() private _users: User[] = [];
   private _userMap = new Map<string, User>();
 
+  // Realtime subscription handle + debounced refresh timer.
+  private _unsubscribeRealtime: (() => void) | null = null;
+  private _refreshTimer: number | null = null;
+  // Live indicator pulse — flips briefly when a websocket event arrives so
+  // the user sees the page is wired to the realtime bus.
+  @state() private _livePulse = false;
+  private _livePulseTimer: number | null = null;
+
   // ── Lifecycle ──────────────────────────────────────────────────────
 
   connectedCallback() {
     super.connectedCallback();
     this._loadUsers();
     this._loadTimeline();
+    this._connectRealtime();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._unsubscribeRealtime) {
+      this._unsubscribeRealtime();
+      this._unsubscribeRealtime = null;
+    }
+    if (this._refreshTimer !== null) {
+      window.clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+    if (this._livePulseTimer !== null) {
+      window.clearTimeout(this._livePulseTimer);
+      this._livePulseTimer = null;
+    }
+  }
+
+  private _connectRealtime() {
+    const onAuditEvent = () => this._scheduleRealtimeRefresh();
+    this._unsubscribeRealtime = unifiedWebSocketManager.subscribe(
+      'audit',
+      onAuditEvent
+    );
+    void unifiedWebSocketManager.connect();
+  }
+
+  private _scheduleRealtimeRefresh() {
+    // Pulse the live indicator immediately so the user sees feedback even
+    // before the debounced refetch actually runs.
+    this._livePulse = true;
+    if (this._livePulseTimer !== null) {
+      window.clearTimeout(this._livePulseTimer);
+    }
+    this._livePulseTimer = window.setTimeout(() => {
+      this._livePulse = false;
+      this._livePulseTimer = null;
+    }, 1500);
+
+    if (this._refreshTimer !== null) {
+      window.clearTimeout(this._refreshTimer);
+    }
+    // Debounce so a burst of websocket events (notification fan-out across
+    // channels, then approval, then execution) results in a single refetch.
+    this._refreshTimer = window.setTimeout(() => {
+      this._refreshTimer = null;
+      // Only auto-refresh page 0 — paging back through history shouldn't
+      // shift under the user's feet when new events arrive.
+      if (this._page === 0) {
+        void this._loadTimeline();
+      }
+    }, 400);
   }
 
   // ── Data loading ───────────────────────────────────────────────────
@@ -344,6 +406,15 @@ export class AuditView extends AuthedElement {
       'failure_reason',
       'resource_type',
       'resource_id',
+      // Approval-notification fan-out
+      'channel',
+      'recipient_count',
+      'sent_count',
+      'failed_count',
+      'skipped_count',
+      // Post-approval execution outcome
+      'duration_ms',
+      'error',
     ];
     const renderedKeys = new Set<string>();
     const preferredItems = preferredKeys
@@ -367,10 +438,38 @@ export class AuditView extends AuthedElement {
         this._renderDetailItem(this._prettyDetailLabel(key), value)
       );
 
+    // Render recipient list as a small chip cluster when present.
+    const recipientChips =
+      Array.isArray(details.recipient_user_ids) &&
+      details.recipient_user_ids.length > 0
+        ? html`
+            <div class="detail-block">
+              <span class="detail-label">Recipients</span>
+              <div class="recipient-chips">
+                ${details.recipient_user_ids
+                  .slice(0, 12)
+                  .map(
+                    (uid: string) => html`
+                      <sl-tag size="small" variant="neutral"
+                        >${this._getUserDisplay(uid)}</sl-tag
+                      >
+                    `
+                  )}
+                ${details.recipient_user_ids.length > 12
+                  ? html`<sl-tag size="small" variant="neutral"
+                      >+${details.recipient_user_ids.length - 12} more</sl-tag
+                    >`
+                  : nothing}
+              </div>
+            </div>
+          `
+        : nothing;
+
     return html`
       <div class="event-details">
-        ${preferredItems} ${remainingItems}
+        ${preferredItems} ${remainingItems} ${recipientChips}
         ${this._renderJsonDetail('Arguments', details.tool_args)}
+        ${this._renderJsonDetail('Result preview', details.result_preview)}
         ${this._renderJsonDetail('Budget', details.budget)}
         ${this._renderJsonDetail('New Value', details.new_value)}
         ${this._renderJsonDetail('Old Value', details.old_value)}
@@ -409,6 +508,14 @@ export class AuditView extends AuthedElement {
         return { variant: 'success', label: 'Success' };
       case 'denied':
         return { variant: 'danger', label: 'Denied' };
+      case 'sent':
+        return { variant: 'success', label: 'Sent' };
+      case 'partial':
+        return { variant: 'warning', label: 'Partial' };
+      case 'no_devices':
+        return { variant: 'neutral', label: 'No devices' };
+      case 'skipped':
+        return { variant: 'neutral', label: 'Skipped' };
       default:
         return { variant: 'neutral', label: outcome };
     }
@@ -439,6 +546,8 @@ export class AuditView extends AuthedElement {
     if (action === 'tool_call') return 'terminal';
     if (action === 'model_gateway_request') return 'cpu';
     if (action.startsWith('policy_')) return 'shield-check';
+    if (action === 'approval_notification_sent') return 'send';
+    if (action === 'approval_tool_executed') return 'play-circle';
     if (action.startsWith('approval_')) return 'person-check';
     if (action === 'authentication') return 'key';
     if (action === 'configuration_change') return 'gear';
@@ -446,6 +555,27 @@ export class AuditView extends AuthedElement {
     if (action.startsWith('runtime_session_')) return 'activity';
     if (action.startsWith('role_')) return 'people';
     return 'info-circle';
+  }
+
+  private _formatChannelLabel(channel: string | undefined | null): string {
+    if (!channel) return 'channel';
+    const map: Record<string, string> = {
+      email: 'Email',
+      mobile_push: 'Mobile push',
+      slack: 'Slack',
+      mattermost: 'Mattermost',
+      webhook: 'Webhook',
+    };
+    return map[channel] || channel;
+  }
+
+  private _formatRecipientNames(userIds: string[] | undefined): string {
+    if (!userIds || userIds.length === 0) return '';
+    const names = userIds
+      .slice(0, 3)
+      .map((id) => this._getUserDisplay(id))
+      .join(', ');
+    return userIds.length > 3 ? `${names} +${userIds.length - 3} more` : names;
   }
 
   private _getSubEventLabel(sub: SubEvent): string {
@@ -475,6 +605,33 @@ export class AuditView extends AuthedElement {
         return 'Approval expired (timed out)';
       case 'approval_escalated':
         return `Escalated${d.escalation_reason ? ` — ${d.escalation_reason}` : ''}`;
+      case 'approval_notification_sent': {
+        const channel = this._formatChannelLabel(d.channel);
+        const recipients = this._formatRecipientNames(d.recipient_user_ids);
+        const sent = typeof d.sent_count === 'number' ? d.sent_count : null;
+        const failed = typeof d.failed_count === 'number' ? d.failed_count : 0;
+        const skipped =
+          typeof d.skipped_count === 'number' ? d.skipped_count : 0;
+        let summary = `Notified via ${channel}`;
+        if (sub.status === 'no_devices') {
+          summary += ' — no registered devices';
+        } else if (sub.status === 'failed') {
+          summary += ` — failed${d.error ? ` (${d.error})` : ''}`;
+        } else if (sent !== null) {
+          summary += `: ${sent} sent`;
+          if (failed) summary += `, ${failed} failed`;
+          if (skipped) summary += `, ${skipped} skipped`;
+        }
+        if (recipients) summary += ` (${recipients})`;
+        return summary;
+      }
+      case 'approval_tool_executed': {
+        const tn = d.tool_name ? ` ${d.tool_name}` : '';
+        if (sub.status === 'failed') {
+          return `Tool${tn} execution failed${d.error ? ` — ${d.error}` : ''}`;
+        }
+        return `Tool${tn} executed successfully`;
+      }
       case 'runtime_session_created':
         return 'Runtime session started';
       case 'runtime_session_updated':
@@ -597,6 +754,15 @@ export class AuditView extends AuthedElement {
         <sl-badge slot="title-prefix" pill variant="neutral"
           >${this._total} events</sl-badge
         >
+        <sl-tooltip slot="title-prefix" content="Live updates over websocket">
+          <span
+            class="live-indicator ${this._livePulse ? 'pulsing' : ''}"
+            aria-label="Realtime updates active"
+          >
+            <span class="live-dot"></span>
+            <span class="live-label">LIVE</span>
+          </span>
+        </sl-tooltip>
       </view-header>
       <div class="column-layout wide">
         <div class="main-column audit-view" style="padding-top: 0;">
@@ -814,6 +980,8 @@ export class AuditView extends AuthedElement {
     let approvalSubevent = null;
     let approvalResolutionSubevent = null;
     let escalationSubevent = null;
+    const notificationSubevents: SubEvent[] = [];
+    let executionSubevent: SubEvent | null = null;
 
     for (const sub of group.sub_events) {
       if (sub.action.startsWith('policy_')) policySubevent = sub;
@@ -825,6 +993,10 @@ export class AuditView extends AuthedElement {
         sub.action === 'approval_expired'
       ) {
         approvalResolutionSubevent = sub;
+      } else if (sub.action === 'approval_notification_sent') {
+        notificationSubevents.push(sub);
+      } else if (sub.action === 'approval_tool_executed') {
+        executionSubevent = sub;
       }
     }
 
@@ -848,6 +1020,41 @@ export class AuditView extends AuthedElement {
 
     if (approvalSubevent) {
       story += `An approval request was created. `;
+
+      if (notificationSubevents.length > 0) {
+        const channelSummaries = notificationSubevents
+          .map((n) => {
+            const channelLabel = this._formatChannelLabel(n.details?.channel);
+            const sent =
+              typeof n.details?.sent_count === 'number'
+                ? n.details.sent_count
+                : null;
+            if (n.status === 'no_devices') {
+              return `${channelLabel.toLowerCase()} (no devices)`;
+            }
+            if (n.status === 'failed') {
+              return `${channelLabel.toLowerCase()} (failed)`;
+            }
+            return sent !== null
+              ? `${channelLabel.toLowerCase()} (${sent})`
+              : channelLabel.toLowerCase();
+          })
+          .join(', ');
+        const totalRecipients = new Set<string>();
+        for (const n of notificationSubevents) {
+          const ids = n.details?.recipient_user_ids;
+          if (Array.isArray(ids)) {
+            for (const uid of ids) totalRecipients.add(uid);
+          }
+        }
+        if (totalRecipients.size > 0) {
+          const names = this._formatRecipientNames(Array.from(totalRecipients));
+          story += `Approvers ${names} were notified via ${channelSummaries}. `;
+        } else {
+          story += `Approvers were notified via ${channelSummaries}. `;
+        }
+      }
+
       if (escalationSubevent) {
         story += `The request was later escalated. `;
       }
@@ -858,7 +1065,11 @@ export class AuditView extends AuthedElement {
         if (approvalResolutionSubevent.action === 'approval_approved') {
           story += `${u} approved it. `;
         } else if (approvalResolutionSubevent.action === 'approval_denied') {
-          story += `${u} declined it. `;
+          story += `${u} declined it`;
+          if (approvalResolutionSubevent.details?.reason) {
+            story += ` — "${approvalResolutionSubevent.details.reason}"`;
+          }
+          story += '. ';
         } else if (approvalResolutionSubevent.action === 'approval_expired') {
           story += `The approval request timed out. `;
         }
@@ -867,7 +1078,19 @@ export class AuditView extends AuthedElement {
       }
     }
 
-    if (
+    if (executionSubevent) {
+      // Async-poll path emits a dedicated execution sub-event with full
+      // outcome information — prefer this over the generic group outcome.
+      if (executionSubevent.status === 'executed') {
+        story += `The tool then ran successfully`;
+        const dur = executionSubevent.details?.duration_ms;
+        if (typeof dur === 'number') story += ` in ${dur}ms`;
+        story += '.';
+      } else if (executionSubevent.status === 'failed') {
+        const err = executionSubevent.details?.error;
+        story += `The tool then failed${err ? ` — ${err}` : ''}.`;
+      }
+    } else if (
       group.outcome === 'success' ||
       group.outcome === 'executed' ||
       group.outcome === 'allow'
@@ -987,6 +1210,54 @@ export class AuditView extends AuthedElement {
         font-weight: 600;
         color: var(--sl-color-neutral-900);
       }
+      /* ── Live indicator ───────────────────── */
+      .live-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        color: var(--sl-color-neutral-500);
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: var(--sl-color-neutral-100);
+        transition:
+          background 0.2s ease,
+          color 0.2s ease;
+      }
+      .live-indicator .live-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--sl-color-success-500);
+        box-shadow: 0 0 0 0 rgba(45, 196, 113, 0);
+        transition: box-shadow 0.2s ease;
+      }
+      .live-indicator.pulsing {
+        background: var(--sl-color-success-100);
+        color: var(--sl-color-success-700);
+      }
+      .live-indicator.pulsing .live-dot {
+        animation: live-pulse 1.4s ease-out;
+      }
+      @keyframes live-pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(45, 196, 113, 0.6);
+        }
+        100% {
+          box-shadow: 0 0 0 10px rgba(45, 196, 113, 0);
+        }
+      }
+
+      /* ── Recipient chips ──────────────────── */
+      .recipient-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+      }
+
       .total-badge {
         font-size: 0.75rem;
         color: var(--sl-color-neutral-500);

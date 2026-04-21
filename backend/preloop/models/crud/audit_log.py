@@ -497,6 +497,16 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
                         outcome = "expired"
                         all_outcomes.add("expired")
 
+                # The post-approval tool execution (async path) is the most
+                # recent meaningful event in the chain — promote it to the
+                # final outcome shown on the row so users can see at a glance
+                # whether the actual tool call succeeded after approval.
+                for sub in sub_list:
+                    if sub.action == "approval_tool_executed":
+                        outcome = sub.status or outcome
+                        if sub.status:
+                            all_outcomes.add(sub.status)
+
             # Apply outcome filter — match only if *all* selected outcomes
             # appear somewhere in the chain (AND semantics).
             if outcome_filter and not set(outcome_filter).issubset(all_outcomes):

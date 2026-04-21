@@ -117,8 +117,18 @@ def _managed_agent_onboarding_flags(
             and "preloop" in managed_config["mcp"]
         )
     )
+    # Each CLI adapter emits ``gateway_provider_ok`` and ``gateway_base_url_ok``
+    # in its validation payload after it has rewritten the agent config to
+    # route through Preloop's gateway. Treat that as the canonical signal so
+    # we don't have to re-derive it from each agent's bespoke nested config
+    # shape (Hermes uses ``model.{provider,base_url,api_key,default}``,
+    # OpenClaw uses Anthropic env vars, etc.).
+    cli_gateway_configured = bool(
+        validation.get("gateway_provider_ok") and validation.get("gateway_base_url_ok")
+    )
     model_gateway_configured = bool(
-        validation.get("gateway_model_configured")
+        cli_gateway_configured
+        or validation.get("gateway_model_configured")
         or (
             isinstance(managed_config.get("models"), dict)
             and isinstance(managed_config["models"].get("providers"), dict)

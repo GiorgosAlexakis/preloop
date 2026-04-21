@@ -788,12 +788,19 @@ export class AgentsView extends LitElement {
   /**
    * Compute node positions that pack into the available canvas viewport.
    *
-   * The layout is an ellipse (or several concentric ellipses for large
-   * fleets) sized to the viewport's actual aspect ratio so we don't waste
-   * horizontal real-estate on tall-but-narrow screens or vice versa. Cards
-   * stay outside a small halo around the gateway and inside the viewport
-   * edges, which keeps the topology readable without forcing the
-   * fit-to-view scale to shrink the cards into illegibility.
+   * Priority order (per UX guideline):
+   *   1. Adjust the line length (ring radius) until adjacent cards stop
+   *      overlapping. Cards stay as close to the gateway as the
+   *      non-overlap constraint allows, so we don't pin them to the
+   *      viewport edges when there's no need.
+   *   2. If even at the viewport-fitting maximum a single ring would
+   *      overlap, switch to an alternative arrangement (rectangle
+   *      perimeter, which uses wide-aspect viewports much more
+   *      efficiently than an ellipse).
+   *   3. Only as a last resort, fall back to a single ring at the
+   *      smallest non-overlapping radius (which overflows the viewport)
+   *      so `fitViewportToPositions` can scale the canvas down. That is
+   *      the only path that ends up shrinking text.
    */
   private computeFittedLayout(
     items: Array<{ id: string }>
@@ -806,110 +813,183 @@ export class AgentsView extends LitElement {
       ? viewport.getBoundingClientRect()
       : { width: window.innerWidth, height: window.innerHeight };
 
-    // Approximate node footprint (matches the .agent-node card sizing).
+    // Card footprint (matches the .agent-node card sizing).
     const cardHalfWidth = 130;
     const cardHalfHeight = 95;
-    const gatewayHalo = 110; // keep cards clear of the gateway pulse ring
-    const edgePadding = 32;
 
-    // Largest ellipse that keeps every card inside the viewport.
-    const rxMax = Math.max(
-      gatewayHalo + 40,
+    // Two thresholds for adjacent-card distances:
+    //  • `minDx` / `minDy` enforce a small visual gap so cards on the
+    //    ring layout breathe rather than literally kiss.
+    //  • `minDxStrict` / `minDyStrict` detect actual visual overlap
+    //    (cards clipping each other) — used to validate the perimeter
+    //    fallback, where natural spacing at corners can be tighter
+    //    than the ring's breathing room without anything looking bad.
+    const cardGap = 24;
+    const minDx = 2 * cardHalfWidth + cardGap;
+    const minDy = 2 * cardHalfHeight + cardGap;
+    const minDxStrict = 2 * cardHalfWidth + 8;
+    const minDyStrict = 2 * cardHalfHeight + 8;
+
+    // Halo around the gateway icon + label that cards must stay clear
+    // of. The label sits below the icon so this is a soft minimum on
+    // the per-axis radius, not on the diagonal distance.
+    const haloX = cardHalfWidth + 40;
+    const haloY = cardHalfHeight + 60;
+
+    const edgePadding = 28;
+
+    // Largest ellipse / rectangle that keeps every card fully inside
+    // the visible canvas.
+    const availableHalfX = Math.max(
+      haloX,
       bounds.width / 2 - cardHalfWidth - edgePadding
     );
-    const ryMax = Math.max(
-      gatewayHalo + 40,
+    const availableHalfY = Math.max(
+      haloY,
       bounds.height / 2 - cardHalfHeight - edgePadding
     );
 
-    if (items.length <= 3) {
-      // For 1-3 nodes, scatter to the corners that exist in the canvas so
-      // the layout still feels balanced even on tiny viewports.
+    if (items.length <= 4) {
+      // For very small fleets, anchor each card in its own quadrant.
+      // Pull them in towards the gateway when there's plenty of room
+      // so we don't strand them at the corners.
+      const r = Math.min(availableHalfX, availableHalfX * 0.55 + 90);
+      const ry = Math.min(availableHalfY, availableHalfY * 0.55 + 90);
       const directions = [
         { x: 1, y: -1 }, // Top right
         { x: -1, y: 1 }, // Bottom left
         { x: 1, y: 1 }, // Bottom right
+        { x: -1, y: -1 }, // Top left
       ];
       items.forEach((agent, i) => {
         const dir = directions[i % directions.length];
         positions[agent.id] = {
-          x: Math.round(dir.x * rxMax),
-          y: Math.round(dir.y * ryMax),
+          x: Math.round(dir.x * r),
+          y: Math.round(dir.y * ry),
         };
       });
       return positions;
     }
 
-    // Approximate ellipse circumference (Ramanujan's formula).
-    const ellipseCircumference = (a: number, b: number) =>
-      Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+    const N = items.length;
+    const angleStep = (2 * Math.PI) / N;
+    const startAngle = -Math.PI / 2;
 
-    // Minimum chord between neighbouring cards on the same ring.
-    const minChord = 2 * cardHalfWidth + 30;
-
-    // Build candidate rings shrinking inward, each constrained so its
-    // minor axis still clears the gateway halo.
-    const buildRings = (count: number) => {
-      const rings: Array<{ rx: number; ry: number; capacity: number }> = [];
-      for (let k = 0; k < count; k++) {
-        const shrink = 1 - k * 0.32;
-        const rx = Math.max(gatewayHalo + 40, rxMax * shrink);
-        const ry = Math.max(gatewayHalo + 40, ryMax * shrink);
-        const capacity = Math.max(
-          1,
-          Math.floor(ellipseCircumference(rx, ry) / minChord)
-        );
-        rings.push({ rx, ry, capacity });
-      }
-      return rings;
-    };
-
-    // Pick the smallest number of rings (max 4) whose combined capacity
-    // covers all items without overcrowding any single ring.
-    const maxRings = 4;
-    let ringCount = 1;
-    let rings = buildRings(ringCount);
-    while (
-      ringCount < maxRings &&
-      rings.reduce((sum, r) => sum + r.capacity, 0) < items.length
-    ) {
-      ringCount++;
-      rings = buildRings(ringCount);
+    // ── Step 1 ────────────────────────────────────────────────────────
+    // Compute the smallest uniform scale `t` of the (availableHalfX,
+    // availableHalfY) ellipse for which no pair of adjacent cards
+    // overlaps. For each pair we need either |Δx| ≥ minDx OR |Δy| ≥
+    // minDy; the cheaper of those two conditions sets the per-pair
+    // requirement, and the worst pair sets the ring requirement.
+    let tRing = 0;
+    for (let i = 0; i < N; i++) {
+      const a = startAngle + i * angleStep;
+      const b = a + angleStep;
+      const dxUnit = Math.abs(Math.cos(a) - Math.cos(b));
+      const dyUnit = Math.abs(Math.sin(a) - Math.sin(b));
+      const tx = dxUnit > 1e-6 ? minDx / (availableHalfX * dxUnit) : Infinity;
+      const ty = dyUnit > 1e-6 ? minDy / (availableHalfY * dyUnit) : Infinity;
+      tRing = Math.max(tRing, Math.min(tx, ty));
     }
 
-    // Distribute items proportionally to each ring's capacity, with the
-    // outer ring soaking up any remainder so it stays the densest.
-    const totalCapacity = rings.reduce((s, r) => s + r.capacity, 0);
-    const itemsPerRing = rings.map((r) =>
-      Math.floor((items.length * r.capacity) / totalCapacity)
-    );
-    let remaining = items.length - itemsPerRing.reduce((s, n) => s + n, 0);
-    let cursor = 0;
-    while (remaining > 0) {
-      itemsPerRing[cursor % ringCount]++;
-      cursor++;
-      remaining--;
-    }
-
-    // Place the items ring by ring. Inner rings are rotated by half a
-    // step so they sit between the outer-ring positions, which keeps
-    // the visual density even.
-    let itemIdx = 0;
-    rings.forEach((ring, ri) => {
-      const n = itemsPerRing[ri];
-      if (n === 0) return;
-      const angleStep = (2 * Math.PI) / n;
-      const angleOffset = -Math.PI / 2 + (ri * angleStep) / 2;
-      for (let j = 0; j < n; j++) {
-        const angle = angleOffset + j * angleStep;
-        const item = items[itemIdx++];
-        positions[item.id] = {
-          x: Math.round(Math.cos(angle) * ring.rx),
-          y: Math.round(Math.sin(angle) * ring.ry),
+    if (tRing <= 1) {
+      // Single ring fits comfortably inside the viewport. Use the
+      // smallest non-overlapping radius so cards stay close to the
+      // gateway when there's room — never blown out to the edges.
+      const t = Math.max(0.05, tRing);
+      const rx = Math.max(haloX, availableHalfX * t);
+      const ry = Math.max(haloY, availableHalfY * t);
+      items.forEach((agent, i) => {
+        const angle = startAngle + i * angleStep;
+        positions[agent.id] = {
+          x: Math.round(Math.cos(angle) * rx),
+          y: Math.round(Math.sin(angle) * ry),
         };
+      });
+      return positions;
+    }
+
+    // ── Step 2 ────────────────────────────────────────────────────────
+    // The ring would have to grow past the viewport to clear overlap.
+    // Try a rectangle-perimeter arrangement: it spreads cards along
+    // the actual viewport edges so wide screens (where the ellipse's
+    // minor axis bottlenecks) gain a lot more usable room.
+    const Wx = availableHalfX;
+    const Wy = availableHalfY;
+    const perimeter = 4 * (Wx + Wy);
+    const spacing = perimeter / N;
+    const perimeterPositions: Record<string, { x: number; y: number }> = {};
+    // Anchor the first card at top-centre (perimeter offset = Wx, the
+    // distance from the top-left corner along the top edge to its
+    // midpoint), then walk clockwise.
+    const anchor = Wx;
+    items.forEach((item, k) => {
+      let p = (anchor + k * spacing) % perimeter;
+      let x = 0;
+      let y = 0;
+      if (p < 2 * Wx) {
+        // Top edge: left → right.
+        x = -Wx + p;
+        y = -Wy;
+      } else if (p < 2 * Wx + 2 * Wy) {
+        // Right edge: top → bottom.
+        x = Wx;
+        y = -Wy + (p - 2 * Wx);
+      } else if (p < 4 * Wx + 2 * Wy) {
+        // Bottom edge: right → left.
+        x = Wx - (p - 2 * Wx - 2 * Wy);
+        y = Wy;
+      } else {
+        // Left edge: bottom → top.
+        x = -Wx;
+        y = Wy - (p - 4 * Wx - 2 * Wy);
       }
+      perimeterPositions[item.id] = {
+        x: Math.round(x),
+        y: Math.round(y),
+      };
     });
 
+    // Verify the perimeter layout actually clears every pair of cards.
+    // Use the strict thresholds: at corners the spacing is naturally
+    // tighter than the ring's breathing room and that's fine as long
+    // as cards don't literally clip into each other.
+    const arr = Object.values(perimeterPositions);
+    let perimeterOverlaps = false;
+    for (let i = 0; i < arr.length && !perimeterOverlaps; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        if (
+          Math.abs(arr[i].x - arr[j].x) < minDxStrict &&
+          Math.abs(arr[i].y - arr[j].y) < minDyStrict
+        ) {
+          perimeterOverlaps = true;
+          break;
+        }
+      }
+    }
+
+    if (!perimeterOverlaps) {
+      Object.assign(positions, perimeterPositions);
+      return positions;
+    }
+
+    // ── Step 3 ────────────────────────────────────────────────────────
+    // Even the perimeter layout couldn't separate every pair (typically
+    // happens past ~12 cards on small viewports). Fall back to the
+    // single ring at its smallest non-overlapping radius. The ring
+    // overflows the viewport on purpose; fitViewportToPositions will
+    // scale the canvas just enough to bring it back, which is the only
+    // path where text shrinks.
+    const t = Math.max(0.05, tRing);
+    const rx = Math.max(haloX, availableHalfX * t);
+    const ry = Math.max(haloY, availableHalfY * t);
+    items.forEach((agent, i) => {
+      const angle = startAngle + i * angleStep;
+      positions[agent.id] = {
+        x: Math.round(Math.cos(angle) * rx),
+        y: Math.round(Math.sin(angle) * ry),
+      };
+    });
     return positions;
   }
 
@@ -948,18 +1028,26 @@ export class AgentsView extends LitElement {
       if (pos.y > maxY) maxY = pos.y;
     }
 
-    // Account for the actual rendered card footprint plus a little visual
-    // breathing room so the labels under each card don't get clipped.
-    minX -= 150;
-    maxX += 150;
-    minY -= 120;
-    maxY += 140;
+    // Account for the actual rendered card footprint plus a small
+    // visual margin. Keep this tight: any extra padding here forces a
+    // scale-down that shrinks text even when the cards themselves
+    // still fit comfortably in the viewport.
+    const cardHalfW = 130;
+    const cardHalfH = 95;
+    const labelExtra = 24; // a card's label sits a bit below its body
+    minX -= cardHalfW + 8;
+    maxX += cardHalfW + 8;
+    minY -= cardHalfH + 8;
+    maxY += cardHalfH + labelExtra;
 
     const contentWidth = Math.max(1, maxX - minX);
     const contentHeight = Math.max(1, maxY - minY);
     const scaleX = bounds.width / contentWidth;
     const scaleY = bounds.height / contentHeight;
-    const targetScale = Math.max(0.35, Math.min(scaleX, scaleY, 1));
+    // Cap the zoom at 1× (never grow cards beyond native size) and at
+    // 0.45× (anything smaller is too illegible — better to let the
+    // user pan than read shrunken text).
+    const targetScale = Math.max(0.45, Math.min(scaleX, scaleY, 1));
 
     const contentCenterX = (minX + maxX) / 2;
     const contentCenterY = (minY + maxY) / 2;
@@ -1147,6 +1235,7 @@ export class AgentsView extends LitElement {
     if (!agent.live_validation_supported) return 'neutral';
     if (agent.live_validation_status === 'passed') return 'success';
     if (agent.live_validation_status === 'failed') return 'danger';
+    if (agent.live_validation_status === 'not_run') return 'neutral';
     return 'warning';
   }
 
@@ -1154,6 +1243,9 @@ export class AgentsView extends LitElement {
     if (!agent.live_validation_supported) return 'No live check';
     if (agent.live_validation_status === 'passed') return 'Live validated';
     if (agent.live_validation_status === 'failed') return 'Live check failed';
+    // ``not_run`` means the CLI was never invoked with ``--live-validate`` —
+    // it's an opt-in step, not a check that's currently in flight.
+    if (agent.live_validation_status === 'not_run') return 'Live check not run';
     return 'Live check pending';
   }
 
@@ -1710,7 +1802,7 @@ export class AgentsView extends LitElement {
                   />`
                 : renderAgentIcon(
                     agentKind,
-                    'font-size: 24px; color: var(--sl-color-neutral-500); margin-top: 2px;'
+                    'font-size: 24px; color: var(--sl-color-neutral-800); margin-top: 2px;'
                   )}
               <div>
                 <div class="agent-name">${displayName}</div>
@@ -2213,7 +2305,7 @@ export class AgentsView extends LitElement {
                               />`
                             : renderAgentIcon(
                                 agent?.agent_kind || agent?.session_source_type,
-                                'flex-shrink: 0; color: var(--sl-color-neutral-500); width: 20px; height: 20px;'
+                                'flex-shrink: 0; color: var(--sl-color-neutral-900); width: 20px; height: 20px;'
                               )}
                           <strong
                             style="font-size: 1rem; word-break: break-word; line-height: 1.2;"

@@ -26,7 +26,7 @@ class TestCodexAgentInit:
 
     def test_config_stored(self):
         """Configuration is stored on the agent."""
-        config = {"model": "gpt-4", "custom_key": "value"}
+        config = {"model": "gpt-5.4", "custom_key": "value"}
         agent = CodexAgent(config)
         assert agent.config == config
 
@@ -80,8 +80,8 @@ class TestCodexModelResolution:
         """model_identifier from AIModel takes priority over agent_config."""
         agent = CodexAgent({})
         context = {
-            "model_identifier": "gpt-4o",
-            "agent_config": {"model": "gpt-3.5"},
+            "model_identifier": "gpt-5.4",
+            "agent_config": {"model": "gpt-5.4-codex"},
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
@@ -91,7 +91,7 @@ class TestCodexModelResolution:
             with patch.object(agent, "use_kubernetes", False):
                 await agent.start(context)
                 call_ctx = mock_start.call_args[0][0]
-                assert call_ctx["codex_model"] == "gpt-4o"
+                assert call_ctx["codex_model"] == "gpt-5.4-codex"
 
     @pytest.mark.asyncio
     async def test_agent_config_model_fallback(self):
@@ -112,7 +112,7 @@ class TestCodexModelResolution:
 
     @pytest.mark.asyncio
     async def test_default_model(self):
-        """Falls back to 'gpt-4' when nothing is specified."""
+        """Falls back to 'gpt-5.4' when nothing is specified."""
         agent = CodexAgent({})
         context = {
             "agent_config": {},
@@ -125,7 +125,7 @@ class TestCodexModelResolution:
             with patch.object(agent, "use_kubernetes", False):
                 await agent.start(context)
                 call_ctx = mock_start.call_args[0][0]
-                assert call_ctx["codex_model"] == "gpt-4"
+                assert call_ctx["codex_model"] == "gpt-5.4"
 
     @pytest.mark.asyncio
     async def test_gateway_model_alias_takes_priority(self):
@@ -133,9 +133,9 @@ class TestCodexModelResolution:
         agent = CodexAgent({})
         context = {
             "model_gateway_enabled": True,
-            "model_gateway_model_alias": "openai/gpt-5",
-            "model_identifier": "gpt-4o",
-            "agent_config": {"model": "gpt-3.5"},
+            "model_gateway_model_alias": "openai/gpt-5.4-codex",
+            "model_identifier": "gpt-5.4-codex",
+            "agent_config": {"model": "gpt-5.4-codex"},
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
@@ -145,7 +145,7 @@ class TestCodexModelResolution:
             with patch.object(agent, "use_kubernetes", False):
                 await agent.start(context)
                 call_ctx = mock_start.call_args[0][0]
-                assert call_ctx["codex_model"] == "openai/gpt-5"
+                assert call_ctx["codex_model"] == "openai/gpt-5.4-codex"
 
 
 class TestCodexBuildScript:
@@ -180,12 +180,12 @@ class TestCodexBuildScript:
         agent = CodexAgent({})
         context = {
             "prompt": "test",
-            "codex_model": "gpt-4o",
+            "codex_model": "gpt-5.4-codex",
             "execution_id": "exec-1",
             "flow_name": "test-flow",
         }
         script = agent._build_codex_script(context)
-        assert '--model "gpt-4o"' in script
+        assert '--model "gpt-5.4"' in script
 
     def test_script_has_post_exec_sleep_trap(self):
         """Script includes the post-exec debug sleep trap."""
@@ -238,9 +238,9 @@ class TestCodexAuthConfig:
     def test_openai_config(self):
         """Standard OpenAI config generates correct auth.json and config.toml."""
         agent = CodexAgent({})
-        auth_block = agent._build_codex_auth_config("gpt-4", "openai", "")
+        auth_block = agent._build_codex_auth_config("gpt-5.4", "openai", "")
         assert "OPENAI_API_KEY" in auth_block
-        assert 'model = "gpt-4"' in auth_block
+        assert 'model = "gpt-5.4"' in auth_block
         assert "[mcp_servers.preloop]" in auth_block
 
     def test_custom_provider_config(self):

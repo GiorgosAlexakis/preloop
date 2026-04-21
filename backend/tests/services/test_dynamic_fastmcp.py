@@ -465,6 +465,99 @@ class TestMCPCallTool:
                     task_meta=None,
                 )
 
+    async def test_call_tool_require_approval_without_workflow_blocks(
+        self, dynamic_mcp, user_context
+    ):
+        """If the policy returns ``require_approval`` but no workflow can be
+        resolved (no rule, config, or account default), the call must be
+        blocked rather than silently allowed through.
+
+        Without this fail-closed behaviour an explicit ``require_approval``
+        rule whose workflow is unset would behave like ``allow``, which is
+        the exact silent-bypass bug we're guarding against.
+        """
+        from fastmcp.tools.tool import ToolResult
+
+        dynamic_mcp._user_context_provider = lambda: user_context
+
+        available_tools = [Tool(name="pay", description="Pay tool", parameters={})]
+
+        # ``evaluate_policy_async`` returns require_approval but no workflow id
+        with patch.object(dynamic_mcp, "list_tools", return_value=available_tools):
+            with patch(
+                "preloop.services.policy_evaluator.evaluate_policy_async",
+                new=AsyncMock(
+                    return_value=("require_approval", None, "matched bare rule")
+                ),
+            ):
+                with patch(
+                    "preloop.models.db.session.get_async_db_session"
+                ) as mock_session:
+                    mock_session.return_value.__aenter__ = AsyncMock(
+                        return_value=MagicMock()
+                    )
+                    mock_session.return_value.__aexit__ = AsyncMock(return_value=None)
+
+                    with patch.object(
+                        dynamic_mcp.__class__.__bases__[0],
+                        "call_tool",
+                        new=AsyncMock(),
+                        create=True,
+                    ) as mock_super:
+                        result = await dynamic_mcp.call_tool(
+                            "pay", {"amount": 10, "recipient": "alice"}
+                        )
+
+        # Tool must NOT have been executed.
+        mock_super.assert_not_called()
+        assert isinstance(result, ToolResult)
+        assert "approval workflow" in result.content[0].text.lower()
+        assert "configure" in result.content[0].text.lower()
+
+    async def test_call_tool_internal_name_reentry_skips_access_check(
+        self, dynamic_mcp, user_context
+    ):
+        """Re-entering call_tool with a registered internal name must
+        bypass the access check.
+
+        FastMCP's tool dispatcher re-routes super().call_tool(internal_name)
+        through this subclass. Because list_tools strips ``account_*`` names
+        from the user-visible tool list, the re-entry path would otherwise
+        fail with ``Access denied`` and break every proxied tool that has an
+        access rule (e.g. ``require_approval``).
+        """
+        from fastmcp.tools.tool import ToolResult
+
+        dynamic_mcp._user_context_provider = lambda: user_context
+        safe_account_id = user_context.account_id.replace("-", "_")
+        internal_name = f"account_{safe_account_id}_pay"
+        dynamic_mcp._registered_proxied_tools.add(internal_name)
+
+        list_tools_mock = AsyncMock()
+        mock_result = ToolResult(content=[types.TextContent(type="text", text="Paid")])
+
+        with patch.object(dynamic_mcp, "list_tools", new=list_tools_mock):
+            with patch.object(
+                dynamic_mcp.__class__.__bases__[0],
+                "call_tool",
+                new=AsyncMock(return_value=mock_result),
+                create=True,
+            ) as mock_super:
+                result = await dynamic_mcp.call_tool(
+                    internal_name, {"amount": 10, "recipient": "alice"}
+                )
+
+        list_tools_mock.assert_not_called()
+        mock_super.assert_called_once_with(
+            internal_name,
+            {"amount": 10, "recipient": "alice"},
+            version=None,
+            run_middleware=True,
+            task_meta=None,
+        )
+        assert isinstance(result, ToolResult)
+        assert result.content[0].text == "Paid"
+
 
 class TestCreateProxiedToolWrapper:
     """Test _create_proxied_tool_wrapper method."""

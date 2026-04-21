@@ -253,7 +253,7 @@ def test_chat_completions_endpoint_rejects_omitted_model_without_gateway_default
         obj_in={
             "name": "Direct Default Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4.1",
+            "model_identifier": "gpt-5.4",
             "api_key": "provider-secret",
             "is_default": True,
         },

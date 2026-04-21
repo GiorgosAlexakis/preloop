@@ -109,6 +109,43 @@ class CRUDApprovalWorkflow(CRUDBase[models.ApprovalWorkflow]):
             .first()
         )
 
+    def find_legacy_default_workflows(self, db: Session) -> List[UUID]:
+        """Return ``account_id``s whose default workflow needs repair.
+
+        A default workflow is considered "legacy" / broken when it either:
+
+        * was created with ``approval_type="manual"`` (the older synonym
+          for the in-UI human-approval flow that the dialog dropdown can
+          no longer render — the type field appears blank), or
+        * has no ``approver_user_ids`` *and* no ``approver_team_ids`` —
+          which makes any approval request routed through it impossible
+          to act on.
+
+        The startup repair pass uses this to find accounts that still
+        carry pre-fix data and heal them on boot.
+        """
+        rows = (
+            db.query(self.model.account_id)
+            .filter(
+                self.model.is_default.is_(True),
+                (
+                    (self.model.approval_type == "manual")
+                    | (
+                        (
+                            (self.model.approver_user_ids.is_(None))
+                            | (self.model.approver_user_ids == [])
+                        )
+                        & (
+                            (self.model.approver_team_ids.is_(None))
+                            | (self.model.approver_team_ids == [])
+                        )
+                    )
+                ),
+            )
+            .all()
+        )
+        return [row[0] for row in rows]
+
     def create(
         self,
         db: Session,
@@ -271,3 +308,24 @@ async def get_approval_workflow_async(
         select(models.ApprovalWorkflow).where(models.ApprovalWorkflow.id == workflow_id)
     )
     return result.scalar_one_or_none()
+
+
+async def get_default_approval_workflow_async(
+    db: Session, account_id: UUID
+) -> Optional[models.ApprovalWorkflow]:
+    """Async: Retrieve the default approval workflow for an account.
+
+    Args:
+        db: The async database session.
+        account_id: The ID of the account.
+
+    Returns:
+        The default approval workflow if one is configured, otherwise None.
+    """
+    result = await db.execute(
+        select(models.ApprovalWorkflow).where(
+            models.ApprovalWorkflow.account_id == account_id,
+            models.ApprovalWorkflow.is_default.is_(True),
+        )
+    )
+    return result.scalars().first()

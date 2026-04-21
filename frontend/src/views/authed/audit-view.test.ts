@@ -3,13 +3,30 @@ import sinon from 'sinon';
 
 import './audit-view';
 import type { AuditView } from './audit-view';
+import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 
 describe('AuditView', () => {
   let fetchStub: sinon.SinonStub;
+  let wsSubscribeStub: sinon.SinonStub;
+  let wsConnectStub: sinon.SinonStub;
+  let wsCallback: ((message: any) => void) | null = null;
 
   beforeEach(() => {
     localStorage.setItem('accessToken', 'test-access-token');
     localStorage.setItem('refreshToken', 'test-refresh-token');
+
+    wsCallback = null;
+    wsSubscribeStub = sinon
+      .stub(unifiedWebSocketManager, 'subscribe')
+      .callsFake((_topic: string, cb: (message: any) => void) => {
+        wsCallback = cb;
+        return () => {
+          wsCallback = null;
+        };
+      });
+    wsConnectStub = sinon
+      .stub(unifiedWebSocketManager, 'connect')
+      .resolves(undefined as any);
 
     fetchStub = sinon.stub(window, 'fetch');
     fetchStub.callsFake(async (input: RequestInfo | URL) => {
@@ -96,6 +113,112 @@ describe('AuditView', () => {
                 ],
               },
               {
+                correlation_id: 'corr-pay',
+                outcome: 'executed',
+                primary_event: {
+                  id: 'audit-pay-1',
+                  account_id: 'account-1',
+                  user_id: 'user-1',
+                  action: 'tool_call',
+                  resource_type: 'tool',
+                  resource_id: 'pay',
+                  status: 'executed',
+                  ip_address: null,
+                  user_agent: null,
+                  timestamp: '2026-03-10T10:05:00Z',
+                  details: {
+                    tool_name: 'pay',
+                    tool_args: { amount: 50, to: 'Jill' },
+                    correlation_id: 'corr-pay',
+                    api_key_name: 'Hermes Token',
+                  },
+                },
+                sub_events: [
+                  {
+                    id: 'audit-pay-2',
+                    action: 'policy_require_approval',
+                    status: 'require_approval',
+                    timestamp: '2026-03-10T10:05:01Z',
+                    details: {
+                      decision: 'require_approval',
+                      correlation_id: 'corr-pay',
+                      rule_description: 'Default Rule',
+                    },
+                  },
+                  {
+                    id: 'audit-pay-3',
+                    action: 'approval_created',
+                    status: 'created',
+                    timestamp: '2026-03-10T10:05:02Z',
+                    details: {
+                      approval_id: 'apr-1',
+                      correlation_id: 'corr-pay',
+                      tool_name: 'pay',
+                      timeout_seconds: 300,
+                    },
+                  },
+                  {
+                    id: 'audit-pay-4',
+                    action: 'approval_notification_sent',
+                    status: 'sent',
+                    timestamp: '2026-03-10T10:05:03Z',
+                    details: {
+                      approval_id: 'apr-1',
+                      correlation_id: 'corr-pay',
+                      channel: 'email',
+                      tool_name: 'pay',
+                      sent_count: 1,
+                      failed_count: 0,
+                      skipped_count: 0,
+                      recipient_user_ids: ['user-1'],
+                      recipient_count: 1,
+                    },
+                  },
+                  {
+                    id: 'audit-pay-5',
+                    action: 'approval_notification_sent',
+                    status: 'no_devices',
+                    timestamp: '2026-03-10T10:05:03Z',
+                    details: {
+                      approval_id: 'apr-1',
+                      correlation_id: 'corr-pay',
+                      channel: 'mobile_push',
+                      tool_name: 'pay',
+                      sent_count: 0,
+                      failed_count: 0,
+                      recipient_user_ids: ['user-1'],
+                      recipient_count: 1,
+                    },
+                  },
+                  {
+                    id: 'audit-pay-6',
+                    action: 'approval_approved',
+                    status: 'approved',
+                    timestamp: '2026-03-10T10:05:30Z',
+                    details: {
+                      approval_id: 'apr-1',
+                      correlation_id: 'corr-pay',
+                      approver_id: 'user-1',
+                      reason: 'Looks fine',
+                      tool_name: 'pay',
+                    },
+                  },
+                  {
+                    id: 'audit-pay-7',
+                    action: 'approval_tool_executed',
+                    status: 'executed',
+                    timestamp: '2026-03-10T10:05:31Z',
+                    details: {
+                      approval_id: 'apr-1',
+                      correlation_id: 'corr-pay',
+                      tool_name: 'pay',
+                      duration_ms: 234,
+                      result_preview: 'Paid $50 to Jill',
+                    },
+                  },
+                ],
+              },
+              {
                 correlation_id: null,
                 outcome: 'budget_denied',
                 primary_event: {
@@ -128,7 +251,7 @@ describe('AuditView', () => {
                 sub_events: [],
               },
             ],
-            total: 3,
+            total: 4,
             skip: 0,
             limit: 50,
           }),
@@ -148,6 +271,8 @@ describe('AuditView', () => {
 
   afterEach(() => {
     fetchStub.restore();
+    wsSubscribeStub.restore();
+    wsConnectStub.restore();
     localStorage.clear();
   });
 
@@ -213,6 +338,92 @@ describe('AuditView', () => {
     expect(expandedContent).to.contain('403');
     expect(expandedContent).to.contain('budget_limit_exceeded');
     expect(expandedContent).to.contain('Claude Workspace Token');
+
+    document.body.removeChild(element);
+  });
+
+  it('renders the full approval lifecycle: notifications, decision, execution', async () => {
+    const element = document.createElement('audit-view') as AuditView;
+    document.body.appendChild(element);
+
+    await waitUntil(
+      () => !(element as any)._loading,
+      'Audit view did not finish loading'
+    );
+    await element.updateComplete;
+
+    const rows = Array.from(
+      element.shadowRoot?.querySelectorAll('.primary-row') || []
+    ) as HTMLElement[];
+    const payRow = rows.find((row) => row.textContent?.includes('pay'));
+    expect(payRow, 'pay row should be present').to.exist;
+
+    payRow?.click();
+    await element.updateComplete;
+
+    const expanded = element.shadowRoot?.textContent || '';
+    expect(expanded).to.contain('Policy: Require Approval');
+    expect(expanded).to.contain('Default Rule');
+    expect(expanded).to.contain('Approval requested for pay');
+    expect(expanded).to.contain('Notified via Email');
+    expect(expanded).to.contain('1 sent');
+    expect(expanded).to.contain('Notified via Mobile push');
+    expect(expanded).to.contain('no registered devices');
+    expect(expanded).to.contain('Approved by Alice Example');
+    expect(expanded).to.contain('Looks fine');
+    expect(expanded).to.contain('Tool pay executed successfully');
+    expect(expanded).to.contain('Paid $50 to Jill');
+
+    document.body.removeChild(element);
+  });
+
+  it('subscribes to the audit websocket topic and refreshes on live events', async () => {
+    const element = document.createElement('audit-view') as AuditView;
+    document.body.appendChild(element);
+
+    await waitUntil(
+      () => !(element as any)._loading,
+      'Audit view did not finish loading'
+    );
+    await element.updateComplete;
+
+    expect(wsSubscribeStub.calledOnce, 'subscribe should be called once').to.be
+      .true;
+    expect(wsSubscribeStub.firstCall.args[0]).to.equal('audit');
+    expect(wsConnectStub.calledOnce, 'connect should be called once').to.be
+      .true;
+    expect(wsCallback, 'callback should have been registered').to.not.be.null;
+
+    const fetchCallsBefore = fetchStub
+      .getCalls()
+      .filter((c) =>
+        (c.args[0] as string).startsWith('/api/v1/audit-logs/grouped?')
+      ).length;
+
+    wsCallback?.({
+      type: 'audit_event',
+      action: 'tool_call',
+      status: 'executed',
+    });
+    await element.updateComplete;
+
+    const liveIndicator = element.shadowRoot?.querySelector('.live-indicator');
+    expect(liveIndicator, 'live indicator should render').to.exist;
+    expect(
+      liveIndicator?.classList.contains('pulsing'),
+      'pulse class should be applied immediately on event'
+    ).to.be.true;
+
+    await waitUntil(
+      () =>
+        fetchStub
+          .getCalls()
+          .filter((c) =>
+            (c.args[0] as string).startsWith('/api/v1/audit-logs/grouped?')
+          ).length > fetchCallsBefore,
+      'audit list should be refetched after live event',
+      { timeout: 1500 }
+    );
 
     document.body.removeChild(element);
   });

@@ -21,7 +21,7 @@ class AIModelBase(BaseModel):
     description: Optional[str] = Field(None, description="Optional description")
     provider_name: str = Field(..., description="e.g., 'openai', 'anthropic'")
     model_identifier: str = Field(
-        ..., description="Standardized identifier, e.g., 'gpt-4-turbo'"
+        ..., description="Standardized identifier, e.g., 'gpt-5.4-turbo'"
     )
     api_endpoint: Optional[str] = Field(
         None, description="URL for the model's API, if not standard"

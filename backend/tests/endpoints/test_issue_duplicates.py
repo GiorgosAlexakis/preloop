@@ -723,7 +723,7 @@ def test_get_resolution_suggestion_invalid_resolution(mocker: MockerFixture) -> 
 
     mocker.patch(
         "preloop.api.endpoints.issue_duplicates.crud_ai_model.get_default_active_model",
-        return_value=MagicMock(model_identifier="gpt-4"),
+        return_value=MagicMock(model_identifier="gpt-5.4"),
     )
 
     mocker.patch(
@@ -767,7 +767,7 @@ def test_get_resolution_suggestion_success(
 
     mocker.patch(
         "preloop.api.endpoints.issue_duplicates.crud_ai_model.get_default_active_model",
-        return_value=MagicMock(model_identifier="gpt-4"),
+        return_value=MagicMock(model_identifier="gpt-5.4"),
     )
 
     mocker.patch(
@@ -1215,7 +1215,7 @@ def test_get_resolution_suggestion_deconflict_success(
 
     mocker.patch(
         "preloop.api.endpoints.issue_duplicates.crud_ai_model.get_default_active_model",
-        return_value=MagicMock(model_identifier="gpt-4"),
+        return_value=MagicMock(model_identifier="gpt-5.4"),
     )
 
     mocker.patch(
@@ -1309,7 +1309,7 @@ def test_get_resolution_suggestion_prompt_not_configured(mocker: MockerFixture) 
 
     mocker.patch(
         "preloop.api.endpoints.issue_duplicates.crud_ai_model.get_default_active_model",
-        return_value=MagicMock(model_identifier="gpt-4"),
+        return_value=MagicMock(model_identifier="gpt-5.4"),
     )
 
     mocker.patch(
@@ -1361,7 +1361,7 @@ def test_check_or_create_issue_duplicate_creates_via_ai(
 
     mock_model = MagicMock()
     mock_model.id = uuid4()
-    mock_model.model_identifier = "gpt-4"
+    mock_model.model_identifier = "gpt-5.4"
     mock_model.api_key = "test-key"
     mock_get_default_model.return_value = mock_model
 

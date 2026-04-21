@@ -126,6 +126,80 @@ func TestPost_Success(t *testing.T) {
 	}
 }
 
+// TestPostWithHeaders_AppliesExtraHeaders proves that the
+// header-aware POST helper actually emits caller-supplied headers on the
+// outgoing request. The motivating regression was Anthropic's
+// /v1/messages endpoint rejecting requests with HTTP 400 "Missing
+// anthropic-version header" — without a supported way to attach the
+// header from the CLI, every Claude Code live-validation probe failed.
+func TestPostWithHeaders_AppliesExtraHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("anthropic-version"); got != "2023-06-01" {
+			t.Errorf("expected anthropic-version='2023-06-01', got %q", got)
+		}
+		if got := r.Header.Get("X-Custom"); got != "value" {
+			t.Errorf("expected X-Custom='value', got %q", got)
+		}
+		// Standard headers must still be set — extras don't replace them.
+		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
+			t.Errorf("expected Authorization='Bearer tok', got %q", got)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("expected Content-Type='application/json', got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWithToken(server.URL, "tok")
+	err := client.PostWithHeaders(
+		"/test",
+		map[string]string{"hello": "world"},
+		map[string]string{
+			"anthropic-version": "2023-06-01",
+			"X-Custom":          "value",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestPostWithHeaders_StandardHeadersWinOverExtras pins down the
+// override semantics that doWithBodyAndHeaders applies. Callers must
+// not be able to clobber Authorization / Content-Type / Accept by
+// passing conflicting values in “headers“ — that would silently break
+// auth or content negotiation in surprising ways.
+func TestPostWithHeaders_StandardHeadersWinOverExtras(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer real-token" {
+			t.Errorf("expected real Authorization to win, got %q", got)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("expected Content-Type to remain application/json, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWithToken(server.URL, "real-token")
+	err := client.PostWithHeaders(
+		"/test",
+		map[string]string{},
+		map[string]string{
+			"Authorization": "Bearer hijacked",
+			"Content-Type":  "text/plain",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestPostMultipart_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -199,7 +273,7 @@ func TestGet_APIError(t *testing.T) {
 func TestClientRefreshesExpiredAccessTokenFromStoredConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	os.Setenv("HOME", tmpDir)         //nolint:errcheck
 	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	requestCount := 0
@@ -281,7 +355,7 @@ func TestClientRefreshesExpiredAccessTokenFromStoredConfig(t *testing.T) {
 func TestClientDoesNotRefreshWhenExplicitTokenOverrideIsUsed(t *testing.T) {
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir) //nolint:errcheck
+	os.Setenv("HOME", tmpDir)         //nolint:errcheck
 	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

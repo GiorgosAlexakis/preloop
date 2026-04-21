@@ -17,7 +17,7 @@ def test_get_spend_multi(db_session, create_account):
         account_id=account.id,
         subject_type="user",
         subject_id=None,
-        model_alias="gpt-4",
+        model_alias="gpt-5.4",
         period=BudgetPeriod.daily,
         period_start=dt,
         spend_increment_usd=1.5,
@@ -40,7 +40,7 @@ def test_get_spend_multi(db_session, create_account):
 
     # Define buckets to query - including one that does not exist in DB
     buckets = [
-        ("user", None, "gpt-4", BudgetPeriod.daily, dt),
+        ("user", None, "gpt-5.4", BudgetPeriod.daily, dt),
         ("account", None, None, BudgetPeriod.monthly, dt),
         ("nonexistent", None, None, BudgetPeriod.daily, dt),
     ]
@@ -49,7 +49,7 @@ def test_get_spend_multi(db_session, create_account):
 
     # We expect 2 successful results to be returned
     assert len(result) == 2
-    assert result[("user", None, "gpt-4", BudgetPeriod.daily, dt)] == 1.5
+    assert result[("user", None, "gpt-5.4", BudgetPeriod.daily, dt)] == 1.5
     assert result[("account", None, None, BudgetPeriod.monthly, dt)] == 10.0
 
     # The nonexistent entry shouldn't be mapped

@@ -47,7 +47,7 @@ class BudgetPolicy(Base):
 
     model_alias = Column(
         String, nullable=True, index=True
-    )  # e.g., 'gpt-4o'. If null, applies to all models for that subject.
+    )  # e.g., 'gpt-5.4'. If null, applies to all models for that subject.
     period = Column(Enum(BudgetPeriod), nullable=False)
 
     hard_limit_usd = Column(Float, nullable=True)

@@ -80,7 +80,7 @@ class TestOpenCodeModelResolution:
         agent = OpenCodeAgent({})
         context = {
             "model_identifier": "claude-sonnet-4-20250514",
-            "agent_config": {"model": "gpt-4o"},
+            "agent_config": {"model": "gpt-5.4"},
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
@@ -97,7 +97,7 @@ class TestOpenCodeModelResolution:
         """Falls back to agent_config.model when model_identifier is absent."""
         agent = OpenCodeAgent({})
         context = {
-            "agent_config": {"model": "gpt-4o"},
+            "agent_config": {"model": "gpt-5.4"},
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
@@ -107,7 +107,7 @@ class TestOpenCodeModelResolution:
             with patch.object(agent, "use_kubernetes", False):
                 await agent.start(context)
                 call_ctx = mock_start.call_args[0][0]
-                assert call_ctx["opencode_model"] == "gpt-4o"
+                assert call_ctx["opencode_model"] == "gpt-5.4"
 
     @pytest.mark.asyncio
     async def test_no_model_raises_error(self):
@@ -142,7 +142,7 @@ class TestOpenCodeModelResolution:
             "model_gateway_enabled": True,
             "model_gateway_model_alias": "anthropic/claude-sonnet-4-5",
             "model_identifier": "claude-sonnet-4-20250514",
-            "agent_config": {"model": "gpt-4o"},
+            "agent_config": {"model": "gpt-5.4"},
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
@@ -180,12 +180,12 @@ class TestOpenCodeBuildScript:
         agent = OpenCodeAgent({})
         context = {
             "prompt": "test",
-            "opencode_model": "gpt-4o",
+            "opencode_model": "gpt-5.4",
             "execution_id": "exec-1",
             "flow_name": "test-flow",
         }
         script = agent._build_opencode_script(context)
-        assert "gpt-4o" in script
+        assert "gpt-5.4" in script
 
     def test_script_has_post_exec_sleep_trap(self):
         """Script includes the post-exec debug sleep trap."""

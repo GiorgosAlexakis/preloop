@@ -78,11 +78,9 @@ async def _get_openai_models(api_key: Optional[str] = None) -> List[str]:
         logger.warning(f"Failed to fetch OpenAI models: {e}")
         # Return fallback list for other errors (network issues, etc.)
         return [
-            "gpt-4o",
-            "gpt-4o-mini",
-            "gpt-4-turbo",
-            "gpt-4",
-            "gpt-3.5-turbo",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.4-codex",
         ]
 
 

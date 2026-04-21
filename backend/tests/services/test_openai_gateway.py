@@ -362,7 +362,7 @@ def test_create_response_requires_gateway_enabled_default_when_model_omitted(
         obj_in={
             "name": "Direct Default Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4.1",
+            "model_identifier": "gpt-5.4",
             "api_key": "provider-secret",
             "is_default": True,
         },
@@ -1110,3 +1110,681 @@ def test_create_response_drops_unsupported_hosted_tools_for_upstream(
             },
         }
     ]
+
+
+def _codex_responses_payload() -> dict:
+    return {
+        "id": "resp_codex_chat_1",
+        "created_at": 1234,
+        "output": [
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [
+                    {"type": "output_text", "text": "Hello from Codex"},
+                ],
+            }
+        ],
+        "usage": {
+            "input_tokens": 5,
+            "output_tokens": 3,
+            "total_tokens": 8,
+        },
+        "output_text": "Hello from Codex",
+    }
+
+
+def test_create_chat_completion_routes_codex_oauth_models():
+    """Codex OAuth models hit the Codex backend, not litellm."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    ai_model = SimpleNamespace(
+        id="model-1",
+        provider_name="openai-codex",
+        model_identifier="gpt-5.4",
+        api_endpoint="https://chatgpt.com/backend-api/codex",
+    )
+
+    with (
+        patch.object(service, "_resolve_requested_model", return_value=ai_model),
+        patch.object(service, "_check_budget", return_value=None),
+        patch.object(service, "_record_gateway_request"),
+        patch.object(service, "_emit_gateway_request_started"),
+        patch.object(
+            service,
+            "_create_openai_codex_response",
+            return_value=_codex_responses_payload(),
+        ) as mock_create_codex,
+        patch.object(service, "_call_litellm") as mock_call_litellm,
+    ):
+        response = service.create_chat_completion(
+            {
+                "model": "openai/gpt-5.4",
+                "messages": [{"role": "user", "content": "Hi"}],
+            }
+        )
+
+    mock_create_codex.assert_called_once()
+    mock_call_litellm.assert_not_called()
+    assert response["model"] == "openai/gpt-5.4"
+    assert response["choices"][0]["message"]["content"] == "Hello from Codex"
+    assert response["choices"][0]["finish_reason"] == "stop"
+    assert response["usage"]["total_tokens"] == 8
+
+
+def test_stream_chat_completion_emits_codex_chunks_for_oauth_models():
+    """Streaming chat completions fake-stream Codex sync responses."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    ai_model = SimpleNamespace(
+        id="model-1",
+        provider_name="openai-codex",
+        model_identifier="gpt-5.4",
+        api_endpoint="https://chatgpt.com/backend-api/codex",
+    )
+
+    with (
+        patch.object(service, "_resolve_requested_model", return_value=ai_model),
+        patch.object(service, "_check_budget", return_value=None),
+        patch.object(service, "_record_gateway_request") as mock_record,
+        patch.object(service, "_emit_gateway_request_started"),
+        patch.object(
+            service,
+            "_create_openai_codex_response",
+            return_value=_codex_responses_payload(),
+        ) as mock_create_codex,
+        patch.object(service, "_call_litellm") as mock_call_litellm,
+    ):
+        events = list(
+            service.stream_chat_completion(
+                {
+                    "model": "openai/gpt-5.4",
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    "stream": True,
+                }
+            )
+        )
+
+    mock_create_codex.assert_called_once()
+    mock_call_litellm.assert_not_called()
+
+    payloads = [_parse_sse_payload(event) for event in events]
+    assert payloads[-1] == "[DONE]"
+    chunks = [p for p in payloads if p != "[DONE]"]
+
+    assert chunks[0]["choices"][0]["delta"] == {"role": "assistant", "content": ""}
+    content_chunk = next(c for c in chunks if c["choices"][0]["delta"].get("content"))
+    assert content_chunk["choices"][0]["delta"]["content"] == "Hello from Codex"
+    final_chunk = next(c for c in chunks if c["choices"][0].get("finish_reason"))
+    assert final_chunk["choices"][0]["finish_reason"] == "stop"
+    assert final_chunk["usage"]["total_tokens"] == 8
+
+    mock_record.assert_called_once()
+    record_kwargs = mock_record.call_args.kwargs
+    assert record_kwargs["status_code"] == 200
+    assert record_kwargs["endpoint"] == "/openai/v1/chat/completions"
+    assert record_kwargs["endpoint_kind"] == "chat_completions_stream"
+
+
+def test_stream_chat_completion_propagates_codex_errors():
+    """Codex upstream errors during streaming surface as gateway errors."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    ai_model = SimpleNamespace(
+        id="model-1",
+        provider_name="openai-codex",
+        model_identifier="gpt-5.4",
+        api_endpoint="https://chatgpt.com/backend-api/codex",
+    )
+
+    with (
+        patch.object(service, "_resolve_requested_model", return_value=ai_model),
+        patch.object(service, "_check_budget", return_value=None),
+        patch.object(service, "_record_gateway_request") as mock_record,
+        patch.object(service, "_emit_gateway_request_started"),
+        patch.object(
+            service,
+            "_create_openai_codex_response",
+            side_effect=ModelGatewayAPIError(
+                provider="openai",
+                status_code=401,
+                message="OpenAI Codex OAuth credentials are not configured",
+            ),
+        ),
+    ):
+        with pytest.raises(ModelGatewayAPIError) as exc_info:
+            list(
+                service.stream_chat_completion(
+                    {
+                        "model": "openai/gpt-5.4",
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "stream": True,
+                    }
+                )
+            )
+
+    assert exc_info.value.status_code == 401
+    mock_record.assert_called_once()
+    assert mock_record.call_args.kwargs["status_code"] == 401
+
+
+def test_codex_response_to_chat_completion_dict_extracts_tool_calls():
+    """Codex function_call output items become chat-completion tool_calls."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    response_dict = {
+        "id": "resp_codex_2",
+        "output": [
+            {
+                "type": "function_call",
+                "call_id": "call_abc",
+                "name": "lookup_user",
+                "arguments": '{"id":"u-1"}',
+            }
+        ],
+        "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+    }
+
+    chat_dict = service._codex_response_to_chat_completion_dict(response_dict)
+
+    message = chat_dict["choices"][0]["message"]
+    assert message["content"] == ""
+    assert message["tool_calls"] == [
+        {
+            "id": "call_abc",
+            "type": "function",
+            "function": {"name": "lookup_user", "arguments": '{"id":"u-1"}'},
+        }
+    ]
+    assert chat_dict["choices"][0]["finish_reason"] == "tool_calls"
+
+
+def test_build_openai_codex_payload_from_chat_completion_extracts_system_message():
+    """System messages must move to ``instructions`` (Codex requires it)."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    payload = {
+        "model": "openai/gpt-5.4",
+        "temperature": 0.5,
+    }
+    messages = [
+        {"role": "system", "content": "You are a billing assistant."},
+        {"role": "user", "content": "Pay $50 to Jon"},
+    ]
+
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload=payload, messages=messages
+    )
+
+    assert upstream["instructions"] == "You are a billing assistant."
+    assert upstream["model"] == "openai/gpt-5.4"
+    assert upstream["temperature"] == 0.5
+    # System message must NOT show up in input items.
+    assert all(
+        item.get("role") != "system"
+        for item in upstream["input"]
+        if item.get("type") == "message"
+    )
+    user_item = upstream["input"][0]
+    assert user_item["type"] == "message"
+    assert user_item["role"] == "user"
+    assert user_item["content"][0] == {
+        "type": "input_text",
+        "text": "Pay $50 to Jon",
+    }
+
+
+def test_build_openai_codex_payload_from_chat_completion_supplies_default_instructions():
+    """Codex rejects requests without ``instructions``; we must provide a
+    default when the chat-completions client doesn't send a system message."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload={"model": "openai/gpt-5.4"},
+        messages=[{"role": "user", "content": "hi"}],
+    )
+
+    assert isinstance(upstream["instructions"], str)
+    assert upstream["instructions"].strip(), "instructions must be a non-empty string"
+
+
+def test_build_openai_codex_payload_from_chat_completion_translates_tool_round_trip():
+    """Assistant tool_calls and tool results from a previous turn must be
+    translated to Codex ``function_call``/``function_call_output`` items so
+    Codex can resume after a tool call (which is when Hermes was failing)."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    payload = {"model": "openai/gpt-5.4"}
+    messages = [
+        {"role": "system", "content": "You can use tools."},
+        {"role": "user", "content": "Pay $50 to Jon"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_xyz",
+                    "type": "function",
+                    "function": {
+                        "name": "pay",
+                        "arguments": '{"amount":50,"recipient":"Jon"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_xyz",
+            "content": "Payment of $50 to Jon submitted",
+        },
+    ]
+
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload=payload, messages=messages
+    )
+
+    assert upstream["instructions"] == "You can use tools."
+    types = [item["type"] for item in upstream["input"]]
+    assert types == ["message", "function_call", "function_call_output"]
+
+    function_call = upstream["input"][1]
+    assert function_call == {
+        "type": "function_call",
+        "call_id": "call_xyz",
+        "name": "pay",
+        "arguments": '{"amount":50,"recipient":"Jon"}',
+    }
+    function_output = upstream["input"][2]
+    assert function_output == {
+        "type": "function_call_output",
+        "call_id": "call_xyz",
+        "output": "Payment of $50 to Jon submitted",
+    }
+
+
+def test_build_openai_codex_payload_assistant_text_uses_output_text():
+    """Assistant text content in chat history must use ``output_text`` rather
+    than ``input_text`` when re-encoded for the Codex Responses API."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload={"model": "openai/gpt-5.4"},
+        messages=[
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello!"},
+        ],
+    )
+    assistant_item = next(
+        item
+        for item in upstream["input"]
+        if item.get("type") == "message" and item.get("role") == "assistant"
+    )
+    assert assistant_item["content"] == [
+        {"type": "output_text", "text": "hello!"},
+    ]
+
+
+def test_build_openai_codex_payload_drops_orphan_tool_messages():
+    """A ``role: tool`` message with no ``tool_call_id`` cannot be linked to
+    any prior call, so it must be dropped to avoid a malformed Codex request."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload={"model": "openai/gpt-5.4"},
+        messages=[
+            {"role": "user", "content": "hi"},
+            {"role": "tool", "content": "stray"},
+        ],
+    )
+    assert all(item.get("type") != "function_call_output" for item in upstream["input"])
+
+
+def test_build_openai_codex_payload_sets_store_false():
+    """Codex rejects requests without ``store: false`` (HTTP 400 "Store must
+    be set to false"). The chat-completions translator must set it explicitly,
+    just like the native codex-cli does."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload={"model": "openai/gpt-5.4"},
+        messages=[{"role": "user", "content": "hi"}],
+    )
+    assert upstream["store"] is False
+
+
+def test_build_openai_codex_payload_overrides_model_with_ai_model_identifier():
+    """The Codex backend identifies models by the upstream provider id
+    (e.g. ``gpt-5-codex``), not the gateway alias the chat-completions client
+    sent. When an ``ai_model`` is passed in we must use its identifier so the
+    upstream call resolves correctly."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+    ai_model = SimpleNamespace(model_identifier="gpt-5-codex")
+
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload={"model": "openai/gpt-5.4"},
+        messages=[{"role": "user", "content": "hi"}],
+        ai_model=ai_model,
+    )
+    assert upstream["model"] == "gpt-5-codex"
+
+
+def test_aggregate_codex_sse_stream_builds_assistant_message_from_streaming_events():
+    """An assistant text turn must be reconstructed from
+    ``output_item.added`` + ``output_text.delta`` + ``output_text.done``,
+    independent of whether the giant ``response.completed`` event is present
+    or parseable (chatgpt.com sometimes truncates that event — see
+    vercel/ai#14473)."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    sse_lines = [
+        b'data: {"type":"response.created","response":{"id":"resp_codex_msg"}}\n',
+        b"\n",
+        b'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","content":[]}}\n',
+        b"\n",
+        b'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hello "}\n',
+        b"\n",
+        b'data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"world"}\n',
+        b"\n",
+        b'data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"text":"hello world"}\n',
+        b"\n",
+        b'data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"hello world"}]}}\n',
+        b"\n",
+    ]
+
+    result = service._aggregate_codex_sse_stream(iter(sse_lines))
+
+    assert result["id"] == "resp_codex_msg"
+    assert result["output_text"] == "hello world"
+    assert len(result["output"]) == 1
+    msg = result["output"][0]
+    assert msg["type"] == "message"
+    assert msg["role"] == "assistant"
+    assert msg["content"] == [{"type": "output_text", "text": "hello world"}]
+
+
+def test_aggregate_codex_sse_stream_captures_function_call_with_arguments_deltas():
+    """A tool-only turn (no text deltas) must still surface the
+    ``function_call`` item with its accumulated arguments. This is the
+    failure mode Hermes hit when asking ``pay $6 to Joe`` — the previous
+    aggregator returned an empty output because it relied on
+    ``response.completed`` and on text deltas, both of which are
+    insufficient for tool-only turns."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    sse_lines = [
+        b'data: {"type":"response.created","response":{"id":"resp_codex_tool"}}\n',
+        b"\n",
+        b'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_abc","name":"pay","arguments":""}}\n',
+        b"\n",
+        b'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\\"amount\\":6"}\n',
+        b"\n",
+        b'data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":",\\"recipient\\":\\"Joe\\"}"}\n',
+        b"\n",
+        b'data: {"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":0,"arguments":"{\\"amount\\":6,\\"recipient\\":\\"Joe\\"}"}\n',
+        b"\n",
+        b'data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_abc","name":"pay","arguments":"{\\"amount\\":6,\\"recipient\\":\\"Joe\\"}","status":"completed"}}\n',
+        b"\n",
+    ]
+
+    result = service._aggregate_codex_sse_stream(iter(sse_lines))
+
+    assert result["id"] == "resp_codex_tool"
+    assert result["output_text"] == ""
+    assert len(result["output"]) == 1
+    fc = result["output"][0]
+    assert fc["type"] == "function_call"
+    assert fc["name"] == "pay"
+    assert fc["call_id"] == "call_abc"
+    assert fc["arguments"] == '{"amount":6,"recipient":"Joe"}'
+
+    # The whole point: the chat-completion converter must turn this into a
+    # ``tool_calls`` array so Hermes sees something other than an empty
+    # response.
+    chat = service._codex_response_to_chat_completion_dict(result)
+    message = chat["choices"][0]["message"]
+    assert message["content"] == ""
+    assert message["tool_calls"] == [
+        {
+            "id": "call_abc",
+            "type": "function",
+            "function": {
+                "name": "pay",
+                "arguments": '{"amount":6,"recipient":"Joe"}',
+            },
+        }
+    ]
+    assert chat["choices"][0]["finish_reason"] == "tool_calls"
+
+
+def test_aggregate_codex_sse_stream_skips_truncated_response_completed_event():
+    """If ``response.completed`` arrives truncated (mirrors the
+    vercel/ai#14473 reproduction), aggregation must still produce a valid
+    response from the smaller streaming events."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    sse_lines = [
+        b'data: {"type":"response.created","response":{"id":"resp_trunc"}}\n',
+        b"\n",
+        b'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_x","type":"message","role":"assistant","content":[]}}\n',
+        b"\n",
+        b'data: {"type":"response.output_text.delta","item_id":"msg_x","output_index":0,"content_index":0,"delta":"ok"}\n',
+        b"\n",
+        b'data: {"type":"response.output_text.done","item_id":"msg_x","output_index":0,"content_index":0,"text":"ok"}\n',
+        b"\n",
+        b'data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_x","type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}}\n',
+        b"\n",
+        # Truncated ``response.completed`` — invalid JSON. Must be skipped.
+        b'data: {"type":"response.completed","response":{"id":"resp_trunc","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"o\n',
+        b"\n",
+    ]
+
+    result = service._aggregate_codex_sse_stream(iter(sse_lines))
+
+    assert result["id"] == "resp_trunc"
+    assert result["output_text"] == "ok"
+    assert result["output"][0]["content"] == [{"type": "output_text", "text": "ok"}]
+
+
+def test_aggregate_codex_sse_stream_raises_on_response_failed_event():
+    """A ``response.failed`` event must surface as a ``ModelGatewayAPIError``
+    so the gateway records a proper error and the client sees a non-empty
+    failure response instead of an empty success."""
+    from preloop.services.model_gateway_errors import ModelGatewayAPIError
+
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    sse_lines = [
+        b'data: {"type":"response.created","response":{"id":"resp_err"}}\n',
+        b"\n",
+        b'data: {"type":"response.failed","response":{"id":"resp_err","error":{"message":"upstream blew up"}}}\n',
+        b"\n",
+    ]
+
+    with pytest.raises(ModelGatewayAPIError) as exc_info:
+        service._aggregate_codex_sse_stream(iter(sse_lines))
+    assert "upstream blew up" in str(exc_info.value)
+
+
+def test_iter_sse_events_skips_non_data_lines_and_done_marker():
+    """The SSE parser must ignore ``event:``, ``id:``, comments, and the
+    ``[DONE]`` sentinel, and must only surface JSON ``data:`` payloads."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    sse_lines = [
+        b": comment\n",
+        b"event: response.foo\n",
+        b"id: 1\n",
+        b'data: {"type":"response.foo","ok":true}\n',
+        b"\n",
+        b"data: [DONE]\n",
+        b"\n",
+    ]
+
+    events = list(service._iter_sse_events(iter(sse_lines)))
+    assert events == [{"type": "response.foo", "ok": True}]
+
+
+def test_build_openai_codex_payload_flattens_chat_completion_tools():
+    """Chat-completions tools nest the function spec under ``function``; the
+    Codex Responses API expects ``name``/``description``/``parameters`` to be
+    on the tool entry itself. Sending the chat-completions shape unchanged
+    triggers ``HTTP 400: Missing required parameter: 'tools[0].name'``."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    payload = {
+        "model": "openai/gpt-5.4",
+        "messages": [],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "pay",
+                    "description": "Send a payment",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "amount": {"type": "number"},
+                            "recipient": {"type": "string"},
+                        },
+                        "required": ["amount", "recipient"],
+                    },
+                    "strict": True,
+                },
+            }
+        ],
+        "tool_choice": "auto",
+    }
+
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload=payload,
+        messages=[],
+    )
+
+    assert upstream["tools"] == [
+        {
+            "type": "function",
+            "name": "pay",
+            "description": "Send a payment",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "amount": {"type": "number"},
+                    "recipient": {"type": "string"},
+                },
+                "required": ["amount", "recipient"],
+            },
+            "strict": True,
+        }
+    ]
+    assert upstream["tool_choice"] == "auto"
+
+
+def test_build_openai_codex_payload_flattens_forced_tool_choice():
+    """A forced tool_choice ``{"type": "function", "function": {"name": ...}}``
+    must be flattened to ``{"type": "function", "name": ...}`` for Codex."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload={
+            "model": "openai/gpt-5.4",
+            "messages": [],
+            "tool_choice": {"type": "function", "function": {"name": "pay"}},
+        },
+        messages=[],
+    )
+
+    assert upstream["tool_choice"] == {"type": "function", "name": "pay"}
+
+
+def test_build_openai_codex_payload_passes_through_responses_api_tools():
+    """Tools already in Responses-API shape (no nested ``function`` field)
+    must be forwarded verbatim, so callers can pre-translate when needed."""
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    service = OpenAIGatewayService(MagicMock(), auth_context)
+
+    already_flat = [
+        {
+            "type": "function",
+            "name": "pay",
+            "description": "Send a payment",
+            "parameters": {"type": "object", "properties": {}},
+        }
+    ]
+
+    upstream = service._build_openai_codex_payload_from_chat_completion(
+        payload={
+            "model": "openai/gpt-5.4",
+            "messages": [],
+            "tools": already_flat,
+        },
+        messages=[],
+    )
+
+    assert upstream["tools"] == already_flat

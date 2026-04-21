@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_AI_TIMEOUT = 30
 
 # Default model to use if none specified
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-5.4-mini"
 
 
 @dataclass

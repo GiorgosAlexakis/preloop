@@ -66,7 +66,7 @@ def mock_ai_model():
     model = MagicMock()
     model.id = uuid.uuid4()
     model.provider_name = "openai"
-    model.model_identifier = "gpt-4o"
+    model.model_identifier = "gpt-5.4"
     model.api_key = "sk-test"
     model.api_endpoint = None
     model.is_default = True
@@ -161,9 +161,9 @@ class TestValidateOutput:
 class TestToLitellmModel:
     def test_openai(self, mock_ai_model):
         mock_ai_model.provider_name = "openai"
-        mock_ai_model.model_identifier = "gpt-4o"
+        mock_ai_model.model_identifier = "gpt-5.4"
         assert (
-            PolicyGenerationService._to_litellm_model(mock_ai_model) == "openai/gpt-4o"
+            PolicyGenerationService._to_litellm_model(mock_ai_model) == "openai/gpt-5.4"
         )
 
     def test_anthropic(self, mock_ai_model):
@@ -182,9 +182,9 @@ class TestToLitellmModel:
 
     def test_identifier_with_prefix_passthrough(self, mock_ai_model):
         mock_ai_model.provider_name = "openai"
-        mock_ai_model.model_identifier = "azure/gpt-4o"
+        mock_ai_model.model_identifier = "azure/gpt-5.4"
         assert (
-            PolicyGenerationService._to_litellm_model(mock_ai_model) == "azure/gpt-4o"
+            PolicyGenerationService._to_litellm_model(mock_ai_model) == "azure/gpt-5.4"
         )
 
 

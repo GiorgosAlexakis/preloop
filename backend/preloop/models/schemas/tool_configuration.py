@@ -152,7 +152,7 @@ class ApprovalWorkflowBase(BaseModel):
     )
     ai_model: Optional[str] = Field(
         None,
-        description="AI model for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
+        description="AI model for approval decisions (e.g., 'gpt-5.4', 'claude-sonnet-4.7')",
     )
     ai_guidelines: Optional[str] = Field(
         None, description="User-defined guidelines for AI approval decisions"

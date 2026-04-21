@@ -75,7 +75,7 @@ class TestOpenHandsAgent:
                 "agent_type": "PlannerAgent",
                 "max_iterations": 20,
             },
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "model_api_key": "test-key",
         }
 
@@ -140,7 +140,7 @@ class TestOpenHandsAgent:
                 "agent_type": "CodeActAgent",
                 "max_iterations": 25,
             },
-            "model_identifier": "gpt-4-turbo",
+            "model_identifier": "gpt-5.4-turbo",
             "model_api_key": "sk-test-key",
             "model_provider": "openai",
             "model_parameters": {
@@ -159,7 +159,7 @@ class TestOpenHandsAgent:
         assert env["PROMPT"] == "Implement feature X"
 
         # Check AI model variables
-        assert env["LLM_MODEL"] == "gpt-4-turbo"
+        assert env["LLM_MODEL"] == "gpt-5.4-turbo"
         assert env["LLM_API_KEY"] == "sk-test-key"
         assert env["LLM_PROVIDER"] == "openai"
         assert env["LLM_TEMPERATURE"] == "0.7"
@@ -243,7 +243,7 @@ class TestOpenHandsAgent:
 
         execution_context = {
             "prompt": "Test task",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "model_parameters": {
                 "temperature": 0.9,
                 "max_tokens": 2000,
@@ -267,7 +267,7 @@ class TestOpenHandsAgent:
 
         execution_context = {
             "prompt": "Test task",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             # No model_parameters
             "openhands_agent_type": "CodeActAgent",
             "max_iterations": 10,

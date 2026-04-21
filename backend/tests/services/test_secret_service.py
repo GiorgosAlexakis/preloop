@@ -35,7 +35,7 @@ def test_resolve_ai_model_api_key_from_secret_reference(
         obj_in={
             "name": "Secret-backed Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4o",
+            "model_identifier": "gpt-5.4",
             "api_key": "super-secret-key",
             "is_default": False,
         },

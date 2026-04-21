@@ -1983,12 +1983,12 @@ export class ToolCard extends LitElement {
                                 <sl-option value="claude-sonnet-4-20250514"
                                   >Claude Sonnet 4</sl-option
                                 >
-                                <sl-option value="gpt-4o">GPT-4o</sl-option>
-                                <sl-option value="gpt-4-turbo"
-                                  >GPT-4 Turbo</sl-option
+                                <sl-option value="gpt-5.4">GPT-5.4</sl-option>
+                                <sl-option value="gpt-5.4-mini"
+                                  >GPT-5.4 Mini</sl-option
                                 >
-                                <sl-option value="gemini-2.5-pro"
-                                  >Gemini 2.5 Pro</sl-option
+                                <sl-option value="gemini-3.5-pro"
+                                  >Gemini 3.5 Pro</sl-option
                                 >
                               </sl-select>
                             </div>

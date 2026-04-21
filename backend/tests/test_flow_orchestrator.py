@@ -1259,7 +1259,7 @@ class TestFlowExecutionOrchestrator:
         ai_model = AIModel(
             id=str(ai_model_id),
             name="Test Model",
-            model_identifier="gpt-4",
+            model_identifier="gpt-5.4",
             provider_name="openai",
             api_endpoint="https://api.openai.com/v1",
             api_key="test-key",

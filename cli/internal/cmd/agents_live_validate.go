@@ -1,0 +1,797 @@
+// Live validation runners for managed CLI agents.
+//
+// This file complements ``agents_openclaw.go`` by adding the per-agent
+// gateway-probe helpers that the orchestrator calls after CLI onboarding
+// completes. Each helper sends a real, account-bound model request through
+// the Preloop gateway, then waits for the request to be indexed in the
+// gateway-usage search so we can prove end-to-end that:
+//
+//   - the durable credential the CLI installed actually authenticates,
+//   - the managed model alias is bound to a working AI model,
+//   - the upstream provider returns a non-error response, and
+//   - the request was logged on the account's audit/usage trail.
+//
+// Historically only OpenClaw and Codex CLI had bespoke implementations;
+// every other agent kind silently reported ``Live check: unsupported`` and
+// the user had to trust that onboarding worked. This module fills the gap
+// with implementations for Hermes, OpenCode, Claude Code and Gemini CLI,
+// and unifies the boilerplate that all six implementations need into
+// ``runGatewayLiveValidation`` so future kinds (or upstream changes) only
+// require describing the per-agent payload.
+//
+// The orchestrator (``runDeferredLiveValidationsParallel``) invokes these
+// helpers concurrently *after* every agent has been onboarded, so a slow
+// upstream (e.g. Codex' chatgpt.com backend, which can take 5–10 seconds)
+// no longer blocks subsequent agents from being touched, and the wall
+// clock for ``preloop agents onboard --all`` collapses from sequential
+// O(N) to roughly the slowest single live check.
+
+package cmd
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/preloop/preloop/cli/internal/api"
+)
+
+// gatewayLiveValidationSpec captures everything the shared
+// “runGatewayLiveValidation“ helper needs to know about the per-agent
+// request shape. Each agent kind contributes a tiny “buildLiveValidationSpec“
+// closure that resolves the gateway token + model alias from its config
+// document and assembles the request body for the appropriate endpoint.
+//
+// The shared helper handles all of the boilerplate that every kind needs:
+//   - resolving the configured Preloop API base URL,
+//   - fetching the managed agent + credential summary,
+//   - emitting the validation token in the prompt so the gateway-usage
+//     search can find it later,
+//   - performing the POST against the gateway,
+//   - waiting for the matching usage record to be indexed, and
+//   - assembling the “ValidationResult“ map in the canonical shape every
+//     UI and audit consumer expects (see “defaultManagedLiveValidationResult“).
+type gatewayLiveValidationSpec struct {
+	// Endpoint is the gateway-relative path the request will be POSTed to,
+	// e.g. ``/openai/v1/chat/completions`` or
+	// ``/gemini/v1beta/models/<model>:generateContent``.
+	Endpoint string
+
+	// Body is the JSON-serialisable payload posted to ``Endpoint``. Each
+	// agent kind builds it in the shape the upstream expects (chat-completions
+	// / Anthropic messages / Gemini generateContent / Codex Responses).
+	Body map[string]interface{}
+
+	// Token is the per-account durable credential the CLI installed in the
+	// agent's config. It is sent as ``Authorization: Bearer <token>`` and
+	// is what the gateway's auth dependency uses to resolve the account
+	// and look up budgets / model permissions.
+	Token string
+
+	// ModelAlias is the gateway alias (e.g. ``preloop/openai/gpt-5.4``)
+	// recorded in the validation result and used to constrain the
+	// gateway-usage search. It does NOT have to match the upstream
+	// provider's model identifier — the gateway is responsible for that
+	// translation internally.
+	ModelAlias string
+
+	// Headers carries additional HTTP request headers (e.g.
+	// ``anthropic-version: 2023-06-01`` for the Anthropic gateway, which
+	// the upstream rejects with HTTP 400 if missing). Standard headers
+	// (Authorization / Content-Type / Accept) take precedence over any
+	// values supplied here so callers cannot accidentally clobber auth
+	// or content negotiation.
+	Headers map[string]string
+}
+
+// liveValidationContext gathers the lookups every per-agent spec builder
+// needs (config doc, base URL, validation prompt + token). It is provided
+// by the shared runner so per-agent code is purely declarative.
+type liveValidationContext struct {
+	// Document is the parsed (and decrypted, where applicable) agent
+	// config document, e.g. the ~/.codex/config.toml or
+	// ~/.gemini/settings.json contents. Per-agent code reads the gateway
+	// token / model alias out of it.
+	Document map[string]interface{}
+
+	// BaseURL is the configured Preloop API URL with no trailing slash,
+	// e.g. ``https://staging.preloop.ai``. Per-agent code rarely needs this
+	// directly but it is available for endpoints that embed the URL in the
+	// path or body.
+	BaseURL string
+
+	// Prompt is the human-readable validation prompt embedding the unique
+	// ``ValidationToken``. Per-agent code wraps it in the appropriate
+	// content shape (chat message / Anthropic message / Gemini part) so
+	// the token reaches the indexed prompt-text on the gateway side.
+	Prompt string
+
+	// ValidationToken is a unique nanosecond-precision token (e.g.
+	// ``preloop-validation-1776726725962856000``) used by
+	// ``waitForManagedValidationUsage`` to find the request record after
+	// it has been logged. Per-agent code only needs to make sure ``Prompt``
+	// reaches the upstream verbatim.
+	ValidationToken string
+}
+
+// gatewayLiveValidationBuilder is the per-agent function that turns a
+// “liveValidationContext“ into the actual request to send. Returning an
+// error short-circuits the validation with a “failed“ outcome and a
+// human-readable error attached to the “ValidationResult“ map.
+type gatewayLiveValidationBuilder func(ctx liveValidationContext) (gatewayLiveValidationSpec, error)
+
+// runGatewayLiveValidation is the shared driver behind every per-agent
+// “run<Kind>LiveValidation“ helper. It encapsulates the steps every kind
+// needs (resolve base URL, fetch agent detail, load config doc, build the
+// gateway request via “builder“, POST, wait for the validation token to
+// appear in gateway-usage search, assemble the canonical result map) so
+// per-agent code only declares *what* request to send, not *how* to plumb
+// the validation lifecycle.
+//
+// The function returns a populated outcome even on failure (with
+// “Attempted: true“, “Passed: false“ and a structured “live_validation_*“
+// payload) so the orchestrator can persist a meaningful audit record
+// regardless of which step blew up.
+func runGatewayLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+	endpointKey string,
+	builder gatewayLiveValidationBuilder,
+) (*managedLiveValidationOutcome, error) {
+	failedOutcome := func(err error) (*managedLiveValidationOutcome, error) {
+		return &managedLiveValidationOutcome{
+			Attempted: true,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted": true,
+				"live_validation_passed":    false,
+				"live_validation_status":    "failed",
+				"live_validation_error":     err.Error(),
+				"live_validation_endpoint":  endpointKey,
+			}),
+		}, err
+	}
+
+	baseURL, err := resolveConfiguredAPIURL()
+	if err != nil {
+		return failedOutcome(err)
+	}
+
+	detail, err := getManagedAgentDetailForDiscovered(client, agent)
+	if err != nil {
+		return failedOutcome(err)
+	}
+
+	document, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return failedOutcome(err)
+	}
+
+	validationToken := fmt.Sprintf("preloop-validation-%d", time.Now().UTC().UnixNano())
+	prompt := fmt.Sprintf(
+		"Welcome to Preloop. Validation token: %s. Reply with ACK only.",
+		validationToken,
+	)
+
+	spec, err := builder(liveValidationContext{
+		Document:        document,
+		BaseURL:         baseURL,
+		Prompt:          prompt,
+		ValidationToken: validationToken,
+	})
+	if err != nil {
+		return failedOutcome(err)
+	}
+	if strings.TrimSpace(spec.Token) == "" {
+		return failedOutcome(fmt.Errorf(
+			"managed %s config does not contain a Preloop gateway token",
+			resolveAgentDisplayName(agent),
+		))
+	}
+	if strings.TrimSpace(spec.ModelAlias) == "" {
+		return failedOutcome(fmt.Errorf(
+			"managed %s config does not contain a Preloop model alias",
+			resolveAgentDisplayName(agent),
+		))
+	}
+
+	gatewayClient := api.NewClientWithToken(baseURL, spec.Token)
+	var gatewayResponse map[string]interface{}
+	var requestErr error
+	if len(spec.Headers) == 0 {
+		requestErr = gatewayClient.Post(spec.Endpoint, spec.Body, &gatewayResponse)
+	} else {
+		requestErr = gatewayClient.PostWithHeaders(
+			spec.Endpoint,
+			spec.Body,
+			spec.Headers,
+			&gatewayResponse,
+		)
+	}
+	_ = gatewayResponse
+
+	apiKeyID := mostLikelyManagedAPIKeyID(detail.Credentials)
+	searchHit, searchErr := waitForManagedValidationUsage(
+		client,
+		runtimePrincipalIDForAgent(agent),
+		apiKeyID,
+		spec.ModelAlias,
+		validationToken,
+	)
+
+	passed := requestErr == nil && searchErr == nil && searchHit != nil && searchHit.StatusCode < 400
+	result := mergeStringMaps(validationResult, map[string]interface{}{
+		"live_validation_attempted":      true,
+		"live_validation_passed":         passed,
+		"live_validation_status":         "failed",
+		"live_validation_token":          validationToken,
+		"live_validation_prompt":         prompt,
+		"live_validation_model_alias":    spec.ModelAlias,
+		"live_validation_runtime_agent":  resolveAgentDisplayName(agent),
+		"live_validation_runtime_source": runtimePrincipalIDForAgent(agent),
+		"live_validation_endpoint":       endpointKey,
+	})
+	if passed {
+		result["live_validation_status"] = "passed"
+	}
+	if apiKeyID != "" {
+		result["live_validation_api_key_id"] = apiKeyID
+	}
+	if searchHit != nil {
+		result["live_validation_request_logged"] = true
+		result["live_validation_api_usage_id"] = searchHit.APIUsageID
+		result["live_validation_logged_at"] = searchHit.Timestamp
+		result["live_validation_status_code"] = searchHit.StatusCode
+	} else {
+		result["live_validation_request_logged"] = false
+	}
+
+	var validationErr error
+	if requestErr != nil {
+		result["live_validation_error"] = requestErr.Error()
+		validationErr = requestErr
+	}
+	if searchErr != nil {
+		result["live_validation_lookup_error"] = searchErr.Error()
+		if validationErr == nil {
+			validationErr = searchErr
+		} else {
+			validationErr = fmt.Errorf("%v; %w", validationErr, searchErr)
+		}
+	}
+	if !passed && validationErr == nil {
+		validationErr = fmt.Errorf("validation request did not appear in gateway usage")
+		result["live_validation_lookup_error"] = validationErr.Error()
+	}
+
+	return &managedLiveValidationOutcome{
+		Attempted:        true,
+		Passed:           passed,
+		ValidationResult: result,
+	}, validationErr
+}
+
+// ---------------------------------------------------------------------------
+// Per-agent payload builders.
+//
+// Each builder is paired with a tiny ``run<Kind>LiveValidation`` shim so the
+// dispatch table in ``runManagedAgentLiveValidation`` reads cleanly. The
+// builders are split out (rather than inlined into shims) to keep them
+// trivially testable in isolation.
+// ---------------------------------------------------------------------------
+
+// buildHermesLiveValidationSpec builds the gateway request used to verify a
+// Hermes onboarding. Hermes is wired up through “model.provider: custom“
+// pointing at Preloop's OpenAI-compatible chat-completions gateway, with
+// the durable credential stored in “model.api_key“ and the alias in
+// “model.default“. The probe is a vanilla one-message chat-completion.
+func buildHermesLiveValidationSpec(ctx liveValidationContext) (gatewayLiveValidationSpec, error) {
+	model, _ := asObjectMap(ctx.Document["model"])
+	token := strings.TrimSpace(resolveConfigSecret(model["api_key"]))
+	if token == "" {
+		token = strings.TrimSpace(resolveConfigSecret(model["apiKey"]))
+	}
+	modelAlias := strings.TrimSpace(lookupString(model, "default"))
+	if modelAlias == "" {
+		modelAlias = strings.TrimSpace(lookupString(model, "model"))
+	}
+	return gatewayLiveValidationSpec{
+		Endpoint:   "/openai/v1/chat/completions",
+		Body:       buildChatCompletionsLiveValidationPayload(modelAlias, ctx.Prompt),
+		Token:      token,
+		ModelAlias: modelAlias,
+	}, nil
+}
+
+// buildOpenCodeLiveValidationSpec builds the gateway request used to verify
+// an OpenCode onboarding. OpenCode is wired up via the “preloop“ provider
+// block (“provider.preloop.options.{baseURL,apiKey}“) and a top-level
+// “model: "preloop/<alias>"“ reference. The probe targets the same
+// chat-completions endpoint OpenCode itself uses.
+func buildOpenCodeLiveValidationSpec(ctx liveValidationContext) (gatewayLiveValidationSpec, error) {
+	providers, _ := asObjectMap(ctx.Document["provider"])
+	preloop, _ := asObjectMap(providers["preloop"])
+	options, _ := asObjectMap(preloop["options"])
+	token := strings.TrimSpace(resolveConfigSecret(options["apiKey"]))
+	modelAlias := strings.TrimSpace(strings.TrimPrefix(
+		strings.TrimSpace(lookupString(ctx.Document, "model")),
+		"preloop/",
+	))
+	return gatewayLiveValidationSpec{
+		Endpoint:   "/openai/v1/chat/completions",
+		Body:       buildChatCompletionsLiveValidationPayload(modelAlias, ctx.Prompt),
+		Token:      token,
+		ModelAlias: modelAlias,
+	}, nil
+}
+
+// buildClaudeCodeLiveValidationSpec builds the gateway request used to
+// verify a Claude Code onboarding. Claude Code is wired up via env vars
+// (“ANTHROPIC_BASE_URL“ / “ANTHROPIC_API_KEY“ / “ANTHROPIC_MODEL“)
+// because the upstream binary reads its config exclusively from the
+// process environment. The probe targets the Anthropic “/v1/messages“
+// gateway endpoint with a single user-text message.
+func buildClaudeCodeLiveValidationSpec(ctx liveValidationContext) (gatewayLiveValidationSpec, error) {
+	env, _ := asObjectMap(ctx.Document["env"])
+	token := strings.TrimSpace(resolveConfigSecret(env["ANTHROPIC_API_KEY"]))
+	if token == "" {
+		token = strings.TrimSpace(resolveConfigSecret(env["ANTHROPIC_AUTH_TOKEN"]))
+	}
+	// IMPORTANT: priority order matters here. ``applyClaudeManagedGateway``
+	// pins different fields depending on whether the upstream model maps
+	// onto one of Claude Code's three opaque selection keys
+	// (``opus`` / ``sonnet`` / ``haiku``):
+	//
+	//   - For a model in any of those families, ``ANTHROPIC_MODEL`` and
+	//     the root ``model`` are set to the SELECTION KEY (e.g. literal
+	//     "opus") — NOT to a gateway-resolvable alias. The real alias is
+	//     mirrored to the corresponding ``ANTHROPIC_DEFAULT_*_MODEL`` env
+	//     var AND to ``ANTHROPIC_CUSTOM_MODEL_OPTION`` (always).
+	//   - For a custom/non-family model, ``ANTHROPIC_MODEL`` carries the
+	//     full alias directly.
+	//
+	// Reading ``ANTHROPIC_MODEL`` first (as we used to) works for the
+	// custom case but for opus/sonnet/haiku models silently sends the
+	// gateway the literal string "opus", which it correctly rejects with
+	// HTTP 404 "Requested model not found". Probing
+	// ``ANTHROPIC_CUSTOM_MODEL_OPTION`` first — where the alias is set
+	// unconditionally — fixes the family case without breaking the custom
+	// one. The remaining fields are kept as defensive fallbacks for
+	// older/hand-edited configs that may not have the canonical set.
+	modelAlias := ""
+	for _, key := range []string{
+		"ANTHROPIC_CUSTOM_MODEL_OPTION",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+		"ANTHROPIC_MODEL",
+	} {
+		if alias := strings.TrimSpace(lookupString(env, key)); alias != "" {
+			modelAlias = alias
+			break
+		}
+	}
+	if modelAlias == "" {
+		modelAlias = strings.TrimSpace(lookupString(ctx.Document, "model"))
+	}
+	// Strip the optional ``preloop/`` provider prefix so the gateway's
+	// ``alias.endswith("/" + requested)`` resolver matches whether the
+	// stored alias is the bare ``anthropic/<model>`` form or the
+	// ``preloop/anthropic/<model>`` prefixed form. Without this strip a
+	// stored alias of ``preloop/anthropic/claude-opus-4-6`` and a sent
+	// value of ``preloop/anthropic/claude-opus-4-6`` only matches via
+	// the equality branch, while a stored alias of
+	// ``anthropic/claude-opus-4-6`` (the canonical normalised form on the
+	// account model registry) can never match the prefixed sent value at
+	// all — which was a second class of "Requested model not found"
+	// failures we hit during multi-account testing.
+	modelAlias = strings.TrimPrefix(modelAlias, "preloop/")
+	return gatewayLiveValidationSpec{
+		Endpoint:   "/anthropic/v1/messages",
+		Body:       buildAnthropicMessagesLiveValidationPayload(modelAlias, ctx.Prompt),
+		Token:      token,
+		ModelAlias: modelAlias,
+		// The Preloop Anthropic gateway endpoint validates the upstream
+		// API contract and rejects requests without an
+		// ``anthropic-version`` header with HTTP 400 ("Missing
+		// anthropic-version header" — Anthropic's native error shape).
+		// We pin to the long-standing GA version Anthropic recommends as
+		// the default for new integrations; the gateway transcoders
+		// don't depend on a newer surface.
+		Headers: map[string]string{"anthropic-version": anthropicAPIVersion},
+	}, nil
+}
+
+// anthropicAPIVersion is the value of the mandatory “anthropic-version“
+// HTTP header sent on every probe to “/anthropic/v1/messages“. Anthropic
+// guarantees this version stays compatible indefinitely (it's the
+// "stable" GA release), so pinning to it keeps live validation working
+// even if the upstream introduces newer breaking-change versions later.
+const anthropicAPIVersion = "2023-06-01"
+
+// buildGeminiLiveValidationSpec builds the gateway request used to verify
+// a Gemini CLI onboarding. Gemini is wired up via “apiKey“ and “baseUrl“
+// at the document root with the model name living under “model.name“
+// (the upstream binary uses “models/<name>:generateContent“-style URLs).
+// The probe targets the corresponding Preloop gateway endpoint with a
+// single Gemini “contents“ part.
+func buildGeminiLiveValidationSpec(ctx liveValidationContext) (gatewayLiveValidationSpec, error) {
+	token := strings.TrimSpace(resolveConfigSecret(ctx.Document["apiKey"]))
+	modelName := ""
+	if modelObj, ok := asObjectMap(ctx.Document["model"]); ok {
+		modelName = strings.TrimSpace(lookupString(modelObj, "name"))
+	}
+	if modelName == "" {
+		modelName = strings.TrimSpace(lookupString(ctx.Document, "model"))
+	}
+	// The CLI strips the ``google/`` prefix when it writes ``model.name``;
+	// the gateway accepts both the bare name (``gemini-3-flash-preview``)
+	// and the fully-qualified alias (``google/gemini-3-flash-preview``).
+	// Normalise to the qualified form for the audit/usage record so it
+	// matches what every other agent kind reports.
+	modelAlias := normalizeGeminiGatewayModelAlias(modelName)
+	endpoint := fmt.Sprintf(
+		"/gemini/v1beta/models/%s:generateContent",
+		geminiClientModelName(modelName),
+	)
+	return gatewayLiveValidationSpec{
+		Endpoint:   endpoint,
+		Body:       buildGeminiGenerateContentLiveValidationPayload(ctx.Prompt),
+		Token:      token,
+		ModelAlias: modelAlias,
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Shared payload builders for OpenAI / Anthropic / Gemini gateway endpoints.
+// ---------------------------------------------------------------------------
+
+// buildChatCompletionsLiveValidationPayload assembles a one-shot
+// chat-completion probe used by every agent kind whose gateway path is
+// “/openai/v1/chat/completions“ (OpenClaw, Hermes, OpenCode). The payload
+// is intentionally minimal — a single user message with a low max-tokens
+// cap — so the request is cheap and unlikely to trip provider-specific
+// quirks. The validation token is embedded directly in the user message
+// so it reaches the indexed prompt text the gateway-usage search inspects.
+func buildChatCompletionsLiveValidationPayload(modelAlias, prompt string) map[string]interface{} {
+	// Intentionally only ``model`` + ``messages``: the Preloop gateway
+	// transparently routes Codex OAuth-backed models (e.g. ``openai/gpt-5.4``,
+	// which Hermes binds to by default) to the upstream Codex Responses
+	// backend. That backend rejects vanilla chat-completion knobs that
+	// OpenAI accepts:
+	//
+	//   - ``temperature`` → HTTP 400 "Unsupported parameter: temperature"
+	//   - ``max_tokens`` / ``max_output_tokens`` → HTTP 400
+	//     "Unsupported parameter: …"
+	//
+	// Sending only the required fields means the same probe works for
+	// both vanilla OpenAI-compatible upstreams (Google Gemini via
+	// chat-completions, ZAI, etc.) and the more restrictive Codex
+	// Responses backend without needing a per-model branch here. It also
+	// keeps the probe cheap — the upstream gets to pick a sensible
+	// default cap, and we don't care about the response body anyway.
+	return map[string]interface{}{
+		"model": modelAlias,
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": prompt},
+		},
+	}
+}
+
+// buildAnthropicMessagesLiveValidationPayload assembles a one-shot probe
+// for the “/anthropic/v1/messages“ gateway endpoint. Anthropic strictly
+// requires “max_tokens“ (no default) and a non-empty “messages“ array;
+// we keep the message minimal and put the validation token in the user
+// content so the gateway-usage search can locate the request after it has
+// been logged.
+func buildAnthropicMessagesLiveValidationPayload(modelAlias, prompt string) map[string]interface{} {
+	return map[string]interface{}{
+		"model":      modelAlias,
+		"max_tokens": 32,
+		"messages": []map[string]interface{}{
+			{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": prompt},
+				},
+			},
+		},
+	}
+}
+
+// buildGeminiGenerateContentLiveValidationPayload assembles a one-shot
+// probe for “/gemini/v1beta/models/<model>:generateContent“. The model
+// is encoded in the URL (not the body) per the Gemini API contract, so
+// only “contents“ is needed here. We include a low “maxOutputTokens“
+// to keep the upstream cost minimal; Gemini accepts this field on every
+// hosted model variant.
+func buildGeminiGenerateContentLiveValidationPayload(prompt string) map[string]interface{} {
+	return map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"role": "user",
+				"parts": []map[string]interface{}{
+					{"text": prompt},
+				},
+			},
+		},
+		"generationConfig": map[string]interface{}{
+			"maxOutputTokens": 32,
+			"temperature":     0,
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Shim runners that wire the per-agent builders into the shared driver.
+// ---------------------------------------------------------------------------
+
+func runHermesLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	return runGatewayLiveValidation(
+		client,
+		agent,
+		validationResult,
+		"/openai/v1/chat/completions",
+		buildHermesLiveValidationSpec,
+	)
+}
+
+func runOpenCodeLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	return runGatewayLiveValidation(
+		client,
+		agent,
+		validationResult,
+		"/openai/v1/chat/completions",
+		buildOpenCodeLiveValidationSpec,
+	)
+}
+
+func runClaudeCodeLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	return runGatewayLiveValidation(
+		client,
+		agent,
+		validationResult,
+		"/anthropic/v1/messages",
+		buildClaudeCodeLiveValidationSpec,
+	)
+}
+
+func runGeminiLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	return runGatewayLiveValidation(
+		client,
+		agent,
+		validationResult,
+		"/gemini/v1beta/models/{model}:generateContent",
+		buildGeminiLiveValidationSpec,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Parallel post-onboarding live-validate orchestrator.
+// ---------------------------------------------------------------------------
+
+// deferredLiveValidationResult is the payload “runDeferredLiveValidationsParallel“
+// returns about a single agent — used by callers (e.g. the “--all“
+// onboarding loop) for status reporting and bookkeeping.
+type deferredLiveValidationResult struct {
+	Agent    AgentConfig
+	Outcome  *managedLiveValidationOutcome
+	Err      error
+	Duration time.Duration
+}
+
+// runDeferredLiveValidationsParallel runs “runManagedAgentLiveValidation“
+// for every supported agent in “agents“ concurrently, persisting each
+// outcome to the corresponding managed enrollment as it completes and
+// streaming a one-line status to “output“ per agent. It returns once
+// every goroutine has finished, so callers can synchronously inspect
+// “[]deferredLiveValidationResult“ and decide whether to surface
+// aggregate warnings.
+//
+// This decouples live validation from the per-agent onboarding loop so
+// (a) a slow upstream (Codex' chatgpt.com backend can take 5–10 seconds)
+// does not block subsequent enrollments from starting, and
+// (b) the wall clock for “preloop agents onboard --all“ is dominated by
+// the slowest single live check rather than O(N) of them serialized.
+//
+// Agents that don't support live validation are filtered out up-front and
+// reported with a neutral “unsupported“ status so the caller can still
+// produce a complete summary.
+func runDeferredLiveValidationsParallel(
+	client *api.Client,
+	agents []AgentConfig,
+	output interface{ Write(p []byte) (int, error) },
+) []deferredLiveValidationResult {
+	if len(agents) == 0 {
+		return nil
+	}
+
+	supported := make([]AgentConfig, 0, len(agents))
+	results := make([]deferredLiveValidationResult, 0, len(agents))
+	for _, agent := range agents {
+		if !supportsManagedLiveValidation(agent) {
+			results = append(results, deferredLiveValidationResult{
+				Agent: agent,
+				Outcome: &managedLiveValidationOutcome{
+					Attempted:        false,
+					Passed:           false,
+					ValidationResult: defaultManagedLiveValidationResult(agent),
+				},
+			})
+			continue
+		}
+		supported = append(supported, agent)
+	}
+
+	if len(supported) == 0 {
+		// Nothing to run in parallel — only emit a header if at least one
+		// agent was actually live-validated. The pure-unsupported case is
+		// quiet to avoid useless noise.
+		return results
+	}
+
+	fmt.Fprintf(
+		output,
+		"\nRunning live validation for %d agent(s) in parallel...\n",
+		len(supported),
+	)
+
+	resultCh := make(chan deferredLiveValidationResult, len(supported))
+	var wg sync.WaitGroup
+	for _, agent := range supported {
+		wg.Add(1)
+		go func(agent AgentConfig) {
+			defer wg.Done()
+			started := time.Now()
+			outcome, err := runManagedAgentLiveValidation(
+				client,
+				agent,
+				cloneStringMap(defaultManagedLiveValidationResult(agent)),
+			)
+			resultCh <- deferredLiveValidationResult{
+				Agent:    agent,
+				Outcome:  outcome,
+				Err:      err,
+				Duration: time.Since(started),
+			}
+		}(agent)
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	for result := range resultCh {
+		// Persist the outcome to the managed enrollment so the UI surfaces
+		// the new status immediately. Persistence failures are non-fatal:
+		// the on-disk validation_result has already been computed and we
+		// still print a clear status line to the user.
+		if result.Outcome != nil {
+			persistDeferredLiveValidationResult(client, result)
+		}
+		printDeferredLiveValidationLine(output, result)
+		results = append(results, result)
+	}
+
+	return results
+}
+
+// persistDeferredLiveValidationResult records “result.Outcome“ against the
+// managed enrollment in the control plane so the UI ("Live check passed/
+// failed") reflects what just happened. It is best-effort: if persistence
+// fails (e.g. transient API hiccup) we surface the error inline but do not
+// fail the parallel run, since the live check itself already produced a
+// definitive answer that is now in “result.Outcome“.
+func persistDeferredLiveValidationResult(
+	client *api.Client,
+	result deferredLiveValidationResult,
+) {
+	if result.Outcome == nil {
+		return
+	}
+	enrollmentID := resolveDeferredEnrollmentID(client, result.Agent)
+	if enrollmentID == "" {
+		return
+	}
+	status := "validated"
+	if result.Outcome.Attempted && !result.Outcome.Passed {
+		status = "validation_failed"
+	}
+	_, _ = validateManagedEnrollmentRecord(
+		client,
+		result.Agent,
+		enrollmentID,
+		result.Outcome.ValidationResult,
+		status,
+	)
+}
+
+// resolveDeferredEnrollmentID finds the cli_managed_config enrollment ID
+// for “agent“, preferring the local enrollment-state file (which the
+// onboard loop just wrote) and falling back to a managed-agent detail
+// fetch. Returning “""“ causes the persistence step to no-op, which is
+// the correct behaviour when the agent was never actually onboarded
+// (e.g. the user passed “--dry-run“).
+func resolveDeferredEnrollmentID(client *api.Client, agent AgentConfig) string {
+	if state, err := loadLocalEnrollmentState(agent); err == nil &&
+		strings.TrimSpace(state.EnrollmentID) != "" {
+		return state.EnrollmentID
+	}
+	detail, err := getManagedAgentDetailForDiscovered(client, agent)
+	if err != nil {
+		return ""
+	}
+	for _, enrollment := range detail.Enrollments {
+		if enrollment.EnrollmentType == "cli_managed_config" {
+			return enrollment.ID
+		}
+	}
+	return ""
+}
+
+// printDeferredLiveValidationLine formats one row of the post-onboarding
+// summary table — kept in a single place so the wording stays consistent
+// between the parallel runner and any future caller.
+func printDeferredLiveValidationLine(
+	output interface{ Write(p []byte) (int, error) },
+	result deferredLiveValidationResult,
+) {
+	name := resolveAgentDisplayName(result.Agent)
+	if result.Outcome == nil {
+		fmt.Fprintf(output, "  ✗ %s: live validation produced no outcome\n", name)
+		return
+	}
+	if !result.Outcome.Attempted {
+		fmt.Fprintf(output, "  • %s: live validation unsupported\n", name)
+		return
+	}
+	if result.Outcome.Passed {
+		fmt.Fprintf(
+			output,
+			"  ✓ %s: live validation passed (%dms)\n",
+			name,
+			result.Duration.Milliseconds(),
+		)
+		return
+	}
+	if result.Err != nil {
+		fmt.Fprintf(
+			output,
+			"  ✗ %s: live validation failed (%dms): %v\n",
+			name,
+			result.Duration.Milliseconds(),
+			result.Err,
+		)
+		fmt.Fprintf(
+			output,
+			"      Run 'preloop agents validate %s --live' to retry and inspect the full error.\n",
+			name,
+		)
+		return
+	}
+	fmt.Fprintf(
+		output,
+		"  ✗ %s: live validation failed (%dms)\n",
+		name,
+		result.Duration.Milliseconds(),
+	)
+}

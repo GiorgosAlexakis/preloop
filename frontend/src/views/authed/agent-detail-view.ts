@@ -701,6 +701,7 @@ export class AgentDetailView extends LitElement {
     if (!this.agent?.live_validation_supported) return 'neutral';
     if (this.agent.live_validation_status === 'passed') return 'success';
     if (this.agent.live_validation_status === 'failed') return 'danger';
+    if (this.agent.live_validation_status === 'not_run') return 'neutral';
     return 'warning';
   }
 
@@ -709,6 +710,10 @@ export class AgentDetailView extends LitElement {
     if (this.agent.live_validation_status === 'passed') return 'Live validated';
     if (this.agent.live_validation_status === 'failed')
       return 'Live check failed';
+    // ``not_run`` means the CLI was never invoked with ``--live-validate`` —
+    // it's an opt-in step, not a check that's currently in flight.
+    if (this.agent.live_validation_status === 'not_run')
+      return 'Live check not run';
     return 'Live check pending';
   }
 
@@ -1207,7 +1212,7 @@ export class AgentDetailView extends LitElement {
       <view-header headerText=${this.agent.display_name}>
         <div
           slot="title-prefix"
-          style="display: flex; align-items: center; color: var(--sl-color-neutral-600);"
+          style="display: flex; align-items: center; color: var(--sl-color-neutral-900);"
         >
           ${renderAgentIcon(
             this.agent.agent_kind || this.agent.session_source_type,

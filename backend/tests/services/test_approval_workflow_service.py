@@ -8,8 +8,10 @@ from uuid import uuid4
 
 
 from preloop.services.approval_workflow_service import (
+    DEFAULT_APPROVAL_TYPE,
     create_default_approval_workflow_for_account,
     create_default_approval_workflow_background,
+    repair_default_approval_workflow_for_account,
 )
 
 
@@ -44,33 +46,66 @@ class TestCreateDefaultApprovalWorkflowForAccount:
 
         obj_in = call_args.kwargs["obj_in"]
         assert obj_in["name"] == "Default Approval Workflow"
+        # The dialog dropdown labels this value as "Standard Human Approval".
+        # Storing the dropdown's canonical value (rather than the legacy
+        # "manual" synonym) keeps the type field populated when the account
+        # owner opens the workflow editor.
+        assert obj_in["approval_type"] == DEFAULT_APPROVAL_TYPE == "standard"
+        assert obj_in["approval_mode"] == "standard"
         assert obj_in["is_default"] is True
         assert obj_in["approvals_required"] == 1
         assert obj_in["approver_user_ids"] == [str(user_id)]
 
         mock_db.close.assert_called_once()
 
+    @patch("preloop.services.approval_workflow_service._resolve_account_owner_user_id")
     @patch("preloop.services.approval_workflow_service.get_session_factory")
     @patch("preloop.services.approval_workflow_service.crud_approval_workflow")
-    def test_creates_policy_without_approver_when_user_id_none(
-        self, mock_crud, mock_session_factory
+    def test_falls_back_to_account_owner_when_user_id_missing(
+        self, mock_crud, mock_session_factory, mock_resolve
     ):
-        """Test that policy is created without approver when user_id is None."""
-        # Arrange
+        """When ``user_id`` is omitted the service must resolve the account
+        owner so the seeded default workflow always has an approver — an
+        empty default workflow makes default-routed approvals impossible to
+        act on."""
+        account_id = uuid4()
+        owner_id = uuid4()
+        mock_db = MagicMock()
+        mock_session_factory.return_value = MagicMock(return_value=mock_db)
+
+        mock_crud.get_default.return_value = None
+        mock_crud.get_multi_by_account.return_value = []
+        mock_resolve.return_value = owner_id
+
+        create_default_approval_workflow_for_account(account_id, user_id=None)
+
+        mock_resolve.assert_called_once_with(mock_db, account_id)
+        mock_crud.create.assert_called_once()
+        obj_in = mock_crud.create.call_args.kwargs["obj_in"]
+        assert obj_in["approver_user_ids"] == [str(owner_id)]
+
+    @patch("preloop.services.approval_workflow_service._resolve_account_owner_user_id")
+    @patch("preloop.services.approval_workflow_service.get_session_factory")
+    @patch("preloop.services.approval_workflow_service.crud_approval_workflow")
+    def test_creates_policy_without_approver_when_no_owner_resolvable(
+        self, mock_crud, mock_session_factory, mock_resolve
+    ):
+        """If neither ``user_id`` nor an account-owner can be resolved, the
+        workflow is still created (so the account has a default to fall
+        back to) but logs a warning instead of failing — and no approver
+        is set."""
         account_id = uuid4()
         mock_db = MagicMock()
         mock_session_factory.return_value = MagicMock(return_value=mock_db)
 
         mock_crud.get_default.return_value = None
         mock_crud.get_multi_by_account.return_value = []
+        mock_resolve.return_value = None
 
-        # Act
         create_default_approval_workflow_for_account(account_id, user_id=None)
 
-        # Assert
         mock_crud.create.assert_called_once()
-        call_args = mock_crud.create.call_args
-        obj_in = call_args.kwargs["obj_in"]
+        obj_in = mock_crud.create.call_args.kwargs["obj_in"]
         assert "approver_user_ids" not in obj_in
 
     @patch("preloop.services.approval_workflow_service.get_session_factory")
@@ -152,6 +187,102 @@ class TestCreateDefaultApprovalWorkflowForAccount:
 
         # Assert
         mock_db.close.assert_called_once()
+
+
+class TestRepairDefaultApprovalWorkflowForAccount:
+    """Tests for repair_default_approval_workflow_for_account."""
+
+    @patch("preloop.services.approval_workflow_service.get_session_factory")
+    @patch("preloop.services.approval_workflow_service.crud_approval_workflow")
+    def test_returns_false_when_no_default_workflow(
+        self, mock_crud, mock_session_factory
+    ):
+        account_id = uuid4()
+        mock_db = MagicMock()
+        mock_session_factory.return_value = MagicMock(return_value=mock_db)
+        mock_crud.get_default.return_value = None
+
+        assert (
+            repair_default_approval_workflow_for_account(account_id, user_id=None)
+            is False
+        )
+        mock_db.commit.assert_not_called()
+
+    @patch("preloop.services.approval_workflow_service.get_session_factory")
+    @patch("preloop.services.approval_workflow_service.crud_approval_workflow")
+    def test_rewrites_legacy_manual_approval_type(
+        self, mock_crud, mock_session_factory
+    ):
+        """The legacy ``approval_type="manual"`` value must be rewritten
+        to the canonical ``standard`` so the dialog renders the type
+        correctly."""
+        account_id = uuid4()
+        mock_db = MagicMock()
+        mock_session_factory.return_value = MagicMock(return_value=mock_db)
+
+        existing = MagicMock()
+        existing.approval_type = "manual"
+        existing.approver_user_ids = [uuid4()]
+        existing.approver_team_ids = None
+        mock_crud.get_default.return_value = existing
+
+        modified = repair_default_approval_workflow_for_account(
+            account_id, user_id=None
+        )
+
+        assert modified is True
+        assert existing.approval_type == DEFAULT_APPROVAL_TYPE
+        mock_db.commit.assert_called_once()
+
+    @patch("preloop.services.approval_workflow_service._resolve_account_owner_user_id")
+    @patch("preloop.services.approval_workflow_service.get_session_factory")
+    @patch("preloop.services.approval_workflow_service.crud_approval_workflow")
+    def test_seeds_account_owner_when_no_approvers(
+        self, mock_crud, mock_session_factory, mock_resolve
+    ):
+        """A default workflow with no approvers must be patched with the
+        account owner so default-routed approvals can be acted on."""
+        account_id = uuid4()
+        owner_id = uuid4()
+        mock_db = MagicMock()
+        mock_session_factory.return_value = MagicMock(return_value=mock_db)
+
+        existing = MagicMock()
+        existing.approval_type = "standard"
+        existing.approver_user_ids = None
+        existing.approver_team_ids = None
+        mock_crud.get_default.return_value = existing
+        mock_resolve.return_value = owner_id
+
+        modified = repair_default_approval_workflow_for_account(
+            account_id, user_id=None
+        )
+
+        assert modified is True
+        assert existing.approver_user_ids == [owner_id]
+        mock_db.commit.assert_called_once()
+
+    @patch("preloop.services.approval_workflow_service.get_session_factory")
+    @patch("preloop.services.approval_workflow_service.crud_approval_workflow")
+    def test_no_op_when_workflow_is_already_healthy(
+        self, mock_crud, mock_session_factory
+    ):
+        account_id = uuid4()
+        mock_db = MagicMock()
+        mock_session_factory.return_value = MagicMock(return_value=mock_db)
+
+        existing = MagicMock()
+        existing.approval_type = "standard"
+        existing.approver_user_ids = [uuid4()]
+        existing.approver_team_ids = None
+        mock_crud.get_default.return_value = existing
+
+        modified = repair_default_approval_workflow_for_account(
+            account_id, user_id=None
+        )
+
+        assert modified is False
+        mock_db.commit.assert_not_called()
 
 
 class TestCreateDefaultApprovalWorkflowBackground:

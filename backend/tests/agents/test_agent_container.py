@@ -79,7 +79,7 @@ class TestContainerAgentExecutor:
             "execution_id": "exec-789",
             "prompt": "Test prompt",
             "agent_config": {},
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "model_api_key": "test-key",
             "allowed_mcp_servers": ["preloop-mcp"],
             "allowed_mcp_tools": [

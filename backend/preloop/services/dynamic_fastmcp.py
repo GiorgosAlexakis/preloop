@@ -659,6 +659,28 @@ async def {internal_name}({params_str}) -> str:
 
         logger.info(f"!!! call_tool called for tool: {name} !!!")
 
+        # ── Internal proxied tool name re-entry ─────────────────────────
+        # When we translate a client-facing proxied tool name to its internal
+        # `account_<id>_<tool>` form below and call ``super().call_tool``,
+        # FastMCP's tool dispatch re-enters this override with the internal
+        # name. The access checks, justification/policy evaluation, and audit
+        # logging here are scoped to the user-visible tool name and were
+        # already performed on the first entry, so we shortcut directly to
+        # the FastMCP base implementation. The dynamically-registered wrapper
+        # (see ``_create_proxied_tool_wrapper``) still enforces account-level
+        # ownership before dispatching to the upstream MCP server.
+        if name in self._registered_proxied_tools:
+            logger.info(
+                f"Internal proxied tool re-entry: {name} (skipping duplicate checks)"
+            )
+            return await super().call_tool(
+                name,
+                arguments,
+                version=version,
+                run_middleware=run_middleware,
+                task_meta=task_meta,
+            )
+
         # Get current user context
         user_context = self._get_current_user_context()
 
@@ -814,10 +836,37 @@ async def {internal_name}({params_str}) -> str:
                     ]
                 )
 
-            if action == "require_approval" and approval_workflow_id:
-                # Store the workflow_id so require_approval() in the tool wrapper
-                # picks it up instead of relying on the legacy config-level policy.
-                _rule_workflow_id_var.set(str(approval_workflow_id))
+            if action == "require_approval":
+                if approval_workflow_id:
+                    # Store the workflow_id so require_approval() in the tool
+                    # wrapper picks it up instead of relying on the legacy
+                    # config-level policy.
+                    _rule_workflow_id_var.set(str(approval_workflow_id))
+                else:
+                    # SECURITY: a rule asked for approval but no workflow could
+                    # be resolved (no rule/config workflow and no account-level
+                    # default). Fail closed instead of silently allowing the
+                    # tool through, otherwise an explicit ``require_approval``
+                    # rule would behave like ``allow``.
+                    _rule_workflow_id_var.set(None)
+                    logger.error(
+                        f"Tool '{name}' matched require_approval rule but no "
+                        "approval workflow is configured (rule, tool config, "
+                        "and account default are all unset). Blocking the call."
+                    )
+                    return ToolResult(
+                        content=[
+                            TextContent(
+                                type="text",
+                                text=(
+                                    f"Tool '{name}' requires approval but no "
+                                    "approval workflow is configured for this "
+                                    "account. Configure an approval workflow "
+                                    "(or mark one as default) and retry."
+                                ),
+                            )
+                        ]
+                    )
             else:
                 _rule_workflow_id_var.set(None)
 

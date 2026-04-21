@@ -112,6 +112,100 @@ def _log_approval_lifecycle_async(
         logger.debug(f"Failed to log approval lifecycle to audit: {e}")
 
 
+def _current_correlation_id() -> Optional[str]:
+    """Best-effort lookup of the active correlation_id from the MCP context var."""
+    try:
+        from preloop.services.dynamic_fastmcp import _correlation_id_var
+
+        return _correlation_id_var.get(None)
+    except Exception:
+        return None
+
+
+def _log_approval_notification_async(
+    account_id: str,
+    approval_id: uuid.UUID,
+    channel: str,
+    status: str,
+    tool_name: Optional[str] = None,
+    recipient_user_ids: Optional[List[uuid.UUID]] = None,
+    sent_count: Optional[int] = None,
+    failed_count: Optional[int] = None,
+    skipped_count: Optional[int] = None,
+    error: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    extra_details: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Fire-and-forget audit log entry for one approval notification fan-out."""
+    try:
+        audit_service = _get_audit_service()
+        if not audit_service:
+            return
+        db_factory = _get_db_factory()
+        if not db_factory:
+            return
+        audit_service.log_approval_notification_async(
+            db_factory=db_factory,
+            account_id=account_id,
+            approval_id=approval_id,
+            channel=channel,
+            status=status,
+            tool_name=tool_name,
+            recipient_user_ids=recipient_user_ids,
+            sent_count=sent_count,
+            failed_count=failed_count,
+            skipped_count=skipped_count,
+            error=error,
+            correlation_id=correlation_id,
+            extra_details=extra_details,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to log approval notification to audit: {e}")
+
+
+def _log_approval_tool_executed_async(
+    account_id: str,
+    approval_id: uuid.UUID,
+    tool_name: str,
+    status: str,
+    duration_ms: Optional[int] = None,
+    result_preview: Optional[str] = None,
+    error: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    execution_id: Optional[str] = None,
+    extra_details: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Fire-and-forget audit log entry for the post-approval tool execution."""
+    try:
+        audit_service = _get_audit_service()
+        if not audit_service:
+            return
+        db_factory = _get_db_factory()
+        if not db_factory:
+            return
+        exec_id: Optional[uuid.UUID] = None
+        if execution_id:
+            try:
+                exec_id = uuid.UUID(execution_id)
+            except (ValueError, TypeError):
+                pass
+        audit_service.log_approval_tool_executed_async(
+            db_factory=db_factory,
+            account_id=account_id,
+            approval_id=approval_id,
+            tool_name=tool_name,
+            status=status,
+            duration_ms=duration_ms,
+            result_preview=result_preview,
+            error=error,
+            correlation_id=correlation_id,
+            execution_id=exec_id,
+            extra_details=extra_details,
+        )
+    except Exception as e:
+        logger.debug(f"Failed to log approval tool execution to audit: {e}")
+
+
 # Thread pool for running sync database operations
 _sync_db_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
@@ -435,6 +529,15 @@ class ApprovalService:
                 updated_request = await self.update_approval_request(request_id, update)
                 if updated_request:
                     await self._broadcast_approval_update(updated_request, "approved")
+                    _log_approval_lifecycle_async(
+                        account_id=str(updated_request.account_id),
+                        approval_id=updated_request.id,
+                        event="approved",
+                        tool_name=updated_request.tool_name,
+                        approver_id=None,
+                        reason=comment,
+                        execution_id=updated_request.execution_id,
+                    )
                 return updated_request
             else:
                 # For quorum > 1 without user_id, only allow ONE anonymous vote per request
@@ -500,6 +603,19 @@ class ApprovalService:
             updated_request = await self.update_approval_request(request_id, update)
             if updated_request:
                 await self._broadcast_approval_update(updated_request, "approved")
+                _log_approval_lifecycle_async(
+                    account_id=str(updated_request.account_id),
+                    approval_id=updated_request.id,
+                    event="approved",
+                    tool_name=updated_request.tool_name,
+                    approver_id=user_id,
+                    reason=comment,
+                    execution_id=updated_request.execution_id,
+                    extra_details={
+                        "approval_count": approval_count,
+                        "approvals_required": approvals_required,
+                    },
+                )
             return updated_request
         else:
             # Quorum not met yet - just record the vote and broadcast progress
@@ -602,6 +718,15 @@ class ApprovalService:
                 updated_request = await self.update_approval_request(request_id, update)
                 if updated_request:
                     await self._broadcast_approval_update(updated_request, "declined")
+                    _log_approval_lifecycle_async(
+                        account_id=str(updated_request.account_id),
+                        approval_id=updated_request.id,
+                        event="denied",
+                        tool_name=updated_request.tool_name,
+                        approver_id=None,
+                        reason=comment,
+                        execution_id=updated_request.execution_id,
+                    )
                 return updated_request
             else:
                 # For quorum > 1 without user_id, only allow ONE anonymous vote per request
@@ -695,6 +820,19 @@ class ApprovalService:
             updated_request = await self.update_approval_request(request_id, update)
             if updated_request:
                 await self._broadcast_approval_update(updated_request, "declined")
+                _log_approval_lifecycle_async(
+                    account_id=str(updated_request.account_id),
+                    approval_id=updated_request.id,
+                    event="denied",
+                    tool_name=updated_request.tool_name,
+                    approver_id=user_id,
+                    reason=comment,
+                    execution_id=updated_request.execution_id,
+                    extra_details={
+                        "decline_count": decline_count,
+                        "approvals_required": approvals_required,
+                    },
+                )
             return updated_request
         else:
             # Still possible to reach quorum - just record the vote
@@ -1236,6 +1374,15 @@ class ApprovalService:
             # In tests, requested_at might be a mock - just continue
             pass
 
+        # Recover correlation_id from the originating MCP context so the audit
+        # entries we emit below land in the same timeline group.
+        correlation_id = _current_correlation_id()
+        approver_user_ids: List[uuid.UUID] = []
+        try:
+            approver_user_ids = await self._get_all_approver_user_ids(approval_workflow)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"Failed to resolve approver list for audit: {exc}")
+
         # Send email notifications to users who have email enabled
         try:
             email_result = await self._send_email_notification(
@@ -1246,6 +1393,14 @@ class ApprovalService:
             logger.error(f"Failed to send email notifications: {str(e)}")
             results["email"] = {"success": False, "error": str(e)}
 
+        self._audit_notification_result(
+            approval_request=approval_request,
+            channel="email",
+            channel_result=results["email"],
+            recipient_user_ids=approver_user_ids,
+            correlation_id=correlation_id,
+        )
+
         # Send push notifications to users who have push enabled
         try:
             push_result = await self._send_push_notification(
@@ -1255,6 +1410,14 @@ class ApprovalService:
         except Exception as e:
             logger.error(f"Failed to send push notifications: {str(e)}")
             results["mobile_push"] = {"success": False, "error": str(e)}
+
+        self._audit_notification_result(
+            approval_request=approval_request,
+            channel="mobile_push",
+            channel_result=results["mobile_push"],
+            recipient_user_ids=approver_user_ids,
+            correlation_id=correlation_id,
+        )
 
         # Handle webhook-based notifications (these are workflow-level, not per-user)
         # Derive notification channels from approval_type (the model field)
@@ -1272,7 +1435,67 @@ class ApprovalService:
                     logger.error(f"Failed to send {channel} notification: {str(e)}")
                     results[channel] = {"success": False, "error": str(e)}
 
+                self._audit_notification_result(
+                    approval_request=approval_request,
+                    channel=channel,
+                    channel_result=results[channel],
+                    recipient_user_ids=None,
+                    correlation_id=correlation_id,
+                )
+
         return results
+
+    def _audit_notification_result(
+        self,
+        approval_request: ApprovalRequest,
+        channel: str,
+        channel_result: Dict[str, Any],
+        recipient_user_ids: Optional[List[uuid.UUID]],
+        correlation_id: Optional[str],
+    ) -> None:
+        """Persist a single channel fan-out result to the audit log.
+
+        Translates the heterogeneous per-channel result dicts into a normalised
+        ``status`` (sent / partial / failed / skipped / no_devices) and forwards
+        the structured counts to ``_log_approval_notification_async``.
+        """
+        try:
+            sent = channel_result.get("sent")
+            failed = channel_result.get("failed")
+            skipped = channel_result.get("skipped")
+            error = channel_result.get("error")
+            success = channel_result.get("success")
+
+            if channel_result.get("no_devices"):
+                status = "no_devices"
+            elif success is False and (sent or 0) == 0:
+                status = "failed"
+            elif (failed or 0) > 0 and (sent or 0) > 0:
+                status = "partial"
+            elif success is True or (sent or 0) > 0:
+                status = "sent"
+            elif skipped:
+                status = "skipped"
+            else:
+                status = "sent" if success else "failed"
+
+            _log_approval_notification_async(
+                account_id=str(approval_request.account_id),
+                approval_id=approval_request.id,
+                channel=channel,
+                status=status,
+                tool_name=approval_request.tool_name,
+                recipient_user_ids=list(recipient_user_ids)
+                if recipient_user_ids
+                else None,
+                sent_count=sent if isinstance(sent, int) else None,
+                failed_count=failed if isinstance(failed, int) else None,
+                skipped_count=skipped if isinstance(skipped, int) else None,
+                error=str(error) if error else None,
+                correlation_id=correlation_id,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"Failed to persist notification audit for {channel}: {exc}")
 
     async def _get_all_approver_user_ids(
         self, approval_workflow: ApprovalWorkflow

@@ -54,14 +54,44 @@ var openCodeDefaultEndpointByProvider = map[string]string{
 }
 
 type managedEnrollmentOptions struct {
-	Client           *api.Client
-	DryRun           bool
-	AutoApprove      bool
-	LiveValidate     bool
+	Client *api.Client
+	DryRun bool
+	// AutoApprove skips interactive Y/n confirmations for the high-level
+	// onboarding decision (applies to the "Onboard X?" prompt in interactive
+	// flows). It does NOT control whether live validation runs — see
+	// LiveValidate / SkipLiveValidate for that.
+	AutoApprove bool
+	// LiveValidate is the user's intent: "run a live validation request
+	// against the model gateway after enrollment, when the agent kind
+	// supports it." Defaults to true at the CLI flag layer so onboarded
+	// agents are immediately validated end-to-end.
+	LiveValidate bool
+	// SkipLiveValidate is an explicit override that disables live
+	// validation even when LiveValidate is true. This is what `--skip-live-validate`
+	// (or `--live-validate=false` in the new model) translates into and is the
+	// recommended way to opt out from automation that should never make a real
+	// model gateway request after onboarding.
+	SkipLiveValidate bool
+	// SkipConfirmation suppresses interactive prompts inside the enrollment
+	// flow itself (e.g. tag editing). It used to also suppress the live
+	// validation prompt, which made bulk and discover-driven onboarding
+	// silently never validate; it no longer has that effect — live
+	// validation is governed solely by LiveValidate / SkipLiveValidate.
 	SkipConfirmation bool
-	Tags             map[string]string
-	Input            io.Reader
-	Output           io.Writer
+	// DeferLiveValidate tells executeManagedEnrollment to skip the in-line
+	// per-agent live-validation step entirely so the orchestrator can run
+	// every agent's live validation concurrently *after* onboarding has
+	// finished for all of them (see runDeferredLiveValidationsParallel).
+	// The on-disk validation_result is still seeded with the canonical
+	// ``not_run`` placeholder, so the UI continues to render a sensible
+	// state until the deferred parallel phase populates the real outcome.
+	// Setting both LiveValidate and DeferLiveValidate is the normal mode
+	// for ``preloop agents onboard --all``: every agent gets onboarded in
+	// the per-agent loop, then all the live checks fan out in parallel.
+	DeferLiveValidate bool
+	Tags              map[string]string
+	Input             io.Reader
+	Output            io.Writer
 }
 
 type managedLiveValidationOutcome struct {
@@ -478,20 +508,30 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		return err
 	}
 
-	requestedLiveValidation := opts.LiveValidate
-	if !requestedLiveValidation && supportsManagedLiveValidation(agent) && !opts.SkipConfirmation && !opts.AutoApprove {
-		confirmed, err := confirmActionDefaultYes(
-			input,
-			output,
-			fmt.Sprintf(
-				"Run live validation for %s now? (Y/n): ",
-				resolveAgentDisplayName(agent),
-			),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to read live validation confirmation: %w", err)
-		}
-		requestedLiveValidation = confirmed
+	// Live validation runs by default whenever the agent kind supports it.
+	// It is suppressed only by an explicit ``--skip-live-validate`` (or
+	// ``--live-validate=false``) at the CLI layer, which both clear the
+	// ``LiveValidate`` flag below. Crucially this no longer depends on
+	// ``SkipConfirmation`` / ``AutoApprove`` — historically those caused
+	// ``--yes``, ``--all``, ``PRELOOP_CONFIRM`` and the discover-driven
+	// onboarding path to silently skip live validation, leaving every
+	// enrollment stuck on "Live check not run" in the UI.
+	requestedLiveValidation := opts.LiveValidate &&
+		!opts.SkipLiveValidate &&
+		!opts.DeferLiveValidate &&
+		supportsManagedLiveValidation(agent)
+	// When the orchestrator deferred live validation to the post-onboarding
+	// parallel phase we surface a ``pending`` placeholder in the immediate
+	// onboarding output so the user knows a real check is coming. Without
+	// this the line would read ``Live validation: not_run`` (the
+	// ``defaultManagedLiveValidationResult`` value) which is misleading —
+	// the parallel runner is about to overwrite it with the real outcome.
+	deferredForParallelRun := opts.LiveValidate &&
+		!opts.SkipLiveValidate &&
+		opts.DeferLiveValidate &&
+		supportsManagedLiveValidation(agent)
+	if deferredForParallelRun {
+		validationResult["live_validation_status"] = "pending"
 	}
 
 	var liveValidationErr error
@@ -569,10 +609,21 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	fmt.Printf("  Config updated: %s\n", agent.ConfigPath)
 	fmt.Printf("  Backup saved: %s\n", backupState.BackupPath)
 	if liveValidationErr != nil {
+		// Live validation is informational and runs by default for every
+		// supported agent — its failure mode must NOT abort sibling agents
+		// during ``--all`` onboarding, nor exit non-zero for a single
+		// onboard, because the onboarding itself succeeded (account state
+		// applied, config rewritten, backup saved). The failure status is
+		// already persisted to ``validation_result`` and surfaces in the
+		// console UI as "Live check failed", and ``preloop agents validate
+		// <agent> --live`` is the dedicated command for "exit non-zero on
+		// live-validate failure" semantics. Print a clear warning with a
+		// recovery hint and continue.
 		fmt.Printf("  Warning: live validation failed: %v\n", liveValidationErr)
-		if opts.LiveValidate {
-			return fmt.Errorf("managed onboarding applied, but live validation failed: %w", liveValidationErr)
-		}
+		fmt.Printf(
+			"           Run 'preloop agents validate %s --live' to retry and inspect the full error.\n",
+			resolveAgentDisplayName(agent),
+		)
 	}
 	return nil
 }
@@ -589,9 +640,24 @@ func updateManagedAgentTags(client *api.Client, agentID string, tags map[string]
 	return nil
 }
 
+// supportsManagedLiveValidation reports whether the CLI knows how to send a
+// real, account-bound model-gateway probe for “agent“ after onboarding
+// completes. Every Preloop-managed agent kind we ship a runtime adapter for
+// supports live validation now (Claude Code via the Anthropic gateway,
+// Gemini CLI via the Gemini gateway, OpenCode/Hermes/OpenClaw via the
+// OpenAI-compatible chat-completions gateway, Codex CLI via the OpenAI
+// Responses-API gateway). Returning “false“ here is reserved for agent
+// kinds we have not yet built a probe for at all — never for "we have a
+// probe but the user didn't ask for it", which is gated upstream by the
+// “--skip-live-validate“ flag.
 func supportsManagedLiveValidation(agent AgentConfig) bool {
 	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
-	case "openclaw", "codex cli":
+	case "openclaw",
+		"codex cli",
+		"hermes",
+		"opencode",
+		"claude code",
+		"gemini cli":
 		return true
 	default:
 		return false
@@ -646,6 +712,14 @@ func runManagedAgentLiveValidation(
 		return runOpenClawLiveValidation(client, agent, validationResult)
 	case "codex cli":
 		return runCodexLiveValidation(client, agent, validationResult)
+	case "hermes":
+		return runHermesLiveValidation(client, agent, validationResult)
+	case "opencode":
+		return runOpenCodeLiveValidation(client, agent, validationResult)
+	case "claude code":
+		return runClaudeCodeLiveValidation(client, agent, validationResult)
+	case "gemini cli":
+		return runGeminiLiveValidation(client, agent, validationResult)
 	default:
 		return &managedLiveValidationOutcome{
 			Attempted:        false,
@@ -816,6 +890,48 @@ func runOpenClawLiveValidation(
 	}, validationErr
 }
 
+// buildCodexLiveValidationPayload constructs the body the CLI POSTs to the
+// Preloop gateway's “/openai/v1/responses“ endpoint to validate a managed
+// Codex CLI enrollment.
+//
+// The Preloop gateway forwards this body almost verbatim to the upstream
+// Codex Responses backend (see “_create_openai_codex_response“ in
+// “openai_gateway.py“), which strictly requires:
+//   - “instructions“ to be a non-empty string (HTTP 400 "Instructions are
+//     required" otherwise),
+//   - “store“ to be “false“ (HTTP 400 "Store must be set to false"
+//     otherwise),
+//   - “input“ to be an array of Responses-API items with user text wrapped
+//     in “input_text“ content.
+//
+// Notably “max_output_tokens“ (which vanilla OpenAI's Responses API
+// happily accepts) is rejected by Codex' chatgpt.com backend with HTTP 400
+// "Unsupported parameter: max_output_tokens" — so we deliberately omit it.
+// A one-shot validation request that produces a few tokens is fine for our
+// purposes; capping output is the gateway's job, not ours.
+//
+// Sending the looser “{"input": "...string..."}“ shape worked against the
+// vanilla OpenAI Responses API but is rejected by Codex OAuth-backed models,
+// which is exactly what every Preloop-managed Codex CLI ends up bound to.
+// Building the payload in this shape keeps live validation working
+// regardless of which upstream provider backs the managed model alias.
+func buildCodexLiveValidationPayload(modelAlias, prompt string) map[string]interface{} {
+	return map[string]interface{}{
+		"model": modelAlias,
+		"input": []map[string]interface{}{
+			{
+				"type": "message",
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "input_text", "text": prompt},
+				},
+			},
+		},
+		"instructions": "You are a Preloop onboarding validator. Reply with ACK only.",
+		"store":        false,
+	}
+}
+
 func runCodexLiveValidation(
 	client *api.Client,
 	agent AgentConfig,
@@ -893,11 +1009,7 @@ func runCodexLiveValidation(
 		"Welcome to Preloop. Validation token: %s. Reply with ACK only.",
 		validationToken,
 	)
-	requestPayload := map[string]interface{}{
-		"model":             managedModelAlias,
-		"input":             prompt,
-		"max_output_tokens": 32,
-	}
+	requestPayload := buildCodexLiveValidationPayload(managedModelAlias, prompt)
 
 	gatewayClient := api.NewClientWithToken(baseURL, token)
 	var gatewayResponse map[string]interface{}
@@ -1161,6 +1273,8 @@ func resolveManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, 
 		return parseClaudeManagedGatewayUpstream(agent)
 	case "codex cli":
 		return parseCodexManagedGatewayUpstream(agent)
+	case "hermes":
+		return parseHermesManagedGatewayUpstream(agent)
 	default:
 		return nil, nil
 	}
@@ -3156,6 +3270,8 @@ func managedGatewayBindingConfigKey(agent AgentConfig) string {
 		return "env.ANTHROPIC_MODEL"
 	case "gemini cli":
 		return "model.name"
+	case "hermes":
+		return "model.default"
 	default:
 		return "model"
 	}

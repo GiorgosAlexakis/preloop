@@ -61,7 +61,7 @@ def test_detect_issue_dependencies_success(
         "preloop.api.endpoints.issue_dependencies.crud_ai_model"
     )
     mock_ai_model = MagicMock(spec=AIModel)
-    mock_ai_model.model_identifier = "gpt-4"
+    mock_ai_model.model_identifier = "gpt-5.4"
     mock_ai_model.api_key = "fake-key"
     mock_ai_model.credentials_secret = None
     mock_crud_ai_model.get_default_active_model.return_value = mock_ai_model
@@ -129,7 +129,7 @@ def test_detect_issue_dependencies_uses_secret_service_credentials(
     )
     mock_ai_model = MagicMock(spec=AIModel)
     mock_ai_model.id = "model-123"
-    mock_ai_model.model_identifier = "gpt-4"
+    mock_ai_model.model_identifier = "gpt-5.4"
     mock_ai_model.api_key = "legacy-plaintext-key"
     mock_ai_model.credentials_secret = None
     mock_crud_ai_model.get_default_active_model.return_value = mock_ai_model

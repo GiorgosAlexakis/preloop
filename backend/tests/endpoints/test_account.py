@@ -107,7 +107,7 @@ def test_get_dashboard_telemetry_aggregates_recent_usage(
         runtime_principal_type="managed_agent",
         runtime_principal_id="agent-2",
         runtime_principal_name="Agent Two",
-        model_alias="openai/gpt-4.1",
+        model_alias="openai/gpt-5.4",
         provider_name="openai",
         prompt_tokens=4,
         completion_tokens=0,

@@ -21,9 +21,9 @@ class TestGetAvailableModelsForProvider:
     async def test_get_openai_models(self):
         """Test routing to OpenAI provider."""
         with patch("preloop.services.ai_model_provider._get_openai_models") as mock_get:
-            mock_get.return_value = ["gpt-4o", "gpt-4-turbo"]
+            mock_get.return_value = ["gpt-5.4", "gpt-5.4-mini"]
             result = await get_available_models_for_provider("openai", "test_key")
-            assert result == ["gpt-4o", "gpt-4-turbo"]
+            assert result == ["gpt-5.4", "gpt-5.4-mini"]
             mock_get.assert_called_once_with("test_key")
 
     @pytest.mark.asyncio
@@ -80,13 +80,13 @@ class TestGetOpenAIModels:
     async def test_get_openai_models_success(self):
         """Test successful retrieval of OpenAI models."""
         mock_model_1 = MagicMock()
-        mock_model_1.id = "gpt-4o"
+        mock_model_1.id = "gpt-5.4"
         mock_model_2 = MagicMock()
-        mock_model_2.id = "gpt-4-turbo"
+        mock_model_2.id = "gpt-5.4-mini"
         mock_model_3 = MagicMock()
-        mock_model_3.id = "gpt-3.5-turbo"
+        mock_model_3.id = "gpt-5.4-codex"
         mock_model_4 = MagicMock()
-        mock_model_4.id = "gpt-4-instruct"  # Should be filtered out
+        mock_model_4.id = "gpt-5.4-instruct"  # Should be filtered out
 
         mock_response = MagicMock()
         mock_response.data = [mock_model_1, mock_model_2, mock_model_3, mock_model_4]
@@ -99,22 +99,22 @@ class TestGetOpenAIModels:
             result = await _get_openai_models("test_key")
 
             assert len(result) <= 10
-            assert "gpt-4o" in result
-            assert "gpt-4-turbo" in result
-            assert "gpt-3.5-turbo" in result
-            assert "gpt-4-instruct" not in result  # Filtered out
+            assert "gpt-5.4" in result
+            assert "gpt-5.4-mini" in result
+            assert "gpt-5.4-codex" in result
+            assert "gpt-5.4-instruct" not in result  # Filtered out
 
     @pytest.mark.asyncio
     async def test_get_openai_models_filters_non_chat_models(self):
         """Test that non-chat models are filtered."""
         mock_models = []
         for model_id in [
-            "gpt-4o",
-            "gpt-4-audio-preview",  # Should be filtered
-            "gpt-3.5-turbo-instruct",  # Should be filtered
+            "gpt-5.4",
+            "gpt-5.4-audio-preview",  # Should be filtered
+            "gpt-5.4-codex",  # Should be filtered
             "text-similarity-ada-001",  # Should be filtered
             "text-search-ada-doc-001",  # Should be filtered
-            "gpt-4-turbo",
+            "gpt-5.4-mini",
         ]:
             mock_model = MagicMock()
             mock_model.id = model_id
@@ -130,10 +130,9 @@ class TestGetOpenAIModels:
 
             result = await _get_openai_models("test_key")
 
-            assert "gpt-4o" in result
-            assert "gpt-4-turbo" in result
-            assert "gpt-4-audio-preview" not in result
-            assert "gpt-3.5-turbo-instruct" not in result
+            assert "gpt-5.4" in result
+            assert "gpt-5.4-mini" in result
+            assert "gpt-5.4-codex" in result
             assert "text-similarity-ada-001" not in result
 
     @pytest.mark.asyncio
@@ -168,15 +167,15 @@ class TestGetOpenAIModels:
             result = await _get_openai_models("test_key")
 
             # Should return fallback list
-            assert "gpt-4o" in result
-            assert "gpt-4-turbo" in result
-            assert "gpt-3.5-turbo" in result
+            assert "gpt-5.4" in result
+            assert "gpt-5.4-mini" in result
+            assert "gpt-5.4-codex" in result
 
     @pytest.mark.asyncio
     async def test_get_openai_models_without_api_key(self):
         """Test retrieval without providing API key."""
         mock_model = MagicMock()
-        mock_model.id = "gpt-4o"
+        mock_model.id = "gpt-5.4"
         mock_response = MagicMock()
         mock_response.data = [mock_model]
 
@@ -189,7 +188,7 @@ class TestGetOpenAIModels:
 
             # Should call AsyncOpenAI without api_key parameter
             mock_client.assert_called_once_with()
-            assert "gpt-4o" in result
+            assert "gpt-5.4" in result
 
 
 class TestGetAnthropicModels:

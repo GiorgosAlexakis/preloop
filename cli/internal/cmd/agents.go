@@ -411,14 +411,16 @@ func init() {
 	agentsCmd.AddCommand(agentsStarterPolicyCmd)
 
 	agentsDiscoverCmd.Flags().Bool("add", false, "deprecated: use 'preloop agents onboard <agent>' instead")
-agentsDiscoverCmd.Flags().BoolP("yes", "y", false, "auto-approve interactive onboarding prompts")
+	agentsDiscoverCmd.Flags().BoolP("yes", "y", false, "auto-approve interactive onboarding prompts")
 	agentsDiscoverCmd.Flags().BoolP("force", "f", false, "alias for --yes")
+	agentsDiscoverCmd.Flags().Bool("skip-live-validate", false, "do not run a live validation prompt after onboarding")
 	_ = agentsDiscoverCmd.Flags().MarkDeprecated("add", "use 'preloop agents onboard [agent]'")
 	agentsEnrollCmd.Flags().Bool("dry-run", false, "preview account and config changes without writing")
 	agentsEnrollCmd.Flags().BoolP("yes", "y", false, "skip the onboarding confirmation prompt")
 	agentsEnrollCmd.Flags().BoolP("force", "f", false, "alias for --yes")
 	agentsEnrollCmd.Flags().Bool("all", false, "onboard all discovered agents")
-	agentsEnrollCmd.Flags().Bool("live-validate", false, "after onboarding, run a supported live validation prompt through the agent")
+	agentsEnrollCmd.Flags().Bool("live-validate", true, "after onboarding, run a supported live validation prompt through the agent (default: true; pass --skip-live-validate or --live-validate=false to opt out)")
+	agentsEnrollCmd.Flags().Bool("skip-live-validate", false, "do not run a live validation prompt after onboarding (overrides --live-validate)")
 	agentsEnrollCmd.Flags().StringSlice("tags", []string{}, "add key-value tags to the enrolled agent (e.g., --tags ext=true,env=prod)")
 	agentsListCmd.Flags().Bool("json", false, "output managed agents as JSON")
 	agentsStatusCmd.Flags().Bool("json", false, "output managed status as JSON")
@@ -443,6 +445,7 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 	addServers, _ := cmd.Flags().GetBool("add")
 	noOnboardPrompt, _ := cmd.Flags().GetBool("no-onboard-prompt")
 	autoApprove, _ := cmd.Flags().GetBool("yes")
+	skipLiveValidate, _ := cmd.Flags().GetBool("skip-live-validate")
 
 	if addServers {
 		return fmt.Errorf("discover is now read-only; use 'preloop agents onboard <agent>'")
@@ -515,10 +518,14 @@ func runAgentsDiscover(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return promptToOnboardDiscoveredAgents(discovered, autoApprove)
+	return promptToOnboardDiscoveredAgents(discovered, autoApprove, skipLiveValidate)
 }
 
-func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool) error {
+func promptToOnboardDiscoveredAgents(
+	discovered []AgentConfig,
+	autoApprove bool,
+	skipLiveValidate bool,
+) error {
 	client, err := api.NewClient(FlagToken, FlagURL)
 	if err != nil {
 		return fmt.Errorf("failed to create API client: %w", err)
@@ -537,14 +544,37 @@ func promptToOnboardDiscoveredAgents(discovered []AgentConfig, autoApprove bool)
 		return nil
 	}
 
-	return promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, autoApprove, func(agent AgentConfig) error {
-		return executeManagedEnrollment(agent, managedEnrollmentOptions{
-			Client:           client,
-			SkipConfirmation: true,
-			Input:            os.Stdin,
-			Output:           os.Stdout,
+	// We defer live validation so that all agents in the discover-driven batch
+	// are onboarded first, then their live checks run concurrently in a single
+	// post-onboarding phase (see runDeferredLiveValidationsParallel). This
+	// means the wall clock for "discover + onboard" is no longer dominated by
+	// per-agent live-validate latency (e.g. Codex' chatgpt.com backend can
+	// take ~5s) and a slow upstream for one agent never blocks subsequent
+	// agents from being touched.
+	deferLiveValidate := !skipLiveValidate
+	var enrolled []AgentConfig
+	err = promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, autoApprove, func(agent AgentConfig) error {
+		enrollErr := executeManagedEnrollment(agent, managedEnrollmentOptions{
+			Client:            client,
+			SkipConfirmation:  true,
+			LiveValidate:      true,
+			SkipLiveValidate:  skipLiveValidate,
+			DeferLiveValidate: deferLiveValidate,
+			Input:             os.Stdin,
+			Output:            os.Stdout,
 		})
+		if enrollErr == nil {
+			enrolled = append(enrolled, agent)
+		}
+		return enrollErr
 	})
+	if err != nil {
+		return err
+	}
+	if deferLiveValidate && len(enrolled) > 0 {
+		runDeferredLiveValidationsParallel(client, enrolled, os.Stdout)
+	}
+	return nil
 }
 
 func promptToOnboardCandidates(
@@ -662,7 +692,6 @@ func filterAgentsPendingEnrollment(client *api.Client, discovered []AgentConfig)
 	return candidates, nil
 }
 
-
 func isAutoApprove(cmd *cobra.Command) bool {
 	yes, _ := cmd.Flags().GetBool("yes")
 	force, _ := cmd.Flags().GetBool("force")
@@ -673,6 +702,7 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	autoApprove := isAutoApprove(cmd)
 	liveValidate, _ := cmd.Flags().GetBool("live-validate")
+	skipLiveValidate, _ := cmd.Flags().GetBool("skip-live-validate")
 	tagsInput, _ := cmd.Flags().GetStringSlice("tags")
 	runAll, _ := cmd.Flags().GetBool("all")
 
@@ -695,6 +725,7 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 		DryRun:           dryRun,
 		AutoApprove:      autoApprove,
 		LiveValidate:     liveValidate,
+		SkipLiveValidate: skipLiveValidate,
 		Tags:             tags,
 		SkipConfirmation: false,
 		Input:            os.Stdin,
@@ -715,6 +746,16 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
+		// Live validation is deferred to a single parallel post-onboarding
+		// phase whenever we are touching multiple agents in one invocation
+		// (both the explicit ``--all`` path and the implicit "no args, multiple
+		// candidates" path). This keeps onboarding strictly sequential — so
+		// state-mutating steps (config rewrites, backups, durable credential
+		// creation) stay deterministic — while collapsing the live-validate
+		// wall clock from O(N) to ~max(individual checks). See
+		// runDeferredLiveValidationsParallel for the implementation.
+		deferLiveValidate := liveValidate && !skipLiveValidate
+
 		if runAll {
 			if !autoApprove {
 				var names []string
@@ -733,19 +774,45 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 					return nil
 				}
 			}
-			return promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, true, func(a AgentConfig) error {
+			var enrolled []AgentConfig
+			err := promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, true, func(a AgentConfig) error {
 				agentOpts := opts
 				agentOpts.AutoApprove = true
 				agentOpts.SkipConfirmation = true
-				return executeManagedEnrollment(a, agentOpts)
+				agentOpts.DeferLiveValidate = deferLiveValidate
+				if enrollErr := executeManagedEnrollment(a, agentOpts); enrollErr != nil {
+					return enrollErr
+				}
+				enrolled = append(enrolled, a)
+				return nil
 			})
+			if err != nil {
+				return err
+			}
+			if deferLiveValidate && len(enrolled) > 0 {
+				runDeferredLiveValidationsParallel(client, enrolled, os.Stdout)
+			}
+			return nil
 		}
 
-		return promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, autoApprove, func(a AgentConfig) error {
+		var enrolled []AgentConfig
+		err = promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, autoApprove, func(a AgentConfig) error {
 			agentOpts := opts
 			agentOpts.SkipConfirmation = autoApprove
-			return executeManagedEnrollment(a, agentOpts)
+			agentOpts.DeferLiveValidate = deferLiveValidate
+			if enrollErr := executeManagedEnrollment(a, agentOpts); enrollErr != nil {
+				return enrollErr
+			}
+			enrolled = append(enrolled, a)
+			return nil
 		})
+		if err != nil {
+			return err
+		}
+		if deferLiveValidate && len(enrolled) > 0 {
+			runDeferredLiveValidationsParallel(client, enrolled, os.Stdout)
+		}
+		return nil
 	}
 
 	agent, err := findDiscoveredAgent(discovered, args[0])
@@ -2399,7 +2466,7 @@ func refreshManagedPlanSnapshots(plan managedMCPEnrollmentPlan) (managedMCPEnrol
 
 func supportsManagedGateway(agent AgentConfig) bool {
 	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
-	case "codex cli", "opencode", "claude code", "gemini cli":
+	case "codex cli", "opencode", "claude code", "gemini cli", "hermes":
 		return true
 	default:
 		return false
@@ -2422,6 +2489,8 @@ func applyManagedGatewayForAgent(
 		return applyClaudeManagedGateway(plan, baseURL, token, modelAlias)
 	case "gemini cli":
 		return applyGeminiManagedGateway(plan, baseURL, token, modelAlias)
+	case "hermes":
+		return applyHermesManagedGateway(plan, baseURL, token, modelAlias)
 	default:
 		return plan, nil
 	}

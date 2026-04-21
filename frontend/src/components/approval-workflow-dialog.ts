@@ -262,7 +262,12 @@ export class ApprovalWorkflowDialog extends LitElement {
       this._description = this.policy.description || '';
       // Fall back to standard only for truly EE-only types.
       const eeTypes = ['ai_driven'];
-      const policyType = this.policy.approval_type || 'standard';
+      // Older default workflows were stored with approval_type="manual"
+      // (a legacy synonym for the in-UI human-approval flow). The dialog's
+      // dropdown only renders "standard" for that case, so normalise here
+      // — otherwise the type field appears blank in the editor.
+      const rawType = this.policy.approval_type || 'standard';
+      const policyType = rawType === 'manual' ? 'standard' : rawType;
       if (eeTypes.includes(policyType) && !this._hasAdvancedApprovals()) {
         this._approvalType = 'standard';
       } else {
@@ -474,7 +479,10 @@ export class ApprovalWorkflowDialog extends LitElement {
             multiple
             clearable
             hoist
-            .value=${[...this._approverUserIds, ...this._approverTeamIds]}
+            .value=${[
+              ...this._approverUserIds.map((id) => `user:${id}`),
+              ...this._approverTeamIds.map((id) => `team:${id}`),
+            ]}
             @sl-change=${(e: any) => this._handleApproverChange(e)}
           >
             ${this._users.map(
@@ -484,7 +492,9 @@ export class ApprovalWorkflowDialog extends LitElement {
                 </sl-option>
               `
             )}
-            <sl-divider></sl-divider>
+            ${this._users.length > 0 && this._teams.length > 0
+              ? html`<sl-divider></sl-divider>`
+              : null}
             ${this._teams.map(
               (team) => html`
                 <sl-option value=${`team:${team.id}`}>${team.name}</sl-option>

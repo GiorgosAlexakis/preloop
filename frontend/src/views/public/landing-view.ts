@@ -894,7 +894,7 @@ export class LandingView extends LitElement {
                   <img
                     src="/images/logos/hermes.svg"
                     alt="Hermes"
-                    style="height: 24px;"
+                    style="height: 24px; filter: invert(1);"
                   />
                   Hermes
                 </div>
@@ -976,7 +976,7 @@ export class LandingView extends LitElement {
                   <img
                     src="/images/logos/hermes.svg"
                     alt="Hermes"
-                    style="height: 24px;"
+                    style="height: 24px; filter: invert(1);"
                   />
                   Hermes
                 </div>

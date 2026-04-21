@@ -51,7 +51,7 @@ func TestParseOpenClawConfigJSON5(t *testing.T) {
     defaults: {
       model: {
         primary: "openai/gpt-5",
-        fallbacks: ["openai/gpt-4.1"],
+        fallbacks: ["openai/gpt-5.4"],
       },
     },
   },
@@ -286,7 +286,7 @@ func TestParseOpenClawConfigResolvesAmazonBedrockRefToBedrockProviderBlock(t *te
 func TestParseOpenClawConfigRecoversUpstreamFromManagedConfigState(t *testing.T) {
 	tempDir := t.TempDir()
 	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tempDir) //nolint:errcheck
+	os.Setenv("HOME", tempDir)        //nolint:errcheck
 	defer os.Setenv("HOME", origHome) //nolint:errcheck
 
 	configPath := filepath.Join(tempDir, ".openclaw", "openclaw.json")
@@ -552,7 +552,7 @@ func TestBuildOpenClawManagedMCPEnrollmentPlanRewritesGateway(t *testing.T) {
     defaults: {
       model: {
         primary: "openai/gpt-5",
-        fallbacks: ["openai/gpt-4.1"],
+        fallbacks: ["openai/gpt-5.4"],
       },
       models: {
         "openai/gpt-5": { alias: "GPT 5" },
@@ -636,7 +636,7 @@ func TestBuildOpenClawManagedMCPEnrollmentPlanRewritesGateway(t *testing.T) {
 		t.Fatalf("expected defaults model block, got %#v", plan.ManagedDocument)
 	}
 	fallbacks, ok := defaults["fallbacks"].([]interface{})
-	if !ok || len(fallbacks) != 1 || fallbacks[0] != "preloop/openai/gpt-4.1" {
+	if !ok || len(fallbacks) != 1 || fallbacks[0] != "preloop/openai/gpt-5.4" {
 		t.Fatalf("expected fallback model to be rewritten, got %#v", defaults)
 	}
 	managedModels, ok := managedProvider["models"].([]interface{})
@@ -828,6 +828,195 @@ func TestFilterAgentsPendingLocalEnrollmentSkipsSavedState(t *testing.T) {
 	}
 	if candidates[0].Name != pending.Name {
 		t.Fatalf("expected pending agent to remain, got %#v", candidates)
+	}
+}
+
+// TestAgentsEnrollFlags_LiveValidateDefaultsTrue ensures the CLI's
+// “--live-validate“ flag now defaults to true so onboarding actually
+// performs end-to-end validation by default. This protects against an
+// accidental future regression that flips the default back to false (which
+// is what previously left every scripted re-onboard stuck on
+// "Live check not run" in the UI).
+func TestAgentsEnrollFlags_LiveValidateDefaultsTrue(t *testing.T) {
+	flag := agentsEnrollCmd.Flags().Lookup("live-validate")
+	if flag == nil {
+		t.Fatalf("expected agents onboard to expose --live-validate")
+	}
+	if flag.DefValue != "true" {
+		t.Fatalf("expected --live-validate to default to true, got %q", flag.DefValue)
+	}
+}
+
+func TestAgentsEnrollFlags_SkipLiveValidateExists(t *testing.T) {
+	flag := agentsEnrollCmd.Flags().Lookup("skip-live-validate")
+	if flag == nil {
+		t.Fatalf("expected agents onboard to expose --skip-live-validate as the supported opt-out")
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("expected --skip-live-validate to default to false, got %q", flag.DefValue)
+	}
+}
+
+func TestAgentsDiscoverFlags_SkipLiveValidateExists(t *testing.T) {
+	flag := agentsDiscoverCmd.Flags().Lookup("skip-live-validate")
+	if flag == nil {
+		t.Fatalf("expected agents discover to expose --skip-live-validate so the discover-driven onboarding path can opt out")
+	}
+}
+
+// shouldRunLiveValidation mirrors the gating logic inside
+// executeManagedEnrollment so we can assert the resolution rules without
+// spinning up a full enrollment integration.
+func shouldRunLiveValidation(opts managedEnrollmentOptions, agent AgentConfig) bool {
+	return opts.LiveValidate &&
+		!opts.SkipLiveValidate &&
+		supportsManagedLiveValidation(agent)
+}
+
+func TestLiveValidationGating_DefaultRunsForSupportedAgent(t *testing.T) {
+	if !shouldRunLiveValidation(
+		managedEnrollmentOptions{LiveValidate: true},
+		AgentConfig{Name: "OpenClaw"},
+	) {
+		t.Fatalf("expected live validation to run by default for a supported agent")
+	}
+	if !shouldRunLiveValidation(
+		managedEnrollmentOptions{LiveValidate: true},
+		AgentConfig{Name: "Codex CLI"},
+	) {
+		t.Fatalf("expected live validation to run by default for Codex CLI")
+	}
+}
+
+// Bulk and discover-driven onboarding both used to set SkipConfirmation
+// and AutoApprove, which silently suppressed live validation. Make sure
+// neither of those flags blocks live validation any more.
+func TestLiveValidationGating_NotBlockedBySkipConfirmationOrAutoApprove(t *testing.T) {
+	opts := managedEnrollmentOptions{
+		LiveValidate:     true,
+		AutoApprove:      true,
+		SkipConfirmation: true,
+	}
+	if !shouldRunLiveValidation(opts, AgentConfig{Name: "OpenClaw"}) {
+		t.Fatalf("expected live validation to still run for an --all / --yes / discover bulk onboard")
+	}
+}
+
+func TestLiveValidationGating_SkipFlagOverridesEverything(t *testing.T) {
+	opts := managedEnrollmentOptions{
+		LiveValidate:     true,
+		SkipLiveValidate: true,
+	}
+	if shouldRunLiveValidation(opts, AgentConfig{Name: "OpenClaw"}) {
+		t.Fatalf("expected --skip-live-validate to suppress live validation even for supported agents")
+	}
+}
+
+func TestLiveValidationGating_UnsupportedAgentNeverRuns(t *testing.T) {
+	// Only kinds that have NO live-validate implementation should be skipped.
+	// Every kind we ship a managed runtime adapter for now has a live check
+	// (see runManagedAgentLiveValidation dispatch); listing them as
+	// "unsupported" here would silently mask a regression where someone
+	// drops a per-agent run<Kind>LiveValidation function.
+	opts := managedEnrollmentOptions{LiveValidate: true}
+	for _, name := range []string{
+		"Claude Desktop",
+		"Cursor",
+		"Windsurf",
+		"VSCode / Copilot",
+	} {
+		if shouldRunLiveValidation(opts, AgentConfig{Name: name}) {
+			t.Fatalf("expected live validation to be skipped for unsupported agent %q", name)
+		}
+	}
+}
+
+func TestLiveValidationGating_SupportedAgents_AllRunByDefault(t *testing.T) {
+	// Regression: the user reported "Live check not run / unsupported" for
+	// every kind except OpenClaw and Codex CLI after onboarding via the CLI.
+	// We now ship a live-validate implementation for every managed agent
+	// kind, so each must report supported by default.
+	opts := managedEnrollmentOptions{LiveValidate: true}
+	for _, name := range []string{
+		"OpenClaw",
+		"Codex CLI",
+		"Hermes",
+		"OpenCode",
+		"Claude Code",
+		"Gemini CLI",
+	} {
+		if !shouldRunLiveValidation(opts, AgentConfig{Name: name}) {
+			t.Fatalf("expected live validation to run for managed agent %q", name)
+		}
+	}
+}
+
+// TestBuildCodexLiveValidationPayload_IncludesGatewayRequiredFields proves
+// the Codex live-validate request body carries the three fields the Preloop
+// gateway (and the upstream Codex Responses backend) reject the request
+// without: “instructions“ (non-empty string), “store“ set to false, and
+// “input“ in Responses-API item form. It also asserts the validation
+// token is embedded in the user-text item so the post-call gateway-usage
+// search can match it. Regressing any of these caused the user-reported
+// error "Instructions are required" + a usage-search timeout, which then
+// aborted the rest of “preloop agents onboard --all“.
+func TestBuildCodexLiveValidationPayload_IncludesGatewayRequiredFields(t *testing.T) {
+	prompt := "Welcome to Preloop. Validation token: preloop-validation-12345. Reply with ACK only."
+	payload := buildCodexLiveValidationPayload("preloop/openai/gpt-5.4", prompt)
+
+	// Round-trip through JSON to assert the on-the-wire shape, since this is
+	// exactly what the gateway will see.
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to JSON-marshal payload: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("failed to JSON-unmarshal payload: %v", err)
+	}
+
+	if model, _ := decoded["model"].(string); model != "preloop/openai/gpt-5.4" {
+		t.Fatalf("expected model 'preloop/openai/gpt-5.4', got %q", model)
+	}
+	instructions, _ := decoded["instructions"].(string)
+	if strings.TrimSpace(instructions) == "" {
+		t.Fatalf("expected non-empty 'instructions' field, got %q", instructions)
+	}
+	if store, ok := decoded["store"].(bool); !ok || store {
+		t.Fatalf("expected 'store: false', got %#v", decoded["store"])
+	}
+	input, ok := decoded["input"].([]interface{})
+	if !ok || len(input) == 0 {
+		t.Fatalf("expected 'input' to be a non-empty array of Responses-API items, got %#v", decoded["input"])
+	}
+	first, ok := input[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected first input item to be an object, got %#v", input[0])
+	}
+	if first["type"] != "message" || first["role"] != "user" {
+		t.Fatalf("expected first input item to be a user message, got %#v", first)
+	}
+	content, ok := first["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatalf("expected first input message to have non-empty content, got %#v", first)
+	}
+	firstContent, ok := content[0].(map[string]interface{})
+	if !ok || firstContent["type"] != "input_text" {
+		t.Fatalf("expected first content item to be input_text, got %#v", content[0])
+	}
+	text, _ := firstContent["text"].(string)
+	if !strings.Contains(text, "preloop-validation-") {
+		t.Fatalf("expected user-text to embed the preloop-validation token, got %q", text)
+	}
+	// max_output_tokens / max_completion_tokens MUST NOT be set: Codex'
+	// chatgpt.com backend rejects them with HTTP 400 "Unsupported parameter:
+	// max_output_tokens", which broke live validation for every Codex CLI
+	// onboard until we dropped them.
+	if _, present := decoded["max_output_tokens"]; present {
+		t.Fatalf("expected 'max_output_tokens' to be absent (Codex backend rejects it), got %#v", decoded["max_output_tokens"])
+	}
+	if _, present := decoded["max_completion_tokens"]; present {
+		t.Fatalf("expected 'max_completion_tokens' to be absent, got %#v", decoded["max_completion_tokens"])
 	}
 }
 

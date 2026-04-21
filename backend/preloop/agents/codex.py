@@ -28,7 +28,7 @@ class CodexAgent(ContainerAgentExecutor):
 
         Args:
             config: Agent configuration including:
-                - model: OpenAI model to use (default: gpt-4)
+                - model: OpenAI model to use (default: gpt-5.4)
                 - custom settings for Codex CLI
         """
         # Use official Codex Universal image
@@ -117,7 +117,7 @@ class CodexAgent(ContainerAgentExecutor):
             )
             or model_identifier
             or agent_model
-            or "gpt-4"
+            or "gpt-5.4"
         )
         codex_context["codex_model"] = model
 
@@ -211,7 +211,7 @@ class CodexAgent(ContainerAgentExecutor):
         model = (
             execution_context.get("codex_model")
             or execution_context.get("model_identifier")
-            or "gpt-4"
+            or "gpt-5.4"
         )
 
         self.logger.info(
@@ -294,7 +294,7 @@ class CodexAgent(ContainerAgentExecutor):
         ) or (
             execution_context.get("codex_model")
             or execution_context.get("model_identifier")
-            or "gpt-4"
+            or "gpt-5.4"
         )
         model_provider = (
             execution_context.get("model_gateway_provider")
@@ -512,7 +512,7 @@ exit $CODEX_EXIT_CODE
         env_key, and wire_api so Codex knows how to reach the provider.
 
         Args:
-            model: Model identifier (e.g., "gpt-4", "claude-sonnet-4-20250514")
+            model: Model identifier (e.g., "gpt-5.4", "claude-sonnet-4-20250514")
             model_provider: Provider name (e.g., "openai", "anthropic")
             model_endpoint: API base URL for custom providers
 

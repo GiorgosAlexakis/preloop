@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"io"
 	"os"
 	"path/filepath"
@@ -321,5 +322,370 @@ func TestHermesAdapterValidateManagedConfig_FailsWithoutPreloopEntry(t *testing.
 	result := adapter.ValidateManagedConfig(doc, "https://preloop.example")
 	if passed, _ := result["validation_passed"].(bool); passed {
 		t.Fatalf("expected validation to fail without Preloop entry, got %#v", result)
+	}
+}
+
+func TestSupportsManagedGateway_IncludesHermes(t *testing.T) {
+	if !supportsManagedGateway(AgentConfig{Name: hermesAgentName}) {
+		t.Fatalf("expected Hermes to support the managed gateway")
+	}
+	if !supportsManagedGateway(AgentConfig{Name: "hermes"}) {
+		t.Fatalf("expected lowercase hermes to support the managed gateway")
+	}
+}
+
+func TestApplyHermesManagedGateway_RewritesModelBlock(t *testing.T) {
+	plan := managedMCPEnrollmentPlan{
+		ManagedDocument: map[string]interface{}{
+			"model": map[string]interface{}{
+				"default":  "gpt-5.4",
+				"provider": "openai-codex",
+				"base_url": "https://chatgpt.com/backend-api/codex",
+			},
+			"mcp_servers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"url": "https://preloop.example/mcp/v1",
+					"headers": map[string]interface{}{
+						"Authorization": "Bearer hermes-durable-token",
+					},
+				},
+			},
+		},
+	}
+
+	plan, err := applyHermesManagedGateway(
+		plan,
+		"https://preloop.example",
+		"hermes-durable-token",
+		"openai/gpt-5.4",
+	)
+	if err != nil {
+		t.Fatalf("unexpected gateway apply error: %v", err)
+	}
+
+	model, ok := plan.ManagedDocument["model"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected model mapping in managed doc, got %#v", plan.ManagedDocument["model"])
+	}
+	if model["provider"] != hermesGatewayProviderName {
+		t.Fatalf("expected provider %q, got %#v", hermesGatewayProviderName, model["provider"])
+	}
+	if model["base_url"] != "https://preloop.example/openai/v1" {
+		t.Fatalf("unexpected hermes gateway base_url: %#v", model["base_url"])
+	}
+	if model["api_key"] != "hermes-durable-token" {
+		t.Fatalf("unexpected hermes gateway api_key: %#v", model["api_key"])
+	}
+	if model["default"] != "openai/gpt-5.4" {
+		t.Fatalf("unexpected hermes gateway model default: %#v", model["default"])
+	}
+	if _, exists := model["model"]; exists {
+		t.Fatalf("expected stale `model` shorthand to be cleared")
+	}
+	if plan.ManagedModelAlias != "openai/gpt-5.4" {
+		t.Fatalf("unexpected ManagedModelAlias: %q", plan.ManagedModelAlias)
+	}
+	if plan.ManagedProviderName != "preloop" {
+		t.Fatalf("unexpected ManagedProviderName: %q", plan.ManagedProviderName)
+	}
+
+	servers := plan.ManagedDocument["mcp_servers"].(map[string]interface{})
+	preloop := servers["preloop"].(map[string]interface{})
+	if preloop["url"] != "https://preloop.example/mcp/v1" {
+		t.Fatalf("expected pre-existing MCP entry to be preserved, got %#v", preloop)
+	}
+}
+
+func TestApplyHermesManagedGateway_CreatesModelBlockWhenMissing(t *testing.T) {
+	plan := managedMCPEnrollmentPlan{
+		ManagedDocument: map[string]interface{}{},
+	}
+
+	plan, err := applyHermesManagedGateway(
+		plan,
+		"https://preloop.example/",
+		"hermes-token",
+		"openai/gpt-5.4",
+	)
+	if err != nil {
+		t.Fatalf("unexpected gateway apply error: %v", err)
+	}
+
+	model, ok := plan.ManagedDocument["model"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected applyHermesManagedGateway to materialise the model block, got %#v", plan.ManagedDocument)
+	}
+	if model["base_url"] != "https://preloop.example/openai/v1" {
+		t.Fatalf("expected trailing slash to be stripped from base URL, got %#v", model["base_url"])
+	}
+}
+
+func TestHermesAdapterValidateManagedConfig_PassesWithGatewayConfigured(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: hermesAgentName})
+	doc := map[string]interface{}{
+		"mcp_servers": map[string]interface{}{
+			"preloop": adapter.BuildManagedServer("https://preloop.example", "hermes-token"),
+		},
+		"model": map[string]interface{}{
+			"provider": hermesGatewayProviderName,
+			"base_url": "https://preloop.example/openai/v1",
+			"api_key":  "hermes-token",
+			"default":  "openai/gpt-5.4",
+		},
+	}
+	result := adapter.ValidateManagedConfig(doc, "https://preloop.example")
+	if passed, _ := result["validation_passed"].(bool); !passed {
+		t.Fatalf("expected gateway-configured validation to pass, got %#v", result)
+	}
+	if result["gateway_provider_ok"] != true {
+		t.Fatalf("expected gateway_provider_ok=true, got %#v", result)
+	}
+	if result["gateway_base_url_ok"] != true {
+		t.Fatalf("expected gateway_base_url_ok=true, got %#v", result)
+	}
+	if result["gateway_model_alias"] != "openai/gpt-5.4" {
+		t.Fatalf("unexpected gateway alias surfaced by validation: %#v", result["gateway_model_alias"])
+	}
+}
+
+func TestHermesAdapterValidateManagedConfig_FailsWhenGatewayBaseURLWrong(t *testing.T) {
+	adapter := managedMCPAdapterForAgent(AgentConfig{Name: hermesAgentName})
+	doc := map[string]interface{}{
+		"mcp_servers": map[string]interface{}{
+			"preloop": adapter.BuildManagedServer("https://preloop.example", "hermes-token"),
+		},
+		"model": map[string]interface{}{
+			"provider": hermesGatewayProviderName,
+			"base_url": "https://chatgpt.com/backend-api/codex",
+			"default":  "openai/gpt-5.4",
+		},
+	}
+	result := adapter.ValidateManagedConfig(doc, "https://preloop.example")
+	if passed, _ := result["validation_passed"].(bool); passed {
+		t.Fatalf("expected validation to fail when gateway base_url is wrong, got %#v", result)
+	}
+}
+
+func TestExtractHermesModelSelection_StringShorthand(t *testing.T) {
+	modelRef, providerHint, baseURL := extractHermesModelSelection(map[string]interface{}{
+		"model": "anthropic/claude-opus-4.6",
+	})
+	if modelRef != "anthropic/claude-opus-4.6" || providerHint != "" || baseURL != "" {
+		t.Fatalf("unexpected shorthand parse: model=%q hint=%q baseURL=%q", modelRef, providerHint, baseURL)
+	}
+}
+
+func TestExtractHermesModelSelection_StructuredMapping(t *testing.T) {
+	modelRef, providerHint, baseURL := extractHermesModelSelection(map[string]interface{}{
+		"model": map[string]interface{}{
+			"default":  "gpt-5.4",
+			"provider": "openai-codex",
+			"base_url": "https://chatgpt.com/backend-api/codex",
+		},
+	})
+	if modelRef != "gpt-5.4" || providerHint != "openai-codex" ||
+		baseURL != "https://chatgpt.com/backend-api/codex" {
+		t.Fatalf("unexpected structured parse: model=%q hint=%q baseURL=%q", modelRef, providerHint, baseURL)
+	}
+}
+
+func TestSplitHermesModelRef_PrefersExplicitProviderHint(t *testing.T) {
+	provider, model := splitHermesModelRef("anthropic/claude-opus-4.6", "openrouter")
+	if provider != "openrouter" || model != "claude-opus-4.6" {
+		t.Fatalf("expected explicit provider hint to win, got provider=%q model=%q", provider, model)
+	}
+}
+
+func TestSplitHermesModelRef_DefaultsToOpenRouterWhenAuto(t *testing.T) {
+	provider, model := splitHermesModelRef("hermes-3-llama-3.1-405b", "auto")
+	if provider != "openrouter" || model != "hermes-3-llama-3.1-405b" {
+		t.Fatalf("expected auto to default to openrouter, got provider=%q model=%q", provider, model)
+	}
+}
+
+func TestNormalizeHermesManagedAlias_CollapsesCodexProvider(t *testing.T) {
+	if got := normalizeHermesManagedAlias("gpt-5.4", "openai-codex", "gpt-5.4"); got != "openai/gpt-5.4" {
+		t.Fatalf("expected openai/gpt-5.4, got %q", got)
+	}
+	if got := normalizeHermesManagedAlias("anthropic/claude-opus-4.6", "anthropic", "claude-opus-4.6"); got != "anthropic/claude-opus-4.6" {
+		t.Fatalf("expected pre-existing slashed alias to round-trip, got %q", got)
+	}
+}
+
+func TestParseHermesManagedGatewayUpstream_ImportsCodexOAuth(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to override HOME: %v", err)
+	}
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
+
+	configPath := filepath.Join(home, hermesBootstrapConfigPath)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create hermes dir: %v", err)
+	}
+	configBody := `model:
+  default: gpt-5.4
+  provider: openai-codex
+  base_url: https://chatgpt.com/backend-api/codex
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0644); err != nil {
+		t.Fatalf("failed to seed hermes config: %v", err)
+	}
+
+	jwtPayload := base64.RawURLEncoding.EncodeToString([]byte(`{"exp":1893456000,"https://api.openai.com/auth":{"chatgpt_account_id":"acct-test"}}`))
+	accessToken := "header." + jwtPayload + ".sig"
+	authJSON := `{
+        "version": 1,
+        "providers": {
+            "openai-codex": {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "access_token": "` + accessToken + `",
+                    "refresh_token": "refresh-token"
+                }
+            }
+        },
+        "active_provider": "openai-codex"
+    }`
+	authPath := filepath.Join(home, hermesAuthFile)
+	if err := os.WriteFile(authPath, []byte(authJSON), 0600); err != nil {
+		t.Fatalf("failed to seed hermes auth.json: %v", err)
+	}
+
+	upstream, err := parseHermesManagedGatewayUpstream(AgentConfig{
+		Name:       hermesAgentName,
+		ConfigPath: configPath,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected hermes upstream to resolve")
+	}
+	if upstream.CredentialType != "oauth_openai_codex" {
+		t.Fatalf("expected oauth_openai_codex credentials, got %#v", upstream.CredentialType)
+	}
+	if upstream.ProviderName != "openai-codex" {
+		t.Fatalf("expected openai-codex provider name, got %q", upstream.ProviderName)
+	}
+	if upstream.ManagedModelAlias != "openai/gpt-5.4" {
+		t.Fatalf("expected gateway alias openai/gpt-5.4, got %q", upstream.ManagedModelAlias)
+	}
+	if upstream.ModelIdentifier != "gpt-5.4" {
+		t.Fatalf("expected model identifier gpt-5.4, got %q", upstream.ModelIdentifier)
+	}
+	if upstream.APIEndpoint != "https://chatgpt.com/backend-api/codex" {
+		t.Fatalf("unexpected API endpoint: %q", upstream.APIEndpoint)
+	}
+	if got := upstream.CredentialPayload["access"]; got != accessToken {
+		t.Fatalf("expected access token in payload, got %#v", got)
+	}
+	if got := upstream.CredentialPayload["account_id"]; got != "acct-test" {
+		t.Fatalf("expected account_id from JWT, got %#v", got)
+	}
+	if !upstream.CanRouteThroughGateway() {
+		t.Fatalf("expected upstream to be routable, got %#v", upstream)
+	}
+}
+
+func TestParseHermesManagedGatewayUpstream_ResolvesOpenAIKeyFromEnvFile(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to override HOME: %v", err)
+	}
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
+
+	for _, key := range []string{"OPENAI_API_KEY", "OPENROUTER_API_KEY"} {
+		old, present := os.LookupEnv(key)
+		_ = os.Unsetenv(key)
+		defer func(k, v string, p bool) {
+			if p {
+				_ = os.Setenv(k, v)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}(key, old, present)
+	}
+
+	configPath := filepath.Join(home, hermesBootstrapConfigPath)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create hermes dir: %v", err)
+	}
+	configBody := `model:
+  default: gpt-5.4
+  provider: openai
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0644); err != nil {
+		t.Fatalf("failed to seed hermes config: %v", err)
+	}
+
+	envPath := filepath.Join(home, hermesEnvFile)
+	if err := os.MkdirAll(filepath.Dir(envPath), 0755); err != nil {
+		t.Fatalf("failed to create hermes dir: %v", err)
+	}
+	if err := os.WriteFile(envPath, []byte("OPENAI_API_KEY=sk-test-1234\n"), 0600); err != nil {
+		t.Fatalf("failed to seed hermes .env: %v", err)
+	}
+
+	upstream, err := parseHermesManagedGatewayUpstream(AgentConfig{
+		Name:       hermesAgentName,
+		ConfigPath: configPath,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream resolution from .env API key")
+	}
+	if upstream.APIKey != "sk-test-1234" {
+		t.Fatalf("expected API key from .env, got %q", upstream.APIKey)
+	}
+	if upstream.ManagedModelAlias != "openai/gpt-5.4" {
+		t.Fatalf("expected openai/gpt-5.4 alias, got %q", upstream.ManagedModelAlias)
+	}
+	if !upstream.CanRouteThroughGateway() {
+		t.Fatalf("expected upstream to route through gateway, got %#v", upstream)
+	}
+}
+
+func TestParseHermesManagedGatewayUpstream_SkipsAlreadyManagedConfig(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to override HOME: %v", err)
+	}
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
+
+	configPath := filepath.Join(home, hermesBootstrapConfigPath)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create hermes dir: %v", err)
+	}
+	body := `model:
+  default: preloop/openai/gpt-5.4
+  provider: custom
+  base_url: https://preloop.example/openai/v1
+`
+	if err := os.WriteFile(configPath, []byte(body), 0644); err != nil {
+		t.Fatalf("failed to seed hermes config: %v", err)
+	}
+
+	upstream, err := parseHermesManagedGatewayUpstream(AgentConfig{
+		Name:       hermesAgentName,
+		ConfigPath: configPath,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream != nil {
+		t.Fatalf("expected nil upstream when already pointed at preloop, got %#v", upstream)
+	}
+}
+
+func TestManagedGatewayBindingConfigKey_Hermes(t *testing.T) {
+	got := managedGatewayBindingConfigKey(AgentConfig{Name: hermesAgentName})
+	if got != "model.default" {
+		t.Fatalf("expected model.default, got %q", got)
 	}
 }

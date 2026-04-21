@@ -912,6 +912,12 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                         internal_name = f"account_{safe_account_id}_{tool_name}"
 
                         # Execute the tool OUTSIDE the locked transaction
+                        import time as _time
+
+                        exec_start = _time.monotonic()
+                        exec_status = "executed"
+                        exec_error: Optional[str] = None
+                        result_preview: Optional[str] = None
                         try:
                             from preloop.services.dynamic_fastmcp import (
                                 _bypass_approval_var,
@@ -949,6 +955,14 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                             else:
                                 result_data = {"text": str(tool_result)}
 
+                            try:
+                                preview_src = result_data.get("text") or json.dumps(
+                                    result_data
+                                )
+                                result_preview = str(preview_src)[:500]
+                            except Exception:
+                                result_preview = None
+
                         except Exception as exec_err:
                             logger.error(
                                 f"Error executing tool after approval: {exec_err}",
@@ -958,6 +972,10 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                             # do not re-execute the tool.
                             result_data = {"_error": str(exec_err)}
                             response["tool_execution_error"] = str(exec_err)
+                            exec_status = "failed"
+                            exec_error = str(exec_err)
+
+                        elapsed_ms = int((_time.monotonic() - exec_start) * 1000)
 
                         # Store the real result in a fresh transaction
                         async with get_async_db_session() as db2:
@@ -970,6 +988,32 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                             if ar:
                                 ar.tool_result = result_data
                                 await db2.commit()
+
+                        # Audit the post-approval execution outcome so the
+                        # audit timeline shows the full story even for the
+                        # async-poll path (which bypasses DynamicFastMCP's
+                        # built-in tool_call audit).
+                        try:
+                            from preloop.services.approval_service import (
+                                _log_approval_tool_executed_async,
+                            )
+
+                            _log_approval_tool_executed_async(
+                                account_id=str(approval_request.account_id),
+                                approval_id=req_id,
+                                tool_name=tool_name,
+                                status=exec_status,
+                                duration_ms=elapsed_ms,
+                                result_preview=result_preview,
+                                error=exec_error,
+                                execution_id=str(approval_request.execution_id)
+                                if approval_request.execution_id
+                                else None,
+                            )
+                        except Exception as audit_err:  # pragma: no cover
+                            logger.debug(
+                                f"Failed to audit post-approval execution: {audit_err}"
+                            )
 
                         if "_error" not in (result_data or {}):
                             response["tool_result"] = result_data

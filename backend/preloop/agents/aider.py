@@ -31,7 +31,7 @@ class AiderAgent(ContainerAgentExecutor):
 
         Args:
             config: Agent configuration including:
-                - model: AI model to use (default: gpt-4)
+                - model: AI model to use (default: gpt-5.4)
                 - edit_format: Edit format (default: whole)
                 - custom settings for Aider
         """
@@ -65,7 +65,7 @@ class AiderAgent(ContainerAgentExecutor):
         model = (
             execution_context.get("model_identifier")
             or agent_config.get("model")
-            or "gpt-4"
+            or "gpt-5.4"
         )
         aider_context["aider_model"] = model
 
@@ -146,7 +146,7 @@ class AiderAgent(ContainerAgentExecutor):
 
         # Build the command to run Aider with the prompt
         prompt = execution_context["prompt"]
-        model = execution_context.get("aider_model", "gpt-4")
+        model = execution_context.get("aider_model", "gpt-5.4")
         edit_format = execution_context.get("aider_edit_format", "whole")
 
         # Escape prompt for shell (use single quotes to avoid escaping issues)

@@ -61,7 +61,7 @@ def mock_organization(mock_user) -> MagicMock:
 def mock_ai_model() -> MagicMock:
     """Provide a mock AIModel for tests."""
     model = MagicMock(spec=AIModel)
-    model.model_identifier = "gpt-4"
+    model.model_identifier = "gpt-5.4"
     model.api_key = "sk-test-key"
     return model
 

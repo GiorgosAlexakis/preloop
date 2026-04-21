@@ -196,7 +196,7 @@ class ApprovalWorkflowDefinition(BaseModel):
     )
     ai_model: Optional[str] = Field(
         None,
-        description="AI model to use for evaluation (e.g., 'claude-sonnet-4-20250514', 'gpt-4o')",
+        description="AI model to use for evaluation (e.g., 'claude-sonnet-4.7', 'gpt-5.4')",
     )
     ai_guidelines: Optional[str] = Field(
         None,

@@ -261,6 +261,90 @@ class TestEvaluatePolicyWithRules:
         assert action == "require_approval"
         assert approval_id == rule_workflow_id
 
+    def test_require_approval_rule_without_workflow_falls_back_to_account_default(
+        self, mock_audit_logging, monkeypatch
+    ):
+        """A bare ``require_approval`` rule must fall back to the account
+        default workflow rather than silently auto-approving."""
+        default_workflow_id = uuid4()
+        mock_config = MagicMock()
+        mock_config.id = uuid4()
+        mock_config.approval_workflow_id = None
+
+        rule = self._make_rule(
+            action="require_approval",
+            condition_expression="",  # unconditional
+            approval_workflow_id=None,
+        )
+
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_config
+        mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
+            rule
+        ]
+
+        # Patch the default-workflow lookup to return a known workflow.
+        import preloop.services.policy_evaluator as pe
+
+        default_workflow = MagicMock()
+        default_workflow.id = default_workflow_id
+
+        class FakeApprovalWorkflowCRUD:
+            def get_default(self, db, account_id):
+                return default_workflow
+
+        monkeypatch.setattr(pe, "crud_approval_workflow", FakeApprovalWorkflowCRUD())
+
+        action, approval_id, desc = evaluate_policy(
+            db=mock_db,
+            tool_name="test_tool",
+            tool_args={"amount": 50},
+            account_id=uuid4(),
+        )
+
+        assert action == "require_approval"
+        assert approval_id == default_workflow_id
+
+    def test_require_approval_rule_without_any_workflow_returns_none(
+        self, mock_audit_logging, monkeypatch
+    ):
+        """When there is no rule, config, or account default workflow, the
+        evaluator still returns ``require_approval`` so the caller can fail
+        closed (it must NOT silently switch to ``allow``)."""
+        mock_config = MagicMock()
+        mock_config.id = uuid4()
+        mock_config.approval_workflow_id = None
+
+        rule = self._make_rule(
+            action="require_approval",
+            condition_expression="",
+            approval_workflow_id=None,
+        )
+
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_config
+        mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
+            rule
+        ]
+
+        import preloop.services.policy_evaluator as pe
+
+        class FakeApprovalWorkflowCRUD:
+            def get_default(self, db, account_id):
+                return None
+
+        monkeypatch.setattr(pe, "crud_approval_workflow", FakeApprovalWorkflowCRUD())
+
+        action, approval_id, desc = evaluate_policy(
+            db=mock_db,
+            tool_name="test_tool",
+            tool_args={"amount": 50},
+            account_id=uuid4(),
+        )
+
+        assert action == "require_approval"
+        assert approval_id is None
+
     def test_rule_evaluation_error_fails_closed(self, mock_audit_logging):
         """Rule evaluation error -> fail closed with require_approval."""
         workflow_id = uuid4()

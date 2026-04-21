@@ -2204,7 +2204,7 @@ class TestAutoApproveRequest:
                     request_id=request_id,
                     reason="Safe tool call",
                     decided_by_ai=True,
-                    ai_model="gpt-4o-mini",
+                    ai_model="gpt-5.4-mini",
                     ai_confidence=0.95,
                 )
 
@@ -2213,7 +2213,7 @@ class TestAutoApproveRequest:
                 update_arg = mock_update.call_args[0][1]
                 assert update_arg.status == "approved"
                 assert update_arg.decided_by_ai is True
-                assert update_arg.ai_model == "gpt-4o-mini"
+                assert update_arg.ai_model == "gpt-5.4-mini"
                 assert update_arg.ai_confidence == 0.95
                 assert update_arg.ai_reasoning == "Safe tool call"
                 mock_broadcast.assert_called_once_with(
@@ -2259,7 +2259,7 @@ class TestAutoDenyRequest:
                     request_id=request_id,
                     reason="Dangerous operation",
                     decided_by_ai=True,
-                    ai_model="gpt-4o-mini",
+                    ai_model="gpt-5.4-mini",
                     ai_confidence=0.92,
                 )
 
@@ -2268,7 +2268,7 @@ class TestAutoDenyRequest:
                 update_arg = mock_update.call_args[0][1]
                 assert update_arg.status == "declined"
                 assert update_arg.decided_by_ai is True
-                assert update_arg.ai_model == "gpt-4o-mini"
+                assert update_arg.ai_model == "gpt-5.4-mini"
                 assert update_arg.ai_confidence == 0.92
                 assert update_arg.ai_reasoning == "Dangerous operation"
                 mock_broadcast.assert_called_once_with(
@@ -2317,7 +2317,7 @@ class TestAIDrivenApprovalFlow:
         result.decision = decision
         result.confidence = confidence
         result.reasoning = reasoning
-        result.model_used = "gpt-4o-mini"
+        result.model_used = "gpt-5.4-mini"
         return result
 
     async def test_high_confidence_approve(
@@ -2571,7 +2571,7 @@ class TestAIDrivenApprovalFlow:
             # Should update request with AI info
             mock_update.assert_called()
             update_arg = mock_update.call_args[0][1]
-            assert update_arg.ai_model == "gpt-4o-mini"
+            assert update_arg.ai_model == "gpt-5.4-mini"
             assert update_arg.ai_confidence == 0.4
             assert "Escalated to human review" in update_arg.ai_reasoning
             # Should send human notifications using original policy

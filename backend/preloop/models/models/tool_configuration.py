@@ -300,7 +300,7 @@ class ApprovalWorkflow(Base):
     ai_model: Mapped[Optional[str]] = mapped_column(
         String(100),
         nullable=True,
-        comment="AI model to use for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
+        comment="AI model to use for approval decisions (e.g., 'gpt-5.4', 'claude-sonnet-4.7')",
     )
     ai_guidelines: Mapped[Optional[str]] = mapped_column(
         Text,

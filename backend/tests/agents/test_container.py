@@ -42,7 +42,7 @@ def sample_execution_context():
         "prompt": "Test prompt",
         "agent_config": {},
         "model_api_key": "test-key",
-        "model_identifier": "gpt-4",
+        "model_identifier": "gpt-5.4",
         "model_provider": "openai",
     }
 

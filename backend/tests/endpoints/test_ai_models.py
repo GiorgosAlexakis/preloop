@@ -34,7 +34,7 @@ async def test_create_ai_model(mock_account: Account, mocker: MockerFixture):
         name="Test AI Model",
         description="A test AI model",
         provider_name="openai",
-        model_identifier="gpt-4",
+        model_identifier="gpt-5.4",
         api_key="test_key",
     )
 
@@ -140,7 +140,7 @@ async def test_update_ai_model(mock_account: Account, mocker: MockerFixture):
         name=ai_model_update.name,
         description="A test AI model",
         provider_name="openai",
-        model_identifier="gpt-4",
+        model_identifier="gpt-5.4",
         api_endpoint=None,
         is_default=False,
         model_parameters=None,
@@ -201,7 +201,7 @@ def test_ai_model_schema_rejects_mixed_inline_and_external_credentials():
         AIModelCreate(
             name="Mixed Credentials Model",
             provider_name="openai",
-            model_identifier="gpt-4",
+            model_identifier="gpt-5.4",
             api_key="inline-key",
             credentials_backend_type="vault_kv_v2",
             credentials_external_ref="providers/openai/team-a",

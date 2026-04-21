@@ -55,7 +55,7 @@ describe('DashboardView', () => {
       usage_by_model: [
         {
           ai_model_id: 'model-1',
-          model_alias: 'gpt-4.1',
+          model_alias: 'gpt-5.4',
           provider_name: 'openai',
           request_count: 10,
           token_usage: {
@@ -76,7 +76,7 @@ describe('DashboardView', () => {
           flow_id: null,
           flow_name: null,
           session_reference: 'Agent Session',
-          model_alias: 'gpt-4.1',
+          model_alias: 'gpt-5.4',
           provider_name: 'openai',
           request_count: 8,
           token_usage: {
@@ -114,7 +114,7 @@ describe('DashboardView', () => {
           flow_id: null,
           flow_name: null,
           flow_execution_id: null,
-          latest_model_alias: 'gpt-4.1',
+          latest_model_alias: 'gpt-5.4',
           latest_provider_name: 'openai',
           total_requests: 8,
           successful_requests: 7,
@@ -154,7 +154,7 @@ describe('DashboardView', () => {
           ended_at: null,
           total_requests: 8,
           estimated_cost: 4.2,
-          latest_model_alias: 'gpt-4.1',
+          latest_model_alias: 'gpt-5.4',
           latest_provider_name: 'openai',
           last_request_at: '2026-03-07T10:00:00Z',
           activity_status: 'active_now',
@@ -178,7 +178,7 @@ describe('DashboardView', () => {
           endpoint: '/openai/v1/responses',
           method: 'POST',
           provider_name: 'openai',
-          model_alias: 'gpt-4.1',
+          model_alias: 'gpt-5.4',
           flow_id: null,
           flow_name: null,
           flow_execution_id: null,
@@ -214,7 +214,7 @@ describe('DashboardView', () => {
             action: 'model_gateway_request',
             status: 'failed',
             timestamp: '2026-03-07T10:00:00Z',
-            details: { requested_model: 'gpt-4.1' },
+            details: { requested_model: 'gpt-5.4' },
           },
           sub_events: [],
         },
@@ -299,9 +299,9 @@ describe('DashboardView', () => {
     aiModelsResponse = [
       {
         id: 'model-1',
-        name: 'OpenAI GPT-4.1',
+        name: 'OpenAI GPT-5.4',
         provider_name: 'openai',
-        model_identifier: 'gpt-4.1',
+        model_identifier: 'gpt-5.4',
       },
     ];
     usersResponse = {

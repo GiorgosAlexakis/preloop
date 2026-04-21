@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -199,9 +200,12 @@ func (a hermesManagedMCPAdapter) BuildManagedServer(baseURL, token string) map[s
 }
 
 // ValidateManagedConfig confirms the Preloop entry exists in `mcp_servers` and
-// is correctly authorised.
+// is correctly authorised. When the managed gateway has been wired up it also
+// verifies that `model.provider` / `model.base_url` / `model.api_key` route
+// through Preloop.
 func (a hermesManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface{}, baseURL string) map[string]interface{} {
 	expectedURL := strings.TrimRight(baseURL, "/") + "/mcp/v1"
+	expectedGatewayBaseURL := strings.TrimRight(baseURL, "/") + hermesGatewayPath
 	result := map[string]interface{}{
 		"adapter_key":             a.Key(),
 		"expected_preloop_url":    expectedURL,
@@ -229,10 +233,426 @@ func (a hermesManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface{
 			result["authorization_header_ok"] = true
 		}
 	}
-	result["validation_passed"] =
-		result["preloop_server_present"] == true &&
-			result["preloop_url_ok"] == true &&
-			result["transport_ok"] == true &&
-			result["authorization_header_ok"] == true
+	mcpOK := result["preloop_server_present"] == true &&
+		result["preloop_url_ok"] == true &&
+		result["transport_ok"] == true &&
+		result["authorization_header_ok"] == true
+
+	// Optional gateway fields: only meaningful once the managed model gateway
+	// has been wired into `model:`. We surface explicit booleans so the
+	// enrollment audit trail can distinguish "MCP-only" from "fully managed".
+	gatewayPresent := false
+	gatewayBaseURLOK := false
+	gatewayProviderOK := false
+	gatewayAlias := ""
+	if model, ok := asObjectMap(doc["model"]); ok {
+		provider, _ := model["provider"].(string)
+		baseURLValue, _ := model["base_url"].(string)
+		modelAlias := strings.TrimSpace(lookupString(model, "default"))
+		if modelAlias == "" {
+			modelAlias, _ = model["model"].(string)
+			modelAlias = strings.TrimSpace(modelAlias)
+		}
+		if strings.EqualFold(strings.TrimSpace(provider), "custom") {
+			gatewayProviderOK = true
+		}
+		if strings.TrimSpace(baseURLValue) == expectedGatewayBaseURL {
+			gatewayBaseURLOK = true
+		}
+		if gatewayProviderOK || gatewayBaseURLOK || modelAlias != "" {
+			gatewayPresent = true
+		}
+		gatewayAlias = modelAlias
+	}
+	result["gateway_present"] = gatewayPresent
+	result["gateway_base_url_ok"] = gatewayBaseURLOK
+	result["gateway_provider_ok"] = gatewayProviderOK
+	if gatewayAlias != "" {
+		result["gateway_model_alias"] = gatewayAlias
+	}
+
+	if gatewayPresent {
+		result["validation_passed"] = mcpOK && gatewayBaseURLOK && gatewayProviderOK
+	} else {
+		result["validation_passed"] = mcpOK
+	}
 	return result
+}
+
+// hermesGatewayPath is the OpenAI-compatible suffix appended to the Preloop
+// base URL when wiring Hermes' `model.base_url:` to route through Preloop.
+// Hermes treats `model.provider: custom` as "any OpenAI-compatible endpoint"
+// (see https://hermes-agent.nousresearch.com/docs/user-guide/configuration/),
+// which matches the same `/openai/v1` prefix that Codex CLI / OpenCode use.
+const hermesGatewayPath = "/openai/v1"
+
+// hermesGatewayProviderName is the literal value Hermes uses to flag that the
+// configured `model.base_url` should be honoured directly instead of going
+// through one of the named providers. We always emit this so Preloop's gateway
+// is reached regardless of what the user originally selected.
+const hermesGatewayProviderName = "custom"
+
+// applyHermesManagedGateway rewrites the Hermes config so chat traffic flows
+// through Preloop's OpenAI-compatible gateway. Hermes accepts an
+// OpenAI-compatible endpoint via `model.provider: custom` plus
+// `model.base_url:` and either `model.api_key:` or the `OPENAI_API_KEY` env
+// var. We embed the durable Preloop credential directly in `api_key` so the
+// onboarding works without touching the user's `~/.hermes/.env`.
+func applyHermesManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, modelAlias string) (managedMCPEnrollmentPlan, error) {
+	model, ok := asObjectMap(plan.ManagedDocument["model"])
+	if !ok {
+		model = make(map[string]interface{})
+	}
+	model["provider"] = hermesGatewayProviderName
+	model["base_url"] = strings.TrimRight(baseURL, "/") + hermesGatewayPath
+	model["api_key"] = token
+	model["default"] = modelAlias
+	// Hermes accepts both `model:` (string shorthand) and the structured
+	// mapping. If we leave a stale shorthand around it will silently win, so we
+	// drop it once we've populated the mapping.
+	delete(model, "model")
+	plan.ManagedDocument["model"] = model
+	plan.ManagedModelAlias = modelAlias
+	plan.ManagedProviderName = "preloop"
+	plan.Notes = append(
+		plan.Notes,
+		fmt.Sprintf("Model traffic will route through Preloop using %s.", modelAlias),
+	)
+	return refreshManagedPlanSnapshots(plan)
+}
+
+// hermesAuthFile is the path Hermes uses to persist provider OAuth tokens
+// (e.g. ChatGPT/Codex). Layout:
+//
+//	{
+//	  "providers": {
+//	    "openai-codex": { "tokens": {"access_token": "...", "refresh_token": "..."}, "auth_mode": "chatgpt" }
+//	  }
+//	}
+const hermesAuthFile = ".hermes/auth.json"
+
+// hermesEnvFile is the path Hermes uses to persist API keys and other secrets
+// referenced by `${VAR}` substitution in `~/.hermes/config.yaml`.
+const hermesEnvFile = ".hermes/.env"
+
+// parseHermesManagedGatewayUpstream inspects `~/.hermes/config.yaml` and the
+// associated secret stores to determine which model Hermes is currently using
+// and whether we have enough material to register that model in Preloop.
+//
+// The returned upstream is suitable for `applyManagedGatewayForAgent` /
+// `syncManagedGatewayAIModel`. When credentials cannot be recovered the
+// function still returns a non-nil upstream populated with notes so the
+// enrollment plan can explain why the gateway step was skipped.
+func parseHermesManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
+	document, err := readAgentConfigForGatewayResolution(agent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Hermes config: %w", err)
+	}
+	notes := []string{}
+
+	modelRef, providerHint, configBaseURL := extractHermesModelSelection(document)
+	if modelRef == "" {
+		// No upstream model declared yet: nothing to mirror in Preloop. We
+		// still run the MCP-only enrollment flow above this layer.
+		return nil, nil
+	}
+	if looksManagedGatewayModelRef(modelRef) {
+		// Already pointed at Preloop — we can't recover the original upstream
+		// from this state alone.
+		return nil, nil
+	}
+
+	providerID, modelID := splitHermesModelRef(modelRef, providerHint)
+	if providerID == "" || modelID == "" {
+		return nil, nil
+	}
+
+	managedAlias := normalizeHermesManagedAlias(modelRef, providerID, modelID)
+
+	apiEndpoint := normalizeAIModelEndpoint(strings.TrimSpace(configBaseURL))
+	apiKey, credentialType, credentialPayload, providerName, credNotes := resolveHermesUpstreamCredentials(
+		document, providerID, modelID,
+	)
+	notes = append(notes, credNotes...)
+
+	if apiEndpoint == "" {
+		apiEndpoint = hermesDefaultEndpointFor(providerID)
+	}
+
+	return &managedGatewayUpstream{
+		SourceAgent:       hermesSourceType,
+		SourceProviderID:  providerID,
+		ProviderName:      providerName,
+		ModelIdentifier:   modelID,
+		APIEndpoint:       apiEndpoint,
+		APIKey:            apiKey,
+		CredentialType:    credentialType,
+		CredentialPayload: credentialPayload,
+		ManagedModelAlias: managedAlias,
+		Notes:             notes,
+	}, nil
+}
+
+// extractHermesModelSelection collapses Hermes' multiple model-config shapes
+// (string shorthand vs structured `model:` mapping) into a single tuple of
+// (modelRef, providerHint, baseURL).
+//
+// Hermes config supports both:
+//
+//	model: anthropic/claude-opus-4.6
+//
+//	model:
+//	  default: gpt-5.4
+//	  provider: openai-codex
+//	  base_url: https://chatgpt.com/backend-api/codex
+func extractHermesModelSelection(document map[string]interface{}) (string, string, string) {
+	if document == nil {
+		return "", "", ""
+	}
+	if shorthand, ok := document["model"].(string); ok {
+		return strings.TrimSpace(shorthand), "", ""
+	}
+	model, ok := asObjectMap(document["model"])
+	if !ok {
+		return "", "", ""
+	}
+	modelRef := strings.TrimSpace(lookupString(model, "default"))
+	if modelRef == "" {
+		modelRef = strings.TrimSpace(lookupString(model, "model"))
+	}
+	providerHint := strings.TrimSpace(lookupString(model, "provider"))
+	baseURL := strings.TrimSpace(lookupString(model, "base_url"))
+	return modelRef, providerHint, baseURL
+}
+
+// splitHermesModelRef resolves the "provider/model" tuple Hermes uses to
+// describe a model. When the user has an explicit `model.provider:` we trust
+// that hint, otherwise we fall back on the prefix in the model identifier.
+func splitHermesModelRef(modelRef, providerHint string) (string, string) {
+	modelRef = strings.TrimSpace(modelRef)
+	providerHint = strings.ToLower(strings.TrimSpace(providerHint))
+	if modelRef == "" {
+		return "", ""
+	}
+	if strings.Contains(modelRef, "/") {
+		parts := strings.SplitN(modelRef, "/", 2)
+		modelProviderID := strings.ToLower(strings.TrimSpace(parts[0]))
+		modelID := strings.TrimSpace(parts[1])
+		if providerHint != "" && providerHint != "auto" {
+			return providerHint, modelID
+		}
+		return modelProviderID, modelID
+	}
+	if providerHint != "" && providerHint != "auto" {
+		return providerHint, modelRef
+	}
+	// Hermes auto-detection defaults to OpenRouter when nothing else is
+	// configured (see Hermes docs: "auto - Best available: OpenRouter → Nous
+	// Portal → main endpoint"). Mirror that assumption so Preloop can register
+	// the model under a sensible provider name.
+	return "openrouter", modelRef
+}
+
+// normalizeHermesManagedAlias produces the `provider/model` alias Preloop's
+// gateway expects. We collapse `openai-codex` to `openai` so the alias matches
+// the rest of the Preloop catalogue (Codex OAuth still works because the
+// upstream credential carries the `openai-codex` provider runtime).
+func normalizeHermesManagedAlias(modelRef, providerID, modelID string) string {
+	modelRef = strings.TrimSpace(modelRef)
+	if strings.Contains(modelRef, "/") {
+		return modelRef
+	}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	switch provider {
+	case "openai-codex":
+		provider = "openai"
+	case "google-gemini-cli", "gemini":
+		provider = "google"
+	}
+	return provider + "/" + strings.TrimSpace(modelID)
+}
+
+// hermesDefaultEndpointFor returns the canonical OpenAI-compatible endpoint
+// for the named provider when the local Hermes config has not pinned one.
+// Used by the upstream parser so that a Codex OAuth user, for example, ends
+// up registered against the ChatGPT backend rather than an empty endpoint.
+func hermesDefaultEndpointFor(providerID string) string {
+	switch strings.ToLower(strings.TrimSpace(providerID)) {
+	case "openai-codex":
+		return "https://chatgpt.com/backend-api/codex"
+	case "openai":
+		return "https://api.openai.com/v1"
+	case "openrouter":
+		return "https://openrouter.ai/api/v1"
+	case "anthropic":
+		return "https://api.anthropic.com/v1"
+	case "nous", "nous-api":
+		return "https://api.nousresearch.com/v1"
+	default:
+		return ""
+	}
+}
+
+// resolveHermesUpstreamCredentials looks up reusable upstream credentials
+// based on the configured provider, falling back through standard Hermes
+// secret stores. Returned values are:
+//
+//   - apiKey: a bearer token Preloop can use directly (empty when none).
+//   - credentialType: provider-runtime tag (e.g. `oauth_openai_codex`) for
+//     OAuth payloads that Preloop must refresh on the user's behalf.
+//   - credentialPayload: structured credential bundle for OAuth providers.
+//   - providerName: normalized Preloop provider name (e.g. "openai-codex").
+//   - notes: human-readable notes to surface in the enrollment plan.
+func resolveHermesUpstreamCredentials(
+	document map[string]interface{},
+	providerID string,
+	modelID string,
+) (string, string, map[string]interface{}, string, []string) {
+	notes := []string{}
+	provider := strings.ToLower(strings.TrimSpace(providerID))
+	providerName := provider
+
+	switch provider {
+	case "openai-codex":
+		providerName = "openai-codex"
+		if oauthCredential, oauthNote := resolveHermesCodexOAuthCredential(); oauthCredential != nil {
+			if oauthNote != "" {
+				notes = append(notes, oauthNote)
+			}
+			return "", "oauth_openai_codex", oauthCredential.Payload(), providerName, notes
+		}
+		notes = append(
+			notes,
+			"Hermes is signed in with ChatGPT OAuth, but the local OAuth session in ~/.hermes/auth.json could not be resolved into a reusable Preloop credential bundle.",
+		)
+	case "openai", "custom":
+		providerName = "openai"
+		if apiKey, note := resolveHermesEnvSecret("OPENAI_API_KEY"); apiKey != "" {
+			return apiKey, "", nil, providerName, append(notes, note)
+		}
+		if apiKey := resolveHermesConfigAPIKey(document); apiKey != "" {
+			return apiKey, "", nil, providerName, append(
+				notes,
+				"Resolved Hermes API key from `model.api_key` in ~/.hermes/config.yaml.",
+			)
+		}
+	case "openrouter":
+		providerName = "openrouter"
+		for _, env := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY"} {
+			if apiKey, note := resolveHermesEnvSecret(env); apiKey != "" {
+				return apiKey, "", nil, providerName, append(notes, note)
+			}
+		}
+	case "anthropic":
+		providerName = "anthropic"
+		if apiKey, note := resolveHermesEnvSecret("ANTHROPIC_API_KEY"); apiKey != "" {
+			return apiKey, "", nil, providerName, append(notes, note)
+		}
+	case "google", "gemini", "google-gemini-cli":
+		providerName = "google"
+		for _, env := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"} {
+			if apiKey, note := resolveHermesEnvSecret(env); apiKey != "" {
+				return apiKey, "", nil, providerName, append(notes, note)
+			}
+		}
+	case "nous", "nous-api":
+		providerName = "nous"
+		if apiKey, note := resolveHermesEnvSecret("NOUS_API_KEY"); apiKey != "" {
+			return apiKey, "", nil, providerName, append(notes, note)
+		}
+	default:
+		// Unknown providers (Z.AI, Kimi, custom_providers entries, etc.) — try
+		// the universal OPENAI_API_KEY fallback that Hermes itself uses for
+		// any OpenAI-compatible endpoint.
+		if apiKey, note := resolveHermesEnvSecret("OPENAI_API_KEY"); apiKey != "" {
+			return apiKey, "", nil, providerName, append(notes, note)
+		}
+	}
+
+	return "", "", nil, providerName, notes
+}
+
+// resolveHermesEnvSecret reads a secret from the user's process environment
+// first (so an active shell takes precedence) and then `~/.hermes/.env`,
+// matching how Hermes resolves provider credentials at runtime.
+func resolveHermesEnvSecret(key string) (string, string) {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value, fmt.Sprintf("Resolved Hermes upstream key from %s in the active shell.", key)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
+	path := filepath.Join(home, hermesEnvFile)
+	if value := resolveEnvFileSecret(path, key); value != "" {
+		return value, fmt.Sprintf("Resolved Hermes upstream key from %s in %s.", key, path)
+	}
+	return "", ""
+}
+
+// resolveHermesConfigAPIKey returns the api_key embedded directly in the
+// `model:` block of the user's Hermes config (Hermes' "custom" provider
+// supports inline keys per the upstream docs).
+func resolveHermesConfigAPIKey(document map[string]interface{}) string {
+	model, ok := asObjectMap(document["model"])
+	if !ok {
+		return ""
+	}
+	return resolveConfigSecret(model["api_key"])
+}
+
+// resolveHermesCodexOAuthCredential reads `~/.hermes/auth.json` and pulls the
+// Codex OAuth bundle so Preloop can call ChatGPT on the user's behalf. The
+// bundle is structurally identical to `~/.codex/auth.json` apart from being
+// nested under `providers.openai-codex` in Hermes.
+func resolveHermesCodexOAuthCredential() (*codexOAuthCredential, string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, ""
+	}
+	path := filepath.Join(home, hermesAuthFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ""
+	}
+	blob := extractHermesProviderAuthBlob(data, "openai-codex")
+	if len(blob) == 0 {
+		return nil, ""
+	}
+	fallbackExpiry := time.Now().UTC().Add(time.Hour).UnixMilli()
+	if info, statErr := os.Stat(path); statErr == nil {
+		fallbackExpiry = info.ModTime().UTC().Add(time.Hour).UnixMilli()
+	}
+	credential := parseCodexOAuthCredentialBlob(blob, fallbackExpiry)
+	if credential == nil {
+		return nil, ""
+	}
+	return credential, fmt.Sprintf(
+		"Resolved Hermes ChatGPT OAuth credentials from %s.",
+		path,
+	)
+}
+
+// extractHermesProviderAuthBlob returns the JSON sub-document under
+// `providers.<providerName>` from a Hermes auth.json payload. Returns nil
+// when the file is malformed or the provider is missing so callers can fall
+// back to other credential sources.
+func extractHermesProviderAuthBlob(data []byte, providerName string) []byte {
+	var document map[string]interface{}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return nil
+	}
+	providers, ok := asObjectMap(document["providers"])
+	if !ok {
+		return nil
+	}
+	provider, ok := asObjectMap(providers[providerName])
+	if !ok {
+		return nil
+	}
+	encoded, err := json.Marshal(provider)
+	if err != nil {
+		return nil
+	}
+	return encoded
 }

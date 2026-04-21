@@ -260,8 +260,8 @@ def upgrade() -> None:
         "approval_workflow",
         "ai_model",
         existing_type=sa.VARCHAR(length=100),
-        comment="AI model to use for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
-        existing_comment="AI model for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
+        comment="AI model to use for approval decisions (e.g., 'gpt-5.4', 'claude-sonnet-4.7')",
+        existing_comment="AI model for approval decisions (e.g., 'gpt-5.4', 'claude-sonnet-4.7')",
         existing_nullable=True,
     )
     op.alter_column(
@@ -1894,8 +1894,8 @@ def downgrade() -> None:
         "approval_workflow",
         "ai_model",
         existing_type=sa.VARCHAR(length=100),
-        comment="AI model for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
-        existing_comment="AI model to use for approval decisions (e.g., 'gpt-4o', 'claude-sonnet-4-20250514')",
+        comment="AI model for approval decisions (e.g., 'gpt-5.4', 'claude-sonnet-4.7')",
+        existing_comment="AI model to use for approval decisions (e.g., 'gpt-5.4', 'claude-sonnet-4.7')",
         existing_nullable=True,
     )
     op.alter_column(

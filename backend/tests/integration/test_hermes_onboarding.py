@@ -92,7 +92,7 @@ def test_hermes_onboarding_creates_managed_agent(authed_client: httpx.Client) ->
     _mint_hermes_runtime_session_token(authed_client, session_source_id=session_id)
 
     response = authed_client.get(
-        "/api/v1/account/agents",
+        "/api/v1/agents",
         params={"agent_kind": HERMES_SOURCE_TYPE},
     )
     assert response.status_code == 200, (

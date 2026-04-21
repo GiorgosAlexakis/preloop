@@ -83,6 +83,27 @@ func (c *Client) Post(path string, body, result interface{}) error {
 	return c.do(http.MethodPost, path, body, result)
 }
 
+// PostWithHeaders performs a POST request to the specified path with the
+// given body and additional request headers merged into the standard
+// Authorization / Content-Type set. This is needed by call-sites that
+// proxy through Preloop into upstream APIs that require their own
+// version pins (e.g. Anthropic's mandatory “anthropic-version“ header
+// on “/anthropic/v1/messages“); without a way to set those headers the
+// upstream rejects the request with HTTP 400 even though the gateway
+// accepted it.
+//
+// Standard headers (Authorization, Content-Type, Accept) take precedence
+// — additional headers cannot override them. This keeps callers from
+// accidentally breaking auth or content negotiation.
+func (c *Client) PostWithHeaders(
+	path string,
+	body interface{},
+	headers map[string]string,
+	result interface{},
+) error {
+	return c.doWithHeaders(http.MethodPost, path, body, headers, result)
+}
+
 // PostMultipart performs a multipart/form-data POST request with one file.
 func (c *Client) PostMultipart(path string, fields map[string]string, fileFieldName, fileName string, fileContent []byte, result interface{}) error {
 	var body bytes.Buffer
@@ -133,6 +154,21 @@ func (c *Client) Delete(path string, result interface{}) error {
 
 // do performs an HTTP request and decodes the response.
 func (c *Client) do(method, path string, body, result interface{}) error {
+	return c.doWithHeaders(method, path, body, nil, result)
+}
+
+// doWithHeaders is the canonical request entry point — every other
+// helper ultimately routes here. “extraHeaders“ are merged into the
+// outgoing request after the standard set (Authorization /
+// Content-Type / Accept), and the standard set takes precedence so a
+// caller cannot accidentally clobber auth or content negotiation by
+// supplying conflicting values.
+func (c *Client) doWithHeaders(
+	method, path string,
+	body interface{},
+	extraHeaders map[string]string,
+	result interface{},
+) error {
 	var bodyBytes []byte
 	contentType := "application/json"
 	if body != nil {
@@ -142,12 +178,21 @@ func (c *Client) do(method, path string, body, result interface{}) error {
 		}
 		bodyBytes = jsonBody
 	}
-
-	return c.doWithBody(method, path, bodyBytes, contentType, result)
+	return c.doWithBodyAndHeaders(method, path, bodyBytes, contentType, extraHeaders, result)
 }
 
 func (c *Client) doWithBody(method, path string, bodyBytes []byte, contentType string, result interface{}) error {
-	statusCode, responseBody, err := c.executeRequest(method, path, bodyBytes, contentType)
+	return c.doWithBodyAndHeaders(method, path, bodyBytes, contentType, nil, result)
+}
+
+func (c *Client) doWithBodyAndHeaders(
+	method, path string,
+	bodyBytes []byte,
+	contentType string,
+	extraHeaders map[string]string,
+	result interface{},
+) error {
+	statusCode, responseBody, err := c.executeRequest(method, path, bodyBytes, contentType, extraHeaders)
 	if err != nil {
 		return err
 	}
@@ -159,6 +204,7 @@ func (c *Client) doWithBody(method, path string, bodyBytes []byte, contentType s
 				path,
 				bodyBytes,
 				contentType,
+				extraHeaders,
 			)
 			if err != nil {
 				return err
@@ -179,7 +225,12 @@ func (c *Client) doWithBody(method, path string, bodyBytes []byte, contentType s
 	return nil
 }
 
-func (c *Client) executeRequest(method, path string, bodyBytes []byte, contentType string) (int, []byte, error) {
+func (c *Client) executeRequest(
+	method, path string,
+	bodyBytes []byte,
+	contentType string,
+	extraHeaders map[string]string,
+) (int, []byte, error) {
 	url := strings.TrimRight(c.baseURL, "/") + path
 
 	var bodyReader io.Reader
@@ -190,6 +241,14 @@ func (c *Client) executeRequest(method, path string, bodyBytes []byte, contentTy
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Apply extra headers FIRST so the canonical headers below win on
+	// conflict. This is what protects callers from accidentally
+	// overriding Content-Type / Accept / Authorization with stale values
+	// passed in from upstream code paths.
+	for key, value := range extraHeaders {
+		req.Header.Set(key, value)
 	}
 
 	if contentType != "" {
@@ -234,6 +293,7 @@ func (c *Client) RefreshAccessToken() error {
 		"/oauth/token",
 		[]byte(form.Encode()),
 		"application/x-www-form-urlencoded",
+		nil,
 	)
 	if err != nil {
 		return err

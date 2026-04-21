@@ -51,7 +51,7 @@ def test_ai_model(db_session: Session, test_account: Account) -> AIModel:
     ai_model = AIModel(
         name="Test GPT-4",
         provider_name="openai",
-        model_identifier="gpt-4",
+        model_identifier="gpt-5.4",
         api_key=os.getenv("OPENAI_API_KEY", "test-key"),
         account_id=test_account.id,
     )

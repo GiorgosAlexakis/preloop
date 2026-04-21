@@ -38,7 +38,7 @@ class TestAgentFactory:
     def test_create_aider_agent(self):
         """Test creating an Aider agent."""
         config = {
-            "model": "gpt-4",
+            "model": "gpt-5.4",
             "edit_format": "whole",
         }
 
@@ -51,7 +51,7 @@ class TestAgentFactory:
     def test_create_codex_agent(self):
         """Test creating a Codex agent."""
         config = {
-            "model": "gpt-4",
+            "model": "gpt-5.4",
         }
 
         agent = create_agent_executor("codex", config)

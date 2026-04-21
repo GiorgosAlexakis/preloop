@@ -14,10 +14,14 @@ from sqlalchemy.orm import Session
 
 from preloop.models.crud import (
     crud_account,
+    crud_approval_workflow,
     crud_tool_configuration,
     crud_tool_access_rule,
 )
 from preloop.models.crud.account import get_meta_data_async
+from preloop.models.crud.approval_workflow import (
+    get_default_approval_workflow_async,
+)
 from preloop.models.crud.tool_configuration import (
     get_tool_config_by_id_async,
     get_tool_config_by_tool_name_async,
@@ -252,6 +256,12 @@ def evaluate_policy(
             db, account_id=account_id, tool_name=tool_name
         )
 
+    # Resolve the account's default approval workflow (if any) up front so it
+    # can serve as the implicit fallback for ``require_approval`` rules that
+    # don't pin a specific workflow.
+    default_workflow = crud_approval_workflow.get_default(db, account_id=account_id)
+    default_workflow_id_for_account = default_workflow.id if default_workflow else None
+
     context = {
         "tool_name": tool_name,
         "args": tool_args,
@@ -275,7 +285,8 @@ def evaluate_policy(
         user_id=user_id,
         execution_id=execution_id,
         default_approval_workflow_id=(
-            tool_config.approval_workflow_id if tool_config else None
+            (tool_config.approval_workflow_id if tool_config else None)
+            or default_workflow_id_for_account
         ),
     )
     if scoped_decision is not None:
@@ -380,9 +391,13 @@ def evaluate_policy(
                 # Determine approval workflow ID for require_approval action
                 approval_workflow_id = None
                 if rule.action == "require_approval":
-                    # Prefer the rule-level policy; fall back to tool config default
+                    # Prefer the rule-level policy; fall back to tool config
+                    # default; finally fall back to the account default so a
+                    # ``require_approval`` rule never silently auto-approves.
                     approval_workflow_id = (
-                        rule.approval_workflow_id or tool_config.approval_workflow_id
+                        rule.approval_workflow_id
+                        or tool_config.approval_workflow_id
+                        or default_workflow_id_for_account
                     )
 
                 rule_desc = (
@@ -431,7 +446,7 @@ def evaluate_policy(
             )
             return (
                 "require_approval",
-                tool_config.approval_workflow_id,
+                tool_config.approval_workflow_id or default_workflow_id_for_account,
                 error_desc,
             )
 
@@ -760,6 +775,15 @@ async def evaluate_policy_async(
             db, account_id=account_id, tool_name=tool_name
         )
 
+    # Resolve the account's default approval workflow (if any) up front so it
+    # can serve as the implicit fallback for ``require_approval`` rules that
+    # don't pin a specific workflow. Without this fallback the system would
+    # silently auto-approve, which is the opposite of the user's intent.
+    default_workflow = await get_default_approval_workflow_async(
+        db, account_id=account_id
+    )
+    default_workflow_id_for_account = default_workflow.id if default_workflow else None
+
     context = {
         "tool_name": tool_name,
         "args": tool_args,
@@ -785,7 +809,8 @@ async def evaluate_policy_async(
         correlation_id=correlation_id,
         extra_details=extra_details,
         default_approval_workflow_id=(
-            tool_config.approval_workflow_id if tool_config else None
+            (tool_config.approval_workflow_id if tool_config else None)
+            or default_workflow_id_for_account
         ),
     )
     if scoped_decision is not None:
@@ -879,9 +904,13 @@ async def evaluate_policy_async(
                 approval_workflow_id = None
                 if rule.action == "require_approval":
                     # Prefer the rule's own approval_workflow_id; fall back to
-                    # the tool config's legacy approval_workflow_id.
+                    # the tool config's legacy approval_workflow_id; finally fall
+                    # back to the account's default workflow so a bare
+                    # ``require_approval`` rule never silently auto-approves.
                     approval_workflow_id = (
-                        rule.approval_workflow_id or tool_config.approval_workflow_id
+                        rule.approval_workflow_id
+                        or tool_config.approval_workflow_id
+                        or default_workflow_id_for_account
                     )
 
                 rule_desc = (
@@ -929,7 +958,7 @@ async def evaluate_policy_async(
             )
             return (
                 "require_approval",
-                tool_config.approval_workflow_id,
+                tool_config.approval_workflow_id or default_workflow_id_for_account,
                 error_desc,
             )
 

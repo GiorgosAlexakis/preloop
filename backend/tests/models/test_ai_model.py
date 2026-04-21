@@ -22,7 +22,7 @@ def test_create_ai_model(db_session: Session, create_account):
         obj_in={
             "name": "Test OpenAI Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
             "is_default": True,
@@ -32,7 +32,7 @@ def test_create_ai_model(db_session: Session, create_account):
 
     assert ai_model is not None
     assert ai_model.provider_name == "openai"
-    assert ai_model.model_identifier == "gpt-4"
+    assert ai_model.model_identifier == "gpt-5.4"
     assert ai_model.api_endpoint == "https://api.openai.com/v1"
     assert ai_model.api_key is None
     assert ai_model.credentials_secret_id is not None
@@ -81,7 +81,7 @@ def test_create_system_default_ai_model_with_secret_reference(db_session: Sessio
         obj_in={
             "name": "System Default Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4.1-mini",
+            "model_identifier": "gpt-5.4-mini",
             "api_key": "system-default-secret",
             "is_default": True,
         },
@@ -123,7 +123,7 @@ def test_create_ai_model_with_external_secret_reference(
         obj_in={
             "name": "External Secret Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4.1",
+            "model_identifier": "gpt-5.4",
             "credentials_backend_type": VAULT_KV_V2_BACKEND,
             "credentials_external_ref": "providers/openai/team-a",
             "credentials_meta_data": {"field": "api_key", "version": 4},
@@ -198,7 +198,7 @@ def test_get_ai_models_by_account(db_session: Session, create_account):
         obj_in={
             "name": "Test OpenAI Model Account1",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
             "is_default": True,
@@ -210,7 +210,7 @@ def test_get_ai_models_by_account(db_session: Session, create_account):
         obj_in={
             "name": "Test OpenAI Model Account1",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
         },
@@ -245,7 +245,7 @@ def test_update_ai_model_and_default_logic(db_session: Session, create_account):
         obj_in={
             "name": "Default Test Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
             "is_default": True,
@@ -304,7 +304,7 @@ def test_get_default_ai_model(db_session: Session, create_account):
         obj_in={
             "name": "Non-Default Model for Get Default Test",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
             "is_default": False,
@@ -338,7 +338,7 @@ def test_get_default_ai_model(db_session: Session, create_account):
         obj_in={
             "name": "Non-Default Model for Get Default Test",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
             "is_default": False,
@@ -363,7 +363,7 @@ def test_delete_ai_model(db_session: Session, create_account):
         obj_in={
             "name": "Model to Delete",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
             "is_default": False,
@@ -386,7 +386,7 @@ def test_delete_ai_model(db_session: Session, create_account):
         obj_in={
             "name": "Surviving Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_endpoint": "https://api.openai.com/v1",
             "api_key": "test_key_123",
             "is_default": False,
@@ -406,7 +406,7 @@ def test_delete_ai_model_preserves_shared_secret_reference(
         obj_in={
             "name": "Primary Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4",
+            "model_identifier": "gpt-5.4",
             "api_key": "shared-secret",
             "is_default": False,
         },
@@ -420,7 +420,7 @@ def test_delete_ai_model_preserves_shared_secret_reference(
         obj_in={
             "name": "Secondary Model",
             "provider_name": "openai",
-            "model_identifier": "gpt-4.1",
+            "model_identifier": "gpt-5.4",
             "is_default": False,
         },
         account_id=account.id,
@@ -447,7 +447,7 @@ def test_default_model_exists(db_session: Session):
     default_model = AIModel(
         name="System Default Test",
         provider_name="openai",
-        model_identifier="gpt-4-test",
+        model_identifier="gpt-5.4-test",
         api_endpoint="https://api.openai.com/v1",
         api_key="test_key",
         is_default=True,

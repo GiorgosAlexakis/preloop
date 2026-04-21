@@ -235,9 +235,9 @@ def test_account_agent_model_bindings_endpoint_replaces_bindings(
     fallback_model = crud_ai_model.create_with_account(
         db=db_session,
         obj_in={
-            "name": "OpenAI GPT-4.1",
+            "name": "OpenAI GPT-5.4",
             "provider_name": "openai",
-            "model_identifier": "gpt-4.1",
+            "model_identifier": "gpt-5.4",
         },
         account_id=test_user.account_id,
     )
@@ -258,7 +258,7 @@ def test_account_agent_model_bindings_endpoint_replaces_bindings(
                     "ai_model_id": str(fallback_model.id),
                     "binding_type": "configured",
                     "config_key": "model.fallbacks[0]",
-                    "gateway_alias": "openai/gpt-4.1",
+                    "gateway_alias": "openai/gpt-5.4",
                     "is_primary": False,
                     "status": "gateway_ready",
                 },
@@ -270,7 +270,7 @@ def test_account_agent_model_bindings_endpoint_replaces_bindings(
     bindings = response.json()
     assert [binding["gateway_alias"] for binding in bindings] == [
         "openai/gpt-5.4",
-        "openai/gpt-4.1",
+        "openai/gpt-5.4",
     ]
 
     detail_response = client.get(f"/api/v1/agents/{agent.id}")
@@ -449,6 +449,83 @@ def test_managed_agent_onboarding_flags_supports_gemini_gateway_config():
                 "apiKeyHeader": "x-goog-api-key",
                 "model": {"name": "google/gemini-3.1-pro-preview"},
             }
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_supports_hermes_gateway_config():
+    """Hermes ``model.{provider,base_url,api_key}`` configs should count as fully
+    onboarded.
+
+    Hermes' managed config writes the gateway parameters under ``model:`` (not
+    the top-level ``baseUrl`` / ``apiKey`` keys other adapters use), and its
+    validation payload omits the legacy ``gateway_model_configured`` flag in
+    favour of the canonical ``gateway_provider_ok`` /
+    ``gateway_base_url_ok`` pair. Both signals should be treated as evidence
+    that the model gateway is wired up.
+    """
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcp": {
+                    "servers": {
+                        "preloop": {
+                            "url": "https://preloop.example/mcp/v1",
+                            "transport": "http-streaming",
+                        }
+                    }
+                },
+                "model": {
+                    "provider": "custom",
+                    "base_url": "https://preloop.example/openai/v1",
+                    "api_key": "agt_secret",
+                    "default": "openai/gpt-5.4",
+                },
+            },
+            "validation_result": {
+                "adapter_key": "hermes",
+                "validation_passed": True,
+                "transport_ok": True,
+                "preloop_url_ok": True,
+                "preloop_server_present": True,
+                "gateway_present": True,
+                "gateway_provider_ok": True,
+                "gateway_base_url_ok": True,
+                "gateway_model_alias": "openai/gpt-5.4",
+            },
+        }
+    )
+    assert mcp_ok is True
+    assert gateway_ok is True
+    assert state == "fully_onboarded"
+
+
+def test_managed_agent_onboarding_flags_uses_cli_validation_flags():
+    """``gateway_provider_ok`` + ``gateway_base_url_ok`` are sufficient.
+
+    All CLI adapters emit these two flags in their validation result after
+    they've successfully rewritten the agent's local config to route through
+    Preloop's gateway. The backend should accept that signal even when none of
+    the hard-coded ``managed_config`` shape patterns match — otherwise newly
+    added agents would silently appear as ``mcp_proxy_only`` until the
+    backend learns their bespoke nested config shape.
+    """
+    mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.example/mcp/v1"}},
+                "some_future_provider_block": {"endpoint": "https://preloop.example"},
+            },
+            "validation_result": {
+                "adapter_key": "future_agent",
+                "validation_passed": True,
+                "preloop_server_present": True,
+                "gateway_provider_ok": True,
+                "gateway_base_url_ok": True,
+            },
         }
     )
     assert mcp_ok is True

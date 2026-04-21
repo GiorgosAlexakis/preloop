@@ -320,7 +320,7 @@ def test_gateway_usage_filters_by_ai_model_id(db_session, create_account, create
         obj_in={
             "name": "Model B",
             "provider_name": "openai",
-            "model_identifier": "gpt-4.1",
+            "model_identifier": "gpt-5.4",
             "api_key": "secret-b",
         },
         account_id=account.id,
@@ -375,7 +375,7 @@ def test_gateway_usage_filters_by_ai_model_id(db_session, create_account, create
         account_id=str(account.id),
         ai_model_id=str(ai_model_b.id),
         runtime_session_id=str(session_b.id),
-        model_alias="openai/gpt-4.1",
+        model_alias="openai/gpt-5.4",
         provider_name="openai",
         prompt_tokens=20,
         completion_tokens=10,

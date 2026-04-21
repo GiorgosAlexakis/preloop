@@ -239,7 +239,7 @@ class TestApprovalWorkflowAIDriven:
                 _approval_workflow(
                     "ai-review",
                     approval_type="ai_driven",
-                    ai_model="gpt-4o",
+                    ai_model="gpt-5.4",
                     ai_guidelines="Review for safety",
                     ai_fallback_behavior="escalate",
                     escalation_workflow="human-fallback",
