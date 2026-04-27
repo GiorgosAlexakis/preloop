@@ -173,7 +173,7 @@ var agentsListCmd = &cobra.Command{
 var agentsValidateCmd = &cobra.Command{
 	Use:   "validate <agent>",
 	Short: "Validate managed enrollment for an agent",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MinimumNArgs(1),
 	RunE:  runAgentsValidate,
 }
 
@@ -253,20 +253,21 @@ type flowSummaryResponse struct {
 }
 
 type managedAgentSummary struct {
-	ID                     string   `json:"id"`
-	DisplayName            string   `json:"display_name"`
-	SessionSourceType      string   `json:"session_source_type"`
-	SessionSourceID        string   `json:"session_source_id"`
-	SessionReference       string   `json:"session_reference,omitempty"`
-	LifecycleState         string   `json:"lifecycle_state"`
-	ActivityStatus         string   `json:"activity_status,omitempty"`
-	LastSeenAt             string   `json:"last_seen_at,omitempty"`
-	LastActivityAt         string   `json:"last_activity_at,omitempty"`
-	OnboardingState        string   `json:"onboarding_state,omitempty"`
-	LatestModelAlias       string   `json:"latest_model_alias,omitempty"`
-	ManagedMCPServers      []string `json:"managed_mcp_servers"`
-	MCPProxyConfigured     bool     `json:"mcp_proxy_configured,omitempty"`
-	ModelGatewayConfigured bool     `json:"model_gateway_configured,omitempty"`
+	ID                     string                            `json:"id"`
+	DisplayName            string                            `json:"display_name"`
+	SessionSourceType      string                            `json:"session_source_type"`
+	SessionSourceID        string                            `json:"session_source_id"`
+	SessionReference       string                            `json:"session_reference,omitempty"`
+	LifecycleState         string                            `json:"lifecycle_state"`
+	ActivityStatus         string                            `json:"activity_status,omitempty"`
+	LastSeenAt             string                            `json:"last_seen_at,omitempty"`
+	LastActivityAt         string                            `json:"last_activity_at,omitempty"`
+	OnboardingState        string                            `json:"onboarding_state,omitempty"`
+	LatestModelAlias       string                            `json:"latest_model_alias,omitempty"`
+	ConfiguredModels       []managedAgentModelBindingSummary `json:"configured_models,omitempty"`
+	ManagedMCPServers      []string                          `json:"managed_mcp_servers"`
+	MCPProxyConfigured     bool                              `json:"mcp_proxy_configured,omitempty"`
+	ModelGatewayConfigured bool                              `json:"model_gateway_configured,omitempty"`
 }
 
 type managedAgentListResponse struct {
@@ -986,11 +987,12 @@ func listManagedAgents(client *api.Client) ([]managedAgentSummary, error) {
 
 func runAgentsValidate(cmd *cobra.Command, args []string) error {
 	runLiveValidation, _ := cmd.Flags().GetBool("live")
+	agentName := strings.Join(args, " ")
 	discovered, err := discoverAgents(io.Discard, false)
 	if err != nil {
 		return err
 	}
-	agent, err := findDiscoveredAgent(discovered, args[0])
+	agent, err := findDiscoveredAgent(discovered, agentName)
 	if err != nil {
 		return err
 	}

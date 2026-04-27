@@ -30,10 +30,14 @@ OPENBAO_KV_V2_BACKEND = "openbao_kv_v2"
 AI_MODEL_API_KEY_SECRET_KIND = "ai_model_api_key"
 AI_MODEL_CREDENTIALS_SECRET_KIND = "ai_model_credentials"
 OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE = "oauth_openai_codex"
+ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE = "oauth_anthropic_claude_code"
 OPENAI_CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 OPENAI_CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
 OPENAI_CODEX_JWT_CLAIM_PATH = "https://api.openai.com/auth"
 OPENAI_CODEX_REFRESH_SKEW_MS = 60_000
+ANTHROPIC_CLAUDE_CODE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+ANTHROPIC_CLAUDE_CODE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+ANTHROPIC_CLAUDE_CODE_REFRESH_SKEW_MS = 60_000
 
 
 @dataclass
@@ -425,6 +429,17 @@ class SecretService:
                 db=db,
             )
 
+        if (
+            credential_type == ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE
+            and allow_refresh
+            and self._anthropic_claude_code_refresh_required(payload)
+        ):
+            payload = self._refresh_anthropic_claude_code_ai_model_credentials(
+                ai_model,
+                payload,
+                db=db,
+            )
+
         if credential_type == "api_key":
             api_key = str(payload.get("api_key") or payload.get("value") or "").strip()
             return ResolvedModelCredentials(
@@ -436,6 +451,16 @@ class SecretService:
             )
 
         if credential_type == OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE:
+            access_token = str(payload.get("access") or "").strip()
+            return ResolvedModelCredentials(
+                credential_type=credential_type,
+                backend_type=resolved_secret.backend_type,
+                value=access_token or None,
+                payload=payload,
+                secret_reference_id=resolved_secret.secret_reference_id,
+            )
+
+        if credential_type == ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE:
             access_token = str(payload.get("access") or "").strip()
             return ResolvedModelCredentials(
                 credential_type=credential_type,
@@ -461,6 +486,17 @@ class SecretService:
             expires_ms
             <= int(datetime.now(timezone.utc).timestamp() * 1000)
             + OPENAI_CODEX_REFRESH_SKEW_MS
+        )
+
+    def _anthropic_claude_code_refresh_required(self, payload: Dict[str, Any]) -> bool:
+        expires_raw = payload.get("expires")
+        expires_ms = self._coerce_epoch_millis(expires_raw)
+        if expires_ms is None:
+            return False
+        return (
+            expires_ms
+            <= int(datetime.now(timezone.utc).timestamp() * 1000)
+            + ANTHROPIC_CLAUDE_CODE_REFRESH_SKEW_MS
         )
 
     def _refresh_openai_codex_ai_model_credentials(
@@ -507,6 +543,95 @@ class SecretService:
             db.refresh(ai_model.credentials_secret)
 
         return next_payload
+
+    def _refresh_anthropic_claude_code_ai_model_credentials(
+        self,
+        ai_model: AIModel,
+        payload: Dict[str, Any],
+        *,
+        db: Optional[Session] = None,
+    ) -> Dict[str, Any]:
+        refresh_token = str(payload.get("refresh") or "").strip()
+        if not refresh_token:
+            return payload
+
+        refreshed = self._refresh_anthropic_claude_code_token(refresh_token)
+        next_payload = {
+            "type": ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE,
+            "access": refreshed["access"],
+            "refresh": refreshed["refresh"],
+            "expires": refreshed["expires"],
+        }
+
+        if (
+            db is not None
+            and ai_model.credentials_secret is not None
+            and ai_model.credentials_secret.backend_type == LOCAL_ENCRYPTED_BACKEND
+        ):
+            ai_model.credentials_secret.encrypted_value = encrypt_value(
+                json.dumps(next_payload)
+            )
+            ai_model.credentials_secret.last_verified_at = datetime.now(timezone.utc)
+            ai_model.credentials_secret.meta_data = {
+                **(
+                    ai_model.credentials_secret.meta_data
+                    if isinstance(ai_model.credentials_secret.meta_data, dict)
+                    else {}
+                ),
+                "credential_type": ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE,
+            }
+            db.add(ai_model.credentials_secret)
+            db.commit()
+            db.refresh(ai_model.credentials_secret)
+
+        return next_payload
+
+    def _refresh_anthropic_claude_code_token(
+        self, refresh_token: str
+    ) -> Dict[str, Any]:
+        body = urllib_parse.urlencode(
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": ANTHROPIC_CLAUDE_CODE_CLIENT_ID,
+            }
+        ).encode("utf-8")
+        req = urllib_request.Request(
+            ANTHROPIC_CLAUDE_CODE_TOKEN_URL,
+            data=body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "anthropic-beta": "oauth-2025-04-20",
+            },
+            method="POST",
+        )
+        try:
+            with urllib_request.urlopen(req, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib_error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "ignore")
+            raise ValueError(
+                "Anthropic Claude Code OAuth token refresh failed with status "
+                f"{exc.code}: {detail}"
+            ) from exc
+        except urllib_error.URLError as exc:
+            raise ValueError(
+                f"Anthropic Claude Code OAuth token refresh failed: {exc.reason}"
+            ) from exc
+
+        access = str(payload.get("access_token") or "").strip()
+        refresh = str(payload.get("refresh_token") or refresh_token).strip()
+        expires_in = payload.get("expires_in")
+        if not access or not refresh or not isinstance(expires_in, (int, float)):
+            raise ValueError(
+                "Anthropic Claude Code OAuth token refresh response missing fields"
+            )
+        return {
+            "access": access,
+            "refresh": refresh,
+            "expires": int(datetime.now(timezone.utc).timestamp() * 1000)
+            + int(expires_in * 1000),
+        }
 
     def _refresh_openai_codex_token(self, refresh_token: str) -> Dict[str, Any]:
         body = urllib_parse.urlencode(

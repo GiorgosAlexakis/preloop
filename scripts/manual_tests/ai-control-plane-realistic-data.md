@@ -113,8 +113,8 @@ curl -X POST http://localhost:8000/api/v1/ai-models \
 
 Expected evidence:
 
-- `/console/settings/ai-models` shows fleet traffic/spend signals
-- `/console/settings/ai-models/:id` shows model-specific sessions and captured interactions after traffic starts
+- `/console/ai-models` shows fleet traffic/spend signals
+- `/console/ai-models/:id` shows model-specific sessions and captured interactions after traffic starts
 
 ## Step 5: Create a Managed Flow
 
@@ -177,7 +177,7 @@ Expected evidence:
 - `Overview`: flow executions, AI summary cards, MCP card, approvals if triggered
 - `/console/flows/executions/:id`: execution status and gateway events
 - `/console/runtime-sessions`: sessions, interaction history, activity timeline
-- `/console/settings/ai-models`: fleet and model-detail traffic
+- `/console/ai-models`: fleet and model-detail traffic
 - `/console/api-usage`: account-level gateway usage
 - `/console/audit`: gateway and lifecycle audit events
 

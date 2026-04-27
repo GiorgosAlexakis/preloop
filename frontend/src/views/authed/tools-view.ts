@@ -703,7 +703,6 @@ export class ToolsView extends LitElement {
   }
 
   private async loadData() {
-    this.loading = true;
     this.error = null;
     let starterPolicyRequest: {
       serverId: string | null;

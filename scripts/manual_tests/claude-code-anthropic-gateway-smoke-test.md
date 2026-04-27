@@ -73,7 +73,7 @@ What this validates:
 
 Expected evidence:
 
-- `/console/settings/ai-models` shows Anthropic traffic
+- `/console/ai-models` shows Anthropic traffic
 - `/console/runtime-sessions?sessionId=<runtime_session_id>` shows a new interaction
 - `/console/audit` contains the gateway request
 
@@ -98,7 +98,7 @@ Success criteria:
 After one successful and one intentionally bad prompt, review:
 
 - `Overview`: does the home page surface the traffic and any exceptions clearly?
-- `/console/settings/ai-models`: does the model list and detail make the Anthropic traffic easy to find?
+- `/console/ai-models`: does the model list and detail make the Anthropic traffic easy to find?
 - `/console/runtime-sessions`: can you find the session quickly and understand what happened?
 - `/console/agents`: does the managed-agent record feel clearly tied to the runtime session?
 - `/console/audit`: can you trace the model request and any operator-relevant failures?

@@ -35,6 +35,9 @@ export class ResourceActions extends LitElement {
   /** OR provide an array of action lists from multiple selected items. The component will intersect them by ID. */
   @property({ type: Array }) actionsSets?: ResourceAction[][];
 
+  /** Render all actions behind the overflow menu, useful inside clickable cards. */
+  @property({ type: Boolean, attribute: 'menu-only' }) menuOnly = false;
+
   @state() private containerWidth = 0;
   private resizeObserver!: ResizeObserver;
 
@@ -190,9 +193,12 @@ export class ResourceActions extends LitElement {
     // Dropdown toggle is ~40px.
     // If containerWidth is 0 (initial), render all or wait.
     let visibleCount = effectiveActions.length;
+    if (this.menuOnly) {
+      visibleCount = 0;
+    }
 
     // We can do a rudimentary calculation based on container width.
-    if (this.containerWidth > 0) {
+    if (!this.menuOnly && this.containerWidth > 0) {
       // Let's assume average button width + gap is 120px
       const estimatedTotalWidth = effectiveActions.length * 120;
 
@@ -226,8 +232,15 @@ export class ResourceActions extends LitElement {
         ${overflowActions.length > 0
           ? html`
               <sl-dropdown placement="bottom-start">
-                <sl-button slot="trigger" variant="default" caret>
-                  <sl-icon name="three-dots"></sl-icon>
+                <sl-button
+                  slot="trigger"
+                  variant="default"
+                  ?caret=${!this.menuOnly}
+                  aria-label="Resource actions"
+                >
+                  <sl-icon
+                    name=${this.menuOnly ? 'three-dots-vertical' : 'three-dots'}
+                  ></sl-icon>
                 </sl-button>
                 <sl-menu>
                   ${overflowActions.map((action) =>

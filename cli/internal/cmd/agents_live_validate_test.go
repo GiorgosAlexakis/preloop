@@ -39,6 +39,54 @@ func decodeBuilderPayload(t *testing.T, body map[string]interface{}) map[string]
 	return decoded
 }
 
+func TestBuildOpenClawLiveValidationSpec_UsesManagedGatewayProvider(t *testing.T) {
+	doc := map[string]interface{}{
+		"agents": map[string]interface{}{
+			"defaults": map[string]interface{}{
+				"model": map[string]interface{}{
+					"primary": "preloop/openai/gpt-5.4",
+				},
+			},
+		},
+		"models": map[string]interface{}{
+			"providers": map[string]interface{}{
+				"preloop": map[string]interface{}{
+					"baseUrl": "https://staging.preloop.ai/openai/v1",
+					"apiKey":  "openclaw-managed-token",
+				},
+			},
+		},
+	}
+	spec, err := buildOpenClawLiveValidationSpec(liveValidationContext{
+		Document:        doc,
+		BaseURL:         "https://staging.preloop.ai",
+		Prompt:          "Welcome to Preloop. Validation token: preloop-validation-openclaw.",
+		ValidationToken: "preloop-validation-openclaw",
+	})
+	if err != nil {
+		t.Fatalf("builder returned error: %v", err)
+	}
+	if spec.Endpoint != "/openai/v1/chat/completions" {
+		t.Fatalf("expected chat-completions endpoint, got %q", spec.Endpoint)
+	}
+	if spec.Token != "openclaw-managed-token" {
+		t.Fatalf("expected token from provider.preloop.apiKey, got %q", spec.Token)
+	}
+	if spec.ModelAlias != "preloop/openai/gpt-5.4" {
+		t.Fatalf("expected OpenClaw model ref to remain prefixed, got %q", spec.ModelAlias)
+	}
+	body := decodeBuilderPayload(t, spec.Body)
+	if body["model"] != "preloop/openai/gpt-5.4" {
+		t.Fatalf("expected body.model to match OpenClaw model ref, got %#v", body["model"])
+	}
+	if _, ok := body["temperature"]; ok {
+		t.Fatalf("OpenAI-compatible live validation should not set temperature: %#v", body)
+	}
+	if _, ok := body["max_tokens"]; ok {
+		t.Fatalf("OpenAI-compatible live validation should not set max_tokens: %#v", body)
+	}
+}
+
 // TestBuildHermesLiveValidationSpec_PostsChatCompletionsWithBearerToken
 // proves that the Hermes builder reads the durable Preloop credential out
 // of “model.api_key“ and the gateway alias out of “model.default“,
@@ -196,6 +244,60 @@ func TestBuildClaudeCodeLiveValidationSpec_ReadsTokenAndModelFromEnv(t *testing.
 	}
 }
 
+func TestBuildClaudeCodeLiveValidationSpec_MapsClaudeSelectionKey(t *testing.T) {
+	doc := map[string]interface{}{
+		"env": map[string]interface{}{
+			"ANTHROPIC_API_KEY": "claude-managed-token",
+			"ANTHROPIC_MODEL":   "anthropic/haiku",
+		},
+		"model": "haiku",
+	}
+	spec, err := buildClaudeCodeLiveValidationSpec(liveValidationContext{
+		Document:        doc,
+		BaseURL:         "https://staging.preloop.ai",
+		Prompt:          "Welcome to Preloop. Validation token: preloop-validation-haiku.",
+		ValidationToken: "preloop-validation-haiku",
+		AvailableModels: []aiModelResponse{
+			{
+				Name:            "Bad selector-only imported model",
+				ProviderName:    "anthropic",
+				ModelIdentifier: "haiku",
+			},
+			{
+				Name:            "Claude Haiku older",
+				ProviderName:    "anthropic",
+				ModelIdentifier: "claude-3-5-haiku-20241022",
+			},
+			{
+				Name:            "Claude Haiku current",
+				ProviderName:    "anthropic",
+				ModelIdentifier: "claude-haiku-4-5",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("builder returned error: %v", err)
+	}
+	if spec.ModelAlias != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("expected haiku selection to use highest account model, got %q", spec.ModelAlias)
+	}
+	body := decodeBuilderPayload(t, spec.Body)
+	if body["model"] != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("expected body.model to use mapped haiku alias, got %#v", body["model"])
+	}
+}
+
+func TestSelectHighestClaudeModelAlias(t *testing.T) {
+	got := selectHighestClaudeModelAlias("haiku", []string{
+		"claude-3-5-haiku-20241022",
+		"claude-haiku-4-5",
+		"haiku",
+	})
+	if got != "anthropic/claude-haiku-4-5" {
+		t.Fatalf("expected highest concrete haiku alias, got %q", got)
+	}
+}
+
 // TestBuildClaudeCodeLiveValidationSpec_SetsAnthropicVersionHeader pins
 // down the regression that broke Claude Code live validation in the
 // initial multi-agent rollout: the Preloop Anthropic gateway endpoint
@@ -265,6 +367,26 @@ func TestBuildChatCompletionsLiveValidationPayload_OmitsCodexIncompatibleFields(
 	}
 	if _, ok := decoded["messages"].([]interface{}); !ok {
 		t.Fatalf("expected body.messages array, got %#v", decoded["messages"])
+	}
+}
+
+func TestMissingManagedGatewayValidationPrerequisite(t *testing.T) {
+	if reason := missingManagedGatewayValidationPrerequisite(map[string]interface{}{
+		"gateway_provider_ok": true,
+		"gateway_base_url_ok": true,
+		"gateway_token_ok":    true,
+	}); reason != "" {
+		t.Fatalf("expected all prerequisites to pass, got reason %q", reason)
+	}
+	if reason := missingManagedGatewayValidationPrerequisite(map[string]interface{}{
+		"gateway_provider_ok": true,
+		"gateway_base_url_ok": true,
+		"gateway_token_ok":    false,
+	}); reason != "managed model gateway token is not configured" {
+		t.Fatalf("expected missing token reason, got %q", reason)
+	}
+	if reason := missingManagedGatewayValidationPrerequisite(map[string]interface{}{}); reason != "" {
+		t.Fatalf("expected absent legacy flags to stay compatible, got %q", reason)
 	}
 }
 
@@ -468,8 +590,9 @@ func TestPrintDeferredLiveValidationLine_StatusVariants(t *testing.T) {
 			result: deferredLiveValidationResult{
 				Agent: AgentConfig{Name: "Codex CLI"},
 				Outcome: &managedLiveValidationOutcome{
-					Attempted: true,
-					Passed:    false,
+					Attempted:        true,
+					Passed:           false,
+					ValidationResult: map[string]interface{}{},
 				},
 				Err:      errStringForTest("HTTP 400 boom"),
 				Duration: 120 * time.Millisecond,
@@ -478,7 +601,28 @@ func TestPrintDeferredLiveValidationLine_StatusVariants(t *testing.T) {
 				"Codex CLI",
 				"failed",
 				"HTTP 400 boom",
-				"preloop agents validate Codex CLI --live",
+				"preloop agents validate \"Codex CLI\" --live",
+			},
+		},
+		{
+			name: "throttled_with_error",
+			result: deferredLiveValidationResult{
+				Agent: AgentConfig{Name: "Claude Code"},
+				Outcome: &managedLiveValidationOutcome{
+					Attempted: true,
+					Passed:    false,
+					ValidationResult: map[string]interface{}{
+						"live_validation_status": "throttled",
+					},
+				},
+				Err:      errStringForTest("API error (status 429): rate_limit_error"),
+				Duration: 120 * time.Millisecond,
+			},
+			contains: []string{
+				"Claude Code",
+				"throttled",
+				"rate_limit_error",
+				"preloop agents validate \"Claude Code\" --live",
 			},
 		},
 		{
@@ -489,6 +633,24 @@ func TestPrintDeferredLiveValidationLine_StatusVariants(t *testing.T) {
 				Duration: 0,
 			},
 			contains: []string{"Cursor", "unsupported"},
+		},
+		{
+			name: "not run with prerequisite reason",
+			result: deferredLiveValidationResult{
+				Agent: AgentConfig{Name: "Claude Code"},
+				Outcome: &managedLiveValidationOutcome{
+					Attempted: false,
+					ValidationResult: map[string]interface{}{
+						"live_validation_skip_reason": "managed model gateway token is not configured",
+					},
+				},
+				Duration: 0,
+			},
+			contains: []string{
+				"Claude Code",
+				"not run",
+				"managed model gateway token is not configured",
+			},
 		},
 	}
 	for _, tc := range cases {

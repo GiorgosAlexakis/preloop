@@ -487,7 +487,7 @@ export class AIModelsView extends LitElement {
                       <td>
                         <a
                           class="model-link"
-                          href=${`/console/settings/ai-models/${model.id}`}
+                          href=${`/console/ai-models/${model.id}`}
                         >
                           ${model.name}
                         </a>
@@ -588,7 +588,7 @@ export class AIModelsView extends LitElement {
                         <div class="actions">
                           <sl-button
                             size="small"
-                            href=${`/console/settings/ai-models/${model.id}`}
+                            href=${`/console/ai-models/${model.id}`}
                           >
                             View
                           </sl-button>

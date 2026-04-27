@@ -132,6 +132,18 @@ export class AuditView extends AuthedElement {
 
   connectedCallback() {
     super.connectedCallback();
+
+    // Parse URL parameters to initialize filters
+    const params = new URLSearchParams(window.location.search);
+    const eventType = params.get('event_type');
+    if (eventType) {
+      this._eventTypeFilters = [eventType];
+    }
+    const outcome = params.get('outcome');
+    if (outcome) {
+      this._outcomeFilters = [outcome];
+    }
+
     this._loadUsers();
     this._loadTimeline();
     this._connectRealtime();

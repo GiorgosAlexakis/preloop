@@ -316,11 +316,11 @@ describe('AgentDetailView', () => {
       'Tool calls and model traffic both flow through Preloop.'
     );
     const modelLink = element.shadowRoot?.querySelector(
-      'a.session-link[href="/console/settings/ai-models/configured-model-1"]'
+      'a.session-link[href="/console/ai-models/configured-model-1"]'
     );
     expect(modelLink).to.exist;
     const wrongModelLink = element.shadowRoot?.querySelector(
-      'a.session-link[href="/console/settings/ai-models/model-1"]'
+      'a.session-link[href="/console/ai-models/model-1"]'
     );
     expect(wrongModelLink).to.not.exist;
   });

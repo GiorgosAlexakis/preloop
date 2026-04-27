@@ -141,10 +141,10 @@ describe('AIModelsView', () => {
     expect(content).to.contain('Mini Claw');
 
     const nameLink = element.shadowRoot?.querySelector(
-      'a.model-link[href="/console/settings/ai-models/model-1"]'
+      'a.model-link[href="/console/ai-models/model-1"]'
     );
     const viewButton = element.shadowRoot?.querySelector(
-      'sl-button[href="/console/settings/ai-models/model-1"]'
+      'sl-button[href="/console/ai-models/model-1"]'
     );
 
     expect(nameLink).to.not.equal(null);

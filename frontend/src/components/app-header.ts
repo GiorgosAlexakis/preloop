@@ -239,6 +239,13 @@ export class AppHeader extends LitElement {
                 </div>`}
           </div>
           <nav class="${this.isMenuOpen ? 'mobile-menu-open' : ''}">
+            <sl-icon-button
+              name="github"
+              href="https://github.com/preloop/preloop"
+              target="_blank"
+              label="GitHub Repository"
+              style="font-size: 1.25rem;"
+            ></sl-icon-button>
             <sl-button
               href="https://docs.preloop.ai"
               target="_blank"

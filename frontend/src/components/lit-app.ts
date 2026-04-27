@@ -492,9 +492,9 @@ export class LitApp extends LitElement {
           { path: 'settings/profile', component: 'profile-view' },
           { path: 'settings/security', component: 'security-view' },
           { path: 'settings/api-keys', component: 'api-keys-view' },
-          { path: 'settings/ai-models', component: 'ai-models-view' },
+          { path: 'ai-models', component: 'ai-models-view' },
           {
-            path: 'settings/ai-models/:modelId',
+            path: 'ai-models/:modelId',
             component: 'ai-model-detail-view',
           },
           { path: 'settings/appearance', component: 'appearance-view' },

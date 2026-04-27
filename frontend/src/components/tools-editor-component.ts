@@ -41,7 +41,25 @@ export class ToolsEditorComponent extends LitElement {
   @state() private collapsedGroups: Set<string> = new Set();
   private _hasAutoCollapsed = false;
 
+  constructor() {
+    super();
+    try {
+      const savedExpanded = sessionStorage.getItem('preloopExpandedTools');
+      if (savedExpanded) {
+        this.expandedTools = new Set(JSON.parse(savedExpanded));
+      }
+      const savedCollapsed = sessionStorage.getItem('preloopCollapsedGroups');
+      if (savedCollapsed) {
+        this.collapsedGroups = new Set(JSON.parse(savedCollapsed));
+        this._hasAutoCollapsed = true;
+      }
+    } catch (e) {
+      console.warn('Failed to load tool editor state', e);
+    }
+  }
+
   willUpdate(changedProperties: Map<string | number | symbol, unknown>) {
+    // Only collapse by default if it's the first time we load tools
     if (
       this.collapseByDefault &&
       !this._hasAutoCollapsed &&
@@ -53,6 +71,12 @@ export class ToolsEditorComponent extends LitElement {
       groupsToCollapse.add('builtin');
       groupsToCollapse.add('http');
       this.collapsedGroups = groupsToCollapse;
+      try {
+        sessionStorage.setItem(
+          'preloopCollapsedGroups',
+          JSON.stringify([...groupsToCollapse])
+        );
+      } catch {}
     }
   }
 
@@ -187,6 +211,13 @@ export class ToolsEditorComponent extends LitElement {
       updated.add(groupId);
     }
     this.collapsedGroups = updated;
+    this._hasAutoCollapsed = true;
+    try {
+      sessionStorage.setItem(
+        'preloopCollapsedGroups',
+        JSON.stringify([...updated])
+      );
+    } catch {}
   }
 
   private _handleToggleExpand(e: CustomEvent) {
@@ -198,6 +229,12 @@ export class ToolsEditorComponent extends LitElement {
       updated.add(key);
     }
     this.expandedTools = updated;
+    try {
+      sessionStorage.setItem(
+        'preloopExpandedTools',
+        JSON.stringify([...updated])
+      );
+    } catch {}
   }
 
   private _renderToolGroup(group: ToolGroup) {
@@ -337,7 +374,7 @@ export class ToolsEditorComponent extends LitElement {
                             .rulesInherited=${rulesInherited}
                             .policies=${this.approvalPolicies}
                             .features=${this.features}
-                            ?expanded=${this.expandedTools.has(
+                            .expanded=${this.expandedTools.has(
                               this._getToolKey(tool)
                             )}
                             @toggle-expand=${this._handleToggleExpand}
@@ -364,7 +401,11 @@ export class ToolsEditorComponent extends LitElement {
                 ? 'No tools found. Add an MCP server to get started.'
                 : 'No managed tools found for this scope.'}
             </div>`
-          : groups.map((group) => this._renderToolGroup(group))}
+          : repeat(
+              groups,
+              (group) => group.id,
+              (group) => this._renderToolGroup(group)
+            )}
       </div>
     `;
   }

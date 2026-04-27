@@ -1,9 +1,11 @@
 """Tests for the OpenAI-compatible gateway service."""
 
-import pytest
 import json
+import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from preloop.models.models.api_usage import ApiUsage
 from preloop.models.crud import (
@@ -14,6 +16,7 @@ from preloop.models.crud import crud_api_key
 from preloop.services.model_gateway_auth import ModelGatewayAuthContext
 from preloop.services.model_gateway_errors import ModelGatewayAPIError
 from preloop.services.openai_gateway import OpenAIGatewayService
+from preloop.services.openai_gateway import LiteLLMModelGatewayBackend
 
 
 def _parse_sse_payload(event: str):
@@ -40,8 +43,8 @@ def test_call_litellm_uses_injected_upstream_backend():
     with patch(
         "preloop.services.openai_gateway.get_secret_service"
     ) as mock_secret_service:
-        mock_secret_service.return_value.resolve_ai_model_api_key.return_value = (
-            SimpleNamespace(value="provider-secret")
+        mock_secret_service.return_value.resolve_ai_model_credentials.return_value = (
+            SimpleNamespace(credential_type="api_key", value="provider-secret")
         )
         service._call_litellm(
             ai_model,
@@ -78,7 +81,9 @@ def test_call_litellm_allows_bedrock_ambient_credentials():
     with patch(
         "preloop.services.openai_gateway.get_secret_service"
     ) as mock_secret_service:
-        mock_secret_service.return_value.resolve_ai_model_api_key.return_value = None
+        mock_secret_service.return_value.resolve_ai_model_credentials.return_value = (
+            None
+        )
         service._call_litellm(
             ai_model,
             messages=[{"role": "user", "content": "Hello"}],
@@ -113,8 +118,9 @@ def test_call_litellm_passes_imported_bedrock_credentials():
     with patch(
         "preloop.services.openai_gateway.get_secret_service"
     ) as mock_secret_service:
-        mock_secret_service.return_value.resolve_ai_model_api_key.return_value = (
+        mock_secret_service.return_value.resolve_ai_model_credentials.return_value = (
             SimpleNamespace(
+                credential_type="api_key",
                 value=json.dumps(
                     {
                         "aws_access_key_id": "AKIA_TEST",
@@ -122,7 +128,7 @@ def test_call_litellm_passes_imported_bedrock_credentials():
                         "aws_session_token": "session-test",
                         "aws_region_name": "eu-central-1",
                     }
-                )
+                ),
             )
         )
         service._call_litellm(
@@ -141,6 +147,81 @@ def test_call_litellm_passes_imported_bedrock_credentials():
         aws_session_token="session-test",
         aws_region_name="eu-central-1",
     )
+
+
+def test_call_litellm_uses_claude_code_oauth_headers():
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    db = MagicMock()
+    upstream_backend = MagicMock()
+    service = OpenAIGatewayService(db, auth_context, upstream_backend=upstream_backend)
+    ai_model = SimpleNamespace(
+        provider_name="anthropic",
+        model_identifier="claude-opus-4-6",
+        api_endpoint=None,
+        meta_data={},
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.get_secret_service"
+    ) as mock_secret_service:
+        mock_secret_service.return_value.resolve_ai_model_credentials.return_value = (
+            SimpleNamespace(
+                credential_type="oauth_anthropic_claude_code",
+                value="sk-ant-oat01-access-token",
+            )
+        )
+        service._call_litellm(
+            ai_model,
+            messages=[{"role": "user", "content": "Hello"}],
+            payload={"max_tokens": 1},
+            provider="anthropic",
+        )
+
+    mock_secret_service.return_value.resolve_ai_model_credentials.assert_called_once_with(
+        ai_model,
+        db=db,
+        allow_refresh=True,
+    )
+    upstream_backend.completion.assert_called_once_with(
+        model="anthropic/claude-opus-4-6",
+        messages=[{"role": "user", "content": "Hello"}],
+        timeout=600,
+        _preloop_anthropic_auth_token="sk-ant-oat01-access-token",
+        extra_headers={
+            "anthropic-beta": "oauth-2025-04-20",
+            "anthropic-client-platform": "claude-code",
+        },
+        max_tokens=1,
+    )
+
+
+def test_litellm_backend_masks_ambient_anthropic_api_key_for_oauth(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-platform-key")
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    observed_env = {}
+
+    def fake_completion(**kwargs):
+        observed_env["api_key"] = os.environ.get("ANTHROPIC_API_KEY")
+        observed_env["auth_token"] = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        observed_env["kwargs"] = kwargs
+        return {"ok": True}
+
+    with patch("preloop.services.openai_gateway.litellm.completion", fake_completion):
+        result = LiteLLMModelGatewayBackend().completion(
+            model="anthropic/claude-haiku-4-5",
+            messages=[{"role": "user", "content": "Hello"}],
+            _preloop_anthropic_auth_token="oauth-token",
+        )
+
+    assert result == {"ok": True}
+    assert observed_env["api_key"] is None
+    assert observed_env["auth_token"] == "oauth-token"
+    assert "_preloop_anthropic_auth_token" not in observed_env["kwargs"]
+    assert os.environ["ANTHROPIC_API_KEY"] == "ambient-platform-key"
+    assert os.environ.get("ANTHROPIC_AUTH_TOKEN") is None
 
 
 def test_create_response_uses_openai_codex_adapter():

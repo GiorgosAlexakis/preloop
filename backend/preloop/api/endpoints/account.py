@@ -108,6 +108,10 @@ def _managed_agent_onboarding_flags(
             and "preloop" in managed_config["mcpServers"]
         )
         or (
+            isinstance(managed_config.get("mcp_servers"), dict)
+            and "preloop" in managed_config["mcp_servers"]
+        )
+        or (
             isinstance(managed_config.get("mcp"), dict)
             and isinstance(managed_config["mcp"].get("servers"), dict)
             and "preloop" in managed_config["mcp"]["servers"]
@@ -144,6 +148,27 @@ def _managed_agent_onboarding_flags(
             and "preloop" in managed_config["provider"]
             and isinstance(managed_config.get("model"), str)
             and managed_config["model"].startswith("preloop/")
+        )
+        or (
+            # Hermes stores its managed model gateway configuration under
+            # model.{provider,base_url,api_key,default}. Newer CLI builds also
+            # emit gateway_provider_ok / gateway_base_url_ok, but staging can
+            # legitimately contain enrollments written by older CLI binaries
+            # that have the correct managed config but not those validation
+            # flags. Recognize the config shape directly so those agents don't
+            # appear incomplete after successful onboarding.
+            isinstance(managed_config.get("model"), dict)
+            and managed_config["model"].get("provider") == "custom"
+            and isinstance(managed_config["model"].get("base_url"), str)
+            and "/openai/v1" in managed_config["model"]["base_url"]
+            and (
+                isinstance(managed_config["model"].get("api_key"), str)
+                or isinstance(managed_config["model"].get("apiKey"), str)
+            )
+            and (
+                isinstance(managed_config["model"].get("default"), str)
+                or isinstance(managed_config["model"].get("model"), str)
+            )
         )
         or (
             isinstance(managed_config.get("env"), dict)

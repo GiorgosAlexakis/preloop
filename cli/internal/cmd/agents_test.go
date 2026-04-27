@@ -829,7 +829,7 @@ func TestParseClaudeManagedGatewayUpstreamUsesRecentSessionModel(t *testing.T) {
 	if err := os.Setenv("HOME", home); err != nil {
 		t.Fatalf("failed to set HOME: %v", err)
 	}
-	if err := os.Setenv("CLAUDE_TEST_TOKEN", "claude-auth-token"); err != nil {
+	if err := os.Setenv("CLAUDE_TEST_TOKEN", "sk-ant-api03-claude-auth-token"); err != nil {
 		t.Fatalf("failed to set CLAUDE_TEST_TOKEN: %v", err)
 	}
 	defer func() {
@@ -876,11 +876,78 @@ func TestParseClaudeManagedGatewayUpstreamUsesRecentSessionModel(t *testing.T) {
 	if upstream.ManagedModelAlias != "anthropic/claude-opus-4-6" {
 		t.Fatalf("expected inferred Claude alias, got %#v", upstream.ManagedModelAlias)
 	}
-	if upstream.APIKey != "claude-auth-token" {
+	if upstream.APIKey != "sk-ant-api03-claude-auth-token" {
 		t.Fatalf("expected Claude auth token, got %#v", upstream.APIKey)
 	}
 	if len(upstream.Notes) == 0 {
 		t.Fatalf("expected explanatory notes, got %#v", upstream)
+	}
+}
+
+func TestParseClaudeManagedGatewayUpstreamImportsOAuthCredential(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	oldToken := os.Getenv("CLAUDE_TEST_TOKEN")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	if err := os.Setenv("CLAUDE_TEST_TOKEN", "sk-ant-oat01-claude-code-token"); err != nil {
+		t.Fatalf("failed to set CLAUDE_TEST_TOKEN: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+		_ = os.Setenv("CLAUDE_TEST_TOKEN", oldToken)
+	}()
+
+	configPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create claude dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"model":"opus[1m]","env":{"ANTHROPIC_AUTH_TOKEN":"${CLAUDE_TEST_TOKEN}"}}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write claude config: %v", err)
+	}
+	sessionPath := filepath.Join(home, ".claude", "projects", "project-a", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0755); err != nil {
+		t.Fatalf("failed to create claude session dir: %v", err)
+	}
+	if err := os.WriteFile(
+		sessionPath,
+		[]byte("{\"timestamp\":\"2026-04-04T11:00:00Z\",\"message\":{\"model\":\"claude-opus-4-6\"}}\n"),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write claude session log: %v", err)
+	}
+	t.Setenv("CLAUDE_CODE_USE_BEDROCK", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("ANTHROPIC_MODEL", "")
+
+	upstream, err := parseClaudeManagedGatewayUpstream(
+		AgentConfig{Name: "Claude Code", ConfigPath: configPath},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected upstream Claude model metadata to be detected")
+	}
+	if upstream.ManagedModelAlias != "anthropic/claude-opus-4-6" {
+		t.Fatalf("expected inferred Claude alias, got %#v", upstream.ManagedModelAlias)
+	}
+	if upstream.APIKey != "" {
+		t.Fatalf("expected OAuth credential to stay out of APIKey field, got %#v", upstream.APIKey)
+	}
+	if upstream.CredentialType != "oauth_anthropic_claude_code" {
+		t.Fatalf("expected Claude OAuth credential type, got %#v", upstream.CredentialType)
+	}
+	if got := upstream.CredentialPayload["access"]; got != "sk-ant-oat01-claude-code-token" {
+		t.Fatalf("expected OAuth access token payload, got %#v", got)
+	}
+	if !upstream.CanRouteThroughGateway() {
+		t.Fatalf("expected OAuth-backed Claude model traffic to route through gateway")
 	}
 }
 

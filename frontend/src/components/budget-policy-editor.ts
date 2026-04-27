@@ -6,7 +6,13 @@ import {
   getBudgetPolicies,
   createBudgetPolicy,
   deleteBudgetPolicy,
+  getAIModels,
+  getAccountAgents,
+  AIModel,
+  ManagedAgentSummary,
+  fetchWithAuth,
 } from '../api.js';
+import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
@@ -18,14 +24,22 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
 @customElement('budget-policy-editor')
 export class BudgetPolicyEditor extends LitElement {
-  @property({ type: String }) subjectType!: string;
-  @property({ type: String }) subjectId!: string;
+  @property({ type: String }) subjectType?: string;
+  @property({ type: String }) subjectId?: string;
 
   @state() private policies: BudgetPolicy[] = [];
   @state() private showAddForm = false;
   @state() private error = '';
 
+  @state() private models: AIModel[] = [];
+  @state() private agents: ManagedAgentSummary[] = [];
+  @state() private loadingSubjects = false;
+  @state() private features: any = {};
+  @state() private availableUsers: any[] = [];
+
   // New Policy Form State
+  @state() private newSubjectType = 'global';
+  @state() private newSubjectId = 'global';
   @state() private newPeriod = 'monthly';
   @state() private newHardLimit = '';
   @state() private newSoftLimit = '';
@@ -92,6 +106,52 @@ export class BudgetPolicyEditor extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
     await this.loadPolicies();
+    this.loadSubjects();
+  }
+
+  private getSubjectName(type: string, id: string): string {
+    if (type === 'ai_model') {
+      const model = this.models.find((m) => m.id === id);
+      return model ? model.alias || model.id : id;
+    }
+    if (type === 'managed_agent') {
+      const agent = this.agents.find((a) => a.id === id);
+      return agent ? agent.display_name || agent.id : id;
+    }
+    return id;
+  }
+
+  async loadSubjects() {
+    this.loadingSubjects = true;
+    try {
+      const [models, agentsResponse, userProfile, featuresRes, usersRes] =
+        await Promise.all([
+          getAIModels().catch(() => [] as AIModel[]),
+          getAccountAgents({ status: 'all', limit: 100 }).catch(() => ({
+            items: [] as ManagedAgentSummary[],
+          })),
+          fetchWithAuth('/api/v1/auth/users/me')
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+          fetchWithAuth('/api/v1/features')
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+          fetchWithAuth('/api/v1/users?limit=100')
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => ({ users: [] })),
+        ]);
+      this.models = models;
+      this.agents = (agentsResponse as any).items || [];
+      this.features = featuresRes?.features || {};
+      this.availableUsers = (usersRes as any).users || [];
+      if (userProfile && !this.newEmails) {
+        this.newEmails = userProfile.email;
+      }
+    } catch (e) {
+      console.error('Failed to load subjects', e);
+    } finally {
+      this.loadingSubjects = false;
+    }
   }
 
   async loadPolicies() {
@@ -134,8 +194,10 @@ export class BudgetPolicyEditor extends LitElement {
     }
 
     const payload: BudgetPolicyCreate = {
-      subject_type: this.subjectType,
-      subject_id: this.subjectId,
+      subject_type: this.subjectType || this.newSubjectType,
+      subject_id: this.subjectType
+        ? this.subjectId || 'global'
+        : this.newSubjectId,
       model_alias: null, // applies to all models
       period: this.newPeriod,
       hard_limit_usd: this.newHardLimit ? parseFloat(this.newHardLimit) : null,
@@ -156,12 +218,26 @@ export class BudgetPolicyEditor extends LitElement {
   }
 
   private resetForm() {
+    this.newSubjectType = 'global';
+    this.newSubjectId = 'global';
     this.newPeriod = 'monthly';
     this.newHardLimit = '';
     this.newSoftLimit = '';
     this.newNotifySoft = false;
     this.newNotifyHard = false;
     this.newEmails = '';
+  }
+
+  private addEmail(email: string) {
+    if (!email) return;
+    const current = this.newEmails
+      .split(',')
+      .map((e) => e.trim())
+      .filter((e) => e);
+    if (!current.includes(email)) {
+      current.push(email);
+      this.newEmails = current.join(', ');
+    }
   }
 
   render() {
@@ -217,17 +293,60 @@ export class BudgetPolicyEditor extends LitElement {
                         >${p.period.charAt(0).toUpperCase() +
                         p.period.slice(1)}</strong
                       >
-                      Limit:
-                      ${p.hard_limit_usd
-                        ? html`Hard: $${p.hard_limit_usd.toFixed(2)}`
-                        : 'No Hard Limit'}
-                      ${p.soft_limit_usd
-                        ? html`| Soft: $${p.soft_limit_usd.toFixed(2)}`
+                      ${!this.subjectType
+                        ? html`
+                            <sl-badge
+                              variant="neutral"
+                              style="margin-left: 8px;"
+                            >
+                              ${p.subject_type === 'global'
+                                ? 'Global'
+                                : p.subject_type === 'ai_model'
+                                  ? 'Model'
+                                  : p.subject_type === 'managed_agent'
+                                    ? 'Agent'
+                                    : p.subject_type}
+                            </sl-badge>
+                            <span
+                              style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-600); margin-left: 4px;"
+                            >
+                              ${p.subject_type !== 'global' && p.subject_id
+                                ? this.getSubjectName(
+                                    p.subject_type,
+                                    p.subject_id
+                                  )
+                                : ''}
+                            </span>
+                          `
                         : ''}
-                      <div class="meta-text">
-                        Notifications to:
-                        ${p.notification_emails?.join(', ') || 'None'}
-                      </div>
+                      <br />
+                      <span
+                        style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-700);"
+                        >Limit:</span
+                      >
+                      ${p.hard_limit_usd
+                        ? html`<span
+                            style="font-size: var(--sl-font-size-small);"
+                            >Hard: $${p.hard_limit_usd.toFixed(2)}</span
+                          >`
+                        : html`<span
+                            style="font-size: var(--sl-font-size-small);"
+                            >No Hard Limit</span
+                          >`}
+                      ${p.soft_limit_usd
+                        ? html`<span
+                            style="font-size: var(--sl-font-size-small);"
+                            >| Soft: $${p.soft_limit_usd.toFixed(2)}</span
+                          >`
+                        : ''}
+                      ${this.features?.['billing']
+                        ? html`
+                            <div class="meta-text">
+                              Notifications to:
+                              ${p.notification_emails?.join(', ') || 'None'}
+                            </div>
+                          `
+                        : ''}
                     </div>
                     <sl-icon-button
                       name="trash"
@@ -242,6 +361,64 @@ export class BudgetPolicyEditor extends LitElement {
         ${this.showAddForm
           ? html`
               <div class="form-container">
+                ${!this.subjectType
+                  ? html`
+                      <div class="form-row">
+                        <sl-select
+                          label="Target Scope"
+                          value=${this.newSubjectType}
+                          @sl-change=${(e: any) => {
+                            this.newSubjectType = e.target.value;
+                            this.newSubjectId =
+                              this.newSubjectType === 'global' ? 'global' : '';
+                          }}
+                        >
+                          <sl-option value="global"
+                            >Global (Account-wide)</sl-option
+                          >
+                          <sl-option value="ai_model">AI Model</sl-option>
+                          <sl-option value="managed_agent">Agent</sl-option>
+                        </sl-select>
+
+                        ${this.newSubjectType === 'ai_model'
+                          ? html`
+                              <sl-select
+                                label="Select Model"
+                                value=${this.newSubjectId}
+                                @sl-change=${(e: any) =>
+                                  (this.newSubjectId = e.target.value)}
+                                ?disabled=${this.loadingSubjects}
+                              >
+                                ${this.models.map(
+                                  (m) =>
+                                    html`<sl-option value=${m.id}
+                                      >${m.alias || m.id}</sl-option
+                                    >`
+                                )}
+                              </sl-select>
+                            `
+                          : this.newSubjectType === 'managed_agent'
+                            ? html`
+                                <sl-select
+                                  label="Select Agent"
+                                  value=${this.newSubjectId}
+                                  @sl-change=${(e: any) =>
+                                    (this.newSubjectId = e.target.value)}
+                                  ?disabled=${this.loadingSubjects}
+                                >
+                                  ${this.agents.map(
+                                    (a) =>
+                                      html`<sl-option value=${a.id}
+                                        >${a.display_name || a.id}</sl-option
+                                      >`
+                                  )}
+                                </sl-select>
+                              `
+                            : html`<div style="flex: 1"></div>`}
+                      </div>
+                    `
+                  : ''}
+
                 <sl-select
                   label="Period"
                   value=${this.newPeriod}
@@ -274,30 +451,55 @@ export class BudgetPolicyEditor extends LitElement {
                   ></sl-input>
                 </div>
 
-                <sl-input
-                  label="Notification Emails"
-                  help-text="Comma separated list of emails"
-                  placeholder="admin@example.com"
-                  .value=${this.newEmails}
-                  @sl-input=${(e: any) => (this.newEmails = e.target.value)}
-                ></sl-input>
+                ${this.features?.['billing']
+                  ? html`
+                      <sl-input
+                        label="Notification Emails"
+                        help-text="Comma separated list of emails"
+                        placeholder="admin@example.com"
+                        .value=${this.newEmails}
+                        @sl-input=${(e: any) =>
+                          (this.newEmails = e.target.value)}
+                      ></sl-input>
 
-                <div class="checkbox-group">
-                  <sl-checkbox
-                    ?checked=${this.newNotifySoft}
-                    @sl-change=${(e: any) =>
-                      (this.newNotifySoft = e.target.checked)}
-                  >
-                    Send email on Soft Limit
-                  </sl-checkbox>
-                  <sl-checkbox
-                    ?checked=${this.newNotifyHard}
-                    @sl-change=${(e: any) =>
-                      (this.newNotifyHard = e.target.checked)}
-                  >
-                    Send email on Hard Limit
-                  </sl-checkbox>
-                </div>
+                      ${this.availableUsers.length > 0
+                        ? html`
+                            <div
+                              style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: -8px; margin-bottom: 8px;"
+                            >
+                              ${this.availableUsers.map(
+                                (u) => html`
+                                  <sl-badge
+                                    variant="neutral"
+                                    style="cursor: pointer"
+                                    @click=${() => this.addEmail(u.email)}
+                                  >
+                                    + ${u.email}
+                                  </sl-badge>
+                                `
+                              )}
+                            </div>
+                          `
+                        : ''}
+
+                      <div class="checkbox-group">
+                        <sl-checkbox
+                          ?checked=${this.newNotifySoft}
+                          @sl-change=${(e: any) =>
+                            (this.newNotifySoft = e.target.checked)}
+                        >
+                          Send email on Soft Limit
+                        </sl-checkbox>
+                        <sl-checkbox
+                          ?checked=${this.newNotifyHard}
+                          @sl-change=${(e: any) =>
+                            (this.newNotifyHard = e.target.checked)}
+                        >
+                          Send email on Hard Limit
+                        </sl-checkbox>
+                      </div>
+                    `
+                  : ''}
 
                 <div class="form-actions">
                   <sl-button @click=${() => (this.showAddForm = false)}

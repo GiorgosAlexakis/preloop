@@ -25,7 +25,7 @@ export class SettingsView extends LitElement {
     { path: '/console/settings/security', label: 'Security' },
     { path: '/console/settings/subscription', label: 'Subscription' },
     { path: '/console/settings/api-keys', label: 'API Keys' },
-    { path: '/console/settings/ai-models', label: 'AI Models' },
+    { path: '/console/ai-models', label: 'AI Models' },
     { path: '/console/settings/appearance', label: 'Appearance' },
   ];
 

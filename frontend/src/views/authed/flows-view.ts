@@ -4,6 +4,7 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
+import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import { router } from '../../router';
 import { Router } from '@vaadin/router';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
@@ -90,6 +91,17 @@ export class FlowsView extends LitElement {
         transition:
           transform 0.2s,
           box-shadow 0.2s;
+        height: 100%;
+      }
+      .flow-card::part(base) {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      .flow-card::part(body) {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
       }
       .flow-card:hover {
         transform: translateY(-4px);
@@ -107,11 +119,28 @@ export class FlowsView extends LitElement {
         gap: 8px;
         font-size: var(--sl-font-size-large);
         font-weight: 600;
+        min-width: 0;
       }
       .flow-description {
         color: var(--sl-color-neutral-600);
         margin-bottom: 12px;
         font-size: var(--sl-font-size-small);
+        height: 5.75rem;
+        overflow: hidden;
+      }
+      .flow-description-text {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        line-height: 1.35;
+      }
+      .flow-description-placeholder {
+        color: var(--sl-color-neutral-400);
+        font-style: italic;
+      }
+      .flow-description-action {
+        margin-top: var(--sl-spacing-2x-small);
       }
       .flow-stats {
         display: flex;
@@ -204,6 +233,12 @@ export class FlowsView extends LitElement {
 
   @state()
   private showPresets = true;
+
+  @state()
+  private expandedDescription: {
+    title: string;
+    description: string;
+  } | null = null;
 
   private unsubscribe?: () => void;
   private hasInitializedPresetVisibility = false;
@@ -400,6 +435,26 @@ export class FlowsView extends LitElement {
               </div>`}
         </div>
       </div>
+      <sl-dialog
+        label=${this.expandedDescription?.title || 'Flow description'}
+        ?open=${Boolean(this.expandedDescription)}
+        @sl-after-hide=${() => {
+          this.expandedDescription = null;
+        }}
+      >
+        <div style="white-space: pre-wrap; color: var(--sl-color-neutral-700);">
+          ${this.expandedDescription?.description || ''}
+        </div>
+        <sl-button
+          slot="footer"
+          variant="primary"
+          @click=${() => {
+            this.expandedDescription = null;
+          }}
+        >
+          Close
+        </sl-button>
+      </sl-dialog>
     `;
   }
 
@@ -424,9 +479,7 @@ export class FlowsView extends LitElement {
             : ''}
         </div>
 
-        ${flow.description
-          ? html`<div class="flow-description">${flow.description}</div>`
-          : ''}
+        ${this.renderFlowDescription(flow)}
 
         <div class="flow-stats">
           <div class="stat-item">
@@ -500,9 +553,7 @@ export class FlowsView extends LitElement {
               : ''}
           </div>
         </div>
-        ${preset.description
-          ? html`<div class="flow-description">${preset.description}</div>`
-          : ''}
+        ${this.renderFlowDescription(preset)}
       </sl-card>
     `;
   }
@@ -597,6 +648,55 @@ export class FlowsView extends LitElement {
 
   private togglePresets() {
     this.showPresets = !this.showPresets;
+  }
+
+  private truncateDescription(description: string): string {
+    const maxLength = 140;
+    if (description.length <= maxLength) {
+      return description;
+    }
+
+    const truncated = description.slice(0, maxLength).trimEnd();
+    const lastSpace = truncated.lastIndexOf(' ');
+    const preview =
+      lastSpace > 80 ? truncated.slice(0, lastSpace).trimEnd() : truncated;
+    return `${preview}...`;
+  }
+
+  private renderFlowDescription(flow: Flow) {
+    const description = flow.description?.trim();
+    const shouldShowFull = (description?.length ?? 0) > 140;
+    const preview = description ? this.truncateDescription(description) : '';
+
+    return html`
+      <div class="flow-description">
+        ${description
+          ? html`
+              <div class="flow-description-text">${preview}</div>
+              ${shouldShowFull
+                ? html`
+                    <sl-button
+                      class="flow-description-action"
+                      size="small"
+                      variant="text"
+                      @click=${(event: Event) => {
+                        event.stopPropagation();
+                        this.expandedDescription = {
+                          title: flow.name,
+                          description,
+                        };
+                      }}
+                    >
+                      Show full description
+                    </sl-button>
+                  `
+                : null}
+            `
+          : html`<span class="flow-description-placeholder"
+              >No description</span
+            >`}
+      </div>
+    `;
   }
 
   private sortPresets(presets: Flow[]): Flow[] {

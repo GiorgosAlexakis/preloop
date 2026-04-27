@@ -357,10 +357,7 @@ export class ConsoleShell extends LitElement {
                   <span class="sidebar-label">Trackers</span>
                 </sl-menu-item>
               </a>
-              <a
-                href="/console/settings/ai-models"
-                @click=${this._closeSidebar}
-              >
+              <a href="/console/ai-models" @click=${this._closeSidebar}>
                 <sl-menu-item>
                   <sl-icon name="cpu" slot="prefix"></sl-icon>
                   <span class="sidebar-label">Models</span>

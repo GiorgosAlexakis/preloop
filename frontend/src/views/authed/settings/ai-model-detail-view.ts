@@ -12,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '../../../components/view-header.ts';
+import '../../../components/budget-policy-editor.ts';
 import {
   extractErrorMessage,
   fetchWithAuth,
@@ -1072,11 +1073,7 @@ export class AIModelDetailView extends LitElement {
     return html`
       <view-header headerText=${headerText} width="extra-wide">
         <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
-          <sl-button
-            variant="default"
-            size="small"
-            href="/console/settings/ai-models"
-          >
+          <sl-button variant="default" size="small" href="/console/ai-models">
             <sl-icon slot="prefix" name="arrow-left"></sl-icon>
             Back to AI Models
           </sl-button>
@@ -1167,6 +1164,14 @@ export class AIModelDetailView extends LitElement {
                       Loading model metadata and observability surfaces.
                     </div>
                   `}
+            </sl-card>
+
+            <sl-card>
+              <div slot="header" class="model-title">Budget Management</div>
+              <budget-policy-editor
+                subjectType="ai_model"
+                .subjectId=${this.modelId}
+              ></budget-policy-editor>
             </sl-card>
 
             ${this.renderGatewayValidation()}

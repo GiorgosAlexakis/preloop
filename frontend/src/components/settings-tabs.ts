@@ -32,7 +32,7 @@ export class SettingsTabs extends LitElement {
       { path: '/console/settings/teams', label: 'Teams', ee: true },
       { path: '/console/settings/invitations', label: 'Invitations', ee: true },
       { path: '/console/settings/api-keys', label: 'API Keys' },
-      { path: '/console/settings/ai-models', label: 'AI Models' },
+      { path: '/console/ai-models', label: 'AI Models' },
       { path: '/console/settings/appearance', label: 'Appearance' },
     ];
     return allTabs.filter((t) => !t.ee || hasUserMgmt);

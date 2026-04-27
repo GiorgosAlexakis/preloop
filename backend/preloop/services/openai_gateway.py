@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
 import time
+from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Optional, Protocol
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -35,6 +38,7 @@ from preloop.services.model_pricing import estimate_ai_model_usage_cost
 from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
 from preloop.services.gateway_usage_search import GatewayUsageSearchService
 from preloop.services.secret_service import (
+    ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE,
     OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE,
     ResolvedModelCredentials,
     get_secret_service,
@@ -103,8 +107,33 @@ class ModelGatewayBackend(Protocol):
     def completion(self, **kwargs: Any) -> Any: ...
 
 
+_ANTHROPIC_OAUTH_ENV_LOCK = threading.Lock()
+
+
+@contextmanager
+def _anthropic_oauth_environment(auth_token: str) -> Iterator[None]:
+    """Force LiteLLM's Anthropic client to use OAuth, not ambient API keys."""
+    with _ANTHROPIC_OAUTH_ENV_LOCK:
+        previous_api_key = os.environ.pop("ANTHROPIC_API_KEY", None)
+        previous_auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        os.environ["ANTHROPIC_AUTH_TOKEN"] = auth_token
+        try:
+            yield
+        finally:
+            if previous_api_key is not None:
+                os.environ["ANTHROPIC_API_KEY"] = previous_api_key
+            if previous_auth_token is None:
+                os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
+            else:
+                os.environ["ANTHROPIC_AUTH_TOKEN"] = previous_auth_token
+
+
 class LiteLLMModelGatewayBackend:
     def completion(self, **kwargs: Any) -> Any:
+        anthropic_auth_token = kwargs.pop("_preloop_anthropic_auth_token", None)
+        if anthropic_auth_token:
+            with _anthropic_oauth_environment(str(anthropic_auth_token)):
+                return litellm.completion(**kwargs)
         return litellm.completion(**kwargs)
 
 
@@ -2460,8 +2489,25 @@ class OpenAIGatewayService:
         stream: bool,
         provider: GatewayProvider,
     ) -> Dict[str, Any]:
-        resolved_secret = get_secret_service().resolve_ai_model_api_key(ai_model)
-        if not resolved_secret and not _supports_ambient_provider_credentials(ai_model):
+        resolved_credentials = get_secret_service().resolve_ai_model_credentials(
+            ai_model,
+            db=self.db,
+            allow_refresh=True,
+        )
+        supports_ambient = _supports_ambient_provider_credentials(ai_model)
+        supports_oauth = (
+            provider == "anthropic"
+            and resolved_credentials is not None
+            and resolved_credentials.credential_type
+            == ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE
+            and bool(resolved_credentials.value)
+        )
+        supports_api_key = (
+            resolved_credentials is not None
+            and resolved_credentials.credential_type == "api_key"
+            and bool(resolved_credentials.value)
+        )
+        if not (supports_api_key or supports_oauth or supports_ambient):
             raise ModelGatewayAPIError(
                 provider=provider,
                 status_code=400,
@@ -2473,14 +2519,20 @@ class OpenAIGatewayService:
             "messages": messages,
             "timeout": 600,  # 10 minute timeout for massive concurrent prompts (PR Reviews)
         }
-        if resolved_secret and _supports_ambient_provider_credentials(ai_model):
-            kwargs.update(_bedrock_credential_kwargs(resolved_secret.value))
+        if resolved_credentials and supports_ambient:
+            kwargs.update(_bedrock_credential_kwargs(resolved_credentials.value or ""))
+        if supports_oauth:
+            kwargs["_preloop_anthropic_auth_token"] = resolved_credentials.value
+            kwargs["extra_headers"] = {
+                "anthropic-beta": "oauth-2025-04-20",
+                "anthropic-client-platform": "claude-code",
+            }
         if (
-            resolved_secret
+            supports_api_key
             and "api_key" not in kwargs
             and "aws_access_key_id" not in kwargs
         ):
-            kwargs["api_key"] = resolved_secret.value
+            kwargs["api_key"] = resolved_credentials.value
         if region := _bedrock_region(ai_model):
             kwargs.setdefault("aws_region_name", region)
         if stream:

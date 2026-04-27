@@ -81,7 +81,7 @@ class TestCodexModelResolution:
         agent = CodexAgent({})
         context = {
             "model_identifier": "gpt-5.4",
-            "agent_config": {"model": "gpt-5.4-codex"},
+            "agent_config": {"model": "gpt-5.4"},
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
@@ -91,7 +91,7 @@ class TestCodexModelResolution:
             with patch.object(agent, "use_kubernetes", False):
                 await agent.start(context)
                 call_ctx = mock_start.call_args[0][0]
-                assert call_ctx["codex_model"] == "gpt-5.4-codex"
+                assert call_ctx["codex_model"] == "gpt-5.4"
 
     @pytest.mark.asyncio
     async def test_agent_config_model_fallback(self):
@@ -133,9 +133,9 @@ class TestCodexModelResolution:
         agent = CodexAgent({})
         context = {
             "model_gateway_enabled": True,
-            "model_gateway_model_alias": "openai/gpt-5.4-codex",
-            "model_identifier": "gpt-5.4-codex",
-            "agent_config": {"model": "gpt-5.4-codex"},
+            "model_gateway_model_alias": "openai/gpt-5.4",
+            "model_identifier": "gpt-5.4",
+            "agent_config": {"model": "gpt-5.4"},
             "execution_id": "test-123",
             "flow_id": "flow-1",
         }
@@ -145,7 +145,7 @@ class TestCodexModelResolution:
             with patch.object(agent, "use_kubernetes", False):
                 await agent.start(context)
                 call_ctx = mock_start.call_args[0][0]
-                assert call_ctx["codex_model"] == "openai/gpt-5.4-codex"
+                assert call_ctx["codex_model"] == "openai/gpt-5.4"
 
 
 class TestCodexBuildScript:
@@ -180,7 +180,7 @@ class TestCodexBuildScript:
         agent = CodexAgent({})
         context = {
             "prompt": "test",
-            "codex_model": "gpt-5.4-codex",
+            "codex_model": "gpt-5.4",
             "execution_id": "exec-1",
             "flow_name": "test-flow",
         }

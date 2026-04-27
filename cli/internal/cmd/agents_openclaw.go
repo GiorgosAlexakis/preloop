@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -621,8 +622,8 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		// recovery hint and continue.
 		fmt.Printf("  Warning: live validation failed: %v\n", liveValidationErr)
 		fmt.Printf(
-			"           Run 'preloop agents validate %s --live' to retry and inspect the full error.\n",
-			resolveAgentDisplayName(agent),
+			"           Run: preloop agents validate %s --live\n",
+			shellQuoteAgentName(resolveAgentDisplayName(agent)),
 		)
 	}
 	return nil
@@ -727,167 +728,6 @@ func runManagedAgentLiveValidation(
 			ValidationResult: validationResult,
 		}, nil
 	}
-}
-
-func runOpenClawLiveValidation(
-	client *api.Client,
-	agent AgentConfig,
-	validationResult map[string]interface{},
-) (*managedLiveValidationOutcome, error) {
-	baseURL, err := resolveConfiguredAPIURL()
-	if err != nil {
-		return &managedLiveValidationOutcome{
-			Attempted:        true,
-			Passed:           false,
-			ValidationResult: validationResult,
-		}, err
-	}
-
-	detail, err := getManagedAgentDetailForDiscovered(client, agent)
-	if err != nil {
-		return &managedLiveValidationOutcome{
-			Attempted: true,
-			Passed:    false,
-			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
-				"live_validation_attempted": true,
-				"live_validation_passed":    false,
-				"live_validation_status":    "failed",
-				"live_validation_error":     err.Error(),
-			}),
-		}, err
-	}
-
-	validationDocument, err := loadAgentConfigDocument(agent)
-	if err != nil {
-		return &managedLiveValidationOutcome{
-			Attempted: true,
-			Passed:    false,
-			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
-				"live_validation_attempted": true,
-				"live_validation_passed":    false,
-				"live_validation_status":    "failed",
-				"live_validation_error":     err.Error(),
-			}),
-		}, err
-	}
-
-	parsed, err := parseOpenClawConfig(agent.ConfigPath)
-	if err != nil {
-		return &managedLiveValidationOutcome{
-			Attempted: true,
-			Passed:    false,
-			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
-				"live_validation_attempted": true,
-				"live_validation_passed":    false,
-				"live_validation_status":    "failed",
-				"live_validation_error":     err.Error(),
-			}),
-		}, err
-	}
-
-	token := resolveOpenClawManagedGatewayToken(validationDocument)
-	if token == "" {
-		token = strings.TrimSpace(parsed.ProviderAPIKey)
-	}
-	if token == "" {
-		err = fmt.Errorf("managed OpenClaw config does not contain a Preloop gateway token")
-		return &managedLiveValidationOutcome{
-			Attempted: true,
-			Passed:    false,
-			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
-				"live_validation_attempted": true,
-				"live_validation_passed":    false,
-				"live_validation_status":    "failed",
-				"live_validation_error":     err.Error(),
-			}),
-		}, err
-	}
-
-	managedModelAlias := openClawManagedModelAlias(parsed)
-	validationToken := fmt.Sprintf("preloop-validation-%d", time.Now().UTC().UnixNano())
-	prompt := fmt.Sprintf(
-		"Welcome to Preloop. Validation token: %s. Reply with ACK only.",
-		validationToken,
-	)
-	requestPayload := map[string]interface{}{
-		"model": managedModelAlias,
-		"messages": []map[string]interface{}{
-			{
-				"role":    "user",
-				"content": prompt,
-			},
-		},
-		"temperature": 0,
-		"max_tokens":  32,
-	}
-
-	gatewayClient := api.NewClientWithToken(baseURL, token)
-	var gatewayResponse map[string]interface{}
-	requestErr := gatewayClient.Post(
-		"/openai/v1/chat/completions",
-		requestPayload,
-		&gatewayResponse,
-	)
-	_ = gatewayResponse
-
-	apiKeyID := mostLikelyManagedAPIKeyID(detail.Credentials)
-	searchHit, searchErr := waitForManagedValidationUsage(
-		client,
-		runtimePrincipalIDForAgent(agent),
-		apiKeyID,
-		managedModelAlias,
-		validationToken,
-	)
-
-	passed := requestErr == nil && searchErr == nil && searchHit != nil && searchHit.StatusCode < 400
-	result := mergeStringMaps(validationResult, map[string]interface{}{
-		"live_validation_attempted":      true,
-		"live_validation_passed":         passed,
-		"live_validation_status":         "failed",
-		"live_validation_token":          validationToken,
-		"live_validation_prompt":         prompt,
-		"live_validation_model_alias":    managedModelAlias,
-		"live_validation_runtime_agent":  resolveAgentDisplayName(agent),
-		"live_validation_runtime_source": runtimePrincipalIDForAgent(agent),
-	})
-	if passed {
-		result["live_validation_status"] = "passed"
-	}
-	if apiKeyID != "" {
-		result["live_validation_api_key_id"] = apiKeyID
-	}
-	if searchHit != nil {
-		result["live_validation_request_logged"] = true
-		result["live_validation_api_usage_id"] = searchHit.APIUsageID
-		result["live_validation_logged_at"] = searchHit.Timestamp
-		result["live_validation_status_code"] = searchHit.StatusCode
-	} else {
-		result["live_validation_request_logged"] = false
-	}
-
-	var validationErr error
-	if requestErr != nil {
-		result["live_validation_error"] = requestErr.Error()
-		validationErr = requestErr
-	}
-	if searchErr != nil {
-		result["live_validation_lookup_error"] = searchErr.Error()
-		if validationErr == nil {
-			validationErr = searchErr
-		} else {
-			validationErr = fmt.Errorf("%v; %w", validationErr, searchErr)
-		}
-	}
-	if !passed && validationErr == nil {
-		validationErr = fmt.Errorf("validation request did not appear in gateway usage")
-		result["live_validation_lookup_error"] = validationErr.Error()
-	}
-
-	return &managedLiveValidationOutcome{
-		Attempted:        true,
-		Passed:           passed,
-		ValidationResult: result,
-	}, validationErr
 }
 
 // buildCodexLiveValidationPayload constructs the body the CLI POSTs to the
@@ -1021,13 +861,17 @@ func runCodexLiveValidation(
 	_ = gatewayResponse
 
 	apiKeyID := mostLikelyManagedAPIKeyID(detail.Credentials)
-	searchHit, searchErr := waitForManagedValidationUsage(
-		client,
-		runtimePrincipalIDForAgent(agent),
-		apiKeyID,
-		managedModelAlias,
-		validationToken,
-	)
+	var searchHit *gatewayUsageSearchItem
+	var searchErr error
+	if requestErr == nil {
+		searchHit, searchErr = waitForManagedValidationUsage(
+			client,
+			runtimePrincipalIDForAgent(agent),
+			apiKeyID,
+			managedModelAlias,
+			validationToken,
+		)
+	}
 
 	passed := requestErr == nil && searchErr == nil && searchHit != nil && searchHit.StatusCode < 400
 	result := mergeStringMaps(validationResult, map[string]interface{}{
@@ -1531,6 +1375,19 @@ func parseClaudeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 	if modelRef == "" || strings.Contains(modelRef, "[") {
 		return nil, nil
 	}
+	if selection := claudeSelectionFromModelRef(modelRef); selection != "" {
+		if resolvedAlias := resolveClaudeSelectionGatewayModelAlias(selection, nil, nil); resolvedAlias != "" {
+			modelRef = resolvedAlias
+			notes = append(
+				notes,
+				fmt.Sprintf(
+					"Resolved Claude Code model selector %q to current Anthropic model %s.",
+					selection,
+					modelRef,
+				),
+			)
+		}
+	}
 	if claudeUsesBedrock(document) {
 		providerID, modelID := splitOpenClawModelRef(modelRef)
 		if modelID == "" {
@@ -1572,10 +1429,23 @@ func parseClaudeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 		}, nil
 	}
 	apiKey, apiKeyNote := resolveClaudeAuthToken(document)
+	credentialType := ""
+	credentialPayload := map[string]interface{}{}
+	if isClaudeCodeOAuthAccessToken(apiKey) {
+		credentialType = "oauth_anthropic_claude_code"
+		credentialPayload = map[string]interface{}{"access": apiKey}
+		if oauthCredential, oauthNote := resolveClaudeOAuthCredential(); oauthCredential != nil {
+			credentialPayload = oauthCredential.Payload()
+			if oauthNote != "" {
+				apiKeyNote = oauthNote
+			}
+		}
+		apiKey = ""
+	}
 	if apiKeyNote != "" {
 		notes = append(notes, apiKeyNote)
 	}
-	if apiKey == "" && resolveClaudeOAuthEmail() != "" {
+	if apiKey == "" && credentialType == "" && resolveClaudeOAuthEmail() != "" {
 		notes = append(
 			notes,
 			"Claude Code appears to rely on local OAuth/keychain auth, but no reusable upstream token was available for automatic import.",
@@ -1599,9 +1469,15 @@ func parseClaudeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 		ModelIdentifier:   modelID,
 		APIEndpoint:       normalizeAIModelEndpoint(lookupString(document, "env", "ANTHROPIC_BASE_URL")),
 		APIKey:            apiKey,
+		CredentialType:    credentialType,
+		CredentialPayload: credentialPayload,
 		ManagedModelAlias: managedAlias,
 		Notes:             notes,
 	}, nil
+}
+
+func isClaudeCodeOAuthAccessToken(token string) bool {
+	return strings.HasPrefix(strings.TrimSpace(token), "sk-ant-oat")
 }
 
 func parseCodexManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
@@ -2032,6 +1908,9 @@ func resolveClaudeAuthToken(document map[string]interface{}) (string, string) {
 			return value, claudeShellExportNote(envKey)
 		}
 	}
+	if token, note := resolveClaudeManagedAPIKey(); token != "" {
+		return token, note
+	}
 	if token, note := resolveClaudeCredentialFileToken(); token != "" {
 		return token, note
 	}
@@ -2039,6 +1918,37 @@ func resolveClaudeAuthToken(document map[string]interface{}) (string, string) {
 		return token, note
 	}
 	return "", ""
+}
+
+func resolveClaudeManagedAPIKey() (string, string) {
+	if runtime.GOOS == "darwin" {
+		if user := strings.TrimSpace(os.Getenv("USER")); user != "" {
+			if token, err := keyring.Get("Claude Code", user); err == nil && strings.TrimSpace(token) != "" {
+				return strings.TrimSpace(token), "Resolved Claude Code managed API key from OS Keychain (service: Claude Code)."
+			}
+		}
+	}
+	if token := resolveClaudePrimaryAPIKey(); token != "" {
+		return token, "Resolved Claude Code managed API key from ~/.claude.json."
+	}
+	return "", ""
+}
+
+func resolveClaudePrimaryAPIKey() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(home, ".claude.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var document map[string]interface{}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(lookupString(document, "primaryApiKey"))
 }
 
 func resolveClaudeCredentialFileToken() (string, string) {
@@ -2096,6 +2006,154 @@ func resolveClaudeKeychainToken() (string, string) {
 		}
 	}
 	return "", ""
+}
+
+type claudeOAuthCredential struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresAtMS  int64
+}
+
+func (c *claudeOAuthCredential) Payload() map[string]interface{} {
+	if c == nil {
+		return map[string]interface{}{}
+	}
+	payload := map[string]interface{}{
+		"access": strings.TrimSpace(c.AccessToken),
+	}
+	if refresh := strings.TrimSpace(c.RefreshToken); refresh != "" {
+		payload["refresh"] = refresh
+	}
+	if c.ExpiresAtMS > 0 {
+		payload["expires"] = c.ExpiresAtMS
+	}
+	return payload
+}
+
+func resolveClaudeOAuthCredential() (*claudeOAuthCredential, string) {
+	if credential, note := resolveClaudeCredentialFileOAuthCredential(); credential != nil {
+		return credential, note
+	}
+	if runtime.GOOS == "darwin" {
+		if credential, note := resolveClaudeKeychainOAuthCredential(); credential != nil {
+			return credential, note
+		}
+	}
+	return nil, ""
+}
+
+func resolveClaudeCredentialFileOAuthCredential() (*claudeOAuthCredential, string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, ""
+	}
+	path := filepath.Join(home, ".claude", ".credentials.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, ""
+	}
+	credential := parseClaudeOAuthCredentialBlob(
+		string(data),
+		time.Now().UTC().Add(time.Hour).UnixMilli(),
+	)
+	if credential == nil {
+		return nil, ""
+	}
+	return credential, fmt.Sprintf("Resolved Claude Code OAuth credentials from %s.", path)
+}
+
+func resolveClaudeKeychainOAuthCredential() (*claudeOAuthCredential, string) {
+	if raw := readClaudeKeychainCredentialBlob(); raw != "" {
+		if credential := parseClaudeOAuthCredentialBlob(
+			raw,
+			time.Now().UTC().Add(time.Hour).UnixMilli(),
+		); credential != nil {
+			return credential, "Resolved Claude Code OAuth credentials from OS Keychain (service: Claude Code-credentials)."
+		}
+	}
+	return nil, ""
+}
+
+func parseClaudeOAuthCredentialBlob(raw string, fallbackExpiry int64) *claudeOAuthCredential {
+	var document map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &document); err != nil {
+		return nil
+	}
+	candidatePaths := [][]string{
+		{"claudeAiOauth"},
+		{"oauth"},
+		{"anthropic"},
+		{"claude"},
+		{},
+	}
+	for _, path := range candidatePaths {
+		container := document
+		if len(path) > 0 {
+			var ok bool
+			container, ok = asObjectMap(lookupValue(document, path...))
+			if !ok {
+				continue
+			}
+		}
+		access := firstNonEmptyString(
+			lookupString(container, "accessToken"),
+			lookupString(container, "access_token"),
+			lookupString(container, "authToken"),
+			lookupString(container, "token"),
+		)
+		if !isClaudeCodeOAuthAccessToken(access) {
+			continue
+		}
+		refresh := firstNonEmptyString(
+			lookupString(container, "refreshToken"),
+			lookupString(container, "refresh_token"),
+		)
+		expires := coerceEpochMillis(container["expiresAt"])
+		if expires == 0 {
+			expires = coerceEpochMillis(container["expires_at"])
+		}
+		if expires == 0 {
+			expires = decodeJWTExpiryMillis(access)
+		}
+		if expires == 0 {
+			expires = fallbackExpiry
+		}
+		return &claudeOAuthCredential{
+			AccessToken:  access,
+			RefreshToken: refresh,
+			ExpiresAtMS:  expires,
+		}
+	}
+	return nil
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func coerceEpochMillis(raw interface{}) int64 {
+	switch value := raw.(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	case json.Number:
+		parsed, _ := value.Int64()
+		return parsed
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func readClaudeKeychainCredentialBlob() string {

@@ -316,32 +316,37 @@ export class ToolListItem extends LitElement {
   private _renderExpandedContent() {
     return html`
       <div class="tool-content">
-        ${this.rulesInherited
-          ? html`
-              <sl-alert
-                variant="primary"
-                open
-                style="margin-bottom: var(--sl-spacing-medium);"
-              >
-                <sl-icon slot="icon" name="info-circle"></sl-icon>
-                <strong>Inherited Configuration</strong><br />
-                These rules are inherited from the global API Catalog. Saving
-                any changes or toggling this tool will create an override
-                specific to this agent.
-              </sl-alert>
-            `
-          : html`
-              <sl-button
-                variant="warning"
-                outline
-                size="small"
-                @click=${this._revertToGlobal}
-                style="margin-bottom: var(--sl-spacing-medium);"
-              >
-                <sl-icon slot="prefix" name="arrow-counterclockwise"></sl-icon>
-                Restore global settings
-              </sl-button>
-            `}
+        ${this.mode === 'scoped'
+          ? this.rulesInherited
+            ? html`
+                <sl-alert
+                  variant="primary"
+                  open
+                  style="margin-bottom: var(--sl-spacing-medium);"
+                >
+                  <sl-icon slot="icon" name="info-circle"></sl-icon>
+                  <strong>Inherited Configuration</strong><br />
+                  These rules are inherited from the global API Catalog. Saving
+                  any changes or toggling this tool will create an override
+                  specific to this agent.
+                </sl-alert>
+              `
+            : html`
+                <sl-button
+                  variant="warning"
+                  outline
+                  size="small"
+                  @click=${this._revertToGlobal}
+                  style="margin-bottom: var(--sl-spacing-medium);"
+                >
+                  <sl-icon
+                    slot="prefix"
+                    name="arrow-counterclockwise"
+                  ></sl-icon>
+                  Restore global settings
+                </sl-button>
+              `
+          : ''}
         ${this.tool.description
           ? html`<div
               style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-600); margin-bottom: var(--sl-spacing-small);"

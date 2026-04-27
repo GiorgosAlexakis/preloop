@@ -143,6 +143,7 @@ export interface GatewayUsageByExecution {
 }
 
 export interface GatewayUsageBySession {
+  ai_model_id?: string | null;
   runtime_session_id?: string | null;
   runtime_session_name?: string | null;
   session_source_type?: string | null;

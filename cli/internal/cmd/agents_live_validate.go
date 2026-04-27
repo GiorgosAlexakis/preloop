@@ -29,7 +29,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +118,15 @@ type liveValidationContext struct {
 	// it has been logged. Per-agent code only needs to make sure ``Prompt``
 	// reaches the upstream verbatim.
 	ValidationToken string
+
+	// AvailableModels is the account's current model registry. Builders can
+	// use this to resolve provider selector keys dynamically instead of
+	// baking model-version aliases into the CLI.
+	AvailableModels []aiModelResponse
+
+	// ManagedAgent is the server-side detail for the enrolled agent. It
+	// includes configured model bindings when the control plane has them.
+	ManagedAgent managedAgentDetailResponse
 }
 
 // gatewayLiveValidationBuilder is the per-agent function that turns a
@@ -153,6 +167,23 @@ func runGatewayLiveValidation(
 			}),
 		}, err
 	}
+	skippedOutcome := func(reason string) (*managedLiveValidationOutcome, error) {
+		return &managedLiveValidationOutcome{
+			Attempted: false,
+			Passed:    false,
+			ValidationResult: mergeStringMaps(validationResult, map[string]interface{}{
+				"live_validation_attempted":   false,
+				"live_validation_passed":      nil,
+				"live_validation_status":      "not_run",
+				"live_validation_skip_reason": reason,
+				"live_validation_endpoint":    endpointKey,
+			}),
+		}, nil
+	}
+
+	if reason := missingManagedGatewayValidationPrerequisite(validationResult); reason != "" {
+		return skippedOutcome(reason)
+	}
 
 	baseURL, err := resolveConfiguredAPIURL()
 	if err != nil {
@@ -168,6 +199,7 @@ func runGatewayLiveValidation(
 	if err != nil {
 		return failedOutcome(err)
 	}
+	availableModels := listManagedValidationAIModels(client)
 
 	validationToken := fmt.Sprintf("preloop-validation-%d", time.Now().UTC().UnixNano())
 	prompt := fmt.Sprintf(
@@ -180,12 +212,14 @@ func runGatewayLiveValidation(
 		BaseURL:         baseURL,
 		Prompt:          prompt,
 		ValidationToken: validationToken,
+		AvailableModels: availableModels,
+		ManagedAgent:    *detail,
 	})
 	if err != nil {
 		return failedOutcome(err)
 	}
 	if strings.TrimSpace(spec.Token) == "" {
-		return failedOutcome(fmt.Errorf(
+		return skippedOutcome(fmt.Sprintf(
 			"managed %s config does not contain a Preloop gateway token",
 			resolveAgentDisplayName(agent),
 		))
@@ -213,19 +247,29 @@ func runGatewayLiveValidation(
 	_ = gatewayResponse
 
 	apiKeyID := mostLikelyManagedAPIKeyID(detail.Credentials)
-	searchHit, searchErr := waitForManagedValidationUsage(
-		client,
-		runtimePrincipalIDForAgent(agent),
-		apiKeyID,
-		spec.ModelAlias,
-		validationToken,
-	)
+	var searchHit *gatewayUsageSearchItem
+	var searchErr error
+	if requestErr == nil {
+		searchHit, searchErr = waitForManagedValidationUsage(
+			client,
+			runtimePrincipalIDForAgent(agent),
+			apiKeyID,
+			spec.ModelAlias,
+			validationToken,
+		)
+	}
 
 	passed := requestErr == nil && searchErr == nil && searchHit != nil && searchHit.StatusCode < 400
+	liveValidationStatus := "failed"
+	if passed {
+		liveValidationStatus = "passed"
+	} else if isUpstreamRateLimitedValidationError(requestErr) {
+		liveValidationStatus = "throttled"
+	}
 	result := mergeStringMaps(validationResult, map[string]interface{}{
 		"live_validation_attempted":      true,
 		"live_validation_passed":         passed,
-		"live_validation_status":         "failed",
+		"live_validation_status":         liveValidationStatus,
 		"live_validation_token":          validationToken,
 		"live_validation_prompt":         prompt,
 		"live_validation_model_alias":    spec.ModelAlias,
@@ -233,8 +277,8 @@ func runGatewayLiveValidation(
 		"live_validation_runtime_source": runtimePrincipalIDForAgent(agent),
 		"live_validation_endpoint":       endpointKey,
 	})
-	if passed {
-		result["live_validation_status"] = "passed"
+	if liveValidationStatus == "throttled" {
+		result["live_validation_failure_reason"] = "upstream_rate_limited"
 	}
 	if apiKeyID != "" {
 		result["live_validation_api_key_id"] = apiKeyID
@@ -273,6 +317,50 @@ func runGatewayLiveValidation(
 	}, validationErr
 }
 
+func isUpstreamRateLimitedValidationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "rate_limit_error") ||
+		strings.Contains(message, "ratelimiterror") ||
+		strings.Contains(message, "throttling_error") ||
+		strings.Contains(message, "status 429")
+}
+
+func listManagedValidationAIModels(client *api.Client) []aiModelResponse {
+	if client == nil {
+		return nil
+	}
+	var models []aiModelResponse
+	if err := client.Get("/api/v1/ai-models", &models); err != nil {
+		return nil
+	}
+	return models
+}
+
+func missingManagedGatewayValidationPrerequisite(
+	validationResult map[string]interface{},
+) string {
+	for _, prerequisite := range []struct {
+		key   string
+		label string
+	}{
+		{"gateway_provider_ok", "provider"},
+		{"gateway_base_url_ok", "base URL"},
+		{"gateway_token_ok", "token"},
+	} {
+		value, present := validationResult[prerequisite.key]
+		if present && value != true {
+			return fmt.Sprintf(
+				"managed model gateway %s is not configured",
+				prerequisite.label,
+			)
+		}
+	}
+	return ""
+}
+
 // ---------------------------------------------------------------------------
 // Per-agent payload builders.
 //
@@ -281,6 +369,30 @@ func runGatewayLiveValidation(
 // builders are split out (rather than inlined into shims) to keep them
 // trivially testable in isolation.
 // ---------------------------------------------------------------------------
+
+// buildOpenClawLiveValidationSpec builds the gateway request used to verify
+// an OpenClaw onboarding. OpenClaw's managed config points its primary model
+// at the “preloop“ provider and stores the durable gateway token on that
+// provider. The probe must use the exact configured model ref because
+// OpenClaw itself sends “preloop/<alias>“ to the OpenAI-compatible gateway.
+func buildOpenClawLiveValidationSpec(ctx liveValidationContext) (gatewayLiveValidationSpec, error) {
+	token := resolveOpenClawManagedGatewayToken(ctx.Document)
+	modelAlias := strings.TrimSpace(extractOpenClawPrimaryModel(ctx.Document))
+	if modelAlias == "" {
+		for _, binding := range ctx.ManagedAgent.Agent.ConfiguredModels {
+			if strings.TrimSpace(binding.GatewayAlias) != "" {
+				modelAlias = strings.TrimSpace(binding.GatewayAlias)
+				break
+			}
+		}
+	}
+	return gatewayLiveValidationSpec{
+		Endpoint:   "/openai/v1/chat/completions",
+		Body:       buildChatCompletionsLiveValidationPayload(modelAlias, ctx.Prompt),
+		Token:      token,
+		ModelAlias: modelAlias,
+	}, nil
+}
 
 // buildHermesLiveValidationSpec builds the gateway request used to verify a
 // Hermes onboarding. Hermes is wired up through “model.provider: custom“
@@ -376,17 +488,28 @@ func buildClaudeCodeLiveValidationSpec(ctx liveValidationContext) (gatewayLiveVa
 	if modelAlias == "" {
 		modelAlias = strings.TrimSpace(lookupString(ctx.Document, "model"))
 	}
+	if selection := claudeSelectionFromModelRef(modelAlias); selection != "" {
+		selectionAlias := resolveClaudeSelectionGatewayModelAlias(
+			selection,
+			ctx.AvailableModels,
+			ctx.ManagedAgent.Agent.ConfiguredModels,
+		)
+		if selectionAlias == "" {
+			return gatewayLiveValidationSpec{}, fmt.Errorf(
+				"could not resolve Claude Code model selector %q to an account AI model",
+				modelAlias,
+			)
+		}
+		modelAlias = selectionAlias
+	}
 	// Strip the optional ``preloop/`` provider prefix so the gateway's
 	// ``alias.endswith("/" + requested)`` resolver matches whether the
 	// stored alias is the bare ``anthropic/<model>`` form or the
 	// ``preloop/anthropic/<model>`` prefixed form. Without this strip a
-	// stored alias of ``preloop/anthropic/claude-opus-4-6`` and a sent
-	// value of ``preloop/anthropic/claude-opus-4-6`` only matches via
-	// the equality branch, while a stored alias of
-	// ``anthropic/claude-opus-4-6`` (the canonical normalised form on the
-	// account model registry) can never match the prefixed sent value at
-	// all — which was a second class of "Requested model not found"
-	// failures we hit during multi-account testing.
+	// stored aliases can exist with or without the ``preloop/`` prefix.
+	// Normalising the request alias lets the gateway resolver match either
+	// account-model shape and avoids "Requested model not found" failures
+	// caused by equivalent but differently prefixed aliases.
 	modelAlias = strings.TrimPrefix(modelAlias, "preloop/")
 	return gatewayLiveValidationSpec{
 		Endpoint:   "/anthropic/v1/messages",
@@ -410,6 +533,218 @@ func buildClaudeCodeLiveValidationSpec(ctx liveValidationContext) (gatewayLiveVa
 // "stable" GA release), so pinning to it keeps live validation working
 // even if the upstream introduces newer breaking-change versions later.
 const anthropicAPIVersion = "2023-06-01"
+
+func isClaudeSelectionKey(model string) bool {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "haiku", "sonnet", "opus":
+		return true
+	default:
+		return false
+	}
+}
+
+func claudeSelectionFromModelRef(model string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(model))
+	if isClaudeSelectionKey(trimmed) {
+		return trimmed
+	}
+	parts := strings.Split(trimmed, "/")
+	if len(parts) > 0 && isClaudeSelectionKey(parts[len(parts)-1]) {
+		return parts[len(parts)-1]
+	}
+	return ""
+}
+
+func resolveClaudeSelectionGatewayModelAlias(
+	selection string,
+	models []aiModelResponse,
+	bindings []managedAgentModelBindingSummary,
+) string {
+	selection = strings.ToLower(strings.TrimSpace(selection))
+	type candidate struct {
+		alias string
+		key   []int
+	}
+	candidates := make([]candidate, 0)
+	for _, binding := range bindings {
+		alias := strings.TrimSpace(binding.GatewayAlias)
+		identifier := strings.TrimSpace(binding.ModelIdentifier)
+		if alias == "" ||
+			claudeSelectionFromModelRef(alias) != "" ||
+			claudeSelectionFromModelRef(identifier) != "" ||
+			!claudeModelMatchesSelection(selection, alias, identifier) {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			alias: alias,
+			key:   modelVersionSortKey(alias + " " + identifier),
+		})
+	}
+	for _, model := range models {
+		provider := strings.ToLower(strings.TrimSpace(model.ProviderName))
+		identifier := strings.TrimSpace(model.ModelIdentifier)
+		if provider != "anthropic" ||
+			claudeSelectionFromModelRef(identifier) != "" ||
+			!claudeModelMatchesSelection(selection, identifier, model.Name) {
+			continue
+		}
+		alias := "anthropic/" + identifier
+		candidates = append(candidates, candidate{
+			alias: alias,
+			key:   modelVersionSortKey(identifier + " " + model.Name),
+		})
+	}
+	if len(candidates) == 0 {
+		return resolveClaudeSelectionFromAnthropicModels(selection)
+	}
+	best := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if compareVersionSortKeys(candidate.key, best.key) > 0 {
+			best = candidate
+		}
+	}
+	return strings.TrimPrefix(best.alias, "preloop/")
+}
+
+func resolveClaudeSelectionFromAnthropicModels(selection string) string {
+	credential, _ := resolveClaudeOAuthCredential()
+	token := ""
+	if credential != nil {
+		token = strings.TrimSpace(credential.AccessToken)
+	}
+	if token == "" {
+		if managedKey, _ := resolveClaudeManagedAPIKey(); managedKey != "" {
+			token = managedKey
+		}
+	}
+	if token == "" {
+		return ""
+	}
+	models, err := fetchAnthropicModelIDs(token)
+	if err != nil {
+		return ""
+	}
+	return selectHighestClaudeModelAlias(selection, models)
+}
+
+func fetchAnthropicModelIDs(token string) ([]string, error) {
+	req, err := http.NewRequest(http.MethodGet, "https://api.anthropic.com/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("anthropic-version", anthropicAPIVersion)
+	if isClaudeCodeOAuthAccessToken(token) {
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	} else {
+		req.Header.Set("x-api-key", token)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Anthropic models request failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		if id := strings.TrimSpace(item.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+func selectHighestClaudeModelAlias(selection string, modelIDs []string) string {
+	type candidate struct {
+		id  string
+		key []int
+	}
+	candidates := make([]candidate, 0)
+	for _, id := range modelIDs {
+		if !claudeModelMatchesSelection(selection, id) ||
+			claudeSelectionFromModelRef(id) != "" {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			id:  id,
+			key: modelVersionSortKey(id),
+		})
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	best := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if compareVersionSortKeys(candidate.key, best.key) > 0 {
+			best = candidate
+		}
+	}
+	return "anthropic/" + best.id
+}
+
+func claudeModelMatchesSelection(selection string, values ...string) bool {
+	needle := strings.ToLower(strings.TrimSpace(selection))
+	if needle == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func modelVersionSortKey(value string) []int {
+	matches := regexp.MustCompile(`\d+`).FindAllString(value, -1)
+	key := make([]int, 0, len(matches))
+	for _, match := range matches {
+		parsed, err := strconv.Atoi(match)
+		if err != nil {
+			continue
+		}
+		key = append(key, parsed)
+	}
+	return key
+}
+
+func compareVersionSortKeys(left, right []int) int {
+	limit := len(left)
+	if len(right) > limit {
+		limit = len(right)
+	}
+	for i := 0; i < limit; i++ {
+		l, r := 0, 0
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		switch {
+		case l > r:
+			return 1
+		case l < r:
+			return -1
+		}
+	}
+	return 0
+}
 
 // buildGeminiLiveValidationSpec builds the gateway request used to verify
 // a Gemini CLI onboarding. Gemini is wired up via “apiKey“ and “baseUrl“
@@ -527,6 +862,20 @@ func buildGeminiGenerateContentLiveValidationPayload(prompt string) map[string]i
 // ---------------------------------------------------------------------------
 // Shim runners that wire the per-agent builders into the shared driver.
 // ---------------------------------------------------------------------------
+
+func runOpenClawLiveValidation(
+	client *api.Client,
+	agent AgentConfig,
+	validationResult map[string]interface{},
+) (*managedLiveValidationOutcome, error) {
+	return runGatewayLiveValidation(
+		client,
+		agent,
+		validationResult,
+		"/openai/v1/chat/completions",
+		buildOpenClawLiveValidationSpec,
+	)
+}
 
 func runHermesLiveValidation(
 	client *api.Client,
@@ -761,6 +1110,11 @@ func printDeferredLiveValidationLine(
 		return
 	}
 	if !result.Outcome.Attempted {
+		reason, _ := result.Outcome.ValidationResult["live_validation_skip_reason"].(string)
+		if strings.TrimSpace(reason) != "" {
+			fmt.Fprintf(output, "  • %s: live validation not run (%s)\n", name, reason)
+			return
+		}
 		fmt.Fprintf(output, "  • %s: live validation unsupported\n", name)
 		return
 	}
@@ -774,17 +1128,23 @@ func printDeferredLiveValidationLine(
 		return
 	}
 	if result.Err != nil {
+		status, _ := result.Outcome.ValidationResult["live_validation_status"].(string)
+		label := "failed"
+		if status == "throttled" {
+			label = "throttled"
+		}
 		fmt.Fprintf(
 			output,
-			"  ✗ %s: live validation failed (%dms): %v\n",
+			"  ✗ %s: live validation %s (%dms): %v\n",
 			name,
+			label,
 			result.Duration.Milliseconds(),
 			result.Err,
 		)
 		fmt.Fprintf(
 			output,
-			"      Run 'preloop agents validate %s --live' to retry and inspect the full error.\n",
-			name,
+			"      Run: preloop agents validate %s --live\n",
+			shellQuoteAgentName(name),
 		)
 		return
 	}
@@ -794,4 +1154,18 @@ func printDeferredLiveValidationLine(
 		name,
 		result.Duration.Milliseconds(),
 	)
+}
+
+func shellQuoteAgentName(name string) string {
+	if !strings.ContainsAny(name, " \t\n'\"\\$`") {
+		return name
+	}
+	escaped := strings.NewReplacer(
+		"\\", "\\\\",
+		"\"", "\\\"",
+		"$", "\\$",
+		"`", "\\`",
+		"\n", "\\n",
+	).Replace(name)
+	return `"` + escaped + `"`
 }

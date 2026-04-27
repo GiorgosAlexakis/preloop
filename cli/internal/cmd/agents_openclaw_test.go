@@ -1066,6 +1066,50 @@ func TestExtractClaudeTokenFromCredentialBlobSupportsClaudeAiOauthAccessToken(t 
 	}
 }
 
+func TestResolveClaudePrimaryAPIKey(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
+	if err := os.WriteFile(
+		filepath.Join(home, ".claude.json"),
+		[]byte(`{"primaryApiKey":"sk-ant-api03-managed"}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write Claude config: %v", err)
+	}
+	if got := resolveClaudePrimaryAPIKey(); got != "sk-ant-api03-managed" {
+		t.Fatalf("expected primary API key, got %#v", got)
+	}
+}
+
+func TestParseClaudeOAuthCredentialBlob(t *testing.T) {
+	raw := `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-access","refreshToken":"refresh-token","expiresAt":1893456000000}}`
+	credential := parseClaudeOAuthCredentialBlob(raw, 0)
+	if credential == nil {
+		t.Fatal("expected Claude OAuth credential")
+	}
+	if credential.AccessToken != "sk-ant-oat01-access" {
+		t.Fatalf("unexpected access token %#v", credential.AccessToken)
+	}
+	if credential.RefreshToken != "refresh-token" {
+		t.Fatalf("unexpected refresh token %#v", credential.RefreshToken)
+	}
+	if credential.ExpiresAtMS != 1893456000000 {
+		t.Fatalf("unexpected expiry %#v", credential.ExpiresAtMS)
+	}
+	payload := credential.Payload()
+	if payload["access"] != "sk-ant-oat01-access" ||
+		payload["refresh"] != "refresh-token" ||
+		payload["expires"] != int64(1893456000000) {
+		t.Fatalf("unexpected payload %#v", payload)
+	}
+}
+
 func TestWaitForManagedValidationUsage_FindsIndexedEvent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.RawQuery, "runtime_principal_id=octavia-123") {

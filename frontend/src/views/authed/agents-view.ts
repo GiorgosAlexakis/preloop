@@ -20,13 +20,18 @@ import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 import '@shoelace-style/shoelace/dist/components/copy-button/copy-button.js';
 import '../../components/view-header.ts';
+import '../../components/resource-actions.ts';
+import type { ResourceAction } from '../../components/resource-actions.ts';
 import {
+  fetchWithAuth,
   getAccountAgents,
   removeAccountAgent,
   getAccountGatewayUsageSummary,
   getFlows,
   getFlowExecutions,
   getAIModels,
+  getFeatures,
+  updateAccountAgent,
   type ManagedAgentListParams,
 } from '../../api';
 import type {
@@ -39,16 +44,44 @@ import consoleStyles from '../../styles/console-styles.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import { renderAgentIcon } from '../../utils/agent-icons';
 
+const AVAILABLE_AGENT_KINDS = [
+  { value: 'openclaw', label: 'OpenClaw' },
+  { value: 'opencode', label: 'OpenCode' },
+  { value: 'claude_code', label: 'Claude Code' },
+  { value: 'codex', label: 'Codex CLI' },
+  { value: 'gemini_cli', label: 'Gemini CLI' },
+  { value: 'hermes', label: 'Hermes' },
+  { value: 'cursor', label: 'Cursor' },
+  { value: 'windsurf', label: 'Windsurf' },
+  { value: 'flows', label: 'Flows' },
+];
+
+const DEFAULT_AGENT_KINDS = AVAILABLE_AGENT_KINDS.map((k) => k.value).filter(
+  (k) => k !== 'flows'
+);
+
 @customElement('agents-view')
 export class AgentsView extends LitElement {
   @state() private agents: AccountManagedAgentListResponse | null = null;
   @state() private loading = true;
   @state() private error: string | null = null;
   @state() private searchQuery = '';
-  @state() private agentKinds: string[] = ['all'];
+  @state() private agentKinds: string[] = (() => {
+    try {
+      const saved = localStorage.getItem('preloopAgentKinds');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return DEFAULT_AGENT_KINDS;
+  })();
   @state() private lastSeenAfter = 'all';
   @state() private flows: any[] = [];
   @state() private aiModels: AIModel[] = [];
+  @state() private availableUsers: Array<{
+    id: string;
+    username: string;
+    email: string;
+  }> = [];
+  @state() private featureFlags: { [key: string]: boolean | string[] } = {};
 
   @state() private actionAgentId: string | null = null;
   @state() private liveActivity: Record<
@@ -84,10 +117,14 @@ export class AgentsView extends LitElement {
 
   // Node Dragging State
   @state() private nodePositions: Record<string, { x: number; y: number }> = {};
+  @state() private nodeAnimationState: Record<string, 'entering' | 'exiting'> =
+    {};
   private draggingNodeId: string | null = null;
   private nodeStartX = 0;
   private nodeStartY = 0;
   private dragHasMoved = false;
+  private exitingCanvasItems = new Map<string, any>();
+  private nodeAnimationTimers = new Map<string, number>();
 
   // Viewport Dragging State
   private isDragging = false;
@@ -128,6 +165,42 @@ export class AgentsView extends LitElement {
       .filters sl-input {
         flex: 1 1 280px;
       }
+      .agents-toolbar {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: var(--sl-spacing-medium);
+        flex-wrap: wrap;
+        width: 100%;
+      }
+      .agents-toolbar .filters {
+        flex: 1 1 520px;
+        min-width: 0;
+      }
+      .view-switcher-group {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-medium);
+        margin: auto;
+      }
+      .view-switcher-group sl-radio-group {
+        white-space: nowrap;
+      }
+      .toolbar-divider {
+        width: 1px;
+        height: 32px;
+        background: var(--sl-color-neutral-300);
+      }
+      @media (max-width: 900px) {
+        .view-switcher-group {
+          margin-left: 0;
+          width: 100%;
+          justify-content: flex-end;
+        }
+        .toolbar-divider {
+          display: none;
+        }
+      }
       .cards {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -139,6 +212,11 @@ export class AgentsView extends LitElement {
       }
       .agent-card {
         max-width: 400px;
+        cursor: pointer;
+      }
+      .agent-card:focus-visible::part(base) {
+        outline: 2px solid var(--sl-color-primary-500);
+        outline-offset: 2px;
       }
       .agent-card.live::part(base) {
         border-color: var(--sl-color-primary-500);
@@ -161,10 +239,10 @@ export class AgentsView extends LitElement {
         display: flex;
         flex-direction: column;
         gap: var(--sl-spacing-medium);
+        position: relative;
       }
       .title-row,
-      .metric-row,
-      .action-row {
+      .metric-row {
         display: flex;
         justify-content: space-between;
         gap: var(--sl-spacing-small);
@@ -174,6 +252,7 @@ export class AgentsView extends LitElement {
         align-items: start;
         border-bottom: 1px solid var(--sl-color-neutral-200);
         padding-bottom: var(--sl-spacing-small);
+        padding-right: 44px;
       }
       .agent-name {
         font-weight: 700;
@@ -185,6 +264,11 @@ export class AgentsView extends LitElement {
         font-size: var(--sl-font-size-small);
         margin-top: var(--sl-spacing-3x-small);
         overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .label {
         opacity: 0.7;
@@ -196,10 +280,11 @@ export class AgentsView extends LitElement {
         font-size: 0.95rem;
         text-align: right;
       }
-      .action-row {
-        border-top: 1px solid var(--sl-color-neutral-200);
-        padding-top: var(--sl-spacing-medium);
-        margin-top: var(--sl-spacing-small);
+      .card-actions {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        z-index: 2;
       }
       .empty-state {
         border: 1px dashed var(--sl-color-neutral-300);
@@ -208,8 +293,7 @@ export class AgentsView extends LitElement {
         color: var(--sl-color-neutral-600);
         background: var(--sl-color-neutral-0);
       }
-      :host(:host-context(.sl-theme-dark)) .title-row,
-      :host(:host-context(.sl-theme-dark)) .action-row {
+      :host(:host-context(.sl-theme-dark)) .title-row {
         border-color: var(--sl-color-neutral-800);
       }
 
@@ -402,10 +486,27 @@ export class AgentsView extends LitElement {
         width: 250px;
         touch-action: none;
         cursor: pointer;
+        opacity: 1;
+        transition: opacity 220ms ease;
+      }
+      .agent-node.entering {
+        animation: node-fade-in 240ms ease-out both;
+      }
+      .agent-node.exiting {
+        opacity: 0;
+        pointer-events: none;
       }
       .agent-node.dragging {
         z-index: 100;
         cursor: grabbing;
+      }
+      @keyframes node-fade-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
       }
       .agent-node sl-card {
         width: 100%;
@@ -441,6 +542,13 @@ export class AgentsView extends LitElement {
         transform: translate(-50%, -50%);
         width: 1px;
         height: 1px;
+        transition: opacity 220ms ease;
+      }
+      .connection-line.entering {
+        animation: node-fade-in 240ms ease-out both;
+      }
+      .connection-line.exiting {
+        opacity: 0;
       }
       @media (prefers-color-scheme: dark) {
         .canvas-container {
@@ -451,7 +559,7 @@ export class AgentsView extends LitElement {
           color: var(--sl-color-primary-400);
         }
         .controls-overlay {
-          border-color: var(--sl-color-neutral-800);
+          border-color: var(--sl-color-neutral-400);
         }
       }
     `,
@@ -506,6 +614,10 @@ export class AgentsView extends LitElement {
       window.clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+    for (const timer of this.nodeAnimationTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    this.nodeAnimationTimers.clear();
   }
 
   onBeforeLeave() {
@@ -545,6 +657,17 @@ export class AgentsView extends LitElement {
     }, 250);
   }
 
+  private async fetchUsers(): Promise<
+    Array<{ id: string; username: string; email: string }>
+  > {
+    const response = await fetchWithAuth('/api/v1/users');
+    if (!response.ok) {
+      return [];
+    }
+    const data = await response.json();
+    return data.users || [];
+  }
+
   private async loadAgents(): Promise<void> {
     this.loading = true;
     this.error = null;
@@ -553,18 +676,17 @@ export class AgentsView extends LitElement {
       limit: 50,
     };
 
-    // If 'all' is selected, clear agentKind param for backend. If specific kinds are selected, send comma separated.
-    const selectedAgentKinds = this.agentKinds.includes('all')
-      ? []
-      : this.agentKinds.filter((k) => k !== 'flows');
-    if (selectedAgentKinds.length > 0) {
+    const selectedAgentKinds = this.agentKinds.filter((k) => k !== 'flows');
+    if (this.agentKinds.length === AVAILABLE_AGENT_KINDS.length) {
+      // Send nothing, backend will return everything by default
+    } else if (selectedAgentKinds.length > 0) {
       params.agentKind = selectedAgentKinds.join(',');
-    } else if (!this.agentKinds.includes('all')) {
+    } else {
       params.agentKind = '__none__'; // Send a dummy value so no agents match this request
     }
-    // We handle the 'flows' display separately in frontend if not 'all'
-    const includeFlows =
-      this.agentKinds.includes('all') || this.agentKinds.includes('flows');
+    // We handle the 'flows' display separately in frontend
+    const includeFlows = this.agentKinds.includes('flows');
+    const previousCanvasItems = this.getCanvasItems({ includeExiting: false });
 
     if (this.lastSeenAfter !== 'all') {
       const now = Date.now();
@@ -615,13 +737,21 @@ export class AgentsView extends LitElement {
 
     try {
       // Parallel fetch
-      const [agentsData, gatewayData, flowsData, modelsData] =
-        await Promise.all([
-          getAccountAgents(params),
-          getAccountGatewayUsageSummary(),
-          getFlows(),
-          getAIModels().catch(() => [] as AIModel[]),
-        ]);
+      const [
+        agentsData,
+        gatewayData,
+        flowsData,
+        modelsData,
+        featuresData,
+        users,
+      ] = await Promise.all([
+        getAccountAgents(params),
+        getAccountGatewayUsageSummary(),
+        getFlows(),
+        getAIModels().catch(() => [] as AIModel[]),
+        getFeatures().catch(() => ({ features: {} })),
+        this.fetchUsers().catch(() => []),
+      ]);
 
       // Handle custom local empty case for dummy filter
       if (params.agentKind === '__none__') {
@@ -648,13 +778,11 @@ export class AgentsView extends LitElement {
         alertEl.toast();
       }
 
-      const shouldForceReset =
-        this.previousAgentCount !== -1 &&
-        agentsData.items.length !== this.previousAgentCount;
-
       this.agents = agentsData;
       this.previousAgentCount = agentsData.items.length;
       this.gatewaySummary = gatewayData;
+      this.featureFlags = featuresData?.features || {};
+      this.availableUsers = users;
 
       if (!this.hasAutoOpenedOnboarding && this.previousAgentCount === 0) {
         this.showOnboardingDialog = true;
@@ -705,7 +833,11 @@ export class AgentsView extends LitElement {
         this.flows = activeFlows;
       }
 
-      this.initializeNodePositions(shouldForceReset);
+      this.updateCanvasItemTransitions(
+        this.getCanvasItems({ includeExiting: false }),
+        previousCanvasItems
+      );
+      this.initializeNodePositions(false);
     } catch (error) {
       console.error('Failed to load managed agents or gateway summary:', error);
       this.error =
@@ -719,8 +851,13 @@ export class AgentsView extends LitElement {
 
   private initializeNodePositions(forceReset = false) {
     if (!this.agents) return;
-    const items = [...(this.agents?.items || []), ...this.flows];
+    const items = this.getCanvasItems({ includeExiting: false });
     let newPositions = forceReset ? {} : { ...this.nodePositions };
+    const compactStaleLayout =
+      !forceReset && this.shouldCompactCanvasLayout(items, newPositions);
+    if (compactStaleLayout) {
+      newPositions = {};
+    }
 
     const unpositionedAgents = items.filter((a) => !newPositions[a.id]);
 
@@ -736,38 +873,8 @@ export class AgentsView extends LitElement {
       // Recompute the entire layout to fit the canvas viewport.
       newPositions = this.computeFittedLayout(items);
     } else {
-      // Append new agents to the existing layout without disturbing what's
-      // already placed. Pick free slots that don't collide with current
-      // positions, expanding outward in rings around the gateway.
-      const takenCoords = new Set(
-        Object.values(newPositions).map((p) => `${p.x},${p.y}`)
-      );
-
-      const directions = [
-        { x: -1, y: -1 }, // Top Left
-        { x: 1, y: -1 }, // Top Right
-        { x: -1, y: 1 }, // Bottom Left
-        { x: 1, y: 1 }, // Bottom Right
-      ];
-
-      let nextSlotIndex = 0;
       unpositionedAgents.forEach((agent) => {
-        let placed = false;
-        while (!placed) {
-          const layer = Math.floor(nextSlotIndex / 4);
-          const dir = directions[nextSlotIndex % 4];
-          const distance = 250 + layer * 200;
-          const x = dir.x * distance;
-          const y = dir.y * distance;
-          const coord = `${x},${y}`;
-
-          if (!takenCoords.has(coord)) {
-            newPositions[agent.id] = { x, y };
-            takenCoords.add(coord);
-            placed = true;
-          }
-          nextSlotIndex++;
-        }
+        newPositions[agent.id] = this.findBestBlankCanvasPosition(newPositions);
       });
     }
 
@@ -777,219 +884,215 @@ export class AgentsView extends LitElement {
     );
     this.animateNodePositions(newPositions);
 
-    if (isFullLayout) {
-      // Make sure the freshly-laid-out nodes are actually visible: pick a
-      // scale/translate that frames every card. We do this off the main
-      // animation tick so the positions object is already settled.
+    if (isFullLayout || unpositionedAgents.length > 0) {
+      // Make sure the nodes are actually visible: pick a scale/translate
+      // that frames every card without moving existing card positions.
       requestAnimationFrame(() => this.fitViewportToPositions(newPositions));
     }
   }
 
-  /**
-   * Compute node positions that pack into the available canvas viewport.
-   *
-   * Priority order (per UX guideline):
-   *   1. Adjust the line length (ring radius) until adjacent cards stop
-   *      overlapping. Cards stay as close to the gateway as the
-   *      non-overlap constraint allows, so we don't pin them to the
-   *      viewport edges when there's no need.
-   *   2. If even at the viewport-fitting maximum a single ring would
-   *      overlap, switch to an alternative arrangement (rectangle
-   *      perimeter, which uses wide-aspect viewports much more
-   *      efficiently than an ellipse).
-   *   3. Only as a last resort, fall back to a single ring at the
-   *      smallest non-overlapping radius (which overflows the viewport)
-   *      so `fitViewportToPositions` can scale the canvas down. That is
-   *      the only path that ends up shrinking text.
-   */
+  private getCanvasItems(options: { includeExiting?: boolean } = {}) {
+    const currentItems = [
+      ...(this.agents?.items || []).filter(
+        (agent: any) =>
+          !this.flows.some((flow: any) => flow.id === agent.session_source_id)
+      ),
+      ...this.flows,
+    ];
+    if (!options.includeExiting || this.exitingCanvasItems.size === 0) {
+      return currentItems;
+    }
+    const currentIds = new Set(currentItems.map((item: any) => item.id));
+    return [
+      ...currentItems,
+      ...Array.from(this.exitingCanvasItems.values()).filter(
+        (item: any) => !currentIds.has(item.id)
+      ),
+    ];
+  }
+
+  private updateCanvasItemTransitions(
+    currentItems: any[],
+    previousItems: any[]
+  ) {
+    const currentIds = new Set(currentItems.map((item: any) => item.id));
+    const previousItemsById = new Map(
+      previousItems.map((item: any) => [item.id, item])
+    );
+    const previousIds = new Set(previousItemsById.keys());
+
+    for (const item of currentItems) {
+      if (!previousIds.has(item.id)) {
+        this.markNodeAnimation(item.id, 'entering', 280);
+      }
+      this.exitingCanvasItems.delete(item.id);
+    }
+
+    for (const previousId of previousIds) {
+      if (
+        currentIds.has(previousId) ||
+        this.exitingCanvasItems.has(previousId)
+      ) {
+        continue;
+      }
+      const previousItem = previousItemsById.get(previousId);
+      if (!previousItem) continue;
+      this.exitingCanvasItems.set(previousId, previousItem);
+      this.markNodeAnimation(previousId, 'exiting', 260, () => {
+        this.exitingCanvasItems.delete(previousId);
+        const { [previousId]: _removed, ...rest } = this.nodeAnimationState;
+        this.nodeAnimationState = rest;
+        this.requestUpdate();
+      });
+    }
+  }
+
+  private markNodeAnimation(
+    id: string,
+    state: 'entering' | 'exiting',
+    durationMs: number,
+    onDone?: () => void
+  ) {
+    const existing = this.nodeAnimationTimers.get(id);
+    if (existing !== undefined) {
+      window.clearTimeout(existing);
+    }
+    this.nodeAnimationState = { ...this.nodeAnimationState, [id]: state };
+    const timer = window.setTimeout(() => {
+      this.nodeAnimationTimers.delete(id);
+      if (onDone) {
+        onDone();
+        return;
+      }
+      const { [id]: _removed, ...rest } = this.nodeAnimationState;
+      this.nodeAnimationState = rest;
+    }, durationMs);
+    this.nodeAnimationTimers.set(id, timer);
+  }
+
+  private findBestBlankCanvasPosition(
+    positions: Record<string, { x: number; y: number }>
+  ): { x: number; y: number } {
+    const cardHalfWidth = 130;
+    const cardHalfHeight = 95;
+    const gap = 36;
+    const stepX = cardHalfWidth * 2 + gap;
+    const stepY = cardHalfHeight * 2 + gap;
+    const occupied = Object.values(positions);
+    const candidates = this.getCompactCanvasCandidates(
+      occupied.length + 12
+    ).sort(
+      (a, b) =>
+        this.canvasCandidateScore(a, occupied) -
+        this.canvasCandidateScore(b, occupied)
+    );
+
+    return (
+      candidates.find(
+        (candidate) =>
+          !occupied.some(
+            (pos) =>
+              Math.abs(pos.x - candidate.x) < stepX &&
+              Math.abs(pos.y - candidate.y) < stepY
+          )
+      ) || { x: 360 + occupied.length * 42, y: 280 }
+    );
+  }
+
+  private canvasCandidateScore(
+    candidate: { x: number; y: number },
+    occupied: Array<{ x: number; y: number }>
+  ): number {
+    const distanceFromGateway = Math.hypot(candidate.x, candidate.y);
+    if (occupied.length === 0) return distanceFromGateway;
+    const nearest = Math.min(
+      ...occupied.map((pos) =>
+        Math.hypot(pos.x - candidate.x, pos.y - candidate.y)
+      )
+    );
+    return distanceFromGateway - nearest * 0.08;
+  }
+
+  private getCompactCanvasCandidates(
+    desiredCount: number
+  ): Array<{ x: number; y: number }> {
+    const candidates: Array<{ x: number; y: number }> = [];
+    const rings = [
+      { rx: 360, ry: 270, slots: 6 },
+      { rx: 620, ry: 465, slots: 10 },
+      { rx: 880, ry: 660, slots: 14 },
+      { rx: 1140, ry: 855, slots: 18 },
+      { rx: 1400, ry: 1050, slots: 22 },
+    ];
+
+    for (const ring of rings) {
+      const angleStep = (2 * Math.PI) / ring.slots;
+      for (let i = 0; i < ring.slots; i++) {
+        const angle = -Math.PI / 2 + i * angleStep;
+        candidates.push({
+          x: Math.round(Math.cos(angle) * ring.rx),
+          y: Math.round(Math.sin(angle) * ring.ry),
+        });
+      }
+      if (candidates.length >= desiredCount) break;
+    }
+
+    return candidates;
+  }
+
+  private shouldCompactCanvasLayout(
+    items: Array<{ id: string }>,
+    positions: Record<string, { x: number; y: number }>
+  ): boolean {
+    if (items.length === 0) return false;
+    const positionedItems = items.filter((item) => positions[item.id]);
+    if (positionedItems.length === 0) return false;
+
+    let maxDistance = 0;
+    for (const item of positionedItems) {
+      const pos = positions[item.id];
+      maxDistance = Math.max(maxDistance, Math.hypot(pos.x, pos.y));
+    }
+
+    const compactCandidates = this.getCompactCanvasCandidates(
+      positionedItems.length
+    );
+    const expectedMaxDistance = Math.max(
+      ...compactCandidates
+        .slice(0, Math.max(positionedItems.length, 1))
+        .map((pos) => Math.hypot(pos.x, pos.y))
+    );
+
+    return maxDistance > expectedMaxDistance + 220;
+  }
+
   private computeFittedLayout(
     items: Array<{ id: string }>
   ): Record<string, { x: number; y: number }> {
     const positions: Record<string, { x: number; y: number }> = {};
     if (items.length === 0) return positions;
 
-    const viewport = this.shadowRoot?.querySelector('.canvas-viewport');
-    const bounds = viewport
-      ? viewport.getBoundingClientRect()
-      : { width: window.innerWidth, height: window.innerHeight };
-
-    // Card footprint (matches the .agent-node card sizing).
     const cardHalfWidth = 130;
     const cardHalfHeight = 95;
+    const gap = 36;
+    const minDx = 2 * cardHalfWidth + gap;
+    const minDy = 2 * cardHalfHeight + gap;
+    const candidates = this.getCompactCanvasCandidates(items.length + 16);
 
-    // Two thresholds for adjacent-card distances:
-    //  • `minDx` / `minDy` enforce a small visual gap so cards on the
-    //    ring layout breathe rather than literally kiss.
-    //  • `minDxStrict` / `minDyStrict` detect actual visual overlap
-    //    (cards clipping each other) — used to validate the perimeter
-    //    fallback, where natural spacing at corners can be tighter
-    //    than the ring's breathing room without anything looking bad.
-    const cardGap = 24;
-    const minDx = 2 * cardHalfWidth + cardGap;
-    const minDy = 2 * cardHalfHeight + cardGap;
-    const minDxStrict = 2 * cardHalfWidth + 8;
-    const minDyStrict = 2 * cardHalfHeight + 8;
-
-    // Halo around the gateway icon + label that cards must stay clear
-    // of. The label sits below the icon so this is a soft minimum on
-    // the per-axis radius, not on the diagonal distance.
-    const haloX = cardHalfWidth + 40;
-    const haloY = cardHalfHeight + 60;
-
-    const edgePadding = 28;
-
-    // Largest ellipse / rectangle that keeps every card fully inside
-    // the visible canvas.
-    const availableHalfX = Math.max(
-      haloX,
-      bounds.width / 2 - cardHalfWidth - edgePadding
-    );
-    const availableHalfY = Math.max(
-      haloY,
-      bounds.height / 2 - cardHalfHeight - edgePadding
-    );
-
-    if (items.length <= 4) {
-      // For very small fleets, anchor each card in its own quadrant.
-      // Pull them in towards the gateway when there's plenty of room
-      // so we don't strand them at the corners.
-      const r = Math.min(availableHalfX, availableHalfX * 0.55 + 90);
-      const ry = Math.min(availableHalfY, availableHalfY * 0.55 + 90);
-      const directions = [
-        { x: 1, y: -1 }, // Top right
-        { x: -1, y: 1 }, // Bottom left
-        { x: 1, y: 1 }, // Bottom right
-        { x: -1, y: -1 }, // Top left
-      ];
-      items.forEach((agent, i) => {
-        const dir = directions[i % directions.length];
-        positions[agent.id] = {
-          x: Math.round(dir.x * r),
-          y: Math.round(dir.y * ry),
-        };
-      });
-      return positions;
+    for (const item of items) {
+      const occupied = Object.values(positions);
+      const candidate =
+        candidates.find(
+          (pos) =>
+            !occupied.some(
+              (occupiedPos) =>
+                Math.abs(occupiedPos.x - pos.x) < minDx &&
+                Math.abs(occupiedPos.y - pos.y) < minDy
+            )
+        ) || this.findBestBlankCanvasPosition(positions);
+      positions[item.id] = candidate;
     }
 
-    const N = items.length;
-    const angleStep = (2 * Math.PI) / N;
-    const startAngle = -Math.PI / 2;
-
-    // ── Step 1 ────────────────────────────────────────────────────────
-    // Compute the smallest uniform scale `t` of the (availableHalfX,
-    // availableHalfY) ellipse for which no pair of adjacent cards
-    // overlaps. For each pair we need either |Δx| ≥ minDx OR |Δy| ≥
-    // minDy; the cheaper of those two conditions sets the per-pair
-    // requirement, and the worst pair sets the ring requirement.
-    let tRing = 0;
-    for (let i = 0; i < N; i++) {
-      const a = startAngle + i * angleStep;
-      const b = a + angleStep;
-      const dxUnit = Math.abs(Math.cos(a) - Math.cos(b));
-      const dyUnit = Math.abs(Math.sin(a) - Math.sin(b));
-      const tx = dxUnit > 1e-6 ? minDx / (availableHalfX * dxUnit) : Infinity;
-      const ty = dyUnit > 1e-6 ? minDy / (availableHalfY * dyUnit) : Infinity;
-      tRing = Math.max(tRing, Math.min(tx, ty));
-    }
-
-    if (tRing <= 1) {
-      // Single ring fits comfortably inside the viewport. Use the
-      // smallest non-overlapping radius so cards stay close to the
-      // gateway when there's room — never blown out to the edges.
-      const t = Math.max(0.05, tRing);
-      const rx = Math.max(haloX, availableHalfX * t);
-      const ry = Math.max(haloY, availableHalfY * t);
-      items.forEach((agent, i) => {
-        const angle = startAngle + i * angleStep;
-        positions[agent.id] = {
-          x: Math.round(Math.cos(angle) * rx),
-          y: Math.round(Math.sin(angle) * ry),
-        };
-      });
-      return positions;
-    }
-
-    // ── Step 2 ────────────────────────────────────────────────────────
-    // The ring would have to grow past the viewport to clear overlap.
-    // Try a rectangle-perimeter arrangement: it spreads cards along
-    // the actual viewport edges so wide screens (where the ellipse's
-    // minor axis bottlenecks) gain a lot more usable room.
-    const Wx = availableHalfX;
-    const Wy = availableHalfY;
-    const perimeter = 4 * (Wx + Wy);
-    const spacing = perimeter / N;
-    const perimeterPositions: Record<string, { x: number; y: number }> = {};
-    // Anchor the first card at top-centre (perimeter offset = Wx, the
-    // distance from the top-left corner along the top edge to its
-    // midpoint), then walk clockwise.
-    const anchor = Wx;
-    items.forEach((item, k) => {
-      let p = (anchor + k * spacing) % perimeter;
-      let x = 0;
-      let y = 0;
-      if (p < 2 * Wx) {
-        // Top edge: left → right.
-        x = -Wx + p;
-        y = -Wy;
-      } else if (p < 2 * Wx + 2 * Wy) {
-        // Right edge: top → bottom.
-        x = Wx;
-        y = -Wy + (p - 2 * Wx);
-      } else if (p < 4 * Wx + 2 * Wy) {
-        // Bottom edge: right → left.
-        x = Wx - (p - 2 * Wx - 2 * Wy);
-        y = Wy;
-      } else {
-        // Left edge: bottom → top.
-        x = -Wx;
-        y = Wy - (p - 4 * Wx - 2 * Wy);
-      }
-      perimeterPositions[item.id] = {
-        x: Math.round(x),
-        y: Math.round(y),
-      };
-    });
-
-    // Verify the perimeter layout actually clears every pair of cards.
-    // Use the strict thresholds: at corners the spacing is naturally
-    // tighter than the ring's breathing room and that's fine as long
-    // as cards don't literally clip into each other.
-    const arr = Object.values(perimeterPositions);
-    let perimeterOverlaps = false;
-    for (let i = 0; i < arr.length && !perimeterOverlaps; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        if (
-          Math.abs(arr[i].x - arr[j].x) < minDxStrict &&
-          Math.abs(arr[i].y - arr[j].y) < minDyStrict
-        ) {
-          perimeterOverlaps = true;
-          break;
-        }
-      }
-    }
-
-    if (!perimeterOverlaps) {
-      Object.assign(positions, perimeterPositions);
-      return positions;
-    }
-
-    // ── Step 3 ────────────────────────────────────────────────────────
-    // Even the perimeter layout couldn't separate every pair (typically
-    // happens past ~12 cards on small viewports). Fall back to the
-    // single ring at its smallest non-overlapping radius. The ring
-    // overflows the viewport on purpose; fitViewportToPositions will
-    // scale the canvas just enough to bring it back, which is the only
-    // path where text shrinks.
-    const t = Math.max(0.05, tRing);
-    const rx = Math.max(haloX, availableHalfX * t);
-    const ry = Math.max(haloY, availableHalfY * t);
-    items.forEach((agent, i) => {
-      const angle = startAngle + i * angleStep;
-      positions[agent.id] = {
-        x: Math.round(Math.cos(angle) * rx),
-        y: Math.round(Math.sin(angle) * ry),
-      };
-    });
     return positions;
   }
 
@@ -1028,33 +1131,30 @@ export class AgentsView extends LitElement {
       if (pos.y > maxY) maxY = pos.y;
     }
 
-    // Account for the actual rendered card footprint plus a small
-    // visual margin. Keep this tight: any extra padding here forces a
-    // scale-down that shrinks text even when the cards themselves
-    // still fit comfortably in the viewport.
+    // Account for the actual rendered card footprint plus speech bubbles
+    // above the card. The layout reserves matching top clearance so this
+    // should rarely force a scale-down for normal fleet sizes.
     const cardHalfW = 130;
     const cardHalfH = 95;
-    const labelExtra = 24; // a card's label sits a bit below its body
-    minX -= cardHalfW + 8;
-    maxX += cardHalfW + 8;
-    minY -= cardHalfH + 8;
-    maxY += cardHalfH + labelExtra;
+    const sideMargin = 56;
+    const speechBubbleHeight = 132;
+    const bottomMargin = 44;
+    minX -= cardHalfW + sideMargin;
+    maxX += cardHalfW + sideMargin;
+    minY -= cardHalfH + speechBubbleHeight;
+    maxY += cardHalfH + bottomMargin;
 
-    const contentWidth = Math.max(1, maxX - minX);
-    const contentHeight = Math.max(1, maxY - minY);
-    const scaleX = bounds.width / contentWidth;
-    const scaleY = bounds.height / contentHeight;
-    // Cap the zoom at 1× (never grow cards beyond native size) and at
-    // 0.45× (anything smaller is too illegible — better to let the
-    // user pan than read shrunken text).
-    const targetScale = Math.max(0.45, Math.min(scaleX, scaleY, 1));
-
-    const contentCenterX = (minX + maxX) / 2;
-    const contentCenterY = (minY + maxY) / 2;
+    const halfWidth = Math.max(Math.abs(minX), Math.abs(maxX), 1);
+    const halfHeight = Math.max(Math.abs(minY), Math.abs(maxY), 1);
+    const scaleX = bounds.width / 2 / halfWidth;
+    const scaleY = bounds.height / 2 / halfHeight;
+    // Keep the gateway pinned at viewport center. Only scale the surrounding
+    // agents down when the compact rings truly need the room.
+    const targetScale = Math.min(scaleX, scaleY, 1);
 
     this.scale = targetScale;
-    this.translateX = bounds.width / 2 - contentCenterX * targetScale;
-    this.translateY = bounds.height / 2 - contentCenterY * targetScale;
+    this.translateX = bounds.width / 2;
+    this.translateY = bounds.height / 2;
   }
 
   private animatePositionFrameId: number | null = null;
@@ -1081,8 +1181,8 @@ export class AgentsView extends LitElement {
       let allDone = progress >= 1;
 
       for (const id in targetPositions) {
-        const start = startPositions[id] || { x: 0, y: 0 };
         const target = targetPositions[id];
+        const start = startPositions[id] || target;
         currentPositions[id] = {
           x: start.x + (target.x - start.x) * ease,
           y: start.y + (target.y - start.y) * ease,
@@ -1121,17 +1221,20 @@ export class AgentsView extends LitElement {
 
   private handleAgentKindChange(kind: string, checked: boolean): void {
     if (kind === 'all') {
-      this.agentKinds = checked ? ['all'] : [];
+      this.agentKinds = checked
+        ? AVAILABLE_AGENT_KINDS.map((k) => k.value)
+        : [];
     } else {
-      let updated = [...this.agentKinds].filter((k) => k !== 'all');
+      let updated = [...this.agentKinds];
       if (checked) {
         if (!updated.includes(kind)) updated.push(kind);
       } else {
         updated = updated.filter((k) => k !== kind);
       }
-      this.agentKinds = updated.length === 0 ? ['all'] : updated;
+      this.agentKinds = updated;
     }
 
+    localStorage.setItem('preloopAgentKinds', JSON.stringify(this.agentKinds));
     void this.loadAgents();
   }
 
@@ -1235,6 +1338,7 @@ export class AgentsView extends LitElement {
     if (!agent.live_validation_supported) return 'neutral';
     if (agent.live_validation_status === 'passed') return 'success';
     if (agent.live_validation_status === 'failed') return 'danger';
+    if (agent.live_validation_status === 'throttled') return 'warning';
     if (agent.live_validation_status === 'not_run') return 'neutral';
     return 'warning';
   }
@@ -1243,6 +1347,8 @@ export class AgentsView extends LitElement {
     if (!agent.live_validation_supported) return 'No live check';
     if (agent.live_validation_status === 'passed') return 'Live validated';
     if (agent.live_validation_status === 'failed') return 'Live check failed';
+    if (agent.live_validation_status === 'throttled')
+      return 'Live check throttled';
     // ``not_run`` means the CLI was never invoked with ``--live-validate`` —
     // it's an opt-in step, not a check that's currently in flight.
     if (agent.live_validation_status === 'not_run') return 'Live check not run';
@@ -1306,6 +1412,61 @@ export class AgentsView extends LitElement {
       return { text: text.substring(0, 300), source: 'User' };
     }
     return null;
+  }
+
+  private extractPreviewFromGatewayResponse(
+    response: any
+  ): { text: string; source: string } | null {
+    if (!response || typeof response !== 'object') return null;
+
+    const choiceMessage = response.choices?.[0]?.message;
+    const choiceText =
+      typeof choiceMessage?.content === 'string'
+        ? choiceMessage.content
+        : this.extractTextFromContentParts(choiceMessage?.content);
+    if (choiceText) {
+      return { text: choiceText.substring(0, 300), source: 'AI Model' };
+    }
+
+    if (
+      typeof response.output_text === 'string' &&
+      response.output_text.trim()
+    ) {
+      return {
+        text: response.output_text.substring(0, 300),
+        source: 'AI Model',
+      };
+    }
+
+    const outputText = this.extractTextFromContentParts(response.output);
+    if (outputText) {
+      return { text: outputText.substring(0, 300), source: 'AI Model' };
+    }
+
+    return null;
+  }
+
+  private extractTextFromContentParts(content: any): string {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+
+    const fragments: string[] = [];
+    for (const item of content) {
+      if (typeof item === 'string') {
+        fragments.push(item);
+      } else if (item && typeof item === 'object') {
+        const itemRecord = item as Record<string, any>;
+        if (typeof itemRecord.text === 'string') {
+          fragments.push(itemRecord.text);
+        } else if (typeof itemRecord.content === 'string') {
+          fragments.push(itemRecord.content);
+        } else if (Array.isArray(itemRecord.content)) {
+          const nested = this.extractTextFromContentParts(itemRecord.content);
+          if (nested) fragments.push(nested);
+        }
+      }
+    }
+    return fragments.join('\n').trim();
   }
 
   private enqueueBubble(agentId: string, text: string, source: string) {
@@ -1427,16 +1588,19 @@ export class AgentsView extends LitElement {
         source: 'User',
       };
     } else if (
-      (type === 'model_gateway_call' ||
-        type === 'model_gateway_call_completed') &&
-      payload.conversation_preview?.messages?.length > 0
+      type === 'model_gateway_call' ||
+      type === 'model_gateway_call_completed'
     ) {
-      const messages = payload.conversation_preview.messages;
-      const last = messages[messages.length - 1];
-      preview = {
-        text: last.text || '(No text)',
-        source: last.source === 'request' ? 'Agent' : 'AI Model',
-      };
+      preview =
+        this.extractPreviewFromGatewayResponse(payload.response) || undefined;
+      if (!preview && payload.conversation_preview?.messages?.length > 0) {
+        const messages = payload.conversation_preview.messages;
+        const last = messages[messages.length - 1];
+        preview = {
+          text: last.text || '(No text)',
+          source: last.source === 'request' ? 'Agent' : 'AI Model',
+        };
+      }
     } else if (
       (payload.messages &&
         Array.isArray(payload.messages) &&
@@ -1535,6 +1699,102 @@ export class AgentsView extends LitElement {
     } finally {
       this.actionAgentId = null;
     }
+  }
+
+  private async updateAgent(
+    agent: ManagedAgentSummary,
+    payload: Parameters<typeof updateAccountAgent>[1]
+  ): Promise<void> {
+    this.actionAgentId = agent.id;
+    try {
+      await updateAccountAgent(agent.id, payload);
+      await this.loadAgents();
+    } catch (error) {
+      console.error('Failed to update managed agent:', error);
+      this.error =
+        error instanceof Error
+          ? error.message
+          : 'Failed to update managed agent';
+    } finally {
+      this.actionAgentId = null;
+    }
+  }
+
+  private promptRenameAgent(agent: ManagedAgentSummary): void {
+    const newName = window.prompt(
+      'Enter the new name for this agent:',
+      agent.display_name
+    );
+    if (newName !== null && newName.trim() !== '') {
+      void this.updateAgent(agent, { display_name: newName.trim() });
+    }
+  }
+
+  private promptEditAgentTags(agent: ManagedAgentSummary): void {
+    const currentTags = Object.entries(agent.tags || {})
+      .map(([key, value]) =>
+        value && value !== 'true' ? `${key}=${value}` : key
+      )
+      .join(' ');
+    const input = window.prompt(
+      'Edit tags as space-separated key or key=value entries:',
+      currentTags
+    );
+    if (input === null) return;
+
+    const tags: Record<string, string> = {};
+    input.split(/\s+/).forEach((tag) => {
+      if (!tag) return;
+      const [key, ...valueParts] = tag.split('=');
+      tags[key] = valueParts.length > 0 ? valueParts.join('=') : 'true';
+    });
+    void this.updateAgent(agent, { tags });
+  }
+
+  private promptChangeAgentOwner(agent: ManagedAgentSummary): void {
+    if (!this.availableUsers.length) return;
+    const currentOwner = agent.owner_username || agent.owner_email || '';
+    const input = window.prompt(
+      'Enter owner username or email. Leave blank to clear owner.',
+      currentOwner
+    );
+    if (input === null) return;
+
+    const trimmed = input.trim();
+    if (!trimmed) {
+      void this.updateAgent(agent, { owner_user_id: null });
+      return;
+    }
+
+    const selected = this.availableUsers.find(
+      (user) => user.username === trimmed || user.email === trimmed
+    );
+    if (!selected) {
+      window.alert('No user matched that username or email.');
+      return;
+    }
+    void this.updateAgent(agent, { owner_user_id: selected.id });
+  }
+
+  private async updateAgentLifecycle(
+    agent: ManagedAgentSummary,
+    lifecycleAction: 'suspend' | 'resume'
+  ): Promise<void> {
+    const label = lifecycleAction === 'suspend' ? 'halt' : 'resume';
+    if (
+      !window.confirm(
+        `Are you sure you want to ${label} ${agent.display_name}?`
+      )
+    ) {
+      return;
+    }
+    await this.updateAgent(agent, {
+      lifecycle_action: lifecycleAction,
+      reason:
+        lifecycleAction === 'suspend'
+          ? 'Manually halted from managed agents view'
+          : 'Manually resumed from managed agents view',
+    });
   }
 
   // --- CANVAS VIEWPORT LOGIC ---
@@ -1647,7 +1907,7 @@ export class AgentsView extends LitElement {
   }
 
   private resetView() {
-    const items = [...(this.agents?.items || []), ...this.flows];
+    const items = this.getCanvasItems({ includeExiting: false });
     const bounds = this.shadowRoot
       ?.querySelector('.canvas-viewport')
       ?.getBoundingClientRect();
@@ -1750,6 +2010,92 @@ export class AgentsView extends LitElement {
   }
 
   // --- RENDERING ---
+  private navigateToCardTarget(url: string) {
+    Router.go(url);
+  }
+
+  private handleCardKeydown(event: KeyboardEvent, url: string) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    this.navigateToCardTarget(url);
+  }
+
+  private getCardActions(item: any): ResourceAction[] {
+    const isFlow =
+      'flow_status' in item || ('name' in item && !('display_name' in item));
+    if (isFlow) {
+      return [];
+    }
+
+    const agent = item as ManagedAgentSummary;
+    const actions: ResourceAction[] = [
+      {
+        id: 'rename',
+        label: 'Rename',
+        icon: 'pencil',
+        loading: this.actionAgentId === agent.id,
+        onClick: () => this.promptRenameAgent(agent),
+      },
+      {
+        id: 'edit-tags',
+        label: 'Edit tags',
+        icon: 'tags',
+        loading: this.actionAgentId === agent.id,
+        onClick: () => this.promptEditAgentTags(agent),
+      },
+    ];
+
+    if (this.featureFlags.user_management && this.availableUsers.length > 0) {
+      actions.push({
+        id: 'change-owner',
+        label: 'Change owner',
+        icon: 'person-gear',
+        loading: this.actionAgentId === agent.id,
+        onClick: () => this.promptChangeAgentOwner(agent),
+      });
+    }
+
+    const isSuspendedOrDecommissioned =
+      agent.lifecycle_state === 'suspended' ||
+      agent.lifecycle_state === 'decommissioned';
+    actions.push(
+      isSuspendedOrDecommissioned
+        ? {
+            id: 'resume',
+            label: 'Resume',
+            icon: 'plug',
+            variant: 'success',
+            loading: this.actionAgentId === agent.id,
+            onClick: () => {
+              void this.updateAgentLifecycle(agent, 'resume');
+            },
+          }
+        : {
+            id: 'halt',
+            label: 'Halt',
+            icon: 'power',
+            variant: 'danger',
+            loading: this.actionAgentId === agent.id,
+            onClick: () => {
+              void this.updateAgentLifecycle(agent, 'suspend');
+            },
+          }
+    );
+
+    actions.push({
+      id: 'remove',
+      label: 'Remove',
+      icon: 'trash',
+      variant: 'danger',
+      loading: this.actionAgentId === agent.id,
+      onClick: () => {
+        void this.removeAgent(agent);
+      },
+    });
+
+    return actions;
+  }
+
   private renderAgentCard(item: any) {
     const isFlow =
       'flow_status' in item || ('name' in item && !('display_name' in item));
@@ -1759,6 +2105,7 @@ export class AgentsView extends LitElement {
     const detailUrl = isFlow
       ? `/console/flows/${encodeURIComponent(item.id)}`
       : `/console/agents/${encodeURIComponent(agent!.id)}`;
+    const actions = this.getCardActions(item);
     const liveActivity = this.liveActivity[itemId];
     const liveTotal =
       (liveActivity?.modelCalls || 0) + (liveActivity?.toolCalls || 0);
@@ -1789,8 +2136,27 @@ export class AgentsView extends LitElement {
         class="agent-card ${liveTotal > 0 ? 'live' : ''} ${isGlowing
           ? 'glowing'
           : ''}"
+        role="link"
+        tabindex="0"
+        @click=${() => this.navigateToCardTarget(detailUrl)}
+        @keydown=${(event: KeyboardEvent) =>
+          this.handleCardKeydown(event, detailUrl)}
       >
         <div class="card-stack">
+          ${actions.length
+            ? html`
+                <div
+                  class="card-actions"
+                  @click=${(event: Event) => event.stopPropagation()}
+                  @keydown=${(event: Event) => event.stopPropagation()}
+                >
+                  <resource-actions
+                    .actions=${actions}
+                    menu-only
+                  ></resource-actions>
+                </div>
+              `
+            : null}
           <div class="title-row">
             <div style="display: flex; gap: 12px; align-items: flex-start;">
               ${isFlow
@@ -1806,7 +2172,10 @@ export class AgentsView extends LitElement {
                   )}
               <div>
                 <div class="agent-name">${displayName}</div>
-                <div class="agent-meta">
+                <div
+                  class="agent-meta"
+                  title="${sessionSourceId ? sessionSourceId : ''}"
+                >
                   ${isFlow ? 'Flow' : this.getSourceLabel(agentKind)}
                   ${sessionSourceId ? ` · ${sessionSourceId}` : ''}
                 </div>
@@ -1873,7 +2242,7 @@ export class AgentsView extends LitElement {
                   ></sl-icon>
                   <strong>Model:</strong>
                   <a
-                    href="/console/settings/ai-models/${encodeURIComponent(
+                    href="/console/ai-models/${encodeURIComponent(
                       isFlow
                         ? flowNode!.ai_model_id
                         : (agent as any)?.ai_model_id ||
@@ -1882,6 +2251,7 @@ export class AgentsView extends LitElement {
                     )}"
                     style="color: inherit; text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;"
                     @pointerdown="${(e: Event) => e.stopPropagation()}"
+                    @click="${(e: Event) => e.stopPropagation()}"
                   >
                     ${(() => {
                       if (isFlow) return flowNode!.ai_model_id;
@@ -2001,32 +2371,6 @@ export class AgentsView extends LitElement {
                 liveActivity?.lastActivityAt || lastSeen
               )}</span
             >
-          </div>
-
-          <div class="action-row">
-            <span class="label"
-              >Inspect${!isFlow ? ', rename, or remove' : ''}</span
-            >
-            <div class="badges">
-              ${!isFlow
-                ? html`
-                    <sl-button
-                      size="small"
-                      variant="danger"
-                      ?loading=${this.actionAgentId === agent?.id}
-                      @click=${() => this.removeAgent(agent!)}
-                    >
-                      Remove
-                    </sl-button>
-                  `
-                : ''}
-              <sl-button
-                size="small"
-                variant="default"
-                @click=${() => Router.go(detailUrl)}
-                >View ${isFlow ? 'Flow' : 'Agent'}</sl-button
-              >
-            </div>
           </div>
         </div>
       </sl-card>
@@ -2148,13 +2492,7 @@ export class AgentsView extends LitElement {
               </div>
             </div>
 
-            ${[
-              ...(this.agents?.items || []).filter(
-                (a: any) =>
-                  !this.flows.some((f: any) => f.id === a.session_source_id)
-              ),
-              ...this.flows,
-            ].map((item: any) => {
+            ${this.getCanvasItems({ includeExiting: true }).map((item: any) => {
               const isFlow =
                 'flow_status' in item ||
                 ('name' in item && !('display_name' in item));
@@ -2213,9 +2551,8 @@ export class AgentsView extends LitElement {
 
               return html`
                 <svg
-                  class="connection-line ${this.draggingNodeId === item.id
-                    ? 'dragging'
-                    : ''}"
+                  class="connection-line ${this.nodeAnimationState[item.id] ||
+                  ''} ${this.draggingNodeId === item.id ? 'dragging' : ''}"
                   xmlns="http://www.w3.org/2000/svg"
                 >
                   <line
@@ -2261,9 +2598,8 @@ export class AgentsView extends LitElement {
                 </svg>
 
                 <div
-                  class="agent-node ${this.draggingNodeId === item.id
-                    ? 'dragging'
-                    : ''}"
+                  class="agent-node ${this.nodeAnimationState[item.id] ||
+                  ''} ${this.draggingNodeId === item.id ? 'dragging' : ''}"
                   style=${styleMap({ left: `${pos.x}px`, top: `${pos.y}px` })}
                   @pointerdown=${(e: PointerEvent) =>
                     this.handleNodePointerDown(e, item.id)}
@@ -2323,12 +2659,13 @@ export class AgentsView extends LitElement {
                             : ''}
                       </div>
                       <div
-                        style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; word-break: break-all;"
+                        style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; word-break: break-word;"
+                        title="${isFlow
+                          ? flowNode?.description || ''
+                          : agent?.session_source_id || ''}"
                       >
                         ${isFlow
-                          ? html`<span title="Description"
-                              >${flowNode?.description || ''}</span
-                            >`
+                          ? flowNode?.description || ''
                           : agent?.session_source_id}
                       </div>
                       ${!isFlow && agent?.owner_username
@@ -2362,7 +2699,7 @@ export class AgentsView extends LitElement {
                               style="color: var(--sl-color-primary-500);"
                             ></sl-icon>
                             <a
-                              href="/console/settings/ai-models/${encodeURIComponent(
+                              href="/console/ai-models/${encodeURIComponent(
                                 (agent as any).ai_model_id
                               )}"
                               style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
@@ -2380,7 +2717,7 @@ export class AgentsView extends LitElement {
                               style="color: var(--sl-color-primary-500);"
                             ></sl-icon>
                             <a
-                              href="/console/settings/ai-models/${encodeURIComponent(
+                              href="/console/ai-models/${encodeURIComponent(
                                 flowNode.ai_model_id
                               )}"
                               style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
@@ -2592,30 +2929,8 @@ export class AgentsView extends LitElement {
             </sl-button>
           </div>
 
-          <div
-            style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
-          >
-            <div style="display: flex; justify-content: flex-end; width: 100%;">
-              <!-- View Switcher -->
-              <sl-radio-group
-                value=${this.currentView}
-                @sl-change=${(e: any) => this.setCurrentView(e.target.value)}
-                size="small"
-              >
-                <sl-radio-button value="cards" title="Cards View">
-                  <sl-icon name="grid"></sl-icon>
-                </sl-radio-button>
-                <sl-radio-button value="canvas" title="Canvas View">
-                  <sl-icon name="share"></sl-icon>
-                </sl-radio-button>
-              </sl-radio-group>
-            </div>
-
-            <form
-              class="filters"
-              style="display: flex; gap: var(--sl-spacing-medium); flex-wrap: wrap; align-items: end; width: 100%;"
-              @submit=${this.handleSearchSubmit}
-            >
+          <div class="agents-toolbar">
+            <form class="filters" @submit=${this.handleSearchSubmit}>
               <sl-input
                 placeholder="Search name, tags:env=prod, owner:username"
                 clearable
@@ -2628,26 +2943,27 @@ export class AgentsView extends LitElement {
               <sl-dropdown stay-open-on-select>
                 <sl-button slot="trigger" caret variant="default">
                   Agent Kinds
-                  (${this.agentKinds.length === 1 &&
-                  this.agentKinds[0] === 'all'
+                  (${this.agentKinds.length === AVAILABLE_AGENT_KINDS.length
                     ? 'All'
                     : this.agentKinds.length})
                 </sl-button>
                 <div
                   style="padding: var(--sl-spacing-medium); background: var(--sl-panel-background-color); border: solid 1px var(--sl-panel-border-color); border-radius: var(--sl-border-radius-medium); box-shadow: var(--sl-shadow-large); display: flex; flex-direction: column; gap: var(--sl-spacing-small); min-width: 200px;"
                 >
-                  ${[
-                    { value: 'all', label: 'All Agents' },
-                    { value: 'flows', label: 'Flows' },
-                    { value: 'openclaw', label: 'OpenClaw' },
-                    { value: 'opencode', label: 'OpenCode' },
-                    { value: 'claude_code', label: 'Claude Code' },
-                    { value: 'codex', label: 'Codex CLI' },
-                    { value: 'gemini_cli', label: 'Gemini CLI' },
-                    { value: 'hermes', label: 'Hermes' },
-                    { value: 'cursor', label: 'Cursor' },
-                    { value: 'windsurf', label: 'Windsurf' },
-                  ].map(
+                  <sl-checkbox
+                    .checked=${this.agentKinds.length ===
+                    AVAILABLE_AGENT_KINDS.length}
+                    .indeterminate=${this.agentKinds.length > 0 &&
+                    this.agentKinds.length < AVAILABLE_AGENT_KINDS.length}
+                    @sl-change=${(e: any) =>
+                      this.handleAgentKindChange('all', e.target.checked)}
+                  >
+                    Select All
+                  </sl-checkbox>
+                  <sl-divider
+                    style="margin: var(--sl-spacing-x-small) 0;"
+                  ></sl-divider>
+                  ${AVAILABLE_AGENT_KINDS.map(
                     (kind) => html`
                       <sl-checkbox
                         .checked=${this.agentKinds.includes(kind.value)}
@@ -2675,6 +2991,22 @@ export class AgentsView extends LitElement {
                 <sl-option value="last_7_days">Last 7 days</sl-option>
               </sl-select>
             </form>
+
+            <div class="view-switcher-group">
+              <span class="toolbar-divider" aria-hidden="true"></span>
+              <sl-radio-group
+                value=${this.currentView}
+                @sl-change=${(e: any) => this.setCurrentView(e.target.value)}
+                size="small"
+              >
+                <sl-radio-button value="cards" title="Cards View">
+                  <sl-icon name="grid"></sl-icon>
+                </sl-radio-button>
+                <sl-radio-button value="canvas" title="Canvas View">
+                  <sl-icon name="share"></sl-icon>
+                </sl-radio-button>
+              </sl-radio-group>
+            </div>
           </div>
 
           ${this.error

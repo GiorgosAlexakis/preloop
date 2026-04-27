@@ -462,20 +462,18 @@ def test_managed_agent_onboarding_flags_supports_hermes_gateway_config():
 
     Hermes' managed config writes the gateway parameters under ``model:`` (not
     the top-level ``baseUrl`` / ``apiKey`` keys other adapters use), and its
-    validation payload omits the legacy ``gateway_model_configured`` flag in
-    favour of the canonical ``gateway_provider_ok`` /
-    ``gateway_base_url_ok`` pair. Both signals should be treated as evidence
-    that the model gateway is wired up.
+    older validation payloads may omit both the legacy
+    ``gateway_model_configured`` flag and the newer ``gateway_provider_ok`` /
+    ``gateway_base_url_ok`` pair. The managed config shape itself is enough
+    evidence that the model gateway is wired up.
     """
     mcp_ok, gateway_ok, state = _managed_agent_onboarding_flags(
         {
             "managed_config": {
-                "mcp": {
-                    "servers": {
-                        "preloop": {
-                            "url": "https://preloop.example/mcp/v1",
-                            "transport": "http-streaming",
-                        }
+                "mcp_servers": {
+                    "preloop": {
+                        "url": "https://preloop.example/mcp/v1",
+                        "transport": "http-streaming",
                     }
                 },
                 "model": {
@@ -491,9 +489,6 @@ def test_managed_agent_onboarding_flags_supports_hermes_gateway_config():
                 "transport_ok": True,
                 "preloop_url_ok": True,
                 "preloop_server_present": True,
-                "gateway_present": True,
-                "gateway_provider_ok": True,
-                "gateway_base_url_ok": True,
                 "gateway_model_alias": "openai/gpt-5.4",
             },
         }
