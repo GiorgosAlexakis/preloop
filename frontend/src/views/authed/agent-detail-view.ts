@@ -1394,7 +1394,7 @@ export class AgentDetailView extends LitElement {
 
           <div
             class="stat-card"
-            style="min-width: 200px; display: flex; flex-direction: column; justify-content: space-between; border-color: var(--sl-color-neutral-200); background: white;"
+            style="min-width: 200px; display: flex; flex-direction: column; justify-content: space-between; border-color: transparent;"
           >
             <div
               style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
@@ -1609,8 +1609,10 @@ export class AgentDetailView extends LitElement {
         class="owner-dialog"
         label="Change Owner"
         ?open=${this.changeOwnerDialogOpen}
-        @sl-after-hide=${() => {
-          this.changeOwnerDialogOpen = false;
+        @sl-after-hide=${(e: Event) => {
+          if (e.target === e.currentTarget) {
+            this.changeOwnerDialogOpen = false;
+          }
         }}
       >
         <sl-select
@@ -1650,8 +1652,10 @@ export class AgentDetailView extends LitElement {
         class="budgets-dialog"
         label="Update Budgets"
         ?open=${this.updateBudgetsDialogOpen}
-        @sl-after-hide=${() => {
-          this.updateBudgetsDialogOpen = false;
+        @sl-after-hide=${(e: Event) => {
+          if (e.target === e.currentTarget) {
+            this.updateBudgetsDialogOpen = false;
+          }
         }}
         style="--width: 600px;"
       >

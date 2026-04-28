@@ -2586,9 +2586,11 @@ export class DashboardView extends AuthedElement {
         <sl-dialog
           label="Configure Budget Limits"
           ?open=${this.showBudgetDialog}
-          @sl-after-hide=${() => {
-            this.showBudgetDialog = false;
-            this.fetchBudgetSummary();
+          @sl-after-hide=${(e: Event) => {
+            if (e.target === e.currentTarget) {
+              this.showBudgetDialog = false;
+              this.fetchBudgetSummary();
+            }
           }}
           style="--width: 600px;"
         >
