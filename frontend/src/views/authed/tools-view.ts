@@ -67,7 +67,7 @@ export class ToolsView extends LitElement {
   @state() private tools: ToolWithRules[] = [];
   @state() private mcpServers: MCPServer[] = [];
   @state() private approvalPolicies: ApprovalWorkflow[] = [];
-  @state() private loading = false;
+  @state() private loading = true;
   @state() private error: string | null = null;
   @state() private isAddingMCPServer = false;
   @state() private editingMCPServer: MCPServer | null = null;
@@ -703,6 +703,7 @@ export class ToolsView extends LitElement {
   }
 
   private async loadData() {
+    this.loading = true;
     this.error = null;
     let starterPolicyRequest: {
       serverId: string | null;

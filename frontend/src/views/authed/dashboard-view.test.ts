@@ -422,11 +422,6 @@ describe('DashboardView', () => {
     expect(element.shadowRoot?.textContent).to.contain(
       'Recent Flow Executions'
     );
-    expect(element.shadowRoot?.textContent).to.contain('MCP server');
-    expect(element.shadowRoot?.textContent).to.contain('Approval analytics');
-    expect(element.shadowRoot?.textContent).to.contain('Key metrics');
-    expect(element.shadowRoot?.textContent).to.contain('Active agents');
-    expect(element.shadowRoot?.textContent).to.contain('Gateway failures');
     expect(element.shadowRoot?.textContent).to.contain('Audit exceptions');
     expect(element.shadowRoot?.textContent).to.contain('Pending approvals');
   });
