@@ -157,6 +157,10 @@ export class DashboardView extends AuthedElement {
     const newSet = new Set(this.dismissedExecutions);
     newSet.add(id);
     this.dismissedExecutions = newSet;
+    localStorage.setItem(
+      'dashboard_dismissed_executions',
+      JSON.stringify(Array.from(newSet))
+    );
   }
 
   private formatDate(dateStr: string | null | undefined): string {
@@ -682,6 +686,20 @@ export class DashboardView extends AuthedElement {
       localStorage.getItem('dashboard_welcome_dismissed') === 'true';
     this.gatewayMetricsExpanded =
       localStorage.getItem('preloop_dashboard_metrics_expanded') === 'true';
+
+    try {
+      const dismissedExecsRaw = localStorage.getItem(
+        'dashboard_dismissed_executions'
+      );
+      if (dismissedExecsRaw) {
+        const parsed = JSON.parse(dismissedExecsRaw);
+        if (Array.isArray(parsed)) {
+          this.dismissedExecutions = new Set(parsed as string[]);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse dismissed executions from localStorage', e);
+    }
   }
 
   private dismissWelcomeCard(): void {
@@ -1097,7 +1115,9 @@ export class DashboardView extends AuthedElement {
 
   private get failedFlowExecutions(): FlowExecution[] {
     return this.recentFlowExecutions.filter(
-      (execution) => execution.status === 'FAILED'
+      (execution) =>
+        execution.status === 'FAILED' &&
+        !this.dismissedExecutions.has(execution.id)
     );
   }
 
