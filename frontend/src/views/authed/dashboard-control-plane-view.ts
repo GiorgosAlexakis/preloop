@@ -131,7 +131,8 @@ export class DashboardView extends AuthedElement {
   @state() private budgetSummary: AccountGatewayUsageSummaryResponse | null =
     null;
   @state() private fetchingBudget = false;
-  @state() private activeAgentsTimeRange: '5m' | '1h' | '1d' | '1mo' = '1d';
+  @state() private activeAgentsTimeRange: '5m' | '1h' | '1d' | '1w' | '1mo' =
+    '1d';
   @state() private fetchingActiveAgents = false;
   @state() private showSetupDialog = false;
   @state() private showBudgetDialog = false;
@@ -769,6 +770,10 @@ export class DashboardView extends AuthedElement {
         const d = new Date(now);
         d.setDate(d.getDate() - 1);
         startDateStr = d.toISOString();
+      } else if (this.activeAgentsTimeRange === '1w') {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 7);
+        startDateStr = d.toISOString();
       } else if (this.activeAgentsTimeRange === '1mo') {
         const d = new Date(now);
         d.setMonth(d.getMonth() - 1);
@@ -1088,23 +1093,19 @@ export class DashboardView extends AuthedElement {
   }
 
   private get activeAgents(): ManagedAgentSummary[] {
-    return [...this.managedAgents]
-      .filter((agent) => agent.activity_status === 'active_now')
-      .sort(
-        (left, right) =>
-          new Date(right.last_seen_at).getTime() -
-          new Date(left.last_seen_at).getTime()
-      );
+    return [...this.managedAgents].sort(
+      (left, right) =>
+        new Date(right.last_seen_at).getTime() -
+        new Date(left.last_seen_at).getTime()
+    );
   }
 
   private get activeSessions(): RuntimeSessionSummary[] {
-    return [...this.runtimeSessions]
-      .filter((session) => session.activity_status === 'active_now')
-      .sort((left, right) => {
-        const leftTs = left.last_activity_at || left.started_at;
-        const rightTs = right.last_activity_at || right.started_at;
-        return new Date(rightTs).getTime() - new Date(leftTs).getTime();
-      });
+    return [...this.runtimeSessions].sort((left, right) => {
+      const leftTs = left.last_activity_at || left.started_at;
+      const rightTs = right.last_activity_at || right.started_at;
+      return new Date(rightTs).getTime() - new Date(leftTs).getTime();
+    });
   }
 
   private get gatewayFailures(): GatewayUsageSearchResultItem[] {
@@ -2046,6 +2047,7 @@ export class DashboardView extends AuthedElement {
             <option value="5m">5m</option>
             <option value="1h">1h</option>
             <option value="1d">1d</option>
+            <option value="1w">1w</option>
             <option value="1mo">1mo</option>
           </select>
           <div
