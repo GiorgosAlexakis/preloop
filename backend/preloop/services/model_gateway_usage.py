@@ -241,6 +241,66 @@ class ModelGatewayUsageService:
             ],
         )
 
+    def get_api_key_summary(
+        self,
+        *,
+        api_key: Any,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Any:
+        """Return gateway usage totals for one API key."""
+        start_date, end_date = self._normalize_period(start_date, end_date)
+        totals = crud_api_usage.get_gateway_usage_summary(
+            self.db,
+            account_id=str(api_key.account_id),
+            api_key_id=str(api_key.id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        usage_by_model = crud_api_usage.get_gateway_usage_by_model(
+            self.db,
+            account_id=str(api_key.account_id),
+            api_key_id=str(api_key.id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        usage_by_session = crud_api_usage.get_gateway_usage_by_session(
+            self.db,
+            account_id=str(api_key.account_id),
+            api_key_id=str(api_key.id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+        requests_by_day = crud_api_usage.get_gateway_usage_timeseries(
+            self.db,
+            account_id=str(api_key.account_id),
+            api_key_id=str(api_key.id),
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        from preloop.schemas.gateway_usage import ApiKeyGatewayUsageSummaryResponse
+
+        return ApiKeyGatewayUsageSummaryResponse(
+            api_key_id=str(api_key.id),
+            period_start=start_date,
+            period_end=end_date,
+            total_requests=totals["request_count"],
+            successful_requests=totals["success_count"],
+            failed_requests=totals["error_count"],
+            token_usage=GatewayTokenUsage(
+                prompt_tokens=totals["prompt_tokens"],
+                completion_tokens=totals["completion_tokens"],
+                total_tokens=totals["total_tokens"],
+            ),
+            estimated_cost=totals["estimated_cost"],
+            requests_by_day=[GatewayUsageByDay(**row) for row in requests_by_day],
+            usage_by_model=[self._model_row_to_schema(row) for row in usage_by_model],
+            usage_by_session=[
+                self._session_row_to_schema(row) for row in usage_by_session
+            ],
+        )
+
     def search_account_interactions(
         self,
         *,

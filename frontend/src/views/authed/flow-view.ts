@@ -514,7 +514,12 @@ export class FlowView extends LitElement {
         width="wide"
       >
         <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
-          <sl-button variant="default" size="small" href="/console/flows">
+          <sl-button
+            variant="text"
+            size="small"
+            href="/console/flows"
+            style="margin-left: -12px;"
+          >
             <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Flows
           </sl-button>
         </div>
@@ -568,7 +573,12 @@ export class FlowView extends LitElement {
 
       <view-header headerText="${this.flow.name}" width="wide">
         <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
-          <sl-button variant="default" size="small" href="/console/flows">
+          <sl-button
+            variant="text"
+            size="small"
+            href="/console/flows"
+            style="margin-left: -12px;"
+          >
             <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Flows
           </sl-button>
         </div>

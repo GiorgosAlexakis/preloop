@@ -14,7 +14,7 @@ import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '../../components/governance-rule-set-editor.ts';
 import '../../components/budget-policy-editor.ts';
 import '../../components/tools-editor-component.ts';
-import '../../components/session-history-widget.ts';
+import '../../components/unified-session-history.ts';
 import '../../components/view-header.ts';
 import '../../components/resource-actions.ts';
 import type { ResourceAction } from '../../components/resource-actions.ts';
@@ -1287,6 +1287,16 @@ export class AgentDetailView extends LitElement {
 
     return html`
       <view-header headerText=${this.agent.display_name}>
+        <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
+          <sl-button
+            variant="text"
+            size="small"
+            @click=${() => window.history.back()}
+            style="margin-left: -12px;"
+          >
+            <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back
+          </sl-button>
+        </div>
         <div
           slot="title-prefix"
           style="display: flex; align-items: center; color: var(--sl-color-neutral-900);"
@@ -1297,13 +1307,6 @@ export class AgentDetailView extends LitElement {
           )}
         </div>
         <div slot="main-column" class="header-actions">
-          <sl-button
-            variant="default"
-            size="small"
-            @click=${() => window.history.back()}
-          >
-            <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back
-          </sl-button>
           <resource-actions .actions=${this.agentActions}></resource-actions>
         </div>
       </view-header>
@@ -1597,9 +1600,9 @@ export class AgentDetailView extends LitElement {
                 </div>
               </div>
             </div>
-            <session-history-widget
+            <unified-session-history
               .sessions=${this.sessions}
-            ></session-history-widget>
+            ></unified-session-history>
           </div>
         </sl-card>
       </div>

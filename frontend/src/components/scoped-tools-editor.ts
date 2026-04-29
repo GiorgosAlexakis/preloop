@@ -106,8 +106,8 @@ export class ScopedToolsEditor extends LitElement {
         groups['builtin'].tools.push(tool);
       } else if (tool.source === 'mcp') {
         let serverId = tool.source_id;
-        if (!serverId && tool.server_name) {
-          serverId = mcpServersByName.get(tool.server_name)?.id;
+        if (!serverId && tool.source_name) {
+          serverId = mcpServersByName.get(tool.source_name)?.id;
         }
         if (serverId && groups[serverId]) {
           groups[serverId].tools.push(tool);

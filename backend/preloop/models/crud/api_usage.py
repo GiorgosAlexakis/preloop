@@ -307,6 +307,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
         ai_model_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get aggregated gateway usage totals for an account or flow."""
         query = db.query(
@@ -338,6 +339,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
         if ai_model_id:
             query = query.filter(ApiUsage.ai_model_id == ai_model_id)
+        if api_key_id:
+            query = query.filter(ApiUsage.api_key_id == api_key_id)
 
         row = query.one()
         return {
@@ -360,6 +363,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
         flow_execution_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by model."""
@@ -400,6 +404,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
         elif flow_execution_id:
             query = query.filter(ApiUsage.flow_execution_id == flow_execution_id)
+        if api_key_id:
+            query = query.filter(ApiUsage.api_key_id == api_key_id)
 
         rows = (
             query.group_by(
@@ -543,6 +549,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         start_date: datetime,
         end_date: datetime,
         ai_model_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group recent execution-backed gateway usage into session slices."""
@@ -601,6 +608,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         )
         if ai_model_id:
             rows = rows.filter(ApiUsage.ai_model_id == ai_model_id)
+        if api_key_id:
+            rows = rows.filter(ApiUsage.api_key_id == api_key_id)
         rows = (
             rows.group_by(
                 ApiUsage.ai_model_id,
@@ -655,6 +664,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         end_date: datetime,
         flow_id: Optional[str] = None,
         ai_model_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by day."""
         bucket = func.date_trunc("day", ApiUsage.timestamp)
@@ -675,6 +685,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.flow_id == flow_id)
         if ai_model_id:
             query = query.filter(ApiUsage.ai_model_id == ai_model_id)
+        if api_key_id:
+            query = query.filter(ApiUsage.api_key_id == api_key_id)
 
         rows = query.group_by(bucket).order_by(bucket.asc()).all()
         return [
@@ -821,6 +833,53 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             "total_calls": int(row.total_calls or 0) if row else 0,
             "success_calls": int(row.success_calls or 0) if row else 0,
         }
+
+    def get_gateway_usage_by_api_key(
+        self,
+        db: Session,
+        *,
+        api_key_id: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Get recent gateway usage for an API key."""
+        rows = (
+            db.query(
+                ApiUsage.ai_model_id,
+                ApiUsage.model_alias,
+                ApiUsage.provider_name,
+                ApiUsage.runtime_principal_name,
+                ApiUsage.runtime_principal_id,
+                ApiUsage.status_code,
+                ApiUsage.prompt_tokens,
+                ApiUsage.completion_tokens,
+                ApiUsage.total_tokens,
+                ApiUsage.estimated_cost,
+                ApiUsage.timestamp,
+            )
+            .filter(
+                ApiUsage.api_key_id == api_key_id,
+                ApiUsage.action_type == "model_gateway",
+            )
+            .order_by(ApiUsage.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "ai_model_id": str(row.ai_model_id) if row.ai_model_id else None,
+                "model_alias": row.model_alias,
+                "provider_name": row.provider_name,
+                "agent_name": row.runtime_principal_name,
+                "agent_id": row.runtime_principal_id,
+                "status_code": row.status_code,
+                "prompt_tokens": int(row.prompt_tokens or 0),
+                "completion_tokens": int(row.completion_tokens or 0),
+                "total_tokens": int(row.total_tokens or 0),
+                "estimated_cost": float(row.estimated_cost or 0.0),
+                "timestamp": row.timestamp,
+            }
+            for row in rows
+        ]
 
     def get_last_model_call_timestamp(
         self, db: Session, api_key_id: str

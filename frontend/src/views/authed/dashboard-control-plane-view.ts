@@ -138,9 +138,9 @@ export class DashboardView extends AuthedElement {
   @state() private showBudgetDialog = false;
   @state() private welcomeCardDismissed = false;
   @state() private gatewayMetricsExpanded = false;
-  @state() private budgetExpanded = false;
+
   @state() private budgetPolicies: BudgetPolicy[] = [];
-  @state() private dismissedExecutions = new Set<string>();
+  @state() private dismissedExecutions: string[] = [];
   @state()
   private approvalStats = {
     total: 0,
@@ -155,13 +155,13 @@ export class DashboardView extends AuthedElement {
   private refreshInFlight = false;
 
   private dismissExecution(id: string) {
-    const newSet = new Set(this.dismissedExecutions);
-    newSet.add(id);
-    this.dismissedExecutions = newSet;
-    localStorage.setItem(
-      'dashboard_dismissed_executions',
-      JSON.stringify(Array.from(newSet))
-    );
+    if (!this.dismissedExecutions.includes(id)) {
+      this.dismissedExecutions = [...this.dismissedExecutions, id];
+      localStorage.setItem(
+        'dashboard_dismissed_executions',
+        JSON.stringify(this.dismissedExecutions)
+      );
+    }
   }
 
   private formatDate(dateStr: string | null | undefined): string {
@@ -695,7 +695,7 @@ export class DashboardView extends AuthedElement {
       if (dismissedExecsRaw) {
         const parsed = JSON.parse(dismissedExecsRaw);
         if (Array.isArray(parsed)) {
-          this.dismissedExecutions = new Set(parsed as string[]);
+          this.dismissedExecutions = parsed as string[];
         }
       }
     } catch (e) {
@@ -1005,7 +1005,12 @@ export class DashboardView extends AuthedElement {
         : 0;
       this.toolCallsCount = toolCallsStats?.total || 0;
       this.failedToolCallsCount = failedToolCallsStats?.total || 0;
-      this.usedToolsCount = usedToolsStats?.groups?.length || 0;
+      const usedToolNames = new Set(
+        (usedToolsStats?.groups || []).map((g: any) => g.group_value)
+      );
+      this.usedToolsCount = this.tools.filter(
+        (t: any) => t.is_enabled && usedToolNames.has(t.name)
+      ).length;
       this.totalAgentsCount = totalAgentsStats?.total || 0;
       this.calculateApprovalStats(allApprovalRequests);
 
@@ -1118,7 +1123,7 @@ export class DashboardView extends AuthedElement {
     return this.recentFlowExecutions.filter(
       (execution) =>
         execution.status === 'FAILED' &&
-        !this.dismissedExecutions.has(execution.id)
+        !this.dismissedExecutions.includes(execution.id)
     );
   }
 
@@ -1183,7 +1188,22 @@ export class DashboardView extends AuthedElement {
     }
   }
 
-  private budgetVariant(): 'success' | 'warning' | 'danger' | 'neutral' {
+  private getGlobalPolicyUsage() {
+    return this.calculatePolicyUsages().find(
+      (u) =>
+        u.policy.subject_type === 'global' ||
+        u.policy.subject_type === 'account'
+    );
+  }
+
+  private budgetVariant() {
+    const globalUsage = this.getGlobalPolicyUsage();
+    if (globalUsage && globalUsage.limit > 0) {
+      if (globalUsage.percent >= 100) return 'danger';
+      if (globalUsage.percent >= 80) return 'warning';
+      return 'success';
+    }
+
     const budget = this.budgetSummary?.budget;
     if (!budget) {
       return 'neutral';
@@ -1198,6 +1218,11 @@ export class DashboardView extends AuthedElement {
   }
 
   private budgetPercent(): number {
+    const globalUsage = this.getGlobalPolicyUsage();
+    if (globalUsage && globalUsage.limit > 0) {
+      return globalUsage.percent;
+    }
+
     const budget = this.budgetSummary?.budget;
     const limit = budget?.monthly_limit_usd || budget?.soft_limit_usd || 0;
     if (!limit) {
@@ -1373,7 +1398,7 @@ export class DashboardView extends AuthedElement {
           : html`
               <div class="item-list">
                 ${this.recentFlowExecutions
-                  .filter((exec) => !this.dismissedExecutions.has(exec.id))
+                  .filter((exec) => !this.dismissedExecutions.includes(exec.id))
                   .slice(0, 5)
                   .map(
                     (exec) => html`
@@ -1475,10 +1500,14 @@ export class DashboardView extends AuthedElement {
   }
 
   private renderBudgetHealthContent() {
+    const globalUsage = this.getGlobalPolicyUsage();
     const limit =
-      this.budgetSummary?.budget?.monthly_limit_usd ||
-      this.budgetSummary?.budget?.soft_limit_usd ||
-      0;
+      globalUsage && globalUsage.limit > 0
+        ? globalUsage.limit
+        : this.budgetSummary?.budget?.monthly_limit_usd ||
+          this.budgetSummary?.budget?.soft_limit_usd ||
+          0;
+    const usages = this.calculatePolicyUsages();
     return html`
       <div
         style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
@@ -1525,66 +1554,53 @@ export class DashboardView extends AuthedElement {
           </sl-button>
         </div>
 
-        ${this.budgetPolicies.length > 0
+        ${usages.length > 0
           ? html`
               <div
                 style="border-top: 1px solid var(--sl-color-neutral-200); padding-top: var(--sl-spacing-small); margin-top: var(--sl-spacing-small);"
               >
                 <div
-                  style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; color: var(--sl-color-neutral-700); font-size: var(--sl-font-size-small); font-weight: 500;"
-                  @click=${() => (this.budgetExpanded = !this.budgetExpanded)}
+                  style="color: var(--sl-color-neutral-700); font-size: var(--sl-font-size-small); font-weight: 500; margin-bottom: var(--sl-spacing-small);"
                 >
                   Configured limits
-                  <sl-icon
-                    name=${this.budgetExpanded ? 'chevron-up' : 'chevron-down'}
-                  ></sl-icon>
                 </div>
-
-                ${this.budgetExpanded
-                  ? html`
+                <div
+                  style="display: flex; flex-direction: column; gap: var(--sl-spacing-small); max-height: 300px; overflow-y: auto; padding-right: var(--sl-spacing-x-small);"
+                >
+                  ${usages.map(
+                    (u) => html`
                       <div
-                        style="display: flex; flex-direction: column; gap: var(--sl-spacing-small); margin-top: var(--sl-spacing-medium);"
+                        style="display: flex; flex-direction: column; gap: 4px;"
                       >
-                        ${this.calculatePolicyUsages().map(
-                          (u) => html`
-                            <div
-                              style="display: flex; flex-direction: column; gap: 4px;"
-                            >
-                              <div
-                                style="display: flex; justify-content: space-between; font-size: var(--sl-font-size-small); align-items: center;"
-                              >
-                                <span
-                                  style="display: flex; align-items: center; gap: 4px;"
-                                >
-                                  ${u.policy.subject_type === 'global'
-                                    ? html`<sl-icon name="globe"></sl-icon>
-                                        Global`
-                                    : u.policy.subject_type === 'ai_model'
-                                      ? html`<sl-icon name="cpu"></sl-icon>
-                                          Model`
-                                      : html`<sl-icon name="robot"></sl-icon>
-                                          Agent`}
-                                </span>
-                                <span style="font-weight: 500;">
-                                  $${u.spend.toFixed(2)} /
-                                  $${u.limit.toFixed(2)}
-                                </span>
-                              </div>
-                              <sl-progress-bar
-                                value=${u.percent}
-                                class="budget-${u.percent >= 100
-                                  ? 'danger'
-                                  : u.percent >= 80
-                                    ? 'warning'
-                                    : 'success'}"
-                                style="--height: 4px;"
-                              ></sl-progress-bar>
-                            </div>
-                          `
-                        )}
+                        <div
+                          style="display: flex; justify-content: space-between; font-size: var(--sl-font-size-small); align-items: center;"
+                        >
+                          <span
+                            style="display: flex; align-items: center; gap: 4px;"
+                          >
+                            ${u.policy.subject_type === 'global'
+                              ? html`<sl-icon name="globe"></sl-icon> Global`
+                              : u.policy.subject_type === 'ai_model'
+                                ? html`<sl-icon name="cpu"></sl-icon> Model`
+                                : html`<sl-icon name="robot"></sl-icon> Agent`}
+                          </span>
+                          <span style="font-weight: 500;">
+                            $${u.spend.toFixed(2)} / $${u.limit.toFixed(2)}
+                          </span>
+                        </div>
+                        <sl-progress-bar
+                          value=${u.percent}
+                          class="budget-${u.percent >= 100
+                            ? 'danger'
+                            : u.percent >= 80
+                              ? 'warning'
+                              : 'success'}"
+                          style="--height: 4px;"
+                        ></sl-progress-bar>
                       </div>
                     `
-                  : nothing}
+                  )}
+                </div>
               </div>
             `
           : nothing}
@@ -2234,7 +2250,7 @@ export class DashboardView extends AuthedElement {
         <div slot="header" class="card-header-with-action">
           <div class="chart-header">
             <sl-icon
-              src="/assets/gateway.svg"
+              src="/assets/preloop-badge.svg"
               slot="prefix"
               class="mcp-icon"
               alt="Gateway"
@@ -2275,50 +2291,54 @@ export class DashboardView extends AuthedElement {
             <div class="tool-count-label">available tools</div>
           </div>
 
-          <div class="tool-count">
-            <a
-              href="/console/audit?event_type=model_gateway_request"
-              style="color: inherit; text-decoration: none;"
-            >
-              <sl-icon
-                name="activity"
-                style="color: var(--sl-color-primary-600);"
-              ></sl-icon>
-              <div class="tool-count-value">
-                ${this.formatNumber(this.gatewaySummary?.total_requests || 0)}
-              </div>
-              <div class="tool-count-label hover-underline">model requests</div>
-            </a>
-          </div>
+          <a
+            class="tool-count"
+            href="/console/audit?event_type=model_gateway_request"
+            style="color: inherit; text-decoration: none;"
+          >
+            <sl-icon
+              name="activity"
+              style="color: var(--sl-color-primary-600);"
+            ></sl-icon>
+            <div class="tool-count-value">
+              ${this.formatNumber(this.gatewaySummary?.total_requests || 0)}
+            </div>
+            <div class="tool-count-label hover-underline">model requests</div>
+          </a>
 
-          <div class="tool-count">
-            <a
-              href="/console/audit?event_type=tool_call"
-              style="color: inherit; text-decoration: none;"
-            >
-              <sl-icon
-                name="play-circle"
-                style="color: var(--sl-color-primary-600);"
-              ></sl-icon>
-              <div class="tool-count-value">
-                ${this.formatNumber(this.toolCallsCount)}
-              </div>
-              <div class="tool-count-label hover-underline">tool calls</div>
-            </a>
-          </div>
+          <a
+            class="tool-count"
+            href="/console/audit?event_type=tool_call"
+            style="color: inherit; text-decoration: none;"
+          >
+            <sl-icon
+              name="play-circle"
+              style="color: var(--sl-color-primary-600);"
+            ></sl-icon>
+            <div class="tool-count-value">
+              ${this.formatNumber(this.toolCallsCount)}
+            </div>
+            <div class="tool-count-label hover-underline">tool calls</div>
+          </a>
 
           <!-- Rows 2 and 3 (Expandable) -->
           ${this.gatewayMetricsExpanded
             ? html`
                 <!-- Row 2 -->
-                <div class="tool-count">
+                <a
+                  class="tool-count"
+                  href="/console/agents"
+                  style="color: inherit; text-decoration: none;"
+                >
                   <sl-icon
                     name="robot"
                     style="color: var(--sl-color-neutral-400);"
                   ></sl-icon>
                   <div class="tool-count-value">${this.totalAgentsCount}</div>
-                  <div class="tool-count-label">active agents</div>
-                </div>
+                  <div class="tool-count-label hover-underline">
+                    active agents
+                  </div>
+                </a>
 
                 <div class="tool-count">
                   <sl-icon
@@ -2329,57 +2349,61 @@ export class DashboardView extends AuthedElement {
                   <div class="tool-count-label">used tools</div>
                 </div>
 
-                <div class="tool-count">
-                  <a
-                    href="/console/audit?event_type=model_gateway_request&outcome=failed"
-                    style="color: inherit; text-decoration: none;"
-                  >
-                    <sl-icon
-                      name="exclamation-triangle"
-                      style="color: ${this.gatewaySummary?.failed_requests
-                        ? 'var(--sl-color-danger-600)'
-                        : 'var(--sl-color-neutral-400)'};"
-                    ></sl-icon>
-                    <div class="tool-count-value">
-                      ${this.formatNumber(
-                        this.gatewaySummary?.failed_requests || 0
-                      )}
-                    </div>
-                    <div class="tool-count-label hover-underline">
-                      failed requests
-                    </div>
-                  </a>
-                </div>
+                <a
+                  class="tool-count"
+                  href="/console/audit?event_type=model_gateway_request&outcome=failed"
+                  style="color: inherit; text-decoration: none;"
+                >
+                  <sl-icon
+                    name="exclamation-triangle"
+                    style="color: ${this.gatewaySummary?.failed_requests
+                      ? 'var(--sl-color-danger-600)'
+                      : 'var(--sl-color-neutral-400)'};"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.formatNumber(
+                      this.gatewaySummary?.failed_requests || 0
+                    )}
+                  </div>
+                  <div class="tool-count-label hover-underline">
+                    failed requests
+                  </div>
+                </a>
 
-                <div class="tool-count">
-                  <a
-                    href="/console/audit?event_type=tool_call&outcome=failed"
-                    style="color: inherit; text-decoration: none;"
-                  >
-                    <sl-icon
-                      name="exclamation-octagon"
-                      style="color: ${this.failedToolCallsCount > 0
-                        ? 'var(--sl-color-danger-600)'
-                        : 'var(--sl-color-neutral-400)'};"
-                    ></sl-icon>
-                    <div class="tool-count-value">
-                      ${this.formatNumber(this.failedToolCallsCount)}
-                    </div>
-                    <div class="tool-count-label hover-underline">
-                      failed tool calls
-                    </div>
-                  </a>
-                </div>
+                <a
+                  class="tool-count"
+                  href="/console/audit?event_type=tool_call&outcome=failed"
+                  style="color: inherit; text-decoration: none;"
+                >
+                  <sl-icon
+                    name="exclamation-octagon"
+                    style="color: ${this.failedToolCallsCount > 0
+                      ? 'var(--sl-color-danger-600)'
+                      : 'var(--sl-color-neutral-400)'};"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.formatNumber(this.failedToolCallsCount)}
+                  </div>
+                  <div class="tool-count-label hover-underline">
+                    failed tool calls
+                  </div>
+                </a>
 
                 <!-- Row 3 -->
-                <div class="tool-count">
+                <a
+                  class="tool-count"
+                  href="/console/flows"
+                  style="color: inherit; text-decoration: none;"
+                >
                   <sl-icon
                     name="diagram-3"
                     style="color: var(--sl-color-neutral-400);"
                   ></sl-icon>
                   <div class="tool-count-value">${this.totalFlowsCount}</div>
-                  <div class="tool-count-label">total flows</div>
-                </div>
+                  <div class="tool-count-label hover-underline">
+                    total flows
+                  </div>
+                </a>
 
                 <div class="tool-count">
                   <sl-icon
@@ -2424,6 +2448,69 @@ export class DashboardView extends AuthedElement {
                   </div>
                   <div class="tool-count-label">success rate</div>
                 </div>
+
+                <!-- Row 4 (Approvals) -->
+                <a
+                  class="tool-count"
+                  href="/console/approvals"
+                  style="color: inherit; text-decoration: none;"
+                >
+                  <sl-icon
+                    name="shield-check"
+                    style="color: var(--sl-color-neutral-400);"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.formatNumber(this.approvalStats.total)}
+                  </div>
+                  <div class="tool-count-label hover-underline">
+                    total approvals
+                  </div>
+                </a>
+
+                <a
+                  class="tool-count"
+                  href="/console/approvals?status=approved"
+                  style="color: inherit; text-decoration: none;"
+                >
+                  <sl-icon
+                    name="check-circle"
+                    style="color: var(--sl-color-success-600);"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.formatNumber(this.approvalStats.approved)}
+                  </div>
+                  <div class="tool-count-label hover-underline">approved</div>
+                </a>
+
+                <a
+                  class="tool-count"
+                  href="/console/approvals?status=declined"
+                  style="color: inherit; text-decoration: none;"
+                >
+                  <sl-icon
+                    name="x-circle"
+                    style="color: var(--sl-color-danger-600);"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.formatNumber(this.approvalStats.declined)}
+                  </div>
+                  <div class="tool-count-label hover-underline">declined</div>
+                </a>
+
+                <a
+                  class="tool-count"
+                  href="/console/approvals?status=expired"
+                  style="color: inherit; text-decoration: none;"
+                >
+                  <sl-icon
+                    name="clock"
+                    style="color: var(--sl-color-warning-600);"
+                  ></sl-icon>
+                  <div class="tool-count-value">
+                    ${this.formatNumber(this.approvalStats.expired)}
+                  </div>
+                  <div class="tool-count-label hover-underline">timed out</div>
+                </a>
               `
             : nothing}
         </div>

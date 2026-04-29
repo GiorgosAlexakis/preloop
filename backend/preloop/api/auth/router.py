@@ -1251,6 +1251,95 @@ async def list_api_keys(
             pass
 
 
+@router.get("/api-keys/{key_id}", response_model=ApiKeySummary)
+async def get_api_key(
+    key_id: UUID,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+) -> ApiKeySummary:
+    """Get a specific API key for the current user.
+
+    Args:
+        key_id: The API key ID.
+        current_user: The current authenticated user.
+
+    Returns:
+        The API key summary.
+    """
+    session_generator = get_db_session()
+    session = next(session_generator)
+
+    try:
+        # Get API key using CRUD layer
+        key = crud_api_key.get_by_id_and_user(
+            session, key_id=key_id, username=current_user.username
+        )
+        if key is None:
+            raise HTTPException(status_code=404, detail="API key not found")
+
+        return _build_api_key_summary(session, key)
+    finally:
+        session.close()
+        try:
+            # Clean up the generator
+            next(session_generator, None)
+        except StopIteration:
+            pass
+
+
+@router.get("/api-keys/{key_id}/activity")
+async def get_api_key_activity(
+    key_id: UUID,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> List[Dict[str, Any]]:
+    """Get recent activity for an API key.
+
+    Args:
+        key_id: The API key ID.
+        current_user: The current authenticated user.
+        db: The database session.
+
+    Returns:
+        A list of recent API usage logs.
+    """
+    # Verify ownership
+    key = crud_api_key.get_by_id_and_user(
+        db, key_id=key_id, username=current_user.username
+    )
+    if key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    from preloop.models.crud.api_usage import crud_api_usage
+
+    return crud_api_usage.get_gateway_usage_by_api_key(
+        db, api_key_id=str(key_id), limit=50
+    )
+
+
+@router.get("/api-keys/{key_id}/gateway-usage/summary")
+async def get_api_key_gateway_usage_summary(
+    key_id: UUID,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+) -> Any:
+    """Get gateway usage summary for an API key."""
+    key = crud_api_key.get_by_id_and_user(
+        db, key_id=key_id, username=current_user.username
+    )
+    if key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    from preloop.services.model_gateway_usage import ModelGatewayUsageService
+
+    return ModelGatewayUsageService(db).get_api_key_summary(
+        api_key=key,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 @router.get(
     "/api-keys/{key_id}/governance",
     response_model=SubjectGovernanceResponse,

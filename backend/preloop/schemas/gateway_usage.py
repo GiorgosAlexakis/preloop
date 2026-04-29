@@ -473,6 +473,22 @@ class AccountGatewayUsageSummaryResponse(BaseModel):
     usage_by_session: List[GatewayUsageBySession] = Field(default_factory=list)
 
 
+class ApiKeyGatewayUsageSummaryResponse(BaseModel):
+    """API Key-scoped gateway usage summary."""
+
+    api_key_id: str
+    period_start: datetime
+    period_end: datetime
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    token_usage: GatewayTokenUsage
+    estimated_cost: float = 0.0
+    requests_by_day: List[GatewayUsageByDay] = Field(default_factory=list)
+    usage_by_model: List[GatewayUsageByModel] = Field(default_factory=list)
+    usage_by_session: List[GatewayUsageBySession] = Field(default_factory=list)
+
+
 class FlowGatewayUsageSummaryResponse(BaseModel):
     """Flow-scoped gateway usage summary."""
 

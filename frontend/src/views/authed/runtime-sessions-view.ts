@@ -39,6 +39,7 @@ import type {
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import '../../components/unified-session-history.ts';
 
 type DateRangePreset = 'last-7' | 'last-30' | 'last-90' | 'all' | 'custom';
 
@@ -695,12 +696,13 @@ export class RuntimeSessionsView extends LitElement {
         this.selectedSessionId,
         this.buildDetailParams()
       );
-      this.loadInteractions(isSoftRefresh);
-      this.loadActivityTimeline(isSoftRefresh);
-      await this.loadGatewayEvents(
-        this.detail.session.flow_execution_id,
-        isSoftRefresh
-      );
+      // Disabled in favor of unified-session-history
+      // this.loadInteractions(isSoftRefresh);
+      // this.loadActivityTimeline(isSoftRefresh);
+      // await this.loadGatewayEvents(
+      //   this.detail.session.flow_execution_id,
+      //   isSoftRefresh
+      // );
     } catch (error) {
       console.error('Failed to load session detail:', error);
       if (!isSoftRefresh) {
@@ -1717,37 +1719,13 @@ export class RuntimeSessionsView extends LitElement {
           ${this.renderModelBreakdown(this.detail.usage_by_model)}
         </sl-card>
 
-        <sl-card>
-          <div slot="header" class="session-item-title">Activity Timeline</div>
-          ${this.renderActivityTimeline(
-            this.activityTimeline,
-            this.activityTimelineLoading
-          )}
+        <sl-card style="--padding: 0;">
+          <unified-session-history
+            .sessions=${[this.detail.session]}
+            hideSidebar
+            style="height: 600px; display: block;"
+          ></unified-session-history>
         </sl-card>
-
-        <sl-card>
-          <div slot="header" class="session-item-title">
-            Captured Interactions
-          </div>
-          <div class="interaction-toolbar">
-            <sl-input
-              label="Search captured interactions"
-              placeholder="Search captured prompts, outputs, or metadata"
-              .value=${this.interactionQuery}
-              @sl-input=${this.handleInteractionQueryChange}
-              @keydown=${this.handleInteractionQueryKeydown}
-            ></sl-input>
-            <sl-button variant="primary" @click=${this.applyInteractionSearch}>
-              Search
-            </sl-button>
-          </div>
-          ${this.renderInteractions(
-            this.interactions?.items,
-            this.interactionsLoading
-          )}
-        </sl-card>
-
-        ${this.renderGatewayEventsPanel()}
       </div>
     `;
   }

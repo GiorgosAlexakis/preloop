@@ -33,6 +33,7 @@ import type {
   AccountGatewayUsageSummaryResponse,
   FlowGatewayUsageSummaryResponse,
   AIModelGatewayUsageSummaryResponse,
+  ApiKeyGatewayUsageSummaryResponse,
   AIModelRuntimeSessionListResponse,
   AIModelGatewayUsageSearchResponse,
   AIModel,
@@ -674,6 +675,15 @@ export async function updateTracker(trackerId: string, trackerData: any) {
   return response.json();
 }
 
+export async function deleteTracker(trackerId: string): Promise<void> {
+  const response = await fetchWithAuth(`/api/v1/trackers/${trackerId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete tracker');
+  }
+}
+
 export async function validateTrackerToken(
   type: string,
   token: string,
@@ -978,6 +988,24 @@ export async function deleteApiKey(keyId: string) {
   }
 }
 
+export async function getApiKey(keyId: string): Promise<ApiKey> {
+  const response = await fetchWithAuth(`/api/v1/auth/api-keys/${keyId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch API key');
+  }
+  return response.json();
+}
+
+export async function getApiKeyActivity(keyId: string): Promise<any[]> {
+  const response = await fetchWithAuth(
+    `/api/v1/auth/api-keys/${keyId}/activity`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch API key activity');
+  }
+  return response.json();
+}
+
 export async function getApiKeyGovernance(
   keyId: string
 ): Promise<SubjectGovernanceResponse> {
@@ -1004,6 +1032,24 @@ export async function updateApiKeyGovernance(
   );
   if (!response.ok) {
     throw new Error('Failed to update API key governance');
+  }
+  return response.json();
+}
+
+export async function getApiKeyGatewayUsageSummary(
+  keyId: string,
+  params: GatewayUsageSummaryParams = {}
+): Promise<ApiKeyGatewayUsageSummaryResponse> {
+  const query = new URLSearchParams();
+  if (params.startDate) query.append('start_date', params.startDate);
+  if (params.endDate) query.append('end_date', params.endDate);
+
+  const queryString = query.toString();
+  const url = `/api/v1/auth/api-keys/${keyId}/gateway-usage/summary${queryString ? `?${queryString}` : ''}`;
+
+  const response = await fetchWithAuth(url);
+  if (!response.ok) {
+    throw new Error('Failed to fetch API key gateway usage summary');
   }
   return response.json();
 }

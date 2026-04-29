@@ -578,7 +578,14 @@ export class ApiKeysView extends LitElement {
                 (key) => key.id,
                 (key) => html`
                   <tr>
-                    <td>${key.name}</td>
+                    <td>
+                      <a
+                        href="/console/settings/api-keys/${key.id}"
+                        style="font-weight: 600; text-decoration: none; color: var(--sl-color-primary-600);"
+                      >
+                        ${key.name}
+                      </a>
+                    </td>
                     <td>
                       <sl-badge variant=${this.getActivityVariant(key)}>
                         ${this.getActivityLabel(key)}
@@ -611,12 +618,6 @@ export class ApiKeysView extends LitElement {
                         size="small"
                         @click=${() => this.handleDeleteApiKey(key.id)}
                         >Revoke</sl-button
-                      >
-                      <sl-button
-                        size="small"
-                        variant="default"
-                        @click=${() => this.openGovernanceDialog(key)}
-                        >Governance</sl-button
                       >
                     </td>
                   </tr>
@@ -729,145 +730,6 @@ export class ApiKeysView extends LitElement {
           autofocus
           @click=${() => (this.isShowKeyModalOpen = false)}
           >I have copied my key</sl-button
-        >
-      </sl-dialog>
-
-      <sl-dialog
-        label=${`Scoped Governance: ${this.governanceKeyName || 'API Key'}`}
-        .open=${Boolean(this.governanceKeyId)}
-        @sl-hide=${() => {
-          this.governanceKeyId = null;
-          this.governanceError = null;
-          this.scopedToolRules = {};
-          this.governanceToolToAdd = '';
-          this.governanceCustomToolName = '';
-        }}
-      >
-        ${this.governanceError
-          ? html`<sl-alert variant="danger" open style="margin-bottom: 1rem;">
-              <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-              <strong>Error:</strong> ${this.governanceError}
-            </sl-alert>`
-          : null}
-        <sl-input
-          label="Allowed models"
-          placeholder="preloop/google/gemini-3.1-pro-preview, ..."
-          .value=${this.governanceAllowedModels}
-          @sl-input=${(event: Event) => {
-            this.governanceAllowedModels = (
-              event.target as HTMLInputElement
-            ).value;
-          }}
-          style="margin-bottom: 1rem;"
-        ></sl-input>
-        <div style="margin-bottom: 1rem;">
-          <budget-policy-editor
-            subjectType="api_key"
-            .subjectId=${this.governanceKeyId}
-          ></budget-policy-editor>
-        </div>
-        <div style="margin-bottom: 1rem;">
-          <div
-            style="font-size: var(--sl-input-label-font-size-medium); font-weight: var(--sl-input-label-font-weight); margin-bottom: 0.5rem;"
-          >
-            Scoped tool rules
-          </div>
-          <div
-            style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem;"
-          >
-            <sl-select
-              placeholder="Choose a tool"
-              .value=${this.governanceToolToAdd}
-              @sl-change=${(event: Event) => {
-                this.governanceToolToAdd = (event.target as any).value || '';
-              }}
-            >
-              ${this.getAvailableGovernanceTools().map(
-                (tool) =>
-                  html`<sl-option value=${tool.name}>${tool.name}</sl-option>`
-              )}
-            </sl-select>
-            <sl-input
-              placeholder="Or enter a tool name"
-              .value=${this.governanceCustomToolName}
-              @sl-input=${(event: Event) => {
-                this.governanceCustomToolName = (
-                  event.target as HTMLInputElement
-                ).value;
-              }}
-            ></sl-input>
-            <sl-button
-              variant="default"
-              @click=${() => this.addGovernanceToolScope()}
-              >Add tool scope</sl-button
-            >
-          </div>
-          ${Object.keys(this.scopedToolRules).length === 0
-            ? html`<div class="form-help-text">
-                No scoped tool rules configured. Leave empty to inherit
-                account-wide tool policies.
-              </div>`
-            : Object.keys(this.scopedToolRules)
-                .sort()
-                .map((toolName) => {
-                  const tool = this.getGovernanceTool(toolName);
-                  return html`
-                    <sl-card style="margin-top: 0.75rem;">
-                      <div
-                        style="display:flex; justify-content:space-between; gap:12px; align-items:start; margin-bottom:0.75rem;"
-                      >
-                        <div>
-                          <div style="font-weight: 600;">${toolName}</div>
-                          ${tool?.description
-                            ? html`<div class="form-help-text">
-                                ${tool.description}
-                              </div>`
-                            : ''}
-                        </div>
-                        <sl-button
-                          size="small"
-                          variant="text"
-                          @click=${() =>
-                            this.removeGovernanceToolScope(toolName)}
-                        >
-                          Remove scope
-                        </sl-button>
-                      </div>
-                      <governance-rule-set-editor
-                        .toolName=${toolName}
-                        .toolSchema=${tool?.schema || null}
-                        .rules=${this.scopedToolRules[toolName] || []}
-                        .workflows=${this.approvalWorkflows}
-                        .features=${this.featureFlags}
-                        .emptyMessage=${'No scoped rules for this tool yet.'}
-                        @save-rule=${(event: CustomEvent) =>
-                          this.saveScopedToolRule(
-                            toolName,
-                            event.detail.existingRule,
-                            event.detail.formData
-                          )}
-                        @delete-rule=${(event: CustomEvent) =>
-                          this.deleteScopedToolRule(
-                            toolName,
-                            event.detail.rule.id
-                          )}
-                        @reorder-rules=${(event: CustomEvent) =>
-                          this.reorderScopedToolRules(
-                            toolName,
-                            event.detail.reorderedRules
-                          )}
-                        @workflow-created=${() =>
-                          void this.refreshGovernanceWorkflows()}
-                      ></governance-rule-set-editor>
-                    </sl-card>
-                  `;
-                })}
-        </div>
-        <sl-button slot="footer" @click=${() => (this.governanceKeyId = null)}
-          >Close</sl-button
-        >
-        <sl-button slot="footer" variant="primary" @click=${this.saveGovernance}
-          >Save governance</sl-button
         >
       </sl-dialog>
     `;

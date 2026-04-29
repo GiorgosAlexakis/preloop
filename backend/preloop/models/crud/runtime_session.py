@@ -195,6 +195,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         session_source_type: Optional[str] = None,
         runtime_principal_type: Optional[str] = None,
         runtime_principal_id: Optional[str] = None,
+        min_requests: Optional[int] = None,
         status: str = "all",
         limit: int = 20,
         offset: int = 0,
@@ -228,6 +229,43 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 )
             session_query = session_query.filter(
                 self.model.id.in_(matching_session_ids.distinct())
+            )
+        else:
+            if start_date is not None:
+                start_date_utc = (
+                    start_date.astimezone(UTC).replace(tzinfo=None)
+                    if start_date.tzinfo
+                    else start_date
+                )
+                session_query = session_query.filter(
+                    or_(
+                        self.model.last_activity_at >= start_date_utc,
+                        self.model.started_at >= start_date_utc,
+                    )
+                )
+            if end_date is not None:
+                end_date_utc = (
+                    end_date.astimezone(UTC).replace(tzinfo=None)
+                    if end_date.tzinfo
+                    else end_date
+                )
+                session_query = session_query.filter(
+                    self.model.started_at < end_date_utc
+                )
+
+        if min_requests is not None:
+            usage_count_subq = (
+                db.query(ApiUsage.runtime_session_id)
+                .filter(
+                    ApiUsage.runtime_session_id.isnot(None),
+                    ApiUsage.action_type == "model_gateway",
+                )
+                .group_by(ApiUsage.runtime_session_id)
+                .having(func.count(ApiUsage.id) >= min_requests)
+                .subquery()
+            )
+            session_query = session_query.filter(
+                self.model.id.in_(usage_count_subq.select())
             )
         if session_source_type:
             session_query = session_query.filter(

@@ -429,7 +429,10 @@ describe('DashboardView', () => {
   it('subscribes to realtime topics and fetches dashboard data', async () => {
     const element = await mountDashboard();
     await waitUntil(
-      () => !element['loading'],
+      () =>
+        !element['loading'] &&
+        !element['fetchingActiveAgents'] &&
+        !element['fetchingBudget'],
       'dashboard did not finish loading'
     );
 
@@ -442,8 +445,6 @@ describe('DashboardView', () => {
         url.startsWith('/api/v1/account/gateway-usage/summary')
       )
     ).to.be.true;
-    expect(urls.some((url) => url.startsWith('/api/v1/runtime-sessions'))).to.be
-      .true;
     expect(urls.some((url) => url.startsWith('/api/v1/agents'))).to.be.true;
     expect(urls.some((url) => url.startsWith('/api/v1/audit-logs/grouped'))).to
       .be.true;

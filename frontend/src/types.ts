@@ -470,6 +470,20 @@ export interface AIModelGatewayUsageSummaryResponse {
   usage_by_session: GatewayUsageBySession[];
 }
 
+export interface ApiKeyGatewayUsageSummaryResponse {
+  api_key_id: string;
+  period_start: string;
+  period_end: string;
+  total_requests: number;
+  successful_requests: number;
+  failed_requests: number;
+  token_usage: GatewayTokenUsage;
+  estimated_cost: number;
+  requests_by_day: GatewayUsageByDay[];
+  usage_by_model: GatewayUsageByModel[];
+  usage_by_session: GatewayUsageBySession[];
+}
+
 export type AIModelRuntimeSessionListResponse =
   AccountRuntimeSessionListResponse;
 

@@ -492,6 +492,7 @@ def _build_managed_agent_detail_response(
         account_id=account_id,
         runtime_principal_type=summary["session_source_type"],
         runtime_principal_id=summary["session_source_id"],
+        min_requests=1,
         status="all",
         limit=20,
         offset=0,

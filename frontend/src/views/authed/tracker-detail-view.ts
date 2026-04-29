@@ -1,5 +1,6 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { Router } from '@vaadin/router';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -8,7 +9,12 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '../../components/view-header.ts';
-import { fetchWithAuth, getFeatures, type FeaturesResponse } from '../../api';
+import {
+  fetchWithAuth,
+  getFeatures,
+  deleteTracker,
+  type FeaturesResponse,
+} from '../../api';
 import type { Project } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
@@ -41,6 +47,9 @@ export class TrackerDetailView extends LitElement {
 
   @state()
   private _error: string | null = null;
+
+  @state()
+  private _editingTracker: TrackerDetail | null = null;
 
   @state()
   private _features: FeaturesResponse['features'] = {};
@@ -249,6 +258,46 @@ export class TrackerDetailView extends LitElement {
     return this._projects.map((p) => p.id.split('-')[0]).join(',');
   }
 
+  private handleEdit() {
+    if (this._tracker) {
+      this._editingTracker = this._tracker;
+    }
+  }
+
+  private async handleDelete() {
+    if (!this._tracker) return;
+    if (
+      !confirm(
+        `Are you sure you want to delete the tracker "${this._tracker.name}"?`
+      )
+    ) {
+      return;
+    }
+
+    this._loading = true;
+    try {
+      await deleteTracker(this._trackerId);
+      Router.go('/console/trackers');
+    } catch (error) {
+      this._error =
+        error instanceof Error ? error.message : 'Failed to delete tracker';
+      this._loading = false;
+    }
+  }
+
+  private handleSync() {
+    console.log('Sync tracker functionality not yet implemented in backend.');
+  }
+
+  private _handleTrackerUpdated() {
+    this._editingTracker = null;
+    this._loadData();
+  }
+
+  private _closeAddTrackerForm() {
+    this._editingTracker = null;
+  }
+
   private _buildIssuesUrl(subpath: string): string {
     const projectIds = this._getProjectIds();
     const base = `/console/issues${subpath}`;
@@ -270,7 +319,12 @@ export class TrackerDetailView extends LitElement {
       return html`
         <view-header headerText="Tracker Details" width="narrow">
           <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
-            <sl-button variant="default" size="small" href="/console/trackers">
+            <sl-button
+              variant="text"
+              size="small"
+              href="/console/trackers"
+              style="margin-left: -12px;"
+            >
               <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to
               Trackers
             </sl-button>
@@ -295,11 +349,48 @@ export class TrackerDetailView extends LitElement {
     const hasProjects = this._projects.length > 0;
 
     return html`
+      ${this._editingTracker
+        ? html`<add-tracker-modal
+            .tracker=${this._editingTracker}
+            @tracker-updated=${this._handleTrackerUpdated}
+            @close-modal=${this._closeAddTrackerForm}
+          ></add-tracker-modal>`
+        : ''}
       <view-header headerText=${tracker.name} width="narrow">
         <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
-          <sl-button variant="default" size="small" href="/console/trackers">
+          <sl-button
+            variant="text"
+            size="small"
+            href="/console/trackers"
+            style="margin-left: -12px;"
+          >
             <sl-icon slot="prefix" name="arrow-left"></sl-icon> Back to Trackers
           </sl-button>
+        </div>
+        <div slot="main-column" class="header-actions">
+          <resource-actions
+            .actions=${[
+              {
+                id: 'edit',
+                label: 'Edit',
+                icon: 'pencil',
+                onClick: () => this.handleEdit(),
+              },
+              {
+                id: 'sync',
+                label: 'Sync Now',
+                icon: 'arrow-repeat',
+                onClick: () => this.handleSync(),
+              },
+              {
+                id: 'delete',
+                label: 'Delete',
+                icon: 'trash',
+                variant: 'danger',
+                onClick: () => this.handleDelete(),
+              },
+            ]}
+          ></resource-actions>
         </div>
       </view-header>
       <div class="column-layout narrow" style="padding-top: 0;">

@@ -377,19 +377,27 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
                 AuditLog.resource_id.ilike(f"%{tool_name_filter}%")
             )
 
-        # Count total before pagination
-        total = primary_query.count()
+        if outcome_filter:
+            # When outcome_filter is used, we must evaluate the outcomes of groups.
+            # To avoid OOM, limit the search space to the most recent 5000 primary events.
+            primary_events = (
+                primary_query.order_by(AuditLog.timestamp.desc()).limit(5000).all()
+            )
+            total = 0  # Will be recalculated after filtering
+        else:
+            # Count total before pagination
+            total = primary_query.count()
 
-        # Fetch the page of primary events
-        primary_events = (
-            primary_query.order_by(AuditLog.timestamp.desc())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+            # Fetch the page of primary events
+            primary_events = (
+                primary_query.order_by(AuditLog.timestamp.desc())
+                .offset(skip)
+                .limit(limit)
+                .all()
+            )
 
         if not primary_events:
-            return [], total
+            return [], total if not outcome_filter else 0
 
         # Step 2: Collect correlation_ids from primary tool_call events
         correlation_ids = set()
@@ -520,6 +528,10 @@ class CRUDAuditLog(CRUDBase[AuditLog]):
                     "outcome": outcome,
                 }
             )
+
+        if outcome_filter:
+            total = len(groups)
+            groups = groups[skip : skip + limit]
 
         return groups, total
 

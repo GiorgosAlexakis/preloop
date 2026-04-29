@@ -312,9 +312,9 @@ describe('AgentDetailView', () => {
     const content = element.shadowRoot?.textContent || '';
     expect(content).to.contain('Live validated');
     expect(content).to.contain('openai/gpt-5');
-    expect(content).to.contain(
-      'Tool calls and model traffic both flow through Preloop.'
-    );
+    expect(
+      element.shadowRoot?.querySelector('sl-tooltip')?.getAttribute('content')
+    ).to.contain('Tool calls and model traffic both flow through Preloop.');
     const modelLink = element.shadowRoot?.querySelector(
       'a.session-link[href="/console/ai-models/configured-model-1"]'
     );

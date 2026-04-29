@@ -4,6 +4,7 @@ import landingStyles from '../../styles/landing.css?inline';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/app-header';
 import '../../components/app-footer';
+import { getBrandConfig } from '../../brand-config';
 
 @customElement('whatis-mcp-view')
 export class WhatIsMcpView extends LitElement {

@@ -44,7 +44,8 @@ export class AppearanceView extends LitElement {
   }
 
   private handleThemeChange(event: CustomEvent) {
-    const newTheme = event.target.value as Theme;
+    const target = event.target as any;
+    const newTheme = target.value as Theme;
     this.selectedTheme = newTheme;
     localStorage.setItem('theme', newTheme);
     window.dispatchEvent(

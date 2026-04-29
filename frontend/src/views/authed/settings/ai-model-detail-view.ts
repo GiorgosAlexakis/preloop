@@ -12,6 +12,7 @@ import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '../../../components/view-header.ts';
+import '../../../components/resource-actions.ts';
 import '../../../components/budget-policy-editor.ts';
 import {
   extractErrorMessage,
@@ -1073,10 +1074,28 @@ export class AIModelDetailView extends LitElement {
     return html`
       <view-header headerText=${headerText} width="extra-wide">
         <div slot="top" style="margin-bottom: var(--sl-spacing-small);">
-          <sl-button variant="default" size="small" href="/console/ai-models">
+          <sl-button
+            variant="text"
+            size="small"
+            href="/console/ai-models"
+            style="margin-left: -12px;"
+          >
             <sl-icon slot="prefix" name="arrow-left"></sl-icon>
             Back to AI Models
           </sl-button>
+        </div>
+        <div slot="main-column" class="header-actions">
+          <resource-actions
+            .actions=${[
+              { id: 'edit', label: 'Edit', icon: 'pencil' },
+              {
+                id: 'delete',
+                label: 'Delete',
+                icon: 'trash',
+                variant: 'danger',
+              },
+            ]}
+          ></resource-actions>
         </div>
       </view-header>
       <div class="dashboard extra-wide">

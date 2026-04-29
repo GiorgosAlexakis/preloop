@@ -2,6 +2,7 @@ import { expect, waitUntil } from '@open-wc/testing';
 import sinon from 'sinon';
 
 import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
+import '../../../setup-tests';
 import './ai-model-detail-view';
 import type { AIModelDetailView } from './ai-model-detail-view';
 
