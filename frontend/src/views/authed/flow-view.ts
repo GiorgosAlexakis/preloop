@@ -1166,12 +1166,12 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       }
     }
 
-    // Auto-select the most recently added compatible AI model
+    // Auto-select the most recently added AI model
     if (!this.flow.ai_model_id) {
-      const compatibleModels = this.getCompatibleModels();
-      if (compatibleModels.length > 0) {
+      const selectableModels = this.getSelectableModels();
+      if (selectableModels.length > 0) {
         this.flow.ai_model_id =
-          compatibleModels[compatibleModels.length - 1].id;
+          selectableModels[selectableModels.length - 1].id;
       }
     }
 
@@ -1179,30 +1179,27 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   /**
-   * Get AI models compatible with the selected agent type.
+   * Get AI models selectable for the selected agent type.
+   *
+   * The backend adapts gateway-backed models to the protocol each agent speaks
+   * (OpenAI-, Anthropic-, or Gemini-compatible), so the form should not hide
+   * models based on provider names.
    */
-  getCompatibleModels() {
-    const agentType = this.flow.agent_type || 'codex';
+  getSelectableModels() {
+    return this.models;
+  }
 
-    // Define agent type to provider mapping
-    const agentProviderMap: Record<string, string[]> = {
-      gemini: ['google'],
-      codex: ['openai', 'google', 'deepseek', 'qwen', 'custom'],
-      // aider: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'], // Aider supports multiple providers
-      opencode: ['openai', 'anthropic', 'google', 'deepseek', 'qwen', 'custom'],
-    };
-
-    const compatibleProviders = agentProviderMap[agentType] || [];
-
-    // If no provider mapping or empty, return all models
-    if (compatibleProviders.length === 0) {
-      return this.models;
+  private getAgentProtocolLabel(agentType: string): string {
+    switch (agentType) {
+      case 'gemini':
+        return 'Gemini-compatible gateway endpoint';
+      case 'codex':
+      case 'opencode':
+      case 'aider':
+      case 'openhands':
+      default:
+        return 'OpenAI-compatible gateway endpoint';
     }
-
-    // Filter models by compatible providers
-    return this.models.filter((model: any) =>
-      compatibleProviders.includes(model.provider_name?.toLowerCase())
-    );
   }
 
   renderForm() {
@@ -1275,7 +1272,7 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
             }}
             help-text="Choose which AI agent to use for executing this flow"
           >
-            <sl-option value="codex">Codex (Recommended)</sl-option>
+            <sl-option value="codex">Codex CLI</sl-option>
             <sl-option value="gemini">Gemini CLI</sl-option>
             <sl-option value="opencode">OpenCode</sl-option>
           </sl-select>
@@ -1309,15 +1306,9 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                   </div>
                 `
               : (() => {
-                  const compatibleModels = this.getCompatibleModels();
+                  const selectableModels = this.getSelectableModels();
                   const agentType = this.flow.agent_type || 'codex';
-                  const providerNames: Record<string, string> = {
-                    gemini: 'Google',
-                    codex: 'OpenAI',
-                    aider: 'OpenAI/Anthropic',
-                    openhands: 'OpenAI/Anthropic/Google',
-                  };
-                  const providerName = providerNames[agentType] || 'compatible';
+                  const protocolLabel = this.getAgentProtocolLabel(agentType);
 
                   return html`
                     <div>
@@ -1326,13 +1317,13 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
                         .value=${this.flow.ai_model_id || ''}
                         @sl-change=${(e: any) =>
                           (this.flow.ai_model_id = e.target.value)}
-                        help-text="Showing ${providerName} models compatible with ${agentType}"
+                        help-text="All configured models are available. Gateway-backed runs will use the ${protocolLabel} for ${agentType}."
                       >
-                        ${compatibleModels.length === 0
+                        ${selectableModels.length === 0
                           ? html`<sl-option value="" disabled>
-                              No compatible models available
+                              No AI models available
                             </sl-option>`
-                          : compatibleModels.map(
+                          : selectableModels.map(
                               (model) =>
                                 html`<sl-option value=${model.id}
                                   >${model.name}</sl-option

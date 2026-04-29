@@ -365,8 +365,8 @@ paths:
       - Auth
       summary: Get Api Key
       description: "Get a specific API key for the current user.\n\nArgs:\n    key_id:\
-        \ The API key ID.\n    current_user: The current authenticated user.\n\nReturns:\n\
-        \    The API key summary."
+        \ The API key ID.\n    current_user: The current authenticated user.\n   \
+        \ db: The database session.\n\nReturns:\n    The API key summary."
       operationId: get_api_key_api_v1_auth_api_keys__key_id__get
       security:
       - OAuth2PasswordBearer: []

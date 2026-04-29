@@ -8,6 +8,7 @@ from typing import Any, Dict
 from aiodocker.exceptions import DockerError
 
 from preloop.services.mcp_config_service import MCPConfigService
+from preloop.services.model_runtime_resolver import gateway_url_for_api
 
 from .container import ContainerAgentExecutor
 
@@ -303,7 +304,7 @@ class CodexAgent(ContainerAgentExecutor):
         )
         model_provider = (model_provider or "openai").lower()
         model_endpoint = (
-            execution_context.get("model_gateway_url")
+            gateway_url_for_api(execution_context.get("model_gateway_url"), "openai")
             if execution_context.get("model_gateway_enabled")
             else execution_context.get("model_endpoint")
         ) or ""
@@ -608,7 +609,7 @@ EOF"""
             ).lower()
             gateway_token = execution_context.get("model_gateway_token")
             if gateway_token:
-                custom_env_key = f"{gateway_provider.upper()}_API_KEY"
+                custom_env_key = f"{gateway_provider.upper().replace('-', '_')}_API_KEY"
                 env[custom_env_key] = gateway_token
                 env["OPENAI_API_KEY"] = gateway_token
                 env["PRELOOP_MODEL_GATEWAY_TOKEN"] = gateway_token

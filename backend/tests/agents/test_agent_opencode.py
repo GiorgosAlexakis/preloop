@@ -292,7 +292,7 @@ class TestOpenCodeBuildConfig:
         agent = OpenCodeAgent({})
         context = {
             "model_gateway_enabled": True,
-            "model_gateway_url": "http://gateway.internal/openai/v1",
+            "model_gateway_url": "http://gateway.internal/gemini/v1beta",
             "model_gateway_provider": "preloop",
         }
         config = agent._build_opencode_config(

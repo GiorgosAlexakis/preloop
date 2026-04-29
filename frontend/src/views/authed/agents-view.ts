@@ -1018,11 +1018,11 @@ export class AgentsView extends LitElement {
   ): Array<{ x: number; y: number }> {
     const candidates: Array<{ x: number; y: number }> = [];
     const rings = [
-      { rx: 360, ry: 270, slots: 6 },
-      { rx: 620, ry: 465, slots: 10 },
-      { rx: 880, ry: 660, slots: 14 },
-      { rx: 1140, ry: 855, slots: 18 },
-      { rx: 1400, ry: 1050, slots: 22 },
+      { rx: 360, ry: 220, slots: 6 },
+      { rx: 620, ry: 380, slots: 10 },
+      { rx: 880, ry: 540, slots: 14 },
+      { rx: 1140, ry: 700, slots: 18 },
+      { rx: 1400, ry: 860, slots: 22 },
     ];
 
     for (const ring of rings) {
@@ -1098,8 +1098,9 @@ export class AgentsView extends LitElement {
 
   /**
    * Adjust the viewport's scale/translate so every node in `positions`
-   * is visible with a comfortable margin. Caps the zoom at 1× so we
-   * never grow cards past their native size on huge displays.
+   * is visible with a comfortable margin. Allow a modest auto-zoom on
+   * roomy canvases so small fleets stay readable in marketing captures
+   * and day-to-day use.
    */
   private fitViewportToPositions(
     positions: Record<string, { x: number; y: number }>
@@ -1150,7 +1151,8 @@ export class AgentsView extends LitElement {
     const scaleY = bounds.height / 2 / halfHeight;
     // Keep the gateway pinned at viewport center. Only scale the surrounding
     // agents down when the compact rings truly need the room.
-    const targetScale = Math.min(scaleX, scaleY, 1);
+    const maxAutoScale = 1.25;
+    const targetScale = Math.min(scaleX, scaleY, maxAutoScale);
 
     this.scale = targetScale;
     this.translateX = bounds.width / 2;

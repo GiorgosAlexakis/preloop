@@ -170,6 +170,7 @@ export class DashboardView extends AuthedElement {
   @state() private activeAgentsTimeRange: '5m' | '1h' | '1d' | '1w' | '1mo' =
     '1d';
   @state() private fetchingActiveAgents = false;
+  @state() private topModelsSortMetric: 'spend' | 'usage' = 'spend';
   @state() private showSetupDialog = false;
   @state() private showBudgetDialog = false;
   @state() private welcomeCardDismissed = false;
@@ -1961,7 +1962,14 @@ export class DashboardView extends AuthedElement {
     return html`
       <sl-card class="content-card">
         <div slot="header" class="card-header-with-action">
-          Budget health
+          <div
+            style="display: flex; align-items: center; gap: var(--sl-spacing-2x-small);"
+          >
+            Budget health
+            ${this.fetchingBudget
+              ? html`<sl-spinner style="font-size: 1rem;"></sl-spinner>`
+              : ''}
+          </div>
           <select
             style="background: transparent; border: none; font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-600); cursor: pointer; outline: none; margin-left: auto;"
             .value=${this.budgetTimeRange}
@@ -1977,7 +1985,7 @@ export class DashboardView extends AuthedElement {
             <option value="year">1y</option>
           </select>
         </div>
-        ${this.fetchingBudget
+        ${this.fetchingBudget && this.loading
           ? html`<div
               class="loading-container"
               style="padding: var(--sl-spacing-small);"
@@ -2146,17 +2154,58 @@ export class DashboardView extends AuthedElement {
   }
 
   private renderTopModelsCard() {
-    const models = this.gatewaySummary?.usage_by_model || [];
-    if (models.length === 0) {
+    const rawModels = this.gatewaySummary?.usage_by_model || [];
+    if (rawModels.length === 0) {
       return nothing;
     }
+
+    const aggregatedModels = new Map<string, any>();
+    rawModels.forEach((m) => {
+      const key = `${m.model_alias}-${m.provider_name}`;
+      if (!aggregatedModels.has(key)) {
+        aggregatedModels.set(key, { ...m });
+      } else {
+        const existing = aggregatedModels.get(key)!;
+        existing.request_count += m.request_count;
+        existing.estimated_cost += m.estimated_cost;
+        existing.prompt_tokens =
+          (existing.prompt_tokens || 0) + (m.prompt_tokens || 0);
+        existing.completion_tokens =
+          (existing.completion_tokens || 0) + (m.completion_tokens || 0);
+        if (m.ai_model_id && !existing.ai_model_id) {
+          existing.ai_model_id = m.ai_model_id;
+        }
+      }
+    });
+
+    const models = Array.from(aggregatedModels.values());
+    models.sort((a, b) => {
+      if (this.topModelsSortMetric === 'usage') {
+        return b.request_count - a.request_count;
+      } else {
+        return b.estimated_cost - a.estimated_cost;
+      }
+    });
 
     const allSessions = this.gatewaySummary?.usage_by_session || [];
 
     return html`
       <sl-card class="content-card">
         <div slot="header" class="card-header-with-action">
-          Top Models by Usage
+          <div style="display: flex; align-items: center; gap: 4px;">
+            Top Models
+            <select
+              style="background: transparent; border: none; font-size: inherit; font-weight: inherit; font-family: inherit; color: inherit; cursor: pointer; outline: none; padding: 0;"
+              .value=${this.topModelsSortMetric}
+              @change=${(e: Event) => {
+                this.topModelsSortMetric = (e.target as HTMLSelectElement)
+                  .value as any;
+              }}
+            >
+              <option value="spend">by Spend</option>
+              <option value="usage">by Usage</option>
+            </select>
+          </div>
           <div
             style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
           >
@@ -2255,7 +2304,9 @@ export class DashboardView extends AuthedElement {
                           `}
                     </div>
                     <span class="row-value">
-                      ${this.formatCurrency(item.estimated_cost)}
+                      ${this.topModelsSortMetric === 'usage'
+                        ? `${this.formatNumber(item.request_count)} requests`
+                        : this.formatCurrency(item.estimated_cost)}
                     </span>
                   </div>
                   <div
@@ -2263,7 +2314,9 @@ export class DashboardView extends AuthedElement {
                   >
                     <span>${item.provider_name || 'provider unknown'}</span>
                     <span
-                      >${this.formatNumber(item.request_count)} requests</span
+                      >${this.topModelsSortMetric === 'spend'
+                        ? `${this.formatNumber(item.request_count)} requests`
+                        : this.formatCurrency(item.estimated_cost)}</span
                     >
                   </div>
 
@@ -2562,7 +2615,15 @@ export class DashboardView extends AuthedElement {
     return html`
       <sl-card class="content-card">
         <div slot="header" class="card-header-with-action">
-          <div class="card-title">Active agents</div>
+          <div
+            class="card-title"
+            style="display: flex; align-items: center; gap: var(--sl-spacing-2x-small);"
+          >
+            Active agents
+            ${this.fetchingActiveAgents
+              ? html`<sl-spinner style="font-size: 1rem;"></sl-spinner>`
+              : ''}
+          </div>
           <select
             style="background: transparent; border: none; font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-600); cursor: pointer; outline: none; margin-left: auto; margin-right: var(--sl-spacing-small);"
             .value=${this.activeAgentsTimeRange}
@@ -2586,7 +2647,7 @@ export class DashboardView extends AuthedElement {
             >
           </div>
         </div>
-        ${this.fetchingActiveAgents
+        ${this.fetchingActiveAgents && this.loading
           ? html`<div
               class="loading-container"
               style="padding: var(--sl-spacing-small);"
@@ -2766,7 +2827,15 @@ export class DashboardView extends AuthedElement {
               ? 'var(--sl-color-primary-600)'
               : 'var(--sl-color-neutral-400)';
     const content = html`
-      <sl-icon name=${metric.icon} style="color: ${iconColor};"></sl-icon>
+      ${metric.icon.includes('/')
+        ? html`<sl-icon
+            src=${metric.icon}
+            style="color: ${iconColor};"
+          ></sl-icon>`
+        : html`<sl-icon
+            name=${metric.icon}
+            style="color: ${iconColor};"
+          ></sl-icon>`}
       <div class="tool-count-value">${metric.value}</div>
       <div class="tool-count-label ${metric.href ? 'hover-underline' : ''}">
         ${metric.label}
@@ -2799,7 +2868,7 @@ export class DashboardView extends AuthedElement {
       {
         label: 'flows',
         value: this.formatNumber(this.totalFlowsCount),
-        icon: 'diagram-3',
+        icon: '/images/flow.svg',
         href: '/console/flows',
         tone: 'primary',
       },

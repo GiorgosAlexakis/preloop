@@ -9,6 +9,7 @@ from typing import Any, Dict
 from aiodocker.exceptions import DockerError
 
 from preloop.services.mcp_config_service import MCPConfigService
+from preloop.services.model_runtime_resolver import gateway_url_for_api
 
 from .container import ContainerAgentExecutor
 
@@ -477,7 +478,12 @@ exit $OPENCODE_EXIT_CODE
         effective_model_provider = str(effective_model_provider).strip().lower()
 
         if gateway_enabled:
-            model_endpoint = execution_context.get("model_gateway_url") or ""
+            model_endpoint = (
+                gateway_url_for_api(
+                    execution_context.get("model_gateway_url"), "openai"
+                )
+                or ""
+            )
         else:
             model_endpoint = execution_context.get("model_endpoint") or ""
 

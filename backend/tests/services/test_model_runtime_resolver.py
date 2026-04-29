@@ -3,7 +3,10 @@
 from sqlalchemy.orm import Session
 
 from preloop.models.crud import crud_account, crud_ai_model
-from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
+from preloop.services.model_runtime_resolver import (
+    gateway_url_for_api,
+    resolve_ai_model_runtime,
+)
 
 
 def test_resolve_ai_model_runtime_for_gateway_enabled_model(db_session: Session):
@@ -42,6 +45,22 @@ def test_resolve_ai_model_runtime_for_gateway_enabled_model(db_session: Session)
     assert resolved.model_provider == "preloop"
     assert resolved.model_endpoint == "http://gateway.internal/openai/v1"
     assert resolved.model_api_key is None
+
+
+def test_gateway_url_for_api_resolves_sibling_gateway_endpoints():
+    """Gateway URLs should adapt to the client API shape an agent speaks."""
+    assert (
+        gateway_url_for_api("https://review.preloop.ai/openai/v1", "gemini")
+        == "https://review.preloop.ai/gemini/v1beta"
+    )
+    assert (
+        gateway_url_for_api("https://review.preloop.ai/gemini/v1beta", "openai")
+        == "https://review.preloop.ai/openai/v1"
+    )
+    assert (
+        gateway_url_for_api("https://review.preloop.ai/anthropic/v1", "openai")
+        == "https://review.preloop.ai/openai/v1"
+    )
 
 
 def test_resolve_ai_model_runtime_for_direct_provider_model(db_session: Session):

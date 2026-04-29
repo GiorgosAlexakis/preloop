@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from typing import Any, Dict, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from preloop.models.models.ai_model import AIModel
 from preloop.services.secret_service import get_secret_service
@@ -13,6 +14,11 @@ from preloop.services.secret_service import get_secret_service
 DEFAULT_GATEWAY_PROVIDER = "preloop"
 DEFAULT_GATEWAY_TRANSPORT_MODE = "preloop_gateway"
 DEFAULT_GATEWAY_URL = "http://host.docker.internal:8000/openai/v1"
+GATEWAY_API_PATHS = {
+    "openai": "/openai/v1",
+    "anthropic": "/anthropic/v1",
+    "gemini": "/gemini/v1beta",
+}
 
 
 @dataclass
@@ -65,6 +71,26 @@ def _get_gateway_config(ai_model: AIModel) -> Dict[str, Any]:
     meta_data = ai_model.meta_data or {}
     gateway_config = meta_data.get("gateway") if isinstance(meta_data, dict) else None
     return gateway_config if isinstance(gateway_config, dict) else {}
+
+
+def gateway_url_for_api(gateway_url: Optional[str], api: str) -> Optional[str]:
+    """Return the sibling gateway URL for the requested client API shape."""
+    if not gateway_url:
+        return gateway_url
+
+    api_path = GATEWAY_API_PATHS.get(api)
+    if not api_path:
+        raise ValueError(f"Unsupported gateway API: {api}")
+
+    parsed = urlsplit(gateway_url.rstrip("/"))
+    current_path = parsed.path.rstrip("/")
+    base_path = current_path
+    for known_path in GATEWAY_API_PATHS.values():
+        if current_path.endswith(known_path):
+            base_path = current_path[: -len(known_path)].rstrip("/")
+            break
+
+    return urlunsplit(parsed._replace(path=f"{base_path}{api_path}"))
 
 
 def _resolve_direct_ai_model_runtime(ai_model: AIModel) -> ResolvedModelRuntime:

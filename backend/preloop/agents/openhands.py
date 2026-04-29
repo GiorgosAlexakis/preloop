@@ -8,6 +8,7 @@ from typing import Any, Dict
 from aiodocker.exceptions import DockerError
 
 from preloop.services.mcp_config_service import MCPConfigService
+from preloop.services.model_runtime_resolver import gateway_url_for_api
 
 from .container import ContainerAgentExecutor
 
@@ -217,12 +218,36 @@ class OpenHandsAgent(ContainerAgentExecutor):
         }
 
         # Add AI model configuration
-        if "model_identifier" in execution_context:
-            env["LLM_MODEL"] = execution_context["model_identifier"]
-        if "model_api_key" in execution_context:
-            env["LLM_API_KEY"] = execution_context["model_api_key"]
-        if "model_provider" in execution_context:
-            env["LLM_PROVIDER"] = execution_context["model_provider"]
+        if execution_context.get("model_gateway_enabled"):
+            model = execution_context.get(
+                "model_gateway_model_alias"
+            ) or execution_context.get("model_identifier")
+            if model:
+                env["LLM_MODEL"] = (
+                    model if str(model).startswith("openai/") else f"openai/{model}"
+                )
+            gateway_token = execution_context.get("model_gateway_token")
+            if gateway_token:
+                env["LLM_API_KEY"] = gateway_token
+                env["OPENAI_API_KEY"] = gateway_token
+                env["PRELOOP_MODEL_GATEWAY_TOKEN"] = gateway_token
+            gateway_url = gateway_url_for_api(
+                execution_context.get("model_gateway_url")
+                or execution_context.get("model_endpoint"),
+                "openai",
+            )
+            if gateway_url:
+                env["LLM_BASE_URL"] = gateway_url
+                env["LLM_API_BASE"] = gateway_url
+                env["OPENAI_API_BASE"] = gateway_url
+            env["LLM_PROVIDER"] = "openai"
+        else:
+            if "model_identifier" in execution_context:
+                env["LLM_MODEL"] = execution_context["model_identifier"]
+            if "model_api_key" in execution_context:
+                env["LLM_API_KEY"] = execution_context["model_api_key"]
+            if "model_provider" in execution_context:
+                env["LLM_PROVIDER"] = execution_context["model_provider"]
 
         # Add model parameters if specified
         model_params = execution_context.get("model_parameters") or {}

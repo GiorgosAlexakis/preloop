@@ -1335,8 +1335,8 @@ class TestFlowExecutionOrchestrator:
         test_flow = crud_flow.create(
             db=db_session,
             flow_in=FlowCreate(
-                name="Gemini MCP-only Flow",
-                description="Test Gemini fallback",
+                name="Gemini Gateway Flow",
+                description="Test Gemini gateway routing",
                 trigger_event_source="github",
                 trigger_event_types=["issue_created"],
                 prompt_template="Handle {{payload.issue.title}}",

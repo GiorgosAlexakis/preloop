@@ -60,6 +60,11 @@ _bypass_approval_var: ContextVar[bool] = ContextVar(
     "_bypass_approval_var", default=False
 )
 
+# Context variable to ensure internal proxied tool names are only called via proxy translation
+_is_proxy_translation_var: ContextVar[bool] = ContextVar(
+    "_is_proxy_translation_var", default=False
+)
+
 
 class DynamicFastMCP(FastMCP):
     """FastMCP extension with per-user dynamic tool filtering.
@@ -670,6 +675,22 @@ async def {internal_name}({params_str}) -> str:
         # (see ``_create_proxied_tool_wrapper``) still enforces account-level
         # ownership before dispatching to the upstream MCP server.
         if name in self._registered_proxied_tools:
+            if not _is_proxy_translation_var.get(False):
+                logger.warning(
+                    f"Blocked direct invocation of internal proxied tool name: {name}"
+                )
+                from fastmcp.tools.tool import ToolResult
+                from mcp.types import TextContent
+
+                return ToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=f"Access denied: Cannot invoke internal tool name '{name}' directly",
+                        )
+                    ]
+                )
+
             logger.info(
                 f"Internal proxied tool re-entry: {name} (skipping duplicate checks)"
             )
@@ -881,12 +902,14 @@ async def {internal_name}({params_str}) -> str:
         # ── Translate and execute ───────────────────────────────────────
         # Translate tool name for proxied tools
         # Client calls "calculate_fibonacci", we translate to "account_123_calculate_fibonacci"
+        translation_token = None
         if name in self._proxied_tool_servers:
             safe_account_id = user_context.account_id.replace("-", "_")
             internal_name = f"account_{safe_account_id}_{name}"
             logger.info(f"Translating proxied tool name: {name} -> {internal_name}")
             # Modify target name for the FastMCP router
             name = internal_name
+            translation_token = _is_proxy_translation_var.set(True)
         else:
             # Builtin tool - call with original name
             logger.info(f"Calling builtin tool: {name}")
@@ -910,6 +933,8 @@ async def {internal_name}({params_str}) -> str:
             exec_error = str(e)
             raise
         finally:
+            if translation_token is not None:
+                _is_proxy_translation_var.reset(translation_token)
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
             # Clean up context vars after execution

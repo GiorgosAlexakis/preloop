@@ -8,6 +8,7 @@ from typing import Any, Dict
 from aiodocker.exceptions import DockerError
 
 from preloop.services.mcp_config_service import MCPConfigService
+from preloop.services.model_runtime_resolver import gateway_url_for_api
 
 from .container import ContainerAgentExecutor
 
@@ -63,7 +64,12 @@ class AiderAgent(ContainerAgentExecutor):
 
         # Set Aider model - prefer model_identifier from AIModel, fall back to agent_config
         model = (
-            execution_context.get("model_identifier")
+            (
+                execution_context.get("model_gateway_model_alias")
+                if execution_context.get("model_gateway_enabled")
+                else None
+            )
+            or execution_context.get("model_identifier")
             or agent_config.get("model")
             or "gpt-5.4"
         )
@@ -236,8 +242,13 @@ export LITELLM_DROP_PARAMS=True
 # Some providers need explicit prefixes, OpenAI models work without prefix
 MODEL_NAME="{model}"
 
+if [ "{"true" if execution_context.get("model_gateway_enabled") else "false"}" = "true" ]; then
+    if [[ "$MODEL_NAME" != openai/* ]]; then
+        MODEL_NAME="openai/$MODEL_NAME"
+    fi
+    echo "Using Preloop OpenAI-compatible gateway model: $MODEL_NAME"
 # Check if model already has a provider prefix (contains /)
-if [[ "$MODEL_NAME" != */* ]]; then
+elif [[ "$MODEL_NAME" != */* ]]; then
     # No prefix present, check if we need to add one based on model name
     if [[ "$MODEL_NAME" == deepseek-* ]] || [[ "$MODEL_NAME" == *deepseek* ]]; then
         MODEL_NAME="deepseek/$MODEL_NAME"
@@ -249,7 +260,6 @@ if [[ "$MODEL_NAME" != */* ]]; then
         MODEL_NAME="gemini/$MODEL_NAME"
         echo "Using Google Gemini provider: $MODEL_NAME"
     elif [[ "$MODEL_NAME" == gpt-* ]] || [[ "$MODEL_NAME" == o1-* ]] || [[ "$MODEL_NAME" == *openai* ]]; then
-        # OpenAI models work without prefix, but can also use openai/ prefix
         echo "Using OpenAI model: $MODEL_NAME"
     else
         echo "Using model: $MODEL_NAME"
@@ -368,8 +378,21 @@ exit $AIDER_EXIT_CODE
         # Disable version check to avoid permission issues
         env["AIDER_CHECK_UPDATE"] = "false"
 
+        if execution_context.get("model_gateway_enabled"):
+            gateway_token = execution_context.get("model_gateway_token")
+            if gateway_token:
+                env["OPENAI_API_KEY"] = gateway_token
+                env["PRELOOP_MODEL_GATEWAY_TOKEN"] = gateway_token
+
+            gateway_url = gateway_url_for_api(
+                execution_context.get("model_gateway_url")
+                or execution_context.get("model_endpoint"),
+                "openai",
+            )
+            if gateway_url:
+                env["OPENAI_API_BASE"] = gateway_url
         # Add AI model configuration based on provider
-        if "model_api_key" in execution_context:
+        elif "model_api_key" in execution_context:
             api_key = execution_context["model_api_key"]
             model_provider = execution_context.get("model_provider", "").lower()
 

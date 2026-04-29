@@ -1255,35 +1255,26 @@ async def list_api_keys(
 async def get_api_key(
     key_id: UUID,
     current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> ApiKeySummary:
     """Get a specific API key for the current user.
 
     Args:
         key_id: The API key ID.
         current_user: The current authenticated user.
+        db: The database session.
 
     Returns:
         The API key summary.
     """
-    session_generator = get_db_session()
-    session = next(session_generator)
+    # Get API key using CRUD layer
+    key = crud_api_key.get_by_id_and_user(
+        db, key_id=key_id, username=current_user.username
+    )
+    if key is None:
+        raise HTTPException(status_code=404, detail="API key not found")
 
-    try:
-        # Get API key using CRUD layer
-        key = crud_api_key.get_by_id_and_user(
-            session, key_id=key_id, username=current_user.username
-        )
-        if key is None:
-            raise HTTPException(status_code=404, detail="API key not found")
-
-        return _build_api_key_summary(session, key)
-    finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+    return _build_api_key_summary(db, key)
 
 
 @router.get("/api-keys/{key_id}/activity")

@@ -187,6 +187,31 @@ class TestOpenHandsAgent:
         assert "LLM_API_KEY" not in env
 
     @pytest.mark.asyncio
+    async def test_prepare_environment_gateway_uses_openai_compatible_endpoint(
+        self, openhands_config
+    ):
+        """Gateway mode should configure OpenHands through the OpenAI API shape."""
+        agent = OpenHandsAgent(openhands_config)
+
+        env = await agent._prepare_environment(
+            {
+                "prompt": "Use the gateway",
+                "openhands_agent_type": "CodeActAgent",
+                "max_iterations": 10,
+                "model_gateway_enabled": True,
+                "model_gateway_model_alias": "google/gemini-2.5-pro",
+                "model_gateway_token": "gw-token-123",
+                "model_gateway_url": "https://review.preloop.ai/gemini/v1beta",
+            }
+        )
+
+        assert env["LLM_MODEL"] == "openai/google/gemini-2.5-pro"
+        assert env["LLM_PROVIDER"] == "openai"
+        assert env["LLM_API_KEY"] == "gw-token-123"
+        assert env["LLM_BASE_URL"] == "https://review.preloop.ai/openai/v1"
+        assert env["OPENAI_API_BASE"] == "https://review.preloop.ai/openai/v1"
+
+    @pytest.mark.asyncio
     async def test_start_enhances_context(self, openhands_config, mock_docker):
         """Test that start method enhances execution context."""
         mock_container = AsyncMock()

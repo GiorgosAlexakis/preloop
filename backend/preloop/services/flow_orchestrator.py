@@ -549,17 +549,11 @@ class FlowExecutionOrchestrator:
             logger.info("No AI model specified for this flow")
 
     def _resolve_execution_model_runtime(self):
-        """Resolve model runtime, applying agent compatibility fallbacks."""
+        """Resolve model runtime for the selected flow model."""
         if not self.ai_model:
-            return None, False
+            return None
 
-        gateway_requested = bool(
-            (self.ai_model.meta_data or {}).get("gateway", {}).get("enabled")
-        )
-        return (
-            resolve_ai_model_runtime(self.ai_model, allow_gateway=True),
-            False,
-        )
+        return resolve_ai_model_runtime(self.ai_model, allow_gateway=True)
 
     async def _resolve_prompt(self) -> str:
         """
@@ -1319,9 +1313,7 @@ class FlowExecutionOrchestrator:
                 f"identifier={self.ai_model.model_identifier}, "
                 f"provider={self.ai_model.provider_name}"
             )
-            resolved_model_runtime, gateway_downgraded_for_agent = (
-                self._resolve_execution_model_runtime()
-            )
+            resolved_model_runtime = self._resolve_execution_model_runtime()
             execution_context.update(
                 resolved_model_runtime.to_execution_context(
                     gateway_token=account_api_token
@@ -1329,11 +1321,6 @@ class FlowExecutionOrchestrator:
                     else None
                 )
             )
-            if gateway_downgraded_for_agent:
-                execution_context["model_gateway_requested"] = True
-                execution_context["model_gateway_disabled_reason"] = (
-                    GEMINI_GATEWAY_DISABLED_REASON
-                )
         else:
             logger.warning(
                 f"No AI model configured for flow {self.flow.id}, "

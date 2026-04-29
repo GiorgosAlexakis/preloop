@@ -59,7 +59,7 @@ def list_models(
     return GeminiGatewayService(db, auth_context).list_models()
 
 
-@router.get("/models/{model_name}")
+@router.get("/models/{model_name:path}")
 def get_model(
     model_name: str,
     db: Session = Depends(get_db_session),
@@ -69,7 +69,7 @@ def get_model(
     return GeminiGatewayService(db, auth_context).get_model(model_name)
 
 
-@router.post("/models/{model_name}:generateContent")
+@router.post("/models/{model_name:path}:generateContent")
 def generate_content(
     model_name: str,
     payload: Dict[str, Any] = Body(...),
@@ -80,7 +80,7 @@ def generate_content(
     return GeminiGatewayService(db, auth_context).generate_content(model_name, payload)
 
 
-@router.post("/models/{model_name}:streamGenerateContent")
+@router.post("/models/{model_name:path}:streamGenerateContent")
 def stream_generate_content(
     model_name: str,
     payload: Dict[str, Any] = Body(...),

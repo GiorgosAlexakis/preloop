@@ -5,14 +5,25 @@ import json
 import logging
 import os
 from typing import Any, Dict
+from urllib.parse import urlsplit, urlunsplit
 
 from aiodocker.exceptions import DockerError
 
 from preloop.services.mcp_config_service import MCPConfigService
+from preloop.services.model_runtime_resolver import gateway_url_for_api
 
 from .container import ContainerAgentExecutor
 
 logger = logging.getLogger(__name__)
+
+
+def _gemini_cli_base_url(endpoint: str) -> str:
+    """Return the Gemini CLI base URL before the SDK-appended API version."""
+    parsed = urlsplit(endpoint.rstrip("/"))
+    path = parsed.path.rstrip("/")
+    if path.endswith("/v1beta"):
+        path = path[: -len("/v1beta")].rstrip("/")
+    return urlunsplit(parsed._replace(path=path))
 
 
 class GeminiAgent(ContainerAgentExecutor):
@@ -98,8 +109,6 @@ class GeminiAgent(ContainerAgentExecutor):
         Returns:
             Container ID or pod name
         """
-        self._log_gateway_fallback(execution_context)
-
         # Enhance execution context with Gemini-specific settings
         gemini_context = execution_context.copy()
 
@@ -312,17 +321,6 @@ if [ "$GEMINI_EXIT_CODE" -eq "0" ]; then
 fi
 """
 
-        gateway_notice = ""
-        if execution_context.get(
-            "model_gateway_requested"
-        ) and not execution_context.get("model_gateway_enabled"):
-            gateway_notice = f"""
-echo "========================================="
-echo "Gateway compatibility notice"
-echo "{execution_context.get("model_gateway_disabled_reason", "")}"
-echo "========================================="
-"""
-
         # Get execution details for logging
         execution_id = execution_context.get("execution_id", "unknown")
         flow_name = execution_context.get("flow_name", "unknown")
@@ -363,7 +361,6 @@ echo "Model: {model}"
 echo "Start Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo "=================================================="
 echo ""
-{gateway_notice}
 
 # Run initialization commands (git clone, custom commands) if any
 {init_commands}
@@ -501,13 +498,26 @@ exit $GEMINI_EXIT_CODE
         """
         env = {}
 
-        # Add Gemini API key
-        if "model_api_key" in execution_context:
-            env["GEMINI_API_KEY"] = execution_context["model_api_key"]
-        if execution_context.get("model_endpoint"):
-            env["GEMINI_API_BASE_URL"] = execution_context["model_endpoint"]
+        # API key for Gemini CLI:
+        # - Direct provider: use provider secret (model_api_key).
+        # - Preloop gateway: use the short-lived gateway token (model_gateway_token);
+        #   model_api_key is intentionally None in that mode (see resolve_ai_model_runtime).
         if execution_context.get("model_gateway_enabled"):
+            gateway_token = execution_context.get("model_gateway_token")
+            if gateway_token:
+                env["GEMINI_API_KEY"] = gateway_token
             env["GEMINI_API_KEY_HEADER"] = "x-goog-api-key"
+        elif execution_context.get("model_api_key"):
+            env["GEMINI_API_KEY"] = execution_context["model_api_key"]
+
+        if execution_context.get("model_endpoint"):
+            model_endpoint = execution_context["model_endpoint"]
+            if execution_context.get("model_gateway_enabled"):
+                model_endpoint = gateway_url_for_api(model_endpoint, "gemini")
+                model_endpoint = _gemini_cli_base_url(model_endpoint)
+                env["GOOGLE_GENAI_API_VERSION"] = "v1beta"
+            env["GEMINI_API_BASE_URL"] = model_endpoint
+            env["GOOGLE_GEMINI_BASE_URL"] = model_endpoint
 
         # HOME is set by the container setup (container.py) based on the
         # configured UID. Don't hardcode it here.
@@ -568,14 +578,3 @@ exit $GEMINI_EXIT_CODE
         self.logger.info(f"MCP_TOOL_TIMEOUT set to {mcp_timeout}s")
 
         return env
-
-    def _log_gateway_fallback(self, execution_context: Dict[str, Any]) -> None:
-        """Log when Gemini is intentionally running in MCP-only compatibility mode."""
-        if execution_context.get(
-            "model_gateway_requested"
-        ) and not execution_context.get("model_gateway_enabled"):
-            self.logger.warning(
-                "Running Gemini in MCP-only compatibility mode: %s",
-                execution_context.get("model_gateway_disabled_reason")
-                or "gateway transport unavailable",
-            )

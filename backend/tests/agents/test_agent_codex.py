@@ -267,6 +267,23 @@ class TestCodexAuthConfig:
         )
         assert "base_url" not in auth_block
 
+    def test_gateway_script_uses_openai_compatible_gateway_url(self):
+        """Codex should use the OpenAI-compatible gateway endpoint for any model."""
+        agent = CodexAgent({})
+        script = agent._build_codex_script(
+            {
+                "prompt": "test",
+                "execution_id": "exec-1",
+                "flow_name": "test-flow",
+                "model_gateway_enabled": True,
+                "model_gateway_provider": "preloop",
+                "model_gateway_model_alias": "google/gemini-2.5-pro",
+                "model_gateway_url": "https://review.preloop.ai/gemini/v1beta",
+            }
+        )
+        assert 'base_url = "https://review.preloop.ai/openai/v1"' in script
+        assert 'model = "google/gemini-2.5-pro"' in script
+
 
 class TestCodexPrepareEnvironment:
     """Test _prepare_environment method."""
@@ -307,6 +324,19 @@ class TestCodexPrepareEnvironment:
         assert env["PRELOOP_API_KEY"] == "gw-token-123"
         assert env["OPENAI_API_KEY"] == "gw-token-123"
         assert env["PRELOOP_MODEL_GATEWAY_TOKEN"] == "gw-token-123"
+
+    @pytest.mark.asyncio
+    async def test_gateway_provider_env_name_is_shell_safe(self):
+        """Gateway provider adapter names may contain hyphens."""
+        agent = CodexAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_provider": "openai-codex",
+            "model_gateway_token": "gw-token-123",
+        }
+        env = await agent._prepare_environment(context)
+        assert env["OPENAI_CODEX_API_KEY"] == "gw-token-123"
+        assert "OPENAI-CODEX_API_KEY" not in env
 
     @pytest.mark.asyncio
     async def test_language_runtime_env_vars(self):

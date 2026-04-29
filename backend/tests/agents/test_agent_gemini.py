@@ -186,21 +186,6 @@ class TestGeminiBuildScript:
         assert "-H" in script
         assert "$PRELOOP_API_TOKEN" in script
 
-    def test_script_includes_gateway_fallback_notice(self):
-        """Generated script should surface MCP-only compatibility mode."""
-        agent = GeminiAgent({})
-        context = {
-            "prompt": "test",
-            "execution_id": "exec-1",
-            "flow_name": "test-flow",
-            "model_gateway_requested": True,
-            "model_gateway_enabled": False,
-            "model_gateway_disabled_reason": "Gateway transport is unavailable for Gemini.",
-        }
-        script = agent._build_gemini_script(context)
-        assert "Gateway compatibility notice" in script
-        assert "Gateway transport is unavailable for Gemini." in script
-
     def test_prompt_with_single_quotes(self):
         """Prompt with single quotes is handled safely via base64 encoding."""
         import base64
@@ -227,11 +212,27 @@ class TestGeminiPrepareEnvironment:
         agent = GeminiAgent({})
         context = {
             "model_gateway_enabled": True,
+            "model_endpoint": "https://review.preloop.ai/openai/v1",
+        }
+        env = await agent._prepare_environment(context)
+        assert env["GEMINI_API_BASE_URL"] == "https://review.preloop.ai/gemini"
+        assert env["GOOGLE_GEMINI_BASE_URL"] == "https://review.preloop.ai/gemini"
+        assert env["GOOGLE_GENAI_API_VERSION"] == "v1beta"
+        assert env["GEMINI_API_KEY_HEADER"] == "x-goog-api-key"
+
+    @pytest.mark.asyncio
+    async def test_gateway_enabled_uses_model_gateway_token_as_gemini_api_key(self):
+        """Preloop gateway mode must pass the gateway token as GEMINI_API_KEY for the CLI."""
+        agent = GeminiAgent({})
+        context = {
+            "model_gateway_enabled": True,
+            "model_gateway_token": "gw-token-xyz",
             "model_endpoint": "https://review.preloop.ai/gemini/v1beta",
         }
         env = await agent._prepare_environment(context)
-        assert env["GEMINI_API_BASE_URL"] == "https://review.preloop.ai/gemini/v1beta"
+        assert env["GEMINI_API_KEY"] == "gw-token-xyz"
         assert env["GEMINI_API_KEY_HEADER"] == "x-goog-api-key"
+        assert env["GEMINI_API_BASE_URL"] == "https://review.preloop.ai/gemini"
 
     @pytest.mark.asyncio
     async def test_gemini_api_key(self):
