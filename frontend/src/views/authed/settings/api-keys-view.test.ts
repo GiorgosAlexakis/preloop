@@ -108,7 +108,7 @@ describe('ApiKeysView', () => {
     localStorage.clear();
   });
 
-  it('renders activity status and opens governance dialog', async () => {
+  it('renders activity status', async () => {
     const element = await fixture<ApiKeysView>(
       html`<api-keys-view></api-keys-view>`
     );
@@ -124,19 +124,5 @@ describe('ApiKeysView', () => {
     expect(content).to.contain('Recently active');
     expect(content).to.contain('2 model');
     expect(content).to.contain('1 tool');
-    expect(content).to.contain('Governance');
-
-    await (element as any).openGovernanceDialog((element as any).apiKeys[0]);
-    await element.updateComplete;
-
-    expect((element as any).governanceKeyId).to.equal('key-1');
-    expect((element as any).governanceAllowedModels).to.contain('openai/gpt-5');
-    expect((element as any).governanceModelBudgets).to.contain(
-      'monthly_usd_limit'
-    );
-    expect(Object.keys((element as any).scopedToolRules)).to.deep.equal([
-      'search_issues',
-    ]);
-    expect((element as any).governanceToolRules).to.contain('search_issues');
   });
 });

@@ -536,6 +536,8 @@ class TestMCPCallTool:
         list_tools_mock = AsyncMock()
         mock_result = ToolResult(content=[types.TextContent(type="text", text="Paid")])
 
+        from preloop.services.dynamic_fastmcp import _is_proxy_translation_var
+
         with patch.object(dynamic_mcp, "list_tools", new=list_tools_mock):
             with patch.object(
                 dynamic_mcp.__class__.__bases__[0],
@@ -543,9 +545,13 @@ class TestMCPCallTool:
                 new=AsyncMock(return_value=mock_result),
                 create=True,
             ) as mock_super:
-                result = await dynamic_mcp.call_tool(
-                    internal_name, {"amount": 10, "recipient": "alice"}
-                )
+                token = _is_proxy_translation_var.set(True)
+                try:
+                    result = await dynamic_mcp.call_tool(
+                        internal_name, {"amount": 10, "recipient": "alice"}
+                    )
+                finally:
+                    _is_proxy_translation_var.reset(token)
 
         list_tools_mock.assert_not_called()
         mock_super.assert_called_once_with(

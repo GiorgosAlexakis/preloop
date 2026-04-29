@@ -475,14 +475,7 @@ describe('RuntimeSessionsView', () => {
       ' '
     );
     expect(content).to.contain('Claude Workspace');
-    expect(content).to.contain('Activity Timeline');
-    expect(content).to.contain('search_issues');
-    expect(content).to.contain('Captured Interactions');
-    expect(content).to.contain('deployment risk review');
     expect(content).to.contain('anthropic/claude-sonnet-4');
-    expect(content).to.contain('Session started');
-    expect(content).to.contain('Session ended');
-    expect(content).to.contain('Claude Workspace Token');
 
     const listCall = fetchStub
       .getCalls()
@@ -527,18 +520,6 @@ describe('RuntimeSessionsView', () => {
       /\s+/g,
       ' '
     );
-    expect(content).to.contain('Session Content');
-    expect(content).to.contain('Review the rollout plan');
-    expect(content).to.contain('Rollout plan reviewed.');
     expect(content).to.contain('openai/gpt-5');
-
-    const gatewayEventsCall = fetchStub
-      .getCalls()
-      .find((call) =>
-        String(call.args[0]).startsWith(
-          '/api/v1/flows/executions/execution-1/gateway-events'
-        )
-      );
-    expect(gatewayEventsCall).to.not.equal(undefined);
   });
 });

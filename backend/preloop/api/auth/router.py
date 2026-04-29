@@ -353,7 +353,10 @@ class OnboardingRequest(BaseModel):
     "/register", response_model=AuthUserResponse, status_code=status.HTTP_201_CREATED
 )
 async def register(
-    user_data: AuthUserCreate, background_tasks: BackgroundTasks, request: Request
+    user_data: AuthUserCreate,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Register a new user.
 
@@ -384,8 +387,7 @@ async def register(
     # Check if username or email already exists
     # Since get_db_session() doesn't support async with, we'll use a manual approach
     logger.info("[REGISTER] Getting database session")
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
     logger.info("[REGISTER] Database session acquired")
 
     try:
@@ -510,16 +512,14 @@ async def register(
                 detail="Error registering user",
             )
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
 
 @router.post("/verify-email", status_code=status.HTTP_200_OK)
-async def verify_email(verification_data: EmailVerificationRequest) -> Dict[str, str]:
+async def verify_email(
+    verification_data: EmailVerificationRequest,
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
     """Verify a user's email address.
 
     Args:
@@ -536,8 +536,7 @@ async def verify_email(verification_data: EmailVerificationRequest) -> Dict[str,
         email = verify_token(verification_data.token, "email_verification")
 
         # Find and update the user
-        session_generator = get_db_session()
-        session = next(session_generator)
+        session = db
 
         try:
             # Find the user using CRUD layer
@@ -555,12 +554,7 @@ async def verify_email(verification_data: EmailVerificationRequest) -> Dict[str,
 
             return {"message": "Email verified successfully"}
         finally:
-            session.close()
-            try:
-                # Clean up the generator
-                next(session_generator, None)
-            except StopIteration:
-                pass
+            pass
 
     except TokenError as e:
         raise HTTPException(
@@ -577,7 +571,9 @@ async def verify_email(verification_data: EmailVerificationRequest) -> Dict[str,
 
 @router.post("/forgot-password", status_code=status.HTTP_200_OK)
 async def forgot_password(
-    reset_data: PasswordResetRequest, background_tasks: BackgroundTasks
+    reset_data: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Send a password reset email.
 
@@ -590,8 +586,7 @@ async def forgot_password(
     """
     # Always return success even if email doesn't exist (security best practice)
     # But only send email if user exists
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     try:
         # Find user using CRUD layer
@@ -606,12 +601,7 @@ async def forgot_password(
                 send_password_reset_email, user_email=reset_data.email, token=token
             )
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
     return {
         "message": "If your email is registered, you will receive a password reset link"
@@ -619,7 +609,10 @@ async def forgot_password(
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
-async def reset_password(reset_data: PasswordResetConfirmRequest) -> Dict[str, str]:
+async def reset_password(
+    reset_data: PasswordResetConfirmRequest,
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
     """Reset a user's password.
 
     Args:
@@ -636,8 +629,7 @@ async def reset_password(reset_data: PasswordResetConfirmRequest) -> Dict[str, s
         email = verify_token(reset_data.token, "password_reset")
 
         # Find and update the user
-        session_generator = get_db_session()
-        session = next(session_generator)
+        session = db
 
         try:
             # Find user using CRUD layer
@@ -655,12 +647,7 @@ async def reset_password(reset_data: PasswordResetConfirmRequest) -> Dict[str, s
 
             return {"message": "Password reset successfully"}
         finally:
-            session.close()
-            try:
-                # Clean up the generator
-                next(session_generator, None)
-            except StopIteration:
-                pass
+            pass
     except TokenError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -770,7 +757,10 @@ async def login_json(http_request: Request, request: LoginRequest) -> Dict[str, 
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
+async def refresh_token(
+    request: RefreshRequest,
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
     """Refresh an access token using a refresh token.
 
     Args:
@@ -783,8 +773,7 @@ async def refresh_token(request: RefreshRequest) -> Dict[str, str]:
         HTTPException: If the refresh token is invalid or expired.
     """
     # Get synchronous database session
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     try:
         # Decode and validate the refresh token
@@ -911,8 +900,7 @@ async def create_api_key(
     alphabet = string.ascii_letters + string.digits
     key_value = "".join(secrets.choice(alphabet) for _ in range(40))
 
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     def _is_duplicate_name_for_account_error(err: IntegrityError) -> bool:
         orig = getattr(err, "orig", None)
@@ -976,12 +964,7 @@ async def create_api_key(
             detail="Error creating API key",
         )
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
 
 @router.post(
@@ -1234,8 +1217,7 @@ async def list_api_keys(
     Returns:
         List of API keys.
     """
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     try:
         # Get API keys using CRUD layer
@@ -1243,12 +1225,7 @@ async def list_api_keys(
 
         return [_build_api_key_summary(session, key) for key in keys]
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
 
 @router.get("/api-keys/{key_id}", response_model=ApiKeySummary)
@@ -1416,8 +1393,7 @@ async def debug_api_keys(
         List of API keys with their values.
     """
     # This is for debugging only
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     try:
         # Check if specific key was requested
@@ -1467,12 +1443,7 @@ async def debug_api_keys(
             detail=f"Error debugging API keys: {str(e)}",
         )
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
 
 @router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1488,8 +1459,7 @@ async def delete_api_key(
     Raises:
         HTTPException: If the key doesn't exist or doesn't belong to the user.
     """
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     try:
         # Get the key using CRUD layer
@@ -1514,12 +1484,7 @@ async def delete_api_key(
             detail="Error deleting API key",
         )
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
 
 @router.get("/api-usage", response_model=ApiUsageStatistics)
@@ -1538,8 +1503,7 @@ async def get_api_usage(
     Returns:
         API usage statistics.
     """
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     try:
         # Get usage entries using CRUD layer
@@ -1585,12 +1549,7 @@ async def get_api_usage(
             requests_by_endpoint=requests_by_endpoint,
         )
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
 
 async def authenticate_user(
@@ -1609,8 +1568,7 @@ async def authenticate_user(
     from datetime import datetime, timezone
     import threading
 
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
 
     try:
         # Find user using CRUD layer
@@ -1661,12 +1619,7 @@ async def authenticate_user(
 
         return user
     finally:
-        session.close()
-        try:
-            # Clean up the generator
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
 
 
 @router.post("/complete-onboarding", response_model=Token)
@@ -1675,8 +1628,7 @@ async def complete_onboarding(request: OnboardingRequest) -> Dict[str, str]:
     Completes the onboarding for a new user created via Stripe checkout.
     Sets the password and updates the username.
     """
-    session_generator = get_db_session()
-    session = next(session_generator)
+    session = db
     try:
         # Find user using CRUD layer
         user = crud_user.get_by_email(session, email=request.email)
@@ -1719,8 +1671,4 @@ async def complete_onboarding(request: OnboardingRequest) -> Dict[str, str]:
             "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
     finally:
-        session.close()
-        try:
-            next(session_generator, None)
-        except StopIteration:
-            pass
+        pass
