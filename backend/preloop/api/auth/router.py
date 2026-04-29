@@ -679,7 +679,7 @@ async def login_form(
         HTTPException: If the username or password is incorrect.
     """
     user = await authenticate_user(
-        form_data.username, form_data.password, source_ip=get_client_ip(request)
+        form_data.username, form_data.password, source_ip=get_client_ip(request), db=db
     )
     if not user:
         raise HTTPException(
@@ -711,7 +711,11 @@ async def login_form(
 
 
 @router.post("/token/json", response_model=Token)
-async def login_json(http_request: Request, request: LoginRequest) -> Dict[str, str]:
+async def login_json(
+    http_request: Request,
+    request: LoginRequest,
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
     """Login to get an access token using JSON data.
 
     Args:
@@ -725,7 +729,7 @@ async def login_json(http_request: Request, request: LoginRequest) -> Dict[str, 
         HTTPException: If the username or password is incorrect.
     """
     user = await authenticate_user(
-        request.username, request.password, source_ip=get_client_ip(http_request)
+        request.username, request.password, source_ip=get_client_ip(http_request), db=db
     )
     if not user:
         raise HTTPException(
@@ -1553,7 +1557,7 @@ async def get_api_usage(
 
 
 async def authenticate_user(
-    username: str, password: str, source_ip: Optional[str] = None
+    username: str, password: str, db: Session, source_ip: Optional[str] = None
 ) -> Optional[UserModel]:
     """Authenticate a user.
 
@@ -1623,7 +1627,10 @@ async def authenticate_user(
 
 
 @router.post("/complete-onboarding", response_model=Token)
-async def complete_onboarding(request: OnboardingRequest) -> Dict[str, str]:
+async def complete_onboarding(
+    request: OnboardingRequest,
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
     """
     Completes the onboarding for a new user created via Stripe checkout.
     Sets the password and updates the username.
