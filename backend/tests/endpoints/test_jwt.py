@@ -164,7 +164,7 @@ class TestGetCurrentUser:
             mock_session.query.return_value = mock_query
             mock_get_db.return_value = iter([mock_session])
 
-            result = await jwt_module.get_current_user(token)
+            result = await jwt_module.get_current_user(token, db=mock_session)
 
             assert result == mock_user
 
@@ -188,7 +188,7 @@ class TestGetCurrentUser:
             with patch.object(
                 jwt_module.crud_api_key, "get_by_key", return_value=mock_api_key
             ):
-                result = await jwt_module.get_current_user(api_key)
+                result = await jwt_module.get_current_user(api_key, db=mock_session)
 
                 assert result == mock_user
 
@@ -210,7 +210,7 @@ class TestGetCurrentUser:
                 jwt_module.crud_api_key, "get_by_key", return_value=mock_api_key
             ):
                 with pytest.raises(HTTPException) as exc_info:
-                    await jwt_module.get_current_user(api_key)
+                    await jwt_module.get_current_user(api_key, db=mock_session)
 
                 assert exc_info.value.status_code == 401
                 assert "expired" in exc_info.value.detail
@@ -231,7 +231,7 @@ class TestGetCurrentUser:
             mock_get_db.return_value = iter([mock_session])
 
             with pytest.raises(HTTPException) as exc_info:
-                await jwt_module.get_current_user(token)
+                await jwt_module.get_current_user(token, db=mock_session)
 
             assert exc_info.value.status_code == 401
             # The actual implementation wraps errors in "Authentication error"
@@ -255,7 +255,7 @@ class TestGetCurrentUser:
             mock_get_db.return_value = iter([mock_session])
 
             with pytest.raises(HTTPException) as exc_info:
-                await jwt_module.get_current_user(token)
+                await jwt_module.get_current_user(token, db=mock_session)
 
             assert exc_info.value.status_code == 401
             # The actual implementation wraps errors in "Authentication error"
@@ -268,9 +268,10 @@ class TestGetCurrentUser:
     async def test_get_current_user_invalid_uuid(self):
         """Test failure when token contains invalid UUID."""
         token = jwt_module.create_access_token({"sub": "not-a-uuid"})
+        mock_session = MagicMock()
 
         with pytest.raises(HTTPException) as exc_info:
-            await jwt_module.get_current_user(token)
+            await jwt_module.get_current_user(token, db=mock_session)
 
         assert exc_info.value.status_code == 401
         assert "Invalid user ID" in exc_info.value.detail
@@ -293,7 +294,7 @@ class TestGetCurrentUser:
             mock_get_db.return_value = iter([mock_session])
 
             # Should succeed because decode_token returns TokenData, not dict
-            result = await jwt_module.get_current_user(token)
+            result = await jwt_module.get_current_user(token, db=mock_session)
             assert result == mock_user
 
 
@@ -448,7 +449,7 @@ class TestApiKeyFallback:
             with patch.object(
                 jwt_module.crud_api_key, "get_by_key", return_value=mock_api_key
             ):
-                result = await jwt_module.get_current_user(token)
+                result = await jwt_module.get_current_user(token, db=mock_session)
 
                 assert result == mock_user
 
@@ -464,6 +465,6 @@ class TestApiKeyFallback:
 
             with patch.object(jwt_module.crud_api_key, "get_by_key", return_value=None):
                 with pytest.raises(HTTPException) as exc_info:
-                    await jwt_module.get_current_user(token)
+                    await jwt_module.get_current_user(token, db=mock_session)
 
                 assert exc_info.value.status_code == 401

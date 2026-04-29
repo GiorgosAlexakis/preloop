@@ -15,23 +15,27 @@ client = TestClient(app)
 
 @pytest.fixture
 def db_session_mock():
-    with patch("preloop.api.auth.router.get_db_session") as mock_get_db:
-        db_session = MagicMock(spec=Session)
-        mock_execute = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.first.return_value = None
-        mock_execute.scalars.return_value = mock_scalars
-        db_session.execute.return_value = mock_execute
+    from preloop.models.db.session import get_db_session
 
-        # Mock the query chain for CRUD methods
-        mock_query = MagicMock()
-        mock_query.filter.return_value = mock_query
-        mock_query.first.return_value = None
-        mock_query.all.return_value = []
-        db_session.query.return_value = mock_query
+    db_session = MagicMock(spec=Session)
+    mock_execute = MagicMock()
+    mock_scalars = MagicMock()
+    mock_scalars.first.return_value = None
+    mock_execute.scalars.return_value = mock_scalars
+    db_session.execute.return_value = mock_execute
 
-        mock_get_db.return_value = iter([db_session])
+    # Mock the query chain for CRUD methods
+    mock_query = MagicMock()
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = None
+    mock_query.all.return_value = []
+    db_session.query.return_value = mock_query
+
+    app.dependency_overrides[get_db_session] = lambda: db_session
+    try:
         yield db_session
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
 
 
 def test_register_user_success(db_session_mock):
@@ -54,57 +58,46 @@ def test_register_user_success(db_session_mock):
 
 
 def test_register_user_username_exists(db_session_mock):
-    # Mock query chain for username check (returns existing user)
     mock_user = MagicMock(spec=User)
     mock_user.username = "testuser"
     mock_user.email = "test@example.com"
 
-    mock_query = MagicMock()
-    mock_query.filter.return_value = mock_query
-    mock_query.first.return_value = mock_user
-    db_session_mock.query.return_value = mock_query
+    with patch("preloop.api.auth.router.crud_user") as mock_crud:
+        mock_crud.get_by_username.return_value = mock_user
 
-    response = client.post(
-        "/auth/register",
-        json={
-            "username": "testuser",
-            "email": "another@example.com",
-            "password": "password",
-            "full_name": "Test User",
-        },
-    )
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Username already registered"
+        response = client.post(
+            "/auth/register",
+            json={
+                "username": "testuser",
+                "email": "another@example.com",
+                "password": "password",
+                "full_name": "Test User",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Username already registered"
 
 
 def test_register_user_email_exists(db_session_mock):
-    # First query for username check (returns None), second for email check (returns user)
-    mock_query_username = MagicMock()
-    mock_query_username.filter.return_value = mock_query_username
-    mock_query_username.first.return_value = None
-
     mock_user = MagicMock(spec=User)
     mock_user.username = "anotheruser"
     mock_user.email = "test@example.com"
 
-    mock_query_email = MagicMock()
-    mock_query_email.filter.return_value = mock_query_email
-    mock_query_email.first.return_value = mock_user
+    with patch("preloop.api.auth.router.crud_user") as mock_crud:
+        mock_crud.get_by_username.return_value = None
+        mock_crud.get_by_email.return_value = mock_user
 
-    # Use side_effect to return different mocks for each query call
-    db_session_mock.query.side_effect = [mock_query_username, mock_query_email]
-
-    response = client.post(
-        "/auth/register",
-        json={
-            "username": "testuser",
-            "email": "test@example.com",
-            "password": "password",
-            "full_name": "Test User",
-        },
-    )
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Email already registered"
+        response = client.post(
+            "/auth/register",
+            json={
+                "username": "testuser",
+                "email": "test@example.com",
+                "password": "password",
+                "full_name": "Test User",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Email already registered"
 
 
 def test_register_disabled(db_session_mock):

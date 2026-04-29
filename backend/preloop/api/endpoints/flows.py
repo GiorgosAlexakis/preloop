@@ -337,8 +337,7 @@ async def get_flow_execution_logs(
         - source: Where logs were fetched from ("container" or "database")
         - has_more: Boolean indicating if there are more logs (if paginated)
     """
-    from preloop.agents.container import ContainerAgentExecutor
-    from preloop.agents.codex import CodexAgent
+    from preloop.agents import create_agent_executor
 
     # Verify execution exists and user has access
     execution = crud_flow_execution.get(
@@ -361,25 +360,11 @@ async def get_flow_execution_logs(
             if not flow:
                 raise HTTPException(status_code=404, detail="Flow not found")
 
-            # Determine if using Kubernetes or Docker
-            import os
-
-            use_kubernetes = (
-                os.getenv("USE_KUBERNETES_FOR_AGENTS", "false").lower() == "true"
+            # Create the concrete agent executor so log retrieval uses the same
+            # Docker/Kubernetes detection as execution startup and recovery.
+            agent = create_agent_executor(
+                flow.agent_type, {"agent_config": flow.agent_config or {}}
             )
-
-            # Create agent executor to access logs
-            # Note: We don't need the full agent config, just need the get_logs method
-            # CodexAgent auto-detects Kubernetes environment, no need to pass use_kubernetes
-            if flow.agent_type == "codex":
-                agent = CodexAgent(config={})
-            else:
-                agent = ContainerAgentExecutor(
-                    agent_type=flow.agent_type,
-                    config={},
-                    image="dummy-image",  # Not used for get_logs
-                    use_kubernetes=use_kubernetes,
-                )
 
             # Fetch logs from container
             container_logs = await agent.get_logs(

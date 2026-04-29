@@ -390,129 +390,126 @@ async def register(
     session = db
     logger.info("[REGISTER] Database session acquired")
 
+    # Check if username exists using CRUD layer
+    logger.info("[REGISTER] Checking if username exists")
+    existing_user = crud_user.get_by_username(session, username=user_data.username)
+    logger.info(
+        f"[REGISTER] Username check complete, exists: {existing_user is not None}"
+    )
+    if existing_user is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered",
+        )
+
+    # Check if email exists using CRUD layer
+    logger.info("[REGISTER] Checking if email exists")
+    existing_email = crud_user.get_by_email(session, email=user_data.email)
+    logger.info(
+        f"[REGISTER] Email check complete, exists: {existing_email is not None}"
+    )
+    if existing_email is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+
+    # Create organization (Account) first
+    logger.info("[REGISTER] Creating account")
+    account_data = {
+        "organization_name": f"{user_data.username}'s Organization",
+        "is_active": True,
+    }
+    new_account = crud_account.create(session, obj_in=account_data)
+    logger.info(f"[REGISTER] Account created with ID: {new_account.id}")
+
+    # Create user linked to the account
+    logger.info("[REGISTER] Hashing password")
+    hashed_password = get_password_hash(user_data.password)
+    logger.info("[REGISTER] Password hashed")
+    logger.info("[REGISTER] Creating user")
+    user_dict = {
+        "account_id": new_account.id,
+        "username": user_data.username,
+        "email": user_data.email,
+        "hashed_password": hashed_password,
+        "full_name": user_data.full_name,
+        "is_active": True,
+        "email_verified": False,
+        "user_source": "local",
+    }
+    new_user = crud_user.create(session, obj_in=user_dict)
+    logger.info(f"[REGISTER] User created with ID: {new_user.id}")
+
+    # Set this user as the primary user for the account
+    logger.info("[REGISTER] Setting primary_user_id on account")
+    new_account.primary_user_id = new_user.id
+    session.add(new_account)
+    logger.info(
+        f"[REGISTER] Set user {new_user.id} as primary user for account {new_account.id}"
+    )
+
+    # Assign Owner role to the first user
+    logger.info("[REGISTER] Looking up owner role")
+    owner_role = crud_role.get_by_name(session, name="owner")
+    logger.info(f"[REGISTER] Owner role found: {owner_role is not None}")
+    if owner_role:
+        user_role_data = {
+            "user_id": new_user.id,
+            "role_id": owner_role.id,
+        }
+        crud_user_role.create(session, obj_in=user_role_data)
+        logger.info(f"Assigned Owner role to user {new_user.username}")
+    else:
+        logger.warning(
+            "Owner role not found in database - user will have no permissions"
+        )
+
     try:
-        # Check if username exists using CRUD layer
-        logger.info("[REGISTER] Checking if username exists")
-        existing_user = crud_user.get_by_username(session, username=user_data.username)
-        logger.info(
-            f"[REGISTER] Username check complete, exists: {existing_user is not None}"
-        )
-        if existing_user is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already registered",
-            )
+        logger.info("[REGISTER] Committing transaction")
+        session.commit()
+        logger.info("[REGISTER] Transaction committed, refreshing objects")
+        session.refresh(new_user)
+        session.refresh(new_account)
+        logger.info("[REGISTER] Objects refreshed")
 
-        # Check if email exists using CRUD layer
-        logger.info("[REGISTER] Checking if email exists")
-        existing_email = crud_user.get_by_email(session, email=user_data.email)
-        logger.info(
-            f"[REGISTER] Email check complete, exists: {existing_email is not None}"
+        # Schedule all post-account-creation tasks (verification email,
+        # default approval workflow, admin notifications)
+        logger.info("[REGISTER] Scheduling account setup tasks")
+        background_tasks.add_task(
+            complete_new_account_setup_background,
+            account_id=new_account.id,
+            user_id=new_user.id,
+            user_email=new_user.email,
+            username=new_user.username,
+            full_name=new_user.full_name,
+            organization_name=new_account.organization_name,
+            signup_source="standard",
+            source_ip=get_client_ip(request),
+            send_verification=True,
         )
-        if existing_email is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
-            )
+        logger.info("[REGISTER] Account setup tasks scheduled")
 
-        # Create organization (Account) first
-        logger.info("[REGISTER] Creating account")
-        account_data = {
-            "organization_name": f"{user_data.username}'s Organization",
-            "is_active": True,
+        logger.info("[REGISTER] Registration complete, returning response")
+        return {
+            "username": new_user.username,
+            "email": new_user.email,
+            "full_name": new_user.full_name,
+            "email_verified": new_user.email_verified,
         }
-        new_account = crud_account.create(session, obj_in=account_data)
-        logger.info(f"[REGISTER] Account created with ID: {new_account.id}")
-
-        # Create user linked to the account
-        logger.info("[REGISTER] Hashing password")
-        hashed_password = get_password_hash(user_data.password)
-        logger.info("[REGISTER] Password hashed")
-        logger.info("[REGISTER] Creating user")
-        user_dict = {
-            "account_id": new_account.id,
-            "username": user_data.username,
-            "email": user_data.email,
-            "hashed_password": hashed_password,
-            "full_name": user_data.full_name,
-            "is_active": True,
-            "email_verified": False,
-            "user_source": "local",
-        }
-        new_user = crud_user.create(session, obj_in=user_dict)
-        logger.info(f"[REGISTER] User created with ID: {new_user.id}")
-
-        # Set this user as the primary user for the account
-        logger.info("[REGISTER] Setting primary_user_id on account")
-        new_account.primary_user_id = new_user.id
-        session.add(new_account)
-        logger.info(
-            f"[REGISTER] Set user {new_user.id} as primary user for account {new_account.id}"
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Error creating user - username or email may be taken",
         )
-
-        # Assign Owner role to the first user
-        logger.info("[REGISTER] Looking up owner role")
-        owner_role = crud_role.get_by_name(session, name="owner")
-        logger.info(f"[REGISTER] Owner role found: {owner_role is not None}")
-        if owner_role:
-            user_role_data = {
-                "user_id": new_user.id,
-                "role_id": owner_role.id,
-            }
-            crud_user_role.create(session, obj_in=user_role_data)
-            logger.info(f"Assigned Owner role to user {new_user.username}")
-        else:
-            logger.warning(
-                "Owner role not found in database - user will have no permissions"
-            )
-
-        try:
-            logger.info("[REGISTER] Committing transaction")
-            session.commit()
-            logger.info("[REGISTER] Transaction committed, refreshing objects")
-            session.refresh(new_user)
-            session.refresh(new_account)
-            logger.info("[REGISTER] Objects refreshed")
-
-            # Schedule all post-account-creation tasks (verification email,
-            # default approval workflow, admin notifications)
-            logger.info("[REGISTER] Scheduling account setup tasks")
-            background_tasks.add_task(
-                complete_new_account_setup_background,
-                account_id=new_account.id,
-                user_id=new_user.id,
-                user_email=new_user.email,
-                username=new_user.username,
-                full_name=new_user.full_name,
-                organization_name=new_account.organization_name,
-                signup_source="standard",
-                source_ip=get_client_ip(request),
-                send_verification=True,
-            )
-            logger.info("[REGISTER] Account setup tasks scheduled")
-
-            logger.info("[REGISTER] Registration complete, returning response")
-            return {
-                "username": new_user.username,
-                "email": new_user.email,
-                "full_name": new_user.full_name,
-                "email_verified": new_user.email_verified,
-            }
-        except IntegrityError:
-            session.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Error creating user - username or email may be taken",
-            )
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Error registering user: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error registering user",
-            )
-    finally:
-        pass
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error registering user: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error registering user",
+        )
 
 
 @router.post("/verify-email", status_code=status.HTTP_200_OK)
@@ -538,24 +535,20 @@ async def verify_email(
         # Find and update the user
         session = db
 
-        try:
-            # Find the user using CRUD layer
-            user = crud_user.get_by_email(session, email=email)
+        # Find the user using CRUD layer
+        user = crud_user.get_by_email(session, email=email)
 
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found",
-                )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
 
-            # Update email verification status
-            user.email_verified = True
-            session.commit()
+        # Update email verification status
+        user.email_verified = True
+        session.commit()
 
-            return {"message": "Email verified successfully"}
-        finally:
-            pass
-
+        return {"message": "Email verified successfully"}
     except TokenError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -588,21 +581,17 @@ async def forgot_password(
     # But only send email if user exists
     session = db
 
-    try:
-        # Find user using CRUD layer
-        user = crud_user.get_by_email(session, email=reset_data.email)
+    # Find user using CRUD layer
+    user = crud_user.get_by_email(session, email=reset_data.email)
 
-        if user:
-            # Generate password reset token
-            token = create_password_reset_token(reset_data.email)
+    if user:
+        # Generate password reset token
+        token = create_password_reset_token(reset_data.email)
 
-            # Send password reset email as a background task
-            background_tasks.add_task(
-                send_password_reset_email, user_email=reset_data.email, token=token
-            )
-    finally:
-        pass
-
+        # Send password reset email as a background task
+        background_tasks.add_task(
+            send_password_reset_email, user_email=reset_data.email, token=token
+        )
     return {
         "message": "If your email is registered, you will receive a password reset link"
     }
@@ -631,23 +620,20 @@ async def reset_password(
         # Find and update the user
         session = db
 
-        try:
-            # Find user using CRUD layer
-            user = crud_user.get_by_email(session, email=email)
+        # Find user using CRUD layer
+        user = crud_user.get_by_email(session, email=email)
 
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found",
-                )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
 
-            # Update password
-            user.hashed_password = get_password_hash(reset_data.new_password)
-            session.commit()
+        # Update password
+        user.hashed_password = get_password_hash(reset_data.new_password)
+        session.commit()
 
-            return {"message": "Password reset successfully"}
-        finally:
-            pass
+        return {"message": "Password reset successfully"}
     except TokenError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -665,6 +651,7 @@ async def reset_password(
 async def login_form(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db_session),
 ) -> Dict[str, str]:
     """Login to get an access token using form data (required for OAuth2 flow).
 
@@ -837,8 +824,6 @@ async def refresh_token(
             detail=f"Invalid refresh token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    finally:
-        session.close()
 
 
 @router.get("/users/me", response_model=AuthUserResponse)
@@ -890,6 +875,7 @@ async def change_current_user_password(
 async def create_api_key(
     key_data: ApiKeyCreate,
     current_user: UserModel = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> ApiKeyResponse:
     """Create a new API key.
 
@@ -967,8 +953,6 @@ async def create_api_key(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error creating API key",
         )
-    finally:
-        pass
 
 
 @router.post(
@@ -1212,6 +1196,7 @@ async def create_runtime_session_token(
 @router.get("/api-keys", response_model=List[ApiKeySummary])
 async def list_api_keys(
     current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> List[ApiKeySummary]:
     """List all API keys for the current user.
 
@@ -1223,13 +1208,10 @@ async def list_api_keys(
     """
     session = db
 
-    try:
-        # Get API keys using CRUD layer
-        keys = crud_api_key.get_by_user(session, username=current_user.username)
+    # Get API keys using CRUD layer
+    keys = crud_api_key.get_by_user(session, username=current_user.username)
 
-        return [_build_api_key_summary(session, key) for key in keys]
-    finally:
-        pass
+    return [_build_api_key_summary(session, key) for key in keys]
 
 
 @router.get("/api-keys/{key_id}", response_model=ApiKeySummary)
@@ -1385,6 +1367,7 @@ async def debug_api_keys(
     username: str,
     api_key: Optional[str] = None,
     current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> List[ApiKeyResponse]:
     """Debug endpoint to get API keys with their values (admin only).
 
@@ -1446,13 +1429,13 @@ async def debug_api_keys(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error debugging API keys: {str(e)}",
         )
-    finally:
-        pass
 
 
 @router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_api_key(
-    key_id: UUID, current_user: AuthUserResponse = Depends(get_current_active_user)
+    key_id: UUID,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> None:
     """Delete an API key.
 
@@ -1487,8 +1470,6 @@ async def delete_api_key(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error deleting API key",
         )
-    finally:
-        pass
 
 
 @router.get("/api-usage", response_model=ApiUsageStatistics)
@@ -1496,6 +1477,7 @@ async def get_api_usage(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
 ) -> ApiUsageStatistics:
     """Get API usage statistics for the current user.
 
@@ -1509,51 +1491,48 @@ async def get_api_usage(
     """
     session = db
 
-    try:
-        # Get usage entries using CRUD layer
-        usage_entries = crud_api_usage.get_for_user_filtered(
-            session,
-            username=current_user.username,
-            start_date=start_date,
-            end_date=end_date,
-        )
+    # Get usage entries using CRUD layer
+    usage_entries = crud_api_usage.get_for_user_filtered(
+        session,
+        username=current_user.username,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
-        # Calculate statistics
-        total_requests = len(usage_entries)
+    # Calculate statistics
+    total_requests = len(usage_entries)
 
-        # Group by date
-        requests_by_date = {}
-        for entry in usage_entries:
-            date_str = entry.timestamp.strftime("%Y-%m-%d")
-            requests_by_date[date_str] = requests_by_date.get(date_str, 0) + 1
+    # Group by date
+    requests_by_date = {}
+    for entry in usage_entries:
+        date_str = entry.timestamp.strftime("%Y-%m-%d")
+        requests_by_date[date_str] = requests_by_date.get(date_str, 0) + 1
 
-        # Count issue actions
-        issues_created = sum(
-            1 for entry in usage_entries if entry.action_type == "create_issue"
-        )
-        issues_updated = sum(
-            1 for entry in usage_entries if entry.action_type == "update_issue"
-        )
-        issues_closed = sum(
-            1 for entry in usage_entries if entry.action_type == "close_issue"
-        )
+    # Count issue actions
+    issues_created = sum(
+        1 for entry in usage_entries if entry.action_type == "create_issue"
+    )
+    issues_updated = sum(
+        1 for entry in usage_entries if entry.action_type == "update_issue"
+    )
+    issues_closed = sum(
+        1 for entry in usage_entries if entry.action_type == "close_issue"
+    )
 
-        # Group by endpoint
-        requests_by_endpoint = {}
-        for entry in usage_entries:
-            endpoint = entry.endpoint
-            requests_by_endpoint[endpoint] = requests_by_endpoint.get(endpoint, 0) + 1
+    # Group by endpoint
+    requests_by_endpoint = {}
+    for entry in usage_entries:
+        endpoint = entry.endpoint
+        requests_by_endpoint[endpoint] = requests_by_endpoint.get(endpoint, 0) + 1
 
-        return ApiUsageStatistics(
-            total_requests=total_requests,
-            requests_by_date=requests_by_date,
-            issues_created=issues_created,
-            issues_updated=issues_updated,
-            issues_closed=issues_closed,
-            requests_by_endpoint=requests_by_endpoint,
-        )
-    finally:
-        pass
+    return ApiUsageStatistics(
+        total_requests=total_requests,
+        requests_by_date=requests_by_date,
+        issues_created=issues_created,
+        issues_updated=issues_updated,
+        issues_closed=issues_closed,
+        requests_by_endpoint=requests_by_endpoint,
+    )
 
 
 async def authenticate_user(
@@ -1574,56 +1553,53 @@ async def authenticate_user(
 
     session = db
 
-    try:
-        # Find user using CRUD layer
-        user = crud_user.get_by_username(session, username=username)
+    # Find user using CRUD layer
+    user = crud_user.get_by_username(session, username=username)
 
-        if not user:
-            return None
+    if not user:
+        return None
 
-        if not verify_password(password, user.hashed_password):
-            return None
+    if not verify_password(password, user.hashed_password):
+        return None
 
-        if not user.is_active:
-            return None
+    if not user.is_active:
+        return None
 
-        # Capture old last_login before updating (for inactivity notification)
-        old_last_login = user.last_login
+    # Capture old last_login before updating (for inactivity notification)
+    old_last_login = user.last_login
 
-        # Update last_login timestamp
-        user.last_login = datetime.now(timezone.utc)
-        session.commit()
-        session.refresh(user)
+    # Update last_login timestamp
+    user.last_login = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(user)
 
-        # Check if we should notify admins about login after inactivity
-        if (
-            should_notify_on_login(old_last_login, days_threshold=7)
-            and source_ip != "testclient"
-        ):
-            # Capture string values before creating thread to avoid accessing
-            # detached ORM object after session.close() in finally block
-            username_str = user.username
-            email_str = user.email
+    # Check if we should notify admins about login after inactivity
+    if (
+        should_notify_on_login(old_last_login, days_threshold=7)
+        and source_ip != "testclient"
+    ):
+        # Capture string values before creating thread to avoid accessing
+        # detached ORM object after session.close() in finally block
+        username_str = user.username
+        email_str = user.email
 
-            # Run notification in background thread to avoid blocking login
-            def send_login_notification():
-                try:
-                    notify_admins_user_login_after_inactivity(
-                        username=username_str,
-                        email=email_str,
-                        last_login=old_last_login,
-                        source_ip=source_ip,
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send login notification: {e}")
+        # Run notification in background thread to avoid blocking login
+        def send_login_notification():
+            try:
+                notify_admins_user_login_after_inactivity(
+                    username=username_str,
+                    email=email_str,
+                    last_login=old_last_login,
+                    source_ip=source_ip,
+                )
+            except Exception as e:
+                logger.error(f"Failed to send login notification: {e}")
 
-            thread = threading.Thread(target=send_login_notification)
-            thread.daemon = True
-            thread.start()
+        thread = threading.Thread(target=send_login_notification)
+        thread.daemon = True
+        thread.start()
 
-        return user
-    finally:
-        pass
+    return user
 
 
 @router.post("/complete-onboarding", response_model=Token)
@@ -1636,46 +1612,39 @@ async def complete_onboarding(
     Sets the password and updates the username.
     """
     session = db
-    try:
-        # Find user using CRUD layer
-        user = crud_user.get_by_email(session, email=request.email)
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found.")
+    # Find user using CRUD layer
+    user = crud_user.get_by_email(session, email=request.email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
 
-        if user.hashed_password != "NEEDS_RESET":
-            raise HTTPException(status_code=400, detail="Onboarding already completed.")
+    if user.hashed_password != "NEEDS_RESET":
+        raise HTTPException(status_code=400, detail="Onboarding already completed.")
 
-        # Check if the new username is taken by someone else using CRUD layer
-        if user.username != request.username:
-            existing_user = crud_user.get_by_username(
-                session, username=request.username
-            )
-            if existing_user:
-                raise HTTPException(
-                    status_code=400, detail="Username is already taken."
-                )
-            user.username = request.username
+    # Check if the new username is taken by someone else using CRUD layer
+    if user.username != request.username:
+        existing_user = crud_user.get_by_username(session, username=request.username)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username is already taken.")
+        user.username = request.username
 
-        user.hashed_password = get_password_hash(request.password)
-        session.commit()
+    user.hashed_password = get_password_hash(request.password)
+    session.commit()
 
-        # Create access and refresh tokens for auto-login
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": str(user.id), "scopes": []},
-            expires_delta=access_token_expires,
-        )
-        refresh_token_expires = timedelta(days=7)
-        refresh_token = create_access_token(
-            data={"sub": str(user.id), "scopes": [], "refresh": True},
-            expires_delta=refresh_token_expires,
-        )
+    # Create access and refresh tokens for auto-login
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id), "scopes": []},
+        expires_delta=access_token_expires,
+    )
+    refresh_token_expires = timedelta(days=7)
+    refresh_token = create_access_token(
+        data={"sub": str(user.id), "scopes": [], "refresh": True},
+        expires_delta=refresh_token_expires,
+    )
 
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        }
-    finally:
-        pass
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }

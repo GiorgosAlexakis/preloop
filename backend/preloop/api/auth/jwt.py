@@ -22,6 +22,7 @@ from preloop.models.crud import (
     crud_runtime_session,
     crud_user,
 )
+from sqlalchemy.orm import Session
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
@@ -273,11 +274,15 @@ def decode_token(token: str) -> TokenData:
         )
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db_session),
+) -> User:
     """Get the current user from a JWT token or API key.
 
     Args:
         token: JWT token or API key.
+        db: Database session.
 
     Returns:
         The current User object.
@@ -293,32 +298,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
             "Token appears to be an API key (no . character), trying API key authentication first"
         )
         try:
-            session_generator = get_db_session()
-            session = next(session_generator)
+            # Look up the API key using CRUD
+            logger.info(f"Looking up API key: {token[:10]}...")
+            api_key = crud_api_key.get_by_key(db, key=token)
 
-            try:
-                # Look up the API key using CRUD
-                logger.info(f"Looking up API key: {token[:10]}...")
-                api_key = crud_api_key.get_by_key(session, key=token)
+            if api_key:
+                logger.info(
+                    f"API key found: {api_key.name}, user_id: {api_key.user_id}"
+                )
 
-                if api_key:
-                    logger.info(
-                        f"API key found: {api_key.name}, user_id: {api_key.user_id}"
-                    )
+                user = _authenticate_with_api_key(db, api_key)
 
-                    user = _authenticate_with_api_key(session, api_key)
-
-                    logger.info(
-                        f"API key authentication successful for user: {user.username}"
-                    )
-                    return user  # Return the full User object
-            finally:
-                session.close()
-                try:
-                    # Clean up the generator
-                    next(session_generator, None)
-                except StopIteration:
-                    pass
+                logger.info(
+                    f"API key authentication successful for user: {user.username}"
+                )
+                return user  # Return the full User object
         except HTTPException:
             # Re-raise HTTP exceptions
             raise
@@ -363,35 +357,26 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
 
         # Get user from database
         try:
-            session_generator = get_db_session()
-            session = next(session_generator)
+            # Get user by ID
+            user = crud_user.get(db, id=user_id)
 
-            try:
-                # Get user by ID
-                user = crud_user.get(session, id=user_id)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-                if not user:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="User not found",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Inactive user",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-                if not user.is_active:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Inactive user",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-
-                return user  # Return the full User object
-            finally:
-                session.close()
-                try:
-                    # Clean up the generator
-                    next(session_generator, None)
-                except StopIteration:
-                    pass
+            return user  # Return the full User object
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error getting current user from JWT: {str(e)}")
             raise HTTPException(
@@ -408,39 +393,28 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
                 f"JWT authentication failed: {str(e)}, attempting API key authentication as fallback"
             )
             try:
-                session_generator = get_db_session()
-                session = next(session_generator)
+                # Look up the API key using CRUD
+                logger.info(f"Looking up API key: {token[:10]}...")
+                api_key = crud_api_key.get_by_key(db, key=token)
 
-                try:
-                    # Look up the API key using CRUD
-                    logger.info(f"Looking up API key: {token[:10]}...")
-                    api_key = crud_api_key.get_by_key(session, key=token)
-
-                    if not api_key:
-                        logger.warning(f"API key not found: {token[:10]}...")
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Invalid API key",
-                            headers={"WWW-Authenticate": "Bearer"},
-                        )
-
-                    logger.info(
-                        f"API key found: {api_key.name}, user_id: {api_key.user_id}"
+                if not api_key:
+                    logger.warning(f"API key not found: {token[:10]}...")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid API key",
+                        headers={"WWW-Authenticate": "Bearer"},
                     )
 
-                    user = _authenticate_with_api_key(session, api_key)
+                logger.info(
+                    f"API key found: {api_key.name}, user_id: {api_key.user_id}"
+                )
 
-                    logger.info(
-                        f"API key authentication successful for user: {user.username}"
-                    )
-                    return user  # Return the full User object
-                finally:
-                    session.close()
-                    try:
-                        # Clean up the generator
-                        next(session_generator, None)
-                    except StopIteration:
-                        pass
+                user = _authenticate_with_api_key(db, api_key)
+
+                logger.info(
+                    f"API key authentication successful for user: {user.username}"
+                )
+                return user  # Return the full User object
             except HTTPException:
                 # Re-raise HTTP exceptions
                 raise

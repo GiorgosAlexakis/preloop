@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-30
+
+### Overview
+Version 0.9.0 introduces major enhancements to Preloop's agent control plane. The most significant additions include the **AI model gateway**, robust support for **onboarding existing agents** (such as OpenClaw, Codex CLI, Hermes, OpenCode, Claude Code, and Gemini CLI), and comprehensive **cost tracking and budget governance**. These features allow organizations to securely route, monitor, and enforce policies on their AI traffic across diverse agent ecosystems.
+
+### Added (since 0.9.0-rc.3)
+- **API Key Details View**: Added a dedicated API key details view to manage subject-scoped governance.
+- **Budget Controls**: Modernized the budget governance dashboard with clear spend alignment metrics.
+
+### Fixed (since 0.9.0-rc.3)
+- **Auth Session Refactoring**: Refactored authentication API routes to strictly use FastAPI dependency injection (`Depends(get_db_session)`), replacing legacy session iterators.
+- **DynamicFastMCP Security**: Resolved an authorization bypass vulnerability for proxied MCP tool calls by enforcing strict internal re-entry checks.
+- **Dashboard Stability**: Fixed budget spend alignment, gateway usage principal filtering, and applied proper time window filters to active agents and sessions.
+- **UI Polish**: Persisted dismissed flow executions and prevented the budget dialog from unexpectedly closing upon selection changes.
+- **Test Suite**: Resolved failing frontend UI tests for DashboardView, ToolsView, and RuntimeSessionsView.
+
 ## [0.9.0-rc.3] - 2026-04-21
 
 ### Changed

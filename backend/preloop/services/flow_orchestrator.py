@@ -77,6 +77,11 @@ def _make_json_serializable(obj: Any) -> Any:
     return obj
 
 
+def _exception_message(exc: BaseException) -> str:
+    """Return a useful message for exceptions whose str() is empty."""
+    return str(exc) or exc.__class__.__name__
+
+
 class FlowExecutionOrchestrator:
     """Manages the end-to-end lifecycle of a single Flow invocation."""
 
@@ -1765,8 +1770,9 @@ class FlowExecutionOrchestrator:
                     logger.debug(f"Agent status at {elapsed}s: {status.value}")
                     consecutive_failures = 0  # Reset failure counter on success
                 except Exception as status_error:
+                    status_error_message = _exception_message(status_error)
                     logger.error(
-                        f"Error getting agent status at {elapsed}s: {status_error}",
+                        f"Error getting agent status at {elapsed}s: {status_error_message}",
                         exc_info=True,
                     )
                     # Retry once after a short delay
@@ -1776,8 +1782,9 @@ class FlowExecutionOrchestrator:
                         logger.info(f"Status check recovered: {status.value}")
                         consecutive_failures = 0  # Reset on successful retry
                     except Exception as retry_error:
+                        retry_error_message = _exception_message(retry_error)
                         logger.error(
-                            f"Status check retry failed: {retry_error}",
+                            f"Status check retry failed: {retry_error_message}",
                             exc_info=True,
                         )
                         consecutive_failures += 1
@@ -1793,7 +1800,7 @@ class FlowExecutionOrchestrator:
                             )
                             return {
                                 "status": "FAILED",
-                                "error_message": f"Monitoring error: {str(retry_error)}",
+                                "error_message": f"Monitoring error: {retry_error_message}",
                                 "actions_taken": self.execution_logger.get_actions_taken(),
                                 "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
                             }
@@ -1950,16 +1957,17 @@ class FlowExecutionOrchestrator:
             }
 
         except Exception as e:
+            error_message = _exception_message(e)
             logger.error(
-                f"Error monitoring agent execution {session_reference}: {e}",
+                f"Error monitoring agent execution {session_reference}: {error_message}",
                 exc_info=True,
             )
             self.execution_logger.log_milestone(
-                "agent_execution_error", {"error": str(e)}
+                "agent_execution_error", {"error": error_message}
             )
             return {
                 "status": "FAILED",
-                "error_message": f"Monitoring error: {str(e)}",
+                "error_message": f"Monitoring error: {error_message}",
                 "actions_taken": self.execution_logger.get_actions_taken(),
                 "mcp_usage_logs": self.execution_logger.get_mcp_usage_logs(),
             }

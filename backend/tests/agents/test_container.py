@@ -829,3 +829,48 @@ class TestCleanup:
 
         # Should not raise
         await container_executor.cleanup()
+
+
+class TestKubernetesPodWaitMessage:
+    """Tests for user-facing Kubernetes pending pod diagnostics."""
+
+    def test_unschedulable_pod_message_includes_scheduler_reason(
+        self, kubernetes_executor
+    ):
+        """Pending pods should report scheduler messages instead of blank errors."""
+        pod = MagicMock()
+        pod.metadata.name = "agent-test-abc"
+        pod.status.phase = "Pending"
+        pod.status.container_statuses = []
+        condition = MagicMock()
+        condition.type = "PodScheduled"
+        condition.status = "False"
+        condition.reason = "Unschedulable"
+        condition.message = "0/1 nodes are available: 1 Insufficient cpu."
+        pod.status.conditions = [condition]
+
+        message = kubernetes_executor._format_kubernetes_pod_wait_message(pod)
+
+        assert "agent-test-abc" in message
+        assert "Unschedulable" in message
+        assert "Insufficient cpu" in message
+
+    def test_container_waiting_message_includes_waiting_reason(
+        self, kubernetes_executor
+    ):
+        """Container wait states should be surfaced when scheduling has succeeded."""
+        pod = MagicMock()
+        pod.metadata.name = "agent-test-abc"
+        pod.status.phase = "Pending"
+        waiting = MagicMock()
+        waiting.reason = "ImagePullBackOff"
+        waiting.message = "Back-off pulling image"
+        container_status = MagicMock()
+        container_status.state.waiting = waiting
+        pod.status.container_statuses = [container_status]
+        pod.status.conditions = []
+
+        message = kubernetes_executor._format_kubernetes_pod_wait_message(pod)
+
+        assert "ImagePullBackOff" in message
+        assert "Back-off pulling image" in message

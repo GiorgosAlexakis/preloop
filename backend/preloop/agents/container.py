@@ -13,6 +13,12 @@ from preloop.services.mcp_config_service import MCPConfigService
 
 logger = logging.getLogger(__name__)
 
+
+def _exception_message(exc: BaseException) -> str:
+    """Return a useful message for exceptions whose str() is empty."""
+    return str(exc) or exc.__class__.__name__
+
+
 try:
     from kubernetes_asyncio import client, config
     from kubernetes_asyncio.client.rest import ApiException
@@ -569,6 +575,37 @@ class ContainerAgentExecutor(AgentExecutor):
             self.logger.error(f"Failed to get status for Job {job_name}: {e}")
             return AgentStatus.FAILED
 
+    @staticmethod
+    def _format_kubernetes_pod_wait_message(pod: Any) -> str:
+        """Return a useful message for pods that exist but cannot stream logs yet."""
+        pod_name = getattr(getattr(pod, "metadata", None), "name", "unknown")
+        phase = getattr(getattr(pod, "status", None), "phase", None) or "unknown"
+
+        status = getattr(pod, "status", None)
+        for container_status in getattr(status, "container_statuses", None) or []:
+            waiting = getattr(getattr(container_status, "state", None), "waiting", None)
+            if waiting:
+                reason = getattr(waiting, "reason", None) or "Waiting"
+                message = getattr(waiting, "message", None)
+                return f"[WARN] Kubernetes pod {pod_name} is {phase}: {reason}" + (
+                    f" - {message}" if message else ""
+                )
+
+        for condition in getattr(status, "conditions", None) or []:
+            if (
+                getattr(condition, "type", None) == "PodScheduled"
+                and getattr(condition, "status", None) == "False"
+            ):
+                reason = getattr(condition, "reason", None) or "Unschedulable"
+                message = getattr(condition, "message", None)
+                return f"[WARN] Kubernetes pod {pod_name} is {phase}: {reason}" + (
+                    f" - {message}" if message else ""
+                )
+
+        return (
+            f"[WARN] Kubernetes pod {pod_name} is {phase}; logs are not available yet"
+        )
+
     async def get_result(self, session_reference: str) -> AgentExecutionResult:
         """
         Get the result of a container execution.
@@ -1079,11 +1116,12 @@ class ContainerAgentExecutor(AgentExecutor):
             )
             yield f"[ERROR] Failed to stream logs: {e}"
         except Exception as e:
+            error_message = _exception_message(e)
             self.logger.error(
-                f"Unexpected error streaming Docker logs for {container_id}: {e}",
+                f"Unexpected error streaming Docker logs for {container_id}: {error_message}",
                 exc_info=True,
             )
-            yield f"[ERROR] Unexpected error: {e}"
+            yield f"[ERROR] Unexpected error: {error_message}"
 
     async def _get_kubernetes_logs(
         self, job_name: str, tail: int | None = None
@@ -1113,6 +1151,9 @@ class ContainerAgentExecutor(AgentExecutor):
 
             # Get logs from the first pod (Jobs typically have one pod)
             pod_name = pods.items[0].metadata.name
+            pod = pods.items[0]
+            if getattr(pod.status, "phase", None) == "Pending":
+                return [self._format_kubernetes_pod_wait_message(pod)]
 
             log_kwargs: dict = {
                 "name": pod_name,
@@ -1180,6 +1221,8 @@ class ContainerAgentExecutor(AgentExecutor):
 
             # Wait for main container to start (after init container completes)
             # Poll pod status until the main container is running or terminated
+            pod = None
+            container_ready = False
             for attempt in range(60):
                 pod = await self._k8s_core_api.read_namespaced_pod(
                     name=pod_name, namespace=self.agent_namespace
@@ -1194,10 +1237,18 @@ class ContainerAgentExecutor(AgentExecutor):
                         or container_status.state.terminated
                     ):
                         self.logger.info(f"Main container ready for {pod_name}")
+                        container_ready = True
                         break
 
                 if attempt < 59:
                     await asyncio.sleep(1)
+
+            if not container_ready:
+                if pod is not None:
+                    yield self._format_kubernetes_pod_wait_message(pod)
+                else:
+                    yield f"[WARN] Kubernetes pod {pod_name} is not ready for log streaming"
+                return
 
             # Stream logs with follow=True
             response = await self._k8s_core_api.read_namespaced_pod_log(
@@ -1222,10 +1273,12 @@ class ContainerAgentExecutor(AgentExecutor):
                 self.logger.error(f"Error streaming logs for Job {job_name}: {e}")
                 yield f"[ERROR] Failed to stream logs: {e}"
         except Exception as e:
+            error_message = _exception_message(e)
             self.logger.error(
-                f"Unexpected error streaming Kubernetes logs for {job_name}: {e}"
+                f"Unexpected error streaming Kubernetes logs for {job_name}: {error_message}",
+                exc_info=True,
             )
-            yield f"[ERROR] Unexpected error: {e}"
+            yield f"[ERROR] Unexpected error: {error_message}"
 
     def _prepare_init_commands(self, execution_context: Dict[str, Any]) -> str:
         """

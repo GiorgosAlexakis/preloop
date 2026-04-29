@@ -46,7 +46,7 @@ async def test_authenticate_user_updates_last_login(mock_user, mock_db_session):
         mock_verify_password.return_value = True
 
         # Authenticate user
-        result = await authenticate_user("testuser", "password123")
+        result = await authenticate_user("testuser", "password123", db=mock_db_session)
 
         # Verify user was returned
         assert result == mock_user
@@ -85,7 +85,9 @@ async def test_authenticate_user_does_not_update_last_login_on_wrong_password(
         mock_verify_password.return_value = False  # Wrong password
 
         # Authenticate user
-        result = await authenticate_user("testuser", "wrong_password")
+        result = await authenticate_user(
+            "testuser", "wrong_password", db=mock_db_session
+        )
 
         # Verify None was returned (authentication failed)
         assert result is None
@@ -116,7 +118,7 @@ async def test_authenticate_user_does_not_update_last_login_when_inactive(
         mock_verify_password.return_value = True
 
         # Authenticate user
-        result = await authenticate_user("testuser", "password123")
+        result = await authenticate_user("testuser", "password123", db=mock_db_session)
 
         # Verify None was returned (authentication failed)
         assert result is None
@@ -148,7 +150,7 @@ async def test_authenticate_user_updates_last_login_on_subsequent_logins(
         mock_verify_password.return_value = True
 
         # Authenticate user
-        result = await authenticate_user("testuser", "password123")
+        result = await authenticate_user("testuser", "password123", db=mock_db_session)
 
         # Verify user was returned
         assert result == mock_user

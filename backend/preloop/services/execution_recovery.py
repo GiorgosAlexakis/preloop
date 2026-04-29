@@ -14,6 +14,11 @@ from .flow_orchestrator import FlowExecutionOrchestrator
 logger = logging.getLogger(__name__)
 
 
+def _exception_message(exc: BaseException) -> str:
+    """Return a useful message for exceptions whose str() is empty."""
+    return str(exc) or exc.__class__.__name__
+
+
 class ExecutionRecoveryService:
     """Recovers and resumes monitoring for orphaned flow executions."""
 
@@ -149,13 +154,14 @@ class ExecutionRecoveryService:
                 # Container is RUNNING/STARTING - proceed with monitoring below
 
         except Exception as check_error:
+            check_error_message = _exception_message(check_error)
             logger.warning(
-                f"Error checking container status for {execution.id}: {check_error}. "
+                f"Error checking container status for {execution.id}: {check_error_message}. "
                 "Marking as FAILED to avoid hanging."
             )
             update_data = FlowExecutionUpdate(
                 status="FAILED",
-                error_message=f"Container check failed during recovery: {str(check_error)}",
+                error_message=f"Container check failed during recovery: {check_error_message}",
                 end_time=datetime.now(timezone.utc),
             )
             crud_flow_execution.update(db, db_obj=execution, obj_in=update_data)
@@ -207,25 +213,13 @@ class ExecutionRecoveryService:
             try:
                 flow = orchestrator.flow
 
-                # Create appropriate agent executor based on flow agent type
-                from preloop.agents.codex import CodexAgent
-                from preloop.agents.container import ContainerAgentExecutor
-                import os
+                # Recreate the concrete agent executor so resumed monitoring uses
+                # the same Docker/Kubernetes detection as the original run.
+                from preloop.agents import create_agent_executor
 
-                use_kubernetes = (
-                    os.getenv("USE_KUBERNETES_FOR_AGENTS", "false").lower() == "true"
+                agent_executor = create_agent_executor(
+                    flow.agent_type, {"agent_config": flow.agent_config or {}}
                 )
-
-                # CodexAgent auto-detects Kubernetes environment, no need to pass use_kubernetes
-                if flow.agent_type == "codex":
-                    agent_executor = CodexAgent(config={})
-                else:
-                    agent_executor = ContainerAgentExecutor(
-                        agent_type=flow.agent_type,
-                        config={},
-                        image="dummy-image",
-                        use_kubernetes=use_kubernetes,
-                    )
 
                 # Resume monitoring
                 agent_result = await orchestrator._monitor_agent_execution(
@@ -252,8 +246,9 @@ class ExecutionRecoveryService:
                 db.close()
 
         except Exception as e:
+            error_message = _exception_message(e)
             logger.error(
-                f"Error in resumed monitoring task for {session_reference}: {e}",
+                f"Error in resumed monitoring task for {session_reference}: {error_message}",
                 exc_info=True,
             )
             # Mark as failed - need a fresh session since the one above was closed

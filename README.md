@@ -21,9 +21,9 @@ Build automations with templates like the [Pull Request Reviewer](./backend/pres
 curl -fsSL https://preloop.ai/install/cli | sh
 ```
 
-<a href="https://youtu.be/yTtXn8WibTY" target="_blank" title="Watch the video">
-  <img alt="Preloop Video" src="frontend/public/assets/mcp-firewall.svg" style="width: 100%; max-width: 1135px;" />
-</a>
+<p align="center">
+  <img alt="Preloop onboarding local agents into the control plane" src="frontend/public/assets/screenshots/quickstart/dark/agents-onboarding.webp" style="width: 100%; max-width: 1135px; border-radius: 12px;" />
+</p>
 
 ## What is Preloop?
 
@@ -68,6 +68,10 @@ preloop agents discover
 
 Preloop inspects local configurations for **Claude Code**, **Codex CLI**, **Cursor**, **Gemini CLI**, **[Hermes](https://github.com/nousresearch/hermes-agent)**, **[OpenClaw](https://github.com/openclaw/openclaw)**, **[OpenCode](https://github.com/sst/opencode)**, and other MCP-compatible runtimes, imports representable MCP servers and model metadata into your account, mints a durable credential, backs up the existing config, and rewrites the local agent to use Preloop-managed endpoints. Legacy and current config locations are supported, JSON5/YAML parsing included. No SDK. No agent code changes.
 
+<p align="center">
+  <img alt="Preloop dashboard with live agent and gateway usage" src="frontend/public/assets/screenshots/quickstart/dark/dashboard.png" style="width: 100%; max-width: 1135px; border-radius: 12px;" />
+</p>
+
 ### Access Policies & Approval Workflows
 Define fine-grained access controls for any AI tool or operation. Tools support multiple ordered access rules that evaluate in priority order. When an AI attempts a protected operation, Preloop pauses and notifies you:
 - **Instant notifications** via mobile app, email, Slack, Mattermost, or custom webhook.
@@ -77,8 +81,8 @@ Define fine-grained access controls for any AI tool or operation. Tools support 
 - **Full Audit Trail** — every action is logged with full context: what was attempted, the matched policy, execution duration, and who approved it.
 
 <div align="center">
-  <video src="https://docs.preloop.ai/assets/animations/quickstart/access_rules.mp4" controls autoplay loop muted style="max-height: 480px; width: auto; max-width: 100%; border-radius: 8px; margin-right:10px;"></video>
-  <video src="https://docs.preloop.ai/assets/animations/quickstart/mobile_approval.mp4" controls autoplay loop muted style="max-height: 480px; width: auto; max-width: 100%; border-radius: 8px; margin-left:10px;"></video>
+  <img alt="Preloop MCP tool policy rules configured for an example pay tool" src="frontend/public/assets/screenshots/quickstart/dark/rules_configured.png" style="width: 49%; min-width: 320px; border-radius: 12px; margin-right: 1%;" />
+  <img alt="Preloop audit log showing governed agent activity" src="frontend/public/assets/screenshots/quickstart/dark/audit_page.png" style="width: 49%; min-width: 320px; border-radius: 12px; margin-left: 1%;" />
 </div>
 
 ### Policy-as-Code

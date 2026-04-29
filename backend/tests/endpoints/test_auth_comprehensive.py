@@ -43,24 +43,28 @@ client = TestClient(app)
 
 @pytest.fixture
 def db_session_mock():
+    from preloop.models.db.session import get_db_session
+
     """Create a mock database session."""
-    with patch("preloop.api.auth.router.get_db_session") as mock_get_db:
-        db_session = MagicMock(spec=Session)
-        mock_execute = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.first.return_value = None
-        mock_execute.scalars.return_value = mock_scalars
-        db_session.execute.return_value = mock_execute
+    db_session = MagicMock(spec=Session)
+    mock_execute = MagicMock()
+    mock_scalars = MagicMock()
+    mock_scalars.first.return_value = None
+    mock_execute.scalars.return_value = mock_scalars
+    db_session.execute.return_value = mock_execute
 
-        # Mock the query chain for CRUD methods
-        mock_query = MagicMock()
-        mock_query.filter.return_value = mock_query
-        mock_query.first.return_value = None
-        mock_query.all.return_value = []
-        db_session.query.return_value = mock_query
+    # Mock the query chain for CRUD methods
+    mock_query = MagicMock()
+    mock_query.filter.return_value = mock_query
+    mock_query.first.return_value = None
+    mock_query.all.return_value = []
+    db_session.query.return_value = mock_query
 
-        mock_get_db.return_value = iter([db_session])
+    app.dependency_overrides[get_db_session] = lambda: db_session
+    try:
         yield db_session
+    finally:
+        app.dependency_overrides.pop(get_db_session, None)
 
 
 @pytest.fixture
@@ -146,7 +150,7 @@ class TestLoginNotificationBackgroundThread:
 
             # Authenticate user
             result = await authenticate_user(
-                "testuser", "password123", source_ip="192.168.1.1"
+                "testuser", "password123", source_ip="192.168.1.1", db=db_session
             )
 
             # Verify the notification was called with string values
@@ -177,7 +181,7 @@ class TestLoginNotificationBackgroundThread:
 
             # Authenticate with testclient IP
             result = await authenticate_user(
-                "testuser", "password123", source_ip="testclient"
+                "testuser", "password123", source_ip="testclient", db=db_session
             )
 
             # Thread should not be created for testclient
@@ -205,7 +209,7 @@ class TestLoginNotificationBackgroundThread:
 
             # Authenticate user
             result = await authenticate_user(
-                "testuser", "password123", source_ip="192.168.1.1"
+                "testuser", "password123", source_ip="192.168.1.1", db=db_session
             )
 
             # Thread should not be created for recent logins
@@ -246,7 +250,7 @@ class TestLoginNotificationBackgroundThread:
 
             # Should not raise despite notification error
             result = await authenticate_user(
-                "testuser", "password123", source_ip="192.168.1.1"
+                "testuser", "password123", source_ip="192.168.1.1", db=db_session
             )
 
             assert result == mock_user
@@ -1075,7 +1079,9 @@ class TestLoginFlows:
             mock_get_db.return_value = iter([db_session])
             mock_crud.get_by_username.return_value = None
 
-            result = await authenticate_user("nonexistent", "password123")
+            result = await authenticate_user(
+                "nonexistent", "password123", db=db_session
+            )
 
         assert result is None
 
@@ -1092,7 +1098,9 @@ class TestLoginFlows:
             mock_crud.get_by_username.return_value = mock_inactive_user
             mock_verify.return_value = True
 
-            result = await authenticate_user("inactiveuser", "password123")
+            result = await authenticate_user(
+                "inactiveuser", "password123", db=db_session
+            )
 
         assert result is None
 
