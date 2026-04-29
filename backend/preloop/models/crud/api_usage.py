@@ -306,6 +306,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         end_date: datetime,
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
         ai_model_id: Optional[str] = None,
         api_key_id: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -337,6 +338,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.flow_id == flow_id)
         if runtime_session_id:
             query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
+        if runtime_principal_id:
+            query = query.filter(ApiUsage.runtime_principal_id == runtime_principal_id)
         if ai_model_id:
             query = query.filter(ApiUsage.ai_model_id == ai_model_id)
         if api_key_id:
@@ -362,6 +365,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         end_date: Optional[datetime] = None,
         flow_id: Optional[str] = None,
         runtime_session_id: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
         flow_execution_id: Optional[str] = None,
         api_key_id: Optional[str] = None,
         limit: int = 20,
@@ -404,6 +408,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.runtime_session_id == runtime_session_id)
         elif flow_execution_id:
             query = query.filter(ApiUsage.flow_execution_id == flow_execution_id)
+        if runtime_principal_id:
+            query = query.filter(ApiUsage.runtime_principal_id == runtime_principal_id)
         if api_key_id:
             query = query.filter(ApiUsage.api_key_id == api_key_id)
 
@@ -436,6 +442,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         account_id: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        runtime_principal_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by flow."""
@@ -467,6 +474,10 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             base_query = base_query.filter(ApiUsage.timestamp >= start_date)
         if end_date:
             base_query = base_query.filter(ApiUsage.timestamp < end_date)
+        if runtime_principal_id:
+            base_query = base_query.filter(
+                ApiUsage.runtime_principal_id == runtime_principal_id
+            )
 
         rows = (
             base_query.group_by(ApiUsage.flow_id, Flow.name)
@@ -550,6 +561,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         end_date: datetime,
         ai_model_id: Optional[str] = None,
         api_key_id: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         """Group recent execution-backed gateway usage into session slices."""
@@ -610,6 +622,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             rows = rows.filter(ApiUsage.ai_model_id == ai_model_id)
         if api_key_id:
             rows = rows.filter(ApiUsage.api_key_id == api_key_id)
+        if runtime_principal_id:
+            rows = rows.filter(ApiUsage.runtime_principal_id == runtime_principal_id)
         rows = (
             rows.group_by(
                 ApiUsage.ai_model_id,
@@ -665,6 +679,7 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         flow_id: Optional[str] = None,
         ai_model_id: Optional[str] = None,
         api_key_id: Optional[str] = None,
+        runtime_principal_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Group gateway usage by day."""
         bucket = func.date_trunc("day", ApiUsage.timestamp)
@@ -687,6 +702,8 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
             query = query.filter(ApiUsage.ai_model_id == ai_model_id)
         if api_key_id:
             query = query.filter(ApiUsage.api_key_id == api_key_id)
+        if runtime_principal_id:
+            query = query.filter(ApiUsage.runtime_principal_id == runtime_principal_id)
 
         rows = query.group_by(bucket).order_by(bucket.asc()).all()
         return [

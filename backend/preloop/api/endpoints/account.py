@@ -625,12 +625,14 @@ async def get_account_gateway_usage_summary(
     db: Session = Depends(get_db_session),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
+    runtime_principal_id: Optional[str] = Query(None),
 ):
     """Get account-scoped model gateway usage summary."""
     return ModelGatewayUsageService(db).get_account_summary(
         account=account,
         start_date=start_date,
         end_date=end_date,
+        runtime_principal_id=runtime_principal_id,
     )
 
 

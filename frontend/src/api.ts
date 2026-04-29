@@ -264,6 +264,7 @@ export async function getApiUsageStats() {
 export interface GatewayUsageSummaryParams {
   startDate?: string;
   endDate?: string;
+  runtimePrincipalId?: string;
 }
 
 export interface GatewayUsageSearchParams extends GatewayUsageSummaryParams {
@@ -333,6 +334,10 @@ function buildGatewayUsageQuery(params: GatewayUsageSearchParams = {}): string {
 
   if (params.runtimeSessionId) {
     queryParams.set('runtime_session_id', params.runtimeSessionId);
+  }
+
+  if (params.runtimePrincipalId) {
+    queryParams.set('runtime_principal_id', params.runtimePrincipalId);
   }
 
   if (params.sessionSourceType) {

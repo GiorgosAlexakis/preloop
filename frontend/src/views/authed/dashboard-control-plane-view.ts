@@ -35,6 +35,7 @@ import { isSaaS } from '../../brand-config';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import type {
   AccountGatewayUsageSummaryResponse,
+  GatewayUsageBySession,
   GatewayUsageSearchResultItem,
   ManagedAgentSummary,
   RuntimeSessionSummary,
@@ -98,6 +99,29 @@ interface ApprovalRequest {
   resolved_at?: string | null;
 }
 
+interface UsageSessionSubject {
+  kind: 'agent' | 'flow' | 'session';
+  name: string;
+  href: string;
+}
+
+interface DashboardMetric {
+  label: string;
+  value: string | number;
+  icon: string;
+  href?: string;
+  tone?: 'primary' | 'neutral' | 'success' | 'warning' | 'danger';
+}
+
+type BudgetPolicyUsage = {
+  policy: BudgetPolicy;
+  spend: number;
+  hardLimit: number;
+  softLimit: number;
+  maxLimit: number;
+  percent: number;
+};
+
 @customElement('dashboard-view')
 export class DashboardView extends AuthedElement {
   @state() private loading = true;
@@ -106,6 +130,7 @@ export class DashboardView extends AuthedElement {
     null;
   @state() private runtimeSessions: RuntimeSessionSummary[] = [];
   @state() private managedAgents: ManagedAgentSummary[] = [];
+  @state() private budgetAgents: ManagedAgentSummary[] = [];
   @state() private gatewayInteractions: GatewayUsageSearchResultItem[] = [];
   @state() private auditGroups: AuditGroup[] = [];
   @state() private trackers: Tracker[] = [];
@@ -114,6 +139,9 @@ export class DashboardView extends AuthedElement {
   @state() private mcpServers: MCPServer[] = [];
   @state() private tools: Tool[] = [];
   @state() private recentFlowExecutions: FlowExecution[] = [];
+  @state() private flowExecutionsCount = 0;
+  @state() private failedExecutionsCount = 0;
+  @state() private succeededFlowExecutionsCount = 0;
   @state() private pendingApprovals: ApprovalRequest[] = [];
   @state() private lastUpdatedAt: string | null = null;
   @state() private hasFlows = false;
@@ -122,15 +150,23 @@ export class DashboardView extends AuthedElement {
   @state() private enabledUsersCount = 0;
   @state() private toolCallsCount = 0;
   @state() private failedToolCallsCount = 0;
-  @state() private usedToolsCount = 0;
   @state() private totalFlowsCount = 0;
   @state() private totalAgentsCount = 0;
+  @state() private totalRuntimeSessionsCount = 0;
   @state() private gatewayTimeRange: 'day' | 'week' | 'month' | 'year' =
     'month';
   @state() private budgetTimeRange: 'day' | 'week' | 'month' | 'year' = 'month';
   @state() private budgetSummary: AccountGatewayUsageSummaryResponse | null =
     null;
   @state() private fetchingBudget = false;
+  @state() private budgetSummariesByPeriod = new Map<
+    string,
+    AccountGatewayUsageSummaryResponse
+  >();
+  @state() private budgetPolicySummaries = new Map<
+    string,
+    AccountGatewayUsageSummaryResponse
+  >();
   @state() private activeAgentsTimeRange: '5m' | '1h' | '1d' | '1w' | '1mo' =
     '1d';
   @state() private fetchingActiveAgents = false;
@@ -206,6 +242,58 @@ export class DashboardView extends AuthedElement {
         font-size: var(--sl-font-size-small);
         color: var(--sl-color-neutral-600);
         text-align: center;
+      }
+      .hover-underline:hover {
+        text-decoration: underline;
+      }
+      .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: var(--sl-spacing-large);
+        row-gap: var(--sl-spacing-2x-large);
+        align-items: start;
+        margin-bottom: var(--sl-spacing-2x-large);
+      }
+      .budget-track {
+        position: relative;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--sl-color-neutral-200);
+        overflow: hidden;
+      }
+      .budget-track-fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: var(--budget-fill-left, 0%);
+        width: var(--budget-fill-width, 0%);
+        background: var(--sl-color-success-600);
+      }
+      .budget-track-fill.success {
+        background: var(--sl-color-success-600);
+      }
+      .budget-track-fill.warning {
+        background: var(--sl-color-warning-600);
+      }
+      .budget-track-fill.danger {
+        background: var(--sl-color-danger-600);
+      }
+      .budget-soft-marker {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: var(--budget-soft-position, 0%);
+        width: 2px;
+        background: var(--sl-color-warning-600);
+        box-shadow: 0 0 0 1px var(--sl-color-neutral-0);
+      }
+      .budget-hard-marker {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--sl-color-danger-600);
       }
       /* Compliance-specific styles */
       .compliance-progress {
@@ -658,9 +746,28 @@ export class DashboardView extends AuthedElement {
           text-align: left;
         }
 
-        .tool-counts,
         .analytics-grid {
           grid-template-columns: 1fr;
+        }
+
+        .metrics-grid {
+          grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+          gap: var(--sl-spacing-medium);
+          row-gap: var(--sl-spacing-large);
+        }
+
+        .tool-count {
+          min-width: 0;
+        }
+
+        .tool-count-value {
+          font-size: clamp(1rem, 7vw, 1.5rem);
+          overflow-wrap: anywhere;
+        }
+
+        .tool-count-label {
+          font-size: var(--sl-font-size-x-small);
+          line-height: 1.25;
         }
       }
     `,
@@ -670,6 +777,8 @@ export class DashboardView extends AuthedElement {
     super.connectedCallback();
     this.loadDismissedState();
     void this.fetchDashboardData();
+    void this.fetchBudgetSummary();
+    void this.fetchActiveAgentsData();
     this.connectRealtime();
   }
 
@@ -798,6 +907,8 @@ export class DashboardView extends AuthedElement {
       ]);
 
       this.runtimeSessions = runtimeSessions.items || [];
+      this.totalRuntimeSessionsCount =
+        runtimeSessions.total ?? this.runtimeSessions.length;
       this.managedAgents = managedAgents.items || [];
     } catch (error) {
       console.error('Failed to load active agents data', error);
@@ -809,35 +920,69 @@ export class DashboardView extends AuthedElement {
   private async fetchBudgetSummary() {
     this.fetchingBudget = true;
     try {
-      const now = new Date();
-      let startDateStr = '';
-
-      if (this.budgetTimeRange === 'day') {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 1);
-        startDateStr = d.toISOString();
-      } else if (this.budgetTimeRange === 'week') {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 7);
-        startDateStr = d.toISOString();
-      } else if (this.budgetTimeRange === 'month') {
-        const d = new Date(now);
-        d.setMonth(d.getMonth() - 1);
-        startDateStr = d.toISOString();
-      } else if (this.budgetTimeRange === 'year') {
-        const d = new Date(now);
-        d.setFullYear(d.getFullYear() - 1);
-        startDateStr = d.toISOString();
-      }
-
-      const [budgetSummary, policies] = await Promise.all([
-        getAccountGatewayUsageSummary({ startDate: startDateStr }).catch(
-          () => null
-        ),
+      const [budgetSummary, policies, budgetAgents] = await Promise.all([
+        getAccountGatewayUsageSummary({
+          startDate: this.getBudgetStartDate(this.budgetTimeRange),
+        }).catch(() => null),
         getBudgetPolicies().catch(() => [] as BudgetPolicy[]),
+        getAccountAgents({ status: 'all', limit: 100 }).catch(() => ({
+          items: [] as ManagedAgentSummary[],
+        })),
       ]);
       this.budgetSummary = budgetSummary;
       this.budgetPolicies = Array.isArray(policies) ? policies : [];
+      this.budgetAgents = budgetAgents.items || [];
+
+      const periods = new Set(
+        this.budgetPolicies.map((policy) => policy.period || 'monthly')
+      );
+      periods.add(this.timeRangeToBudgetPeriod(this.budgetTimeRange));
+
+      const periodSummaries = await Promise.all(
+        Array.from(periods).map(async (period) => {
+          const summary = await getAccountGatewayUsageSummary({
+            startDate: this.getBudgetPolicyStartDate(period),
+          }).catch(() => null);
+          return [period, summary] as const;
+        })
+      );
+      const nextSummaries = new Map<
+        string,
+        AccountGatewayUsageSummaryResponse
+      >();
+      for (const [period, summary] of periodSummaries) {
+        if (summary) {
+          nextSummaries.set(period, summary);
+        }
+      }
+      this.budgetSummariesByPeriod = nextSummaries;
+
+      const managedAgentPolicies = this.budgetPolicies.filter(
+        (policy) => policy.subject_type === 'managed_agent'
+      );
+      const policySummaries = await Promise.all(
+        managedAgentPolicies.map(async (policy) => {
+          const agent = this.getManagedAgentBySourceId(policy.subject_id);
+          if (!agent?.session_source_id) {
+            return [policy.id, null] as const;
+          }
+          const summary = await getAccountGatewayUsageSummary({
+            startDate: this.getBudgetPolicyStartDate(policy.period),
+            runtimePrincipalId: agent.session_source_id,
+          }).catch(() => null);
+          return [policy.id, summary] as const;
+        })
+      );
+      const nextPolicySummaries = new Map<
+        string,
+        AccountGatewayUsageSummaryResponse
+      >();
+      for (const [policyId, summary] of policySummaries) {
+        if (summary) {
+          nextPolicySummaries.set(policyId, summary);
+        }
+      }
+      this.budgetPolicySummaries = nextPolicySummaries;
     } finally {
       this.fetchingBudget = false;
     }
@@ -910,7 +1055,6 @@ export class DashboardView extends AuthedElement {
         users,
         toolCallsStats,
         failedToolCallsStats,
-        usedToolsStats,
         totalAgentsStats,
       ] = await Promise.all([
         this.catchWith403Handling(
@@ -931,7 +1075,7 @@ export class DashboardView extends AuthedElement {
         this.catchWith403Handling(getTools(), [] as Tool[]),
         this.catchWith403Handling(getFlows(), [] as any[]),
         this.catchWith403Handling(
-          getFlowExecutions({ limit: 5 }),
+          getFlowExecutions({ limit: 100 }),
           [] as FlowExecution[]
         ),
         this.catchWith403Handling(this.fetchApprovalRequests('pending', 3), []),
@@ -969,12 +1113,6 @@ export class DashboardView extends AuthedElement {
           { total: 0 }
         ),
         this.catchWith403Handling(
-          fetchWithAuth(
-            '/api/v1/audit-logs/grouped?event_type=tool_call&group_by=tool_name'
-          ).then((r) => r.json()),
-          { groups: [] }
-        ),
-        this.catchWith403Handling(
           getAccountAgents({ status: 'all', limit: 1 }),
           { total: 0 }
         ),
@@ -990,13 +1128,20 @@ export class DashboardView extends AuthedElement {
       this.tools = tools;
       this.hasFlows = (flows || []).length > 0;
       this.totalFlowsCount = (flows || []).length;
-      this.recentFlowExecutions = [...(flowExecutions || [])]
-        .sort(
-          (left, right) =>
-            new Date(right.start_time).getTime() -
-            new Date(left.start_time).getTime()
-        )
-        .slice(0, 5);
+      const sortedFlowExecutions = [...(flowExecutions || [])].sort(
+        (left, right) =>
+          new Date(right.start_time).getTime() -
+          new Date(left.start_time).getTime()
+      );
+      this.flowExecutionsCount = sortedFlowExecutions.length;
+      this.failedExecutionsCount = sortedFlowExecutions.filter(
+        (execution) => execution.status === 'FAILED'
+      ).length;
+      this.succeededFlowExecutionsCount = sortedFlowExecutions.filter(
+        (execution) =>
+          execution.status === 'SUCCEEDED' || execution.status === 'COMPLETED'
+      ).length;
+      this.recentFlowExecutions = sortedFlowExecutions.slice(0, 5);
       this.pendingApprovals = pendingApprovals;
       this.hasAIModels = (aiModels || []).length > 0;
       this.aiModelsCount = Array.isArray(aiModels) ? aiModels.length : 0;
@@ -1005,12 +1150,6 @@ export class DashboardView extends AuthedElement {
         : 0;
       this.toolCallsCount = toolCallsStats?.total || 0;
       this.failedToolCallsCount = failedToolCallsStats?.total || 0;
-      const usedToolNames = new Set(
-        (usedToolsStats?.groups || []).map((g: any) => g.group_value)
-      );
-      this.usedToolsCount = this.tools.filter(
-        (t: any) => t.is_enabled && usedToolNames.has(t.name)
-      ).length;
       this.totalAgentsCount = totalAgentsStats?.total || 0;
       this.calculateApprovalStats(allApprovalRequests);
 
@@ -1106,11 +1245,56 @@ export class DashboardView extends AuthedElement {
   }
 
   private get activeSessions(): RuntimeSessionSummary[] {
-    return [...this.runtimeSessions].sort((left, right) => {
-      const leftTs = left.last_activity_at || left.started_at;
-      const rightTs = right.last_activity_at || right.started_at;
-      return new Date(rightTs).getTime() - new Date(leftTs).getTime();
-    });
+    return [...this.runtimeSessions]
+      .filter((session) => session.id && (session.total_requests || 0) > 0)
+      .sort((left, right) => {
+        const leftTs = left.last_activity_at || left.started_at;
+        const rightTs = right.last_activity_at || right.started_at;
+        return new Date(rightTs).getTime() - new Date(leftTs).getTime();
+      });
+  }
+
+  private getBudgetStartDate(range: 'day' | 'week' | 'month' | 'year'): string {
+    const now = new Date();
+    const start = new Date(now);
+    if (range === 'day') {
+      start.setDate(start.getDate() - 1);
+    } else if (range === 'week') {
+      start.setDate(start.getDate() - 7);
+    } else if (range === 'month') {
+      start.setMonth(start.getMonth() - 1);
+    } else if (range === 'year') {
+      start.setFullYear(start.getFullYear() - 1);
+    }
+    return start.toISOString();
+  }
+
+  private getBudgetPolicyStartDate(period: string): string | undefined {
+    const now = new Date();
+    const start = new Date(now);
+    if (period === 'hourly') {
+      start.setHours(start.getHours() - 1);
+    } else if (period === 'daily') {
+      start.setDate(start.getDate() - 1);
+    } else if (period === 'weekly') {
+      start.setDate(start.getDate() - 7);
+    } else if (period === 'monthly') {
+      start.setMonth(start.getMonth() - 1);
+    } else if (period === 'yearly') {
+      start.setFullYear(start.getFullYear() - 1);
+    } else {
+      return undefined;
+    }
+    return start.toISOString();
+  }
+
+  private timeRangeToBudgetPeriod(
+    range: 'day' | 'week' | 'month' | 'year'
+  ): string {
+    if (range === 'day') return 'daily';
+    if (range === 'week') return 'weekly';
+    if (range === 'year') return 'yearly';
+    return 'monthly';
   }
 
   private get gatewayFailures(): GatewayUsageSearchResultItem[] {
@@ -1144,11 +1328,25 @@ export class DashboardView extends AuthedElement {
     return Intl.NumberFormat().format(value || 0);
   }
 
+  private formatPercent(numerator: number, denominator: number): string {
+    if (denominator <= 0) {
+      return '0%';
+    }
+    return `${((numerator / denominator) * 100).toFixed(1)}%`;
+  }
+
   private formatDateTime(value: string | null | undefined): string {
     if (!value) {
       return 'Never';
     }
     return parseUTCDate(value).toLocaleString();
+  }
+
+  private formatRuntimeSessionId(value: string | null | undefined): string {
+    if (!value) {
+      return 'Session';
+    }
+    return value.length > 8 ? value.substring(0, 8) : value;
   }
 
   private formatRelativeTime(value: string | null | undefined): string {
@@ -1188,6 +1386,52 @@ export class DashboardView extends AuthedElement {
     }
   }
 
+  private get enabledToolsCount(): number {
+    return this.tools.filter((tool) => tool.is_enabled).length;
+  }
+
+  private get activeAgentsCount(): number {
+    return this.managedAgents.filter(
+      (agent) =>
+        agent.is_active_now ||
+        agent.activity_status === 'active_now' ||
+        agent.activity_status === 'recently_active'
+    ).length;
+  }
+
+  private get inactiveAgentsCount(): number {
+    return Math.max(0, this.totalAgentsCount - this.activeAgentsCount);
+  }
+
+  private get flowExecutionSuccessRate(): string {
+    return this.formatPercent(
+      this.succeededFlowExecutionsCount,
+      this.flowExecutionsCount
+    );
+  }
+
+  private get modelRequestSuccessRate(): string {
+    return this.formatPercent(
+      this.gatewaySummary?.successful_requests || 0,
+      this.gatewaySummary?.total_requests || 0
+    );
+  }
+
+  private get toolCallSuccessRate(): string {
+    return this.formatPercent(
+      this.toolCallsCount - this.failedToolCallsCount,
+      this.toolCallsCount
+    );
+  }
+
+  private get approvalRate(): string {
+    const decidedApprovals =
+      this.approvalStats.approved +
+      this.approvalStats.declined +
+      this.approvalStats.expired;
+    return this.formatPercent(this.approvalStats.approved, decidedApprovals);
+  }
+
   private getGlobalPolicyUsage() {
     return this.calculatePolicyUsages().find(
       (u) =>
@@ -1196,9 +1440,20 @@ export class DashboardView extends AuthedElement {
     );
   }
 
+  private getSelectedGlobalPolicyUsage(): BudgetPolicyUsage | undefined {
+    const selectedPeriod = this.timeRangeToBudgetPeriod(this.budgetTimeRange);
+    return this.calculatePolicyUsages().find(
+      (u) =>
+        (u.policy.subject_type === 'global' ||
+          u.policy.subject_type === 'account') &&
+        u.policy.period === selectedPeriod
+    );
+  }
+
   private budgetVariant() {
-    const globalUsage = this.getGlobalPolicyUsage();
-    if (globalUsage && globalUsage.limit > 0) {
+    const globalUsage =
+      this.getSelectedGlobalPolicyUsage() || this.getGlobalPolicyUsage();
+    if (globalUsage && globalUsage.maxLimit > 0) {
       if (globalUsage.percent >= 100) return 'danger';
       if (globalUsage.percent >= 80) return 'warning';
       return 'success';
@@ -1218,8 +1473,9 @@ export class DashboardView extends AuthedElement {
   }
 
   private budgetPercent(): number {
-    const globalUsage = this.getGlobalPolicyUsage();
-    if (globalUsage && globalUsage.limit > 0) {
+    const globalUsage =
+      this.getSelectedGlobalPolicyUsage() || this.getGlobalPolicyUsage();
+    if (globalUsage && globalUsage.maxLimit > 0) {
       return globalUsage.percent;
     }
 
@@ -1234,33 +1490,267 @@ export class DashboardView extends AuthedElement {
     );
   }
 
-  private calculatePolicyUsages() {
-    if (!this.budgetSummary || !this.budgetPolicies) return [];
+  private calculatePolicyUsages(): BudgetPolicyUsage[] {
+    if (!this.budgetPolicies) return [];
 
     return this.budgetPolicies
       .map((policy) => {
+        const summary =
+          this.budgetPolicySummaries.get(policy.id) ||
+          this.budgetSummariesByPeriod.get(policy.period) ||
+          this.budgetSummary;
         let spend = 0;
-        if (policy.subject_type === 'global') {
-          spend = this.budgetSummary!.budget?.current_spend_usd || 0;
+        if (!summary) {
+          spend = 0;
+        } else if (
+          policy.subject_type === 'global' ||
+          policy.subject_type === 'account'
+        ) {
+          spend =
+            summary.budget?.current_spend_usd || summary.estimated_cost || 0;
         } else if (policy.subject_type === 'ai_model') {
-          spend = this.budgetSummary!.usage_by_model.filter(
-            (m) => m.ai_model_id === policy.subject_id
-          ).reduce((acc, m) => acc + m.estimated_cost, 0);
+          spend = summary.usage_by_model
+            .filter((m) => m.ai_model_id === policy.subject_id)
+            .reduce((acc, m) => acc + m.estimated_cost, 0);
         } else if (policy.subject_type === 'managed_agent') {
-          spend = this.budgetSummary!.usage_by_session.filter(
-            (s) =>
-              s.session_source_type === 'managed_agent' &&
-              s.session_source_id === policy.subject_id
-          ).reduce((acc, s) => acc + s.estimated_cost, 0);
+          const agent = this.getManagedAgentBySourceId(policy.subject_id);
+          const agentIds = new Set(
+            [policy.subject_id, agent?.id, agent?.session_source_id].filter(
+              Boolean
+            ) as string[]
+          );
+          if (this.budgetPolicySummaries.has(policy.id)) {
+            spend =
+              summary.estimated_cost || summary.budget?.current_spend_usd || 0;
+          } else {
+            spend = summary.usage_by_session
+              .filter(
+                (s) =>
+                  agentIds.has(s.session_source_id || '') ||
+                  agentIds.has(s.runtime_principal_id || '')
+              )
+              .reduce((acc, s) => acc + s.estimated_cost, 0);
+          }
+        } else if (policy.subject_type === 'flow') {
+          spend = summary.usage_by_flow
+            .filter((flow) => flow.flow_id === policy.subject_id)
+            .reduce((acc, flow) => acc + flow.estimated_cost, 0);
+        } else if (policy.subject_type === 'api_key') {
+          spend = summary.usage_by_session
+            .filter(
+              (session) =>
+                session.session_source_id === policy.subject_id ||
+                session.runtime_principal_id === policy.subject_id
+            )
+            .reduce((acc, session) => acc + session.estimated_cost, 0);
         }
 
-        const limit = policy.hard_limit_usd || policy.soft_limit_usd || 0;
+        const hardLimit = policy.hard_limit_usd || 0;
+        const softLimit = policy.soft_limit_usd || 0;
+        const maxLimit = hardLimit || softLimit;
         const percent =
-          limit > 0 ? Math.min(100, Math.round((spend / limit) * 100)) : 0;
+          maxLimit > 0
+            ? Math.min(100, Math.round((spend / maxLimit) * 100))
+            : 0;
 
-        return { policy, spend, limit, percent };
+        return { policy, spend, hardLimit, softLimit, maxLimit, percent };
       })
-      .sort((a, b) => b.percent - a.percent);
+      .sort((a, b) => {
+        const aGlobal =
+          a.policy.subject_type === 'global' ||
+          a.policy.subject_type === 'account';
+        const bGlobal =
+          b.policy.subject_type === 'global' ||
+          b.policy.subject_type === 'account';
+        if (aGlobal !== bGlobal) return aGlobal ? -1 : 1;
+        return b.percent - a.percent;
+      });
+  }
+
+  private getBudgetPolicyDisplayName(policy: BudgetPolicy): string {
+    const period = this.formatBudgetPeriod(policy.period);
+    if (policy.subject_type === 'global' || policy.subject_type === 'account') {
+      return `Global · ${period}`;
+    }
+    if (policy.subject_type === 'managed_agent') {
+      const agentName =
+        this.getManagedAgentBySourceId(policy.subject_id)?.display_name ||
+        'Managed agent';
+      return `${agentName} · ${period}`;
+    }
+    if (policy.subject_type === 'ai_model') {
+      return `${policy.model_alias || 'Model'} · ${period}`;
+    }
+    return `${policy.subject_type.replace(/_/g, ' ')} · ${period}`;
+  }
+
+  private formatBudgetPeriod(period: string): string {
+    if (period === 'hourly') return '1h';
+    if (period === 'daily') return '24h';
+    if (period === 'weekly') return '7d';
+    if (period === 'monthly') return '30d';
+    if (period === 'yearly') return '1y';
+    if (period === 'all_time') return 'all time';
+    return period;
+  }
+
+  private getBudgetPolicyIcon(policy: BudgetPolicy): string {
+    if (policy.subject_type === 'global' || policy.subject_type === 'account') {
+      return 'globe';
+    }
+    if (policy.subject_type === 'managed_agent') {
+      return 'robot';
+    }
+    if (policy.subject_type === 'ai_model') {
+      return 'cpu';
+    }
+    return 'sliders';
+  }
+
+  private renderBudgetLimitRow(
+    label: string,
+    icon: string,
+    spend: number,
+    softLimit: number,
+    hardLimit: number
+  ) {
+    const maxLimit = hardLimit || softLimit;
+    const fillPercent =
+      maxLimit > 0 ? Math.min(100, (spend / maxLimit) * 100) : 0;
+    const softPercent =
+      softLimit > 0 && maxLimit > 0
+        ? Math.min(100, (softLimit / maxLimit) * 100)
+        : 0;
+    const successFillPercent =
+      softLimit > 0 ? Math.min(fillPercent, softPercent) : fillPercent;
+    const warningFillPercent =
+      softLimit > 0 && fillPercent > softPercent
+        ? fillPercent - softPercent
+        : 0;
+    return html`
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <div
+          style="display: flex; justify-content: space-between; font-size: var(--sl-font-size-small); align-items: center; gap: var(--sl-spacing-small);"
+        >
+          <span style="display: flex; align-items: center; gap: 4px;">
+            <sl-icon name=${icon}></sl-icon>
+            ${label}
+          </span>
+          <span style="font-weight: 500; text-align: right;">
+            ${this.formatCurrency(spend)}
+            ${maxLimit > 0
+              ? html` / ${this.formatCurrency(maxLimit)}`
+              : html`<span
+                  style="color: var(--sl-color-neutral-500); font-weight: 400;"
+                >
+                  spent</span
+                >`}
+          </span>
+        </div>
+        ${maxLimit > 0
+          ? html`
+              <div class="budget-track">
+                <div
+                  class="budget-track-fill success"
+                  style="--budget-fill-width: ${successFillPercent}%;"
+                ></div>
+                ${warningFillPercent > 0
+                  ? html`<div
+                      class="budget-track-fill warning"
+                      style="--budget-fill-left: ${softPercent}%; --budget-fill-width: ${warningFillPercent}%;"
+                    ></div>`
+                  : nothing}
+                ${softLimit > 0 && hardLimit > 0 && softLimit < hardLimit
+                  ? html`<div
+                      class="budget-soft-marker"
+                      title=${`Soft limit ${this.formatCurrency(softLimit)}`}
+                      style="--budget-soft-position: ${softPercent}%;"
+                    ></div>`
+                  : nothing}
+                ${hardLimit > 0
+                  ? html`<div
+                      class="budget-hard-marker"
+                      title=${`Hard limit ${this.formatCurrency(hardLimit)}`}
+                    ></div>`
+                  : nothing}
+              </div>
+              <div
+                style="display: flex; justify-content: space-between; gap: var(--sl-spacing-small); color: var(--sl-color-neutral-500); font-size: var(--sl-font-size-x-small);"
+              >
+                <span>
+                  ${softLimit > 0
+                    ? html`Soft ${this.formatCurrency(softLimit)}`
+                    : nothing}
+                </span>
+                <span>
+                  ${hardLimit > 0
+                    ? html`Hard ${this.formatCurrency(hardLimit)}`
+                    : nothing}
+                </span>
+              </div>
+            `
+          : nothing}
+      </div>
+    `;
+  }
+
+  private getManagedAgentBySourceId(
+    sourceId: string | null | undefined
+  ): ManagedAgentSummary | undefined {
+    if (!sourceId) {
+      return undefined;
+    }
+    return [...this.managedAgents, ...this.budgetAgents].find(
+      (agent) => agent.id === sourceId || agent.session_source_id === sourceId
+    );
+  }
+
+  private getUsageSessionSubject(
+    session: GatewayUsageBySession
+  ): UsageSessionSubject {
+    const agent = this.getManagedAgentBySourceId(
+      session.session_source_id || session.runtime_principal_id
+    );
+    if (
+      agent ||
+      session.session_source_type === 'managed_agent' ||
+      session.runtime_principal_type === 'managed_agent'
+    ) {
+      const agentId = agent?.id || session.session_source_id;
+      return {
+        kind: 'agent',
+        name:
+          agent?.display_name ||
+          session.runtime_principal_name ||
+          'Managed agent',
+        href: agentId ? `/console/agents/${agentId}` : '/console/agents',
+      };
+    }
+
+    if (
+      session.flow_name ||
+      session.flow_id ||
+      session.flow_execution_id ||
+      session.session_source_type === 'flow_execution'
+    ) {
+      return {
+        kind: 'flow',
+        name: session.flow_name || 'Flow',
+        href: session.flow_id
+          ? `/console/flows/${session.flow_id}`
+          : session.flow_execution_id
+            ? `/console/flows/executions/${session.flow_execution_id}`
+            : '/console/flows',
+      };
+    }
+
+    return {
+      kind: 'session',
+      name: this.formatRuntimeSessionId(session.runtime_session_id),
+      href: session.runtime_session_id
+        ? `/console/runtime-sessions?sessionId=${session.runtime_session_id}`
+        : '/console/runtime-sessions',
+    };
   }
 
   private renderEmptyState(message: string) {
@@ -1500,48 +1990,49 @@ export class DashboardView extends AuthedElement {
   }
 
   private renderBudgetHealthContent() {
-    const globalUsage = this.getGlobalPolicyUsage();
-    const limit =
-      globalUsage && globalUsage.limit > 0
-        ? globalUsage.limit
-        : this.budgetSummary?.budget?.monthly_limit_usd ||
-          this.budgetSummary?.budget?.soft_limit_usd ||
-          0;
-    const usages = this.calculatePolicyUsages();
+    const policyUsages = this.calculatePolicyUsages();
+    const selectedPeriod = this.timeRangeToBudgetPeriod(this.budgetTimeRange);
+    const selectedGlobalUsage = policyUsages.find(
+      (usage) =>
+        (usage.policy.subject_type === 'global' ||
+          usage.policy.subject_type === 'account') &&
+        usage.policy.period === selectedPeriod
+    );
+    const additionalUsages = selectedGlobalUsage
+      ? policyUsages.filter(
+          (usage) => usage.policy.id !== selectedGlobalUsage.policy.id
+        )
+      : policyUsages;
+    const globalSpend = this.budgetSummary?.budget?.current_spend_usd || 0;
+
     return html`
       <div
         style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
       >
         <div
-          style="display: flex; align-items: center; justify-content: space-between;"
+          style="display: flex; flex-direction: column; gap: var(--sl-spacing-small);"
         >
-          ${limit > 0
-            ? html`
-                <sl-badge variant=${this.budgetVariant()}>
-                  ${this.budgetVariant().toUpperCase()}
-                </sl-badge>
-              `
-            : html` <sl-badge variant="neutral"> NO LIMIT </sl-badge> `}
-          <div style="font-weight: 600; font-size: 1.1rem;">
-            $${(this.budgetSummary?.budget?.current_spend_usd || 0).toFixed(2)}
-          </div>
+          ${this.renderBudgetLimitRow(
+            `Global spend · ${this.formatBudgetPeriod(selectedPeriod)}`,
+            'globe',
+            globalSpend,
+            selectedGlobalUsage?.softLimit ||
+              this.budgetSummary?.budget?.soft_limit_usd ||
+              0,
+            selectedGlobalUsage?.hardLimit ||
+              this.budgetSummary?.budget?.monthly_limit_usd ||
+              0
+          )}
+          ${additionalUsages.map((usage) =>
+            this.renderBudgetLimitRow(
+              this.getBudgetPolicyDisplayName(usage.policy),
+              this.getBudgetPolicyIcon(usage.policy),
+              usage.spend,
+              usage.softLimit,
+              usage.hardLimit
+            )
+          )}
         </div>
-        ${limit > 0
-          ? html`
-              <div class="progress-overview" style="margin-top: 0;">
-                <sl-progress-bar
-                  value=${this.budgetPercent()}
-                  class="budget-${this.budgetVariant()}"
-                ></sl-progress-bar>
-              </div>
-              <div
-                style="display: flex; justify-content: space-between; font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-500);"
-              >
-                <span>0</span>
-                <span>$${limit.toFixed(2)} Limit</span>
-              </div>
-            `
-          : nothing}
         <div style="margin-top: var(--sl-spacing-small);">
           <sl-button
             size="small"
@@ -1553,57 +2044,6 @@ export class DashboardView extends AuthedElement {
             Configure Limits
           </sl-button>
         </div>
-
-        ${usages.length > 0
-          ? html`
-              <div
-                style="border-top: 1px solid var(--sl-color-neutral-200); padding-top: var(--sl-spacing-small); margin-top: var(--sl-spacing-small);"
-              >
-                <div
-                  style="color: var(--sl-color-neutral-700); font-size: var(--sl-font-size-small); font-weight: 500; margin-bottom: var(--sl-spacing-small);"
-                >
-                  Configured limits
-                </div>
-                <div
-                  style="display: flex; flex-direction: column; gap: var(--sl-spacing-small); max-height: 300px; overflow-y: auto; padding-right: var(--sl-spacing-x-small);"
-                >
-                  ${usages.map(
-                    (u) => html`
-                      <div
-                        style="display: flex; flex-direction: column; gap: 4px;"
-                      >
-                        <div
-                          style="display: flex; justify-content: space-between; font-size: var(--sl-font-size-small); align-items: center;"
-                        >
-                          <span
-                            style="display: flex; align-items: center; gap: 4px;"
-                          >
-                            ${u.policy.subject_type === 'global'
-                              ? html`<sl-icon name="globe"></sl-icon> Global`
-                              : u.policy.subject_type === 'ai_model'
-                                ? html`<sl-icon name="cpu"></sl-icon> Model`
-                                : html`<sl-icon name="robot"></sl-icon> Agent`}
-                          </span>
-                          <span style="font-weight: 500;">
-                            $${u.spend.toFixed(2)} / $${u.limit.toFixed(2)}
-                          </span>
-                        </div>
-                        <sl-progress-bar
-                          value=${u.percent}
-                          class="budget-${u.percent >= 100
-                            ? 'danger'
-                            : u.percent >= 80
-                              ? 'warning'
-                              : 'success'}"
-                          style="--height: 4px;"
-                        ></sl-progress-bar>
-                      </div>
-                    `
-                  )}
-                </div>
-              </div>
-            `
-          : nothing}
       </div>
     `;
   }
@@ -1736,24 +2176,51 @@ export class DashboardView extends AuthedElement {
                   (s.ai_model_id &&
                     item.ai_model_id &&
                     s.ai_model_id === item.ai_model_id) ||
-                  (!s.ai_model_id &&
-                    !item.ai_model_id &&
-                    s.model_alias === item.model_alias)
+                  (s.model_alias === item.model_alias &&
+                    (!s.provider_name ||
+                      !item.provider_name ||
+                      s.provider_name === item.provider_name))
               );
 
-              const agentGroups = new Map<string, typeof modelSessions>();
-              const orphanSessions: typeof modelSessions = [];
+              const agentGroups = new Map<
+                string,
+                {
+                  subject: UsageSessionSubject;
+                  sessions: typeof modelSessions;
+                }
+              >();
+              const flowGroups = new Map<
+                string,
+                {
+                  subject: UsageSessionSubject;
+                  sessions: typeof modelSessions;
+                }
+              >();
+              const otherSessions: typeof modelSessions = [];
 
               modelSessions.forEach((s) => {
-                if (
-                  s.session_source_type === 'managed_agent' &&
-                  s.session_source_id
-                ) {
-                  const key = s.session_source_id;
-                  if (!agentGroups.has(key)) agentGroups.set(key, []);
-                  agentGroups.get(key)!.push(s);
+                const subject = this.getUsageSessionSubject(s);
+                if (subject.kind === 'agent') {
+                  const key =
+                    s.session_source_id ||
+                    s.runtime_principal_id ||
+                    subject.href;
+                  if (!agentGroups.has(key)) {
+                    agentGroups.set(key, { subject, sessions: [] });
+                  }
+                  agentGroups.get(key)!.sessions.push(s);
+                } else if (subject.kind === 'flow') {
+                  const key =
+                    s.flow_id ||
+                    s.flow_execution_id ||
+                    s.session_source_id ||
+                    subject.href;
+                  if (!flowGroups.has(key)) {
+                    flowGroups.set(key, { subject, sessions: [] });
+                  }
+                  flowGroups.get(key)!.sessions.push(s);
                 } else {
-                  orphanSessions.push(s);
+                  otherSessions.push(s);
                 }
               });
 
@@ -1800,15 +2267,15 @@ export class DashboardView extends AuthedElement {
                     >
                   </div>
 
-                  ${agentGroups.size > 0 || orphanSessions.length > 0
+                  ${agentGroups.size > 0 ||
+                  flowGroups.size > 0 ||
+                  otherSessions.length > 0
                     ? html`
                         <div
                           style="display: flex; flex-direction: column; gap: 8px; padding-left: var(--sl-spacing-medium); margin-top: 4px; border-left: 2px solid var(--sl-color-neutral-200);"
                         >
-                          ${Array.from(agentGroups.entries()).map(
-                            ([agentId, sessions]) => {
-                              const agentName =
-                                sessions[0]?.runtime_principal_name || 'Agent';
+                          ${Array.from(agentGroups.values()).map(
+                            ({ subject, sessions }) => {
                               const totalAgentCost = sessions.reduce(
                                 (acc, s) => acc + s.estimated_cost,
                                 0
@@ -1834,10 +2301,10 @@ export class DashboardView extends AuthedElement {
                                       >
                                       <a
                                         class="row-link"
-                                        href=${`/console/agents/${agentId}`}
+                                        href=${subject.href}
                                         style="color: var(--sl-color-neutral-800); font-weight: 500;"
                                       >
-                                        ${agentName}
+                                        ${subject.name}
                                       </a>
                                     </div>
                                     <span
@@ -1861,11 +2328,9 @@ export class DashboardView extends AuthedElement {
                                             href=${`/console/runtime-sessions?sessionId=${s.runtime_session_id}`}
                                             style="color: var(--sl-color-neutral-600);"
                                           >
-                                            ${agentName} /
-                                            ${s.session_reference ||
-                                            s.runtime_session_id?.substring(
-                                              0,
-                                              8
+                                            ${subject.name} /
+                                            ${this.formatRuntimeSessionId(
+                                              s.runtime_session_id
                                             )}
                                           </a>
                                           <span
@@ -1883,12 +2348,56 @@ export class DashboardView extends AuthedElement {
                               `;
                             }
                           )}
-                          ${orphanSessions.length > 0
+                          ${Array.from(flowGroups.values()).map(
+                            ({ subject, sessions }) => {
+                              const totalFlowCost = sessions.reduce(
+                                (acc, s) => acc + s.estimated_cost,
+                                0
+                              );
+                              const totalFlowReqs = sessions.reduce(
+                                (acc, s) => acc + s.request_count,
+                                0
+                              );
+                              return html`
+                                <div
+                                  style="display: flex; flex-direction: column; gap: 4px;"
+                                >
+                                  <div
+                                    style="display: flex; justify-content: space-between; align-items: center; font-size: var(--sl-font-size-small);"
+                                  >
+                                    <div
+                                      style="display: flex; align-items: center; gap: var(--sl-spacing-3x-small);"
+                                    >
+                                      <sl-badge
+                                        variant="primary"
+                                        style="font-size: 0.5rem; line-height: 1; padding: 2px 4px;"
+                                        >flow</sl-badge
+                                      >
+                                      <a
+                                        class="row-link"
+                                        href=${subject.href}
+                                        style="color: var(--sl-color-neutral-800); font-weight: 500;"
+                                      >
+                                        ${subject.name}
+                                      </a>
+                                    </div>
+                                    <span
+                                      style="color: var(--sl-color-neutral-600);"
+                                      >${this.formatCurrency(totalFlowCost)}
+                                      (${this.formatNumber(totalFlowReqs)}
+                                      req)</span
+                                    >
+                                  </div>
+                                </div>
+                              `;
+                            }
+                          )}
+                          ${otherSessions.length > 0
                             ? html`
                                 <div
                                   style="display: flex; flex-direction: column; gap: 2px;"
                                 >
-                                  ${orphanSessions.map(
+                                  ${otherSessions.map(
                                     (s) => html`
                                       <div
                                         style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;"
@@ -1906,11 +2415,8 @@ export class DashboardView extends AuthedElement {
                                             href=${`/console/runtime-sessions?sessionId=${s.runtime_session_id}`}
                                             style="color: var(--sl-color-neutral-600);"
                                           >
-                                            ${s.runtime_principal_name ||
-                                            s.session_reference ||
-                                            s.runtime_session_id?.substring(
-                                              0,
-                                              8
+                                            ${this.formatRuntimeSessionId(
+                                              s.runtime_session_id
                                             )}
                                           </a>
                                         </div>
@@ -2011,10 +2517,16 @@ export class DashboardView extends AuthedElement {
     for (const agent of this.activeAgents) {
       const sessions = this.activeSessions.filter(
         (s) =>
-          s.runtime_principal_id === agent.session_source_id &&
-          s.runtime_principal_type === agent.session_source_type
+          (s.runtime_principal_id === agent.session_source_id ||
+            s.runtime_principal_id === agent.id ||
+            s.session_source_id === agent.session_source_id ||
+            s.session_source_id === agent.id) &&
+          (s.runtime_principal_type === agent.session_source_type ||
+            s.session_source_type === agent.session_source_type)
       );
-      agentsWithSessions.push({ agent, sessions });
+      if (sessions.length > 0) {
+        agentsWithSessions.push({ agent, sessions });
+      }
       sessions.forEach((s) => usedSessionIds.add(s.id));
     }
 
@@ -2140,8 +2652,7 @@ export class DashboardView extends AuthedElement {
                                       href=${`/console/runtime-sessions?sessionId=${session.id}`}
                                       style="color: var(--sl-color-neutral-700);"
                                     >
-                                      ${session.session_reference ||
-                                      session.id.substring(0, 8)}
+                                      ${this.formatRuntimeSessionId(session.id)}
                                     </a>
                                     <span
                                       style="color: var(--sl-color-neutral-500);"
@@ -2177,8 +2688,7 @@ export class DashboardView extends AuthedElement {
                             style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
                           >
                             ${session.runtime_principal_name ||
-                            session.session_reference ||
-                            session.id.substring(0, 8)}
+                            this.formatRuntimeSessionId(session.id)}
                           </a>
                         </div>
                         <span class="row-value">
@@ -2187,8 +2697,9 @@ export class DashboardView extends AuthedElement {
                       </div>
                       <div class="row-meta">
                         <span
-                          >${session.session_source_type} ·
-                          ${session.session_source_id}</span
+                          >${session.latest_model_alias ||
+                          session.latest_provider_name ||
+                          session.session_source_type}</span
                         >
                         <span
                           >${this.formatRelativeTime(
@@ -2243,7 +2754,191 @@ export class DashboardView extends AuthedElement {
     `;
   }
 
+  private renderMetricItem(metric: DashboardMetric) {
+    const iconColor =
+      metric.tone === 'danger'
+        ? 'var(--sl-color-danger-600)'
+        : metric.tone === 'warning'
+          ? 'var(--sl-color-warning-600)'
+          : metric.tone === 'success'
+            ? 'var(--sl-color-success-600)'
+            : metric.tone === 'primary'
+              ? 'var(--sl-color-primary-600)'
+              : 'var(--sl-color-neutral-400)';
+    const content = html`
+      <sl-icon name=${metric.icon} style="color: ${iconColor};"></sl-icon>
+      <div class="tool-count-value">${metric.value}</div>
+      <div class="tool-count-label ${metric.href ? 'hover-underline' : ''}">
+        ${metric.label}
+      </div>
+    `;
+
+    if (metric.href) {
+      return html`
+        <a
+          class="tool-count"
+          href=${metric.href}
+          style="color: inherit; text-decoration: none;"
+          >${content}</a
+        >
+      `;
+    }
+
+    return html`<div class="tool-count">${content}</div>`;
+  }
+
+  private get gatewayMetrics(): DashboardMetric[] {
+    return [
+      {
+        label: 'agents',
+        value: this.formatNumber(this.totalAgentsCount),
+        icon: 'robot',
+        href: '/console/agents',
+        tone: 'primary',
+      },
+      {
+        label: 'flows',
+        value: this.formatNumber(this.totalFlowsCount),
+        icon: 'diagram-3',
+        href: '/console/flows',
+        tone: 'primary',
+      },
+      {
+        label: 'models',
+        value: this.formatNumber(this.aiModelsCount),
+        icon: 'cpu',
+        href: '/console/ai-models',
+        tone: 'primary',
+      },
+      {
+        label: 'tools',
+        value: this.formatNumber(this.enabledToolsCount),
+        icon: 'tools',
+        href: '/console/tools',
+        tone: 'primary',
+      },
+      {
+        label: 'approved requests',
+        value: this.formatNumber(this.approvalStats.approved),
+        icon: 'check-circle',
+        href: '/console/approvals?status=approved',
+        tone: 'success',
+      },
+      {
+        label: 'inactive agents',
+        value: this.formatNumber(this.inactiveAgentsCount),
+        icon: 'pause-circle',
+        href: '/console/agents',
+        tone: this.inactiveAgentsCount > 0 ? 'warning' : 'neutral',
+      },
+      {
+        label: 'flow executions',
+        value: this.formatNumber(this.flowExecutionsCount),
+        icon: 'play-circle',
+        href: '/console/flows/executions',
+        tone: 'primary',
+      },
+      {
+        label: 'model requests',
+        value: this.formatNumber(this.gatewaySummary?.total_requests || 0),
+        icon: 'activity',
+        href: '/console/audit?event_type=model_gateway_request',
+        tone: 'primary',
+      },
+      {
+        label: 'tool calls',
+        value: this.formatNumber(this.toolCallsCount),
+        icon: 'terminal',
+        href: '/console/audit?event_type=tool_call',
+        tone: 'primary',
+      },
+      {
+        label: 'declined requests',
+        value: this.formatNumber(this.approvalStats.declined),
+        icon: 'x-circle',
+        href: '/console/approvals?status=declined',
+        tone: this.approvalStats.declined > 0 ? 'danger' : 'neutral',
+      },
+      {
+        label: 'total runtime sessions',
+        value: this.formatNumber(this.totalRuntimeSessionsCount),
+        icon: 'collection',
+        href: '/console/runtime-sessions',
+        tone: 'primary',
+      },
+      {
+        label: 'failed executions',
+        value: this.formatNumber(this.failedExecutionsCount),
+        icon: 'exclamation-triangle',
+        href: '/console/flows/executions',
+        tone: this.failedExecutionsCount > 0 ? 'danger' : 'neutral',
+      },
+      {
+        label: 'failed requests',
+        value: this.formatNumber(this.gatewaySummary?.failed_requests || 0),
+        icon: 'exclamation-triangle',
+        href: '/console/audit?event_type=model_gateway_request&outcome=failed',
+        tone: this.gatewaySummary?.failed_requests ? 'danger' : 'neutral',
+      },
+      {
+        label: 'failed tool calls',
+        value: this.formatNumber(this.failedToolCallsCount),
+        icon: 'exclamation-octagon',
+        href: '/console/audit?event_type=tool_call&outcome=failed',
+        tone: this.failedToolCallsCount > 0 ? 'danger' : 'neutral',
+      },
+      {
+        label: 'timed out approval requests',
+        value: this.formatNumber(this.approvalStats.expired),
+        icon: 'clock',
+        href: '/console/approvals?status=expired',
+        tone: this.approvalStats.expired > 0 ? 'warning' : 'neutral',
+      },
+      {
+        label: 'total tokens',
+        value: this.formatNumber(
+          this.gatewaySummary?.token_usage.total_tokens || 0
+        ),
+        icon: 'braces',
+        href: '/console/api-usage',
+        tone: 'primary',
+      },
+      {
+        label: 'flow execution success rate',
+        value: this.flowExecutionSuccessRate,
+        icon: 'check-circle',
+        href: '/console/flows/executions',
+        tone: 'success',
+      },
+      {
+        label: 'model request success rate',
+        value: this.modelRequestSuccessRate,
+        icon: 'check-circle',
+        href: '/console/audit?event_type=model_gateway_request',
+        tone: 'success',
+      },
+      {
+        label: 'tool call success rate',
+        value: this.toolCallSuccessRate,
+        icon: 'check-circle',
+        href: '/console/audit?event_type=tool_call',
+        tone: 'success',
+      },
+      {
+        label: 'approval rate',
+        value: this.approvalRate,
+        icon: 'shield-check',
+        href: '/console/approvals',
+        tone: 'success',
+      },
+    ];
+  }
+
   private renderPreloopGatewayCard() {
+    const visibleMetrics = this.gatewayMetricsExpanded
+      ? this.gatewayMetrics
+      : this.gatewayMetrics.slice(0, 5);
+
     return html`
       <!-- Preloop Gateway Status -->
       <sl-card class="content-card">
@@ -2271,252 +2966,11 @@ export class DashboardView extends AuthedElement {
           </div>
         </div>
 
-        <div
-          style="display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sl-spacing-large); row-gap: var(--sl-spacing-2x-large); align-items: start; margin-bottom: var(--sl-spacing-2x-large);"
-        >
-          <!-- Row 1 (Always Visible) -->
-          <div class="tool-count">
-            <sl-icon name="cpu"></sl-icon>
-            <div class="tool-count-value">${this.aiModelsCount}</div>
-            <div class="tool-count-label">available models</div>
-          </div>
-
-          <div class="tool-count">
-            <sl-icon name="tools"></sl-icon>
-            <div class="tool-count-value">
-              ${this.formatNumber(
-                this.tools.filter((t) => t.is_enabled).length
-              )}
-            </div>
-            <div class="tool-count-label">available tools</div>
-          </div>
-
-          <a
-            class="tool-count"
-            href="/console/audit?event_type=model_gateway_request"
-            style="color: inherit; text-decoration: none;"
-          >
-            <sl-icon
-              name="activity"
-              style="color: var(--sl-color-primary-600);"
-            ></sl-icon>
-            <div class="tool-count-value">
-              ${this.formatNumber(this.gatewaySummary?.total_requests || 0)}
-            </div>
-            <div class="tool-count-label hover-underline">model requests</div>
-          </a>
-
-          <a
-            class="tool-count"
-            href="/console/audit?event_type=tool_call"
-            style="color: inherit; text-decoration: none;"
-          >
-            <sl-icon
-              name="play-circle"
-              style="color: var(--sl-color-primary-600);"
-            ></sl-icon>
-            <div class="tool-count-value">
-              ${this.formatNumber(this.toolCallsCount)}
-            </div>
-            <div class="tool-count-label hover-underline">tool calls</div>
-          </a>
-
-          <!-- Rows 2 and 3 (Expandable) -->
-          ${this.gatewayMetricsExpanded
-            ? html`
-                <!-- Row 2 -->
-                <a
-                  class="tool-count"
-                  href="/console/agents"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="robot"
-                    style="color: var(--sl-color-neutral-400);"
-                  ></sl-icon>
-                  <div class="tool-count-value">${this.totalAgentsCount}</div>
-                  <div class="tool-count-label hover-underline">
-                    active agents
-                  </div>
-                </a>
-
-                <div class="tool-count">
-                  <sl-icon
-                    name="wrench"
-                    style="color: var(--sl-color-neutral-400);"
-                  ></sl-icon>
-                  <div class="tool-count-value">${this.usedToolsCount}</div>
-                  <div class="tool-count-label">used tools</div>
-                </div>
-
-                <a
-                  class="tool-count"
-                  href="/console/audit?event_type=model_gateway_request&outcome=failed"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="exclamation-triangle"
-                    style="color: ${this.gatewaySummary?.failed_requests
-                      ? 'var(--sl-color-danger-600)'
-                      : 'var(--sl-color-neutral-400)'};"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${this.formatNumber(
-                      this.gatewaySummary?.failed_requests || 0
-                    )}
-                  </div>
-                  <div class="tool-count-label hover-underline">
-                    failed requests
-                  </div>
-                </a>
-
-                <a
-                  class="tool-count"
-                  href="/console/audit?event_type=tool_call&outcome=failed"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="exclamation-octagon"
-                    style="color: ${this.failedToolCallsCount > 0
-                      ? 'var(--sl-color-danger-600)'
-                      : 'var(--sl-color-neutral-400)'};"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${this.formatNumber(this.failedToolCallsCount)}
-                  </div>
-                  <div class="tool-count-label hover-underline">
-                    failed tool calls
-                  </div>
-                </a>
-
-                <!-- Row 3 -->
-                <a
-                  class="tool-count"
-                  href="/console/flows"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="diagram-3"
-                    style="color: var(--sl-color-neutral-400);"
-                  ></sl-icon>
-                  <div class="tool-count-value">${this.totalFlowsCount}</div>
-                  <div class="tool-count-label hover-underline">
-                    total flows
-                  </div>
-                </a>
-
-                <div class="tool-count">
-                  <sl-icon
-                    name="boxes"
-                    style="color: var(--sl-color-neutral-400);"
-                  ></sl-icon>
-                  <div class="tool-count-value">${this.tools.length}</div>
-                  <div class="tool-count-label">total tools</div>
-                </div>
-
-                <div class="tool-count">
-                  <sl-icon
-                    name="check-circle"
-                    style="color: var(--sl-color-success-600);"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${(this.gatewaySummary?.total_requests || 0) > 0
-                      ? (
-                          (((this.gatewaySummary?.total_requests || 0) -
-                            (this.gatewaySummary?.failed_requests || 0)) /
-                            (this.gatewaySummary?.total_requests || 1)) *
-                          100
-                        ).toFixed(1) + '%'
-                      : '0%'}
-                  </div>
-                  <div class="tool-count-label">success rate</div>
-                </div>
-
-                <div class="tool-count">
-                  <sl-icon
-                    name="check-circle"
-                    style="color: var(--sl-color-success-600);"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${this.toolCallsCount > 0
-                      ? (
-                          ((this.toolCallsCount - this.failedToolCallsCount) /
-                            this.toolCallsCount) *
-                          100
-                        ).toFixed(1) + '%'
-                      : '0%'}
-                  </div>
-                  <div class="tool-count-label">success rate</div>
-                </div>
-
-                <!-- Row 4 (Approvals) -->
-                <a
-                  class="tool-count"
-                  href="/console/approvals"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="shield-check"
-                    style="color: var(--sl-color-neutral-400);"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${this.formatNumber(this.approvalStats.total)}
-                  </div>
-                  <div class="tool-count-label hover-underline">
-                    total approvals
-                  </div>
-                </a>
-
-                <a
-                  class="tool-count"
-                  href="/console/approvals?status=approved"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="check-circle"
-                    style="color: var(--sl-color-success-600);"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${this.formatNumber(this.approvalStats.approved)}
-                  </div>
-                  <div class="tool-count-label hover-underline">approved</div>
-                </a>
-
-                <a
-                  class="tool-count"
-                  href="/console/approvals?status=declined"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="x-circle"
-                    style="color: var(--sl-color-danger-600);"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${this.formatNumber(this.approvalStats.declined)}
-                  </div>
-                  <div class="tool-count-label hover-underline">declined</div>
-                </a>
-
-                <a
-                  class="tool-count"
-                  href="/console/approvals?status=expired"
-                  style="color: inherit; text-decoration: none;"
-                >
-                  <sl-icon
-                    name="clock"
-                    style="color: var(--sl-color-warning-600);"
-                  ></sl-icon>
-                  <div class="tool-count-value">
-                    ${this.formatNumber(this.approvalStats.expired)}
-                  </div>
-                  <div class="tool-count-label hover-underline">timed out</div>
-                </a>
-              `
-            : nothing}
+        <div class="metrics-grid">
+          ${visibleMetrics.map((metric) => this.renderMetricItem(metric))}
         </div>
-
         <div
-          style="text-align: center; margin-top: -var(--sl-spacing-large); margin-bottom: var(--sl-spacing-medium);"
+          style="display: flex; justify-content: center; margin-top: calc(-1 * var(--sl-spacing-medium)); margin-bottom: var(--sl-spacing-medium);"
         >
           <sl-button
             size="small"
@@ -2528,18 +2982,12 @@ export class DashboardView extends AuthedElement {
               : 'Show more metrics'}
             <sl-icon
               slot="suffix"
-              name="${this.gatewayMetricsExpanded
+              name=${this.gatewayMetricsExpanded
                 ? 'chevron-up'
-                : 'chevron-down'}"
+                : 'chevron-down'}
             ></sl-icon>
           </sl-button>
         </div>
-
-        <style>
-          .hover-underline:hover {
-            text-decoration: underline;
-          }
-        </style>
 
         <!-- AI Model Gateway Endpoint -->
         <div

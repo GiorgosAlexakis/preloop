@@ -27,6 +27,7 @@ describe('DashboardView', () => {
   let allApprovalRequestsResponse: any[];
   let aiModelsResponse: any[];
   let usersResponse: any;
+  let budgetPoliciesResponse: any[];
 
   beforeEach(() => {
     localStorage.setItem('accessToken', 'test-access-token');
@@ -71,7 +72,7 @@ describe('DashboardView', () => {
         {
           runtime_session_id: 'runtime-session-1',
           session_source_type: 'managed_agent',
-          session_source_id: 'agent-1',
+          session_source_id: 'hermes-runtime-principal',
           flow_execution_id: null,
           flow_id: null,
           flow_name: null,
@@ -103,10 +104,10 @@ describe('DashboardView', () => {
         {
           id: 'runtime-session-1',
           session_source_type: 'managed_agent',
-          session_source_id: 'agent-1',
+          session_source_id: 'hermes-runtime-principal',
           session_reference: 'Agent Session',
           runtime_principal_type: 'managed_agent',
-          runtime_principal_id: 'agent-1',
+          runtime_principal_id: 'hermes-runtime-principal',
           runtime_principal_name: 'Ops Agent',
           started_at: '2026-03-07T09:00:00Z',
           last_activity_at: '2026-03-07T10:05:00Z',
@@ -144,7 +145,7 @@ describe('DashboardView', () => {
           runtime_session_id: 'runtime-session-1',
           display_name: 'Ops Agent',
           session_source_type: 'managed_agent',
-          session_source_id: 'agent-1',
+          session_source_id: 'hermes-runtime-principal',
           session_reference: 'Agent Session',
           enrolled_via: 'runtime_session_token',
           managed_mcp_servers: ['github'],
@@ -184,10 +185,10 @@ describe('DashboardView', () => {
           flow_execution_id: null,
           runtime_session_id: 'runtime-session-1',
           session_source_type: 'managed_agent',
-          session_source_id: 'agent-1',
+          session_source_id: 'hermes-runtime-principal',
           session_reference: 'Agent Session',
           runtime_principal_type: 'managed_agent',
-          runtime_principal_id: 'agent-1',
+          runtime_principal_id: 'hermes-runtime-principal',
           runtime_principal_name: 'Ops Agent',
           auth_subject_type: 'api_key',
           api_key_id: 'api-key-1',
@@ -310,6 +311,44 @@ describe('DashboardView', () => {
       skip: 0,
       limit: 100,
     };
+    budgetPoliciesResponse = [
+      {
+        id: 'budget-global',
+        subject_type: 'global',
+        subject_id: null,
+        model_alias: null,
+        period: 'monthly',
+        hard_limit_usd: 50,
+        soft_limit_usd: 40,
+        notify_on_soft: true,
+        notify_on_hard: true,
+        notification_emails: null,
+      },
+      {
+        id: 'budget-global-daily',
+        subject_type: 'global',
+        subject_id: null,
+        model_alias: null,
+        period: 'daily',
+        hard_limit_usd: 10,
+        soft_limit_usd: 8,
+        notify_on_soft: true,
+        notify_on_hard: true,
+        notification_emails: null,
+      },
+      {
+        id: 'budget-agent',
+        subject_type: 'managed_agent',
+        subject_id: 'agent-1',
+        model_alias: null,
+        period: 'monthly',
+        hard_limit_usd: 25,
+        soft_limit_usd: 20,
+        notify_on_soft: true,
+        notify_on_hard: true,
+        notification_emails: null,
+      },
+    ];
 
     fetchStub = sinon
       .stub(window, 'fetch')
@@ -322,6 +361,16 @@ describe('DashboardView', () => {
           });
 
         if (url.startsWith('/api/v1/account/gateway-usage/summary')) {
+          if (url.includes('runtime_principal_id=hermes-runtime-principal')) {
+            return json({
+              ...gatewaySummaryResponse,
+              estimated_cost: 4.2,
+              budget: {
+                ...gatewaySummaryResponse.budget,
+                current_spend_usd: 4.2,
+              },
+            });
+          }
           return json(gatewaySummaryResponse);
         }
 
@@ -387,6 +436,10 @@ describe('DashboardView', () => {
 
         if (url === '/api/v1/users?skip=0&limit=100') {
           return json(usersResponse);
+        }
+
+        if (url.startsWith('/api/v1/budget/policies')) {
+          return json(budgetPoliciesResponse);
         }
 
         return json({ detail: `Unhandled ${url}` });
@@ -476,5 +529,190 @@ describe('DashboardView', () => {
     const content = element.shadowRoot?.textContent || '';
     expect(content).to.not.contain('Gateway failures needing attention');
     expect(content).to.not.contain('Audit exceptions');
+  });
+
+  it('shows all configured budget policies with matching spend and thresholds', async () => {
+    const element = await mountDashboard();
+    await waitUntil(
+      () =>
+        !element['loading'] &&
+        !element['fetchingActiveAgents'] &&
+        !element['fetchingBudget'],
+      'dashboard did not finish loading'
+    );
+    await element.updateComplete;
+
+    const content = element.shadowRoot?.textContent || '';
+    expect(content).to.contain('Global spend · 30d');
+    expect(content).to.contain('Global · 24h');
+    expect(content).to.contain('$12.34');
+    expect(content).to.contain('$50.00');
+    expect(content).to.not.contain('Configured limits');
+    expect(content).to.contain('Ops Agent');
+    expect(content).to.contain('$4.20');
+    expect(content).to.contain('$25.00');
+    expect(content).to.contain('Soft $20.00');
+    expect(content).to.contain('Hard $25.00');
+    expect(content).to.not.contain('SUCCESS');
+
+    const softMarkers = element.shadowRoot?.querySelectorAll(
+      '.budget-soft-marker'
+    );
+    const hardMarkers = element.shadowRoot?.querySelectorAll(
+      '.budget-hard-marker'
+    );
+    const warningSegments = element.shadowRoot?.querySelectorAll(
+      '.budget-track-fill.warning'
+    );
+    expect(softMarkers?.length).to.be.greaterThan(0);
+    expect(hardMarkers?.length).to.be.greaterThan(0);
+    expect(warningSegments?.length).to.be.greaterThan(0);
+  });
+
+  it('renders the requested responsive control-plane metrics behind the expand toggle', async () => {
+    const element = await mountDashboard();
+    await waitUntil(
+      () =>
+        !element['loading'] &&
+        !element['fetchingActiveAgents'] &&
+        !element['fetchingBudget'],
+      'dashboard did not finish loading'
+    );
+    await element.updateComplete;
+
+    const metricsGrid = element.shadowRoot?.querySelector('.metrics-grid');
+    expect(metricsGrid).to.exist;
+    let metricText = metricsGrid?.textContent || '';
+    ['agents', 'flows', 'models', 'tools', 'approved requests'].forEach(
+      (label) => expect(metricText).to.contain(label)
+    );
+
+    [
+      'inactive agents',
+      'flow executions',
+      'model requests',
+      'tool calls',
+      'declined requests',
+      'total runtime sessions',
+      'failed executions',
+      'failed requests',
+      'failed tool calls',
+      'timed out approval requests',
+      'total tokens',
+      'flow execution success rate',
+      'model request success rate',
+      'tool call success rate',
+      'approval rate',
+    ].forEach((label) => expect(metricText).to.not.contain(label));
+
+    const toggle = Array.from(
+      element.shadowRoot?.querySelectorAll('sl-button') || []
+    ).find((button) => button.textContent?.includes('Show more metrics'));
+    expect(toggle).to.exist;
+    (toggle as HTMLElement).click();
+    await element.updateComplete;
+
+    metricText =
+      element.shadowRoot?.querySelector('.metrics-grid')?.textContent || '';
+    [
+      'inactive agents',
+      'flow executions',
+      'model requests',
+      'tool calls',
+      'declined requests',
+      'total runtime sessions',
+      'failed executions',
+      'failed requests',
+      'failed tool calls',
+      'timed out approval requests',
+      'total tokens',
+      'flow execution success rate',
+      'model request success rate',
+      'tool call success rate',
+      'approval rate',
+    ].forEach((label) => expect(metricText).to.contain(label));
+    expect(element.shadowRoot?.textContent || '').to.contain(
+      'Show less metrics'
+    );
+
+    expect(metricText).to.not.contain('used tools');
+    expect(metricText).to.not.contain('total tools');
+  });
+
+  it('skips zero-request runtime sessions and displays ids instead of config paths', async () => {
+    runtimeSessionsResponse = {
+      ...runtimeSessionsResponse,
+      items: [
+        ...runtimeSessionsResponse.items,
+        {
+          ...runtimeSessionsResponse.items[0],
+          id: 'runtime-session-empty',
+          session_reference: '/Users/dimo/.openclaw/openclaw.json',
+          total_requests: 0,
+          successful_requests: 0,
+          failed_requests: 0,
+          estimated_cost: 0,
+          last_request_at: null,
+        },
+      ],
+    };
+
+    const element = await mountDashboard();
+    await waitUntil(
+      () =>
+        !element['loading'] &&
+        !element['fetchingActiveAgents'] &&
+        !element['fetchingBudget'],
+      'dashboard did not finish loading'
+    );
+    await element.updateComplete;
+
+    const content = element.shadowRoot?.textContent || '';
+    expect(content).to.contain('runtime-');
+    expect(content).to.contain('8');
+    expect(content).to.not.contain('/Users/dimo/.openclaw/openclaw.json');
+  });
+
+  it('attributes top model usage to agents and flows instead of generic sessions', async () => {
+    gatewaySummaryResponse = {
+      ...gatewaySummaryResponse,
+      usage_by_session: [
+        ...gatewaySummaryResponse.usage_by_session,
+        {
+          runtime_session_id: 'flow-runtime-session-1',
+          session_source_type: 'flow_execution',
+          session_source_id: 'execution-1',
+          flow_execution_id: 'execution-1',
+          flow_id: 'flow-1',
+          flow_name: 'Refund Assistant',
+          session_reference: 'flow-session-ref',
+          model_alias: 'gpt-5.4',
+          provider_name: 'openai',
+          request_count: 2,
+          token_usage: {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+          },
+          estimated_cost: 1.2,
+          last_request_at: '2026-03-07T10:00:00Z',
+        },
+      ],
+    };
+
+    const element = await mountDashboard();
+    await waitUntil(
+      () =>
+        !element['loading'] &&
+        !element['fetchingActiveAgents'] &&
+        !element['fetchingBudget'],
+      'dashboard did not finish loading'
+    );
+    await element.updateComplete;
+
+    const content = element.shadowRoot?.textContent || '';
+    expect(content).to.contain('Ops Agent');
+    expect(content).to.contain('Refund Assistant');
+    expect(content).to.not.contain('flow-session-ref');
   });
 });

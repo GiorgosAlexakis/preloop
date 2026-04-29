@@ -756,6 +756,14 @@ paths:
             format: date-time
           - type: 'null'
           title: End Date
+      - name: runtime_principal_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
       responses:
         '200':
           description: Successful Response
