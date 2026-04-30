@@ -548,6 +548,32 @@ def test_account_agent_detail_endpoint_returns_one_agent(client, db_session, tes
 
     assert token_response.status_code == 201
 
+    runtime_session = crud_runtime_session.get_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-456",
+    )
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="openai/gpt-5",
+        provider_name="openai",
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+        estimated_cost=0.25,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-456",
+        runtime_principal_name="Claude Code Workspace 2",
+    )
+
     list_response = client.get("/api/v1/agents")
     assert list_response.status_code == 200
     agent_id = list_response.json()["items"][0]["id"]
