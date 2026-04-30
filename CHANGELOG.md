@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-04-30
+
+### Fixed
+- **CLI**: Registered the missing `--no-onboard-prompt` flag in `preloop agents discover` to prevent `unknown flag` errors during headless installation.
+- **Testing**: Fixed a session filtering issue in `test_account_agent_detail_endpoint_returns_one_agent` that caused test assertions to fail.
+- **Frontend**: Added explicit `uuid` dependency to resolve `package.json` resolutions.
 ## [0.9.0] - 2026-04-30
 
 ### Overview

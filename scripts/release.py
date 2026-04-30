@@ -145,9 +145,42 @@ def update_readme(plan: ReleasePlan) -> Path:
     return path
 
 
+def generate_changelog_with_ai(plan: ReleasePlan) -> None:
+    """Use an AI agent to generate changelog entries based on git history."""
+    if not command_exists("opencode") and not command_exists("codex"):
+        print("Neither opencode nor codex CLI found; skipping AI changelog generation.")
+        return
+
+    # Find the previous release tag
+    result = run_command(
+        ["git", "describe", "--tags", "--abbrev=0"], capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        print("Could not find previous tag; skipping AI changelog generation.")
+        return
+    prev_tag = result.stdout.strip()
+
+    prompt = (
+        f"Update CHANGELOG.md. Add a new section for version {plan.version} ({plan.release_date}) "
+        f"under the ## [Unreleased] header. "
+        f"Read the git commits since {prev_tag} to figure out what changed, "
+        f"and summarize them into bullet points under Added, Fixed, or Changed categories."
+    )
+
+    print("Triggering AI to generate changelog updates...")
+    if command_exists("opencode"):
+        run_command(["opencode", "run", prompt], capture_output=False, check=False)
+    else:
+        run_command(["codex", "run", prompt], capture_output=False, check=False)
+
+
 def update_changelog(plan: ReleasePlan) -> Path:
     """Move the current unreleased section under a new release heading."""
     path = ROOT_DIR / "CHANGELOG.md"
+
+    # Attempt to auto-generate the changelog entries using AI
+    generate_changelog_with_ai(plan)
+
     text = read_text(path)
     existing_heading = re.search(
         rf"^## \[{re.escape(plan.version)}\](?: - .+)?$",

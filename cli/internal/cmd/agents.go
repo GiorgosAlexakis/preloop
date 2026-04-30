@@ -412,6 +412,7 @@ func init() {
 	agentsCmd.AddCommand(agentsStarterPolicyCmd)
 
 	agentsDiscoverCmd.Flags().Bool("add", false, "deprecated: use 'preloop agents onboard <agent>' instead")
+	agentsDiscoverCmd.Flags().Bool("no-onboard-prompt", false, "do not prompt to onboard discovered agents")
 	agentsDiscoverCmd.Flags().BoolP("yes", "y", false, "auto-approve interactive onboarding prompts")
 	agentsDiscoverCmd.Flags().BoolP("force", "f", false, "alias for --yes")
 	agentsDiscoverCmd.Flags().Bool("skip-live-validate", false, "do not run a live validation prompt after onboarding")
