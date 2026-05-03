@@ -30,6 +30,20 @@ class CRUDBudgetPolicy(CRUDBase[BudgetPolicy]):
         )
         return db.execute(query).scalars().all()
 
+    def remove(
+        self, db: Session, *, id: uuid.UUID, account_id: str
+    ) -> Optional[BudgetPolicy]:
+        """Delete a budget policy strictly enforcing account ownership."""
+        obj = (
+            db.query(self.model)
+            .filter(self.model.id == id, self.model.account_id == account_id)
+            .first()
+        )
+        if obj:
+            db.delete(obj)
+            db.commit()
+        return obj
+
 
 class CRUDBudgetSpendActivity(CRUDBase[BudgetSpendActivity]):
     """CRUD operations for BudgetSpendActivity model."""

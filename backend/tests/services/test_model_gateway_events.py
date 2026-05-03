@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from preloop.services.model_gateway_events import ModelGatewayEventEmitter
 from uuid import uuid4
 
@@ -437,3 +439,25 @@ def test_emit_for_usage_does_not_require_running_event_loop():
     mock_append_log.assert_called_once()
     assert mock_append_log.call_args.args[1] == str(usage.flow_execution_id)
     assert mock_append_log.call_args.args[2]["type"] == "model_gateway_call"
+
+
+@pytest.mark.asyncio
+async def test_publish_to_nats_drops_event_when_truncated_payload_is_still_too_large():
+    """Gateway events should not publish oversized NATS payloads after truncation."""
+    emitter = ModelGatewayEventEmitter(MagicMock())
+    event = {
+        "execution_id": "execution-1",
+        "payload": {
+            "already_minimal_but_huge": "x" * 1_000_001,
+        },
+    }
+    nats_client = MagicMock()
+    nats_client.is_connected = True
+
+    with patch(
+        "preloop.services.model_gateway_events.get_nats_client",
+        return_value=nats_client,
+    ):
+        await emitter._publish_to_nats(event)
+
+    nats_client.publish.assert_not_called()

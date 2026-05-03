@@ -3750,6 +3750,9 @@ func isPreloopOwnedMCPServer(name string, server MCPDef) bool {
 	if targetURL == "" {
 		return false
 	}
+	if !strings.Contains(targetURL, "://") {
+		targetURL = "https://" + targetURL
+	}
 	parsed, err := url.Parse(targetURL)
 	if err != nil {
 		return false

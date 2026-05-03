@@ -1643,6 +1643,7 @@ func TestBuildManagedRemoteServerRequestSkipsPreloopOwnedServers(t *testing.T) {
 	for name, server := range map[string]MCPDef{
 		"preloop": {URL: "https://external.example/mcp"},
 		"review":  {URL: "https://ai-model-gateway.review.preloop.ai/mcp/v1"},
+		"bare":    {URL: "ai-model-gateway.review.preloop.ai/mcp/v1"},
 	} {
 		request, warning, _, ok := buildManagedRemoteServerRequest(name, server)
 		if ok || request != nil {

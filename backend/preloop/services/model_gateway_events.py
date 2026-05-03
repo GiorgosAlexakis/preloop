@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -21,6 +20,7 @@ from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_BUDGET_HEALTH,
     ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
     build_account_event,
+    encode_realtime_event_for_nats,
     emit_account_event,
 )
 from preloop.sync.services.event_bus import get_nats_client
@@ -182,26 +182,12 @@ class ModelGatewayEventEmitter:
         if not nats_client or not nats_client.is_connected:
             return
 
-        payload_bytes = json.dumps(event).encode()
-        if len(payload_bytes) > 1000000:
-            logger.warning(
-                f"NATS payload size {len(payload_bytes)} exceeds 1MB limit for execution {execution_id}, truncating event details"
-            )
-            event = event.copy()
-            if "payload" in event and isinstance(event["payload"], dict):
-                payload = event["payload"].copy()
-                payload.pop("request", None)
-                payload.pop("response", None)
-                if "conversation_preview" in payload and isinstance(
-                    payload["conversation_preview"], dict
-                ):
-                    preview = payload["conversation_preview"].copy()
-                    preview["messages"] = []
-                    if "metadata" in preview and isinstance(preview["metadata"], dict):
-                        preview["metadata"]["has_truncated_content"] = True
-                    payload["conversation_preview"] = preview
-                event["payload"] = payload
-            payload_bytes = json.dumps(event).encode()
+        payload_bytes = encode_realtime_event_for_nats(
+            event,
+            context=f"execution {execution_id}",
+        )
+        if payload_bytes is None:
+            return
 
         await nats_client.publish(
             f"flow-updates.{execution_id}",
