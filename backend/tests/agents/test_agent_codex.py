@@ -258,6 +258,27 @@ class TestCodexAuthConfig:
         assert auth_block.index("rmcp_client = true") < auth_block.index(
             "[mcp_servers.preloop]"
         )
+        assert 'wire_api = "chat"' in auth_block
+
+    def test_preloop_gateway_provider_uses_responses_wire_api(self):
+        """The Preloop gateway receives Codex Responses API requests."""
+        agent = CodexAgent({})
+        auth_block = agent._build_codex_auth_config(
+            "deepseek/deepseek-v4-pro", "preloop", "http://preloop-api:8000/openai/v1"
+        )
+        assert "PRELOOP_API_KEY" in auth_block
+        assert 'base_url = "http://preloop-api:8000/openai/v1"' in auth_block
+        assert 'wire_api = "responses"' in auth_block
+
+    def test_direct_deepseek_provider_uses_chat_wire_api(self):
+        """DeepSeek direct mode should not ask Codex to call /responses."""
+        agent = CodexAgent({})
+        auth_block = agent._build_codex_auth_config(
+            "deepseek-v4-pro", "deepseek", "https://api.deepseek.com/v1"
+        )
+        assert "DEEPSEEK_API_KEY" in auth_block
+        assert 'base_url = "https://api.deepseek.com/v1"' in auth_block
+        assert 'wire_api = "chat"' in auth_block
 
     def test_custom_provider_no_endpoint(self):
         """Custom provider without endpoint omits base_url."""

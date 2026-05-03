@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import shlex
 from typing import Any, Dict
 
 from aiodocker.exceptions import DockerError
@@ -343,6 +344,7 @@ fi
         opencode_config = self._build_opencode_config(
             model, model_provider, execution_context, mcp_timeout_ms
         )
+        opencode_model_arg = shlex.quote(str(opencode_config["model"]))
         opencode_config_json = json.dumps(opencode_config, indent=2)
         # For the unquoted heredoc, escape "$schema" so the shell doesn't
         # try to expand it as a variable.  All other $-prefixed strings
@@ -428,9 +430,9 @@ echo "PRELOOP_AGENT_EXEC_START"
 # opencode run accepts messages as positional args and runs non-interactively.
 # TODO(reliability): If opencode supports reading from stdin or passing a file
 # directly, we should switch to that instead of positional args $(cat ...) to avoid E2BIG on very large prompts.
-# The -y flag auto-approves all permission requests to avoid hangs.
+# Auto-approve all permission requests to avoid hangs.
 # We use '--' to prevent argument injection if the prompt starts with a hyphen.
-opencode run -y -- "$(cat /tmp/prompt.txt)"
+opencode run --model {opencode_model_arg} --dangerously-skip-permissions -- "$(cat /tmp/prompt.txt)"
 OPENCODE_EXIT_CODE=$?
 
 echo ""

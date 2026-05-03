@@ -93,6 +93,27 @@ def gateway_url_for_api(gateway_url: Optional[str], api: str) -> Optional[str]:
     return urlunsplit(parsed._replace(path=f"{base_path}{api_path}"))
 
 
+def default_model_gateway_url() -> str:
+    """Resolve the default gateway URL for the current runtime environment."""
+    configured_url = os.getenv("PRELOOP_MODEL_GATEWAY_URL")
+    if configured_url:
+        return configured_url
+
+    configured_k8s_url = os.getenv("PRELOOP_MODEL_GATEWAY_URL_K8S")
+    if configured_k8s_url:
+        return configured_k8s_url
+
+    if os.getenv("KUBERNETES_SERVICE_HOST"):
+        api_service_endpoint = os.getenv("PRELOOP_API_SERVICE_HTTP_ENDPOINT")
+        if api_service_endpoint:
+            return (
+                gateway_url_for_api(api_service_endpoint, "openai")
+                or DEFAULT_GATEWAY_URL
+            )
+
+    return DEFAULT_GATEWAY_URL
+
+
 def _resolve_direct_ai_model_runtime(ai_model: AIModel) -> ResolvedModelRuntime:
     """Resolve direct-provider runtime settings for an AI model."""
     resolved_credentials = get_secret_service().resolve_ai_model_credentials(ai_model)
@@ -133,9 +154,7 @@ def resolve_ai_model_runtime(
     model_parameters = ai_model.model_parameters
 
     if gateway_enabled:
-        gateway_url = gateway_config.get("url") or os.getenv(
-            "PRELOOP_MODEL_GATEWAY_URL", DEFAULT_GATEWAY_URL
-        )
+        gateway_url = gateway_config.get("url") or default_model_gateway_url()
         gateway_model_alias = gateway_config.get(
             "model_alias"
         ) or _build_default_gateway_alias(ai_model)

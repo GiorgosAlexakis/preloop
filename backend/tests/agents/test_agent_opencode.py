@@ -201,7 +201,7 @@ class TestOpenCodeBuildScript:
         assert "trap _post_exec_sleep EXIT" in script
 
     def test_script_runs_opencode(self):
-        """Script runs opencode run with positional message."""
+        """Script runs opencode run with current non-interactive flags."""
         agent = OpenCodeAgent({})
         context = {
             "prompt": "test",
@@ -211,8 +211,30 @@ class TestOpenCodeBuildScript:
         }
         script = agent._build_opencode_script(context)
         assert "opencode run" in script
+        assert "--model anthropic/model-1" in script
+        assert "--dangerously-skip-permissions" in script
+        assert "-y" not in script
         # Should NOT use non-existent --non-interactive flag
         assert "--non-interactive" not in script
+
+    def test_script_runs_gateway_model_with_provider_qualified_model(self):
+        """Gateway models should be invoked with the OpenCode provider prefix."""
+        agent = OpenCodeAgent({})
+        context = {
+            "prompt": "test",
+            "opencode_model": "deepseek/deepseek-v4-pro",
+            "model_provider": "deepseek",
+            "model_gateway_enabled": True,
+            "model_gateway_provider": "preloop",
+            "model_gateway_url": "http://release-preloop-api:80/openai/v1",
+            "execution_id": "exec-1",
+            "flow_name": "test-flow",
+        }
+
+        script = agent._build_opencode_script(context)
+
+        assert "--model preloop/deepseek/deepseek-v4-pro" in script
+        assert "--dangerously-skip-permissions" in script
 
     def test_script_installs_opencode(self):
         """Script installs opencode-ai via npm."""

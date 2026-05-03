@@ -52,6 +52,8 @@ spec:
               value: {{ $.Values.environment.debug | quote }}
             - name: DATABASE_URL
               value: {{ include "preloop.databaseUrl" $ }}
+            - name: PRELOOP_API_SERVICE_HTTP_ENDPOINT
+              value: "http://{{ include "preloop.fullname" $ }}-api:80"
             - name: AGENT_EXECUTION_NAMESPACE
               value: {{ $.Values.agentExecution.namespace.create | ternary $.Values.agentExecution.namespace.name $.Release.Namespace | quote }}
             - name: USE_KUBERNETES
