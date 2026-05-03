@@ -25,6 +25,12 @@ interface Flow {
   description?: string;
   icon?: string;
   account_id?: string;
+  execution_stats?: {
+    total_execs?: number;
+    running_execs?: number;
+    last_seen_at?: string | null;
+    estimated_cost?: number;
+  };
 }
 
 interface FlowExecution {
@@ -264,7 +270,10 @@ export class FlowsView extends LitElement {
       const [flows, presets, executions] = await Promise.all([
         getFlows(),
         getFlowPresets(),
-        getFlowExecutions(),
+        getFlowExecutions({
+          limit: 20,
+          status: ['PENDING', 'INITIALIZING', 'STARTING', 'RUNNING'],
+        }),
       ]);
       this.flows = flows;
       this.presets = this.sortPresets(presets);
@@ -282,7 +291,10 @@ export class FlowsView extends LitElement {
   }
 
   async refreshExecutions() {
-    this.executions = await getFlowExecutions();
+    this.executions = await getFlowExecutions({
+      limit: 20,
+      status: ['PENDING', 'INITIALIZING', 'STARTING', 'RUNNING'],
+    });
   }
 
   private connectWebSocket() {
@@ -459,11 +471,8 @@ export class FlowsView extends LitElement {
   }
 
   renderFlowCard(flow: Flow) {
-    const flowExecutions = this.executions.filter((e) => e.flow_id === flow.id);
-    const activeCount = flowExecutions.filter(
-      (e) => e.status === 'RUNNING' || e.status === 'STARTING'
-    ).length;
-    const totalCount = flowExecutions.length;
+    const activeCount = flow.execution_stats?.running_execs || 0;
+    const totalCount = flow.execution_stats?.total_execs || 0;
 
     return html`
       <sl-card

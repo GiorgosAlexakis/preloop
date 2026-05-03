@@ -303,10 +303,9 @@ export class FlowView extends LitElement {
 
       // Load recent executions for this flow
       const allExecutions = await import('../../api').then((m) =>
-        m.getFlowExecutions()
+        m.getFlowExecutions({ flowId: this.flowId, limit: 10 })
       );
       this.recentExecutions = allExecutions
-        .filter((exec: any) => exec.flow_id === this.flowId)
         .sort(
           (a: any, b: any) =>
             parseUTCDate(b.start_time).getTime() -

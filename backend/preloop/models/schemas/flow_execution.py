@@ -96,6 +96,26 @@ class FlowExecutionResponse(FlowExecutionBase):
     # flow: Optional[FlowResponse] = None # Assuming a FlowResponse Pydantic schema exists
 
 
+class FlowExecutionListResponse(BaseModel):
+    """Lightweight flow execution row for list views."""
+
+    id: uuid.UUID
+    flow_id: uuid.UUID
+    status: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    error_message: Optional[str] = None
+    retry_of_execution_id: Optional[uuid.UUID] = None
+    tool_calls_count: Optional[int] = 0
+    total_tokens: Optional[int] = 0
+    estimated_cost: Optional[float] = 0.0
+    created_at: datetime
+    updated_at: datetime
+    flow_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Schema for FlowExecution as stored in DB (identical to Response for now)
 class FlowExecutionInDB(FlowExecutionResponse):
     pass

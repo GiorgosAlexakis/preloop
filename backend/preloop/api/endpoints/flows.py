@@ -3,7 +3,7 @@ import secrets
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from preloop.models import schemas
@@ -249,18 +249,44 @@ def clone_preset(
     return cloned_flow
 
 
-@router.get("/flows/executions", response_model=List[schemas.FlowExecutionResponse])
+def _normalize_status_filters(status: Optional[List[str]]) -> Optional[List[str]]:
+    """Normalize repeated or comma-separated status query parameters."""
+    if not status:
+        return None
+    if isinstance(status, str):
+        status = [status]
+    if not isinstance(status, list):
+        return None
+
+    values: List[str] = []
+    for item in status:
+        values.extend(part.strip().upper() for part in item.split(",") if part.strip())
+    return values or None
+
+
+@router.get("/flows/executions", response_model=List[schemas.FlowExecutionListResponse])
 @require_permission("view_flows")
 def read_flow_executions(
     db: Session = Depends(get_db),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 25,
+    flow_id: Optional[uuid.UUID] = None,
+    status: Optional[List[str]] = Query(default=None),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Retrieve flow executions for the account."""
+    """Retrieve lightweight flow execution summaries for the account."""
+    statuses = _normalize_status_filters(status)
+    limit = max(1, min(limit, 100))
     # Use eager_load=True to load flow relationship in single query (avoids N+1)
     executions = crud_flow_execution.get_multi(
-        db, account_id=current_user.account_id, skip=skip, limit=limit, eager_load=True
+        db,
+        account_id=current_user.account_id,
+        skip=skip,
+        limit=limit,
+        flow_id=flow_id,
+        statuses=statuses,
+        eager_load=True,
+        lightweight=True,
     )
 
     # Flow is already loaded via joinedload - no additional queries needed

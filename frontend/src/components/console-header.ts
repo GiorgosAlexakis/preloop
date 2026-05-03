@@ -287,12 +287,10 @@ export class ConsoleHeader extends LitElement {
 
   private async loadRunningExecutions() {
     try {
-      const executions = await api.getFlowExecutions();
-      // Filter for running/pending executions
-      this._runningExecutions = executions.filter(
-        (exec: FlowExecution) =>
-          exec.status === 'RUNNING' || exec.status === 'PENDING'
-      );
+      this._runningExecutions = await api.getFlowExecutions({
+        limit: 10,
+        status: ['PENDING', 'INITIALIZING', 'STARTING', 'RUNNING'],
+      });
     } catch (error) {
       console.error('Failed to load running executions:', error);
     }

@@ -20,7 +20,7 @@ interface FlowExecution {
   status: string;
   start_time: string;
   end_time?: string;
-  actions_taken_summary?: any[];
+  tool_calls_count?: number;
 }
 
 @customElement('flow-executions-view')
@@ -115,6 +115,9 @@ export class FlowExecutionsView extends AuthedElement {
   @state()
   private pageSize = 20;
 
+  @state()
+  private hasNextPage = false;
+
   private unsubscribe?: () => void;
 
   async connectedCallback() {
@@ -124,51 +127,45 @@ export class FlowExecutionsView extends AuthedElement {
   }
 
   async loadExecutions() {
-    const allExecutions = await getFlowExecutions();
-    // Sort by start_time descending (most recent first)
-    this.executions = allExecutions.sort(
-      (a, b) =>
-        parseUTCDate(b.start_time).getTime() -
-        parseUTCDate(a.start_time).getTime()
-    );
+    const rows = await getFlowExecutions({
+      limit: this.pageSize + 1,
+      skip: (this.currentPage - 1) * this.pageSize,
+      status: this.statusFilter === 'all' ? undefined : this.statusFilter,
+    });
+    this.hasNextPage = rows.length > this.pageSize;
+    this.executions = rows.slice(0, this.pageSize);
   }
 
   get filteredExecutions(): FlowExecution[] {
-    let filtered = this.executions;
-
-    // Apply status filter
-    if (this.statusFilter !== 'all') {
-      filtered = filtered.filter((exec) => exec.status === this.statusFilter);
-    }
-
-    return filtered;
+    return this.executions;
   }
 
   get paginatedExecutions(): FlowExecution[] {
-    const start = (this.currentPage - 1) * this.pageSize;
-    const end = start + this.pageSize;
-    return this.filteredExecutions.slice(start, end);
+    return this.filteredExecutions;
   }
 
   get totalPages(): number {
-    return Math.ceil(this.filteredExecutions.length / this.pageSize);
+    return this.hasNextPage ? this.currentPage + 1 : this.currentPage;
   }
 
   handleStatusFilterChange(event: Event) {
     const select = event.target as any;
     this.statusFilter = select.value;
     this.currentPage = 1; // Reset to first page when filter changes
+    void this.loadExecutions();
   }
 
   nextPage() {
-    if (this.currentPage < this.totalPages) {
+    if (this.hasNextPage) {
       this.currentPage++;
+      void this.loadExecutions();
     }
   }
 
   prevPage() {
     if (this.currentPage > 1) {
       this.currentPage--;
+      void this.loadExecutions();
     }
   }
 
@@ -276,11 +273,9 @@ export class FlowExecutionsView extends AuthedElement {
                   style="margin-bottom: 12px; color: var(--sl-color-neutral-600); font-size: 0.9rem;"
                 >
                   Showing ${(this.currentPage - 1) * this.pageSize + 1} -
-                  ${Math.min(
-                    this.currentPage * this.pageSize,
-                    this.filteredExecutions.length
-                  )}
-                  of ${this.filteredExecutions.length} executions
+                  ${(this.currentPage - 1) * this.pageSize +
+                  this.paginatedExecutions.length}
+                  executions
                 </div>
 
                 <div class="table-wrapper">
@@ -324,7 +319,7 @@ export class FlowExecutionsView extends AuthedElement {
                                 ? formatLocalDateTime(exec.end_time)
                                 : '-'}
                             </td>
-                            <td>${exec.actions_taken_summary?.length || 0}</td>
+                            <td>${exec.tool_calls_count || 0}</td>
                             <td>
                               <sl-button
                                 size="small"

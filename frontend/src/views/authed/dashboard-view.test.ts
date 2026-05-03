@@ -505,6 +505,7 @@ describe('DashboardView', () => {
     expect(urls).to.include('/api/v1/mcp-servers');
     expect(urls).to.include('/api/v1/tools');
     expect(urls).to.include('/api/v1/flows');
+    expect(urls).to.include('/api/v1/flows/executions?limit=10');
     expect(urls.some((url) => url.startsWith('/api/v1/approval-requests'))).to
       .be.true;
   });

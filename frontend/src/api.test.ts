@@ -1,7 +1,7 @@
 import { expect } from '@open-wc/testing';
 import sinon from 'sinon';
 import { Router } from '@vaadin/router';
-import { fetchWithAuth, AuthedElement } from './api.js';
+import { fetchWithAuth, AuthedElement, getFlowExecutions } from './api.js';
 import { customElement } from 'lit/decorators.js';
 
 // Minimal test element that exposes fetchData for testing
@@ -140,6 +140,34 @@ describe('api', () => {
       }
       expect(threw).to.be.true;
       expect(routerGoStub).to.have.been.calledWith('/login');
+    });
+  });
+
+  describe('getFlowExecutions', () => {
+    it('passes bounded filter params for lightweight list requests', async () => {
+      fetchStub.resolves(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      await getFlowExecutions({
+        limit: 21,
+        skip: 20,
+        flowId: 'flow-1',
+        status: ['RUNNING', 'PENDING'],
+      });
+
+      const url = new URL(fetchStub.firstCall.args[0], window.location.origin);
+      expect(url.pathname).to.equal('/api/v1/flows/executions');
+      expect(url.searchParams.get('limit')).to.equal('21');
+      expect(url.searchParams.get('skip')).to.equal('20');
+      expect(url.searchParams.get('flow_id')).to.equal('flow-1');
+      expect(url.searchParams.getAll('status')).to.deep.equal([
+        'RUNNING',
+        'PENDING',
+      ]);
     });
   });
 

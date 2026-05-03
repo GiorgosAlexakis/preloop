@@ -1076,7 +1076,7 @@ export class DashboardView extends AuthedElement {
         this.catchWith403Handling(getTools(), [] as Tool[]),
         this.catchWith403Handling(getFlows(), [] as any[]),
         this.catchWith403Handling(
-          getFlowExecutions({ limit: 100 }),
+          getFlowExecutions({ limit: 10 }),
           [] as FlowExecution[]
         ),
         this.catchWith403Handling(this.fetchApprovalRequests('pending', 3), []),
