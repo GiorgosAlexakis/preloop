@@ -17,6 +17,7 @@ from preloop.services.model_gateway_auth import ModelGatewayAuthContext
 from preloop.services.model_gateway_errors import ModelGatewayAPIError
 from preloop.services.openai_gateway import OpenAIGatewayService
 from preloop.services.openai_gateway import LiteLLMModelGatewayBackend
+from preloop.services.secret_service import CredentialRefreshError
 
 
 def _parse_sse_payload(event: str):
@@ -196,6 +197,48 @@ def test_call_litellm_uses_claude_code_oauth_headers():
         },
         max_tokens=1,
     )
+
+
+def test_call_litellm_maps_claude_code_oauth_refresh_failure():
+    auth_context = ModelGatewayAuthContext(
+        token="token",
+        user=SimpleNamespace(id="user-1", account_id="account-1"),
+    )
+    upstream_backend = MagicMock()
+    service = OpenAIGatewayService(
+        MagicMock(), auth_context, upstream_backend=upstream_backend
+    )
+    ai_model = SimpleNamespace(
+        provider_name="anthropic",
+        model_identifier="claude-opus-4-6",
+        api_endpoint=None,
+        meta_data={},
+    )
+
+    with patch(
+        "preloop.services.openai_gateway.get_secret_service"
+    ) as mock_secret_service:
+        mock_secret_service.return_value.resolve_ai_model_credentials.side_effect = (
+            CredentialRefreshError(
+                "Anthropic Claude Code OAuth token refresh failed with status 403",
+                provider="anthropic",
+                status_code=403,
+                code="1010",
+            )
+        )
+        with pytest.raises(ModelGatewayAPIError) as exc_info:
+            service._call_litellm(
+                ai_model,
+                messages=[{"role": "user", "content": "Hello"}],
+                payload={"max_tokens": 1},
+                provider="anthropic",
+            )
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.error_type == "authentication_error"
+    assert exc_info.value.code == "1010"
+    assert "could not be refreshed" in exc_info.value.message
+    upstream_backend.completion.assert_not_called()
 
 
 def test_litellm_backend_masks_ambient_anthropic_api_key_for_oauth(monkeypatch):

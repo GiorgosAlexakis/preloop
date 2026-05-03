@@ -928,9 +928,11 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                                 # Try internal (namespaced) name first, fall
                                 # back to original name for built-in tools.
                                 try:
-                                    tool_result = await mcp._tool_manager.call_tool(
-                                        internal_name,
-                                        tool_args,
+                                    tool_result = (
+                                        await mcp.call_registered_tool_without_policy(
+                                            internal_name,
+                                            tool_args,
+                                        )
                                     )
                                 except Exception as name_err:
                                     if "not found" in str(name_err).lower():
@@ -938,7 +940,7 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
                                             f"Tool '{internal_name}' not found, "
                                             f"trying original name '{tool_name}'"
                                         )
-                                        tool_result = await mcp._tool_manager.call_tool(
+                                        tool_result = await mcp.call_registered_tool_without_policy(
                                             tool_name,
                                             tool_args,
                                         )

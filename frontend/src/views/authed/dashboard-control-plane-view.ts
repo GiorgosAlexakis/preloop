@@ -1312,15 +1312,6 @@ export class DashboardView extends AuthedElement {
     );
   }
 
-  private get hasBudgetCard(): boolean {
-    const budget = this.gatewaySummary?.budget;
-    return Boolean(
-      this.gatewaySummary?.total_requests ||
-      budget?.monthly_limit_usd ||
-      budget?.soft_limit_usd
-    );
-  }
-
   private formatCurrency(value: number | null | undefined): string {
     return `$${(value || 0).toFixed(2)}`;
   }
@@ -1955,10 +1946,6 @@ export class DashboardView extends AuthedElement {
     `;
   }
   private renderBudgetHealthCard() {
-    if (!this.hasBudgetCard) {
-      return nothing;
-    }
-
     return html`
       <sl-card class="content-card">
         <div slot="header" class="card-header-with-action">

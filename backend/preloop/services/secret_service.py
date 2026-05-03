@@ -60,6 +60,23 @@ class ResolvedModelCredentials:
     secret_reference_id: Optional[UUID] = None
 
 
+class CredentialRefreshError(ValueError):
+    """Raised when provider-managed OAuth credentials cannot be refreshed."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        status_code: Optional[int] = None,
+        code: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.status_code = status_code
+        self.code = code
+
+
 class SecretBackend(Protocol):
     """Interface for secret backend adapters."""
 
@@ -555,7 +572,31 @@ class SecretService:
         if not refresh_token:
             return payload
 
-        refreshed = self._refresh_anthropic_claude_code_token(refresh_token)
+        try:
+            refreshed = self._refresh_anthropic_claude_code_token(refresh_token)
+        except CredentialRefreshError as exc:
+            if (
+                db is not None
+                and ai_model.credentials_secret is not None
+                and ai_model.credentials_secret.backend_type == LOCAL_ENCRYPTED_BACKEND
+            ):
+                ai_model.credentials_secret.status = "error"
+                ai_model.credentials_secret.meta_data = {
+                    **(
+                        ai_model.credentials_secret.meta_data
+                        if isinstance(ai_model.credentials_secret.meta_data, dict)
+                        else {}
+                    ),
+                    "credential_type": ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE,
+                    "last_refresh_error": str(exc),
+                    "last_refresh_status_code": exc.status_code,
+                    "last_refresh_code": exc.code,
+                    "last_refresh_failed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                db.add(ai_model.credentials_secret)
+                db.commit()
+            raise
+
         next_payload = {
             "type": ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE,
             "access": refreshed["access"],
@@ -580,6 +621,7 @@ class SecretService:
                 ),
                 "credential_type": ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE,
             }
+            ai_model.credentials_secret.status = "active"
             db.add(ai_model.credentials_secret)
             db.commit()
             db.refresh(ai_model.credentials_secret)
@@ -610,21 +652,26 @@ class SecretService:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib_error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "ignore")
-            raise ValueError(
+            raise CredentialRefreshError(
                 "Anthropic Claude Code OAuth token refresh failed with status "
-                f"{exc.code}: {detail}"
+                f"{exc.code}: {detail}",
+                provider="anthropic",
+                status_code=exc.code,
+                code=self._extract_oauth_error_code(detail),
             ) from exc
         except urllib_error.URLError as exc:
-            raise ValueError(
-                f"Anthropic Claude Code OAuth token refresh failed: {exc.reason}"
+            raise CredentialRefreshError(
+                f"Anthropic Claude Code OAuth token refresh failed: {exc.reason}",
+                provider="anthropic",
             ) from exc
 
         access = str(payload.get("access_token") or "").strip()
         refresh = str(payload.get("refresh_token") or refresh_token).strip()
         expires_in = payload.get("expires_in")
         if not access or not refresh or not isinstance(expires_in, (int, float)):
-            raise ValueError(
-                "Anthropic Claude Code OAuth token refresh response missing fields"
+            raise CredentialRefreshError(
+                "Anthropic Claude Code OAuth token refresh response missing fields",
+                provider="anthropic",
             )
         return {
             "access": access,
@@ -632,6 +679,19 @@ class SecretService:
             "expires": int(datetime.now(timezone.utc).timestamp() * 1000)
             + int(expires_in * 1000),
         }
+
+    @staticmethod
+    def _extract_oauth_error_code(detail: str) -> Optional[str]:
+        try:
+            payload = json.loads(detail)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict):
+            for key in ("code", "error_code", "error"):
+                value = payload.get(key)
+                if value is not None:
+                    return str(value)
+        return None
 
     def _refresh_openai_codex_token(self, refresh_token: str) -> Dict[str, Any]:
         body = urllib_parse.urlencode(

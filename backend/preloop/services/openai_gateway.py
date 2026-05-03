@@ -39,6 +39,7 @@ from preloop.services.model_runtime_resolver import resolve_ai_model_runtime
 from preloop.services.gateway_usage_search import GatewayUsageSearchService
 from preloop.services.secret_service import (
     ANTHROPIC_CLAUDE_CODE_OAUTH_CREDENTIAL_TYPE,
+    CredentialRefreshError,
     OPENAI_CODEX_OAUTH_CREDENTIAL_TYPE,
     ResolvedModelCredentials,
     get_secret_service,
@@ -2489,11 +2490,25 @@ class OpenAIGatewayService:
         stream: bool,
         provider: GatewayProvider,
     ) -> Dict[str, Any]:
-        resolved_credentials = get_secret_service().resolve_ai_model_credentials(
-            ai_model,
-            db=self.db,
-            allow_refresh=True,
-        )
+        try:
+            resolved_credentials = get_secret_service().resolve_ai_model_credentials(
+                ai_model,
+                db=self.db,
+                allow_refresh=True,
+            )
+        except CredentialRefreshError as exc:
+            status_code = 401
+            if exc.status_code is not None and exc.status_code >= 500:
+                status_code = 502
+            raise ModelGatewayAPIError(
+                provider=provider,
+                status_code=status_code,
+                message=(
+                    "Model credentials could not be refreshed. "
+                    "Reconnect this managed agent or update the model credentials."
+                ),
+                code=exc.code,
+            ) from exc
         supports_ambient = _supports_ambient_provider_credentials(ai_model)
         supports_oauth = (
             provider == "anthropic"

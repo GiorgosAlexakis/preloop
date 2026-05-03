@@ -114,7 +114,7 @@ class MCPClient:
                 f"server: {init_result.serverInfo.name})"
             )
         except Exception as e:
-            logger.error(f"Failed to connect to MCP server at {self.url}: {e}")
+            logger.warning("Failed to connect to MCP server at %s: %s", self.url, e)
             if self._exit_stack:
                 try:
                     await self._exit_stack.aclose()
@@ -137,7 +137,11 @@ class MCPClient:
                         target_exc = exc
                         break
 
-            logger.error(f"Failed to connect to MCP server at {self.url}: {target_exc}")
+            logger.warning(
+                "Failed to connect to MCP server at %s: %s",
+                self.url,
+                target_exc,
+            )
             if self._exit_stack:
                 try:
                     await self._exit_stack.aclose()

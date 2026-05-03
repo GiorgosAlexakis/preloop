@@ -181,9 +181,31 @@ class ModelGatewayEventEmitter:
         nats_client = await get_nats_client()
         if not nats_client or not nats_client.is_connected:
             return
+
+        payload_bytes = json.dumps(event).encode()
+        if len(payload_bytes) > 1000000:
+            logger.warning(
+                f"NATS payload size {len(payload_bytes)} exceeds 1MB limit for execution {execution_id}, truncating event details"
+            )
+            event = event.copy()
+            if "payload" in event and isinstance(event["payload"], dict):
+                payload = event["payload"].copy()
+                payload.pop("request", None)
+                payload.pop("response", None)
+                if "conversation_preview" in payload and isinstance(
+                    payload["conversation_preview"], dict
+                ):
+                    preview = payload["conversation_preview"].copy()
+                    preview["messages"] = []
+                    if "metadata" in preview and isinstance(preview["metadata"], dict):
+                        preview["metadata"]["has_truncated_content"] = True
+                    payload["conversation_preview"] = preview
+                event["payload"] = payload
+            payload_bytes = json.dumps(event).encode()
+
         await nats_client.publish(
             f"flow-updates.{execution_id}",
-            json.dumps(event).encode(),
+            payload_bytes,
         )
 
     def _build_event(

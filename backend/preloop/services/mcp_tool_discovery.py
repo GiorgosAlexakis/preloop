@@ -30,7 +30,6 @@ async def scan_mcp_server_tools(mcp_server_id: UUID, db: Session) -> List[MCPToo
 
     Raises:
         ValueError: If server not found
-        Exception: If scan fails
     """
     # Get MCP server from database using CRUD layer
     mcp_server = crud_mcp_server.get(db, id=mcp_server_id)
@@ -109,8 +108,26 @@ async def scan_mcp_server_tools(mcp_server_id: UUID, db: Session) -> List[MCPToo
         mcp_server.last_error = str(e)
         db.commit()
 
-        logger.error(f"Failed to scan MCP server {mcp_server.name}: {e}", exc_info=True)
-        raise
+        logger.warning("Failed to scan MCP server %s: %s", mcp_server.name, e)
+        try:
+            from preloop.sync.tasks import notify_admins
+
+            notify_admins(
+                subject=f"MCP server scan failed: {mcp_server.name}",
+                message=(
+                    "Preloop could not scan configured MCP server "
+                    f"{mcp_server.name} ({mcp_server.url}). "
+                    f"The server was marked unhealthy and cached tools will be used. "
+                    f"Error: {e}"
+                ),
+            )
+        except Exception as notify_error:
+            logger.debug(
+                "Failed to notify admins about MCP scan failure: %s",
+                notify_error,
+            )
+
+        return crud_mcp_tool.get_by_server(db, server_id=mcp_server_id)
 
 
 async def get_cached_tools_for_server(

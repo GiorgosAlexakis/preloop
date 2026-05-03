@@ -67,8 +67,11 @@ def emit_account_event(event: dict[str, Any]) -> None:
 
         try:
             run_async(_publish_account_event(event))
-        except Exception:
-            logger.exception("Failed to publish account realtime event synchronously")
+        except Exception as e:
+            # Raise from None to suppress the confusing 'RuntimeError' traceback
+            logger.exception(
+                "Failed to publish account realtime event synchronously", exc_info=e
+            )
         return
     loop.create_task(_publish_account_event(event))
 
@@ -81,9 +84,32 @@ async def _publish_account_event(event: dict[str, Any]) -> None:
         nats_client = await get_nats_client()
         if not nats_client or not nats_client.is_connected:
             return
+
+        payload_bytes = json.dumps(event).encode()
+        if len(payload_bytes) > 1000000:
+            logger.warning(
+                f"NATS payload size {len(payload_bytes)} exceeds 1MB limit for account {account_id}, truncating event details"
+            )
+            # Strip heavy details to fit within NATS limits
+            event = event.copy()
+            if "payload" in event and isinstance(event["payload"], dict):
+                payload = event["payload"].copy()
+                payload.pop("request", None)
+                payload.pop("response", None)
+                if "conversation_preview" in payload and isinstance(
+                    payload["conversation_preview"], dict
+                ):
+                    preview = payload["conversation_preview"].copy()
+                    preview["messages"] = []
+                    if "metadata" in preview and isinstance(preview["metadata"], dict):
+                        preview["metadata"]["has_truncated_content"] = True
+                    payload["conversation_preview"] = preview
+                event["payload"] = payload
+            payload_bytes = json.dumps(event).encode()
+
         await nats_client.publish(
             f"account-updates.{account_id}",
-            json.dumps(event).encode(),
+            payload_bytes,
         )
     except Exception:
         logger.exception("Failed to publish account realtime event")

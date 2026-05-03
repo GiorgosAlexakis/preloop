@@ -1129,6 +1129,25 @@ async def {internal_name}({params_str}) -> str:
 
         return result
 
+    async def call_registered_tool_without_policy(
+        self,
+        name: str,
+        arguments: dict | None = None,
+    ):
+        """Execute an already-registered tool without re-running policy checks.
+
+        Async approval polling calls this only after the original tool call has
+        been approved and claimed for idempotent re-execution.
+        """
+        translation_token = None
+        if name in self._registered_proxied_tools:
+            translation_token = _is_proxy_translation_var.set(True)
+        try:
+            return await super().call_tool(name, arguments or {})
+        finally:
+            if translation_token is not None:
+                _is_proxy_translation_var.reset(translation_token)
+
 
 def create_dynamic_mcp_server() -> DynamicFastMCP:
     """Create a DynamicFastMCP server instance.

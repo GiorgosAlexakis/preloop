@@ -4105,6 +4105,13 @@ func buildManagedRemoteServerRequest(
 	name string,
 	server MCPDef,
 ) (map[string]interface{}, string, string, bool) {
+	if isPreloopOwnedMCPServer(name, server) {
+		return nil, fmt.Sprintf(
+			"MCP server %q points at Preloop and was skipped; onboarding will configure this instance's managed Preloop MCP instead.",
+			name,
+		), "", false
+	}
+
 	targetURL := strings.TrimSpace(server.URL)
 	importMode := "direct"
 	warning := ""

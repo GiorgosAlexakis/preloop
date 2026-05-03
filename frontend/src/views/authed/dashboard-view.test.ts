@@ -569,6 +569,47 @@ describe('DashboardView', () => {
     expect(warningSegments?.length).to.be.greaterThan(0);
   });
 
+  it('renders budget health when there is no gateway usage or configured limit', async () => {
+    gatewaySummaryResponse = {
+      ...gatewaySummaryResponse,
+      total_requests: 0,
+      successful_requests: 0,
+      failed_requests: 0,
+      estimated_cost: 0,
+      token_usage: {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+      },
+      budget: {
+        monthly_limit_usd: null,
+        soft_limit_usd: null,
+        current_spend_usd: 0,
+        soft_limit_exceeded: false,
+        hard_limit_exceeded: false,
+      },
+      usage_by_model: [],
+      usage_by_session: [],
+    };
+    budgetPoliciesResponse = [];
+
+    const element = await mountDashboard();
+    await waitUntil(
+      () =>
+        !element['loading'] &&
+        !element['fetchingActiveAgents'] &&
+        !element['fetchingBudget'],
+      'dashboard did not finish loading'
+    );
+    await element.updateComplete;
+
+    const content = element.shadowRoot?.textContent || '';
+    expect(content).to.contain('Budget health');
+    expect(content).to.contain('Global spend · 30d');
+    expect(content).to.contain('$0.00');
+    expect(content).to.contain('Configure Limits');
+  });
+
   it('renders the requested responsive control-plane metrics behind the expand toggle', async () => {
     const element = await mountDashboard();
     await waitUntil(

@@ -1596,6 +1596,64 @@ func TestBuildManagedMCPEnrollmentPlan_AddsPreloopAndRedactsSecrets(t *testing.T
 	}
 }
 
+func TestBuildManagedMCPEnrollmentPlan_DisablesStalePreloopServers(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(configPath, []byte(`{
+  "mcpServers": {
+    "review": {
+      "url": "https://ai-model-gateway.review.preloop.ai/mcp/v1"
+    },
+    "preloop": {
+      "url": "https://old.example/mcp/v1"
+    },
+    "github": {
+      "url": "https://github.example/mcp"
+    }
+  }
+}`), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	plan, err := buildManagedMCPEnrollmentPlan(AgentConfig{
+		Name:       "Gemini CLI",
+		ConfigPath: configPath,
+	}, "https://preloop.example", "durable-secret-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	managedServers := plan.ManagedDocument["mcpServers"].(map[string]interface{})
+	if _, ok := managedServers["review"]; ok {
+		t.Fatalf("expected stale preloop.ai MCP server to be disabled, got %#v", managedServers)
+	}
+	if _, ok := managedServers["github"]; !ok {
+		t.Fatalf("expected non-Preloop MCP server to remain, got %#v", managedServers)
+	}
+	preloop := managedServers["preloop"].(map[string]interface{})
+	if preloop["url"] != "https://preloop.example/mcp/v1" {
+		t.Fatalf("expected current managed Preloop MCP URL, got %#v", preloop)
+	}
+	if len(plan.Notes) == 0 || !strings.Contains(plan.Notes[0], "Disabled existing Preloop MCP entries") {
+		t.Fatalf("expected notice about disabled Preloop MCP entries, got %#v", plan.Notes)
+	}
+}
+
+func TestBuildManagedRemoteServerRequestSkipsPreloopOwnedServers(t *testing.T) {
+	for name, server := range map[string]MCPDef{
+		"preloop": {URL: "https://external.example/mcp"},
+		"review":  {URL: "https://ai-model-gateway.review.preloop.ai/mcp/v1"},
+	} {
+		request, warning, _, ok := buildManagedRemoteServerRequest(name, server)
+		if ok || request != nil {
+			t.Fatalf("expected %q to be skipped, got ok=%v request=%#v", name, ok, request)
+		}
+		if !strings.Contains(warning, "skipped") {
+			t.Fatalf("expected skip warning for %q, got %q", name, warning)
+		}
+	}
+}
+
 func TestBuildManagedMCPEnrollmentPlan_OpenClawUsesNestedHTTPServer(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "openclaw.json")
