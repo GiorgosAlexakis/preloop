@@ -1,6 +1,6 @@
 """Endpoint tests for gateway usage summaries."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from preloop.models.crud import (
     crud_ai_model,
@@ -412,8 +412,9 @@ def test_account_runtime_sessions_use_most_recent_model_alias(
         runtime_principal_id="workspace-latest",
         runtime_principal_name="Claude Workspace",
     )
-    older_usage.timestamp = datetime(2026, 4, 3, 21, 0, tzinfo=UTC)
-    newer_usage.timestamp = datetime(2026, 4, 3, 21, 5, tzinfo=UTC)
+    now = datetime.now(UTC)
+    older_usage.timestamp = now - timedelta(minutes=10)
+    newer_usage.timestamp = now - timedelta(minutes=5)
     db_session.add(older_usage)
     db_session.add(newer_usage)
     db_session.commit()
