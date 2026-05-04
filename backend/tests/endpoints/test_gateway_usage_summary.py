@@ -418,11 +418,17 @@ def test_account_runtime_sessions_use_most_recent_model_alias(
     db_session.add(newer_usage)
     db_session.commit()
 
-    list_response = client.get("/api/v1/runtime-sessions")
+    list_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={"query": "claude-session-latest"},
+    )
 
     assert list_response.status_code == 200
     list_body = list_response.json()
-    assert list_body["items"][0]["latest_model_alias"] == "openai/gpt-5.4"
+    list_item = next(
+        item for item in list_body["items"] if item["id"] == str(runtime_session.id)
+    )
+    assert list_item["latest_model_alias"] == "openai/gpt-5.4"
 
     detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
 

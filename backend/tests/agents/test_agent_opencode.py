@@ -212,7 +212,13 @@ class TestOpenCodeBuildScript:
         script = agent._build_opencode_script(context)
         assert "opencode run" in script
         assert "--model anthropic/model-1" in script
+        assert "--format json" in script
         assert "--dangerously-skip-permissions" in script
+        assert "opencode-json-log-filter.py" in script
+        assert "OPENCODE_EXIT_CODE=${PIPE_CODES[0]}" in script
+        assert "FLOW_EXECUTION_SUCCESS" in script
+        assert "OpenCode command failed; see CLI output above." in script
+        assert 'echo "FLOW_EXECUTION_SUCCESS"' not in script
         assert "-y" not in script
         # Should NOT use non-existent --non-interactive flag
         assert "--non-interactive" not in script
@@ -260,6 +266,9 @@ class TestOpenCodeBuildScript:
         script = agent._build_opencode_script(context)
         assert "opencode.json" in script
         assert "OPENCODE_CONFIG_EOF" in script
+        assert '"share": "disabled"' in script
+        assert '"enabled_providers": [' in script
+        assert '"small_model": "anthropic/model-1"' in script
 
     def test_no_model_raises_error(self):
         """Raises ValueError when no model is in context."""
@@ -284,6 +293,9 @@ class TestOpenCodeBuildConfig:
         )
         assert config["$schema"] == "https://opencode.ai/config.json"
         assert config["autoupdate"] is False
+        assert config["share"] == "disabled"
+        assert config["small_model"] == "anthropic/claude-sonnet-4-20250514"
+        assert config["enabled_providers"] == ["anthropic"]
         assert "mcp" in config
 
     def test_mcp_server_config(self):
@@ -324,6 +336,8 @@ class TestOpenCodeBuildConfig:
         assert provider["options"]["baseURL"] == "http://gateway.internal/openai/v1"
         assert "openai/gpt-5" in provider["models"]
         assert config["model"] == "preloop/openai/gpt-5"
+        assert config["small_model"] == "preloop/openai/gpt-5"
+        assert config["enabled_providers"] == ["preloop"]
 
     def test_gateway_strips_duplicate_provider_prefix_in_models_map(self):
         """If alias already includes ``preloop/``, models keys stay provider-local."""
