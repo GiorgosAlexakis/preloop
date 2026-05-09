@@ -2345,9 +2345,12 @@ ${log.payload.content}</pre
 
       // Fetch final logs from the stopped container
       try {
-        const logsResponse = await getFlowExecutionLogs(this.executionId);
+        const logsResponse = await getFlowExecutionLogs(this.executionId, {
+          tail: 500,
+        });
         if (logsResponse.logs && Array.isArray(logsResponse.logs)) {
           this.logs = logsResponse.logs;
+          this.hasMoreLogs = !!logsResponse.has_more;
           console.log(
             `Loaded ${logsResponse.logs.length} logs after stop from ${logsResponse.source}`
           );

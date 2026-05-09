@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -2432,6 +2433,7 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 	if err != nil {
 		return managedMCPEnrollmentPlan{}, err
 	}
+	removedPreloopServers := prunePreloopOwnedMCPServersFromDocument(managedDoc)
 	container["preloop"] = adapter.BuildManagedServer(baseURL, token)
 	ensureLegacyCodexMCPServer(agent, managedDoc, baseURL)
 
@@ -2446,6 +2448,17 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 	}
 	sanitizeConfigSnapshot(sanitizedManaged)
 
+	notes := []string{}
+	if len(removedPreloopServers) > 0 {
+		notes = append(
+			notes,
+			fmt.Sprintf(
+				"Disabled existing Preloop MCP entries before writing this instance's managed endpoint: %s.",
+				strings.Join(removedPreloopServers, ", "),
+			),
+		)
+	}
+
 	return managedMCPEnrollmentPlan{
 		Agent:               agent,
 		DiscoveredDocument:  discoveredDoc,
@@ -2454,6 +2467,7 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 		SanitizedManaged:    sanitizedManaged,
 		ManagedServerName:   "preloop",
 		ManagedServerURL:    strings.TrimRight(baseURL, "/") + "/mcp/v1",
+		Notes:               notes,
 	}, nil
 }
 
@@ -2701,7 +2715,14 @@ func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig, public
 	result := &remoteServerSyncResult{}
 	for _, name := range sortedServerNames(agent.MCPServers) {
 		server := agent.MCPServers[name]
-		if isManagedPreloopProxy(name, server, publicURL) {
+		if isPreloopOwnedMCPServer(name, server) {
+			result.Warnings = append(
+				result.Warnings,
+				fmt.Sprintf(
+					"MCP server %q points at Preloop and was not imported as an upstream server.",
+					name,
+				),
+			)
 			result.Skipped = append(result.Skipped, name)
 			continue
 		}
@@ -3645,6 +3666,99 @@ func isSensitiveKey(key string) bool {
 	default:
 		return false
 	}
+}
+
+func prunePreloopOwnedMCPServersFromDocument(doc map[string]interface{}) []string {
+	removed := map[string]struct{}{}
+	for _, container := range mcpServerContainers(doc) {
+		for name, raw := range container {
+			def, ok := mcpDefFromRawServer(raw)
+			if !ok {
+				continue
+			}
+			if isPreloopOwnedMCPServer(name, def) {
+				delete(container, name)
+				removed[name] = struct{}{}
+			}
+		}
+	}
+
+	names := make([]string, 0, len(removed))
+	for name := range removed {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func mcpServerContainers(doc map[string]interface{}) []map[string]interface{} {
+	containers := []map[string]interface{}{}
+	if servers, ok := asObjectMap(doc["mcpServers"]); ok {
+		containers = append(containers, servers)
+	}
+	if servers, ok := asObjectMap(doc["servers"]); ok {
+		containers = append(containers, servers)
+	}
+	if servers, ok := asObjectMap(doc["mcp_servers"]); ok {
+		containers = append(containers, servers)
+	}
+	if mcp, ok := asObjectMap(doc["mcp"]); ok {
+		if servers, ok := asObjectMap(mcp["servers"]); ok {
+			containers = append(containers, servers)
+		}
+		if looksLikeMCPServerContainer(mcp) {
+			containers = append(containers, mcp)
+		}
+	}
+	return containers
+}
+
+func mcpDefFromRawServer(raw interface{}) (MCPDef, bool) {
+	object, ok := asObjectMap(raw)
+	if !ok {
+		return MCPDef{}, false
+	}
+	data, err := json.Marshal(object)
+	if err != nil {
+		return MCPDef{}, false
+	}
+	var def MCPDef
+	if err := json.Unmarshal(data, &def); err != nil {
+		return MCPDef{}, false
+	}
+	if def.URL == "" {
+		if httpURL, _ := object["httpUrl"].(string); strings.TrimSpace(httpURL) != "" {
+			def.URL = strings.TrimSpace(httpURL)
+		}
+	}
+	if def.Transport == "" {
+		if transport, _ := object["type"].(string); strings.TrimSpace(transport) != "" {
+			def.Transport = strings.TrimSpace(transport)
+		}
+	}
+	return def, true
+}
+
+func isPreloopOwnedMCPServer(name string, server MCPDef) bool {
+	if strings.EqualFold(strings.TrimSpace(name), "preloop") {
+		return true
+	}
+	targetURL := strings.TrimSpace(server.URL)
+	if targetURL == "" {
+		targetURL = extractURLFromCommandBackedServer(server)
+	}
+	if targetURL == "" {
+		return false
+	}
+	if !strings.Contains(targetURL, "://") {
+		targetURL = "https://" + targetURL
+	}
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "preloop.ai" || strings.HasSuffix(host, ".preloop.ai")
 }
 
 func defaultStarterPolicyFileName(serverName string) string {

@@ -501,8 +501,57 @@ async def test_read_flow_executions(mock_account: Account, mocker: MockerFixture
         mocker.ANY,
         account_id=mock_account.account_id,
         skip=0,
-        limit=100,
+        limit=25,
+        flow_id=None,
+        statuses=None,
         eager_load=True,
+        lightweight=True,
+    )
+
+
+def test_flow_execution_list_schema_excludes_detail_payloads():
+    """List rows do not serialize heavy detail/log payloads."""
+    fields = set(schemas.FlowExecutionListResponse.model_fields)
+
+    assert "resolved_input_prompt" not in fields
+    assert "actions_taken_summary" not in fields
+    assert "mcp_usage_logs" not in fields
+    assert "execution_logs" not in fields
+
+
+@pytest.mark.asyncio
+async def test_read_flow_executions_filters_and_caps_limit(
+    mock_account: Account, mocker: MockerFixture
+):
+    """Flow execution lists are bounded and filtered server-side."""
+    flow_id = uuid.uuid4()
+    mock_crud_flow_execution = mocker.patch(
+        "preloop.api.endpoints.flows.crud_flow_execution",
+        new_callable=MagicMock,
+    )
+    mock_crud_flow_execution.get_multi.return_value = []
+
+    result = await maybe_await(
+        flows.read_flow_executions(
+            db=MagicMock(),
+            skip=5,
+            limit=500,
+            flow_id=flow_id,
+            status=["running,failed", "pending"],
+            current_user=mock_account,
+        )
+    )
+
+    assert result == []
+    mock_crud_flow_execution.get_multi.assert_called_once_with(
+        mocker.ANY,
+        account_id=mock_account.account_id,
+        skip=5,
+        limit=100,
+        flow_id=flow_id,
+        statuses=["RUNNING", "FAILED", "PENDING"],
+        eager_load=True,
+        lightweight=True,
     )
 
 

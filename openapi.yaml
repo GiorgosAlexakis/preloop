@@ -5324,7 +5324,7 @@ paths:
       tags:
       - Flows
       summary: Read Flow Executions
-      description: Retrieve flow executions for the account.
+      description: Retrieve lightweight flow execution summaries for the account.
       operationId: read_flow_executions_api_v1_flows_executions_get
       security:
       - bearerAuth: []
@@ -5341,8 +5341,27 @@ paths:
         required: false
         schema:
           type: integer
-          default: 100
+          default: 25
           title: Limit
+      - name: flow_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Flow Id
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: 'null'
+          title: Status
       responses:
         '200':
           description: Successful Response
@@ -5351,7 +5370,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/FlowExecutionResponse'
+                  $ref: '#/components/schemas/FlowExecutionListResponse'
                 title: Response Read Flow Executions Api V1 Flows Executions Get
         '422':
           description: Validation Error
@@ -8645,6 +8664,81 @@ components:
       required:
       - command
       title: FlowExecutionCommand
+    FlowExecutionListResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        flow_id:
+          type: string
+          format: uuid
+          title: Flow Id
+        status:
+          type: string
+          title: Status
+        start_time:
+          type: string
+          format: date-time
+          title: Start Time
+        end_time:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Time
+        error_message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Message
+        retry_of_execution_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Retry Of Execution Id
+        tool_calls_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tool Calls Count
+          default: 0
+        total_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Total Tokens
+          default: 0
+        estimated_cost:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimated Cost
+          default: 0.0
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        flow_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flow Name
+      type: object
+      required:
+      - id
+      - flow_id
+      - status
+      - start_time
+      - created_at
+      - updated_at
+      title: FlowExecutionListResponse
+      description: Lightweight flow execution row for list views.
     FlowExecutionResponse:
       properties:
         flow_id:

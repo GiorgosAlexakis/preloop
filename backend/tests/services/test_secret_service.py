@@ -12,6 +12,7 @@ from preloop.models.models import Account
 from preloop.models.models.secret_reference import SecretReference
 from preloop.services import secret_service as secret_service_module
 from preloop.services.secret_service import (
+    CredentialRefreshError,
     LOCAL_ENCRYPTED_BACKEND,
     OPENBAO_KV_V2_BACKEND,
     SecretService,
@@ -201,3 +202,55 @@ def test_resolve_ai_model_credentials_refreshes_openai_codex_oauth(
     )
     assert stored["access"] == "new-access"
     assert stored["account_id"] == "acct-new"
+
+
+def test_resolve_ai_model_credentials_marks_anthropic_oauth_refresh_failure(
+    db_session: Session,
+):
+    """Failed Claude Code OAuth refresh should mark stored credentials unhealthy."""
+    account: Account = crud_account.create(
+        db_session,
+        obj_in={
+            "organization_name": "Claude OAuth Org",
+            "is_active": True,
+        },
+    )
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Claude OAuth Model",
+            "provider_name": "anthropic",
+            "model_identifier": "claude-opus-4-6",
+            "credential_type": "oauth_anthropic_claude_code",
+            "credential_payload": {
+                "access": "old-access",
+                "refresh": "refresh-token",
+                "expires": 1,
+            },
+        },
+        account_id=account.id,
+    )
+
+    service = SecretService()
+
+    def fail_refresh(refresh_token: str):
+        raise CredentialRefreshError(
+            "Anthropic Claude Code OAuth token refresh failed with status 403",
+            provider="anthropic",
+            status_code=403,
+            code="1010",
+        )
+
+    service._refresh_anthropic_claude_code_token = fail_refresh
+
+    with pytest.raises(CredentialRefreshError):
+        service.resolve_ai_model_credentials(
+            ai_model,
+            db=db_session,
+            allow_refresh=True,
+        )
+
+    db_session.refresh(ai_model.credentials_secret)
+    assert ai_model.credentials_secret.status == "error"
+    assert ai_model.credentials_secret.meta_data["last_refresh_status_code"] == 403
+    assert ai_model.credentials_secret.meta_data["last_refresh_code"] == "1010"

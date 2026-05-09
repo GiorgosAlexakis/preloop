@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -21,6 +20,7 @@ from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_BUDGET_HEALTH,
     ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
     build_account_event,
+    encode_realtime_event_for_nats,
     emit_account_event,
 )
 from preloop.sync.services.event_bus import get_nats_client
@@ -181,9 +181,17 @@ class ModelGatewayEventEmitter:
         nats_client = await get_nats_client()
         if not nats_client or not nats_client.is_connected:
             return
+
+        payload_bytes = encode_realtime_event_for_nats(
+            event,
+            context=f"execution {execution_id}",
+        )
+        if payload_bytes is None:
+            return
+
         await nats_client.publish(
             f"flow-updates.{execution_id}",
-            json.dumps(event).encode(),
+            payload_bytes,
         )
 
     def _build_event(

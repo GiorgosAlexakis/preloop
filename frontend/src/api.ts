@@ -1239,6 +1239,8 @@ export async function getFlowPresets(): Promise<any[]> {
 export async function getFlowExecutions(options?: {
   limit?: number;
   skip?: number;
+  flowId?: string;
+  status?: string | string[];
 }): Promise<any[]> {
   const params = new URLSearchParams();
   if (options?.limit !== undefined) {
@@ -1246,6 +1248,17 @@ export async function getFlowExecutions(options?: {
   }
   if (options?.skip !== undefined) {
     params.set('skip', options.skip.toString());
+  }
+  if (options?.flowId) {
+    params.set('flow_id', options.flowId);
+  }
+  if (options?.status !== undefined) {
+    const statuses = Array.isArray(options.status)
+      ? options.status
+      : [options.status];
+    for (const status of statuses) {
+      params.append('status', status);
+    }
   }
   const queryString = params.toString();
   const url = `/api/v1/flows/executions${queryString ? `?${queryString}` : ''}`;

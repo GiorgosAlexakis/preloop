@@ -4,10 +4,22 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from preloop.models.db.session import get_db_session, get_engine, get_session_factory
 import preloop.models.db.session as session_module
+
+
+EXPECTED_POOL_KWARGS = {
+    "pool_size": 10,
+    "max_overflow": 20,
+    "pool_pre_ping": True,
+    "pool_recycle": 1800,
+    "pool_timeout": 30,
+    "pool_use_lifo": True,
+    "pool_reset_on_return": None,
+}
 
 
 @pytest.fixture(autouse=True)  # Apply mock engine automatically to relevant tests
@@ -53,11 +65,7 @@ def test_get_engine_custom_url(mock_engine_dependencies):
     # Verify create_engine was called with the custom URL and connection pool parameters
     mock_engine_dependencies["create_engine"].assert_called_once_with(
         custom_url,
-        pool_size=10,
-        max_overflow=20,
-        pool_pre_ping=True,
-        pool_recycle=3600,
-        pool_timeout=30,
+        **EXPECTED_POOL_KWARGS,
         connect_args={
             "connect_timeout": 10,
             "options": "-c statement_timeout=30000",
@@ -91,11 +99,7 @@ def test_get_engine_from_env(mock_engine_dependencies):
         # Verify create_engine was called with the URL from environment and pool parameters
         mock_engine_dependencies["create_engine"].assert_called_once_with(
             env_url,
-            pool_size=10,
-            max_overflow=20,
-            pool_pre_ping=True,
-            pool_recycle=3600,
-            pool_timeout=30,
+            **EXPECTED_POOL_KWARGS,
             connect_args={
                 "connect_timeout": 10,
                 "options": "-c statement_timeout=30000",
@@ -129,11 +133,7 @@ def test_get_engine_default(mock_engine_dependencies):
         # Verify create_engine was called with the default URL and pool parameters
         mock_engine_dependencies["create_engine"].assert_called_once_with(
             default_url,
-            pool_size=10,
-            max_overflow=20,
-            pool_pre_ping=True,
-            pool_recycle=3600,
-            pool_timeout=30,
+            **EXPECTED_POOL_KWARGS,
             connect_args={
                 "connect_timeout": 10,
                 "options": "-c statement_timeout=30000",
@@ -176,6 +176,38 @@ def test_get_session_factory(mock_engine_dependencies):
     assert factory.kw["bind"] == mock_engine_dependencies["engine_instance"]
 
 
+def test_get_engine_uses_database_pool_env(mock_engine_dependencies):
+    """Database pool settings can be tuned from environment variables."""
+    env_url = "postgresql://user:pass@env-host/db"
+    with patch.dict(
+        os.environ,
+        {
+            "DATABASE_URL": env_url,
+            "DATABASE_POOL_SIZE": "3",
+            "DATABASE_MAX_OVERFLOW": "4",
+            "DATABASE_POOL_RECYCLE": "300",
+            "DATABASE_POOL_TIMEOUT": "7",
+        },
+    ):
+        get_engine()
+
+    mock_engine_dependencies["create_engine"].assert_called_once_with(
+        env_url,
+        pool_size=3,
+        max_overflow=4,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_timeout=7,
+        pool_use_lifo=True,
+        pool_reset_on_return=None,
+        connect_args={
+            "connect_timeout": 10,
+            "options": "-c statement_timeout=30000",
+        },
+        echo=False,
+    )
+
+
 def test_get_db_session():
     """Test get_db_session generator function."""
     mock_session = MagicMock(spec=Session)
@@ -199,4 +231,27 @@ def test_get_db_session():
         except StopIteration:
             pass
 
+        mock_session.in_transaction.assert_called_once()
         mock_session.close.assert_called_once()
+
+
+def test_get_db_session_invalidates_when_rollback_fails():
+    """Dead pooled connections are invalidated instead of surfacing close errors."""
+    mock_session = MagicMock(spec=Session)
+    mock_session.in_transaction.return_value = True
+    mock_session.rollback.side_effect = SQLAlchemyError(
+        "SSL connection has been closed unexpectedly"
+    )
+    mock_factory = MagicMock(return_value=mock_session)
+
+    with patch(
+        "preloop.models.db.session.get_session_factory", return_value=mock_factory
+    ):
+        session_gen = get_db_session()
+        assert next(session_gen) == mock_session
+
+        with pytest.raises(StopIteration):
+            next(session_gen)
+
+        mock_session.rollback.assert_called_once()
+        mock_session.invalidate.assert_called_once()

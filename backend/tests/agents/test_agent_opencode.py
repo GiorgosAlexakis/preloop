@@ -201,7 +201,7 @@ class TestOpenCodeBuildScript:
         assert "trap _post_exec_sleep EXIT" in script
 
     def test_script_runs_opencode(self):
-        """Script runs opencode run with positional message."""
+        """Script runs opencode run with current non-interactive flags."""
         agent = OpenCodeAgent({})
         context = {
             "prompt": "test",
@@ -211,8 +211,40 @@ class TestOpenCodeBuildScript:
         }
         script = agent._build_opencode_script(context)
         assert "opencode run" in script
+        assert "--model anthropic/model-1" in script
+        assert "--format json" in script
+        assert "--dangerously-skip-permissions" in script
+        assert "opencode-json-log-filter.js" in script
+        assert "node /tmp/opencode-json-log-filter.js" in script
+        assert "python -u /tmp/opencode-json-log-filter.py" not in script
+        assert "function eventName(event) {" in script
+        assert "readline.createInterface({ input: process.stdin })" in script
+        assert "OPENCODE_EXIT_CODE=${PIPE_CODES[0]}" in script
+        assert "FLOW_EXECUTION_SUCCESS" in script
+        assert "OpenCode command failed; see CLI output above." in script
+        assert 'echo "FLOW_EXECUTION_SUCCESS"' not in script
+        assert "-y" not in script
         # Should NOT use non-existent --non-interactive flag
         assert "--non-interactive" not in script
+
+    def test_script_runs_gateway_model_with_provider_qualified_model(self):
+        """Gateway models should be invoked with the OpenCode provider prefix."""
+        agent = OpenCodeAgent({})
+        context = {
+            "prompt": "test",
+            "opencode_model": "deepseek/deepseek-v4-pro",
+            "model_provider": "deepseek",
+            "model_gateway_enabled": True,
+            "model_gateway_provider": "preloop",
+            "model_gateway_url": "http://release-preloop-api:80/openai/v1",
+            "execution_id": "exec-1",
+            "flow_name": "test-flow",
+        }
+
+        script = agent._build_opencode_script(context)
+
+        assert "--model preloop/deepseek/deepseek-v4-pro" in script
+        assert "--dangerously-skip-permissions" in script
 
     def test_script_installs_opencode(self):
         """Script installs opencode-ai via npm."""
@@ -238,6 +270,9 @@ class TestOpenCodeBuildScript:
         script = agent._build_opencode_script(context)
         assert "opencode.json" in script
         assert "OPENCODE_CONFIG_EOF" in script
+        assert '"share": "disabled"' in script
+        assert '"enabled_providers": [' in script
+        assert '"small_model": "anthropic/model-1"' in script
 
     def test_no_model_raises_error(self):
         """Raises ValueError when no model is in context."""
@@ -262,6 +297,9 @@ class TestOpenCodeBuildConfig:
         )
         assert config["$schema"] == "https://opencode.ai/config.json"
         assert config["autoupdate"] is False
+        assert config["share"] == "disabled"
+        assert config["small_model"] == "anthropic/claude-sonnet-4-20250514"
+        assert config["enabled_providers"] == ["anthropic"]
         assert "mcp" in config
 
     def test_mcp_server_config(self):
@@ -302,6 +340,8 @@ class TestOpenCodeBuildConfig:
         assert provider["options"]["baseURL"] == "http://gateway.internal/openai/v1"
         assert "openai/gpt-5" in provider["models"]
         assert config["model"] == "preloop/openai/gpt-5"
+        assert config["small_model"] == "preloop/openai/gpt-5"
+        assert config["enabled_providers"] == ["preloop"]
 
     def test_gateway_strips_duplicate_provider_prefix_in_models_map(self):
         """If alias already includes ``preloop/``, models keys stay provider-local."""

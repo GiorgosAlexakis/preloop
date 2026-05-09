@@ -1076,7 +1076,7 @@ export class DashboardView extends AuthedElement {
         this.catchWith403Handling(getTools(), [] as Tool[]),
         this.catchWith403Handling(getFlows(), [] as any[]),
         this.catchWith403Handling(
-          getFlowExecutions({ limit: 100 }),
+          getFlowExecutions({ limit: 10 }),
           [] as FlowExecution[]
         ),
         this.catchWith403Handling(this.fetchApprovalRequests('pending', 3), []),
@@ -1309,15 +1309,6 @@ export class DashboardView extends AuthedElement {
       (execution) =>
         execution.status === 'FAILED' &&
         !this.dismissedExecutions.includes(execution.id)
-    );
-  }
-
-  private get hasBudgetCard(): boolean {
-    const budget = this.gatewaySummary?.budget;
-    return Boolean(
-      this.gatewaySummary?.total_requests ||
-      budget?.monthly_limit_usd ||
-      budget?.soft_limit_usd
     );
   }
 
@@ -1955,10 +1946,6 @@ export class DashboardView extends AuthedElement {
     `;
   }
   private renderBudgetHealthCard() {
-    if (!this.hasBudgetCard) {
-      return nothing;
-    }
-
     return html`
       <sl-card class="content-card">
         <div slot="header" class="card-header-with-action">

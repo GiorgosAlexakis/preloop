@@ -164,7 +164,7 @@ class TestScanMCPServerTools:
 
         assert "MCP server not found" in str(exc_info.value)
 
-    async def test_scan_client_error(self, mocker):
+    async def test_scan_client_error_returns_cached_tools_and_notifies(self, mocker):
         """Test scanning server when client raises error."""
         # Setup mock database
         mock_db = MagicMock()
@@ -180,6 +180,8 @@ class TestScanMCPServerTools:
         mock_server.transport = "http"
 
         mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        cached_tool = MagicMock(spec=MCPTool)
+        cached_tool.name = "cached_tool"
 
         # Mock MCP client that raises error
         mock_client = AsyncMock()
@@ -192,15 +194,22 @@ class TestScanMCPServerTools:
             "preloop.services.mcp_tool_discovery.get_mcp_client_pool",
             return_value=mock_client_pool,
         )
+        mock_notify = mocker.patch(
+            "preloop.sync.tasks.notify_admins",
+        )
+        mocker.patch(
+            "preloop.services.mcp_tool_discovery.crud_mcp_tool.get_by_server",
+            return_value=[cached_tool],
+        )
 
         # Execute
-        with pytest.raises(Exception) as exc_info:
-            await scan_mcp_server_tools(server_id, mock_db)
+        result = await scan_mcp_server_tools(server_id, mock_db)
 
-        assert "Connection failed" in str(exc_info.value)
+        assert result == [cached_tool]
         assert mock_server.status == "error"
         assert mock_server.last_error == "Connection failed"
         assert mock_db.commit.called
+        mock_notify.assert_called_once()
 
 
 class TestGetCachedToolsForServer:

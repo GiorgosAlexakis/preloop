@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import shlex
 from typing import Any, Dict
 
 from aiodocker.exceptions import DockerError
@@ -343,6 +344,7 @@ fi
         opencode_config = self._build_opencode_config(
             model, model_provider, execution_context, mcp_timeout_ms
         )
+        opencode_model_arg = shlex.quote(str(opencode_config["model"]))
         opencode_config_json = json.dumps(opencode_config, indent=2)
         # For the unquoted heredoc, escape "$schema" so the shell doesn't
         # try to expand it as a variable.  All other $-prefixed strings
@@ -406,6 +408,78 @@ cat > /workspace/opencode.json << OPENCODE_CONFIG_EOF
 {opencode_config_shell}
 OPENCODE_CONFIG_EOF
 
+cat > /tmp/opencode-json-log-filter.js <<'JS'
+const readline = require("node:readline");
+
+const SENTINEL = "FLOW_EXECUTION_SUCCESS";
+
+function eventName(event) {{
+  return String(event.type || event.event || "").toLowerCase();
+}}
+
+function collectTextValues(value, name, output) {{
+  if (Array.isArray(value)) {{
+    for (const item of value) {{
+      collectTextValues(item, name, output);
+    }}
+    return;
+  }}
+
+  if (!value || typeof value !== "object") {{
+    return;
+  }}
+
+  const valueType = String(value.type || "").toLowerCase();
+  for (const key of ["text", "content", "message"]) {{
+    const text = value[key];
+    if (
+      typeof text === "string" &&
+      (name.includes("message") ||
+        name.includes("part") ||
+        name.includes("text") ||
+        valueType === "text" ||
+        valueType === "assistant" ||
+        text.includes(SENTINEL))
+    ) {{
+      output.push(text);
+    }}
+  }}
+
+  for (const nested of Object.values(value)) {{
+    collectTextValues(nested, name, output);
+  }}
+}}
+
+const rl = readline.createInterface({{ input: process.stdin }});
+
+rl.on("line", (line) => {{
+  if (!line) {{
+    return;
+  }}
+
+  let event;
+  try {{
+    event = JSON.parse(line);
+  }} catch {{
+    console.log(line);
+    return;
+  }}
+
+  const seen = new Set();
+  const values = [];
+  collectTextValues(event, eventName(event), values);
+  for (const text of values) {{
+    if (!text || seen.has(text)) {{
+      continue;
+    }}
+    seen.add(text);
+    for (const outputLine of text.split(/\r?\n/)) {{
+      console.log(outputLine);
+    }}
+  }}
+}});
+JS
+
 # Debug: Show config (with keys masked)
 echo "=== OpenCode Configuration ==="
 echo "Model: {model}"
@@ -428,10 +502,20 @@ echo "PRELOOP_AGENT_EXEC_START"
 # opencode run accepts messages as positional args and runs non-interactively.
 # TODO(reliability): If opencode supports reading from stdin or passing a file
 # directly, we should switch to that instead of positional args $(cat ...) to avoid E2BIG on very large prompts.
-# The -y flag auto-approves all permission requests to avoid hangs.
+# Auto-approve all permission requests to avoid hangs.
 # We use '--' to prevent argument injection if the prompt starts with a hyphen.
-opencode run -y -- "$(cat /tmp/prompt.txt)"
-OPENCODE_EXIT_CODE=$?
+set +e
+opencode run --format json --model {opencode_model_arg} --dangerously-skip-permissions -- "$(cat /tmp/prompt.txt)" | node /tmp/opencode-json-log-filter.js
+PIPE_CODES=("${{PIPESTATUS[@]}}")
+OPENCODE_EXIT_CODE=${{PIPE_CODES[0]}}
+FILTER_EXIT_CODE=${{PIPE_CODES[1]:-0}}
+set -e
+if [ "$FILTER_EXIT_CODE" -ne "0" ]; then
+    echo "OpenCode JSON log filter exited with code: $FILTER_EXIT_CODE"
+fi
+if [ "$OPENCODE_EXIT_CODE" -ne "0" ]; then
+    echo "OpenCode command failed; see CLI output above."
+fi
 
 echo ""
 echo "=================================================="
@@ -508,7 +592,10 @@ exit $OPENCODE_EXIT_CODE
         config: Dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
             "model": model_qualified,
+            "small_model": model_qualified,
             "autoupdate": False,
+            "share": "disabled",
+            "enabled_providers": [effective_model_provider],
             "permission": "allow",
             "mcp": {
                 "preloop": {

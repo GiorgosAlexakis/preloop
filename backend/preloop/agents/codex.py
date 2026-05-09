@@ -526,8 +526,10 @@ exit $CODEX_EXIT_CODE
             # Custom provider: generate provider-specific config
             provider_key = model_provider.replace("-", "_").replace(" ", "_")
             env_key = f"{model_provider.upper().replace('-', '_')}_API_KEY"
-            # Use 'chat' wire_api for most providers (OpenAI-compatible chat/completions)
-            wire_api = "responses"
+            # The Preloop gateway exposes the Responses API and translates it to the
+            # configured upstream provider. Direct OpenAI-compatible providers such as
+            # DeepSeek generally only expose chat/completions.
+            wire_api = "responses" if provider_key == "preloop" else "chat"
 
             if not model_endpoint:
                 logger.warning(

@@ -1,6 +1,6 @@
 """Endpoint tests for gateway usage summaries."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from preloop.models.crud import (
     crud_ai_model,
@@ -412,17 +412,24 @@ def test_account_runtime_sessions_use_most_recent_model_alias(
         runtime_principal_id="workspace-latest",
         runtime_principal_name="Claude Workspace",
     )
-    older_usage.timestamp = datetime(2026, 4, 3, 21, 0, tzinfo=UTC)
-    newer_usage.timestamp = datetime(2026, 4, 3, 21, 5, tzinfo=UTC)
+    now = datetime.now(UTC)
+    older_usage.timestamp = now - timedelta(minutes=10)
+    newer_usage.timestamp = now - timedelta(minutes=5)
     db_session.add(older_usage)
     db_session.add(newer_usage)
     db_session.commit()
 
-    list_response = client.get("/api/v1/runtime-sessions")
+    list_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={"query": "claude-session-latest"},
+    )
 
     assert list_response.status_code == 200
     list_body = list_response.json()
-    assert list_body["items"][0]["latest_model_alias"] == "openai/gpt-5.4"
+    list_item = next(
+        item for item in list_body["items"] if item["id"] == str(runtime_session.id)
+    )
+    assert list_item["latest_model_alias"] == "openai/gpt-5.4"
 
     detail_response = client.get(f"/api/v1/runtime-sessions/{runtime_session.id}")
 

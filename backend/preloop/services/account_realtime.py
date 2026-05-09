@@ -20,6 +20,7 @@ ACCOUNT_TOPIC_MANAGED_AGENTS = "managed_agents"
 ACCOUNT_TOPIC_GATEWAY_ACTIVITY = "gateway_activity"
 ACCOUNT_TOPIC_BUDGET_HEALTH = "budget_health"
 ACCOUNT_TOPIC_AUDIT = "audit"
+MAX_NATS_PAYLOAD_BYTES = 1_000_000
 
 ACCOUNT_REALTIME_TOPICS = {
     ACCOUNT_TOPIC_FLOW_EXECUTIONS,
@@ -68,9 +69,61 @@ def emit_account_event(event: dict[str, Any]) -> None:
         try:
             run_async(_publish_account_event(event))
         except Exception:
+            # Realtime delivery should not fail the caller.
             logger.exception("Failed to publish account realtime event synchronously")
         return
     loop.create_task(_publish_account_event(event))
+
+
+def encode_realtime_event_for_nats(
+    event: dict[str, Any],
+    *,
+    context: str,
+) -> bytes | None:
+    """Encode a realtime event, truncating heavy payload fields if needed."""
+    payload_bytes = json.dumps(event).encode()
+    if len(payload_bytes) <= MAX_NATS_PAYLOAD_BYTES:
+        return payload_bytes
+
+    logger.warning(
+        "NATS payload size %s exceeds 1MB limit for %s, truncating event details",
+        len(payload_bytes),
+        context,
+    )
+    event = _truncate_realtime_event(event)
+    payload_bytes = json.dumps(event).encode()
+    if len(payload_bytes) <= MAX_NATS_PAYLOAD_BYTES:
+        return payload_bytes
+
+    logger.error(
+        "NATS payload size %s still exceeds 1MB limit after truncation, "
+        "dropping event for %s",
+        len(payload_bytes),
+        context,
+    )
+    return None
+
+
+def _truncate_realtime_event(event: dict[str, Any]) -> dict[str, Any]:
+    event = event.copy()
+    if "payload" in event and isinstance(event["payload"], dict):
+        payload = event["payload"].copy()
+        payload.pop("request", None)
+        payload.pop("response", None)
+        if "conversation_preview" in payload and isinstance(
+            payload["conversation_preview"], dict
+        ):
+            preview = payload["conversation_preview"].copy()
+            preview["messages"] = []
+            metadata = preview.get("metadata")
+            if isinstance(metadata, dict):
+                preview["metadata"] = {
+                    **metadata,
+                    "has_truncated_content": True,
+                }
+            payload["conversation_preview"] = preview
+        event["payload"] = payload
+    return event
 
 
 async def _publish_account_event(event: dict[str, Any]) -> None:
@@ -81,9 +134,17 @@ async def _publish_account_event(event: dict[str, Any]) -> None:
         nats_client = await get_nats_client()
         if not nats_client or not nats_client.is_connected:
             return
+
+        payload_bytes = encode_realtime_event_for_nats(
+            event,
+            context=f"account {account_id}",
+        )
+        if payload_bytes is None:
+            return
+
         await nats_client.publish(
             f"account-updates.{account_id}",
-            json.dumps(event).encode(),
+            payload_bytes,
         )
     except Exception:
         logger.exception("Failed to publish account realtime event")

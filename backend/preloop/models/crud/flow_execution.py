@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional, Any
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, load_only
 from sqlalchemy.future import select
 
 from preloop.models.models.flow_execution import FlowExecution
@@ -211,7 +211,10 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
         skip: int = 0,
         limit: int = 100,
         account_id: Optional[str] = None,
+        flow_id: Optional[Any] = None,
+        statuses: Optional[List[str]] = None,
         eager_load: bool = False,
+        lightweight: bool = False,
         **filters,
     ) -> List[FlowExecution]:
         """Get multiple flow executions with optional filtering.
@@ -220,16 +223,44 @@ class CRUDFlowExecution(CRUDBase[FlowExecution]):
 
         Args:
             eager_load: If True, eagerly load the flow relationship to avoid N+1 queries.
+            lightweight: If True, defer heavy text/JSON columns used only by detail views.
         """
         query = db.query(FlowExecution)
 
+        if lightweight:
+            query = query.options(
+                load_only(
+                    FlowExecution.id,
+                    FlowExecution.flow_id,
+                    FlowExecution.status,
+                    FlowExecution.start_time,
+                    FlowExecution.end_time,
+                    FlowExecution.error_message,
+                    FlowExecution.retry_of_execution_id,
+                    FlowExecution.tool_calls_count,
+                    FlowExecution.total_tokens,
+                    FlowExecution.estimated_cost,
+                    FlowExecution.created_at,
+                    FlowExecution.updated_at,
+                )
+            )
+
         # Eagerly load flow relationship to avoid N+1 queries
         if eager_load:
-            query = query.options(joinedload(FlowExecution.flow))
+            flow_loader = joinedload(FlowExecution.flow)
+            if lightweight:
+                flow_loader = flow_loader.load_only(Flow.id, Flow.name)
+            query = query.options(flow_loader)
 
         # Filter by account_id through the Flow relationship
         if account_id:
             query = query.join(Flow).filter(Flow.account_id == account_id)
+
+        if flow_id:
+            query = query.filter(FlowExecution.flow_id == flow_id)
+
+        if statuses:
+            query = query.filter(FlowExecution.status.in_(statuses))
 
         # Apply any additional filters
         for key, value in filters.items():
