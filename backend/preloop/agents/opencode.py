@@ -408,55 +408,77 @@ cat > /workspace/opencode.json << OPENCODE_CONFIG_EOF
 {opencode_config_shell}
 OPENCODE_CONFIG_EOF
 
-cat > /tmp/opencode-json-log-filter.py <<'PY'
-import json
-import sys
+cat > /tmp/opencode-json-log-filter.js <<'JS'
+const readline = require("node:readline");
 
-SENTINEL = "FLOW_EXECUTION_SUCCESS"
+const SENTINEL = "FLOW_EXECUTION_SUCCESS";
 
+function eventName(event) {{
+  return String(event.type || event.event || "").toLowerCase();
+}}
 
-def _event_name(event):
-    return str(event.get("type") or event.get("event") or "").lower()
+function collectTextValues(value, name, output) {{
+  if (Array.isArray(value)) {{
+    for (const item of value) {{
+      collectTextValues(item, name, output);
+    }}
+    return;
+  }}
 
+  if (!value || typeof value !== "object") {{
+    return;
+  }}
 
-def _iter_text_values(value, event_name):
-    if isinstance(value, dict):
-        value_type = str(value.get("type") or "").lower()
-        for key in ("text", "content", "message"):
-            text = value.get(key)
-            if isinstance(text, str) and (
-                "message" in event_name
-                or "part" in event_name
-                or "text" in event_name
-                or value_type in ("text", "assistant")
-                or SENTINEL in text
-            ):
-                yield text
-        for nested in value.values():
-            yield from _iter_text_values(nested, event_name)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _iter_text_values(item, event_name)
+  const valueType = String(value.type || "").toLowerCase();
+  for (const key of ["text", "content", "message"]) {{
+    const text = value[key];
+    if (
+      typeof text === "string" &&
+      (name.includes("message") ||
+        name.includes("part") ||
+        name.includes("text") ||
+        valueType === "text" ||
+        valueType === "assistant" ||
+        text.includes(SENTINEL))
+    ) {{
+      output.push(text);
+    }}
+  }}
 
+  for (const nested of Object.values(value)) {{
+    collectTextValues(nested, name, output);
+  }}
+}}
 
-for line in sys.stdin:
-    line = line.rstrip("\n")
-    if not line:
-        continue
-    try:
-        event = json.loads(line)
-    except json.JSONDecodeError:
-        print(line, flush=True)
-        continue
+const rl = readline.createInterface({{ input: process.stdin }});
 
-    seen = set()
-    for text in _iter_text_values(event, _event_name(event)):
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        for output_line in text.splitlines() or [text]:
-            print(output_line, flush=True)
-PY
+rl.on("line", (line) => {{
+  if (!line) {{
+    return;
+  }}
+
+  let event;
+  try {{
+    event = JSON.parse(line);
+  }} catch {{
+    console.log(line);
+    return;
+  }}
+
+  const seen = new Set();
+  const values = [];
+  collectTextValues(event, eventName(event), values);
+  for (const text of values) {{
+    if (!text || seen.has(text)) {{
+      continue;
+    }}
+    seen.add(text);
+    for (const outputLine of text.split(/\r?\n/)) {{
+      console.log(outputLine);
+    }}
+  }}
+}});
+JS
 
 # Debug: Show config (with keys masked)
 echo "=== OpenCode Configuration ==="
@@ -483,7 +505,7 @@ echo "PRELOOP_AGENT_EXEC_START"
 # Auto-approve all permission requests to avoid hangs.
 # We use '--' to prevent argument injection if the prompt starts with a hyphen.
 set +e
-opencode run --format json --model {opencode_model_arg} --dangerously-skip-permissions -- "$(cat /tmp/prompt.txt)" | python -u /tmp/opencode-json-log-filter.py
+opencode run --format json --model {opencode_model_arg} --dangerously-skip-permissions -- "$(cat /tmp/prompt.txt)" | node /tmp/opencode-json-log-filter.js
 PIPE_CODES=("${{PIPESTATUS[@]}}")
 OPENCODE_EXIT_CODE=${{PIPE_CODES[0]}}
 FILTER_EXIT_CODE=${{PIPE_CODES[1]:-0}}

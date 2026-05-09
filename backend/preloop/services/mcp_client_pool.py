@@ -6,7 +6,7 @@ It maintains persistent HTTP connections and handles authentication.
 
 import asyncio
 import logging
-from contextlib import AsyncExitStack
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -43,8 +43,8 @@ class MCPClient:
         self._exit_stack: Optional[AsyncExitStack] = None
         self._connected = False
 
-    async def connect(self):
-        """Establish connection to the MCP server."""
+    def _build_auth(self) -> tuple[Dict[str, str], Optional[httpx.Auth]]:
+        """Build request headers and httpx auth for the configured auth type."""
         headers = {}
 
         # Add authentication headers
@@ -76,38 +76,46 @@ class MCPClient:
 
             auth = BearerAuth(bearer_token)
 
-        # Test connection with MCP SDK client
-        try:
-            self._exit_stack = AsyncExitStack()
+        return headers, auth
 
-            # Connect using MCP SDK's streamablehttp_client
-            (
-                read_stream,
-                write_stream,
-                get_session_id,
-            ) = await self._exit_stack.enter_async_context(
-                streamablehttp_client(
-                    url=self.url,
-                    headers=headers if not auth else {},  # Use auth param if bearer
-                    timeout=30.0,
-                    sse_read_timeout=60.0 * 5,  # 5 minutes for SSE
-                    auth=auth,
-                )
-            )
+    @asynccontextmanager
+    async def _session_context(self, *, sse_read_timeout: float = 60.0):
+        """Create a short-lived MCP session in the current task."""
+        headers, auth = self._build_auth()
 
-            # Create client session
-            # The session manages its own message loop internally via context manager
-            self._session = ClientSession(
+        async with streamablehttp_client(
+            url=self.url,
+            headers=headers if not auth else {},  # Use auth param if bearer
+            timeout=30.0,
+            sse_read_timeout=sse_read_timeout,
+            auth=auth,
+        ) as (read_stream, write_stream, _):
+            session = ClientSession(
                 read_stream=read_stream,
                 write_stream=write_stream,
             )
+            async with session:
+                init_result = await session.initialize()
+                yield session, init_result
 
-            # Enter the session context (this starts the message loop)
-            await self._exit_stack.enter_async_context(self._session)
+    async def connect(self):
+        """Verify the MCP server is reachable.
 
-            # Initialize the session
-            init_result = await self._session.initialize()
+        The MCP SDK's streamable HTTP client owns AnyIO task groups/cancel
+        scopes. Keeping that async context open in a process-wide pool can
+        close it from a different request task later, producing noisy async
+        generator/cancel-scope RuntimeErrors. We only pool server metadata and
+        use per-operation sessions that enter and exit in the same task.
+        """
+        try:
+            async with self._session_context(sse_read_timeout=60.0) as (
+                _session,
+                init_result,
+            ):
+                pass
             self._connected = True
+            self._session = None
+            self._exit_stack = None
             logger.info(
                 f"Connected to MCP server at {self.url} "
                 f"(protocol: {init_result.protocolVersion}, "
@@ -115,14 +123,7 @@ class MCPClient:
             )
         except Exception as e:
             logger.warning("Failed to connect to MCP server at %s: %s", self.url, e)
-            if self._exit_stack:
-                try:
-                    await self._exit_stack.aclose()
-                except RuntimeError as cleanup_error:
-                    # Ignore benign cancel scope errors during cleanup
-                    if "cancel scope" not in str(cleanup_error).lower():
-                        raise
-                self._exit_stack = None
+            self._connected = False
             raise
         except BaseException as e:
             # Catch BaseExceptionGroup which can be triggered when a TaskGroup
@@ -142,16 +143,7 @@ class MCPClient:
                 self.url,
                 target_exc,
             )
-            if self._exit_stack:
-                try:
-                    await self._exit_stack.aclose()
-                except Exception:
-                    pass
-                except RuntimeError as cleanup_error:
-                    # Ignore benign cancel scope errors during cleanup
-                    if "cancel scope" not in str(cleanup_error).lower():
-                        raise
-                self._exit_stack = None
+            self._connected = False
 
             # Only re-raise as Exception if we unwrapped an Exception.
             # If it's pure BaseException (like KeyboardInterrupt), re-raise it perfectly.
@@ -169,16 +161,11 @@ class MCPClient:
 
     async def close(self):
         """Close the connection to the MCP server."""
-        if self._exit_stack:
-            try:
-                await self._exit_stack.aclose()
-            except RuntimeError as e:
-                # Ignore benign cancel scope errors during cleanup
-                if "cancel scope" not in str(e).lower():
-                    raise
-            self._exit_stack = None
-            self._session = None
-            self._connected = False
+        self._exit_stack = None
+        self._session = None
+        was_connected = self._connected
+        self._connected = False
+        if was_connected:
             logger.info(f"Closed connection to MCP server at {self.url}")
 
     def is_connected(self) -> bool:
@@ -187,60 +174,7 @@ class MCPClient:
         Returns:
             True if connected, False otherwise
         """
-        return self._connected and self._session is not None
-
-    async def _create_temp_session(self):
-        """Create a temporary session for a single operation.
-
-        Returns tuple of (ClientSession, streams_context, client_context) for cleanup.
-        """
-        # Build auth
-        headers = {}
-        if self.auth_type == "bearer" and "token" in self.auth_config:
-            headers["Authorization"] = f"Bearer {self.auth_config['token']}"
-        elif self.auth_type == "oauth" and "access_token" in self.auth_config:
-            headers["Authorization"] = f"Bearer {self.auth_config['access_token']}"
-        elif self.auth_type == "api_key" and "api_key" in self.auth_config:
-            key_name = self.auth_config.get("key_name", "X-API-Key")
-            headers[key_name] = self.auth_config["api_key"]
-
-        auth = None
-        bearer_token = None
-        if self.auth_type == "bearer" and "token" in self.auth_config:
-            bearer_token = self.auth_config["token"]
-        elif self.auth_type == "oauth" and "access_token" in self.auth_config:
-            bearer_token = self.auth_config["access_token"]
-
-        if bearer_token:
-
-            class BearerAuth(httpx.Auth):
-                def __init__(self, token: str):
-                    self.token = token
-
-                def auth_flow(self, request):
-                    request.headers["Authorization"] = f"Bearer {self.token}"
-                    yield request
-
-            auth = BearerAuth(bearer_token)
-
-        # Create client connection (returns context manager)
-        streams_context = streamablehttp_client(
-            url=self.url,
-            headers=headers if not auth else {},
-            timeout=30.0,
-            sse_read_timeout=60.0,
-            auth=auth,
-        )
-
-        # Enter streams context
-        read_stream, write_stream, _ = await streams_context.__aenter__()
-
-        # Create and enter session context
-        session = ClientSession(read_stream=read_stream, write_stream=write_stream)
-        await session.__aenter__()
-        await session.initialize()
-
-        return session, streams_context
+        return self._connected
 
     async def list_tools(self) -> List[types.Tool]:
         """List available tools from the MCP server.
@@ -251,11 +185,15 @@ class MCPClient:
         Raises:
             RuntimeError: If not connected
         """
-        if not self._connected or not self._session:
+        if not self._connected:
             raise RuntimeError("Client not connected. Call connect() first.")
 
         try:
-            result = await self._session.list_tools()
+            async with self._session_context(sse_read_timeout=60.0) as (
+                session,
+                _init_result,
+            ):
+                result = await session.list_tools()
             return result.tools
         except Exception as e:
             logger.error(f"Error listing tools: {e}", exc_info=True)
@@ -297,48 +235,14 @@ class MCPClient:
         Raises:
             RuntimeError: If not connected
         """
-        if not self._connected or not self._session:
+        if not self._connected:
             raise RuntimeError("Client not connected. Call connect() first.")
 
         try:
-            # Use AsyncExitStack for proper cleanup ordering
-            async with AsyncExitStack() as stack:
-                # Create client connection
-                auth = None
-                headers = {}
-                if self.auth_type == "bearer" and "token" in self.auth_config:
-
-                    class BearerAuth(httpx.Auth):
-                        def __init__(self, token: str):
-                            self.token = token
-
-                        def auth_flow(self, request):
-                            request.headers["Authorization"] = f"Bearer {self.token}"
-                            yield request
-
-                    auth = BearerAuth(self.auth_config["token"])
-                elif self.auth_type == "api_key" and "api_key" in self.auth_config:
-                    key_name = self.auth_config.get("key_name", "X-API-Key")
-                    headers[key_name] = self.auth_config["api_key"]
-
-                # Enter streams context and add to stack for cleanup
-                read_stream, write_stream, _ = await stack.enter_async_context(
-                    streamablehttp_client(
-                        url=self.url,
-                        headers=headers if not auth else {},
-                        timeout=30.0,
-                        sse_read_timeout=60.0,
-                        auth=auth,
-                    )
-                )
-
-                # Create and enter session context, add to stack
-                session = ClientSession(
-                    read_stream=read_stream, write_stream=write_stream
-                )
-                await stack.enter_async_context(session)
-                await session.initialize()
-
+            async with self._session_context(sse_read_timeout=60.0) as (
+                session,
+                _init_result,
+            ):
                 # Execute tool call
                 result = await session.call_tool(name=tool_name, arguments=arguments)
 
@@ -365,7 +269,6 @@ class MCPClient:
                         )
 
                 return content_list
-                # AsyncExitStack will handle cleanup in reverse order automatically
         except Exception as e:
             logger.error(f"Error calling tool {tool_name}: {e}")
             raise

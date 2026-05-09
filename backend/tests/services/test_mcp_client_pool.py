@@ -14,6 +14,28 @@ from preloop.services.mcp_client_pool import (
 pytestmark = pytest.mark.asyncio
 
 
+def mock_mcp_session():
+    """Create mocks for a short-lived streamable HTTP MCP session."""
+    mock_read_stream = MagicMock()
+    mock_write_stream = MagicMock()
+    mock_streams = AsyncMock()
+    mock_streams.__aenter__ = AsyncMock(
+        return_value=(mock_read_stream, mock_write_stream, None)
+    )
+    mock_streams.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_init_result = MagicMock()
+    mock_init_result.protocolVersion = "2024-11-05"
+    mock_init_result.serverInfo = MagicMock()
+    mock_init_result.serverInfo.name = "test-server"
+    mock_session.initialize = AsyncMock(return_value=mock_init_result)
+
+    return mock_streams, mock_session
+
+
 class TestMCPClientInit:
     """Test MCPClient initialization."""
 
@@ -64,41 +86,22 @@ class TestMCPClientConnect:
     async def test_connect_success_no_auth(self):
         """Test successful connection without authentication."""
         client = MCPClient(url="http://localhost:8001/mcp")
+        mock_streams, mock_session = mock_mcp_session()
 
-        # Mock streamablehttp_client
-        mock_read_stream = MagicMock()
-        mock_write_stream = MagicMock()
-        mock_get_session_id = MagicMock()
-
-        # Mock ClientSession
-        mock_session = AsyncMock()
-        mock_init_result = MagicMock()
-        mock_init_result.protocolVersion = "2024-11-05"
-        mock_init_result.serverInfo = MagicMock()
-        mock_init_result.serverInfo.name = "test-server"
-        mock_session.initialize = AsyncMock(return_value=mock_init_result)
-
-        with patch(
-            "preloop.services.mcp_client_pool.AsyncExitStack"
-        ) as mock_exit_stack:
-            mock_exit_stack_inst = AsyncMock()
-            mock_exit_stack_inst.enter_async_context = AsyncMock(
-                side_effect=[
-                    (mock_read_stream, mock_write_stream, mock_get_session_id),
-                    None,  # Session context enter
-                ]
-            )
-            mock_exit_stack.return_value = mock_exit_stack_inst
-
-            with patch(
+        with (
+            patch(
+                "preloop.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
                 "preloop.services.mcp_client_pool.ClientSession",
                 return_value=mock_session,
-            ):
-                with patch("preloop.services.mcp_client_pool.streamablehttp_client"):
-                    await client.connect()
+            ),
+        ):
+            await client.connect()
 
         assert client.is_connected()
-        assert client._session == mock_session
+        assert client._session is None
 
     async def test_connect_with_bearer_auth(self):
         """Test connection with bearer authentication."""
@@ -108,35 +111,19 @@ class TestMCPClientConnect:
             auth_config={"token": "test-token"},
         )
 
-        mock_exit_stack_inst = AsyncMock()
-        mock_read_stream = MagicMock()
-        mock_write_stream = MagicMock()
-        mock_get_session_id = MagicMock()
+        mock_streams, mock_session = mock_mcp_session()
 
-        mock_session = AsyncMock()
-        mock_init_result = MagicMock()
-        mock_init_result.protocolVersion = "2024-11-05"
-        mock_init_result.serverInfo = MagicMock()
-        mock_init_result.serverInfo.name = "test-server"
-        mock_session.initialize = AsyncMock(return_value=mock_init_result)
-
-        with patch(
-            "preloop.services.mcp_client_pool.AsyncExitStack"
-        ) as mock_exit_stack:
-            mock_exit_stack_inst.enter_async_context = AsyncMock(
-                side_effect=[
-                    (mock_read_stream, mock_write_stream, mock_get_session_id),
-                    None,
-                ]
-            )
-            mock_exit_stack.return_value = mock_exit_stack_inst
-
-            with patch(
+        with (
+            patch(
+                "preloop.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
                 "preloop.services.mcp_client_pool.ClientSession",
                 return_value=mock_session,
-            ):
-                with patch("preloop.services.mcp_client_pool.streamablehttp_client"):
-                    await client.connect()
+            ),
+        ):
+            await client.connect()
 
         assert client.is_connected()
 
@@ -148,35 +135,19 @@ class TestMCPClientConnect:
             auth_config={"api_key": "test-key"},
         )
 
-        mock_exit_stack_inst = AsyncMock()
-        mock_read_stream = MagicMock()
-        mock_write_stream = MagicMock()
-        mock_get_session_id = MagicMock()
+        mock_streams, mock_session = mock_mcp_session()
 
-        mock_session = AsyncMock()
-        mock_init_result = MagicMock()
-        mock_init_result.protocolVersion = "2024-11-05"
-        mock_init_result.serverInfo = MagicMock()
-        mock_init_result.serverInfo.name = "test-server"
-        mock_session.initialize = AsyncMock(return_value=mock_init_result)
-
-        with patch(
-            "preloop.services.mcp_client_pool.AsyncExitStack"
-        ) as mock_exit_stack:
-            mock_exit_stack_inst.enter_async_context = AsyncMock(
-                side_effect=[
-                    (mock_read_stream, mock_write_stream, mock_get_session_id),
-                    None,
-                ]
-            )
-            mock_exit_stack.return_value = mock_exit_stack_inst
-
-            with patch(
+        with (
+            patch(
+                "preloop.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
                 "preloop.services.mcp_client_pool.ClientSession",
                 return_value=mock_session,
-            ):
-                with patch("preloop.services.mcp_client_pool.streamablehttp_client"):
-                    await client.connect()
+            ),
+        ):
+            await client.connect()
 
         assert client.is_connected()
 
@@ -184,47 +155,36 @@ class TestMCPClientConnect:
         """Test that failed connection cleans up resources."""
         client = MCPClient(url="http://localhost:8001/mcp")
 
-        mock_exit_stack_inst = AsyncMock()
-        mock_exit_stack_inst.enter_async_context = AsyncMock(
-            side_effect=Exception("Connection failed")
-        )
-        mock_exit_stack_inst.aclose = AsyncMock()
+        mock_streams = AsyncMock()
+        mock_streams.__aenter__ = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_streams.__aexit__ = AsyncMock(return_value=None)
 
         with patch(
-            "preloop.services.mcp_client_pool.AsyncExitStack"
-        ) as mock_exit_stack:
-            mock_exit_stack.return_value = mock_exit_stack_inst
+            "preloop.services.mcp_client_pool.streamablehttp_client",
+            return_value=mock_streams,
+        ):
+            with pytest.raises(Exception, match="Connection failed"):
+                await client.connect()
 
-            with patch("preloop.services.mcp_client_pool.streamablehttp_client"):
-                with pytest.raises(Exception, match="Connection failed"):
-                    await client.connect()
-
-        # Cleanup should have been called
-        mock_exit_stack_inst.aclose.assert_called_once()
         assert not client.is_connected()
 
-    async def test_connect_failure_ignores_cancel_scope_error(self):
-        """Test that cancel scope errors during cleanup are ignored."""
+    async def test_connect_failure_does_not_leave_persistent_context(self):
+        """Failed probes do not leave a cross-task context to close later."""
         client = MCPClient(url="http://localhost:8001/mcp")
 
-        mock_exit_stack_inst = AsyncMock()
-        mock_exit_stack_inst.enter_async_context = AsyncMock(
-            side_effect=Exception("Connection failed")
-        )
-        # Cleanup raises cancel scope error
-        mock_exit_stack_inst.aclose = AsyncMock(
-            side_effect=RuntimeError("cancel scope error")
-        )
+        mock_streams = AsyncMock()
+        mock_streams.__aenter__ = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_streams.__aexit__ = AsyncMock(return_value=None)
 
         with patch(
-            "preloop.services.mcp_client_pool.AsyncExitStack"
-        ) as mock_exit_stack:
-            mock_exit_stack.return_value = mock_exit_stack_inst
+            "preloop.services.mcp_client_pool.streamablehttp_client",
+            return_value=mock_streams,
+        ):
+            with pytest.raises(Exception, match="Connection failed"):
+                await client.connect()
 
-            with patch("preloop.services.mcp_client_pool.streamablehttp_client"):
-                # Should not raise the cancel scope error
-                with pytest.raises(Exception, match="Connection failed"):
-                    await client.connect()
+        assert client._exit_stack is None
+        assert client._session is None
 
 
 class TestMCPClientClose:
@@ -241,7 +201,6 @@ class TestMCPClientClose:
 
         await client.close()
 
-        mock_exit_stack.aclose.assert_called_once()
         assert not client.is_connected()
         assert client._session is None
         assert client._exit_stack is None
@@ -253,31 +212,36 @@ class TestMCPClientClose:
         # Should not raise
         await client.close()
 
-    async def test_close_ignores_cancel_scope_error(self):
-        """Test that close ignores cancel scope errors."""
+    async def test_close_clears_legacy_exit_stack_without_closing_cross_task_context(
+        self,
+    ):
+        """Close only clears legacy pooled contexts to avoid cross-task aclose."""
         client = MCPClient(url="http://localhost:8001/mcp")
         client._connected = True
-        client._exit_stack = AsyncMock()
-        client._exit_stack.aclose = AsyncMock(
+        old_exit_stack = AsyncMock()
+        old_exit_stack.aclose = AsyncMock(
             side_effect=RuntimeError("cancel scope error")
         )
+        client._exit_stack = old_exit_stack
 
         # Should not raise
         await client.close()
 
         assert not client.is_connected()
+        old_exit_stack.aclose.assert_not_called()
 
-    async def test_close_raises_non_cancel_scope_error(self):
-        """Test that close raises non-cancel scope errors."""
+    async def test_close_ignores_legacy_exit_stack_errors(self):
+        """Legacy pooled contexts are abandoned instead of closed from this task."""
         client = MCPClient(url="http://localhost:8001/mcp")
         client._connected = True
-        client._exit_stack = AsyncMock()
-        client._exit_stack.aclose = AsyncMock(
-            side_effect=RuntimeError("Different error")
-        )
+        old_exit_stack = AsyncMock()
+        old_exit_stack.aclose = AsyncMock(side_effect=RuntimeError("Different error"))
+        client._exit_stack = old_exit_stack
 
-        with pytest.raises(RuntimeError, match="Different error"):
-            await client.close()
+        await client.close()
+
+        assert not client.is_connected()
+        old_exit_stack.aclose.assert_not_called()
 
 
 class TestMCPClientListTools:
@@ -294,11 +258,20 @@ class TestMCPClientListTools:
         mock_result = MagicMock()
         mock_result.tools = [mock_tool1, mock_tool2]
 
-        mock_session = AsyncMock()
+        mock_streams, mock_session = mock_mcp_session()
         mock_session.list_tools = AsyncMock(return_value=mock_result)
-        client._session = mock_session
 
-        tools = await client.list_tools()
+        with (
+            patch(
+                "preloop.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
+                "preloop.services.mcp_client_pool.ClientSession",
+                return_value=mock_session,
+            ),
+        ):
+            tools = await client.list_tools()
 
         assert len(tools) == 2
         assert tools[0].name == "tool1"
@@ -316,12 +289,21 @@ class TestMCPClientListTools:
         client = MCPClient(url="http://localhost:8001/mcp")
         client._connected = True
 
-        mock_session = AsyncMock()
+        mock_streams, mock_session = mock_mcp_session()
         mock_session.list_tools = AsyncMock(side_effect=Exception("List error"))
-        client._session = mock_session
 
-        with pytest.raises(Exception, match="List error"):
-            await client.list_tools()
+        with (
+            patch(
+                "preloop.services.mcp_client_pool.streamablehttp_client",
+                return_value=mock_streams,
+            ),
+            patch(
+                "preloop.services.mcp_client_pool.ClientSession",
+                return_value=mock_session,
+            ),
+        ):
+            with pytest.raises(Exception, match="List error"):
+                await client.list_tools()
 
 
 class TestMCPClientCallTool:

@@ -24,6 +24,71 @@ _async_engine = None
 _async_session_factory = None
 
 
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable with a safe fallback."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning(f"Invalid {name}={value!r}; using default {default}")
+        return default
+
+
+def _database_pool_kwargs() -> dict:
+    """Return shared SQLAlchemy pool settings for sync and async engines."""
+    return {
+        "pool_size": _env_int("DATABASE_POOL_SIZE", 10),
+        "max_overflow": _env_int("DATABASE_MAX_OVERFLOW", 20),
+        "pool_pre_ping": True,
+        # Keep pooled connections younger than typical proxy/LB idle timeouts.
+        "pool_recycle": _env_int("DATABASE_POOL_RECYCLE", 1800),
+        "pool_timeout": _env_int("DATABASE_POOL_TIMEOUT", 30),
+        # Prefer recently used connections so older idle connections are recycled
+        # instead of being kept alive indefinitely in FIFO order.
+        "pool_use_lifo": True,
+        # Sessions explicitly rollback/close. Disabling pool-level reset avoids
+        # noisy "Exception during reset" logs when Postgres has already closed
+        # an SSL socket while the connection is being returned to the pool.
+        "pool_reset_on_return": None,
+    }
+
+
+def _safe_close_db_session(db: Session) -> None:
+    """Rollback and close a sync session, invalidating dead connections quietly."""
+    try:
+        if db.in_transaction():
+            db.rollback()
+    except SQLAlchemyError as exc:
+        logger.warning(f"Database session rollback failed during close: {exc}")
+        db.invalidate()
+        return
+    finally:
+        try:
+            db.close()
+        except SQLAlchemyError as exc:
+            logger.warning(f"Database session close failed: {exc}")
+            db.invalidate()
+
+
+async def _safe_close_async_db_session(session: AsyncSession) -> None:
+    """Rollback and close an async session, invalidating dead connections quietly."""
+    try:
+        if session.in_transaction():
+            await session.rollback()
+    except SQLAlchemyError as exc:
+        logger.warning(f"Async database session rollback failed during close: {exc}")
+        await session.invalidate()
+        return
+    finally:
+        try:
+            await session.close()
+        except SQLAlchemyError as exc:
+            logger.warning(f"Async database session close failed: {exc}")
+            await session.invalidate()
+
+
 def get_engine(database_url: Optional[str] = None):
     """Create or retrieve SQLAlchemy engine for PostgreSQL with pgvector."""
     global _engine
@@ -41,11 +106,7 @@ def get_engine(database_url: Optional[str] = None):
         # Configure connection pool with proper limits, recycling, and timeouts
         _engine = create_engine(
             url,
-            pool_size=10,  # Maximum number of connections to keep in the pool
-            max_overflow=20,  # Maximum number of connections that can be created beyond pool_size
-            pool_pre_ping=True,  # Test connections before using them to detect stale connections
-            pool_recycle=3600,  # Recycle connections after 1 hour to prevent stale connections
-            pool_timeout=30,  # Timeout in seconds to wait for a connection from the pool
+            **_database_pool_kwargs(),
             connect_args={
                 "connect_timeout": 10,  # Timeout for establishing new connections
                 "options": "-c statement_timeout=30000",  # 30s query timeout (prevents stuck queries)
@@ -90,7 +151,7 @@ def get_db_session() -> Generator[Session, None, None]:
     try:
         yield db
     finally:
-        db.close()
+        _safe_close_db_session(db)
 
 
 def get_async_engine(database_url: Optional[str] = None) -> AsyncEngine:
@@ -116,11 +177,7 @@ def get_async_engine(database_url: Optional[str] = None) -> AsyncEngine:
         # Configure connection pool with proper limits, recycling, and timeouts
         _async_engine = create_async_engine(
             url,
-            pool_size=10,  # Maximum number of connections to keep in the pool
-            max_overflow=20,  # Maximum number of connections that can be created beyond pool_size
-            pool_pre_ping=True,  # Test connections before using them to detect stale connections
-            pool_recycle=3600,  # Recycle connections after 1 hour to prevent stale connections
-            pool_timeout=30,  # Timeout in seconds to wait for a connection from the pool
+            **_database_pool_kwargs(),
             connect_args={
                 "timeout": 10,  # Connection timeout for asyncpg
                 "command_timeout": 30,  # Query timeout for asyncpg
@@ -176,10 +233,4 @@ async def get_async_db_session() -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
             raise
         finally:
-            # Always rollback uncommitted transactions before closing
-            # This prevents "idle in transaction" connections
-            try:
-                await session.rollback()
-            except Exception:
-                pass  # Ignore rollback errors on close
-            await session.close()
+            await _safe_close_async_db_session(session)

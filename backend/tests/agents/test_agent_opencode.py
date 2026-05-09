@@ -214,7 +214,11 @@ class TestOpenCodeBuildScript:
         assert "--model anthropic/model-1" in script
         assert "--format json" in script
         assert "--dangerously-skip-permissions" in script
-        assert "opencode-json-log-filter.py" in script
+        assert "opencode-json-log-filter.js" in script
+        assert "node /tmp/opencode-json-log-filter.js" in script
+        assert "python -u /tmp/opencode-json-log-filter.py" not in script
+        assert "function eventName(event) {" in script
+        assert "readline.createInterface({ input: process.stdin })" in script
         assert "OPENCODE_EXIT_CODE=${PIPE_CODES[0]}" in script
         assert "FLOW_EXECUTION_SUCCESS" in script
         assert "OpenCode command failed; see CLI output above." in script

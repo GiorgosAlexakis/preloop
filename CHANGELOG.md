@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Flow execution listings**: Lightened flow execution list responses to improve performance and reduce payload size for console views that do not need full execution detail.
+- **Codex gateway routing**: Routed Codex-backed gateway traffic through the service endpoint so managed Codex model calls use the intended backend path.
+
+### Fixed
+
+- **MCP and gateway hardening**: Hardened production MCP and model-gateway paths for more reliable request handling and safer control-plane behavior.
+- **Budget enforcement reliability**: Addressed security and reliability issues in budget CRUD paths, improving guardrail consistency for gateway budget checks.
+- **Realtime events**: Improved NATS realtime event handling reliability.
+- **CLI parsing**: Fixed CLI parsing edge cases that could break automation or managed-agent workflows.
+- **OpenCode onboarding**: Captured OpenCode JSON output for sentinel detection so onboarding and validation can identify completion markers reliably.
+- **OpenCode execution logs**: Switched the OpenCode JSON output filter to Node.js so flow execution sentinel detection works in the OpenCode container image without requiring Python.
+- **Database pool cleanup**: Hardened SQLAlchemy pool/session cleanup so closed SSL sockets are invalidated quietly instead of surfacing noisy pool reset errors.
+- **MCP client cleanup**: Reworked external MCP client pooling to avoid keeping streamable HTTP async generators open across request tasks, preventing cancel-scope cleanup errors.
+- **Test stability**: Switched date-sensitive tests to relative dates to avoid failures when 30-day window filters move over time.
+
 ## [0.9.1] - 2026-04-30
 
 ### Fixed

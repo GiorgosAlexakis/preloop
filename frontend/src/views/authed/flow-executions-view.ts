@@ -144,10 +144,6 @@ export class FlowExecutionsView extends AuthedElement {
     return this.filteredExecutions;
   }
 
-  get totalPages(): number {
-    return this.hasNextPage ? this.currentPage + 1 : this.currentPage;
-  }
-
   handleStatusFilterChange(event: Event) {
     const select = event.target as any;
     this.statusFilter = select.value;
@@ -338,7 +334,7 @@ export class FlowExecutionsView extends AuthedElement {
                   </table>
                 </div>
 
-                ${this.totalPages > 1
+                ${this.currentPage > 1 || this.hasNextPage
                   ? html`
                       <div
                         style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 12px; background: var(--sl-color-neutral-50); border-radius: 4px;"
@@ -352,12 +348,12 @@ export class FlowExecutionsView extends AuthedElement {
                           Previous
                         </sl-button>
                         <div style="color: var(--sl-color-neutral-700);">
-                          Page ${this.currentPage} of ${this.totalPages}
+                          Page ${this.currentPage}
                         </div>
                         <sl-button
                           size="small"
                           @click=${this.nextPage}
-                          ?disabled=${this.currentPage === this.totalPages}
+                          ?disabled=${!this.hasNextPage}
                         >
                           Next
                           <sl-icon name="chevron-right"></sl-icon>
