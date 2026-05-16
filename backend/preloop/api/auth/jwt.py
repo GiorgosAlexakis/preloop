@@ -29,9 +29,7 @@ _SECRET_KEY = os.getenv("SECRET_KEY")
 if not _SECRET_KEY:
     _ENV = os.getenv("ENVIRONMENT", "development")
     if _ENV == "production":
-        raise RuntimeError(
-            "SECRET_KEY environment variable is required in production"
-        )
+        raise RuntimeError("SECRET_KEY environment variable is required in production")
     _SECRET_KEY = "development_secret_key_do_not_use_in_production"
     logging.getLogger(__name__).warning(
         "SECRET_KEY not set, using insecure development key. "
