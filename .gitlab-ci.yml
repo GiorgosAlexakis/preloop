@@ -612,6 +612,10 @@ deploy:test:
     ENV_NAME: "oss-$CI_COMMIT_REF_SLUG"
     TARGET_DOMAIN: "oss-$CI_COMMIT_REF_SLUG.test.preloop.ai"
   environment:
+    # $CI_COMMIT_REF_NAME contains the raw branch/tag name (may include slashes:
+    # e.g. "ermi/architecture-review-20260516"). This is fine for environment
+    # names (display-only labels in the GitLab UI) but breaks DNS — URLs must
+    # use $CI_COMMIT_REF_SLUG which replaces slashes with dashes.
     name: oss-test/$CI_COMMIT_REF_NAME
     url: https://oss-$CI_COMMIT_REF_SLUG.test.preloop.ai
     on_stop: stop-test-env
@@ -623,6 +627,7 @@ deploy:review:
     - build:backend
     - build:frontend
   environment:
+    # Same reasoning as deploy:test above — REF_NAME for display, REF_SLUG for DNS.
     name: oss-review/$CI_COMMIT_REF_NAME
     url: https://oss-$CI_COMMIT_REF_SLUG.review.preloop.ai
     on_stop: stop-review-env

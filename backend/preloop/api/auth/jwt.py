@@ -475,10 +475,12 @@ async def get_current_active_user_optional(
         # Any authentication error (invalid, expired, etc.) should result in None
         return None
     except JWTError as e:
-        logger.debug("Token validation failed in get_user_from_token_if_valid: %s", e)
+        logger.debug(
+            "Token validation failed in get_current_active_user_optional: %s", e
+        )
         return None
     except Exception as e:
-        logger.warning("Unexpected error in get_user_from_token_if_valid: %s", e)
+        logger.warning("Unexpected error in get_current_active_user_optional: %s", e)
         return None
 
 
