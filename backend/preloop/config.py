@@ -290,7 +290,9 @@ class Settings(BaseSettings):
         if not secret_key:
             env = os.getenv("ENVIRONMENT", "development")
             if env == "production":
-                raise ValueError("SECRET_KEY environment variable is required in production")
+                raise ValueError(
+                    "SECRET_KEY environment variable is required in production"
+                )
             secret_key = "development_secret_key_do_not_use_in_production"
             logger.warning("SECRET_KEY not set, using default development key")
 

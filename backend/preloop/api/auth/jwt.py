@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 # Configuration
 from preloop.config import settings
+
 SECRET_KEY: str = settings.security.secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
