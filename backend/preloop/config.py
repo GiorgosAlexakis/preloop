@@ -32,8 +32,6 @@ def _load_release_version(
             return v
     except OSError:
         logger.warning("Could not read %s, using fallback version", version_file)
-    except Exception:
-        pass
 
     return default
 
