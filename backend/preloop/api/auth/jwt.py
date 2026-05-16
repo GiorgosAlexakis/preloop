@@ -25,17 +25,8 @@ from preloop.models.crud import (
 from sqlalchemy.orm import Session
 
 # Configuration
-_SECRET_KEY = os.getenv("SECRET_KEY")
-if not _SECRET_KEY:
-    _ENV = os.getenv("ENVIRONMENT", "development")
-    if _ENV == "production":
-        raise RuntimeError("SECRET_KEY environment variable is required in production")
-    _SECRET_KEY = "development_secret_key_do_not_use_in_production"
-    logging.getLogger(__name__).warning(
-        "SECRET_KEY not set, using insecure development key. "
-        "This is NOT safe for production."
-    )
-SECRET_KEY: str = _SECRET_KEY
+from preloop.config import settings
+SECRET_KEY: str = settings.security.secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 

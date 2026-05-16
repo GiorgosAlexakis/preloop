@@ -139,6 +139,8 @@ curl -fsSL https://preloop.ai/install/oss | sh
 
 For extended details detailing comprehensive Docker builds, Kubernetes Helm topologies, GraphQL configuration, WebSocket streaming channels, and deep `.env` definitions, refer to the [Preloop Documentation Hub](https://docs.preloop.ai).
 
+> **Production requirement:** The `SECRET_KEY` environment variable is **required** in production. Without it, the application will refuse to start. In development, a default key is used with a warning. Generate a secure key with: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+
 ## The Open-Source Alternative to AWS Bedrock AgentCore
 
 Preloop covers the same core jobs as AWS Bedrock AgentCore (runtime, gateway, identity, observability, policy) but is open source, self-hostable, MCP-native, and vendor-neutral. Many teams adopt Preloop specifically as an **open-source alternative to AWS Bedrock AgentCore** when they want to avoid hyperscaler lock-in or need to run governance inside their own VPC or on-prem.
