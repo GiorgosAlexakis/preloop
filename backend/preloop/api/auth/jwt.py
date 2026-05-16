@@ -473,6 +473,12 @@ async def get_current_active_user_optional(
     except HTTPException:
         # Any authentication error (invalid, expired, etc.) should result in None
         return None
+    except JWTError as e:
+        logger.debug("Token validation failed in get_user_from_token_if_valid: %s", e)
+        return None
+    except Exception as e:
+        logger.warning("Unexpected error in get_user_from_token_if_valid: %s", e)
+        return None
 
 
 async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[User]:
@@ -512,7 +518,9 @@ async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[
         if user and user.is_active:
             return user
 
-    except Exception:
-        pass
+    except JWTError as e:
+        logger.debug("Token validation failed in get_user_from_token_if_valid: %s", e)
+    except Exception as e:
+        logger.warning("Unexpected error in get_user_from_token_if_valid: %s", e)
 
     return None
