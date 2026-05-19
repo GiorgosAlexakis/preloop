@@ -561,15 +561,35 @@ func resolveHermesUpstreamCredentials(
 			return apiKey, "", nil, providerName, append(notes, note)
 		}
 	default:
-		// Unknown providers (Z.AI, Kimi, custom_providers entries, etc.) — try
-		// the universal OPENAI_API_KEY fallback that Hermes itself uses for
-		// any OpenAI-compatible endpoint.
+		// Latest Hermes versions can add providers faster than Preloop's CLI
+		// ships named cases. Mirror Hermes' provider-specific environment
+		// convention (for example DEEPSEEK_API_KEY) before falling back to the
+		// universal OpenAI-compatible key.
+		for _, env := range hermesProviderAPIKeyEnvCandidates(provider) {
+			if apiKey, note := resolveHermesEnvSecret(env); apiKey != "" {
+				return apiKey, "", nil, providerName, append(notes, note)
+			}
+		}
 		if apiKey, note := resolveHermesEnvSecret("OPENAI_API_KEY"); apiKey != "" {
 			return apiKey, "", nil, providerName, append(notes, note)
 		}
 	}
 
 	return "", "", nil, providerName, notes
+}
+
+func hermesProviderAPIKeyEnvCandidates(provider string) []string {
+	provider = strings.ToUpper(strings.TrimSpace(provider))
+	if provider == "" {
+		return nil
+	}
+	replacer := strings.NewReplacer("-", "_", ".", "_", " ", "_", "/", "_")
+	provider = replacer.Replace(provider)
+	provider = strings.Trim(provider, "_")
+	if provider == "" || provider == "OPENAI" {
+		return nil
+	}
+	return []string{provider + "_API_KEY"}
 }
 
 // resolveHermesEnvSecret reads a secret from the user's process environment

@@ -473,7 +473,7 @@ rl.on("line", (line) => {{
       continue;
     }}
     seen.add(text);
-    for (const outputLine of text.split(/\r?\n/)) {{
+    for (const outputLine of text.split(/\\r?\\n/)) {{
       console.log(outputLine);
     }}
   }}

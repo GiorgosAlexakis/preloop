@@ -3466,7 +3466,7 @@ func (a openClawManagedMCPAdapter) EnsureServerContainer(doc map[string]interfac
 
 func (a openClawManagedMCPAdapter) BuildManagedServer(baseURL, token string) map[string]interface{} {
 	return map[string]interface{}{
-		"transport": "http",
+		"transport": "streamable-http",
 		"url":       strings.TrimRight(baseURL, "/") + "/mcp/v1",
 		"headers": map[string]interface{}{
 			"Authorization": "Bearer " + token,
@@ -3509,7 +3509,9 @@ func (a openClawManagedMCPAdapter) ValidateManagedConfig(doc map[string]interfac
 	}
 	result["preloop_server_present"] = true
 	result["preloop_url_ok"] = preloop["url"] == expectedURL
-	result["transport_ok"] = preloop["transport"] == "http"
+	transport := strings.TrimSpace(fmt.Sprint(preloop["transport"]))
+	result["transport_ok"] = strings.EqualFold(transport, "streamable-http") ||
+		strings.EqualFold(transport, "http")
 	if headers, ok := preloop["headers"].(map[string]interface{}); ok {
 		if auth, ok := headers["Authorization"].(string); ok && strings.HasPrefix(auth, "Bearer ") {
 			result["authorization_header_ok"] = true

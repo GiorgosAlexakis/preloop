@@ -396,6 +396,60 @@ func TestApplyHermesManagedGateway_RewritesModelBlock(t *testing.T) {
 	}
 }
 
+func TestParseHermesManagedGatewayUpstreamResolvesProviderSpecificEnvKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	configPath := filepath.Join(home, ".hermes", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("failed to create Hermes config dir: %v", err)
+	}
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`model:
+  default: deepseek-v4-pro
+  provider: deepseek
+  base_url: https://api.deepseek.com/v1
+`),
+		0o600,
+	); err != nil {
+		t.Fatalf("failed to write Hermes config: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, hermesEnvFile),
+		[]byte("DEEPSEEK_API_KEY=deepseek-secret\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("failed to write Hermes env file: %v", err)
+	}
+
+	upstream, err := parseHermesManagedGatewayUpstream(AgentConfig{
+		Name:       hermesAgentName,
+		ConfigPath: configPath,
+	})
+	if err != nil {
+		t.Fatalf("unexpected Hermes upstream parse error: %v", err)
+	}
+	if upstream == nil {
+		t.Fatal("expected Hermes upstream to be resolved")
+	}
+	if !upstream.CanRouteThroughGateway() {
+		t.Fatalf("expected deepseek upstream to be gateway-routable, got %#v", upstream)
+	}
+	if upstream.ProviderName != "deepseek" {
+		t.Fatalf("expected provider deepseek, got %q", upstream.ProviderName)
+	}
+	if upstream.ModelIdentifier != "deepseek-v4-pro" {
+		t.Fatalf("expected model id deepseek-v4-pro, got %q", upstream.ModelIdentifier)
+	}
+	if upstream.APIKey != "deepseek-secret" {
+		t.Fatalf("expected provider-specific env key to resolve, got %q", upstream.APIKey)
+	}
+	if upstream.ManagedModelAlias != "deepseek/deepseek-v4-pro" {
+		t.Fatalf("unexpected managed model alias %q", upstream.ManagedModelAlias)
+	}
+}
+
 func TestApplyHermesManagedGateway_CreatesModelBlockWhenMissing(t *testing.T) {
 	plan := managedMCPEnrollmentPlan{
 		ManagedDocument: map[string]interface{}{},

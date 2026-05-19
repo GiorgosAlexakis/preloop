@@ -10,10 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **List users N+1 query performance**: The `GET /api/v1/users` endpoint now batch-loads roles, team memberships, team roles, and teams with 4 strategic queries instead of per-user queries, eliminating N+1 overhead for user listings with team memberships.
+- **Managed agent onboarding compatibility**: OpenClaw onboarding now writes and validates the `streamable-http` MCP transport expected by newer OpenClaw releases, and Hermes onboarding resolves provider-specific API key environment variables such as `DEEPSEEK_API_KEY` before falling back to generic OpenAI-style keys.
+- **Gateway tool calls for agent execution**: OpenAI-compatible chat completions now preserve tool calls in both streaming and non-streaming responses, preventing OpenCode and other tool-capable clients from receiving `finish_reason="tool_calls"` without the tool-call payload they need to continue.
+- **Gateway runtime-session stability**: Runtime-session activity touches are throttled and handled best-effort after gateway usage is recorded, reducing hot-row contention and preventing statement timeouts from failing otherwise-successful model requests.
+- **Database connection cleanup**: Restored SQLAlchemy's default pool reset behavior so timed-out or rolled-back transactions are cleaned up before pooled PostgreSQL connections are reused.
+- **OpenCode execution logging**: Fixed the generated OpenCode JSON log filter so newline splitting is escaped correctly inside the generated JavaScript, keeping the filter alive long enough for success sentinel detection.
+- **Dynamic MCP tool wrappers**: Generated FastMCP wrapper signatures now keep required parameters before optional parameters, avoiding invalid Python function signatures for tools with mixed required and optional inputs.
+- **GitLab review environments**: Review-app hostnames and Helm release names now use `CI_COMMIT_REF_SLUG`, keeping branch names with slashes or other DNS-unsafe characters from producing invalid deployment names.
 
 ### Security
 
 - **SECRET_KEY hardening in tokens module**: `utils/tokens.py` now imports `SECRET_KEY` from `preloop.config.settings` (matching the `jwt.py` pattern) instead of using `os.getenv` with a hardcoded development fallback. This ensures email verification, password reset, and onboarding tokens are signed with a properly validated secret key in production.
+- **Production SECRET_KEY validation**: Production configuration now rejects the development fallback secret instead of silently accepting it, and JWT helper paths use explicit `JWTError` handling with logging instead of broad exception swallowing.
 
 ## [0.9.2] - 2026-05-09
 

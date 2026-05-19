@@ -73,6 +73,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         account_id: Any,
         runtime_session_id: Any,
         observed_at: datetime,
+        min_update_interval: Optional[timedelta] = None,
         commit: bool = False,
     ) -> Optional[RuntimeSession]:
         """Update last activity for one runtime session."""
@@ -86,6 +87,17 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         )
         if db_obj is None:
             return None
+        if min_update_interval is not None and db_obj.last_activity_at is not None:
+            last_activity_at = db_obj.last_activity_at
+            normalized_observed_at = observed_at
+            if last_activity_at.tzinfo is None and normalized_observed_at.tzinfo:
+                normalized_observed_at = normalized_observed_at.replace(tzinfo=None)
+            elif last_activity_at.tzinfo and normalized_observed_at.tzinfo is None:
+                last_activity_at = last_activity_at.replace(tzinfo=None)
+
+            elapsed = normalized_observed_at - last_activity_at
+            if elapsed <= timedelta(0) or elapsed < min_update_interval:
+                return db_obj
         db_obj.last_activity_at = observed_at
         db.add(db_obj)
         if commit:

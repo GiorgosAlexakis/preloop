@@ -48,10 +48,6 @@ def _database_pool_kwargs() -> dict:
         # Prefer recently used connections so older idle connections are recycled
         # instead of being kept alive indefinitely in FIFO order.
         "pool_use_lifo": True,
-        # Sessions explicitly rollback/close. Disabling pool-level reset avoids
-        # noisy "Exception during reset" logs when Postgres has already closed
-        # an SSL socket while the connection is being returned to the pool.
-        "pool_reset_on_return": None,
     }
 
 

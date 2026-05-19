@@ -18,7 +18,6 @@ EXPECTED_POOL_KWARGS = {
     "pool_recycle": 1800,
     "pool_timeout": 30,
     "pool_use_lifo": True,
-    "pool_reset_on_return": None,
 }
 
 
@@ -199,13 +198,22 @@ def test_get_engine_uses_database_pool_env(mock_engine_dependencies):
         pool_recycle=300,
         pool_timeout=7,
         pool_use_lifo=True,
-        pool_reset_on_return=None,
         connect_args={
             "connect_timeout": 10,
             "options": "-c statement_timeout=30000",
         },
         echo=False,
     )
+
+
+def test_get_engine_keeps_pool_reset_on_return_default(mock_engine_dependencies):
+    """Pooled connections should be rolled back on return before reuse."""
+    env_url = "postgresql://user:pass@env-host/db"
+    with patch.dict(os.environ, {"DATABASE_URL": env_url}):
+        get_engine()
+
+    _, kwargs = mock_engine_dependencies["create_engine"].call_args
+    assert "pool_reset_on_return" not in kwargs
 
 
 def test_get_db_session():
