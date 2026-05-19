@@ -539,7 +539,7 @@ test:coverage:
     - helm repo add nats https://nats-io.github.io/k8s/helm/charts
     - helm dependency update ./helm/preloop
     - helm dependency build ./helm/preloop
-    - helm uninstall oss-$CI_COMMIT_REF_NAME --namespace ${NAMESPACE} || true
+    - helm uninstall oss-$CI_COMMIT_REF_SLUG --namespace ${NAMESPACE} || true
     - helm upgrade --install ${ENV_NAME} ./helm/preloop
       --namespace ${NAMESPACE}
       --set image.repository=${CI_REGISTRY_IMAGE}
@@ -610,10 +610,14 @@ deploy:test:
     NAMESPACE: preloop-oss-test
     SEED_ENABLED: "true"
     ENV_NAME: "oss-$CI_COMMIT_REF_SLUG"
-    TARGET_DOMAIN: "oss-$CI_COMMIT_REF_NAME.test.preloop.ai"
+    TARGET_DOMAIN: "oss-$CI_COMMIT_REF_SLUG.test.preloop.ai"
   environment:
+    # $CI_COMMIT_REF_NAME contains the raw branch/tag name (may include slashes:
+    # e.g. "ermi/architecture-review-20260516"). This is fine for environment
+    # names (display-only labels in the GitLab UI) but breaks DNS — URLs must
+    # use $CI_COMMIT_REF_SLUG which replaces slashes with dashes.
     name: oss-test/$CI_COMMIT_REF_NAME
-    url: https://oss-$CI_COMMIT_REF_NAME.test.preloop.ai
+    url: https://oss-$CI_COMMIT_REF_SLUG.test.preloop.ai
     on_stop: stop-test-env
     auto_stop_in: 2 hours
 
@@ -623,14 +627,15 @@ deploy:review:
     - build:backend
     - build:frontend
   environment:
+    # Same reasoning as deploy:test above — REF_NAME for display, REF_SLUG for DNS.
     name: oss-review/$CI_COMMIT_REF_NAME
-    url: https://oss-$CI_COMMIT_REF_NAME.review.preloop.ai
+    url: https://oss-$CI_COMMIT_REF_SLUG.review.preloop.ai
     on_stop: stop-review-env
   variables:
     NAMESPACE: preloop-review
     ENV_NAME: "oss-$CI_COMMIT_REF_SLUG"
     SEED_ENABLED: "true"
-    TARGET_DOMAIN: "oss-$CI_COMMIT_REF_NAME.review.preloop.ai"
+    TARGET_DOMAIN: "oss-$CI_COMMIT_REF_SLUG.review.preloop.ai"
 
 # =============================================================================
 # INTEGRATION STAGE - End-to-End Tests on Deployed Environment
@@ -642,7 +647,7 @@ deploy:review:
     - deploy:test
   image: mcr.microsoft.com/playwright/python:v1.30.0-focal
   variables:
-    PRELOOP_TEST_URL: "https://oss-$CI_COMMIT_REF_NAME.test.preloop.ai"
+    PRELOOP_TEST_URL: "https://oss-$CI_COMMIT_REF_SLUG.test.preloop.ai"
   before_script:
     - pip install pytest httpx playwright fastapi dotenv sqlalchemy pytest-playwright
     - playwright install

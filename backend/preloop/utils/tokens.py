@@ -6,7 +6,9 @@ from datetime import datetime, timedelta, UTC
 from jose import JWTError, jwt
 
 # Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
+from preloop.config import settings
+
+SECRET_KEY: str = settings.security.secret_key
 ALGORITHM = "HS256"
 EMAIL_TOKEN_EXPIRE_MINUTES = int(
     os.getenv("EMAIL_TOKEN_EXPIRE_MINUTES", "1440")

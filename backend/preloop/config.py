@@ -32,8 +32,6 @@ def _load_release_version(
             return v
     except OSError:
         logger.warning("Could not read %s, using fallback version", version_file)
-    except Exception:
-        pass
 
     return default
 
@@ -290,6 +288,11 @@ class Settings(BaseSettings):
 
         secret_key = os.getenv("SECRET_KEY")
         if not secret_key:
+            env = os.getenv("ENVIRONMENT", "development")
+            if env == "production":
+                raise ValueError(
+                    "SECRET_KEY environment variable is required in production"
+                )
             secret_key = "development_secret_key_do_not_use_in_production"
             logger.warning("SECRET_KEY not set, using default development key")
 

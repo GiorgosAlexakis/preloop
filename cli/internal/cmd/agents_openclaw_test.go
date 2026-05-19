@@ -616,6 +616,9 @@ func TestBuildOpenClawManagedMCPEnrollmentPlanRewritesGateway(t *testing.T) {
 	if preloopServer["url"] != "https://preloop.example/mcp/v1" {
 		t.Fatalf("unexpected managed MCP URL: %#v", preloopServer)
 	}
+	if preloopServer["transport"] != "streamable-http" {
+		t.Fatalf("expected OpenClaw managed MCP transport streamable-http, got %#v", preloopServer)
+	}
 
 	providers := ensureObjectPath(plan.ManagedDocument, "models", "providers")
 	managedProvider, ok := providers[openClawManagedProviderID].(map[string]interface{})

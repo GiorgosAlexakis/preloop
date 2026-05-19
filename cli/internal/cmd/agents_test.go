@@ -1655,7 +1655,7 @@ func TestBuildManagedRemoteServerRequestSkipsPreloopOwnedServers(t *testing.T) {
 	}
 }
 
-func TestBuildManagedMCPEnrollmentPlan_OpenClawUsesNestedHTTPServer(t *testing.T) {
+func TestBuildManagedMCPEnrollmentPlan_OpenClawUsesStreamableHTTPServer(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "openclaw.json")
 	if err := os.WriteFile(configPath, []byte(`{
@@ -1682,8 +1682,8 @@ func TestBuildManagedMCPEnrollmentPlan_OpenClawUsesNestedHTTPServer(t *testing.T
 	mcp := plan.ManagedDocument["mcp"].(map[string]interface{})
 	servers := mcp["servers"].(map[string]interface{})
 	preloop := servers["preloop"].(map[string]interface{})
-	if preloop["transport"] != "http" {
-		t.Fatalf("expected OpenClaw transport http, got %+v", preloop)
+	if preloop["transport"] != "streamable-http" {
+		t.Fatalf("expected OpenClaw transport streamable-http, got %+v", preloop)
 	}
 	if preloop["url"] != "https://preloop.example/mcp/v1" {
 		t.Fatalf("unexpected OpenClaw managed URL: %+v", preloop)
@@ -3036,7 +3036,7 @@ func TestOpenClawAdapterValidateManagedConfig(t *testing.T) {
 		"mcp": map[string]interface{}{
 			"servers": map[string]interface{}{
 				"preloop": map[string]interface{}{
-					"transport": "http",
+					"transport": "streamable-http",
 					"url":       "https://preloop.example/mcp/v1",
 					"headers": map[string]interface{}{
 						"Authorization": "Bearer durable-token",

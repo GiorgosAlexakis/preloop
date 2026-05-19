@@ -25,7 +25,9 @@ from preloop.models.crud import (
 from sqlalchemy.orm import Session
 
 # Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "development_secret_key_do_not_use_in_production")
+from preloop.config import settings
+
+SECRET_KEY: str = settings.security.secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
@@ -472,6 +474,14 @@ async def get_current_active_user_optional(
     except HTTPException:
         # Any authentication error (invalid, expired, etc.) should result in None
         return None
+    except JWTError as e:
+        logger.debug(
+            "Token validation failed in get_current_active_user_optional: %s", e
+        )
+        return None
+    except Exception as e:
+        logger.warning("Unexpected error in get_current_active_user_optional: %s", e)
+        return None
 
 
 async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[User]:
@@ -511,7 +521,9 @@ async def get_user_from_token_if_valid(token: str, db_session: Any) -> Optional[
         if user and user.is_active:
             return user
 
-    except Exception:
-        pass
+    except JWTError as e:
+        logger.debug("Token validation failed in get_user_from_token_if_valid: %s", e)
+    except Exception as e:
+        logger.warning("Unexpected error in get_user_from_token_if_valid: %s", e)
 
     return None

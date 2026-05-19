@@ -8,11 +8,13 @@ import os
 import threading
 import time
 from contextlib import contextmanager
+from datetime import timedelta
 from typing import Any, Dict, Iterator, List, Optional, Protocol
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 import litellm
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from preloop.config import settings
@@ -59,6 +61,7 @@ _PROVIDER_PREFIX: Dict[str, str] = {
 }
 
 logger = logging.getLogger(__name__)
+_RUNTIME_SESSION_ACTIVITY_TOUCH_MIN_INTERVAL = timedelta(seconds=30)
 
 
 def _supports_ambient_provider_credentials(ai_model: AIModel) -> bool:
@@ -191,18 +194,33 @@ class OpenAIGatewayService:
                 try:
                     from datetime import datetime, timezone
 
-                    rs = crud_runtime_session.upsert_by_source(
+                    rs = crud_runtime_session.get_by_source(
                         self.db,
                         account_id=str(self.auth_context.user.account_id),
                         session_source_type=session_source_type,
                         session_source_id=session_source_id,
-                        runtime_principal_type=session_source_type,
-                        runtime_principal_id=session_source_id,
-                        runtime_principal_name=runtime_principal.get("name"),
-                        last_activity_at=datetime.now(timezone.utc),
-                        reopen_if_ended=True,
                     )
+                    if rs is None or rs.ended_at is not None:
+                        observed_at = datetime.now(timezone.utc)
+                        rs = crud_runtime_session.upsert_by_source(
+                            self.db,
+                            account_id=str(self.auth_context.user.account_id),
+                            session_source_type=session_source_type,
+                            session_source_id=session_source_id,
+                            runtime_principal_type=session_source_type,
+                            runtime_principal_id=session_source_id,
+                            runtime_principal_name=runtime_principal.get("name"),
+                            started_at=observed_at,
+                            last_activity_at=observed_at,
+                            reopen_if_ended=True,
+                        )
                     runtime_session_id = str(rs.id)
+                except SQLAlchemyError as e:
+                    self.db.rollback()
+                    logger.warning(
+                        "Failed to resolve runtime session for gateway request",
+                        exc_info=True,
+                    )
                 except Exception as e:
                     logger.debug(
                         f"Failed to auto-upsert runtime session for gateway request: {e}",
@@ -378,6 +396,13 @@ class OpenAIGatewayService:
                 prompt_key="prompt_tokens",
                 completion_key="completion_tokens",
             )
+            assistant_message = {
+                "role": "assistant",
+                "content": assistant_content,
+            }
+            tool_calls = self._extract_tool_calls(response_dict)
+            if tool_calls:
+                assistant_message["tool_calls"] = tool_calls
             response_payload = {
                 "id": response_dict.get("id", f"chatcmpl_{int(time.time())}"),
                 "object": "chat.completion",
@@ -387,7 +412,7 @@ class OpenAIGatewayService:
                 "choices": [
                     {
                         "index": 0,
-                        "message": {"role": "assistant", "content": assistant_content},
+                        "message": assistant_message,
                         "finish_reason": self._extract_finish_reason(response_dict),
                     }
                 ],
@@ -1044,6 +1069,7 @@ class OpenAIGatewayService:
             response_id: Optional[str] = None
             created_at: Optional[int] = None
             recorded = False
+            tool_call_states: Dict[int, Dict[str, Any]] = {}
             try:
                 for chunk in upstream_stream:
                     chunk_dict = self._response_to_dict(chunk)
@@ -1062,6 +1088,31 @@ class OpenAIGatewayService:
                     delta_text = self._extract_stream_delta_text(event_payload)
                     if delta_text:
                         assistant_parts.append(delta_text)
+                    for tool_delta in self._extract_stream_tool_call_deltas(
+                        event_payload
+                    ):
+                        index = int(tool_delta.get("index", 0) or 0)
+                        state = tool_call_states.get(index)
+                        if state is None:
+                            state = {
+                                "id": tool_delta.get("id")
+                                or f"call_{response_id}_{index}",
+                                "type": tool_delta.get("type") or "function",
+                                "function": {"name": "", "arguments": ""},
+                            }
+                            tool_call_states[index] = state
+                        elif tool_delta.get("id"):
+                            state["id"] = tool_delta["id"]
+                        if tool_delta.get("type"):
+                            state["type"] = tool_delta["type"]
+
+                        function_delta = tool_delta.get("function") or {}
+                        if function_delta.get("name"):
+                            state["function"]["name"] = function_delta["name"]
+                        if function_delta.get("arguments"):
+                            state["function"]["arguments"] += function_delta[
+                                "arguments"
+                            ]
                     last_finish_reason = (
                         self._extract_finish_reason(event_payload) or last_finish_reason
                     )
@@ -1074,6 +1125,13 @@ class OpenAIGatewayService:
                         )
                     yield self._sse_event(event_payload)
 
+                assistant_message = {
+                    "role": "assistant",
+                    "content": "".join(assistant_parts),
+                }
+                tool_calls = [state for _, state in sorted(tool_call_states.items())]
+                if tool_calls:
+                    assistant_message["tool_calls"] = tool_calls
                 response_payload = {
                     "id": response_id or f"chatcmpl_{int(time.time())}",
                     "object": "chat.completion",
@@ -1082,10 +1140,7 @@ class OpenAIGatewayService:
                     "choices": [
                         {
                             "index": 0,
-                            "message": {
-                                "role": "assistant",
-                                "content": "".join(assistant_parts),
-                            },
+                            "message": assistant_message,
                             "finish_reason": last_finish_reason,
                         }
                     ],
@@ -3251,80 +3306,6 @@ class OpenAIGatewayService:
             },
         )
         observed_at = usage_row.timestamp
-        runtime_session = None
-        if usage_row.runtime_session_id:
-            runtime_session = crud_runtime_session.touch_activity(
-                self.db,
-                account_id=self.auth_context.user.account_id,
-                runtime_session_id=usage_row.runtime_session_id,
-                observed_at=observed_at,
-            )
-            if runtime_session is not None:
-                emit_account_event(
-                    build_account_event(
-                        account_id=str(self.auth_context.user.account_id),
-                        topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
-                        event_type="runtime_session_updated",
-                        payload={
-                            "runtime_session_id": str(runtime_session.id),
-                            "session_source_type": runtime_session.session_source_type,
-                            "session_source_id": runtime_session.session_source_id,
-                            "session_reference": runtime_session.session_reference,
-                            "runtime_principal_type": runtime_session.runtime_principal_type,
-                            "runtime_principal_id": runtime_session.runtime_principal_id,
-                            "runtime_principal_name": runtime_session.runtime_principal_name,
-                            "last_activity_at": runtime_session.last_activity_at.isoformat()
-                            if runtime_session.last_activity_at
-                            else None,
-                            "last_request_at": observed_at.isoformat(),
-                            "ended_at": runtime_session.ended_at.isoformat()
-                            if runtime_session.ended_at
-                            else None,
-                        },
-                        runtime_session_id=str(runtime_session.id),
-                        execution_id=str(usage_row.flow_execution_id)
-                        if usage_row.flow_execution_id
-                        else None,
-                        flow_id=str(usage_row.flow_id) if usage_row.flow_id else None,
-                    )
-                )
-
-        managed_agent = None
-        if usage_row.runtime_principal_type and usage_row.runtime_principal_id:
-            managed_agent = crud_managed_agent.touch_last_seen_for_principal(
-                self.db,
-                account_id=self.auth_context.user.account_id,
-                session_source_type=usage_row.runtime_principal_type,
-                session_source_id=usage_row.runtime_principal_id,
-                runtime_session_id=usage_row.runtime_session_id,
-                observed_at=observed_at,
-            )
-            if managed_agent is not None:
-                emit_account_event(
-                    build_account_event(
-                        account_id=str(self.auth_context.user.account_id),
-                        topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
-                        event_type="managed_agent_updated",
-                        payload={
-                            "agent_id": str(managed_agent.id),
-                            "runtime_session_id": str(managed_agent.runtime_session_id)
-                            if managed_agent.runtime_session_id
-                            else None,
-                            "display_name": managed_agent.display_name,
-                            "session_source_type": managed_agent.session_source_type,
-                            "session_source_id": managed_agent.session_source_id,
-                            "session_reference": managed_agent.session_reference,
-                            "last_seen_at": managed_agent.last_seen_at.isoformat(),
-                        },
-                        runtime_session_id=str(usage_row.runtime_session_id)
-                        if usage_row.runtime_session_id
-                        else None,
-                        execution_id=str(usage_row.flow_execution_id)
-                        if usage_row.flow_execution_id
-                        else None,
-                        flow_id=str(usage_row.flow_id) if usage_row.flow_id else None,
-                    )
-                )
 
         log_model_gateway_request(
             self.db,
@@ -3388,6 +3369,97 @@ class OpenAIGatewayService:
             logger.exception(
                 "Automatic gateway interaction indexing failed for usage %s",
                 usage_row.id,
+            )
+        try:
+            runtime_session = None
+            if usage_row.runtime_session_id:
+                runtime_session = crud_runtime_session.touch_activity(
+                    self.db,
+                    account_id=self.auth_context.user.account_id,
+                    runtime_session_id=usage_row.runtime_session_id,
+                    observed_at=observed_at,
+                    min_update_interval=_RUNTIME_SESSION_ACTIVITY_TOUCH_MIN_INTERVAL,
+                    commit=True,
+                )
+                if runtime_session is not None:
+                    emit_account_event(
+                        build_account_event(
+                            account_id=str(self.auth_context.user.account_id),
+                            topic=ACCOUNT_TOPIC_RUNTIME_SESSIONS,
+                            event_type="runtime_session_updated",
+                            payload={
+                                "runtime_session_id": str(runtime_session.id),
+                                "session_source_type": runtime_session.session_source_type,
+                                "session_source_id": runtime_session.session_source_id,
+                                "session_reference": runtime_session.session_reference,
+                                "runtime_principal_type": runtime_session.runtime_principal_type,
+                                "runtime_principal_id": runtime_session.runtime_principal_id,
+                                "runtime_principal_name": runtime_session.runtime_principal_name,
+                                "last_activity_at": runtime_session.last_activity_at.isoformat()
+                                if runtime_session.last_activity_at
+                                else None,
+                                "last_request_at": observed_at.isoformat(),
+                                "ended_at": runtime_session.ended_at.isoformat()
+                                if runtime_session.ended_at
+                                else None,
+                            },
+                            runtime_session_id=str(runtime_session.id),
+                            execution_id=str(usage_row.flow_execution_id)
+                            if usage_row.flow_execution_id
+                            else None,
+                            flow_id=str(usage_row.flow_id)
+                            if usage_row.flow_id
+                            else None,
+                        )
+                    )
+
+            managed_agent = None
+            if usage_row.runtime_principal_type and usage_row.runtime_principal_id:
+                managed_agent = crud_managed_agent.touch_last_seen_for_principal(
+                    self.db,
+                    account_id=self.auth_context.user.account_id,
+                    session_source_type=usage_row.runtime_principal_type,
+                    session_source_id=usage_row.runtime_principal_id,
+                    runtime_session_id=usage_row.runtime_session_id,
+                    observed_at=observed_at,
+                    commit=True,
+                )
+                if managed_agent is not None:
+                    emit_account_event(
+                        build_account_event(
+                            account_id=str(self.auth_context.user.account_id),
+                            topic=ACCOUNT_TOPIC_MANAGED_AGENTS,
+                            event_type="managed_agent_updated",
+                            payload={
+                                "agent_id": str(managed_agent.id),
+                                "runtime_session_id": str(
+                                    managed_agent.runtime_session_id
+                                )
+                                if managed_agent.runtime_session_id
+                                else None,
+                                "display_name": managed_agent.display_name,
+                                "session_source_type": managed_agent.session_source_type,
+                                "session_source_id": managed_agent.session_source_id,
+                                "session_reference": managed_agent.session_reference,
+                                "last_seen_at": managed_agent.last_seen_at.isoformat(),
+                            },
+                            runtime_session_id=str(usage_row.runtime_session_id)
+                            if usage_row.runtime_session_id
+                            else None,
+                            execution_id=str(usage_row.flow_execution_id)
+                            if usage_row.flow_execution_id
+                            else None,
+                            flow_id=str(usage_row.flow_id)
+                            if usage_row.flow_id
+                            else None,
+                        )
+                    )
+        except SQLAlchemyError:
+            self.db.rollback()
+            logger.warning(
+                "Skipping gateway activity touch after usage %s was recorded",
+                usage_row.id,
+                exc_info=True,
             )
 
     def _check_budget(
@@ -3581,11 +3653,10 @@ class OpenAIGatewayService:
         for choice in chunk_dict.get("choices") or []:
             delta = choice.get("delta") or {}
             if not delta and choice.get("message"):
-                delta = {
-                    "content": self._content_to_text(
-                        choice["message"].get("content", "")
-                    )
-                }
+                message = choice["message"]
+                delta = {"content": self._content_to_text(message.get("content", ""))}
+                if message.get("tool_calls"):
+                    delta["tool_calls"] = message["tool_calls"]
             payload["choices"].append(
                 {
                     "index": choice.get("index", 0),

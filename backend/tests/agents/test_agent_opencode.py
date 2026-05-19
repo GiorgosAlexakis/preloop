@@ -219,6 +219,8 @@ class TestOpenCodeBuildScript:
         assert "python -u /tmp/opencode-json-log-filter.py" not in script
         assert "function eventName(event) {" in script
         assert "readline.createInterface({ input: process.stdin })" in script
+        assert r"text.split(/\r?\n/)" in script
+        assert "text.split(/\r?\n/)" not in script
         assert "OPENCODE_EXIT_CODE=${PIPE_CODES[0]}" in script
         assert "FLOW_EXECUTION_SUCCESS" in script
         assert "OpenCode command failed; see CLI output above." in script

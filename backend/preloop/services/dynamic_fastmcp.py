@@ -462,7 +462,8 @@ class DynamicFastMCP(FastMCP):
         required_params = set(input_schema.get("required", []))
 
         # Build parameter list dynamically
-        params = []
+        req_params = []
+        opt_params = []
         param_names = []
 
         for param_name, param_def in properties.items():
@@ -487,14 +488,15 @@ class DynamicFastMCP(FastMCP):
 
             # Add Optional if not required
             if param_name not in required_params:
-                params.append(f"{param_name}: Optional[{type_str}] = None")
+                opt_params.append(f"{param_name}: Optional[{type_str}] = None")
             else:
-                params.append(f"{param_name}: {type_str}")
+                req_params.append(f"{param_name}: {type_str}")
 
         # Add Context parameter at the end
-        params.append("ctx: Optional[Context] = None")
+        opt_params.append("ctx: Optional[Context] = None")
 
         # Create function signature string
+        params = req_params + opt_params
         params_str = ", ".join(params)
 
         # Create the wrapper function using exec (yes, it's safe here - we control the input)
