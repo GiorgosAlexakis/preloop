@@ -32,17 +32,31 @@ services:
   nats:
     image: nats:alpine
     restart: unless-stopped
-    command: [ "-js" ]
+    command: [ "-js", "-m", "8222" ]
     healthcheck:
-      test: [ "CMD", "nats-server", "--signal", "ldm" ]
+      test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:8222/healthz" ]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  migrate:
+    image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres/preloop
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: python scripts/init_db.py --force
 
   api:
     image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
     restart: unless-stopped
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       nats:
@@ -59,12 +73,14 @@ services:
       PRELOOP_SERVICE_ROLE: api
     ports:
       - "8000:8000"
-    command: ./start.sh
+    command: python -m preloop.server
 
   gateway:
     image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
     restart: unless-stopped
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       nats:
@@ -81,12 +97,14 @@ services:
       PRELOOP_SERVICE_ROLE: gateway
     ports:
       - "8001:8000"
-    command: ./start.sh
+    command: python -m preloop.server
 
   scheduler:
     image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
     restart: unless-stopped
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       nats:
@@ -104,6 +122,8 @@ services:
     image: ghcr.io/preloop/preloop:${PRELOOP_VERSION:-latest}
     restart: unless-stopped
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       nats:

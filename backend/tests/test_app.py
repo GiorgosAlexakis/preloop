@@ -205,6 +205,30 @@ def test_create_app_configuration():
         assert "http://localhost:5173" in cors_middleware[0].kwargs["allow_origins"]
 
 
+@patch.dict(os.environ, {"PRELOOP_SERVICE_ROLE": "gateway"}, clear=False)
+def test_gateway_role_mounts_only_gateway_surface():
+    """Gateway role should not expose the core control-plane API routes."""
+    app = create_app()
+    route_paths = {route.path for route in app.routes}
+
+    assert "/api/v1/health" in route_paths
+    assert "/api/v1/version" in route_paths
+    assert "/openai/v1/models" in route_paths
+    assert "/api/v1/trackers" not in route_paths
+    assert "/api/v1/auth/login" not in route_paths
+
+
+@patch.dict(os.environ, {"PRELOOP_SERVICE_ROLE": "api"}, clear=False)
+def test_api_role_excludes_model_gateway_surface():
+    """Core API role should not serve long-lived model gateway endpoints."""
+    app = create_app()
+    route_paths = {route.path for route in app.routes}
+
+    assert "/api/v1/health" in route_paths
+    assert "/api/v1/trackers" in route_paths
+    assert "/openai/v1/models" not in route_paths
+
+
 def test_custom_openapi_schema(client):
     """
     Tests that the custom OpenAPI schema is generated correctly.

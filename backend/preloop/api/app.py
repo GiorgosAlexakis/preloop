@@ -223,6 +223,10 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup logic
     logger.info("Starting up application and database...")
+    service_role = os.getenv("PRELOOP_SERVICE_ROLE", "all").lower()
+    is_testing = os.getenv("TESTING") == "true"
+    is_api_role = service_role in {"all", "api"}
+    is_gateway_role = service_role in {"all", "gateway"}
 
     # Initialize Sentry if DSN is configured
     init_sentry()
@@ -232,7 +236,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         # Check if running in test mode or if INIT_DB is set
         init_db = os.getenv("INIT_DB", "false").lower() == "true"
-        if init_db:
+        if init_db and is_api_role:
             logger.info("Initializing database schema...")
             database_url = os.getenv(
                 "DATABASE_URL",
@@ -240,33 +244,42 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
             setup_database(database_url)
             logger.info("Database schema initialized.")
+        elif init_db:
+            logger.info(
+                "Skipping database schema initialization for %s role.",
+                service_role,
+            )
         else:
             logger.info("Skipping database schema initialization (INIT_DB not true).")
 
         # Check if test data initialization is enabled
-        if os.getenv("INIT_TEST_DATA", "false").lower() == "true":
+        if os.getenv("INIT_TEST_DATA", "false").lower() == "true" and is_api_role:
             logger.info("Initializing test data...")
             # Import and run the test data initialization script
             from scripts.init_test_data import main as init_data_main  # type: ignore
 
             init_data_main()
             logger.info("Test data initialization complete.")
+        elif os.getenv("INIT_TEST_DATA", "false").lower() == "true":
+            logger.info("Skipping test data initialization for %s role.", service_role)
 
     except Exception as e:
         logger.error(f"Database setup failed: {e}", exc_info=True)
         raise RuntimeError("Database setup failed") from e
 
     # Connect to NATS (skip in testing mode)
-    if os.getenv("TESTING") != "true":
+    if not is_testing and (is_api_role or is_gateway_role):
         logger.info("Connecting to NATS...")
         try:
             await connect_nats()
+            app.state.nats_connected = True
             logger.info("NATS connection established.")
         except Exception as e:
             logger.error(f"NATS connection failed: {e}", exc_info=True)
             raise RuntimeError("NATS connection failed") from e
 
-        # Start the NATS consumer for WebSocket broadcasting
+        # Start the NATS consumer for WebSocket broadcasting only on the core API.
+    if not is_testing and is_api_role:
         from preloop.services.websocket_manager import manager, nats_consumer
         import asyncio
 
@@ -275,22 +288,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.nats_consumer_task = loop.create_task(nats_consumer(manager))
         logger.info("NATS consumer for WebSockets started.")
     else:
-        logger.info("Skipping NATS connection (TESTING mode)")
+        logger.info("Skipping NATS WebSocket consumer for %s role.", service_role)
 
     # Start the execution monitor for cleaning up stale executions (skip in testing mode)
     execution_monitor = None
-    if os.getenv("TESTING") != "true":
+    if not is_testing and is_api_role:
         from preloop.services.execution_monitor import get_execution_monitor
 
         execution_monitor = get_execution_monitor()
         await execution_monitor.start()
         logger.info("Execution monitor started.")
     else:
-        logger.info("Skipping execution monitor (TESTING mode)")
+        logger.info("Skipping execution monitor for %s role.", service_role)
 
     # Recover orphaned flow executions (skip in testing mode)
     recovery_service = None
-    if os.getenv("TESTING") != "true":
+    if not is_testing and is_api_role:
         from preloop.services.execution_recovery import get_recovery_service
 
         # Skip recovery if disabled (useful for debugging startup issues)
@@ -321,11 +334,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 )
                 # Don't fail startup - continue anyway
     else:
-        logger.info("Skipping execution recovery (TESTING mode)")
+        logger.info("Skipping execution recovery for %s role.", service_role)
 
     # Start MCP server lifespan (skip in testing mode)
     mcp_lifespan = None
-    if os.getenv("TESTING") != "true":
+    if not is_testing and is_api_role:
         from preloop.services.mcp_http import get_mcp_lifespan_manager
 
         mcp_lifespan = get_mcp_lifespan_manager()
@@ -335,11 +348,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         else:
             logger.warning("No MCP lifespan manager available")
     else:
-        logger.info("Skipping MCP server (TESTING mode)")
+        logger.info("Skipping MCP server for %s role.", service_role)
 
     # Initialize plugin system (skip in testing mode)
     plugin_manager = None
-    if os.getenv("TESTING") != "true":
+    if not is_testing and is_api_role:
         from preloop.plugins import get_plugin_manager
 
         logger.info("Initializing plugin system...")
@@ -350,10 +363,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             f"Registered {len(plugin_manager.list_condition_evaluators())} condition evaluators."
         )
     else:
-        logger.info("Skipping plugin system (TESTING mode)")
+        logger.info("Skipping plugin system for %s role.", service_role)
 
     # Register instance and send version check (skip in testing mode)
-    if os.getenv("TESTING") != "true":
+    if not is_testing and is_api_role:
         from preloop.services.instance_service import register_instance
 
         try:
@@ -362,7 +375,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"Instance registration failed: {e}")
             # Don't fail startup - continue anyway
     else:
-        logger.info("Skipping instance registration (TESTING mode)")
+        logger.info("Skipping instance registration for %s role.", service_role)
 
     # Repair legacy default approval workflows (skip in testing mode).
     # Older builds created the per-account default workflow with
@@ -370,7 +383,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Both make the workflow unusable: the dialog renders the type as blank,
     # and approval requests routed through it have no one able to act on
     # them. The repair pass is idempotent and safe to run on every boot.
-    if os.getenv("TESTING") != "true":
+    if not is_testing and is_api_role:
         try:
             from preloop.models.db.session import get_session_factory
             from preloop.models.crud import crud_approval_workflow
@@ -407,14 +420,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 exc_info=True,
             )
     else:
-        logger.info("Skipping approval workflow repair pass (TESTING mode)")
+        logger.info("Skipping approval workflow repair pass for %s role.", service_role)
 
     yield
 
     # Shutdown logic
 
     # Wait for in-flight flow executions to complete (skip in testing mode)
-    if os.getenv("TESTING") != "true" and recovery_service:
+    if not is_testing and recovery_service:
         logger.info("Waiting for in-flight flow executions to complete...")
         try:
             # Wait up to 5 minutes for recovery tasks to complete
@@ -425,16 +438,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 f"Error waiting for executions to complete: {e}", exc_info=True
             )
     else:
-        logger.info("Skipping execution wait (TESTING mode)")
+        logger.info("Skipping execution wait for %s role.", service_role)
 
     # Stop version checker (skip in testing mode)
-    if os.getenv("TESTING") != "true":
+    if not is_testing and is_api_role:
         from preloop.services.instance_service import stop_version_checker
 
         stop_version_checker()
 
     # Shutdown plugin system (skip in testing mode)
-    if os.getenv("TESTING") != "true" and plugin_manager:
+    if not is_testing and plugin_manager:
         logger.info("Shutting down plugin system...")
         try:
             await plugin_manager.shutdown_all()
@@ -442,30 +455,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.error(f"Error shutting down plugins: {e}", exc_info=True)
     else:
-        logger.info("Skipping plugin shutdown (TESTING mode)")
+        logger.info("Skipping plugin shutdown for %s role.", service_role)
 
     # Stop MCP server lifespan (skip in testing mode)
-    if os.getenv("TESTING") != "true" and mcp_lifespan:
+    if not is_testing and mcp_lifespan:
         try:
             await mcp_lifespan.__aexit__(None, None, None)
             logger.info("MCP server lifespan stopped")
         except Exception as e:
             logger.error(f"Error stopping MCP lifespan: {e}", exc_info=True)
     else:
-        logger.info("Skipping MCP shutdown (TESTING mode)")
+        logger.info("Skipping MCP shutdown for %s role.", service_role)
 
     # Stop the execution monitor (skip in testing mode)
-    if os.getenv("TESTING") != "true" and execution_monitor:
+    if not is_testing and execution_monitor:
         try:
             await execution_monitor.stop()
             logger.info("Execution monitor stopped.")
         except Exception as e:
             logger.error(f"Error stopping execution monitor: {e}", exc_info=True)
     else:
-        logger.info("Skipping execution monitor shutdown (TESTING mode)")
+        logger.info("Skipping execution monitor shutdown for %s role.", service_role)
 
     # Cancel the NATS consumer task (skip in testing mode)
-    if os.getenv("TESTING") != "true":
+    if not is_testing and getattr(app.state, "nats_connected", False):
         if hasattr(app.state, "nats_consumer_task"):
             app.state.nats_consumer_task.cancel()
             logger.info("NATS consumer for WebSockets stopped.")
@@ -477,7 +490,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.error(f"Error closing NATS connection: {e}", exc_info=True)
     else:
-        logger.info("Skipping NATS shutdown (TESTING mode)")
+        logger.info("Skipping NATS shutdown for %s role.", service_role)
 
     logger.info("Shutting down application...")
     # Restore the original jsonable_encoder
@@ -599,15 +612,17 @@ def create_app() -> FastAPI:
     )
 
     service_role = os.getenv("PRELOOP_SERVICE_ROLE", "all").lower()
+    is_api_role = service_role in {"all", "api"}
+    is_gateway_role = service_role in {"all", "gateway"}
 
     # Add profiling middleware only for core API
-    if service_role in ["all", "api"]:
+    if is_api_role:
         app.add_middleware(PyinstrumentMiddleware)
 
     # Add API usage tracking
     # Can be disabled with DISABLE_API_USAGE_TRACKING=true for debugging
     if (
-        service_role in ["all", "api"]
+        is_api_role
         and os.getenv("TESTING") != "true"
         and os.getenv("DISABLE_API_USAGE_TRACKING", "false").lower() != "true"
     ):
@@ -615,16 +630,18 @@ def create_app() -> FastAPI:
 
     # Add WebSocket authentication middleware
     # Validates Bearer token during HTTP upgrade before WebSocket handshake
-    from preloop.api.middleware import WebSocketAuthMiddleware
+    if is_api_role:
+        from preloop.api.middleware import WebSocketAuthMiddleware
 
-    app.add_middleware(WebSocketAuthMiddleware)
+        app.add_middleware(WebSocketAuthMiddleware)
 
     # Rewrite /mcp → /mcp/v1 before Starlette's Mount can redirect.
     # Must be registered here (not in setup_mcp_routes) to guarantee it's
     # in the middleware stack before the first request.
-    from preloop.services.mcp_http import MCPPathRewriteMiddleware
+    if is_api_role:
+        from preloop.services.mcp_http import MCPPathRewriteMiddleware
 
-    app.add_middleware(MCPPathRewriteMiddleware)
+        app.add_middleware(MCPPathRewriteMiddleware)
 
     # --- Custom API Docs Routes (Moved to /docs/api and /docs/redoc) ---
     @app.get("/docs/api", include_in_schema=False)  # Changed path
@@ -715,138 +732,142 @@ def create_app() -> FastAPI:
 
     app.openapi = custom_openapi  # type: ignore
 
-    # OAuth consent page (login form for CLI and MCP OAuth flows)
-    from preloop.api.endpoints.oauth_consent import router as oauth_consent_router
-
-    app.include_router(oauth_consent_router)
-    logger.info("OAuth consent routes registered")
-
-    # OAuth server endpoints (authorize, token, register, well-known metadata)
-    from preloop.api.endpoints.oauth_server import router as oauth_server_router
-
-    app.include_router(oauth_server_router)
-    logger.info("OAuth server routes registered")
-
-    # Setup MCP routes with DynamicMCPServer (MUST be before SPA mount)
-    setup_mcp_routes(app)
-    logger.info("MCP routes configured with DynamicMCPServer")
-
-    # Register plugin routes
-    # This allows plugins (both builtin and proprietary) to add their own endpoints
-    # We do this before adding standard routers to ensure plugins can override if needed
-    # or just be registered alongside
-    from preloop.plugins import get_plugin_manager
-
-    plugin_manager = get_plugin_manager()
-    plugin_manager.register_routes(app)
-    for plugin in plugin_manager._plugins.values():
-        app.dependency_overrides.update(plugin.get_dependencies())
-
-    # Core API routers
-    if service_role in ["all", "api"]:
-        app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
-    app.include_router(
-        account.router,
-        prefix="/api/v1",
-        tags=["Account"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        account.public_router,
-        prefix="/api/v1",
-        tags=["Account"],
-    )  # Public account endpoints (no auth required)
-    app.include_router(
-        public_approval.router, tags=["Public Approval"], include_in_schema=False
-    )  # No auth required, mounted at /approval (not /api/v1/approval)
-    app.include_router(
-        features.router, prefix="/api/v1", tags=["Features"], include_in_schema=False
-    )  # No auth required
+    # Health/version remain available on every role for container probes.
     app.include_router(
         health.router, prefix="/api/v1", tags=["Health"], include_in_schema=False
     )
     app.include_router(
         version.router, prefix="/api/v1", tags=["Version"], include_in_schema=False
     )
-    app.include_router(
-        trackers.router,
-        prefix="/api/v1",
-        tags=["Trackers"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        mcp_servers.router,
-        prefix="/api/v1",
-        tags=["MCP Servers"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    # Public MCP OAuth callback (no auth — user is redirected by external server)
-    app.include_router(mcp_servers.oauth_callback_router)
-    app.include_router(
-        tools.router,
-        prefix="/api/v1",
-        tags=["Tools"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        approval_requests.router,
-        prefix="/api/v1",
-        tags=["Approval Requests"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        notification_preferences.router,
-        prefix="/api/v1/notification-preferences",
-        tags=["Notification Preferences"],
-        # No router-level auth - individual endpoints handle their own auth
-        # /register-device and /register-via-token are public (token-based)
-    )
-    # Note: Issue dependencies endpoint is now loaded via plugins/analytics
-    app.include_router(
-        organizations.router,
-        prefix="/api/v1",
-        tags=["Organizations"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        projects.router,
-        prefix="/api/v1",
-        tags=["Projects"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        issues.router,
-        prefix="/api/v1",
-        tags=["Issues"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    # Note: Issue compliance endpoint is now loaded via plugins/analytics
-    app.include_router(
-        comments.router,
-        prefix="/api/v1",
-        tags=["Comments"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        search_router.router,
-        prefix="/api/v1",
-        tags=["Search"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        embedding_router.router,
-        prefix="/api/v1",
-        tags=["Embeddings"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    app.include_router(
-        ai_models.router,
-        prefix="/api/v1",
-        tags=["AI Models"],
-        dependencies=[Depends(get_current_active_user)],
-    )
-    # Public AI models endpoints (no auth required)
-    if service_role in ["all", "api"]:
+
+    if is_api_role:
+        # OAuth consent page (login form for CLI and MCP OAuth flows)
+        from preloop.api.endpoints.oauth_consent import router as oauth_consent_router
+
+        app.include_router(oauth_consent_router)
+        logger.info("OAuth consent routes registered")
+
+        # OAuth server endpoints (authorize, token, register, well-known metadata)
+        from preloop.api.endpoints.oauth_server import router as oauth_server_router
+
+        app.include_router(oauth_server_router)
+        logger.info("OAuth server routes registered")
+
+        # Setup MCP routes with DynamicMCPServer (MUST be before SPA mount)
+        setup_mcp_routes(app)
+        logger.info("MCP routes configured with DynamicMCPServer")
+
+        # Register plugin routes
+        # This allows plugins (both builtin and proprietary) to add their own endpoints
+        # We do this before adding standard routers to ensure plugins can override if needed
+        # or just be registered alongside
+        from preloop.plugins import get_plugin_manager
+
+        plugin_manager = get_plugin_manager()
+        plugin_manager.register_routes(app)
+        for plugin in plugin_manager._plugins.values():
+            app.dependency_overrides.update(plugin.get_dependencies())
+
+        # Core API routers
+        app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
+        app.include_router(
+            account.router,
+            prefix="/api/v1",
+            tags=["Account"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            account.public_router,
+            prefix="/api/v1",
+            tags=["Account"],
+        )  # Public account endpoints (no auth required)
+        app.include_router(
+            public_approval.router, tags=["Public Approval"], include_in_schema=False
+        )  # No auth required, mounted at /approval (not /api/v1/approval)
+        app.include_router(
+            features.router,
+            prefix="/api/v1",
+            tags=["Features"],
+            include_in_schema=False,
+        )  # No auth required
+        app.include_router(
+            trackers.router,
+            prefix="/api/v1",
+            tags=["Trackers"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            mcp_servers.router,
+            prefix="/api/v1",
+            tags=["MCP Servers"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        # Public MCP OAuth callback (no auth — user is redirected by external server)
+        app.include_router(mcp_servers.oauth_callback_router)
+        app.include_router(
+            tools.router,
+            prefix="/api/v1",
+            tags=["Tools"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            approval_requests.router,
+            prefix="/api/v1",
+            tags=["Approval Requests"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            notification_preferences.router,
+            prefix="/api/v1/notification-preferences",
+            tags=["Notification Preferences"],
+            # No router-level auth - individual endpoints handle their own auth
+            # /register-device and /register-via-token are public (token-based)
+        )
+        # Note: Issue dependencies endpoint is now loaded via plugins/analytics
+        app.include_router(
+            organizations.router,
+            prefix="/api/v1",
+            tags=["Organizations"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            projects.router,
+            prefix="/api/v1",
+            tags=["Projects"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            issues.router,
+            prefix="/api/v1",
+            tags=["Issues"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        # Note: Issue compliance endpoint is now loaded via plugins/analytics
+        app.include_router(
+            comments.router,
+            prefix="/api/v1",
+            tags=["Comments"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            search_router.router,
+            prefix="/api/v1",
+            tags=["Search"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            embedding_router.router,
+            prefix="/api/v1",
+            tags=["Embeddings"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            ai_models.router,
+            prefix="/api/v1",
+            tags=["AI Models"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        # Public AI models endpoints (no auth required)
         app.include_router(
             ai_models.public_router,
             prefix="/api/v1",
@@ -854,7 +875,7 @@ def create_app() -> FastAPI:
         )
 
     # AI Model Gateway routers
-    if service_role in ["all", "gateway"]:
+    if is_gateway_role:
         app.include_router(
             openai_gateway.router,
             prefix="/openai/v1",
@@ -874,7 +895,7 @@ def create_app() -> FastAPI:
             include_in_schema=False,
         )
 
-    if service_role in ["all", "api"]:
+    if is_api_role:
         # Note: Issue duplicates endpoint is now loaded via plugins/analytics
         app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
         app.include_router(

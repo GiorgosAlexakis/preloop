@@ -23,6 +23,7 @@ The script updates:
 
 It can also optionally:
 
+- ask `opencode` or `codex` to draft changelog entries with `--generate-changelog-ai`
 - commit the release prep changes
 - create `v<version>`
 - push the current branch and tag
@@ -84,6 +85,9 @@ Before `v0.8.0-beta.1`, confirm these release-facing areas are resolved:
 
 # Optional: package Helm artifacts too
 ./scripts/release.sh 0.8.0-beta.1 --package-chart
+
+# Optional: ask a local AI CLI to draft changelog entries first
+./scripts/release.sh 0.8.0-beta.1 --generate-changelog-ai
 
 # Non-interactive full release flow
 ./scripts/release.sh 0.8.0-beta.1 --yes --commit --tag --push-branch --push-tag --monitor-release

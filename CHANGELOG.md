@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OSS hosted trial path**: Added a self-contained Railway trial deployment map for Preloop OSS, including private API/gateway, worker/scheduler, Postgres/pgvector, and NATS services, generated Railway variable guidance, README onboarding, and teardown documentation.
+
+### Changed
+
+- **Service role deployment modes**: API startup and route registration now respect `PRELOOP_SERVICE_ROLE` so API-only, gateway-only, and combined trial deployments can run the right surface area.
+- **Release changelog generation**: AI-authored changelog drafting is now opt-in via `--generate-changelog-ai`, keeping deterministic release prep from depending on a local AI CLI.
+
+### Fixed
+
+- **OSS install failure reporting**: The OSS installer now exits non-zero when `docker compose up` fails and prints the log-inspection command instead of reporting success.
+
 ## [0.9.3] - 2026-05-19
 
 ### Fixed

@@ -127,7 +127,21 @@ A durable `RuntimeSession` layer gives you one timeline per managed runtime — 
 
 ## Getting Started
 
-Install Preloop agents and components locally using our provisioning scripts.
+Choose the path that matches what you want to evaluate:
+
+- **Fast public trial:** deploy the self-contained Railway trial template. This gives you a public Preloop URL without manually provisioning a VM.
+- **Local laptop:** install the OSS stack with the install script.
+- **Kubernetes/prod-like:** use the Helm chart in [`helm/preloop`](helm/preloop).
+
+### Try Preloop OSS in 5 minutes
+
+[![Deploy on Railway](https://railway.com/button.svg)](deploy/railway/README.md)
+
+The Railway trial runs Preloop Console, API/gateway, worker/scheduler, Postgres with pgvector, and NATS in one Railway project. The default template is self-contained and does not depend on external managed databases or queues. It is intended for evaluation, not hardened production.
+
+Until the public Railway template code is published, the button opens the checked-in template guide and service map in [`deploy/railway`](deploy/railway). After publishing, replace the link target with the Railway template URL.
+
+### Install locally
 
 ```bash
 # Install the standalone CLI
@@ -136,6 +150,10 @@ curl -fsSL https://preloop.ai/install/cli | sh
 # Install the OSS platform stack
 curl -fsSL https://preloop.ai/install/oss | sh
 ```
+
+### Release smoke test for hosted trials
+
+Before promoting a hosted trial template, verify that the public URL loads the console, `/api/v1/health` responds, first-user sign-in or sign-up works, `preloop agents discover` can target the public URL, one gateway model call appears in the UI, and one MCP policy event appears in the audit timeline.
 
 For extended details detailing comprehensive Docker builds, Kubernetes Helm topologies, GraphQL configuration, WebSocket streaming channels, and deep `.env` definitions, refer to the [Preloop Documentation Hub](https://docs.preloop.ai).
 

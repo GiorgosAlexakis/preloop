@@ -169,17 +169,27 @@ def generate_changelog_with_ai(plan: ReleasePlan) -> None:
 
     print("Triggering AI to generate changelog updates...")
     if command_exists("opencode"):
-        run_command(["opencode", "run", prompt], capture_output=False, check=False)
+        result = run_command(
+            ["opencode", "run", prompt], capture_output=False, check=False
+        )
     else:
-        run_command(["codex", "run", prompt], capture_output=False, check=False)
+        result = run_command(
+            ["codex", "run", prompt], capture_output=False, check=False
+        )
+
+    if result.returncode != 0:
+        print(
+            "AI changelog generation failed; continuing with deterministic "
+            "release heading update."
+        )
 
 
-def update_changelog(plan: ReleasePlan) -> Path:
+def update_changelog(plan: ReleasePlan, *, generate_ai: bool = False) -> Path:
     """Move the current unreleased section under a new release heading."""
     path = ROOT_DIR / "CHANGELOG.md"
 
-    # Attempt to auto-generate the changelog entries using AI
-    generate_changelog_with_ai(plan)
+    if generate_ai:
+        generate_changelog_with_ai(plan)
 
     text = read_text(path)
     existing_heading = re.search(
@@ -485,6 +495,14 @@ def parse_args() -> argparse.Namespace:
         help="Do not create or update the release heading in CHANGELOG.md",
     )
     parser.add_argument(
+        "--generate-changelog-ai",
+        action="store_true",
+        help=(
+            "Ask opencode or codex to draft CHANGELOG entries before creating "
+            "the release heading. Disabled by default for reproducible releases."
+        ),
+    )
+    parser.add_argument(
         "--package-chart",
         action="store_true",
         help="Run helm lint/package/index after updating versions",
@@ -551,7 +569,9 @@ def main() -> int:
     ]
 
     if not args.skip_changelog:
-        updated_paths.append(update_changelog(plan))
+        updated_paths.append(
+            update_changelog(plan, generate_ai=args.generate_changelog_ai)
+        )
 
     if args.package_chart:
         maybe_package_chart()

@@ -58,10 +58,11 @@ POSTGRES_PASSWORD=$(generate_secret)
 EOF
 fi
 
+compose_status=0
 (
   cd "$INSTALL_DIR"
   docker compose up -d
-)
+) || compose_status=$?
 
 echo "Preloop OSS ${VERSION} is starting in ${INSTALL_DIR}"
 echo "API: http://localhost:8000"
@@ -69,3 +70,10 @@ echo "Console: http://localhost:3000"
 echo ""
 echo "To stop it later:"
 echo "  cd ${INSTALL_DIR} && docker compose down"
+
+if [ "$compose_status" -ne 0 ]; then
+  echo ""
+  echo "Docker Compose failed. Inspect logs with:"
+  echo "  cd ${INSTALL_DIR} && docker compose logs"
+  exit "$compose_status"
+fi
