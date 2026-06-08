@@ -1,0 +1,25 @@
+{
+  "name": "preloop-hermes-plugin",
+  "displayName": "Preloop",
+  "description": "Expose Hermes to Preloop for discovery, status, Agent Control, and voice-transcript delivery.",
+  "version": "0.1.0",
+  "runtime": "hermes",
+  "license": "Apache-2.0",
+  "homepage": "https://preloop.ai",
+  "repository": "https://github.com/spacecode-ai/preloop/tree/main/runtime-plugins/hermes-preloop",
+  "keywords": ["preloop", "agent-control", "hermes", "voice", "observability"],
+  "entrypoint": "preloop_hermes_plugin:plugin",
+  "permissions": [
+    "read_config:preloop.control",
+    "network:wss",
+    "agent:send_message",
+    "agent:session_status"
+  ],
+  "configSchema": {
+    "path": "preloop.control",
+    "required": ["control_ws_url", "bearer_token", "runtime_principal_id"]
+  },
+  "verification": {
+    "command": "preloop-hermes-plugin verify --config ~/.hermes/config.yaml"
+  }
+}
