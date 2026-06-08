@@ -484,3 +484,22 @@ agentExecution:
     ttlSecondsAfterFinished: 3600
     # TTL for failed Jobs (seconds)
     ttlSecondsAfterFailed: 7200
+
+# Compute Backend configuration for AWS, Google Cloud (GCP), or KubeVirt
+computeBackend:
+  provider: "" # Set to "kubevirt", "aws", or "gcp"
+  kubevirt:
+    kubeconfigPath: ""
+    namespace: ""
+    vmImage: ""
+  aws:
+    accessKeyId: ""
+    secretAccessKey: ""
+    defaultRegion: ""
+    amiId: ""
+    instanceType: ""
+  gcp:
+    projectId: ""
+    credentialsJsonPath: ""
+    zone: ""
+    machineType: ""

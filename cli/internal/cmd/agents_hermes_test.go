@@ -210,6 +210,24 @@ func TestBuildManagedMCPEnrollmentPlan_HermesAddsPreloopServer(t *testing.T) {
 	if enabled, _ := preloop["enabled"].(bool); !enabled {
 		t.Fatalf("expected preloop server to be enabled, got %#v", preloop)
 	}
+	preloopConfig, ok := plan.ManagedDocument["preloop"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected preloop config block, got %#v", plan.ManagedDocument)
+	}
+	control, ok := preloopConfig["control"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected control config block, got %#v", preloopConfig)
+	}
+	if control["control_ws_url"] != "wss://preloop.example/api/v1/agents/control/ws" {
+		t.Fatalf("unexpected Hermes control WebSocket URL: %#v", control)
+	}
+	if control["bearer_token"] != "hermes-durable-token" {
+		t.Fatalf("unexpected Hermes control bearer token: %#v", control)
+	}
+	if control["adapter_package"] != "preloop-hermes-plugin" ||
+		control["runtime"] != hermesSourceType {
+		t.Fatalf("unexpected Hermes control adapter metadata: %#v", control)
+	}
 
 	sanitizedServers, ok := plan.SanitizedManaged["mcp_servers"].(map[string]interface{})
 	if !ok {
@@ -225,6 +243,11 @@ func TestBuildManagedMCPEnrollmentPlan_HermesAddsPreloopServer(t *testing.T) {
 	existingHeaders := sanitizedExisting["headers"].(map[string]interface{})
 	if existingHeaders["Authorization"] != "<redacted>" {
 		t.Fatalf("expected upstream Authorization header to be redacted, got %+v", existingHeaders)
+	}
+	sanitizedPreloopConfig := plan.SanitizedManaged["preloop"].(map[string]interface{})
+	sanitizedControl := sanitizedPreloopConfig["control"].(map[string]interface{})
+	if sanitizedControl["bearer_token"] != "<redacted>" {
+		t.Fatalf("expected sanitized control bearer token, got %+v", sanitizedControl)
 	}
 }
 
@@ -307,6 +330,161 @@ func TestHermesAdapterValidateManagedConfig_Passes(t *testing.T) {
 	}
 	if result["adapter_key"] != hermesSourceType {
 		t.Fatalf("expected adapter key %q, got %q", hermesSourceType, result["adapter_key"])
+	}
+	if result["control_channel_configured"] != false {
+		t.Fatalf("expected missing control config to be reported separately, got %#v", result)
+	}
+	if result["control_config_written"] != false {
+		t.Fatalf("expected missing control config to remain explicit, got %#v", result)
+	}
+}
+
+func TestHermesAdapterValidateManagedConfig_PassesWithControlChannel(t *testing.T) {
+	agent := AgentConfig{
+		Name:       hermesAgentName,
+		ConfigPath: "/tmp/hermes/config.yaml",
+	}
+	adapter := managedMCPAdapterForAgent(agent)
+	doc := map[string]interface{}{
+		"mcp_servers": map[string]interface{}{
+			"preloop": adapter.BuildManagedServer("https://preloop.example", "hermes-token"),
+		},
+	}
+	applyAgentControlConfigToDocument(
+		agent,
+		doc,
+		buildManagedAgentControlConfig(agent, "https://preloop.example", "hermes-token", nil, nil, nil),
+	)
+
+	result := adapter.ValidateManagedConfig(doc, "https://preloop.example")
+	if passed, _ := result["validation_passed"].(bool); !passed {
+		t.Fatalf("expected hermes adapter validation to pass, got %#v", result)
+	}
+	if result["control_config_written"] != true ||
+		result["control_ws_url_ok"] != true ||
+		result["control_bearer_token_ok"] != true ||
+		result["control_adapter_package_ok"] != true {
+		t.Fatalf("expected Hermes control config validation to pass, got %#v", result)
+	}
+	if result["control_plugin_installed"] != false ||
+		result["control_plugin_verified"] != false ||
+		result["control_channel_configured"] != false {
+		t.Fatalf("expected Hermes runtime plugin to remain unverified, got %#v", result)
+	}
+}
+
+func TestInstallAgentControlRuntimePluginInstallsAndVerifiesHermes(t *testing.T) {
+	dir := t.TempDir()
+	pluginsRoot := filepath.Join(dir, "runtime-plugins")
+	sourcePath := filepath.Join(pluginsRoot, "hermes-preloop")
+	if err := os.MkdirAll(sourcePath, 0755); err != nil {
+		t.Fatalf("failed to create Hermes plugin source dir: %v", err)
+	}
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create bin dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(binDir, "hermes"),
+		[]byte("#!/bin/sh\n[ \"$1\" = plugins ] && [ \"$2\" = install ] && [ -d \"$3\" ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake Hermes installer: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(binDir, "preloop-hermes-plugin"),
+		[]byte("#!/bin/sh\n[ \"$1\" = verify ] && [ \"$2\" = --config ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake Hermes verifier: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	result := installAgentControlRuntimePlugin(
+		AgentConfig{Name: hermesAgentName, ConfigPath: filepath.Join(dir, "config.yaml")},
+		io.Discard,
+	)
+	if result["control_plugin_install_status"] != "installed_and_verified" ||
+		result["control_plugin_installed"] != true ||
+		result["control_plugin_verified"] != true {
+		t.Fatalf("expected Hermes install and verify success, got %#v", result)
+	}
+}
+
+func TestInstallAgentControlRuntimePluginFindsHermesInUserLocalBin(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	localBin := filepath.Join(home, ".local", "bin")
+	pluginsRoot := filepath.Join(dir, "runtime-plugins")
+	sourcePath := filepath.Join(pluginsRoot, "hermes-preloop")
+	if err := os.MkdirAll(sourcePath, 0755); err != nil {
+		t.Fatalf("failed to create Hermes plugin source dir: %v", err)
+	}
+	if err := os.MkdirAll(localBin, 0755); err != nil {
+		t.Fatalf("failed to create local bin dir: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+	t.Setenv("PATH", filepath.Join(dir, "empty-path"))
+
+	if err := os.WriteFile(
+		filepath.Join(localBin, "hermes"),
+		[]byte("#!/bin/sh\n[ \"$1\" = plugins ] && [ \"$2\" = install ] && [ -d \"$3\" ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake Hermes installer: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(localBin, "preloop-hermes-plugin"),
+		[]byte("#!/bin/sh\n[ \"$1\" = verify ] && [ \"$2\" = --config ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake Hermes verifier: %v", err)
+	}
+
+	result := installAgentControlRuntimePlugin(
+		AgentConfig{Name: hermesAgentName, ConfigPath: filepath.Join(home, ".hermes", "config.yaml")},
+		io.Discard,
+	)
+	if result["control_plugin_install_status"] != "installed_and_verified" ||
+		result["control_plugin_installer"] != "hermes" ||
+		result["control_plugin_installed"] != true ||
+		result["control_plugin_verified"] != true {
+		t.Fatalf("expected Hermes install from ~/.local/bin to verify, got %#v", result)
+	}
+}
+
+func TestRuntimeExecutableSearchDescriptionIncludesHermesUserLocalBin(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	t.Setenv("HOME", home)
+
+	description := runtimeExecutableSearchDescription("hermes")
+	if !strings.Contains(description, "PATH") {
+		t.Fatalf("expected PATH in search description, got %q", description)
+	}
+	if !strings.Contains(description, filepath.Join(home, ".local", "bin", "hermes")) {
+		t.Fatalf("expected ~/.local/bin/hermes in search description, got %q", description)
+	}
+}
+
+func TestAgentControlPluginInstallCommandFallsBackToHermesPackage(t *testing.T) {
+	pluginsRoot := t.TempDir()
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+
+	command, args, err := agentControlPluginInstallCommand(hermesAgentName)
+	if err != nil {
+		t.Fatalf("unexpected install command error: %v", err)
+	}
+	if command != "hermes" {
+		t.Fatalf("expected hermes installer, got %q", command)
+	}
+	if len(args) != 3 ||
+		args[0] != "plugins" ||
+		args[1] != "install" ||
+		args[2] != "preloop-hermes-plugin" {
+		t.Fatalf("unexpected marketplace install args: %#v", args)
 	}
 }
 
@@ -640,6 +818,75 @@ func TestParseHermesManagedGatewayUpstream_ImportsCodexOAuth(t *testing.T) {
 	}
 	if !upstream.CanRouteThroughGateway() {
 		t.Fatalf("expected upstream to be routable, got %#v", upstream)
+	}
+}
+
+func TestParseHermesManagedGatewayUpstream_ImportsCredentialPoolCodexOAuth(t *testing.T) {
+	home := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("failed to override HOME: %v", err)
+	}
+	defer func() { _ = os.Setenv("HOME", oldHome) }()
+
+	configPath := filepath.Join(home, hermesBootstrapConfigPath)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("failed to create hermes dir: %v", err)
+	}
+	configBody := `model:
+  default: gpt-5.5
+  provider: openai-codex
+  base_url: https://chatgpt.com/backend-api/codex
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0644); err != nil {
+		t.Fatalf("failed to seed hermes config: %v", err)
+	}
+
+	jwtPayload := base64.RawURLEncoding.EncodeToString([]byte(`{"exp":1893456000}`))
+	accessToken := "header." + jwtPayload + ".sig"
+	authJSON := `{
+        "version": 2,
+        "providers": {
+            "openai-codex": {
+                "auth_mode": "chatgpt",
+                "tokens": {}
+            }
+        },
+        "credential_pool": {
+            "openai-codex": [
+                {
+                    "auth_type": "oauth",
+                    "access_token": "` + accessToken + `",
+                    "refresh_token": "refresh-token",
+                    "last_refresh": "2026-06-07T22:00:00Z"
+                }
+            ]
+        },
+        "active_provider": "openai-codex"
+    }`
+	authPath := filepath.Join(home, hermesAuthFile)
+	if err := os.WriteFile(authPath, []byte(authJSON), 0600); err != nil {
+		t.Fatalf("failed to seed hermes auth.json: %v", err)
+	}
+
+	upstream, err := parseHermesManagedGatewayUpstream(AgentConfig{
+		Name:       hermesAgentName,
+		ConfigPath: configPath,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if upstream == nil || !upstream.CanRouteThroughGateway() {
+		t.Fatalf("expected credential_pool OAuth to be routable, got %#v", upstream)
+	}
+	if upstream.CredentialType != "oauth_openai_codex" {
+		t.Fatalf("expected oauth_openai_codex credentials, got %#v", upstream.CredentialType)
+	}
+	if got := upstream.CredentialPayload["access"]; got != accessToken {
+		t.Fatalf("expected access token from credential_pool, got %#v", got)
+	}
+	if upstream.ManagedModelAlias != "openai/gpt-5.5" {
+		t.Fatalf("expected gateway alias openai/gpt-5.5, got %q", upstream.ManagedModelAlias)
 	}
 }
 

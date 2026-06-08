@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
@@ -19,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	json5 "github.com/yosuke-furukawa/json5/encoding/json5"
@@ -33,6 +35,7 @@ import (
 const (
 	openClawManagedProviderID = "preloop"
 	openClawGatewayPath       = "/openai/v1"
+	openClawPreloopPluginID   = "openclaw-plugin"
 )
 
 var openClawEnvPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
@@ -41,9 +44,10 @@ var opencodeBearerEnvPattern = regexp.MustCompile(`^[Bb]earer\s+\{env:([A-Za-z_]
 var managedGatewayLLMLogPattern = regexp.MustCompile(`service=llm providerID=([^\s]+) modelID=([^\s]+)`)
 
 const (
-	geminiAPIKeyServiceName = "gemini-cli-api-key"
-	geminiAPIKeyAccountName = "default-api-key"
-	geminiFileStorageSecret = "gemini-cli-oauth"
+	geminiAPIKeyServiceName   = "gemini-cli-api-key"
+	geminiAPIKeyAccountName   = "default-api-key"
+	geminiFileStorageSecret   = "gemini-cli-oauth"
+	geminiDefaultManagedModel = "gemini-3-flash-preview"
 )
 
 var openCodeDefaultModelByProvider = map[string]string{
@@ -298,6 +302,19 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			}
 		} else if note := unresolvedManagedGatewayNote(agent, upstream); note != "" {
 			plan.Notes = append(plan.Notes, note)
+			if isCodexCLIAgent(agent) {
+				var cleanupErr error
+				plan, cleanupErr = removeCodexManagedGatewaySelection(plan)
+				if cleanupErr != nil {
+					return cleanupErr
+				}
+			} else if isGeminiCLIAgent(agent) {
+				var cleanupErr error
+				plan, cleanupErr = removeGeminiManagedGatewaySelection(plan)
+				if cleanupErr != nil {
+					return cleanupErr
+				}
+			}
 		}
 	}
 
@@ -332,7 +349,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 
 	allowedServers := append([]string{}, serverSync.Added...)
 	allowedServers = append(allowedServers, serverSync.Reused...)
-	_, err = issueRuntimeSessionToken(client, syncAgent, allowedServers)
+	runtimeSession, err := issueRuntimeSessionToken(client, syncAgent, allowedServers)
 	if err != nil {
 		return fmt.Errorf("failed to bootstrap managed agent identity: %w", err)
 	}
@@ -439,7 +456,31 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			}
 		} else if note := unresolvedManagedGatewayNote(agent, upstream); note != "" {
 			plan.Notes = append(plan.Notes, note)
+			if isCodexCLIAgent(agent) {
+				var cleanupErr error
+				plan, cleanupErr = removeCodexManagedGatewaySelection(plan)
+				if cleanupErr != nil {
+					return cleanupErr
+				}
+			} else if isGeminiCLIAgent(agent) {
+				var cleanupErr error
+				plan, cleanupErr = removeGeminiManagedGatewaySelection(plan)
+				if cleanupErr != nil {
+					return cleanupErr
+				}
+			}
 		}
+	}
+	plan, err = applyManagedAgentControlConfig(
+		plan,
+		baseURL,
+		runtimeSession.Token,
+		managedAgent,
+		&credentialResp.Credential,
+		runtimeSession,
+	)
+	if err != nil {
+		return err
 	}
 	if len(modelBindings) > 0 {
 		if _, err := syncManagedAgentModelBindings(client, managedAgent.ID, modelBindings); err != nil {
@@ -464,6 +505,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	if err := syncManagedAgentRuntimeArtifacts(agent, baseURL, credentialResp.Token); err != nil {
 		return err
 	}
+	pluginInstallResult := installAgentControlRuntimePlugin(agent, output)
 	if err := saveLocalEnrollmentState(backupState); err != nil {
 		return err
 	}
@@ -476,6 +518,7 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 		validationDocument,
 		baseURL,
 	)
+	validationResult = mergeStringMaps(validationResult, pluginInstallResult)
 	validationResult = mergeStringMaps(
 		validationResult,
 		defaultManagedLiveValidationResult(agent),
@@ -560,6 +603,35 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 			liveValidationErr = err
 		}
 	}
+	if liveValidationErr != nil {
+		if rollbackErr := recoverManagedGatewayAfterLiveValidationFailure(
+			agent,
+			originalBytes,
+			output,
+		); rollbackErr != nil {
+			fmt.Fprintf(
+				output,
+				"  Warning: failed to restore local model gateway settings after live validation failure: %v\n",
+				rollbackErr,
+			) //nolint:errcheck
+		} else if isClaudeCodeAgent(agent) ||
+			isCodexCLIAgent(agent) ||
+			isGeminiCLIAgent(agent) {
+			clearManagedGatewayValidationFlags(validationResult)
+			plan.ManagedModelAlias = ""
+			plan.ManagedProviderName = ""
+			if _, persistErr := validateManagedEnrollmentRecord(
+				client,
+				agent,
+				enrollment.ID,
+				validationResult,
+				"validation_failed",
+			); persistErr != nil {
+				return persistErr
+			}
+		}
+	}
+	dedupeManagedAgentControlSidecar(agent, pluginInstallResult)
 
 	fmt.Printf("✓ Onboarded %s\n", resolveAgentDisplayName(agent))
 	fmt.Printf("  Managed agent: %s (%s)\n", managedAgent.ID, runtimePrincipalIDForAgent(agent))
@@ -604,6 +676,11 @@ func executeManagedEnrollment(agent AgentConfig, opts managedEnrollmentOptions) 
 	onboardingState := onboardingStateFromValidation(validationResult)
 	fmt.Printf("  Onboarding mode: %s\n", onboardingStateLabel(onboardingState))
 	fmt.Printf("  Routing: %s\n", onboardingStateNote(onboardingState))
+	if supportsAgentControlChannel(agent) {
+		fmt.Printf("  Agent Control config: %s\n", boolStatus(validationResult["control_config_written"]))
+		fmt.Printf("  Agent Control runtime plugin: %s\n", agentControlPluginStatus(validationResult))
+		fmt.Printf("  Agent Control channel: %s\n", boolStatus(validationResult["control_channel_configured"]))
+	}
 	if validationResult["live_validation_status"] != nil {
 		fmt.Printf("  Live validation: %v\n", validationResult["live_validation_status"])
 	}
@@ -860,7 +937,7 @@ func runCodexLiveValidation(
 	)
 	_ = gatewayResponse
 
-	apiKeyID := mostLikelyManagedAPIKeyID(detail.Credentials)
+	apiKeyID := managedAPIKeyIDForToken(detail.Credentials, token)
 	var searchHit *gatewayUsageSearchItem
 	var searchErr error
 	if requestErr == nil {
@@ -923,6 +1000,20 @@ func runCodexLiveValidation(
 		Passed:           passed,
 		ValidationResult: result,
 	}, validationErr
+}
+
+func managedAPIKeyIDForToken(credentials []managedAgentCredentialSummary, token string) string {
+	token = strings.TrimSpace(token)
+	for _, credential := range credentials {
+		if !strings.EqualFold(strings.TrimSpace(credential.Status), "active") {
+			continue
+		}
+		prefix := strings.TrimSpace(credential.KeyPrefix)
+		if prefix != "" && token != "" && strings.HasPrefix(token, prefix) {
+			return credential.APIKeyID
+		}
+	}
+	return mostLikelyManagedAPIKeyID(credentials)
 }
 
 func mostLikelyManagedAPIKeyID(credentials []managedAgentCredentialSummary) string {
@@ -1101,10 +1192,26 @@ func loadManagedDiscoveredConfig(agent AgentConfig) map[string]interface{} {
 }
 
 func readAgentConfigForGatewayResolution(agent AgentConfig) (map[string]interface{}, error) {
+	current, currentErr := loadAgentConfigDocument(agent)
+	if currentErr == nil && shouldPreferCurrentConfigForGatewayResolution(agent, current) {
+		return current, nil
+	}
 	if discovered := loadManagedDiscoveredConfig(agent); discovered != nil {
 		return discovered, nil
 	}
-	return loadAgentConfigDocument(agent)
+	return current, currentErr
+}
+
+func shouldPreferCurrentConfigForGatewayResolution(agent AgentConfig, current map[string]interface{}) bool {
+	if !isCodexCLIAgent(agent) {
+		return false
+	}
+	modelRef := strings.TrimSpace(lookupString(current, "model"))
+	if modelRef == "" {
+		return false
+	}
+	providerID := strings.TrimSpace(lookupString(current, "model_provider"))
+	return !strings.EqualFold(providerID, "preloop") && !looksManagedGatewayModelRef(modelRef)
 }
 
 func resolveManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstream, error) {
@@ -1282,13 +1389,22 @@ func parseGeminiManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 			)
 		}
 	}
-	if modelRef == "" {
-		return nil, nil
-	}
-
 	apiKey, apiKeyNote := resolveGeminiAPIKey(document)
 	if apiKeyNote != "" {
 		notes = append(notes, apiKeyNote)
+	}
+	if modelRef == "" && apiKey != "" {
+		modelRef = geminiDefaultManagedModel
+		notes = append(
+			notes,
+			fmt.Sprintf(
+				"Defaulted fresh Gemini CLI API-key install to %s because no recent Gemini session model was found.",
+				modelRef,
+			),
+		)
+	}
+	if modelRef == "" {
+		return nil, nil
 	}
 	if apiKey == "" && strings.EqualFold(lookupString(document, "security", "auth", "selectedType"), "gemini-api-key") {
 		notes = append(
@@ -1429,9 +1545,11 @@ func parseClaudeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 		}, nil
 	}
 	apiKey, apiKeyNote := resolveClaudeAuthToken(document)
+	claudeSubscriptionOAuthDetected := false
 	credentialType := ""
 	credentialPayload := map[string]interface{}{}
 	if isClaudeCodeOAuthAccessToken(apiKey) {
+		claudeSubscriptionOAuthDetected = true
 		credentialType = "oauth_anthropic_claude_code"
 		credentialPayload = map[string]interface{}{"access": apiKey}
 		if oauthCredential, oauthNote := resolveClaudeOAuthCredential(); oauthCredential != nil {
@@ -1441,15 +1559,17 @@ func parseClaudeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 			}
 		}
 		apiKey = ""
+		notes = append(notes, claudeCodeOAuthGatewayWarningNote())
 	}
 	if apiKeyNote != "" {
 		notes = append(notes, apiKeyNote)
 	}
-	if apiKey == "" && credentialType == "" && resolveClaudeOAuthEmail() != "" {
-		notes = append(
-			notes,
-			"Claude Code appears to rely on local OAuth/keychain auth, but no reusable upstream token was available for automatic import.",
-		)
+	if apiKey == "" && !claudeSubscriptionOAuthDetected {
+		if resolveClaudeOAuthEmail() != "" {
+			notes = append(notes, claudeCodeSubscriptionBillingNote())
+		} else {
+			notes = append(notes, claudeCodeAPIBillingRequiredNote())
+		}
 	}
 
 	providerID, modelID := splitOpenClawModelRef(modelRef)
@@ -1474,6 +1594,18 @@ func parseClaudeManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstre
 		ManagedModelAlias: managedAlias,
 		Notes:             notes,
 	}, nil
+}
+
+func claudeCodeSubscriptionBillingNote() string {
+	return "Claude Code appears to use Anthropic subscription/OAuth billing, but Preloop could not recover a reusable OAuth token bundle. Claude Code will stay MCP proxy only. To fully onboard Claude Code through Preloop, either rerun after Claude Code refreshes its OAuth credentials or switch to API billing by setting ANTHROPIC_API_KEY to an Anthropic API key and rerun `preloop agents onboard \"Claude Code\" -y`."
+}
+
+func claudeCodeOAuthGatewayWarningNote() string {
+	return "Claude Code appears to use Anthropic subscription/OAuth billing. Preloop can attempt to route model traffic with the recovered OAuth token, but this is best-effort and may stop working due to token expiry, account policy, Anthropic ToS enforcement, or aggressive blocking of external tools. If gateway routing fails, switch Claude Code to API billing by setting ANTHROPIC_API_KEY to an Anthropic API key and rerun `preloop agents onboard \"Claude Code\" -y`."
+}
+
+func claudeCodeAPIBillingRequiredNote() string {
+	return "Claude Code did not expose an importable Anthropic API billing credential. Claude Code will stay MCP proxy only. To fully onboard Claude Code through Preloop, set ANTHROPIC_API_KEY to an Anthropic API key and rerun `preloop agents onboard \"Claude Code\" -y`."
 }
 
 func isClaudeCodeOAuthAccessToken(token string) bool {
@@ -1511,11 +1643,22 @@ func parseCodexManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstrea
 		}
 	}
 	parsedProviderID, modelID := splitOpenClawModelRef(modelRef)
+	if !strings.Contains(modelRef, "/") && strings.EqualFold(resolveCodexAuthMode(), "chatgpt") {
+		parsedProviderID = "openai"
+		modelID = strings.TrimSpace(modelRef)
+	}
 	if providerID == "" {
 		providerID = parsedProviderID
 	}
+	if providerID == "" && strings.EqualFold(resolveCodexAuthMode(), "chatgpt") {
+		providerID = "openai"
+	}
 	if strings.EqualFold(providerID, "preloop") {
-		return nil, nil
+		if !looksManagedGatewayModelRef(modelRef) && parsedProviderID != "" && modelID != "" {
+			providerID = parsedProviderID
+		} else {
+			return nil, nil
+		}
 	}
 	if modelID == "" {
 		modelID = modelRef
@@ -1535,6 +1678,10 @@ func parseCodexManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstrea
 		if oauthCredential, oauthNote := resolveCodexOAuthCredential(); oauthCredential != nil {
 			credentialType = "oauth_openai_codex"
 			credentialPayload = oauthCredential.Payload()
+			if !strings.EqualFold(providerID, "openai") &&
+				!strings.EqualFold(providerID, "openai-codex") {
+				providerID = "openai"
+			}
 			providerName = "openai-codex"
 			apiEndpoint = normalizeCodexManagedEndpoint(apiEndpoint)
 			if oauthNote != "" {
@@ -1549,7 +1696,12 @@ func parseCodexManagedGatewayUpstream(agent AgentConfig) (*managedGatewayUpstrea
 		)
 	}
 	managedAlias := strings.TrimSpace(modelRef)
-	if !strings.Contains(managedAlias, "/") {
+	if credentialType == "oauth_openai_codex" && !strings.HasPrefix(
+		strings.ToLower(managedAlias),
+		"openai/",
+	) {
+		managedAlias = "openai/" + modelID
+	} else if !strings.Contains(managedAlias, "/") {
 		managedAlias = providerID + "/" + modelID
 	}
 
@@ -1747,15 +1899,35 @@ func resolveGeminiEncryptedFileAPIKey() (string, string) {
 	if err != nil {
 		return "", ""
 	}
-	var store map[string]map[string]string
+	var store map[string]interface{}
 	if err := json.Unmarshal([]byte(decryptedJSON), &store); err != nil {
 		return "", ""
 	}
-	raw := strings.TrimSpace(store[geminiAPIKeyServiceName][geminiAPIKeyAccountName])
-	if apiKey := extractGeminiAPIKeyFromCredentialBlob(raw); apiKey != "" {
+	if apiKey := extractGeminiAPIKeyFromCredentialStore(store); apiKey != "" {
 		return apiKey, fmt.Sprintf("Resolved Gemini CLI API key from %s.", path)
 	}
 	return "", ""
+}
+
+func extractGeminiAPIKeyFromCredentialStore(store map[string]interface{}) string {
+	rawService, ok := store[geminiAPIKeyServiceName]
+	if !ok {
+		return ""
+	}
+	if raw, ok := rawService.(string); ok {
+		return extractGeminiAPIKeyFromCredentialBlob(raw)
+	}
+	service, ok := asObjectMap(rawService)
+	if !ok {
+		return ""
+	}
+	if raw, ok := service[geminiAPIKeyAccountName].(string); ok {
+		return extractGeminiAPIKeyFromCredentialBlob(raw)
+	}
+	if raw, ok := asObjectMap(service[geminiAPIKeyAccountName]); ok {
+		return extractGeminiAPIKeyFromCredentialObject(raw)
+	}
+	return ""
 }
 
 func extractGeminiAPIKeyFromCredentialBlob(raw string) string {
@@ -1763,15 +1935,19 @@ func extractGeminiAPIKeyFromCredentialBlob(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	var credentials struct {
-		Token struct {
-			AccessToken string `json:"accessToken"`
-		} `json:"token"`
-	}
+	var credentials map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &credentials); err != nil {
 		return ""
 	}
-	return strings.TrimSpace(credentials.Token.AccessToken)
+	return extractGeminiAPIKeyFromCredentialObject(credentials)
+}
+
+func extractGeminiAPIKeyFromCredentialObject(credentials map[string]interface{}) string {
+	token, ok := asObjectMap(credentials["token"])
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(lookupString(token, "accessToken"))
 }
 
 func decryptGeminiCredentialStore(encryptedData string) (string, error) {
@@ -2805,6 +2981,11 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 	mcp["servers"] = map[string]interface{}{
 		"preloop": openClawManagedMCPAdapter{}.BuildManagedServer(baseURL, token),
 	}
+	applyAgentControlConfigToDocument(
+		agent,
+		managedDoc,
+		buildManagedAgentControlConfig(agent, baseURL, token, nil, nil, nil),
+	)
 
 	managedModelRef := ""
 	providerModels, gatewayURL, gatewayAPI, providerNotes := selectOpenClawManagedProviderModels(parsed, baseURL)
@@ -2865,10 +3046,1012 @@ func buildOpenClawManagedMCPEnrollmentPlan(
 		SanitizedManaged:    sanitizedManaged,
 		ManagedServerName:   "preloop",
 		ManagedServerURL:    managedServerURL,
+		ManagedControlWSURL: managedAgentControlWebSocketURL(baseURL),
 		ManagedModelAlias:   managedModelAlias,
 		ManagedProviderName: openClawManagedProviderID,
 		Notes:               notes,
 	}, nil
+}
+
+func supportsAgentControlChannel(agent AgentConfig) bool {
+	switch strings.ToLower(strings.TrimSpace(agent.Name)) {
+	case "openclaw", hermesSourceType:
+		return true
+	default:
+		return false
+	}
+}
+
+func managedAgentControlWebSocketURL(baseURL string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return trimmed + "/api/v1/agents/control/ws"
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http":
+		parsed.Scheme = "ws"
+	case "https":
+		parsed.Scheme = "wss"
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api/v1/agents/control/ws"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func buildManagedAgentControlConfig(
+	agent AgentConfig,
+	baseURL string,
+	token string,
+	managedAgent *managedAgentSummary,
+	credential *managedAgentCredentialSummary,
+	runtimeSession *runtimeSessionTokenResponse,
+) map[string]interface{} {
+	control := map[string]interface{}{
+		"enabled":                true,
+		"protocol":               "preloop.agent_control.v1",
+		"runtime":                runtimeSessionSourceTypeForAgent(agent.Name),
+		"adapter_package":        agentControlPluginPackageName(agent),
+		"control_ws_url":         managedAgentControlWebSocketURL(baseURL),
+		"bearer_token":           token,
+		"runtime_principal_id":   runtimePrincipalIDForAgent(agent),
+		"runtime_principal_name": runtimePrincipalNameForAgent(agent),
+		"session_source_type":    runtimeSessionSourceTypeForAgent(agent.Name),
+		"session_reference":      filepath.Clean(agent.ConfigPath),
+	}
+	if managedAgent != nil {
+		control["managed_agent_id"] = managedAgent.ID
+	}
+	if credential != nil {
+		control["credential_id"] = credential.ID
+		control["credential_name"] = credential.Name
+	}
+	if runtimeSession != nil {
+		control["runtime_session_id"] = runtimeSession.RuntimeSessionID
+		control["session_source_id"] = runtimeSession.SessionSourceID
+		if strings.TrimSpace(runtimeSession.SessionSourceType) != "" {
+			control["session_source_type"] = runtimeSession.SessionSourceType
+		}
+		if strings.TrimSpace(runtimeSession.SessionReference) != "" {
+			control["session_reference"] = runtimeSession.SessionReference
+		}
+	}
+	return control
+}
+
+func applyManagedAgentControlConfig(
+	plan managedMCPEnrollmentPlan,
+	baseURL string,
+	token string,
+	managedAgent *managedAgentSummary,
+	credential *managedAgentCredentialSummary,
+	runtimeSession *runtimeSessionTokenResponse,
+) (managedMCPEnrollmentPlan, error) {
+	if !supportsAgentControlChannel(plan.Agent) {
+		return plan, nil
+	}
+	control := buildManagedAgentControlConfig(
+		plan.Agent,
+		baseURL,
+		token,
+		managedAgent,
+		credential,
+		runtimeSession,
+	)
+	applyAgentControlConfigToDocument(plan.Agent, plan.ManagedDocument, control)
+	plan.ManagedControlWSURL = lookupString(control, "control_ws_url")
+	plan.Notes = append(
+		plan.Notes,
+		"Agent Control metadata was written; the CLI will install and verify the native runtime plugin when that runtime exposes a supported plugin installer.",
+	)
+	return refreshManagedPlanSnapshots(plan)
+}
+
+func applyAgentControlConfigToDocument(
+	agent AgentConfig,
+	doc map[string]interface{},
+	control map[string]interface{},
+) {
+	if !supportsAgentControlChannel(agent) || doc == nil {
+		return
+	}
+	if runtimeSessionSourceTypeForAgent(agent.Name) == "openclaw" {
+		pluginEntry := ensureObjectPath(
+			doc,
+			"plugins",
+			"entries",
+			openClawPreloopPluginID,
+		)
+		pluginEntry["config"] = control
+		return
+	}
+	preloop := ensureObjectPath(doc, "preloop")
+	preloop["control"] = control
+}
+
+func validateAgentControlConfig(
+	agent AgentConfig,
+	doc map[string]interface{},
+	baseURL string,
+) map[string]interface{} {
+	expectedURL := managedAgentControlWebSocketURL(baseURL)
+	result := map[string]interface{}{
+		"expected_control_ws_url":              expectedURL,
+		"control_config_written":               false,
+		"control_plugin_installed":             false,
+		"control_plugin_verified":              false,
+		"control_plugin_verification":          "not_attempted",
+		"control_channel_configured":           false,
+		"control_ws_url_ok":                    false,
+		"control_bearer_token_ok":              false,
+		"control_credential_reference_present": false,
+		"control_managed_agent_id_present":     false,
+		"control_adapter_package_ok":           false,
+		"control_runtime_principal_id_ok":      false,
+		"control_runtime_session_id_present":   false,
+	}
+	control, ok := agentControlConfigFromDocument(agent, doc)
+	if !ok {
+		return result
+	}
+	result["control_config_written"] = true
+	result["control_plugin_verification"] = "not_verified_by_cli"
+	result["control_ws_url_ok"] = lookupString(control, "control_ws_url") == expectedURL
+	result["control_bearer_token_ok"] = strings.TrimSpace(lookupString(control, "bearer_token")) != ""
+	result["control_credential_reference_present"] = strings.TrimSpace(lookupString(control, "credential_id")) != ""
+	result["control_managed_agent_id_present"] = strings.TrimSpace(lookupString(control, "managed_agent_id")) != ""
+	result["control_adapter_package_ok"] = strings.TrimSpace(lookupString(control, "adapter_package")) == agentControlPluginPackageName(agent)
+	controlPrincipalID := strings.TrimSpace(lookupString(control, "runtime_principal_id"))
+	if strings.TrimSpace(agent.ConfigPath) == "" &&
+		strings.TrimSpace(agent.RuntimePrincipalID) == "" &&
+		strings.TrimSpace(agent.DisplayName) == "" {
+		result["control_runtime_principal_id_ok"] = controlPrincipalID != ""
+	} else {
+		result["control_runtime_principal_id_ok"] = controlPrincipalID == runtimePrincipalIDForAgent(agent)
+	}
+	result["control_runtime_session_id_present"] = strings.TrimSpace(lookupString(control, "runtime_session_id")) != ""
+	plugin := verifyAgentControlRuntimePlugin(agent)
+	for key, value := range plugin {
+		result[key] = value
+	}
+	result["control_channel_configured"] =
+		result["control_config_written"] == true &&
+			result["control_ws_url_ok"] == true &&
+			result["control_bearer_token_ok"] == true &&
+			result["control_adapter_package_ok"] == true &&
+			result["control_runtime_principal_id_ok"] == true &&
+			result["control_plugin_verified"] == true
+	return result
+}
+
+func agentControlConfigFromDocument(
+	agent AgentConfig,
+	doc map[string]interface{},
+) (map[string]interface{}, bool) {
+	if runtimeSessionSourceTypeForAgent(agent.Name) == "openclaw" {
+		plugins, ok := asObjectMap(doc["plugins"])
+		if !ok {
+			return nil, false
+		}
+		entries, ok := asObjectMap(plugins["entries"])
+		if !ok {
+			return nil, false
+		}
+		entry, ok := asObjectMap(entries[openClawPreloopPluginID])
+		if !ok {
+			return nil, false
+		}
+		return asObjectMap(entry["config"])
+	}
+	preloop, ok := asObjectMap(doc["preloop"])
+	if !ok {
+		return nil, false
+	}
+	return asObjectMap(preloop["control"])
+}
+
+func agentControlPluginPackageName(agent AgentConfig) string {
+	sourceType := runtimeSessionSourceTypeForAgent(agent.Name)
+	switch sourceType {
+	case hermesSourceType:
+		return "preloop-hermes-plugin"
+	case "openclaw":
+		return "@preloop/openclaw-plugin"
+	default:
+		return ""
+	}
+}
+
+func agentControlPluginVerifyCommand(agent AgentConfig) string {
+	sourceType := runtimeSessionSourceTypeForAgent(agent.Name)
+	switch sourceType {
+	case hermesSourceType:
+		return "preloop-hermes-plugin"
+	case "openclaw":
+		return "preloop-openclaw-plugin"
+	default:
+		return ""
+	}
+}
+
+func agentControlPluginInstallerCommand(agent AgentConfig) string {
+	switch runtimeSessionSourceTypeForAgent(agent.Name) {
+	case hermesSourceType:
+		return "hermes"
+	case "openclaw":
+		return "openclaw"
+	default:
+		return ""
+	}
+}
+
+func resolveRuntimeExecutable(command string) (string, error) {
+	path, err := exec.LookPath(command)
+	if err == nil {
+		return path, nil
+	}
+	for _, candidate := range runtimeExecutableFallbackPaths(command) {
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			if info.Mode().Perm()&0111 != 0 {
+				return candidate, nil
+			}
+		}
+	}
+	return "", err
+}
+
+func runtimeExecutableFallbackPaths(command string) []string {
+	if strings.TrimSpace(command) == "" || filepath.Base(command) != command {
+		return nil
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	candidates := []string{
+		filepath.Join(homeDir, ".local", "bin", command),
+		filepath.Join(homeDir, "Library", "pnpm", command),
+	}
+	if nvmMatches, globErr := filepath.Glob(
+		filepath.Join(homeDir, ".nvm", "versions", "node", "*", "bin", command),
+	); globErr == nil {
+		sort.Sort(sort.Reverse(sort.StringSlice(nvmMatches)))
+		candidates = append(candidates, nvmMatches...)
+	}
+	if command == "hermes" {
+		candidates = append(
+			candidates,
+			filepath.Join(homeDir, ".hermes", "hermes-agent", "venv", "bin", "hermes"),
+		)
+	}
+	return candidates
+}
+
+func runtimeExecutableSearchDescription(command string) string {
+	locations := []string{"PATH"}
+	for _, candidate := range runtimeExecutableFallbackPaths(command) {
+		locations = append(locations, candidate)
+	}
+	return strings.Join(locations, " or ")
+}
+
+func agentControlPluginSourceDirName(agent AgentConfig) string {
+	switch runtimeSessionSourceTypeForAgent(agent.Name) {
+	case hermesSourceType:
+		return "hermes-preloop"
+	case "openclaw":
+		return "openclaw-preloop"
+	default:
+		return ""
+	}
+}
+
+func installAgentControlRuntimePlugin(agent AgentConfig, writer io.Writer) map[string]interface{} {
+	result := map[string]interface{}{}
+	installer := agentControlPluginInstallerCommand(agent)
+	installTarget := agentControlPluginInstallTarget(agent)
+	if installer == "" {
+		return result
+	}
+	if installTarget == "" {
+		result["control_plugin_install_status"] = "plugin_target_not_found"
+		return result
+	}
+	installerPath, err := resolveRuntimeExecutable(installer)
+	if err != nil {
+		result["control_plugin_install_status"] = "runtime_plugin_installer_not_found"
+		result["control_plugin_install_target"] = installTarget
+		result["control_plugin_installer_search"] = runtimeExecutableSearchDescription(installer)
+		if writer != nil {
+			fmt.Fprintf(
+				writer,
+				"  Warning: Agent Control plugin installer %q was not found on %s. "+
+					"Install %s, add its bin directory to PATH, or run `preloop agents install-plugin %s --dry-run` for the manual install command.\n",
+				installer,
+				runtimeExecutableSearchDescription(installer),
+				resolveAgentDisplayName(agent),
+				runtimeSessionSourceTypeForAgent(agent.Name),
+			) //nolint:errcheck
+		}
+		return mergeStringMaps(result, ensureManagedAgentControlSidecar(agent, writer))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	args := []string{"plugins", "install", installTarget}
+	output, err := exec.CommandContext(ctx, installerPath, args...).CombinedOutput()
+	result["control_plugin_install_status"] = "install_attempted"
+	result["control_plugin_install_target"] = installTarget
+	result["control_plugin_installer"] = installer
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			message = err.Error()
+		}
+		status, remediation := classifyRuntimePluginInstallFailure(installer, message)
+		result["control_plugin_install_status"] = status
+		result["control_plugin_install_error"] = message
+		if remediation != "" {
+			result["control_plugin_install_remediation"] = remediation
+		}
+		if writer != nil {
+			fmt.Fprintf(writer, "  Warning: Agent Control plugin install failed: %s\n", message) //nolint:errcheck
+			if remediation != "" {
+				fmt.Fprintf(writer, "  %s\n", remediation) //nolint:errcheck
+			}
+		}
+		return mergeStringMaps(result, ensureManagedAgentControlSidecar(agent, writer))
+	}
+
+	verification := verifyAgentControlRuntimePlugin(agent)
+	for key, value := range verification {
+		result[key] = value
+	}
+	if verified, _ := verification["control_plugin_verified"].(bool); verified {
+		result["control_plugin_install_status"] = "installed_and_verified"
+	} else {
+		result["control_plugin_install_status"] = "installed_not_verified"
+		result = mergeStringMaps(result, ensureManagedAgentControlSidecar(agent, writer))
+	}
+	return result
+}
+
+func classifyRuntimePluginInstallFailure(installer string, message string) (string, string) {
+	normalizedInstaller := strings.ToLower(strings.TrimSpace(installer))
+	normalizedMessage := strings.ToLower(strings.TrimSpace(message))
+	if normalizedInstaller == "openclaw" &&
+		(strings.Contains(normalizedMessage, "requires node") ||
+			strings.Contains(normalizedMessage, "unsupported engine") ||
+			strings.Contains(normalizedMessage, "wanted: {\"node\"") ||
+			strings.Contains(normalizedMessage, "node >=")) {
+		return "runtime_node_unsupported",
+			"OpenClaw rejected the plugin install because its Node runtime is too old. Upgrade Node to the version required by OpenClaw, then rerun `preloop agents install-plugin openclaw`; the managed sidecar fallback can keep Agent Control available meanwhile."
+	}
+	return "install_failed", ""
+}
+
+func agentControlPluginInstallTarget(agent AgentConfig) string {
+	if sourcePath, ok := findAgentControlRuntimePluginSource(agent); ok {
+		return sourcePath
+	}
+	return agentControlPluginPackageName(agent)
+}
+
+func findAgentControlRuntimePluginSource(agent AgentConfig) (string, bool) {
+	dirName := agentControlPluginSourceDirName(agent)
+	if dirName == "" {
+		return "", false
+	}
+	if configuredRoot := strings.TrimSpace(os.Getenv("PRELOOP_RUNTIME_PLUGINS_DIR")); configuredRoot != "" {
+		return existingAgentControlPluginSource(filepath.Join(configuredRoot, dirName))
+	}
+
+	candidates := []string{}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, agentControlPluginSourceCandidates(wd, dirName)...)
+	}
+	if _, file, _, ok := runtime.Caller(0); ok {
+		candidates = append(candidates, agentControlPluginSourceCandidates(filepath.Dir(file), dirName)...)
+	}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		if seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		if path, ok := existingAgentControlPluginSource(candidate); ok {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+func agentControlPluginSourceCandidates(startPath, dirName string) []string {
+	startPath = filepath.Clean(startPath)
+	candidates := []string{}
+	for {
+		candidates = append(candidates,
+			filepath.Join(startPath, "preloop", "runtime-plugins", dirName),
+			filepath.Join(startPath, "runtime-plugins", dirName),
+		)
+		parent := filepath.Dir(startPath)
+		if parent == startPath {
+			break
+		}
+		startPath = parent
+	}
+	return candidates
+}
+
+func existingAgentControlPluginSource(path string) (string, bool) {
+	cleaned := filepath.Clean(path)
+	if info, err := os.Stat(cleaned); err == nil && info.IsDir() {
+		return cleaned, true
+	}
+	return cleaned, false
+}
+
+func verifyAgentControlRuntimePlugin(agent AgentConfig) map[string]interface{} {
+	result := map[string]interface{}{
+		"control_plugin_installed":    false,
+		"control_plugin_verified":     false,
+		"control_plugin_verification": "not_installed",
+	}
+	command := agentControlPluginVerifyCommand(agent)
+	if command == "" {
+		result["control_plugin_verification"] = "unsupported_agent"
+		return result
+	}
+	path, err := resolveRuntimeExecutable(command)
+	if err != nil {
+		return mergeStringMaps(result, managedAgentControlSidecarVerification(agent))
+	}
+	result["control_plugin_installed"] = true
+	if strings.TrimSpace(agent.ConfigPath) == "" {
+		result["control_plugin_verification"] = "installed_config_path_missing"
+		return result
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, path, "verify", "--config", agent.ConfigPath).CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			message = err.Error()
+		}
+		result["control_plugin_verification"] = message
+		return result
+	}
+	result["control_plugin_verified"] = true
+	result["control_plugin_verification"] = "verified"
+	return result
+}
+
+func ensureManagedAgentControlSidecar(
+	agent AgentConfig,
+	writer io.Writer,
+) map[string]interface{} {
+	result := map[string]interface{}{
+		"control_plugin_installed":    false,
+		"control_plugin_verified":     false,
+		"control_plugin_verification": "managed_sidecar_not_started",
+	}
+	runtimeKey := managedAgentControlSidecarRuntime(agent)
+	if runtimeKey == "" {
+		result["control_plugin_verification"] = "unsupported_agent"
+		return result
+	}
+	pythonPath, err := managedAgentControlSidecarPython()
+	if err != nil {
+		result["control_plugin_verification"] = err.Error()
+		return result
+	}
+	sidecarDir, err := managedAgentControlSidecarDir()
+	if err != nil {
+		result["control_plugin_verification"] = err.Error()
+		return result
+	}
+	if err := os.MkdirAll(sidecarDir, 0700); err != nil {
+		result["control_plugin_verification"] = fmt.Sprintf("failed to create managed sidecar directory: %v", err)
+		return result
+	}
+	scriptPath := filepath.Join(sidecarDir, "agent_control_sidecar.py")
+	if err := os.WriteFile(scriptPath, []byte(managedAgentControlSidecarScript), 0700); err != nil {
+		result["control_plugin_verification"] = fmt.Sprintf("failed to write managed sidecar: %v", err)
+		return result
+	}
+	stopManagedAgentControlSidecars(runtimeKey)
+	stdoutPath := filepath.Join(sidecarDir, runtimeKey+".log")
+	stderrPath := filepath.Join(sidecarDir, runtimeKey+".err.log")
+	stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		result["control_plugin_verification"] = fmt.Sprintf("failed to open managed sidecar log: %v", err)
+		return result
+	}
+	defer stdout.Close() //nolint:errcheck
+	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		result["control_plugin_verification"] = fmt.Sprintf("failed to open managed sidecar error log: %v", err)
+		return result
+	}
+	defer stderr.Close() //nolint:errcheck
+
+	cmd := exec.Command(pythonPath, scriptPath, runtimeKey)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		result["control_plugin_verification"] = fmt.Sprintf("failed to start managed sidecar: %v", err)
+		return result
+	}
+	stopManagedAgentControlSidecarsExcept(runtimeKey, cmd.Process.Pid)
+	if writer != nil {
+		fmt.Fprintf(
+			writer,
+			"  Started managed Agent Control sidecar for %s.\n",
+			resolveAgentDisplayName(agent),
+		) //nolint:errcheck
+	}
+	result["control_plugin_installed"] = true
+	result["control_plugin_install_status"] = "managed_sidecar_started"
+	result["control_plugin_verification"] = "managed_sidecar_starting"
+	result["control_plugin_sidecar_pid"] = cmd.Process.Pid
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(250 * time.Millisecond)
+		verification := managedAgentControlSidecarVerification(agent)
+		if verified, _ := verification["control_plugin_verified"].(bool); verified {
+			return mergeStringMaps(result, verification)
+		}
+		result = mergeStringMaps(result, verification)
+	}
+	return result
+}
+
+func dedupeManagedAgentControlSidecar(agent AgentConfig, installResult map[string]interface{}) {
+	runtimeKey := managedAgentControlSidecarRuntime(agent)
+	if runtimeKey == "" {
+		return
+	}
+	keepPID := 0
+	pids := managedAgentControlSidecarPIDFilePIDs(runtimeKey)
+	if len(pids) > 0 {
+		keepPID = pids[len(pids)-1]
+	}
+	if keepPID <= 0 {
+		keepPID = intFromInterface(installResult["control_plugin_sidecar_pid"])
+	}
+	stopManagedAgentControlSidecarsExcept(runtimeKey, keepPID)
+}
+
+func intFromInterface(value interface{}) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		parsed, _ := typed.Int64()
+		return int(parsed)
+	default:
+		return 0
+	}
+}
+
+func managedAgentControlSidecarVerification(agent AgentConfig) map[string]interface{} {
+	result := map[string]interface{}{
+		"control_plugin_installed":    false,
+		"control_plugin_verified":     false,
+		"control_plugin_verification": "not_installed",
+	}
+	runtimeKey := managedAgentControlSidecarRuntime(agent)
+	if runtimeKey == "" {
+		result["control_plugin_verification"] = "unsupported_agent"
+		return result
+	}
+	sidecarDir, err := managedAgentControlSidecarDir()
+	if err != nil {
+		result["control_plugin_verification"] = err.Error()
+		return result
+	}
+	statusPath := filepath.Join(sidecarDir, runtimeKey+".status.json")
+	statusBytes, err := os.ReadFile(statusPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			result["control_plugin_verification"] = fmt.Sprintf("managed_sidecar_status_error: %v", err)
+		}
+		return result
+	}
+	var status map[string]interface{}
+	if err := json.Unmarshal(statusBytes, &status); err != nil {
+		result["control_plugin_verification"] = fmt.Sprintf("managed_sidecar_status_invalid: %v", err)
+		return result
+	}
+	result["control_plugin_installed"] = true
+	result["control_plugin_sidecar_state"] = status["state"]
+	if errorMessage, _ := status["error"].(string); strings.TrimSpace(errorMessage) != "" {
+		result["control_plugin_sidecar_error"] = errorMessage
+	}
+	if runtimeSessionID, _ := status["runtime_session_id"].(string); strings.TrimSpace(runtimeSessionID) != "" {
+		result["control_plugin_sidecar_runtime_session_id"] = runtimeSessionID
+	}
+	if state, _ := status["state"].(string); state == "connected" {
+		if expectedRuntimeSessionID := currentAgentControlRuntimeSessionID(agent); expectedRuntimeSessionID != "" {
+			observedRuntimeSessionID, _ := status["runtime_session_id"].(string)
+			if strings.TrimSpace(observedRuntimeSessionID) != expectedRuntimeSessionID {
+				result["control_plugin_verification"] = "managed_sidecar_stale_status"
+				return result
+			}
+		}
+		result["control_plugin_verified"] = true
+		result["control_plugin_verification"] = "managed_sidecar_connected"
+		return result
+	}
+	if state, _ := status["state"].(string); strings.TrimSpace(state) != "" {
+		result["control_plugin_verification"] = "managed_sidecar_" + state
+	}
+	return result
+}
+
+func currentAgentControlRuntimeSessionID(agent AgentConfig) string {
+	document, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return ""
+	}
+	control, ok := agentControlConfigFromDocument(agent, document)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(lookupString(control, "runtime_session_id"))
+}
+
+func managedAgentControlSidecarRuntime(agent AgentConfig) string {
+	switch runtimeSessionSourceTypeForAgent(agent.Name) {
+	case hermesSourceType:
+		return "hermes"
+	case "openclaw":
+		return "openclaw"
+	default:
+		return ""
+	}
+}
+
+func managedAgentControlSidecarDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".preloop-agent-control"), nil
+}
+
+func managedAgentControlSidecarPython() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	hermesPython := filepath.Join(homeDir, ".hermes", "hermes-agent", "venv", "bin", "python")
+	if info, err := os.Stat(hermesPython); err == nil && !info.IsDir() {
+		return hermesPython, nil
+	}
+	pythonPath, err := exec.LookPath("python3")
+	if err != nil {
+		return "", fmt.Errorf("python3 is required for the managed Agent Control sidecar")
+	}
+	return pythonPath, nil
+}
+
+func stopManagedAgentControlSidecars(runtimeKey string) {
+	if strings.TrimSpace(runtimeKey) == "" {
+		return
+	}
+	pids := managedAgentControlSidecarPIDFilePIDs(runtimeKey)
+	pgrepPath, err := exec.LookPath("pgrep")
+	if err == nil {
+		for _, pattern := range []string{
+			"agent_control_sidecar.py " + runtimeKey,
+			".preloop-agent-control/agent_control_sidecar.py " + runtimeKey,
+		} {
+			output, err := exec.Command(pgrepPath, "-f", pattern).Output()
+			if err != nil {
+				continue
+			}
+			for _, rawPID := range strings.Fields(string(output)) {
+				pid, err := strconv.Atoi(rawPID)
+				if err == nil {
+					pids = append(pids, pid)
+				}
+			}
+		}
+	}
+	killedPIDs := make([]int, 0)
+	for _, pid := range uniquePositivePIDs(pids) {
+		if pid == os.Getpid() {
+			continue
+		}
+		process, err := os.FindProcess(pid)
+		if err == nil {
+			_ = process.Kill()
+			killedPIDs = append(killedPIDs, pid)
+		}
+	}
+	waitForManagedAgentControlSidecarsToExit(killedPIDs)
+}
+
+func stopManagedAgentControlSidecarsExcept(runtimeKey string, keepPID int) {
+	if strings.TrimSpace(runtimeKey) == "" || keepPID <= 0 {
+		return
+	}
+	pids := managedAgentControlSidecarPIDs(runtimeKey)
+	killedPIDs := make([]int, 0)
+	for _, pid := range uniquePositivePIDs(pids) {
+		if pid == os.Getpid() || pid == keepPID {
+			continue
+		}
+		process, err := os.FindProcess(pid)
+		if err == nil {
+			_ = process.Kill()
+			killedPIDs = append(killedPIDs, pid)
+		}
+	}
+	waitForManagedAgentControlSidecarsToExit(killedPIDs)
+}
+
+func managedAgentControlSidecarPIDs(runtimeKey string) []int {
+	pids := managedAgentControlSidecarPIDFilePIDs(runtimeKey)
+	pgrepPath, err := exec.LookPath("pgrep")
+	if err != nil {
+		return pids
+	}
+	for _, pattern := range []string{
+		"agent_control_sidecar.py " + runtimeKey,
+		".preloop-agent-control/agent_control_sidecar.py " + runtimeKey,
+	} {
+		output, err := exec.Command(pgrepPath, "-f", pattern).Output()
+		if err != nil {
+			continue
+		}
+		for _, rawPID := range strings.Fields(string(output)) {
+			pid, err := strconv.Atoi(rawPID)
+			if err == nil {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	return pids
+}
+
+func managedAgentControlSidecarPIDFilePIDs(runtimeKey string) []int {
+	sidecarDir, err := managedAgentControlSidecarDir()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(sidecarDir, runtimeKey+".pid"))
+	if err != nil {
+		return nil
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return nil
+	}
+	return []int{pid}
+}
+
+func uniquePositivePIDs(pids []int) []int {
+	seen := map[int]bool{}
+	unique := make([]int, 0, len(pids))
+	for _, pid := range pids {
+		if pid <= 0 || seen[pid] {
+			continue
+		}
+		seen[pid] = true
+		unique = append(unique, pid)
+	}
+	return unique
+}
+
+func waitForManagedAgentControlSidecarsToExit(pids []int) {
+	if len(pids) == 0 {
+		return
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		alive := false
+		for _, pid := range pids {
+			if syscall.Kill(pid, 0) == nil {
+				alive = true
+				break
+			}
+		}
+		if !alive {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+const managedAgentControlSidecarScript = `
+import asyncio, json, os, pathlib, sys, time, uuid
+from typing import Any
+
+import aiohttp
+import yaml
+
+BASE = pathlib.Path.home() / ".preloop-agent-control"
+WS_HEARTBEAT_SECONDS = 25
+
+def load_config(runtime: str) -> dict[str, Any]:
+    if runtime == "openclaw":
+        data = json.loads((pathlib.Path.home() / ".openclaw/openclaw.json").read_text())
+    elif runtime == "hermes":
+        data = yaml.safe_load((pathlib.Path.home() / ".hermes/config.yaml").read_text())
+    else:
+        raise SystemExit(f"unsupported runtime {runtime}")
+    if runtime == "openclaw":
+        control = (
+            (((data.get("plugins") or {}).get("entries") or {}).get("openclaw-plugin") or {}).get("config")
+            or (((data.get("plugins") or {}).get("entries") or {}).get("@preloop/openclaw-plugin") or {}).get("config")
+            or ((data.get("preloop") or {}).get("control") or {})
+        )
+    else:
+        control = ((data.get("preloop") or {}).get("control") or {})
+    if not control:
+        raise SystemExit(f"missing Agent Control config for {runtime}")
+    return control
+
+def status(runtime: str, payload: dict[str, Any]) -> None:
+    BASE.mkdir(parents=True, exist_ok=True)
+    payload = dict(payload)
+    payload["runtime"] = runtime
+    payload["ts"] = time.time()
+    (BASE / f"{runtime}.status.json").write_text(json.dumps(payload, sort_keys=True))
+
+def write_pid(runtime: str) -> None:
+    BASE.mkdir(parents=True, exist_ok=True)
+    pid_path = BASE / f"{runtime}.pid"
+    current_pid = os.getpid()
+    try:
+        existing_pid = int(pid_path.read_text().strip())
+    except Exception:
+        existing_pid = 0
+    if existing_pid and existing_pid != current_pid:
+        try:
+            os.kill(existing_pid, 9)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            pass
+    pid_path.write_text(str(current_pid))
+
+def envelope(kind: str, name: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {"type": kind, "name": name, "message_id": str(uuid.uuid4()), "payload": payload or {}}
+
+async def send_json(ws: Any, body: dict[str, Any]) -> None:
+    await ws.send_str(json.dumps(body))
+
+async def run_subprocess(args: list[str], cwd: str | None = None, timeout: int = 900) -> tuple[int, str]:
+    proc = await asyncio.create_subprocess_exec(*args, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        out, _ = await proc.communicate()
+        return 124, out.decode("utf-8", "replace")
+    return proc.returncode or 0, out.decode("utf-8", "replace")
+
+async def dispatch(runtime: str, command: dict[str, Any]) -> dict[str, Any]:
+    payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
+    text = str(payload.get("text") or payload.get("message") or "").strip()
+    if not text:
+        return {"status": "failed", "reply_text": "Empty command text"}
+    if runtime == "hermes":
+        args = [str(pathlib.Path.home() / ".hermes/hermes-agent/venv/bin/python"), "-m", "hermes_cli.main", "--accept-hooks", "-z", text]
+        code, out = await run_subprocess(args, cwd=str(pathlib.Path.home()))
+    else:
+        args = [
+            "/opt/homebrew/opt/node@22/bin/node",
+            str(pathlib.Path.home() / "Library/pnpm/global/5/node_modules/openclaw/dist/index.js"),
+            "agent",
+            "--message",
+            text,
+            "--json",
+            "--timeout",
+            "900",
+        ]
+        target = payload.get("target_session_id")
+        if isinstance(target, str) and target.strip():
+            args.extend(["--session-id", target.strip()])
+        code, out = await run_subprocess(args, cwd=str(pathlib.Path.home()))
+    return {"status": "completed" if code == 0 else "failed", "reply_text": out[-4000:], "exit_code": code}
+
+async def heartbeat_loop(runtime: str, ws: Any) -> None:
+    while True:
+        await asyncio.sleep(WS_HEARTBEAT_SECONDS)
+        await send_json(ws, envelope("heartbeat", "heartbeat", {"status": "online"}))
+        control = load_config(runtime)
+        status(runtime, {
+            "state": "connected",
+            "managed_agent_id": control.get("managed_agent_id"),
+            "runtime_session_id": control.get("runtime_session_id"),
+        })
+
+async def run(runtime: str) -> None:
+    write_pid(runtime)
+    while True:
+        control = load_config(runtime)
+        token = control.get("bearer_token")
+        if not token:
+            status(runtime, {"state": "disconnected", "error": "missing bearer token"})
+            await asyncio.sleep(5)
+            continue
+        headers = {"Authorization": f"Bearer {token}"}
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.ws_connect(control["control_ws_url"], heartbeat=30) as ws:
+                    status(runtime, {
+                        "state": "connected",
+                        "managed_agent_id": control.get("managed_agent_id"),
+                        "runtime_session_id": control.get("runtime_session_id"),
+                    })
+                    await send_json(ws, envelope("presence", "capabilities", {
+                        "status": "online",
+                        "protocol": "preloop.agent_control.v1",
+                        "runtime": runtime,
+                        "runtime_principal_id": control.get("runtime_principal_id"),
+                        "runtime_principal_name": control.get("runtime_principal_name"),
+                        "capabilities": {
+                            "new_session": True,
+                            "existing_session": runtime == "openclaw",
+                            "text": True,
+                            "voice": False,
+                            "interrupt": False,
+                        },
+                    }))
+                    task = asyncio.create_task(heartbeat_loop(runtime, ws))
+                    try:
+                        async for msg in ws:
+                            if msg.type != aiohttp.WSMsgType.TEXT:
+                                continue
+                            body = json.loads(msg.data)
+                            if body.get("type") == "command" and body.get("name") == "send_message":
+                                result = await dispatch(runtime, body)
+                                await send_json(ws, envelope("status", "command_result", {"command_id": body.get("message_id"), **result}))
+                    finally:
+                        task.cancel()
+        except Exception as exc:
+            status(runtime, {
+                "state": "disconnected",
+                "managed_agent_id": control.get("managed_agent_id"),
+                "runtime_session_id": control.get("runtime_session_id"),
+                "error": type(exc).__name__ + ": " + str(exc)[:240],
+            })
+            await asyncio.sleep(5)
+
+if __name__ == "__main__":
+    asyncio.run(run(sys.argv[1]))
+`
+
+func boolStatus(value interface{}) string {
+	if enabled, _ := value.(bool); enabled {
+		return "yes"
+	}
+	return "no"
+}
+
+func agentControlPluginStatus(validation map[string]interface{}) string {
+	if verified, _ := validation["control_plugin_verified"].(bool); verified {
+		return "verified"
+	}
+	if installed, _ := validation["control_plugin_installed"].(bool); installed {
+		return "installed but not verified"
+	}
+	if verification, _ := validation["control_plugin_verification"].(string); strings.TrimSpace(verification) != "" {
+		return verification
+	}
+	return "not installed"
 }
 
 func selectOpenClawManagedProviderModels(
@@ -3662,8 +4845,10 @@ func loadAgentConfigDocument(agent AgentConfig) (map[string]interface{}, error) 
 }
 
 func writeAgentConfigDocument(agent AgentConfig, doc map[string]interface{}) error {
-	if strings.EqualFold(strings.TrimSpace(agent.Name), "codex cli") ||
-		strings.EqualFold(filepath.Ext(agent.ConfigPath), ".toml") {
+	if strings.EqualFold(strings.TrimSpace(agent.Name), "codex cli") {
+		return writeTOMLDocument(agent.ConfigPath, normalizeCodexTOMLDocument(doc))
+	}
+	if strings.EqualFold(filepath.Ext(agent.ConfigPath), ".toml") {
 		return writeTOMLDocument(agent.ConfigPath, doc)
 	}
 	if isHermesAgent(agent) || isYAMLConfigPath(agent.ConfigPath) {
@@ -3826,6 +5011,18 @@ func resolveManagedAgentExecutablePath(commandName, launcherPath string) (string
 			continue
 		}
 		candidate := filepath.Join(dir, commandName)
+		if filepath.Clean(candidate) == cleanLauncher {
+			continue
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if info.Mode()&0111 != 0 {
+			return candidate, nil
+		}
+	}
+	for _, candidate := range runtimeExecutableFallbackPaths(commandName) {
 		if filepath.Clean(candidate) == cleanLauncher {
 			continue
 		}
