@@ -1,4 +1,4 @@
-import { LitElement, html, css, unsafeCSS } from 'lit';
+import { LitElement, html, css, unsafeCSS, type TemplateResult } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -25,6 +25,7 @@ export interface ResourceAction {
   tooltip?: string;
   href?: string;
   onClick?: () => void;
+  render?: () => TemplateResult;
 }
 
 @customElement('resource-actions')
@@ -123,6 +124,10 @@ export class ResourceActions extends LitElement {
   }
 
   private renderButton(action: ResourceAction) {
+    if (action.render) {
+      return action.render();
+    }
+
     const button = html`
       <sl-button
         variant=${action.variant || 'default'}

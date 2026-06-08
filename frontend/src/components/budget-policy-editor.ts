@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   BudgetPolicy,
@@ -105,6 +105,13 @@ export class BudgetPolicyEditor extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
+    const featuresRes = await fetchWithAuth('/api/v1/features')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    this.features = featuresRes?.features || {};
+    if (this.features.billing !== true) {
+      return;
+    }
     await this.loadPolicies();
     this.loadSubjects();
   }
@@ -241,6 +248,10 @@ export class BudgetPolicyEditor extends LitElement {
   }
 
   render() {
+    if (this.features.billing !== true) {
+      return nothing;
+    }
+
     return html`
       <div>
         <div

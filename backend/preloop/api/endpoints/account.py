@@ -50,6 +50,8 @@ from preloop.schemas.gateway_usage import (
     ManagedAgentUpdateRequest,
     ManagedAgentUsageAggregate,
     RuntimeSessionActivityListResponse,
+    RuntimeSessionInteractionSummary,
+    RuntimeSessionSummaryInsight,
     RuntimeSessionSummary,
     RuntimeSessionUpdateRequest,
     DashboardTelemetryResponse,
@@ -77,6 +79,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 public_router = APIRouter()  # Public endpoints (no auth required)
+
+AGENT_CONTROL_CAPABILITIES = [
+    "send_text_prompt",
+    "send_voice_transcript",
+    "target_existing_session",
+    "start_new_session",
+]
+AGENT_CONTROL_INPUT_MODES = ["text", "voice_transcript"]
+AGENT_CONTROL_OUTPUT_MODES = ["event", "status", "text"]
+AGENT_CONTROL_SUPPORTED_AGENT_KINDS = {"hermes", "openclaw"}
+AGENT_CONTROL_STATE_UNSUPPORTED = "unsupported"
+AGENT_CONTROL_STATE_INSTALL_PENDING = "install_pending"
+AGENT_CONTROL_STATE_PLUGIN_CONFIGURED = "plugin_configured"
+AGENT_CONTROL_STATE_PLUGIN_CONNECTED = "plugin_connected"
 
 
 def _managed_agent_onboarding_flags(
@@ -187,6 +203,25 @@ def _managed_agent_onboarding_flags(
             )
         )
     )
+    live_validation_status = str(validation.get("live_validation_status") or "").strip()
+    live_validation_failed = live_validation_status in {"failed", "throttled"}
+    live_validation_missing_gateway = (
+        live_validation_status == "not_run"
+        and isinstance(validation.get("live_validation_skip_reason"), str)
+        and "gateway token" in validation["live_validation_skip_reason"].lower()
+    )
+    explicit_gateway_unavailable = (
+        validation.get("gateway_provider_ok") is False
+        or validation.get("gateway_base_url_ok") is False
+        or validation.get("gateway_token_ok") is False
+        or validation.get("model_provider_rewritten") is False
+        or validation.get("gateway_model_configured") is False
+    )
+    if (live_validation_failed or live_validation_missing_gateway) and (
+        explicit_gateway_unavailable
+        or validation.get("live_validation_attempted") is True
+    ):
+        model_gateway_configured = False
 
     if mcp_proxy_configured and model_gateway_configured:
         return True, True, "fully_onboarded"
@@ -400,20 +435,158 @@ def _managed_agent_live_validation_state(
     return True, normalized_passed, status, latest_enrollment.get("last_validated_at")
 
 
+def _managed_agent_control_config_flags(
+    latest_enrollment: Optional[dict],
+) -> tuple[bool, bool]:
+    if not latest_enrollment:
+        return False, False
+
+    validation = (
+        latest_enrollment.get("validation_result")
+        if isinstance(latest_enrollment.get("validation_result"), dict)
+        else {}
+    )
+    managed_config = (
+        latest_enrollment.get("managed_config")
+        if isinstance(latest_enrollment.get("managed_config"), dict)
+        else {}
+    )
+
+    validation_control_ready = bool(
+        validation.get("control_channel_configured")
+        or (
+            validation.get("control_plugin_verified")
+            and validation.get("control_ws_url_ok")
+            and validation.get("control_bearer_token_ok")
+        )
+    )
+    control_config = _managed_agent_control_config_from_managed_config(managed_config)
+    managed_control_ready = bool(
+        control_config.get("enabled") is True
+        and isinstance(control_config.get("control_ws_url"), str)
+        and control_config["control_ws_url"].strip()
+    )
+
+    return validation_control_ready, managed_control_ready
+
+
+def _managed_agent_control_config_from_managed_config(managed_config: dict) -> dict:
+    """Return Agent Control config from legacy and runtime-plugin locations."""
+    preloop_config = (
+        managed_config.get("preloop")
+        if isinstance(managed_config.get("preloop"), dict)
+        else {}
+    )
+    control_config = (
+        preloop_config.get("control")
+        if isinstance(preloop_config.get("control"), dict)
+        else {}
+    )
+    if control_config:
+        return control_config
+
+    plugins = (
+        managed_config.get("plugins")
+        if isinstance(managed_config.get("plugins"), dict)
+        else {}
+    )
+    entries = plugins.get("entries") if isinstance(plugins.get("entries"), dict) else {}
+    for plugin_id in ("openclaw-plugin", "@preloop/openclaw-plugin"):
+        entry = (
+            entries.get(plugin_id) if isinstance(entries.get(plugin_id), dict) else {}
+        )
+        config = entry.get("config") if isinstance(entry.get("config"), dict) else {}
+        if config:
+            return config
+    return {}
+
+
+def _managed_agent_control_fields(
+    summary: dict,
+    latest_enrollment: Optional[dict],
+    control_enrollment: Optional[dict] = None,
+) -> dict:
+    """Expose Agent Control only after an explicit runtime control enrollment."""
+    agent_kind = str(
+        summary.get("agent_kind") or summary.get("session_source_type") or ""
+    ).lower()
+    validation_control_ready, managed_control_ready = (
+        _managed_agent_control_config_flags(latest_enrollment)
+    )
+    runtime_validation_ready, runtime_managed_ready = (
+        _managed_agent_control_config_flags(control_enrollment)
+    )
+    validation_control_ready = validation_control_ready or runtime_validation_ready
+    managed_control_ready = managed_control_ready or runtime_managed_ready
+    supported_agent_kind = agent_kind in AGENT_CONTROL_SUPPORTED_AGENT_KINDS
+    control_configured = bool(supported_agent_kind and validation_control_ready)
+    control_enabled = bool(
+        summary.get("lifecycle_state") == "active" and control_configured
+    )
+    control_online = bool(
+        control_enabled
+        and summary.get("runtime_session_id")
+        and summary.get("ended_at") is None
+    )
+    if control_online:
+        control_state = AGENT_CONTROL_STATE_PLUGIN_CONNECTED
+    elif control_enabled:
+        control_state = AGENT_CONTROL_STATE_PLUGIN_CONFIGURED
+    elif supported_agent_kind and managed_control_ready:
+        control_state = AGENT_CONTROL_STATE_INSTALL_PENDING
+    else:
+        control_state = AGENT_CONTROL_STATE_UNSUPPORTED
+    return {
+        "control_feature_name": "Agent Control",
+        "control_capabilities": (
+            list(AGENT_CONTROL_CAPABILITIES) if control_enabled else []
+        ),
+        "control_state": control_state,
+        "control_enabled": control_enabled,
+        "control_online": control_online,
+        "supports_new_session": control_enabled,
+        "supports_existing_session": control_enabled,
+        "supports_voice": control_enabled,
+        "supports_interrupt": False,
+        "supported_input_modes": (
+            list(AGENT_CONTROL_INPUT_MODES) if control_enabled else []
+        ),
+        "supported_output_modes": (
+            list(AGENT_CONTROL_OUTPUT_MODES) if control_enabled else []
+        ),
+    }
+
+
 def _enrich_managed_agent_summary(
     db: Session, *, account_id: str, summary: dict
 ) -> dict:
-    latest_enrollment = crud_managed_agent_enrollment.get_latest_for_agent_by_type(
+    cli_enrollment = crud_managed_agent_enrollment.get_latest_for_agent_by_type(
         db,
         account_id=account_id,
         agent_id=summary["id"],
         enrollment_type="cli_managed_config",
-    ) or crud_managed_agent_enrollment.get_latest_for_agent(
-        db, account_id=account_id, agent_id=summary["id"]
+    )
+    control_enrollment = crud_managed_agent_enrollment.get_latest_for_agent_by_type(
+        db,
+        account_id=account_id,
+        agent_id=summary["id"],
+        enrollment_type="runtime_plugin_control",
+    )
+    latest_enrollment = (
+        cli_enrollment
+        or control_enrollment
+        or crud_managed_agent_enrollment.get_latest_for_agent(
+            db, account_id=account_id, agent_id=summary["id"]
+        )
     )
     latest_enrollment_summary = (
         crud_managed_agent_enrollment._to_summary(latest_enrollment)
         if latest_enrollment is not None
+        else None
+    )
+    control_enrollment_summary = (
+        crud_managed_agent_enrollment._to_summary(control_enrollment)
+        if control_enrollment is not None
         else None
     )
     (
@@ -457,12 +630,28 @@ def _enrich_managed_agent_summary(
     )
     if primary_binding and primary_binding.get("ai_model_id"):
         summary["configured_model_id"] = primary_binding["ai_model_id"]
+    summary.update(
+        _managed_agent_control_fields(
+            summary,
+            latest_enrollment_summary,
+            control_enrollment_summary,
+        )
+    )
     return summary
 
 
 def _build_managed_agent_detail_response(
-    db: Session, *, account_id: str, agent_id: str
+    db: Session,
+    *,
+    account_id: str,
+    agent_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
 ) -> Optional[ManagedAgentDetailResponse]:
+    if start_date and start_date.tzinfo:
+        start_date = start_date.astimezone(UTC).replace(tzinfo=None)
+    if end_date and end_date.tzinfo:
+        end_date = end_date.astimezone(UTC).replace(tzinfo=None)
     summary = crud_managed_agent.get_summary_for_account(
         db, account_id=account_id, agent_id=agent_id
     )
@@ -470,10 +659,18 @@ def _build_managed_agent_detail_response(
         return None
     summary = _enrich_managed_agent_summary(db, account_id=account_id, summary=summary)
     aggregate = crud_managed_agent.get_usage_aggregate_for_account(
-        db, account_id=account_id, agent_id=agent_id
+        db,
+        account_id=account_id,
+        agent_id=agent_id,
+        start_date=start_date,
+        end_date=end_date,
     )
     usage_by_model = crud_managed_agent.get_usage_by_model_for_account(
-        db, account_id=account_id, agent_id=agent_id
+        db,
+        account_id=account_id,
+        agent_id=agent_id,
+        start_date=start_date,
+        end_date=end_date,
     )
     activity_by_server = crud_runtime_session_activity.get_server_summary_for_principal(
         db,
@@ -620,12 +817,13 @@ async def update_account_details(
     "/account/gateway-usage/summary",
     response_model=AccountGatewayUsageSummaryResponse,
 )
-async def get_account_gateway_usage_summary(
+def get_account_gateway_usage_summary(
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     runtime_principal_id: Optional[str] = Query(None),
+    include_breakdown: bool = Query(True),
 ):
     """Get account-scoped model gateway usage summary."""
     return ModelGatewayUsageService(db).get_account_summary(
@@ -633,6 +831,7 @@ async def get_account_gateway_usage_summary(
         start_date=start_date,
         end_date=end_date,
         runtime_principal_id=runtime_principal_id,
+        include_breakdown=include_breakdown,
     )
 
 
@@ -640,7 +839,7 @@ async def get_account_gateway_usage_summary(
     "/account/gateway-usage/search",
     response_model=AccountGatewayUsageSearchResponse,
 )
-async def search_account_gateway_usage(
+def search_account_gateway_usage(
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
     query: Optional[str] = Query(None, min_length=1),
@@ -675,7 +874,7 @@ async def search_account_gateway_usage(
 
 
 @router.get("/agents", response_model=AccountManagedAgentListResponse)
-async def list_account_managed_agents(
+def list_account_managed_agents(
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
     query: Optional[str] = Query(None, min_length=1),
@@ -724,6 +923,45 @@ async def list_account_managed_agents(
             )
             for item in result["items"]
         ],
+    )
+
+
+@router.get("/agents/control", response_model=AccountManagedAgentListResponse)
+def list_account_controllable_agents(
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+    online_only: bool = Query(False),
+    limit: int = Query(100, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """List agents that expose the Agent Control product surface."""
+    result = crud_managed_agent.list_for_account(
+        db,
+        account_id=str(account.id),
+        status="all",
+        limit=limit,
+        offset=offset,
+    )
+    items = [
+        _enrich_managed_agent_summary(
+            db, account_id=str(account.id), summary=dict(item)
+        )
+        for item in result["items"]
+    ]
+    items = [
+        item
+        for item in items
+        if item["control_enabled"]
+        or item.get("control_state") == AGENT_CONTROL_STATE_INSTALL_PENDING
+    ]
+    if online_only:
+        items = [item for item in items if item["control_online"]]
+    return AccountManagedAgentListResponse(
+        status="active",
+        total=len(items),
+        limit=limit,
+        offset=offset,
+        items=items,
     )
 
 
@@ -803,14 +1041,20 @@ async def extract_agent_name(
 
 
 @router.get("/agents/{agent_id}", response_model=ManagedAgentDetailResponse)
-async def get_account_managed_agent(
+def get_account_managed_agent(
     agent_id: str,
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
 ):
     """Return one enrolled external agent for the current account."""
     response = _build_managed_agent_detail_response(
-        db, account_id=str(account.id), agent_id=agent_id
+        db,
+        account_id=str(account.id),
+        agent_id=agent_id,
+        start_date=start_date,
+        end_date=end_date,
     )
     if response is None:
         raise HTTPException(
@@ -1461,7 +1705,7 @@ async def delete_account_managed_agent(
 
 
 @router.get("/runtime-sessions", response_model=AccountRuntimeSessionListResponse)
-async def list_account_runtime_sessions(
+def list_account_runtime_sessions(
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
     query: Optional[str] = Query(None, min_length=1),
@@ -1489,7 +1733,7 @@ async def list_account_runtime_sessions(
     "/runtime-sessions/{runtime_session_id}",
     response_model=AccountRuntimeSessionDetailResponse,
 )
-async def get_account_runtime_session_detail(
+def get_account_runtime_session_detail(
     runtime_session_id: str,
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
@@ -1547,6 +1791,22 @@ async def get_account_session_activity_timeline(
     )
 
 
+@router.post(
+    "/runtime-sessions/{runtime_session_id}/summaries",
+    response_model=RuntimeSessionSummaryInsight,
+)
+async def summarize_account_runtime_session(
+    runtime_session_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Summarize one runtime session without hidden inspection spend."""
+    return RuntimeSessionExplorerService(db).get_account_session_summary_insight(
+        account=account,
+        runtime_session_id=runtime_session_id,
+    )
+
+
 @router.get(
     "/runtime-sessions/{runtime_session_id}/gateway-events",
 )
@@ -1555,8 +1815,11 @@ async def get_account_runtime_session_gateway_events(
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
     tail: int | None = Query(None),
+    limit: int = Query(25, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    metadata_only: bool = Query(False),
 ) -> dict[str, Any]:
-    """Return stored gateway events (chat histories) for one runtime session."""
+    """Return one compact page of stored gateway event metadata for a session."""
     session = crud_runtime_session.get_account_session(
         db, account_id=str(account.id), runtime_session_id=runtime_session_id
     )
@@ -1574,7 +1837,16 @@ async def get_account_runtime_session_gateway_events(
         account_id=account.id,
         runtime_session_id=runtime_session_id,
         tail=tail,
+        limit=limit,
+        offset=offset,
+        metadata_only=metadata_only,
     )
+    total = crud_runtime_session_activity.count_model_gateway_calls_for_session(
+        db,
+        account_id=account.id,
+        runtime_session_id=runtime_session_id,
+    )
+    page_limit = min(tail, 200) if tail else min(limit, 5000 if metadata_only else 100)
 
     events = [
         {
@@ -1585,7 +1857,18 @@ async def get_account_runtime_session_gateway_events(
         }
         for row in rows
     ]
-    return {"source": "database", "logs": events}
+    next_offset = offset + len(events)
+    return {
+        "source": "database",
+        "logs": events,
+        "pagination": {
+            "limit": page_limit,
+            "offset": offset,
+            "next_offset": next_offset if next_offset < total else None,
+            "total": total,
+            "has_more": next_offset < total,
+        },
+    }
 
 
 @router.get(
@@ -1629,6 +1912,26 @@ async def get_account_runtime_session_gateway_event_detail(
         "type": activity.activity_type,
         "payload": activity.metadata_,
     }
+
+
+@router.post(
+    "/runtime-sessions/{runtime_session_id}/gateway-events/{activity_id}/summary",
+    response_model=RuntimeSessionInteractionSummary,
+)
+async def summarize_account_runtime_session_gateway_event(
+    runtime_session_id: str,
+    activity_id: str,
+    account: Annotated[Account, Depends(get_account_for_user)],
+    db: Session = Depends(get_db_session),
+):
+    """Summarize one gateway interaction on demand using the account default model."""
+    return RuntimeSessionExplorerService(
+        db
+    ).summarize_account_runtime_session_interaction(
+        account=account,
+        runtime_session_id=runtime_session_id,
+        activity_id=activity_id,
+    )
 
 
 @router.patch(

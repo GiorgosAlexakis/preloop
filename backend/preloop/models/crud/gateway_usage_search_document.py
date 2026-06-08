@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from sqlalchemy import String, and_, case, cast, func, or_
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
 from ..models.api_key import ApiKey
@@ -106,6 +106,7 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
                 func.substring(
                     GatewayUsageSearchDocument.searchable_text, 1, 1000
                 ).label("text_preview"),
+                GatewayUsageSearchDocument.meta_data.label("document_meta_data"),
                 ApiUsage,
                 Flow.name.label("flow_name"),
                 ApiKey.name.label("api_key_name"),
@@ -123,7 +124,6 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
                 ApiUsage.action_type == "model_gateway",
                 ApiUsage.account_id == account_id,
             )
-            .options(defer(ApiUsage.meta_data))
         )
 
         if start_date:
@@ -231,7 +231,10 @@ class CRUDGatewayUsageSearchDocument(CRUDBase[GatewayUsageSearchDocument]):
                     "excerpt": self._build_excerpt(
                         text_preview, query=normalized_query
                     ),
-                    "meta_data": {},
+                    "meta_data": {
+                        **(row.document_meta_data or {}),
+                        **(usage.meta_data or {}),
+                    },
                 }
             )
 

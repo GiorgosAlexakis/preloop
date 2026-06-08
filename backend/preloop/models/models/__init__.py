@@ -27,6 +27,7 @@ from .managed_agent import ManagedAgent
 from .managed_agent_ai_model_binding import ManagedAgentAIModelBinding
 from .managed_agent_credential import ManagedAgentCredential
 from .managed_agent_enrollment import ManagedAgentEnrollment
+from .model_price_override import ModelPriceOverride
 from .tool_configuration import ToolConfiguration, ApprovalWorkflow
 from .mcp_server import MCPServer
 from .mcp_tool import MCPTool
@@ -88,6 +89,7 @@ __all__ = [
     "ManagedAgentAIModelBinding",
     "ManagedAgentCredential",
     "ManagedAgentEnrollment",
+    "ModelPriceOverride",
     "ToolConfiguration",
     "ApprovalWorkflow",
     "MCPServer",

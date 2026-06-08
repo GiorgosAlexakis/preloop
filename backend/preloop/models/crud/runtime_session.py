@@ -5,7 +5,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import String, and_, case, cast, func, or_
+from sqlalchemy import (
+    String,
+    and_,
+    case,
+    cast,
+    func,
+    inspect,
+    literal,
+    literal_column,
+    or_,
+)
 from sqlalchemy.orm import Session
 
 from ..models.api_usage import ApiUsage
@@ -302,6 +312,61 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         )
 
         rows = (
+            self._account_sessions_query(
+                session_query=session_query,
+                usage_join=usage_join,
+                summary_columns_available=self._summary_columns_available(db),
+            )
+            .order_by(
+                func.coalesce(
+                    func.max(ApiUsage.timestamp),
+                    self.model.last_activity_at,
+                    self.model.started_at,
+                ).desc()
+            )
+            .limit(limit)
+            .offset(offset)
+            .all()
+        )
+
+        items = []
+        for row in rows:
+            summary = self._row_to_summary(row)
+            latest_usage = _latest_gateway_usage_for_session(
+                db,
+                account_id=account_id,
+                runtime_session_id=str(row.id),
+                start_date=start_date,
+                end_date=end_date,
+                ai_model_id=ai_model_id,
+            )
+            if latest_usage is not None:
+                summary["latest_model_alias"] = latest_usage.latest_model_alias
+                summary["latest_provider_name"] = latest_usage.latest_provider_name
+                summary["last_request_at"] = latest_usage.last_request_at
+            items.append(summary)
+
+        return {"total": total, "items": items}
+
+    def _account_sessions_query(
+        self,
+        *,
+        session_query: Any,
+        usage_join: Any,
+        summary_columns_available: bool,
+    ) -> Any:
+        """Build the runtime session aggregate query."""
+        summary_column = (
+            literal_column("runtime_session.summary")
+            if summary_columns_available
+            else literal(None)
+        )
+        summary_updated_at_column = (
+            literal_column("runtime_session.summary_updated_at")
+            if summary_columns_available
+            else literal(None)
+        )
+        return (
             session_query.outerjoin(ApiUsage, usage_join)
             .outerjoin(Flow, ApiUsage.flow_id == Flow.id)
             .with_entities(
@@ -313,6 +378,8 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 self.model.runtime_principal_type,
                 self.model.runtime_principal_id,
                 self.model.runtime_principal_name,
+                summary_column.label("summary"),
+                summary_updated_at_column.label("summary_updated_at"),
                 self.model.started_at,
                 self.model.last_activity_at,
                 self.model.ended_at,
@@ -351,40 +418,13 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 self.model.runtime_principal_type,
                 self.model.runtime_principal_id,
                 self.model.runtime_principal_name,
+                summary_column,
+                summary_updated_at_column,
                 self.model.started_at,
                 self.model.last_activity_at,
                 self.model.ended_at,
             )
-            .order_by(
-                func.coalesce(
-                    func.max(ApiUsage.timestamp),
-                    self.model.last_activity_at,
-                    self.model.started_at,
-                ).desc()
-            )
-            .limit(limit)
-            .offset(offset)
-            .all()
         )
-
-        items = []
-        for row in rows:
-            summary = self._row_to_summary(row)
-            latest_usage = _latest_gateway_usage_for_session(
-                db,
-                account_id=account_id,
-                runtime_session_id=str(row.id),
-                start_date=start_date,
-                end_date=end_date,
-                ai_model_id=ai_model_id,
-            )
-            if latest_usage is not None:
-                summary["latest_model_alias"] = latest_usage.latest_model_alias
-                summary["latest_provider_name"] = latest_usage.latest_provider_name
-                summary["last_request_at"] = latest_usage.last_request_at
-            items.append(summary)
-
-        return {"total": total, "items": items}
 
     def get_account_session(
         self, db: Session, *, account_id: str, runtime_session_id: str
@@ -442,6 +482,17 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         usage_join = self._usage_join_conditions(
             start_date=start_date, end_date=end_date, ai_model_id=ai_model_id
         )
+        summary_columns_available = self._summary_columns_available(db)
+        summary_column = (
+            literal_column("runtime_session.summary")
+            if summary_columns_available
+            else literal(None)
+        )
+        summary_updated_at_column = (
+            literal_column("runtime_session.summary_updated_at")
+            if summary_columns_available
+            else literal(None)
+        )
         row = (
             db.query(
                 self.model.account_id,
@@ -452,6 +503,8 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 self.model.runtime_principal_type,
                 self.model.runtime_principal_id,
                 self.model.runtime_principal_name,
+                summary_column.label("summary"),
+                summary_updated_at_column.label("summary_updated_at"),
                 self.model.started_at,
                 self.model.last_activity_at,
                 self.model.ended_at,
@@ -495,6 +548,8 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 self.model.runtime_principal_type,
                 self.model.runtime_principal_id,
                 self.model.runtime_principal_name,
+                summary_column,
+                summary_updated_at_column,
                 self.model.started_at,
                 self.model.last_activity_at,
                 self.model.ended_at,
@@ -517,6 +572,21 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             summary["latest_provider_name"] = latest_usage.latest_provider_name
             summary["last_request_at"] = latest_usage.last_request_at
         return summary
+
+    @staticmethod
+    def _summary_columns_available(db: Session) -> bool:
+        """Return whether the runtime session summary migration has been applied."""
+        try:
+            bind = db.get_bind()
+            if bind is None:
+                return False
+            columns = {
+                column["name"]
+                for column in inspect(bind).get_columns("runtime_session")
+            }
+        except Exception:
+            return False
+        return {"summary", "summary_updated_at"}.issubset(columns)
 
     @staticmethod
     def _usage_join_conditions(
@@ -577,6 +647,8 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             "runtime_principal_type": row.runtime_principal_type,
             "runtime_principal_id": row.runtime_principal_id,
             "runtime_principal_name": row.runtime_principal_name,
+            "summary": row.summary,
+            "summary_updated_at": row.summary_updated_at,
             "started_at": row.started_at,
             "last_activity_at": row.last_activity_at,
             "ended_at": row.ended_at,

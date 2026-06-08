@@ -3,6 +3,7 @@ export interface AIModel {
   name: string;
   description?: string | null;
   provider_name: string;
+  model_kind?: 'llm' | 'stt' | 'tts';
   api_key?: string;
   has_api_key?: boolean;
   credentials_secret_id?: string | null;
@@ -14,6 +15,20 @@ export interface AIModel {
   created_at: string;
   updated_at: string;
   account_id?: string;
+}
+
+export interface SpeechToTextResponse {
+  text: string;
+  ai_model_id: string;
+  provider_name: string;
+  model_identifier: string;
+}
+
+export interface TextToSpeechRequest {
+  input: string;
+  voice?: string;
+  response_format?: 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+  ai_model_id?: string | null;
 }
 
 export interface FlowGatewayConversationPreviewMessage {
@@ -62,6 +77,10 @@ export interface FlowGatewayEventPayload {
   gateway_provider?: string | null;
   requested_model?: string | null;
   upstream_request_id?: string | null;
+  request_fingerprint?: string | null;
+  gateway_attempt?: number | null;
+  is_retry?: boolean | null;
+  retry_of_api_usage_id?: string | null;
   finish_reason?: string | null;
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
@@ -93,6 +112,13 @@ export interface FlowGatewayEvent {
 export interface FlowGatewayEventsResponse {
   logs: FlowGatewayEvent[];
   source: 'container' | 'database';
+  pagination?: {
+    limit: number;
+    offset: number;
+    next_offset: number | null;
+    total: number;
+    has_more: boolean;
+  } | null;
 }
 
 export interface GatewayTokenUsage {
@@ -148,9 +174,13 @@ export interface GatewayUsageBySession {
   runtime_session_name?: string | null;
   session_source_type?: string | null;
   session_source_id?: string | null;
+  session_summary?: string | null;
+  session_summary_updated_at?: string | null;
   runtime_principal_type?: string | null;
   runtime_principal_id?: string | null;
   runtime_principal_name?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
   flow_execution_id: string | null;
   flow_id: string | null;
   flow_name: string | null;
@@ -306,6 +336,50 @@ export interface ManagedAgentSummary {
     | 'failed'
     | string;
   last_validated_at: string | null;
+  control_feature_name?: string;
+  control_capabilities?: string[];
+  control_state?:
+    | 'unsupported'
+    | 'install_pending'
+    | 'plugin_configured'
+    | 'plugin_connected'
+    | string;
+  control_enabled?: boolean;
+  control_online?: boolean;
+  supports_new_session?: boolean;
+  supports_existing_session?: boolean;
+  supports_voice?: boolean;
+  supports_interrupt?: boolean;
+  supported_input_modes?: string[];
+  supported_output_modes?: string[];
+}
+
+export interface AgentControlCommandRequest {
+  message: string;
+  metadata?: Record<string, unknown>;
+  target_session_id?: string | null;
+  session_mode?: 'new' | 'existing' | string;
+  start_new_session?: boolean;
+}
+
+export interface AgentControlVoiceTranscriptRequest {
+  transcript: string;
+  metadata?: Record<string, unknown>;
+  voice?: Record<string, unknown>;
+  target_session_id?: string | null;
+  start_new_session?: boolean;
+}
+
+export interface AgentControlCommandResponse {
+  id?: string;
+  command_id?: string;
+  status?: string;
+  target_session_id?: string | null;
+  runtime_session_id?: string | null;
+  session_mode?: string | null;
+  message?: string | null;
+  metadata?: Record<string, unknown> | null;
+  [key: string]: unknown;
 }
 
 export interface ManagedAgentModelBindingSummary {
@@ -418,10 +492,59 @@ export interface RuntimeSessionActivityItem {
   api_key_name: string | null;
   estimated_cost: number | null;
   total_tokens: number | null;
+  request_fingerprint?: string | null;
+  gateway_attempt?: number | null;
+  is_retry?: boolean;
+  retry_of_api_usage_id?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RuntimeSessionActivityListResponse {
   items: RuntimeSessionActivityItem[];
+}
+
+export interface RuntimeSessionSummaryInsight {
+  title: string;
+  description: string;
+  risk_level: 'low' | 'medium' | 'high' | string;
+  highlights: string[];
+  next_action: string | null;
+  generated_by: 'local' | 'model' | string;
+  fast_model_name: string | null;
+  estimated_summary_cost: number;
+}
+
+export interface RuntimeSessionInteractionSummary {
+  event_id: string;
+  title: string;
+  summary: string;
+  key_points: string[];
+  risk_level: 'low' | 'medium' | 'high' | string;
+  next_action: string | null;
+  generated_by: 'local' | 'model' | string;
+  model_name: string | null;
+  estimated_summary_cost: number;
+}
+
+export interface RuntimeSessionOptimizationSuggestion {
+  id: string;
+  title: string;
+  description: string;
+  expected_savings_tokens: number;
+  expected_savings_usd: number;
+  confidence: 'low' | 'medium' | 'high' | string;
+  action_label: string;
+  evidence: string[];
+}
+
+export interface RuntimeSessionOptimizationResponse {
+  generated_by: 'local' | 'model' | string;
+  fast_model_name: string | null;
+  model_id?: string | null;
+  model_name?: string | null;
+  token_usage?: GatewayTokenUsage;
+  estimated_optimization_cost?: number;
+  suggestions: RuntimeSessionOptimizationSuggestion[];
 }
 
 export interface AccountGatewayUsageSummaryResponse {
@@ -438,6 +561,39 @@ export interface AccountGatewayUsageSummaryResponse {
   usage_by_flow: GatewayUsageByFlow[];
   usage_by_session: GatewayUsageBySession[];
 }
+
+export interface ModelPriceOverride {
+  id: string;
+  account_id: string;
+  ai_model_id: string | null;
+  provider_name: string | null;
+  model_alias: string;
+  currency: string;
+  input_price_per_1k: number | null;
+  output_price_per_1k: number | null;
+  cache_read_input_price_per_1k: number | null;
+  cache_creation_input_price_per_1k: number | null;
+  price_per_1k: number | null;
+  request_price: number | null;
+  discount_percent: number | null;
+  prepaid_token_balance: number | null;
+  prepaid_credit_balance_usd: number | null;
+  effective_from: string | null;
+  effective_until: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ModelPriceOverrideCreate = Omit<
+  ModelPriceOverride,
+  'id' | 'account_id' | 'created_at' | 'updated_at'
+>;
+
+export type ModelPriceOverrideUpdate = Partial<ModelPriceOverrideCreate>;
+
+export interface CostAnalyticsSummaryResponse extends AccountGatewayUsageSummaryResponse {}
 
 export interface FlowGatewayUsageSummaryResponse {
   flow_id: string;

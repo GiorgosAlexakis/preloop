@@ -253,6 +253,17 @@ export class AddTrackerModal extends LitElement {
     this.isLoading = true;
     this.errorMessage = '';
     try {
+      this.dispatchEvent(
+        new CustomEvent('github-oauth-starting', {
+          bubbles: true,
+          composed: true,
+        })
+      );
+      sessionStorage.setItem(
+        'github_oauth_redirect_back',
+        window.location.pathname + window.location.search
+      );
+
       const { authorization_url, state } = await this._api.getGitHubAuthUrl();
       // Store state for CSRF validation on callback
       sessionStorage.setItem('github_oauth_state', state);

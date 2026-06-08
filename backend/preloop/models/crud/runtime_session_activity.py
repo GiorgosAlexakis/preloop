@@ -141,6 +141,102 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             db.refresh(db_obj)
         return db_obj
 
+    def log_agent_control_message(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        message: str,
+        status: str,
+        metadata: Optional[dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None,
+        commit: bool = True,
+    ) -> RuntimeSessionActivity:
+        """Persist one operator-to-agent control message."""
+        activity_timestamp = timestamp or datetime.now(timezone.utc)
+        db_obj = RuntimeSessionActivity(
+            account_id=account_id,
+            runtime_session_id=runtime_session_id,
+            activity_type="agent_control_message",
+            status=status,
+            summary=message,
+            metadata_=metadata,
+            timestamp=activity_timestamp,
+        )
+        db.add(db_obj)
+
+        runtime_session = db.get(RuntimeSession, runtime_session_id)
+        if runtime_session is not None:
+            runtime_session.last_activity_at = activity_timestamp
+            db.add(runtime_session)
+
+        if commit:
+            db.commit()
+            db.refresh(db_obj)
+        return db_obj
+
+    def log_agent_control_result(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        command_id: str,
+        fallback_runtime_session_id: Any,
+        status: str,
+        message: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None,
+        commit: bool = True,
+    ) -> RuntimeSessionActivity | None:
+        """Persist a runtime result for a previously routed operator command."""
+        original = (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.activity_type == "agent_control_message",
+                self.model.metadata_["command_id"].astext == command_id,
+            )
+            .order_by(self.model.timestamp.desc())
+            .first()
+        )
+        runtime_session_id = (
+            original.runtime_session_id
+            if original is not None
+            else fallback_runtime_session_id
+        )
+
+        if original is not None:
+            original.status = status
+            original.metadata_ = {
+                **(original.metadata_ or {}),
+                "result_status": status,
+            }
+            db.add(original)
+
+        if not message:
+            if commit:
+                db.commit()
+            return original
+
+        result_metadata = {
+            "command_id": command_id,
+            "role": "assistant",
+            "direction": "agent_to_operator",
+            "source": "agent_control_result",
+            **(metadata or {}),
+        }
+        return self.log_agent_control_message(
+            db,
+            account_id=account_id,
+            runtime_session_id=runtime_session_id,
+            message=message,
+            status=status,
+            metadata=result_metadata,
+            timestamp=timestamp,
+            commit=commit,
+        )
+
     def list_for_runtime_session(
         self,
         db: Session,
@@ -170,18 +266,64 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
         account_id: Any,
         runtime_session_id: Any,
         tail: Optional[int] = None,
+        limit: int = 25,
+        offset: int = 0,
+        metadata_only: bool = False,
     ) -> list[Any]:
-        """Return model gateway call activities for one flow execution."""
+        """Return latest-first model gateway call activities for one session."""
+        metadata_column = (
+            self.model.metadata_.op("-")("request")
+            .op("-")("response")
+            .op("-")("messages")
+            .label("metadata_")
+        )
+        if metadata_only:
+            metadata_column = func.jsonb_build_object(
+                "metadata_only",
+                True,
+                "api_usage_id",
+                self.model.metadata_["api_usage_id"].astext,
+                "model_alias",
+                self.model.metadata_["model_alias"].astext,
+                "provider_name",
+                self.model.metadata_["provider_name"].astext,
+                "endpoint",
+                self.model.metadata_["endpoint"].astext,
+                "endpoint_kind",
+                self.model.metadata_["endpoint_kind"].astext,
+                "status_code",
+                self.model.metadata_["status_code"].astext,
+                "outcome",
+                self.model.metadata_["outcome"].astext,
+                "error_detail",
+                self.model.metadata_["error_detail"].astext,
+                "upstream_request_id",
+                self.model.metadata_["upstream_request_id"].astext,
+                "request_fingerprint",
+                self.model.metadata_["request_fingerprint"].astext,
+                "gateway_attempt",
+                self.model.metadata_["gateway_attempt"].astext,
+                "is_retry",
+                self.model.metadata_["is_retry"].astext,
+                "retry_of_api_usage_id",
+                self.model.metadata_["retry_of_api_usage_id"].astext,
+                "prompt_tokens",
+                self.model.metadata_["prompt_tokens"].astext,
+                "completion_tokens",
+                self.model.metadata_["completion_tokens"].astext,
+                "total_tokens",
+                self.model.metadata_["total_tokens"].astext,
+                "estimated_cost",
+                self.model.metadata_["estimated_cost"].astext,
+                "tool_name",
+                self.model.metadata_["tool_name"].astext,
+            ).label("metadata_")
         query = (
             db.query(
                 self.model.id,
                 self.model.timestamp,
                 self.model.activity_type,
-                self.model.metadata_.op("-")("request")
-                .op("-")("response")
-                .op("-")("messages")
-                .op("-")("conversation_preview")
-                .label("metadata_"),
+                metadata_column,
             )
             .filter(
                 self.model.account_id == account_id,
@@ -190,10 +332,53 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             )
             .order_by(self.model.timestamp.desc())
         )
-        limit = min(tail, 200) if tail else 50
-        query = query.limit(limit)
-        rows = query.all()
-        return list(reversed(rows))
+        limit = min(tail, 200) if tail else min(max(limit, 1), 100)
+        if metadata_only:
+            limit = min(max(limit, 1), 5000)
+        query = query.limit(limit).offset(max(offset, 0))
+        return query.all()
+
+    def list_recent_model_gateway_call_payloads_for_session(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Return recent stored gateway metadata payloads for summary refreshes."""
+        rows = (
+            db.query(self.model.metadata_)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.runtime_session_id == runtime_session_id,
+                self.model.activity_type == "model_gateway_call",
+            )
+            .order_by(self.model.timestamp.desc())
+            .limit(min(max(limit, 1), 20))
+            .all()
+        )
+        return [
+            row.metadata_ for row in reversed(rows) if isinstance(row.metadata_, dict)
+        ]
+
+    def count_model_gateway_calls_for_session(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+    ) -> int:
+        """Return the number of model gateway call activities for a session."""
+        return (
+            db.query(self.model)
+            .filter(
+                self.model.account_id == account_id,
+                self.model.runtime_session_id == runtime_session_id,
+                self.model.activity_type == "model_gateway_call",
+            )
+            .count()
+        )
 
     def get_model_gateway_call_for_session(
         self,

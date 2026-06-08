@@ -14,9 +14,10 @@ import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import '../../components/governance-rule-set-editor.ts';
 import '../../components/budget-policy-editor.ts';
 import '../../components/tools-editor-component.ts';
-import '../../components/unified-session-history.ts';
+import '../../components/preloop-session-observer.ts';
 import '../../components/view-header.ts';
 import '../../components/resource-actions.ts';
+import '../../components/agent-talk-composer.ts';
 import type { ResourceAction } from '../../components/resource-actions.ts';
 import {
   fetchWithAuth,
@@ -31,6 +32,7 @@ import {
   removeAccountAgent,
   updateAgentGovernance,
   updateAccountAgent,
+  getFlows,
 } from '../../api';
 import type {
   AccountRuntimeSessionDetailResponse,
@@ -53,6 +55,7 @@ import {
   serializeScopedToolRules,
   type ScopedToolRules,
 } from '../../utils/scoped-governance';
+import { getAgentControlState } from '../../utils/agent-control';
 import { renderAgentIcon } from '../../utils/agent-icons';
 
 interface GovernanceToolDefinition {
@@ -86,6 +89,30 @@ export class AgentDetailView extends LitElement {
 
   @state()
   private sessions: RuntimeSessionSummary[] = [];
+
+  @state()
+  private activeTab:
+    | 'sessions'
+    | 'tools'
+    | 'models'
+    | 'vnc'
+    | 'ssh'
+    | 'dashboard'
+    | 'associated-flows' = 'sessions';
+
+  @state()
+  private associatedFlows: any[] = [];
+
+  @state()
+  private sshTerminalOutput: string[] = [
+    'Preloop Secure Agent Shell (Hermes Node)',
+    'Logged in as preloop-agent. System: Alpine Linux 3.19',
+    'Type "help" to list available custom shell actions.',
+    '',
+  ];
+
+  @state()
+  private sshCommandText = '';
 
   @state()
   private selectedSessionId: string | null = null;
@@ -172,6 +199,9 @@ export class AgentDetailView extends LitElement {
   @state()
   private governanceCustomToolName = '';
 
+  @state()
+  private isFullscreen = false;
+
   private unsubscribeRealtime?: () => void;
   private refreshTimer: number | null = null;
 
@@ -206,10 +236,9 @@ export class AgentDetailView extends LitElement {
       }
 
       .split-pane-layout {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
+        display: flex;
+        flex-direction: column;
         gap: var(--sl-spacing-large);
-        align-items: stretch;
       }
 
       .split-pane-layout > sl-card {
@@ -351,6 +380,49 @@ export class AgentDetailView extends LitElement {
       .control-row sl-select {
         min-width: 220px;
       }
+
+      .agent-control-card::part(base) {
+        border-color: var(--sl-color-primary-200);
+        background: linear-gradient(
+          180deg,
+          var(--sl-color-primary-50),
+          var(--sl-color-neutral-0)
+        );
+      }
+
+      .agent-control-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+        gap: var(--sl-spacing-large);
+        align-items: start;
+      }
+
+      .agent-control-composer {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-medium);
+      }
+
+      .agent-control-status {
+        border: 1px solid var(--sl-color-neutral-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-0);
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-small);
+      }
+
+      .agent-control-status-title {
+        color: var(--sl-color-neutral-900);
+        font-weight: var(--sl-font-weight-semibold);
+      }
+
+      @media (max-width: 900px) {
+        .agent-control-panel {
+          grid-template-columns: 1fr;
+        }
+      }
     `,
   ];
 
@@ -398,6 +470,9 @@ export class AgentDetailView extends LitElement {
     const unsubscribers = [
       unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
       unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('agent_control', (message) =>
+        this.handleAgentControlEvent(message)
+      ),
       unifiedWebSocketManager.subscribe('gateway_activity', (message) =>
         this.handleGatewayActivity(message)
       ),
@@ -440,6 +515,24 @@ export class AgentDetailView extends LitElement {
       this.activityByTool = [];
     }
 
+    let startDate: string | undefined;
+    const now = new Date();
+    if (this.budgetTimeRange === 'day') {
+      startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    } else if (this.budgetTimeRange === 'week') {
+      startDate = new Date(
+        now.getTime() - 7 * 24 * 60 * 60 * 1000
+      ).toISOString();
+    } else if (this.budgetTimeRange === 'month') {
+      startDate = new Date(
+        now.getTime() - 30 * 24 * 60 * 60 * 1000
+      ).toISOString();
+    } else if (this.budgetTimeRange === 'year') {
+      startDate = new Date(
+        now.getTime() - 365 * 24 * 60 * 60 * 1000
+      ).toISOString();
+    }
+
     try {
       const [
         detail,
@@ -451,7 +544,7 @@ export class AgentDetailView extends LitElement {
         features,
         models,
       ] = await Promise.all([
-        getAccountAgent(this.agentId),
+        getAccountAgent(this.agentId, { start_date: startDate }),
         this.fetchUsers(),
         getAgentGovernance(this.agentId),
         getTools(),
@@ -494,6 +587,28 @@ export class AgentDetailView extends LitElement {
       this.selectedOwnerUserId = detail.agent.owner_user_id ?? '';
       if (!isSoftRefresh) {
         this.editableDisplayName = detail.agent.display_name;
+      }
+
+      // Load and filter associated flows
+      try {
+        const flows = await getFlows();
+        this.associatedFlows = (flows || []).filter((f: any) => {
+          try {
+            const config =
+              typeof f.agent_config === 'string'
+                ? JSON.parse(f.agent_config)
+                : f.agent_config;
+            return (
+              config &&
+              config.execution_path === 'persistent' &&
+              config.target_agent_id === this.agentId
+            );
+          } catch (e) {
+            return false;
+          }
+        });
+      } catch (e) {
+        console.warn('Failed to load associated flows', e);
       }
 
       if (
@@ -833,6 +948,16 @@ export class AgentDetailView extends LitElement {
             (payload.total_tokens ?? 0),
         },
       };
+    }
+
+    this.scheduleRefresh();
+  }
+
+  private handleAgentControlEvent(message: any): void {
+    const payload = message?.payload ?? message;
+    const agentId = payload?.managed_agent_id ?? payload?.agent_id;
+    if (!this.agent || agentId !== this.agent.id) {
+      return;
     }
 
     this.scheduleRefresh();
@@ -1191,6 +1316,8 @@ export class AgentDetailView extends LitElement {
         <div class="timeline-meta">
           ${this.formatDateTime(item.timestamp)}${item.status
             ? html` · ${item.status}`
+            : null}${item.is_retry || (item.gateway_attempt || 1) > 1
+            ? html` · retry #${item.gateway_attempt || 2}`
             : null}${item.summary ? html` · ${item.summary}` : null}
         </div>
       </div>
@@ -1208,6 +1335,13 @@ export class AgentDetailView extends LitElement {
         onClick: () => this.promptRename(),
       },
       {
+        id: 'remove',
+        label: 'Remove',
+        variant: 'danger',
+        loading: this.actionLoading,
+        onClick: () => this.removeAgent(),
+      },
+      {
         id: 'edit-tags',
         label: 'Edit Tags',
         icon: 'tag',
@@ -1223,14 +1357,6 @@ export class AgentDetailView extends LitElement {
         onClick: () => this.promptChangeOwner(),
       });
     }
-
-    actions.push({
-      id: 'remove',
-      label: 'Remove',
-      variant: 'danger',
-      loading: this.actionLoading,
-      onClick: () => this.removeAgent(),
-    });
 
     const isSuspendedOrDecommissioned =
       this.agent.lifecycle_state === 'suspended' ||
@@ -1259,7 +1385,817 @@ export class AgentDetailView extends LitElement {
       });
     }
 
+    const controlState = getAgentControlState(this.agent);
+    if (controlState.visible) {
+      actions.push({
+        id: 'talk',
+        label: 'Talk',
+        render: () => html`
+          <agent-talk-composer
+            .agent=${this.agent}
+            .sessions=${this.sessions}
+            sourceContext="agent-detail-view"
+            @agent-control-sent=${() => this.loadData(true)}
+          ></agent-talk-composer>
+        `,
+      });
+    }
+
     return actions;
+  }
+
+  private handleSshKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      const command = this.sshCommandText.trim();
+      if (!command) return;
+
+      this.sshTerminalOutput = [...this.sshTerminalOutput, `$ ${command}`];
+
+      // Generate response
+      let response: string[] = [];
+      const lowerCmd = command.toLowerCase();
+      if (lowerCmd === 'help') {
+        response = [
+          'Preloop Agent CLI Custom Actions:',
+          '  help          - Show this command list',
+          '  ls -la        - List sandboxed files and folders',
+          '  git status    - Display git version control state',
+          '  cat agent.log - Cat the active runtime logging outputs',
+          '  clear         - Clear terminal screen',
+        ];
+      } else if (lowerCmd === 'clear') {
+        this.sshTerminalOutput = [];
+        this.sshCommandText = '';
+        this.requestUpdate();
+        return;
+      } else if (lowerCmd === 'ls -la' || lowerCmd === 'ls') {
+        response = [
+          'total 32',
+          'drwxr-xr-x    4 preloop  staff         128 May 31 22:50 .',
+          'drwxr-xr-x   24 preloop  staff         768 May 31 22:45 ..',
+          '-rwxr-xr-x    1 preloop  staff         480 May 31 22:50 preloop.py',
+          '-rw-r--r--    1 preloop  staff        2048 May 31 22:50 firewall.json',
+          '-rw-r--r--    1 preloop  staff         180 May 31 22:50 auth_token.jwt',
+          '-rw-r--r--    1 preloop  staff       12490 May 31 22:50 agent.log',
+        ];
+      } else if (lowerCmd === 'git status') {
+        response = [
+          'On branch main',
+          "Your branch is up to date with 'origin/main'.",
+          '',
+          'nothing to commit, working tree clean',
+        ];
+      } else if (lowerCmd === 'cat agent.log') {
+        response = [
+          '2026-05-31 22:45:01 [INFO] Starting Hermes Agent Micro-service...',
+          '2026-05-31 22:45:02 [INFO] Loading configuration from firewall.json...',
+          '2026-05-31 22:45:03 [INFO] Secure proxy models handshaking successful.',
+          '2026-05-31 22:45:05 [INFO] Gateway authenticated via token JWT.',
+          '2026-05-31 22:45:10 [INFO] Telemetry heartbeat connected successfully.',
+          '2026-05-31 22:45:12 [INFO] Running passive listener queue...',
+        ];
+      } else {
+        response = [
+          `sh: command not found: ${command}`,
+          'Type "help" to see available mock commands.',
+        ];
+      }
+
+      this.sshTerminalOutput = [...this.sshTerminalOutput, ...response, ''];
+      this.sshCommandText = '';
+      this.requestUpdate();
+
+      // Scroll to bottom of terminal
+      setTimeout(() => {
+        const term = this.shadowRoot?.querySelector('.ssh-terminal-body');
+        if (term) term.scrollTop = term.scrollHeight;
+      }, 50);
+    }
+  }
+
+  private renderVNCTab() {
+    const tags = this.agent?.tags || {};
+    const host = tags.host || '127.0.0.1';
+    const username = tags.username || 'ubuntu';
+    const port = tags.port || '22';
+
+    return html`
+      <div
+        class="${this.isFullscreen ? 'fullscreen-mode' : ''}"
+        style="${this.isFullscreen
+          ? `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          z-index: 99999;
+          background: #0f172a;
+          color: #f1f5f9;
+          padding: var(--sl-spacing-2x-large);
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          gap: var(--sl-spacing-large);
+          overflow: auto;
+        `
+          : ''}"
+      >
+        <sl-card
+          style="border: none; box-shadow: 0 10px 32px rgba(19,27,46,0.03); border-radius: var(--sl-border-radius-large); background: ${this
+            .isFullscreen
+            ? '#1e293b'
+            : '#ffffff'}; width: 100%;"
+        >
+          <div style="padding: var(--sl-spacing-large);">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-large); flex-wrap: wrap; gap: var(--sl-spacing-medium);"
+            >
+              <div>
+                <div
+                  style="font-weight: 700; font-size: 1.25rem; color: ${this
+                    .isFullscreen
+                    ? '#ffffff'
+                    : 'var(--sl-color-neutral-800)'};"
+                >
+                  Graphical UI Access (Secure VNC Desktop)
+                </div>
+                <div
+                  style="font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#cbd5e1'
+                    : 'var(--sl-color-neutral-600)'}; margin-top: 4px;"
+                >
+                  Securely tunnel and view the graphical operational desktop
+                  environment of this agent VM.
+                </div>
+              </div>
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+              >
+                <sl-badge variant="success">VNC Port Pre-Exposed</sl-badge>
+                <sl-button
+                  size="small"
+                  @click=${() => {
+                    this.isFullscreen = !this.isFullscreen;
+                    this.requestUpdate();
+                  }}
+                >
+                  <sl-icon
+                    slot="prefix"
+                    name=${this.isFullscreen
+                      ? 'fullscreen-exit'
+                      : 'arrows-angle-expand'}
+                  ></sl-icon>
+                  ${this.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                </sl-button>
+              </div>
+            </div>
+
+            <div
+              style="display: flex; flex-direction: column; gap: var(--sl-spacing-large);"
+            >
+              <div
+                style="background: ${this.isFullscreen
+                  ? '#0f172a'
+                  : 'var(--sl-color-neutral-50)'}; padding: var(--sl-spacing-large); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                  .isFullscreen
+                  ? '#334155'
+                  : 'var(--sl-color-neutral-200)'};"
+              >
+                <div
+                  style="font-weight: 600; font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#38bdf8'
+                    : 'var(--sl-color-primary-700)'}; margin-bottom: var(--sl-spacing-medium); text-transform: uppercase;"
+                >
+                  Step 1: Securely Tunnel VNC Port (5901)
+                </div>
+                <p
+                  style="font-size: var(--sl-font-size-small); line-height: 1.5; color: ${this
+                    .isFullscreen
+                    ? '#cbd5e1'
+                    : 'var(--sl-color-neutral-600)'};"
+                >
+                  Establish an SSH tunnel to forward traffic on the target
+                  server port 5901 to your local workstation's port 5901:
+                </p>
+                <div
+                  style="display: flex; align-items: center; gap: var(--sl-spacing-small); background: ${this
+                    .isFullscreen
+                    ? '#1e293b'
+                    : 'var(--sl-color-neutral-100)'}; padding: var(--sl-spacing-small) var(--sl-spacing-medium); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                    .isFullscreen
+                    ? '#475569'
+                    : 'var(--sl-color-neutral-300)'}; margin-top: var(--sl-spacing-small);"
+                >
+                  <code
+                    style="font-family: var(--sl-font-mono); font-size: 0.85rem; color: ${this
+                      .isFullscreen
+                      ? '#38bdf8'
+                      : 'var(--sl-color-neutral-800)'}; flex: 1; overflow-x: auto; white-space: nowrap;"
+                  >
+                    ssh -L 5901:127.0.0.1:5901 ${username}@${host} -p ${port} -N
+                  </code>
+                  <sl-copy-button
+                    value="ssh -L 5901:127.0.0.1:5901 ${username}@${host} -p ${port} -N"
+                  ></sl-copy-button>
+                </div>
+              </div>
+
+              <div
+                style="background: ${this.isFullscreen
+                  ? '#0f172a'
+                  : 'var(--sl-color-neutral-50)'}; padding: var(--sl-spacing-large); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                  .isFullscreen
+                  ? '#334155'
+                  : 'var(--sl-color-neutral-200)'};"
+              >
+                <div
+                  style="font-weight: 600; font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#38bdf8'
+                    : 'var(--sl-color-primary-700)'}; margin-bottom: var(--sl-spacing-medium); text-transform: uppercase;"
+                >
+                  Step 2: Connect Local VNC Client
+                </div>
+                <p
+                  style="font-size: var(--sl-font-size-small); line-height: 1.5; color: ${this
+                    .isFullscreen
+                    ? '#cbd5e1'
+                    : 'var(--sl-color-neutral-600)'}; margin: 0;"
+                >
+                  Once the port forwarding tunnel is running, open any standard
+                  VNC viewer client (e.g. RealVNC, TigerVNC, or built-in macOS
+                  Screen Sharing) and connect to:
+                </p>
+                <div
+                  style="display: flex; align-items: center; gap: var(--sl-spacing-small); background: ${this
+                    .isFullscreen
+                    ? '#1e293b'
+                    : 'var(--sl-color-neutral-100)'}; padding: var(--sl-spacing-small) var(--sl-spacing-medium); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                    .isFullscreen
+                    ? '#475569'
+                    : 'var(--sl-color-neutral-300)'}; margin-top: var(--sl-spacing-small);"
+                >
+                  <code
+                    style="font-family: var(--sl-font-mono); font-size: 0.85rem; color: ${this
+                      .isFullscreen
+                      ? '#38bdf8'
+                      : 'var(--sl-color-neutral-800)'}; flex: 1; overflow-x: auto; white-space: nowrap;"
+                  >
+                    vnc://localhost:5901
+                  </code>
+                  <sl-copy-button value="vnc://localhost:5901"></sl-copy-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sl-card>
+      </div>
+    `;
+  }
+
+  private renderSSHTab() {
+    const tags = this.agent?.tags || {};
+    const host = tags.host || '127.0.0.1';
+    const username = tags.username || 'ubuntu';
+    const port = tags.port || '22';
+
+    return html`
+      <div
+        class="${this.isFullscreen ? 'fullscreen-mode' : ''}"
+        style="${this.isFullscreen
+          ? `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          z-index: 99999;
+          background: #0f172a;
+          color: #f1f5f9;
+          padding: var(--sl-spacing-2x-large);
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          gap: var(--sl-spacing-large);
+          overflow: auto;
+        `
+          : ''}"
+      >
+        <sl-card
+          style="border: none; box-shadow: 0 10px 32px rgba(19,27,46,0.03); border-radius: var(--sl-border-radius-large); background: ${this
+            .isFullscreen
+            ? '#1e293b'
+            : '#ffffff'}; width: 100%;"
+        >
+          <div style="padding: var(--sl-spacing-large);">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-large); flex-wrap: wrap; gap: var(--sl-spacing-medium);"
+            >
+              <div>
+                <div
+                  style="font-weight: 700; font-size: 1.25rem; color: ${this
+                    .isFullscreen
+                    ? '#ffffff'
+                    : 'var(--sl-color-neutral-800)'};"
+                >
+                  Command Terminal (SSH Access)
+                </div>
+                <div
+                  style="font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#cbd5e1'
+                    : 'var(--sl-color-neutral-600)'}; margin-top: 4px;"
+                >
+                  Connect directly to the governed agent VM node.
+                </div>
+              </div>
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+              >
+                <sl-badge variant="primary">SSH Ready</sl-badge>
+                <sl-button
+                  size="small"
+                  @click=${() => {
+                    this.isFullscreen = !this.isFullscreen;
+                    this.requestUpdate();
+                  }}
+                >
+                  <sl-icon
+                    slot="prefix"
+                    name=${this.isFullscreen
+                      ? 'fullscreen-exit'
+                      : 'arrows-angle-expand'}
+                  ></sl-icon>
+                  ${this.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                </sl-button>
+              </div>
+            </div>
+
+            <div
+              style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--sl-spacing-large); margin-bottom: var(--sl-spacing-large);"
+            >
+              <div
+                style="background: ${this.isFullscreen
+                  ? '#0f172a'
+                  : 'var(--sl-color-neutral-50)'}; padding: var(--sl-spacing-large); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                  .isFullscreen
+                  ? '#334155'
+                  : 'var(--sl-color-neutral-200)'};"
+              >
+                <div
+                  style="font-weight: 600; font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#38bdf8'
+                    : 'var(--sl-color-primary-700)'}; margin-bottom: var(--sl-spacing-medium); text-transform: uppercase;"
+                >
+                  Connection Details
+                </div>
+                <div
+                  style="display: flex; flex-direction: column; gap: var(--sl-spacing-small); font-size: var(--sl-font-size-small);"
+                >
+                  <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--sl-color-neutral-500);"
+                      >Host:</span
+                    >
+                    <strong style="font-family: monospace;">${host}</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--sl-color-neutral-500);"
+                      >Port:</span
+                    >
+                    <strong style="font-family: monospace;">${port}</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--sl-color-neutral-500);"
+                      >Username:</span
+                    >
+                    <strong style="font-family: monospace;">${username}</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span style="color: var(--sl-color-neutral-500);"
+                      >Authentication:</span
+                    >
+                    <strong>SSH Key / Password</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style="background: ${this.isFullscreen
+                  ? '#0f172a'
+                  : 'var(--sl-color-neutral-50)'}; padding: var(--sl-spacing-large); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                  .isFullscreen
+                  ? '#334155'
+                  : 'var(--sl-color-neutral-200)'}; display: flex; flex-direction: column; justify-content: space-between;"
+              >
+                <div>
+                  <div
+                    style="font-weight: 600; font-size: var(--sl-font-size-small); color: ${this
+                      .isFullscreen
+                      ? '#38bdf8'
+                      : 'var(--sl-color-primary-700)'}; margin-bottom: var(--sl-spacing-small); text-transform: uppercase;"
+                  >
+                    Quick Connect Command
+                  </div>
+                  <p
+                    style="font-size: var(--sl-font-size-small); margin: 0 0 var(--sl-spacing-medium) 0; color: ${this
+                      .isFullscreen
+                      ? '#cbd5e1'
+                      : 'var(--sl-color-neutral-600)'};"
+                  >
+                    Run this command in your local terminal to establish an
+                    interactive SSH session.
+                  </p>
+                </div>
+                <div
+                  style="display: flex; align-items: center; gap: var(--sl-spacing-small); background: ${this
+                    .isFullscreen
+                    ? '#1e293b'
+                    : 'var(--sl-color-neutral-100)'}; padding: var(--sl-spacing-small) var(--sl-spacing-medium); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                    .isFullscreen
+                    ? '#475569'
+                    : 'var(--sl-color-neutral-300)'};"
+                >
+                  <code
+                    style="font-family: var(--sl-font-mono); font-size: 0.85rem; color: ${this
+                      .isFullscreen
+                      ? '#38bdf8'
+                      : 'var(--sl-color-neutral-800)'}; flex: 1; overflow-x: auto; white-space: nowrap;"
+                  >
+                    ssh ${username}@${host} -p ${port}
+                  </code>
+                  <sl-copy-button
+                    value="ssh ${username}@${host} -p ${port}"
+                  ></sl-copy-button>
+                </div>
+              </div>
+            </div>
+
+            <div
+              style="background: ${this.isFullscreen
+                ? '#1e293b'
+                : 'var(--sl-color-neutral-50)'}; padding: var(--sl-spacing-large); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                .isFullscreen
+                ? '#334155'
+                : 'var(--sl-color-neutral-200)'};"
+            >
+              <h4
+                style="margin: 0 0 var(--sl-spacing-small) 0; font-weight: 600; color: ${this
+                  .isFullscreen
+                  ? '#ffffff'
+                  : 'var(--sl-color-neutral-800)'};"
+              >
+                How to access pre-exposed VNC / Web services
+              </h4>
+              <p
+                style="margin: 0; font-size: var(--sl-font-size-small); line-height: 1.5; color: ${this
+                  .isFullscreen
+                  ? '#cbd5e1'
+                  : 'var(--sl-color-neutral-600)'};"
+              >
+                Since VNC and Agent Web UIs are typically hosted internally
+                within the isolated VM node sandbox for security, you should
+                tunnel the ports securely using local port forwarding. E.g., to
+                access a web dashboard on port 8000, run:
+                <code
+                  style="display: block; margin: var(--sl-spacing-small) 0; padding: var(--sl-spacing-small); background: ${this
+                    .isFullscreen
+                    ? '#0f172a'
+                    : 'var(--sl-color-neutral-100)'}; border-radius: 4px; font-family: var(--sl-font-mono); font-size: 0.85rem; color: ${this
+                    .isFullscreen
+                    ? '#38bdf8'
+                    : 'var(--sl-color-neutral-800)'};"
+                >
+                  ssh -L 8000:localhost:8000 ${username}@${host} -p ${port} -N
+                </code>
+                Then navigate to
+                <a
+                  href="http://localhost:8000"
+                  target="_blank"
+                  style="color: var(--sl-color-primary-600); font-weight: 500;"
+                  >http://localhost:8000</a
+                >
+                on your browser.
+              </p>
+            </div>
+          </div>
+        </sl-card>
+      </div>
+    `;
+  }
+
+  private renderDashboardTab() {
+    const tags = this.agent?.tags || {};
+    const host = tags.host || '127.0.0.1';
+    const username = tags.username || 'ubuntu';
+    const port = tags.port || '22';
+
+    return html`
+      <div
+        class="${this.isFullscreen ? 'fullscreen-mode' : ''}"
+        style="${this.isFullscreen
+          ? `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          z-index: 99999;
+          background: #0f172a;
+          color: #f1f5f9;
+          padding: var(--sl-spacing-2x-large);
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          gap: var(--sl-spacing-large);
+          overflow: auto;
+        `
+          : ''}"
+      >
+        <sl-card
+          style="border: none; box-shadow: 0 10px 32px rgba(19,27,46,0.03); border-radius: var(--sl-border-radius-large); background: ${this
+            .isFullscreen
+            ? '#1e293b'
+            : '#ffffff'}; width: 100%;"
+        >
+          <div style="padding: var(--sl-spacing-large);">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-large); flex-wrap: wrap; gap: var(--sl-spacing-medium);"
+            >
+              <div>
+                <div
+                  style="font-weight: 700; font-size: 1.25rem; color: ${this
+                    .isFullscreen
+                    ? '#ffffff'
+                    : 'var(--sl-color-neutral-800)'};"
+                >
+                  Agent Web UI Portal Access
+                </div>
+                <div
+                  style="font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#cbd5e1'
+                    : 'var(--sl-color-neutral-600)'}; margin-top: 4px;"
+                >
+                  Access the web-based operational dashboards served directly
+                  from the agent runtime.
+                </div>
+              </div>
+              <div
+                style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
+              >
+                <sl-badge variant="neutral">Sandbox Port Forwarding</sl-badge>
+                <sl-button
+                  size="small"
+                  @click=${() => {
+                    this.isFullscreen = !this.isFullscreen;
+                    this.requestUpdate();
+                  }}
+                >
+                  <sl-icon
+                    slot="prefix"
+                    name=${this.isFullscreen
+                      ? 'fullscreen-exit'
+                      : 'arrows-angle-expand'}
+                  ></sl-icon>
+                  ${this.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                </sl-button>
+              </div>
+            </div>
+
+            <div
+              style="display: flex; flex-direction: column; gap: var(--sl-spacing-large);"
+            >
+              <div
+                style="background: ${this.isFullscreen
+                  ? '#0f172a'
+                  : 'var(--sl-color-neutral-50)'}; padding: var(--sl-spacing-large); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                  .isFullscreen
+                  ? '#334155'
+                  : 'var(--sl-color-neutral-200)'};"
+              >
+                <div
+                  style="font-weight: 600; font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#38bdf8'
+                    : 'var(--sl-color-primary-700)'}; margin-bottom: var(--sl-spacing-medium); text-transform: uppercase;"
+                >
+                  Port Forwarding Instructions
+                </div>
+                <p
+                  style="font-size: var(--sl-font-size-small); line-height: 1.5; color: ${this
+                    .isFullscreen
+                    ? '#cbd5e1'
+                    : 'var(--sl-color-neutral-600)'};"
+                >
+                  The agent serves its Web UI inside the isolated VM node
+                  sandbox (typically on port 8080/8000). Establish an SSH tunnel
+                  to access it securely from your local browser:
+                </p>
+                <div
+                  style="display: flex; align-items: center; gap: var(--sl-spacing-small); background: ${this
+                    .isFullscreen
+                    ? '#1e293b'
+                    : 'var(--sl-color-neutral-100)'}; padding: var(--sl-spacing-small) var(--sl-spacing-medium); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                    .isFullscreen
+                    ? '#475569'
+                    : 'var(--sl-color-neutral-300)'}; margin-top: var(--sl-spacing-small);"
+                >
+                  <code
+                    style="font-family: var(--sl-font-mono); font-size: 0.85rem; color: ${this
+                      .isFullscreen
+                      ? '#38bdf8'
+                      : 'var(--sl-color-neutral-800)'}; flex: 1; overflow-x: auto; white-space: nowrap;"
+                  >
+                    ssh -L 8080:127.0.0.1:8080 ${username}@${host} -p ${port} -N
+                  </code>
+                  <sl-copy-button
+                    value="ssh -L 8080:127.0.0.1:8080 ${username}@${host} -p ${port} -N"
+                  ></sl-copy-button>
+                </div>
+              </div>
+
+              <div
+                style="background: ${this.isFullscreen
+                  ? '#0f172a'
+                  : 'var(--sl-color-neutral-50)'}; padding: var(--sl-spacing-large); border-radius: var(--sl-border-radius-medium); border: 1px solid ${this
+                  .isFullscreen
+                  ? '#334155'
+                  : 'var(--sl-color-neutral-200)'};"
+              >
+                <div
+                  style="font-weight: 600; font-size: var(--sl-font-size-small); color: ${this
+                    .isFullscreen
+                    ? '#38bdf8'
+                    : 'var(--sl-color-primary-700)'}; margin-bottom: var(--sl-spacing-medium); text-transform: uppercase;"
+                >
+                  Access Dashboard
+                </div>
+                <p
+                  style="font-size: var(--sl-font-size-small); line-height: 1.5; color: ${this
+                    .isFullscreen
+                    ? '#cbd5e1'
+                    : 'var(--sl-color-neutral-600)'}; margin-bottom: var(--sl-spacing-medium);"
+                >
+                  Once the tunnel is connected, access the web control panel of
+                  the agent at:
+                </p>
+                <div
+                  style="display: flex; gap: var(--sl-spacing-medium); align-items: center;"
+                >
+                  <sl-button
+                    href="http://localhost:8080"
+                    target="_blank"
+                    variant="primary"
+                    size="small"
+                  >
+                    <sl-icon slot="suffix" name="box-arrow-up-right"></sl-icon>
+                    Open Web UI (localhost:8080)
+                  </sl-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sl-card>
+      </div>
+    `;
+  }
+
+  private renderFlowsTab() {
+    return html`
+      <sl-card
+        style="border: none; box-shadow: 0 10px 32px rgba(19,27,46,0.03); border-radius: var(--sl-border-radius-large); background: #ffffff; width: 100%;"
+      >
+        <div style="padding: var(--sl-spacing-large);">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sl-spacing-medium);"
+          >
+            <div
+              style="font-weight: 700; font-size: 1.15rem; color: var(--sl-color-neutral-800);"
+            >
+              Flows Using This Agent Node
+            </div>
+            ${this.associatedFlows.length > 0
+              ? html`
+                  <a
+                    href="/console/flows/new?agent_id=${this.agentId}"
+                    style="text-decoration: none;"
+                  >
+                    <sl-button variant="primary" size="small">
+                      <sl-icon name="plus-lg" slot="prefix"></sl-icon>
+                      Create New Flow
+                    </sl-button>
+                  </a>
+                `
+              : nothing}
+          </div>
+
+          ${this.associatedFlows.length === 0
+            ? html`
+                <div
+                  style="
+                    text-align: center;
+                    padding: var(--sl-spacing-3x-large);
+                    background: var(--sl-color-neutral-50);
+                    border-radius: var(--sl-border-radius-medium);
+                    color: var(--sl-color-neutral-500);
+                  "
+                >
+                  <sl-icon
+                    name="diagram-3"
+                    style="font-size: 2.5rem; margin-bottom: var(--sl-spacing-medium); opacity: 0.6;"
+                  ></sl-icon>
+                  <p style="margin: 0; font-size: var(--sl-font-size-medium);">
+                    This agent is not currently bound to any event-driven or
+                    automated flows.
+                  </p>
+                  <p
+                    style="margin: 4px 0 0 0; font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-400);"
+                  >
+                    Go to the Flows panel to bind this persistent node to an
+                    automation task.
+                  </p>
+                  <a
+                    href="/console/flows/new?agent_id=${this.agentId}"
+                    style="text-decoration: none; display: inline-block; margin-top: var(--sl-spacing-large);"
+                  >
+                    <sl-button variant="primary" size="small"
+                      >Create New Flow</sl-button
+                    >
+                  </a>
+                </div>
+              `
+            : html`
+                <div
+                  style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
+                >
+                  ${this.associatedFlows.map(
+                    (flow) => html`
+                      <div
+                        style="
+                        background: #ffffff;
+                        border: 1px solid var(--sl-color-neutral-200);
+                        border-radius: var(--sl-border-radius-medium);
+                        padding: var(--sl-spacing-large);
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        box-shadow: 0 2px 4px rgba(19,27,46,0.01);
+                      "
+                      >
+                        <div>
+                          <div
+                            style="font-weight: 600; font-size: var(--sl-font-size-medium); color: var(--sl-color-neutral-800); display: flex; align-items: center; gap: 8px;"
+                          >
+                            <sl-icon
+                              name=${flow.icon || 'diagram-3'}
+                              style="color: var(--sl-color-primary-500);"
+                            ></sl-icon>
+                            ${flow.name}
+                          </div>
+                          <div
+                            style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-top: 4px;"
+                          >
+                            ${flow.description || 'No description provided.'}
+                          </div>
+                          <div
+                            style="font-size: var(--sl-font-size-x-small); color: var(--sl-color-neutral-400); margin-top: 6px; display: flex; gap: 12px;"
+                          >
+                            <span
+                              >Trigger:
+                              <strong
+                                >${flow.trigger_event_source === 'webhook'
+                                  ? 'Webhook'
+                                  : 'Tracker'}</strong
+                              ></span
+                            >
+                            <span
+                              >Status:
+                              <strong
+                                >${flow.is_enabled
+                                  ? 'Enabled'
+                                  : 'Disabled'}</strong
+                              ></span
+                            >
+                          </div>
+                        </div>
+                        <a
+                          href="/console/flows/${flow.id}"
+                          style="text-decoration: none;"
+                        >
+                          <sl-button size="small">Configure Flow</sl-button>
+                        </a>
+                      </div>
+                    `
+                  )}
+                </div>
+              `}
+        </div>
+      </sl-card>
+    `;
   }
 
   render() {
@@ -1347,6 +2283,22 @@ export class AgentDetailView extends LitElement {
                 <sl-badge variant=${this.getLiveValidationVariant()}>
                   ${this.getLiveValidationLabel()}
                 </sl-badge>
+                ${getAgentControlState(this.agent).visible
+                  ? html`
+                      <sl-tooltip
+                        content=${getAgentControlState(this.agent).detail}
+                      >
+                        <sl-badge
+                          variant=${getAgentControlState(this.agent)
+                            .badgeVariant}
+                        >
+                          ${getAgentControlState(this.agent).label}
+                        </sl-badge>
+                      </sl-tooltip>
+                    `
+                  : html`<sl-badge variant="neutral"
+                      >No Agent Control</sl-badge
+                    >`}
                 <sl-badge variant="primary"
                   >${this.agent.enrolled_via}</sl-badge
                 >
@@ -1431,180 +2383,315 @@ export class AgentDetailView extends LitElement {
           </div>
         </div>
 
-        <div class="split-pane-layout" style="align-items: stretch;">
-          <sl-card>
-            <div class="stack">
-              <div class="hero">
-                <div
-                  style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
-                >
-                  <div>
-                    <div class="hero-title">Models & Spend</div>
-                    <div class="meta-line">
-                      Assign budget limits restricting maximum spend per month.
-                      If a model does not have a budget, it will be prohibited.
-                    </div>
-                  </div>
-                  <sl-button
-                    size="small"
-                    @click=${() => {
-                      this.budgetsDialogJson = this.modelBudgetsText;
-                      this.updateBudgetsDialogOpen = true;
-                    }}
-                  >
-                    <sl-icon slot="prefix" name="pencil"></sl-icon>
-                    Edit Budgets
-                  </sl-button>
-                </div>
-              </div>
-              <div class="stack">
-                ${this.getDisplayedAgentModels().map((model: string) => {
-                  const currentBudgets = this.getParsedModelBudgets();
-                  const budget = currentBudgets[model] || {};
-                  const isConfiguredModel =
-                    model === this.agent?.configured_model_alias;
-                  const usage = this.getUsageForDisplayedModel(model);
-                  const modelId = this.getDisplayedModelId(model);
-                  const showZeroSpend = isConfiguredModel && !usage;
-                  return html`
-                    <div
-                      class="stat-card"
-                      style="display: flex; gap: var(--sl-spacing-medium); align-items: center; justify-content: space-between;"
-                    >
-                      <div class="stat-label">
-                        <sl-icon
-                          name="robot"
-                          style="margin-right: 4px;"
-                        ></sl-icon>
-                        ${modelId
-                          ? html`<a
-                              href="/console/ai-models/${encodeURIComponent(
-                                modelId
-                              )}"
-                              class="session-link"
-                              style="font-weight: 500;"
-                              >${model}</a
-                            >`
-                          : html`<span style="font-weight: 500;"
-                              >${model}</span
-                            >`}
-                      </div>
-                      ${usage || budget.monthly_usd_limit || showZeroSpend
-                        ? html`<div style="font-size: 0.9em;">
-                            ${usage || showZeroSpend
-                              ? html`<span
-                                  style="color: var(--sl-color-primary-600); font-weight: 600;"
-                                  >${this.formatMoney(
-                                    usage?.estimated_cost ?? 0
-                                  )}
-                                  spent</span
-                                >`
-                              : ''}
-                            ${(usage || showZeroSpend) &&
-                            budget.monthly_usd_limit
-                              ? ' / '
-                              : ''}
-                            ${budget.monthly_usd_limit
-                              ? html`<span
-                                  style="color: var(--sl-color-neutral-600);"
-                                  >${this.formatMoney(budget.monthly_usd_limit)}
-                                  budget</span
-                                >`
-                              : ''}
-                          </div>`
-                        : ''}
-                    </div>
-                  `;
-                })}
-              </div>
-            </div>
-          </sl-card>
+        <!-- Sub-view Tab Navigation -->
+        ${(() => {
+          const tags = this.agent?.tags || {};
+          const supportsSSH =
+            this.agent?.enrolled_via === 'kube_virt' ||
+            this.agent?.enrolled_via === 'ssh' ||
+            this.agent?.session_source_type === 'kube_virt' ||
+            this.agent?.session_source_type === 'ssh' ||
+            (tags && (tags.compute === 'kube_virt' || tags.compute === 'ssh'));
+          const isVncEnabled = tags && tags.vnc === 'true';
+          const controlEnabled = getAgentControlState(this.agent).enabled;
 
-          <!-- Tools Card -->
-          <sl-card
-            class="tools-card"
-            style="width: 100%; overflow: auto; max-height: 800px; display: flex; flex-direction: column;"
-          >
+          return html`
             <div
-              class="stack"
-              style="overflow-y: auto; overflow-x: hidden; height: 100%; padding-right: 8px;"
+              style="margin-top: var(--sl-spacing-large); margin-bottom: var(--sl-spacing-large); border-bottom: 1px solid var(--sl-color-neutral-200); padding-bottom: 4px;"
             >
-              <div class="hero" style="flex-shrink: 0;">
-                <div
-                  style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
-                >
-                  <div>
-                    <div class="hero-title">Tools & Governance</div>
-                    <div class="meta-line">
-                      Agent-specific configurations overrides applying only to
-                      this agent.
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <tools-editor-component
-                mode="scoped"
-                ?collapseByDefault=${true}
-                .tools=${this.toolCatalog}
-                .mcpServers=${this.mcpServers}
-                .scopedToolRules=${this.scopedToolRules}
-                .toolEnabledOverrides=${this.toolEnabledOverrides}
-                .approvalPolicies=${this.approvalWorkflows}
-                .features=${this.featureFlags}
-                @save-rule=${(e: CustomEvent) =>
-                  this.saveScopedToolRule(
-                    e.detail.tool.name,
-                    e.detail.existingRule || e.detail.rule,
-                    e.detail.formData
-                  )}
-                @delete-rule=${(e: CustomEvent) =>
-                  this.deleteScopedToolRule(
-                    e.detail.tool.name,
-                    e.detail.rule.id
-                  )}
-                @reorder-rules=${(e: CustomEvent) =>
-                  this.reorderScopedToolRules(
-                    e.detail.tool.name,
-                    e.detail.reorderedRules
-                  )}
-                @toggle-enabled=${this.toggleToolEnabledOverride}
-                @revert-tool=${this.revertScopedTool}
-                @policy-created=${() => this.loadData()}
-              ></tools-editor-component>
-            </div>
-          </sl-card>
-        </div>
-
-        <sl-card>
-          <div class="stack">
-            <div class="hero">
-              <div
-                style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
+              <sl-tab-group
+                @sl-tab-show=${(e: any) =>
+                  (this.activeTab = e.detail.name as any)}
+                style="--indicator-color: var(--sl-color-primary-600);"
               >
-                <div>
-                  <div
-                    class="hero-title"
-                    style="display: flex; align-items: center; gap: 8px;"
-                  >
-                    Sessions History
-                    <sl-icon-button
-                      name="arrow-clockwise"
-                      style="font-size: 1.1rem; color: var(--sl-color-neutral-500);"
-                      @click=${() => this.loadData(true)}
-                    ></sl-icon-button>
-                  </div>
-                  <div class="meta-line">
-                    Expand a session to view its captured interactions.
-                  </div>
-                </div>
-              </div>
+                <sl-tab
+                  slot="nav"
+                  panel="sessions"
+                  ?active=${this.activeTab === 'sessions'}
+                  >Session History</sl-tab
+                >
+                <sl-tab
+                  slot="nav"
+                  panel="tools"
+                  ?active=${this.activeTab === 'tools'}
+                  >Tools & Governance</sl-tab
+                >
+                <sl-tab
+                  slot="nav"
+                  panel="models"
+                  ?active=${this.activeTab === 'models'}
+                  >Models & Spend</sl-tab
+                >
+
+                ${supportsSSH
+                  ? html`
+                      <sl-tab
+                        slot="nav"
+                        panel="ssh"
+                        ?active=${this.activeTab === 'ssh'}
+                        >Command Terminal (SSH)</sl-tab
+                      >
+                      ${isVncEnabled
+                        ? html`
+                            <sl-tab
+                              slot="nav"
+                              panel="vnc"
+                              ?active=${this.activeTab === 'vnc'}
+                              >Graphical UI (VNC)</sl-tab
+                            >
+                          `
+                        : nothing}
+                      <sl-tab
+                        slot="nav"
+                        panel="dashboard"
+                        ?active=${this.activeTab === 'dashboard'}
+                        >Agent Web UI</sl-tab
+                      >
+                    `
+                  : nothing}
+                ${controlEnabled
+                  ? html`
+                      <sl-tab
+                        slot="nav"
+                        panel="associated-flows"
+                        ?active=${this.activeTab === 'associated-flows'}
+                        >Associated Flows
+                        (${this.associatedFlows.length})</sl-tab
+                      >
+                    `
+                  : nothing}
+              </sl-tab-group>
             </div>
-            <unified-session-history
-              .sessions=${this.sessions}
-            ></unified-session-history>
-          </div>
-        </sl-card>
+
+            ${this.activeTab === 'sessions'
+              ? html`
+                  <sl-card
+                    style="border: none; box-shadow: 0 10px 32px rgba(19,27,46,0.03); border-radius: var(--sl-border-radius-large); width: 100%;"
+                  >
+                    <div
+                      class="stack"
+                      style="padding: var(--sl-spacing-large);"
+                    >
+                      <div
+                        class="hero"
+                        style="margin-bottom: var(--sl-spacing-large);"
+                      >
+                        <div
+                          style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
+                        >
+                          <div>
+                            <div
+                              class="hero-title"
+                              style="display: flex; align-items: center; gap: 8px;"
+                            >
+                              Sessions History
+                              <sl-icon-button
+                                name="arrow-clockwise"
+                                style="font-size: 1.1rem; color: var(--sl-color-neutral-500);"
+                                @click=${() => this.loadData(true)}
+                              ></sl-icon-button>
+                            </div>
+                            <div class="meta-line">
+                              Expand a session to view its captured
+                              interactions.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <preloop-session-observer
+                        scope="managed_agent"
+                        .scopeId=${this.agentId}
+                        .sessions=${this.sessions}
+                        layout="embedded"
+                        defaultReplayMode="timeline"
+                        .features=${{
+                          summaries: true,
+                          optimization:
+                            this.featureFlags.session_optimization === true,
+                          auditLinks: true,
+                          liveFollow: true,
+                        }}
+                      ></preloop-session-observer>
+                    </div>
+                  </sl-card>
+                `
+              : nothing}
+            ${this.activeTab === 'tools'
+              ? html`
+                  <sl-card
+                    class="tools-card"
+                    style="width: 100%; overflow: auto; max-height: 800px; display: flex; flex-direction: column; border: none; box-shadow: 0 10px 32px rgba(19,27,46,0.03); border-radius: var(--sl-border-radius-large);"
+                  >
+                    <div
+                      class="stack"
+                      style="overflow-y: auto; overflow-x: hidden; height: 100%; padding: var(--sl-spacing-large);"
+                    >
+                      <div
+                        class="hero"
+                        style="flex-shrink: 0; margin-bottom: var(--sl-spacing-medium);"
+                      >
+                        <div
+                          style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
+                        >
+                          <div>
+                            <div class="hero-title">Tools & Governance</div>
+                            <div class="meta-line">
+                              Agent-specific configurations overrides applying
+                              only to this agent.
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <tools-editor-component
+                        mode="scoped"
+                        ?collapseByDefault=${true}
+                        .tools=${this.toolCatalog}
+                        .mcpServers=${this.mcpServers}
+                        .scopedToolRules=${this.scopedToolRules}
+                        .toolEnabledOverrides=${this.toolEnabledOverrides}
+                        .approvalPolicies=${this.approvalWorkflows}
+                        .features=${this.featureFlags}
+                        @save-rule=${(e: CustomEvent) =>
+                          this.saveScopedToolRule(
+                            e.detail.tool.name,
+                            e.detail.existingRule || e.detail.rule,
+                            e.detail.formData
+                          )}
+                        @delete-rule=${(e: CustomEvent) =>
+                          this.deleteScopedToolRule(
+                            e.detail.tool.name,
+                            e.detail.rule.id
+                          )}
+                        @reorder-rules=${(e: CustomEvent) =>
+                          this.reorderScopedToolRules(
+                            e.detail.tool.name,
+                            e.detail.reorderedRules
+                          )}
+                        @toggle-enabled=${this.toggleToolEnabledOverride}
+                        @revert-tool=${this.revertScopedTool}
+                        @policy-created=${() => this.loadData()}
+                      ></tools-editor-component>
+                    </div>
+                  </sl-card>
+                `
+              : nothing}
+            ${this.activeTab === 'models'
+              ? html`
+                  <sl-card
+                    style="border: none; box-shadow: 0 10px 32px rgba(19,27,46,0.03); border-radius: var(--sl-border-radius-large); width: 100%;"
+                  >
+                    <div
+                      class="stack"
+                      style="padding: var(--sl-spacing-large);"
+                    >
+                      <div
+                        class="hero"
+                        style="margin-bottom: var(--sl-spacing-large);"
+                      >
+                        <div
+                          style="display: flex; justify-content: space-between; align-items: center; width: 100%;"
+                        >
+                          <div>
+                            <div class="hero-title">Models & Spend</div>
+                            <div class="meta-line">
+                              Assign budget limits restricting maximum spend per
+                              month. If a model does not have a budget, it will
+                              be prohibited.
+                            </div>
+                          </div>
+                          <sl-button
+                            size="small"
+                            @click=${() => {
+                              this.budgetsDialogJson = this.modelBudgetsText;
+                              this.updateBudgetsDialogOpen = true;
+                            }}
+                          >
+                            <sl-icon slot="prefix" name="pencil"></sl-icon>
+                            Edit Budgets
+                          </sl-button>
+                        </div>
+                      </div>
+                      <div class="stack" style="gap: var(--sl-spacing-medium);">
+                        ${this.getDisplayedAgentModels().map(
+                          (model: string) => {
+                            const currentBudgets = this.getParsedModelBudgets();
+                            const budget = currentBudgets[model] || {};
+                            const isConfiguredModel =
+                              model === this.agent?.configured_model_alias;
+                            const usage = this.getUsageForDisplayedModel(model);
+                            const modelId = this.getDisplayedModelId(model);
+                            const showZeroSpend = isConfiguredModel && !usage;
+                            return html`
+                              <div
+                                class="stat-card"
+                                style="display: flex; gap: var(--sl-spacing-medium); align-items: center; justify-content: space-between;"
+                              >
+                                <div class="stat-label">
+                                  <sl-icon
+                                    name="robot"
+                                    style="margin-right: 4px;"
+                                  ></sl-icon>
+                                  ${modelId
+                                    ? html`<a
+                                        href="/console/ai-models/${encodeURIComponent(
+                                          modelId
+                                        )}"
+                                        class="session-link"
+                                        style="font-weight: 500;"
+                                        >${model}</a
+                                      >`
+                                    : html`<span style="font-weight: 500;"
+                                        >${model}</span
+                                      >`}
+                                </div>
+                                ${usage ||
+                                budget.monthly_usd_limit ||
+                                showZeroSpend
+                                  ? html`<div style="font-size: 0.9em;">
+                                      ${usage || showZeroSpend
+                                        ? html`<span
+                                            style="color: var(--sl-color-primary-600); font-weight: 600;"
+                                            >${this.formatMoney(
+                                              usage?.estimated_cost ?? 0
+                                            )}
+                                            spent</span
+                                          >`
+                                        : ''}
+                                      ${(usage || showZeroSpend) &&
+                                      budget.monthly_usd_limit
+                                        ? ' / '
+                                        : ''}
+                                      ${budget.monthly_usd_limit
+                                        ? html`<span
+                                            style="color: var(--sl-color-neutral-600);"
+                                            >${this.formatMoney(
+                                              budget.monthly_usd_limit
+                                            )}
+                                            budget</span
+                                          >`
+                                        : ''}
+                                    </div>`
+                                  : ''}
+                              </div>
+                            `;
+                          }
+                        )}
+                      </div>
+                    </div>
+                  </sl-card>
+                `
+              : nothing}
+            ${this.activeTab === 'vnc' ? this.renderVNCTab() : nothing}
+            ${this.activeTab === 'ssh' ? this.renderSSHTab() : nothing}
+            ${this.activeTab === 'dashboard'
+              ? this.renderDashboardTab()
+              : nothing}
+            ${this.activeTab === 'associated-flows'
+              ? this.renderFlowsTab()
+              : nothing}
+          `;
+        })()}
       </div>
 
       <!-- Change Owner Dialog -->

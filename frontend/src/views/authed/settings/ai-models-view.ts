@@ -359,6 +359,17 @@ export class AIModelsView extends LitElement {
     return typeof value === 'string' && value.trim() ? value.trim() : null;
   }
 
+  private getModelKindLabel(model: AIModel): string {
+    switch (model.model_kind || 'llm') {
+      case 'stt':
+        return 'Speech to text';
+      case 'tts':
+        return 'Text to speech';
+      default:
+        return 'Inference';
+    }
+  }
+
   private renderFleetOverview() {
     return html`
       <div class="summary-grid">
@@ -509,7 +520,14 @@ export class AIModelsView extends LitElement {
                             `
                           : null}
                       </td>
-                      <td>${model.provider_name}</td>
+                      <td>
+                        <div class="cell-stack">
+                          <div class="cell-primary">${model.provider_name}</div>
+                          <div class="cell-secondary">
+                            ${this.getModelKindLabel(model)}
+                          </div>
+                        </div>
+                      </td>
                       <td>
                         <div class="cell-stack">
                           <div class="badge-row">

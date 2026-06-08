@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timedelta, UTC
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -150,8 +150,7 @@ class TestGetCurrentUser:
         user.account_id = str(uuid.uuid4())
         return user
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_with_jwt(self, mock_user):
+    def test_get_current_user_with_jwt(self, mock_user):
         """Test getting current user with valid JWT."""
         user_id = str(mock_user.id)
         token = jwt_module.create_access_token({"sub": user_id})
@@ -164,12 +163,11 @@ class TestGetCurrentUser:
             mock_session.query.return_value = mock_query
             mock_get_db.return_value = iter([mock_session])
 
-            result = await jwt_module.get_current_user(token, db=mock_session)
+            result = jwt_module.get_current_user(token, db=mock_session)
 
             assert result == mock_user
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_with_api_key(self, mock_user):
+    def test_get_current_user_with_api_key(self, mock_user):
         """Test getting current user with API key (no dots)."""
         api_key = "abcdef123456"  # No dots, looks like API key
 
@@ -188,12 +186,11 @@ class TestGetCurrentUser:
             with patch.object(
                 jwt_module.crud_api_key, "get_by_key", return_value=mock_api_key
             ):
-                result = await jwt_module.get_current_user(api_key, db=mock_session)
+                result = jwt_module.get_current_user(api_key, db=mock_session)
 
                 assert result == mock_user
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_api_key_expired(self, mock_user):
+    def test_get_current_user_api_key_expired(self, mock_user):
         """Test failure when API key is expired."""
         api_key = "abcdef123456"
 
@@ -210,13 +207,12 @@ class TestGetCurrentUser:
                 jwt_module.crud_api_key, "get_by_key", return_value=mock_api_key
             ):
                 with pytest.raises(HTTPException) as exc_info:
-                    await jwt_module.get_current_user(api_key, db=mock_session)
+                    jwt_module.get_current_user(api_key, db=mock_session)
 
                 assert exc_info.value.status_code == 401
                 assert "expired" in exc_info.value.detail
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_inactive_user(self, mock_user):
+    def test_get_current_user_inactive_user(self, mock_user):
         """Test failure when user is inactive."""
         mock_user.is_active = False
         user_id = str(mock_user.id)
@@ -231,7 +227,7 @@ class TestGetCurrentUser:
             mock_get_db.return_value = iter([mock_session])
 
             with pytest.raises(HTTPException) as exc_info:
-                await jwt_module.get_current_user(token, db=mock_session)
+                jwt_module.get_current_user(token, db=mock_session)
 
             assert exc_info.value.status_code == 401
             # The actual implementation wraps errors in "Authentication error"
@@ -240,8 +236,7 @@ class TestGetCurrentUser:
                 or "Inactive" in exc_info.value.detail
             )
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_not_found(self):
+    def test_get_current_user_not_found(self):
         """Test failure when user doesn't exist."""
         user_id = str(uuid.uuid4())
         token = jwt_module.create_access_token({"sub": user_id})
@@ -255,7 +250,7 @@ class TestGetCurrentUser:
             mock_get_db.return_value = iter([mock_session])
 
             with pytest.raises(HTTPException) as exc_info:
-                await jwt_module.get_current_user(token, db=mock_session)
+                jwt_module.get_current_user(token, db=mock_session)
 
             assert exc_info.value.status_code == 401
             # The actual implementation wraps errors in "Authentication error"
@@ -264,20 +259,18 @@ class TestGetCurrentUser:
                 or "not found" in exc_info.value.detail.lower()
             )
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_invalid_uuid(self):
+    def test_get_current_user_invalid_uuid(self):
         """Test failure when token contains invalid UUID."""
         token = jwt_module.create_access_token({"sub": "not-a-uuid"})
         mock_session = MagicMock()
 
         with pytest.raises(HTTPException) as exc_info:
-            await jwt_module.get_current_user(token, db=mock_session)
+            jwt_module.get_current_user(token, db=mock_session)
 
         assert exc_info.value.status_code == 401
         assert "Invalid user ID" in exc_info.value.detail
 
-    @pytest.mark.asyncio
-    async def test_get_current_user_refresh_token_rejected(self, mock_user):
+    def test_get_current_user_refresh_token_rejected(self, mock_user):
         """Test that refresh tokens cannot be used for authentication."""
         user_id = str(mock_user.id)
         # Create a refresh token (with refresh=True)
@@ -294,20 +287,19 @@ class TestGetCurrentUser:
             mock_get_db.return_value = iter([mock_session])
 
             # Should succeed because decode_token returns TokenData, not dict
-            result = await jwt_module.get_current_user(token, db=mock_session)
+            result = jwt_module.get_current_user(token, db=mock_session)
             assert result == mock_user
 
 
 class TestGetCurrentActiveUser:
     """Tests for get_current_active_user function."""
 
-    @pytest.mark.asyncio
-    async def test_get_current_active_user(self):
+    def test_get_current_active_user(self):
         """Test getting current active user."""
         mock_user = MagicMock()
         mock_user.is_active = True
 
-        result = await jwt_module.get_current_active_user(current_user=mock_user)
+        result = jwt_module.get_current_active_user(current_user=mock_user)
 
         assert result == mock_user
 
@@ -315,58 +307,42 @@ class TestGetCurrentActiveUser:
 class TestGetCurrentActiveUserOptional:
     """Tests for get_current_active_user_optional function."""
 
-    @pytest.mark.asyncio
-    async def test_returns_none_when_no_token(self):
+    def test_returns_none_when_no_token(self):
         """Test returns None when no token is provided."""
-        result = await jwt_module.get_current_active_user_optional(token=None)
+        result = jwt_module.get_current_active_user_optional(token=None)
 
         assert result is None
 
-    @pytest.mark.asyncio
-    async def test_returns_user_when_valid_token(self):
+    def test_returns_user_when_valid_token(self):
         """Test returns user when valid token is provided."""
         mock_user = MagicMock()
         mock_user.is_active = True
 
-        with patch.object(
-            jwt_module, "get_current_user", new_callable=AsyncMock
-        ) as mock_get_user:
+        with patch.object(jwt_module, "get_current_user") as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            result = await jwt_module.get_current_active_user_optional(
-                token="valid_token"
-            )
+            result = jwt_module.get_current_active_user_optional(token="valid_token")
 
             assert result == mock_user
 
-    @pytest.mark.asyncio
-    async def test_returns_none_when_inactive_user(self):
+    def test_returns_none_when_inactive_user(self):
         """Test returns None when user is inactive."""
         mock_user = MagicMock()
         mock_user.is_active = False
 
-        with patch.object(
-            jwt_module, "get_current_user", new_callable=AsyncMock
-        ) as mock_get_user:
+        with patch.object(jwt_module, "get_current_user") as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            result = await jwt_module.get_current_active_user_optional(
-                token="valid_token"
-            )
+            result = jwt_module.get_current_active_user_optional(token="valid_token")
 
             assert result is None
 
-    @pytest.mark.asyncio
-    async def test_returns_none_on_authentication_error(self):
+    def test_returns_none_on_authentication_error(self):
         """Test returns None when authentication fails."""
-        with patch.object(
-            jwt_module, "get_current_user", new_callable=AsyncMock
-        ) as mock_get_user:
+        with patch.object(jwt_module, "get_current_user") as mock_get_user:
             mock_get_user.side_effect = HTTPException(status_code=401, detail="Invalid")
 
-            result = await jwt_module.get_current_active_user_optional(
-                token="invalid_token"
-            )
+            result = jwt_module.get_current_active_user_optional(token="invalid_token")
 
             assert result is None
 
@@ -425,8 +401,7 @@ class TestApiKeyFallback:
         user.is_active = True
         return user
 
-    @pytest.mark.asyncio
-    async def test_api_key_used_for_token_without_dots(self, mock_user):
+    def test_api_key_used_for_token_without_dots(self, mock_user):
         """Test that API key auth is used for tokens without dots."""
         # Token without dots is treated as API key first
         token = "simpletokenwithoutdots"
@@ -449,12 +424,11 @@ class TestApiKeyFallback:
             with patch.object(
                 jwt_module.crud_api_key, "get_by_key", return_value=mock_api_key
             ):
-                result = await jwt_module.get_current_user(token, db=mock_session)
+                result = jwt_module.get_current_user(token, db=mock_session)
 
                 assert result == mock_user
 
-    @pytest.mark.asyncio
-    async def test_api_key_not_found_fallback(self):
+    def test_api_key_not_found_fallback(self):
         """Test failure when API key is not found."""
         # Token without dots - will try API key first
         token = "invalidapikey"
@@ -465,6 +439,6 @@ class TestApiKeyFallback:
 
             with patch.object(jwt_module.crud_api_key, "get_by_key", return_value=None):
                 with pytest.raises(HTTPException) as exc_info:
-                    await jwt_module.get_current_user(token, db=mock_session)
+                    jwt_module.get_current_user(token, db=mock_session)
 
                 assert exc_info.value.status_code == 401

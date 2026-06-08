@@ -69,6 +69,17 @@ class AIModel(Base):
     )
 
     @property
+    def model_kind(self) -> str:
+        """Return the model service kind stored in metadata."""
+        meta_data = self.meta_data if isinstance(self.meta_data, dict) else {}
+        service_kind = meta_data.get("service_kind") or meta_data.get("model_kind")
+        if isinstance(service_kind, str) and service_kind.strip():
+            normalized = service_kind.strip().lower()
+            if normalized in {"llm", "stt", "tts"}:
+                return normalized
+        return "llm"
+
+    @property
     def uses_ambient_credentials(self) -> bool:
         """Whether this model uses provider-native ambient credentials."""
         meta_data = self.meta_data if isinstance(self.meta_data, dict) else {}

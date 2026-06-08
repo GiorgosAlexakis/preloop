@@ -94,6 +94,13 @@ export class TrackersView extends LitElement {
     this.isAddingTracker = false;
     this.editingTracker = null;
 
+    const redirectBack = sessionStorage.getItem('github_oauth_redirect_back');
+    if (redirectBack) {
+      sessionStorage.removeItem('github_oauth_redirect_back');
+      Router.go(redirectBack);
+      return;
+    }
+
     const fromWelcome = sessionStorage.getItem('github_oauth_from_welcome');
     if (fromWelcome) {
       sessionStorage.removeItem('github_oauth_from_welcome');
@@ -105,6 +112,20 @@ export class TrackersView extends LitElement {
     // Don't close modal if there are warnings to display
     if (!event.detail?.hasWarnings) {
       this.isAddingTracker = false;
+
+      const redirectBack = sessionStorage.getItem('github_oauth_redirect_back');
+      if (redirectBack) {
+        sessionStorage.removeItem('github_oauth_redirect_back');
+        Router.go(redirectBack);
+        return;
+      }
+
+      const fromWelcome = sessionStorage.getItem('github_oauth_from_welcome');
+      if (fromWelcome) {
+        sessionStorage.removeItem('github_oauth_from_welcome');
+        Router.go('/console');
+        return;
+      }
     }
     await this.trackerListElement?.fetchTrackers();
   }

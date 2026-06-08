@@ -3,9 +3,12 @@
 # Open source core endpoints
 __all__ = [
     "account",
+    "agent_control",
     "anthropic_gateway",
+    "audio",
     "approval_requests",
     "comments",
+    "cost",
     "features",
     "gemini_gateway",
     "health",

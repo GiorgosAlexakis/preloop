@@ -2,7 +2,11 @@
 
 from datetime import UTC, datetime
 
-from preloop.api.endpoints.account import _managed_agent_onboarding_flags
+from preloop.api.endpoints.account import (
+    _managed_agent_control_fields,
+    _managed_agent_control_config_flags,
+    _managed_agent_onboarding_flags,
+)
 from preloop.models.crud import (
     crud_ai_model,
     crud_api_usage,
@@ -40,6 +44,109 @@ def _add_server_tool(db_session, server_id, *, tool_name: str) -> None:
         )
     )
     db_session.flush()
+
+
+def test_managed_agent_control_flags_read_openclaw_plugin_config():
+    """OpenClaw control config lives under its runtime plugin entry."""
+    validation_ready, managed_ready = _managed_agent_control_config_flags(
+        {
+            "validation_result": {
+                "control_plugin_verified": True,
+                "control_ws_url_ok": True,
+                "control_bearer_token_ok": True,
+            },
+            "managed_config": {
+                "plugins": {
+                    "entries": {
+                        "openclaw-plugin": {
+                            "config": {
+                                "enabled": True,
+                                "control_ws_url": (
+                                    "wss://preloop.example/api/v1/agents/control/ws"
+                                ),
+                            }
+                        }
+                    }
+                }
+            },
+        }
+    )
+
+    assert validation_ready is True
+    assert managed_ready is True
+
+
+def test_managed_agent_control_fields_merge_runtime_plugin_evidence():
+    """A later CLI enrollment must not hide a live runtime control connection."""
+    fields = _managed_agent_control_fields(
+        {
+            "agent_kind": "openclaw",
+            "session_source_type": "openclaw",
+            "lifecycle_state": "active",
+            "runtime_session_id": "runtime-123",
+            "ended_at": None,
+        },
+        {
+            "validation_result": {},
+            "managed_config": {
+                "plugins": {
+                    "entries": {
+                        "openclaw-plugin": {
+                            "config": {
+                                "enabled": True,
+                                "control_ws_url": (
+                                    "wss://preloop.example/api/v1/agents/control/ws"
+                                ),
+                            }
+                        }
+                    }
+                }
+            },
+        },
+        {
+            "validation_result": {
+                "control_channel_configured": True,
+                "control_plugin_verified": True,
+                "control_ws_url_ok": True,
+                "control_bearer_token_ok": True,
+            },
+            "managed_config": {},
+        },
+    )
+
+    assert fields["control_state"] == "plugin_connected"
+    assert fields["control_enabled"] is True
+    assert fields["control_online"] is True
+    assert fields["control_capabilities"]
+
+
+def test_onboarding_flags_downgrade_failed_live_gateway_to_mcp_only():
+    """Failed gateway validation must not leave the UI showing fully onboarded."""
+    mcp_configured, gateway_configured, state = _managed_agent_onboarding_flags(
+        {
+            "managed_config": {
+                "mcpServers": {"preloop": {"url": "https://preloop.example/mcp/v1"}},
+                "baseUrl": "https://preloop.example/openai/v1",
+                "apiKey": "agt_managed",
+                "model": {"name": "claude/haiku"},
+            },
+            "validation_result": {
+                "preloop_server_present": True,
+                "gateway_provider_ok": False,
+                "gateway_base_url_ok": False,
+                "gateway_token_ok": False,
+                "model_provider_rewritten": False,
+                "live_validation_supported": True,
+                "live_validation_attempted": True,
+                "live_validation_status": "failed",
+                "live_validation_passed": False,
+            },
+        }
+    )
+
+    assert mcp_configured is True
+    assert gateway_configured is False
+    assert state == "mcp_proxy_only"
 
 
 def test_account_agents_endpoint_lists_onboarded_agents(client, db_session, test_user):

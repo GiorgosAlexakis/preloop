@@ -420,7 +420,7 @@ async def register_tracker(
 
 @router.get("/trackers", response_model=List[TrackerResponse])
 @require_permission("view_trackers")
-async def list_trackers(
+def list_trackers(
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[Tracker]:
@@ -438,7 +438,7 @@ async def list_trackers(
 
 @router.get("/trackers/{tracker_id}", response_model=TrackerResponse)
 @require_permission("view_trackers")
-async def get_tracker(
+def get_tracker(
     tracker_id: UUID4,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),

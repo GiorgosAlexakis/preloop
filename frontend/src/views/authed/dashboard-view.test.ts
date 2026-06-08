@@ -543,26 +543,27 @@ describe('DashboardView', () => {
     );
     await element.updateComplete;
 
-    const content = element.shadowRoot?.textContent || '';
-    expect(content).to.contain('Global spend · 30d');
-    expect(content).to.contain('Global · 24h');
-    expect(content).to.contain('$12.34');
-    expect(content).to.contain('$50.00');
-    expect(content).to.not.contain('Configured limits');
-    expect(content).to.contain('Ops Agent');
-    expect(content).to.contain('$4.20');
-    expect(content).to.contain('$25.00');
-    expect(content).to.contain('Soft $20.00');
-    expect(content).to.contain('Hard $25.00');
-    expect(content).to.not.contain('SUCCESS');
+    const budgetCard = element.shadowRoot?.querySelector('budget-health-card');
+    await budgetCard?.updateComplete;
+    const budgetContent = budgetCard?.shadowRoot?.textContent || '';
+    expect(budgetContent).to.contain('Global spend · 30d');
+    expect(budgetContent).to.contain('Global · 24h');
+    expect(budgetContent).to.contain('$12.34');
+    expect(budgetContent).to.contain('$50.00');
+    expect(budgetContent).to.not.contain('Configured limits');
+    expect(budgetContent).to.contain('Ops Agent');
+    expect(budgetContent).to.contain('$4.20');
+    expect(budgetContent).to.contain('$25.00');
+    expect(budgetContent).to.contain('Soft $20.00');
+    expect(budgetContent).to.contain('Hard $25.00');
 
-    const softMarkers = element.shadowRoot?.querySelectorAll(
+    const softMarkers = budgetCard?.shadowRoot?.querySelectorAll(
       '.budget-soft-marker'
     );
-    const hardMarkers = element.shadowRoot?.querySelectorAll(
+    const hardMarkers = budgetCard?.shadowRoot?.querySelectorAll(
       '.budget-hard-marker'
     );
-    const warningSegments = element.shadowRoot?.querySelectorAll(
+    const warningSegments = budgetCard?.shadowRoot?.querySelectorAll(
       '.budget-track-fill.warning'
     );
     expect(softMarkers?.length).to.be.greaterThan(0);
@@ -604,11 +605,13 @@ describe('DashboardView', () => {
     );
     await element.updateComplete;
 
-    const content = element.shadowRoot?.textContent || '';
-    expect(content).to.contain('Budget health');
-    expect(content).to.contain('Global spend · 30d');
-    expect(content).to.contain('$0.00');
-    expect(content).to.contain('Configure Limits');
+    const budgetCard = element.shadowRoot?.querySelector('budget-health-card');
+    await budgetCard?.updateComplete;
+    const budgetContent = budgetCard?.shadowRoot?.textContent || '';
+    expect(budgetContent).to.contain('Budget health');
+    expect(budgetContent).to.contain('Global spend · 30d');
+    expect(budgetContent).to.contain('$0.00');
+    expect(budgetContent).to.contain('Configure Limits');
   });
 
   it('renders the requested responsive control-plane metrics behind the expand toggle', async () => {

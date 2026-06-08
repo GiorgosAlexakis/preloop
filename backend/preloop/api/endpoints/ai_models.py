@@ -1,7 +1,7 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
@@ -281,6 +281,11 @@ async def get_provider_available_models(
     api_key: Optional[str] = Query(
         None, description="Optional API key for fetching models"
     ),
+    model_kind: Literal["llm", "stt", "tts"] = Query(
+        "llm",
+        pattern="^(llm|stt|tts)$",
+        description="Model service kind to fetch",
+    ),
 ) -> List[str]:
     """
     Fetch available models from the specified AI provider.
@@ -293,7 +298,7 @@ async def get_provider_available_models(
     fetching live data from OpenAI.
     """
     try:
-        models = await get_available_models_for_provider(provider, api_key)
+        models = await get_available_models_for_provider(provider, api_key, model_kind)
         return models
     except ValueError as e:
         # ValueError is raised for authentication errors

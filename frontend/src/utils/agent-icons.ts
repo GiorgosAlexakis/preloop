@@ -18,7 +18,7 @@ export function renderAgentIcon(
     case 'openclaw':
       return renderIcon('', '/images/logos/openclaw.svg');
     case 'codex':
-      return renderIcon('', '/images/logos/codex.svg');
+      return renderIcon('', '/images/logos/codex.svg?v=2');
     case 'gemini_cli':
     case 'gemini-cli':
     case 'geminicli':

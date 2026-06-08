@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
@@ -22,6 +22,10 @@ class AIModelBase(BaseModel):
     provider_name: str = Field(..., description="e.g., 'openai', 'anthropic'")
     model_identifier: str = Field(
         ..., description="Standardized identifier, e.g., 'gpt-5.4-turbo'"
+    )
+    model_kind: Literal["llm", "stt", "tts"] = Field(
+        "llm",
+        description="Service kind for this model configuration: inference, STT, or TTS",
     )
     api_endpoint: Optional[str] = Field(
         None, description="URL for the model's API, if not standard"
@@ -108,6 +112,7 @@ class AIModelUpdate(BaseModel):
     description: Optional[str] = None
     provider_name: Optional[str] = None
     model_identifier: Optional[str] = None
+    model_kind: Optional[Literal["llm", "stt", "tts"]] = None
     api_endpoint: Optional[str] = None
     api_key: Optional[str] = None
     credential_type: Optional[str] = None
@@ -161,6 +166,7 @@ class AIModelInDBBase(TimestampMixin, BaseModel):
     description: Optional[str] = None
     provider_name: str
     model_identifier: str
+    model_kind: Literal["llm", "stt", "tts"] = "llm"
     api_endpoint: Optional[str] = None
     is_default: bool = False
     model_parameters: Optional[Dict] = None

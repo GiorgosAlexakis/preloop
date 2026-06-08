@@ -22,6 +22,7 @@ from preloop.models.models import client_version_log  # noqa: F401
 from preloop.models.models import comment  # noqa: F401
 from preloop.models.models import ai_model  # noqa: F401
 from preloop.models.models import issue_duplicate  # noqa: F401
+from preloop.models.models import model_price_override  # noqa: F401
 
 # Load .env file from the parent directory (project root)
 load_dotenv(

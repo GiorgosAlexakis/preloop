@@ -634,7 +634,7 @@ def _snapshot_to_full(snapshot) -> PolicyVersionFull:
     summary="List policy versions",
     description="List all policy versions for the account with optional pagination.",
 )
-async def list_policy_versions(
+def list_policy_versions(
     limit: int = Query(
         100, ge=1, le=1000, description="Maximum number of versions to return"
     ),
@@ -678,7 +678,7 @@ async def list_policy_versions(
     summary="Get a specific policy version",
     description="Get a specific policy version with full snapshot data.",
 )
-async def get_policy_version(
+def get_policy_version(
     version_id: UUID,
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),

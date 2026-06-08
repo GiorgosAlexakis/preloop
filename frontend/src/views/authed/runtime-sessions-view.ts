@@ -13,9 +13,11 @@ import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/view-header.ts';
 import '../../components/json-tree.ts';
+import '../../components/preloop-session-observer.ts';
 import {
   getAccountRuntimeSessionDetail,
   getAccountRuntimeSessions,
+  getFeatures,
   getFlowExecutionGatewayEvents,
   getRuntimeSessionGatewayEvents,
   getAccountRuntimeSessionActivityTimeline,
@@ -39,7 +41,6 @@ import type {
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
-import '../../components/unified-session-history.ts';
 
 type DateRangePreset = 'last-7' | 'last-30' | 'last-90' | 'all' | 'custom';
 
@@ -110,6 +111,9 @@ export class RuntimeSessionsView extends LitElement {
 
   @state()
   private gatewayEventsError: string | null = null;
+
+  @state()
+  private featureFlags: Record<string, boolean | string[]> = {};
 
   private initialized = false;
   private unsubscribeRealtime?: () => void;
@@ -470,6 +474,7 @@ export class RuntimeSessionsView extends LitElement {
         this.applyPresetDates(this.selectedRange);
       }
       this.initialized = true;
+      void this.loadFeatureFlags();
       void this.loadSessions();
       this.connectRealtime();
     }
@@ -645,6 +650,15 @@ export class RuntimeSessionsView extends LitElement {
     }
 
     return params;
+  }
+
+  private async loadFeatureFlags() {
+    try {
+      const features = await getFeatures();
+      this.featureFlags = features.features || {};
+    } catch {
+      this.featureFlags = {};
+    }
   }
 
   private async loadSessions(isSoftRefresh = false) {
@@ -1300,6 +1314,18 @@ export class RuntimeSessionsView extends LitElement {
                       ${this.formatAuthAttribution(item)}
                     `
                   : ''}
+                ${item.is_retry || (item.gateway_attempt || 1) > 1
+                  ? html`
+                      ${(item.total_tokens !== null &&
+                        item.total_tokens !== undefined) ||
+                      (item.estimated_cost !== null &&
+                        item.estimated_cost !== undefined) ||
+                      this.formatAuthAttribution(item)
+                        ? html` · `
+                        : ''}
+                      retry #${item.gateway_attempt || 2}
+                    `
+                  : ''}
               </div>
             </div>
           `
@@ -1822,15 +1848,29 @@ export class RuntimeSessionsView extends LitElement {
                   </sl-card>
                 `
               : html`
-                  <div class="layout">
-                    <sl-card>
-                      <div slot="header" class="session-item-title">
-                        Sessions
-                      </div>
-                      ${this.renderSessionList()}
-                    </sl-card>
-                    ${this.renderDetail()}
-                  </div>
+                  <sl-card>
+                    <div slot="header" class="session-item-title">
+                      Session Observer
+                    </div>
+                    <preloop-session-observer
+                      scope="account"
+                      .sessions=${this.sessions?.items || []}
+                      .selectedSessionId=${this.selectedSessionId}
+                      layout="full"
+                      defaultReplayMode="timeline"
+                      .features=${{
+                        summaries: true,
+                        optimization:
+                          this.featureFlags.session_optimization === true,
+                        auditLinks: true,
+                        liveFollow: true,
+                        endSession: true,
+                      }}
+                      @session-selected=${(event: CustomEvent) => {
+                        this.selectedSessionId = event.detail.sessionId;
+                      }}
+                    ></preloop-session-observer>
+                  </sl-card>
                 `}
           </div>
         </div>

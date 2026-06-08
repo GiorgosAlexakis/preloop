@@ -177,7 +177,7 @@ async def create_mcp_server(
 
 @router.get("/mcp-servers", response_model=List[MCPServerResponse])
 @require_permission("view_mcp_servers")
-async def list_mcp_servers(
+def list_mcp_servers(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[MCPServerResponse]:

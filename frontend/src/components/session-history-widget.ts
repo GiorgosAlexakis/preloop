@@ -251,7 +251,10 @@ export class SessionHistoryWidget extends LitElement {
     this.loadingSessions = nextLoading;
 
     try {
-      const response = await getRuntimeSessionGatewayEvents(sessionId, 100);
+      const response = await getRuntimeSessionGatewayEvents(sessionId, {
+        limit: 25,
+        offset: 0,
+      });
       // Sort newest events first for the timeline view
       const events = (response.logs || []).sort(
         (a: any, b: any) =>

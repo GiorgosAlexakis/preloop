@@ -21,6 +21,28 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 
+type ServiceKind = 'llm' | 'stt' | 'tts';
+
+interface ProviderOption {
+  value: string;
+  label: string;
+  serviceKinds: ServiceKind[];
+}
+
+const PROVIDER_OPTIONS: ProviderOption[] = [
+  { value: 'openai', label: 'OpenAI', serviceKinds: ['llm', 'stt', 'tts'] },
+  { value: 'anthropic', label: 'Anthropic', serviceKinds: ['llm'] },
+  { value: 'google', label: 'Google', serviceKinds: ['llm', 'stt'] },
+  { value: 'qwen', label: 'Qwen', serviceKinds: ['llm'] },
+  { value: 'deepseek', label: 'DeepSeek', serviceKinds: ['llm'] },
+  {
+    value: 'openai-compatible',
+    label: 'OpenAI-compatible',
+    serviceKinds: ['llm', 'stt', 'tts'],
+  },
+  { value: 'custom', label: 'Custom', serviceKinds: ['llm', 'stt', 'tts'] },
+];
+
 /**
  * Reusable AI model add/edit dialog.
  *
@@ -79,7 +101,21 @@ export class AddAIModelModal extends LitElement {
   private get _canEnablePreloopGateway(): boolean {
     const apiKey = (this._currentModel.api_key || '').trim();
     const hasStoredKey = Boolean(this._isEditing && this.model?.has_api_key);
-    return apiKey.length > 0 || hasStoredKey;
+    return (
+      this._currentModel.model_kind === 'llm' &&
+      (apiKey.length > 0 || hasStoredKey)
+    );
+  }
+
+  private get _selectedServiceKind(): ServiceKind {
+    return (this._currentModel.model_kind || 'llm') as ServiceKind;
+  }
+
+  private get _availableProviders(): ProviderOption[] {
+    const serviceKind = this._selectedServiceKind;
+    return PROVIDER_OPTIONS.filter((provider) =>
+      provider.serviceKinds.includes(serviceKind)
+    );
   }
 
   // ── lifecycle ────────────────────────────────────────
@@ -94,7 +130,10 @@ export class AddAIModelModal extends LitElement {
 
   private _populateForm() {
     if (this.model) {
-      this._currentModel = { ...this.model };
+      this._currentModel = {
+        ...this.model,
+        model_kind: this.model.model_kind || 'llm',
+      };
       const gw = this.model.meta_data?.gateway;
       if (gw && typeof gw === 'object' && 'enabled' in gw) {
         this._preloopGatewayEnabled = Boolean(
@@ -104,7 +143,7 @@ export class AddAIModelModal extends LitElement {
         this._preloopGatewayEnabled = true;
       }
     } else {
-      this._currentModel = {};
+      this._currentModel = { model_kind: 'llm' };
       this._preloopGatewayEnabled = true;
     }
     this._modelSuggestions = [];
@@ -125,13 +164,20 @@ export class AddAIModelModal extends LitElement {
         : {};
     const provider = this._currentModel.provider_name;
     const modelId = this._currentModel.model_identifier;
+    const modelKind = this._currentModel.model_kind || 'llm';
+    const baseMeta = {
+      ...existing,
+      service_kind: modelKind,
+    };
     if (!provider || !modelId) {
-      return existing;
+      return baseMeta;
     }
     const gatewayEnabled =
-      this._preloopGatewayEnabled && this._canEnablePreloopGateway;
+      modelKind === 'llm' &&
+      this._preloopGatewayEnabled &&
+      this._canEnablePreloopGateway;
     return {
-      ...existing,
+      ...baseMeta,
       gateway: {
         enabled: gatewayEnabled,
         provider_adapter: 'preloop',
@@ -152,6 +198,15 @@ export class AddAIModelModal extends LitElement {
       else if (label === 'API Key' && val) this._currentModel.api_key = val;
       else if (label === 'Custom Model Name / ID')
         this._currentModel.model_identifier = val || undefined;
+    }
+    const serviceKindSelect = this.shadowRoot?.querySelector(
+      'sl-select[label="Service Kind"]'
+    ) as SlSelect | null;
+    if (serviceKindSelect?.value) {
+      this._currentModel.model_kind = serviceKindSelect.value as
+        | 'llm'
+        | 'stt'
+        | 'tts';
     }
   }
 
@@ -179,6 +234,8 @@ export class AddAIModelModal extends LitElement {
       google: 'https://generativelanguage.googleapis.com/v1beta',
       qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       deepseek: 'https://api.deepseek.com/v1',
+      'openai-compatible': '',
+      custom: '',
     };
 
     this._currentModel = {
@@ -192,6 +249,9 @@ export class AddAIModelModal extends LitElement {
     this._isOtherModel = false;
     this._modelsFetchError = null;
     this.requestUpdate();
+    if (this._selectedServiceKind !== 'llm') {
+      void this._fetchModelsForCurrentProvider();
+    }
   }
 
   private _getProviderKeyUrl(provider: string | undefined): string {
@@ -206,8 +266,37 @@ export class AddAIModelModal extends LitElement {
         return 'https://dashscope.console.aliyun.com/apiKey';
       case 'deepseek':
         return 'https://platform.deepseek.com/api_keys';
+      case 'openai-compatible':
+      case 'custom':
+        return 'https://platform.openai.com/api-keys';
       default:
         return '';
+    }
+  }
+
+  private _handleServiceKindChange(e: Event) {
+    const modelKind = (e.target as SlSelect).value as ServiceKind;
+    const provider = this._currentModel.provider_name;
+    const providerSupported = PROVIDER_OPTIONS.some(
+      (option) =>
+        option.value === provider && option.serviceKinds.includes(modelKind)
+    );
+
+    this._currentModel = {
+      ...this._currentModel,
+      model_kind: modelKind,
+      provider_name: providerSupported ? provider : '',
+      model_identifier: '',
+    };
+    if (modelKind !== 'llm') {
+      this._preloopGatewayEnabled = false;
+    }
+    this._modelSuggestions = [];
+    this._isOtherModel = false;
+    this._modelsFetchError = null;
+    this.requestUpdate();
+    if (providerSupported && modelKind !== 'llm') {
+      void this._fetchModelsForCurrentProvider();
     }
   }
 
@@ -215,11 +304,18 @@ export class AddAIModelModal extends LitElement {
     provider: string,
     apiKey?: string
   ): Promise<string[]> {
-    return await getAvailableModelsForProvider(provider, apiKey);
+    return await getAvailableModelsForProvider(
+      provider,
+      apiKey,
+      this._selectedServiceKind
+    );
   }
 
   private async _fetchModelsForCurrentProvider() {
-    if (!this._currentModel.provider_name) return;
+    if (!this._currentModel.provider_name) {
+      this._modelsFetchError = 'Select a provider first';
+      return;
+    }
 
     this._isFetchingModels = true;
     this._modelsFetchError = null;
@@ -230,7 +326,7 @@ export class AddAIModelModal extends LitElement {
         this._currentModel.api_key
       );
       if (this._modelSuggestions.length === 0) {
-        this._modelsFetchError = 'No models available for this provider';
+        this._modelsFetchError = `No ${this._selectedServiceKind.toUpperCase()} models available for this provider`;
       }
     } catch (error) {
       console.error('Failed to fetch models:', error);
@@ -277,7 +373,11 @@ export class AddAIModelModal extends LitElement {
       return;
     }
 
-    if (this._preloopGatewayEnabled && !this._canEnablePreloopGateway) {
+    if (
+      this._currentModel.model_kind === 'llm' &&
+      this._preloopGatewayEnabled &&
+      !this._canEnablePreloopGateway
+    ) {
       this._formError =
         'Preloop gateway routing needs upstream API credentials. Enter an API key or turn off gateway routing.';
       return;
@@ -353,17 +453,27 @@ export class AddAIModelModal extends LitElement {
             ?disabled=${this._isSubmitting}
           ></sl-input>
           <sl-select
+            label="Service Kind"
+            .value=${this._currentModel.model_kind || 'llm'}
+            @sl-change=${this._handleServiceKindChange}
+            ?disabled=${this._isSubmitting}
+          >
+            <sl-option value="llm">Inference / chat</sl-option>
+            <sl-option value="stt">Speech to text</sl-option>
+            <sl-option value="tts">Text to speech</sl-option>
+          </sl-select>
+
+          <sl-select
             label="Provider"
             .value=${this._currentModel.provider_name || ''}
             @sl-change=${this._handleProviderChange}
             ?disabled=${this._isSubmitting}
           >
-            <sl-option value="openai">OpenAI</sl-option>
-            <sl-option value="anthropic">Anthropic</sl-option>
-            <sl-option value="google">Google</sl-option>
-            <sl-option value="qwen">Qwen</sl-option>
-            <sl-option value="deepseek">DeepSeek</sl-option>
-            <sl-option value="custom">Custom</sl-option>
+            ${this._availableProviders.map(
+              (provider) => html`
+                <sl-option value=${provider.value}>${provider.label}</sl-option>
+              `
+            )}
           </sl-select>
 
           <sl-input
@@ -424,7 +534,8 @@ export class AddAIModelModal extends LitElement {
                 this._preloopGatewayEnabled = Boolean(el.checked);
                 this.requestUpdate();
               }}
-              ?disabled=${this._isSubmitting}
+              ?disabled=${this._isSubmitting ||
+              this._currentModel.model_kind !== 'llm'}
             >
               Route inference through the Preloop gateway (OpenAI-compatible
               /openai/v1)
@@ -432,17 +543,22 @@ export class AddAIModelModal extends LitElement {
             <div
               style="font-size: 0.875rem; color: var(--sl-color-neutral-600); margin-top: 0.35rem;"
             >
-              ${this._currentModel.provider_name &&
-              this._currentModel.model_identifier
-                ? html`Gateway alias
-                    <code
-                      >${String(
-                        this._currentModel.provider_name
-                      ).toLowerCase()}/${this._currentModel
-                        .model_identifier}</code
-                    >`
-                : html`Save provider and model id to show the gateway alias.`}
-              ${!this._canEnablePreloopGateway && this._preloopGatewayEnabled
+              ${this._currentModel.model_kind !== 'llm'
+                ? html`STT/TTS models are used directly for server audio
+                  fallback.`
+                : this._currentModel.provider_name &&
+                    this._currentModel.model_identifier
+                  ? html`Gateway alias
+                      <code
+                        >${String(
+                          this._currentModel.provider_name
+                        ).toLowerCase()}/${this._currentModel
+                          .model_identifier}</code
+                      >`
+                  : html`Save provider and model id to show the gateway alias.`}
+              ${this._currentModel.model_kind === 'llm' &&
+              !this._canEnablePreloopGateway &&
+              this._preloopGatewayEnabled
                 ? html`
                     <sl-alert
                       variant="warning"

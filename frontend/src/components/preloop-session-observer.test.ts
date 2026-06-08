@@ -1,0 +1,352 @@
+import { fixture, html, expect, waitUntil } from '@open-wc/testing';
+import sinon from 'sinon';
+import { unifiedWebSocketManager } from '../services/unified-websocket-manager';
+import './preloop-session-observer';
+import type { PreloopSessionObserver } from './preloop-session-observer';
+
+describe('PreloopSessionObserver', () => {
+  let fetchStub: sinon.SinonStub;
+  let connectStub: sinon.SinonStub;
+  let subscribeStub: sinon.SinonStub;
+
+  const session = {
+    id: 'runtime-session-1',
+    session_source_type: 'claude_code',
+    session_source_id: 'workspace-42',
+    session_reference: 'claude-session-42',
+    runtime_principal_name: 'Claude Workspace',
+    started_at: '2026-03-09T18:00:00Z',
+    last_activity_at: '2026-03-09T20:00:00Z',
+    ended_at: null,
+    latest_model_alias: 'anthropic/claude-sonnet-4',
+    latest_provider_name: 'Anthropic',
+    is_active_now: true,
+    activity_status: 'active_now',
+    total_requests: 1,
+    successful_requests: 1,
+    failed_requests: 0,
+    token_usage: {
+      prompt_tokens: 1200,
+      completion_tokens: 100,
+      total_tokens: 1300,
+    },
+    estimated_cost: 0.42,
+    last_request_at: '2026-03-09T20:00:00Z',
+  };
+
+  beforeEach(() => {
+    localStorage.setItem('accessToken', 'test-access-token');
+    localStorage.setItem('refreshToken', 'test-refresh-token');
+    connectStub = sinon.stub(unifiedWebSocketManager, 'connect').resolves();
+    subscribeStub = sinon
+      .stub(unifiedWebSocketManager, 'subscribe')
+      .returns(() => undefined);
+    fetchStub = sinon.stub(window, 'fetch');
+    fetchStub.callsFake(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/gateway-events/') && url.includes('/summary')) {
+        return new Response(
+          JSON.stringify({
+            event_id: 'event-1',
+            title: 'Widget replay request',
+            summary:
+              'The user asked the agent to build a session replay widget.',
+            key_points: ['User wants replay clarity', '1300 tokens'],
+            risk_level: 'low',
+            next_action: null,
+            generated_by: 'model',
+            model_name: 'fast-model',
+            estimated_summary_cost: 0.001,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/ai-models')) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: 'model-1',
+              name: 'fast-model',
+              provider_name: 'anthropic',
+              model_kind: 'llm',
+              model_identifier: 'claude-sonnet-4',
+              is_default: true,
+              created_at: '2026-03-09T00:00:00Z',
+              updated_at: '2026-03-09T00:00:00Z',
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/gateway-events')) {
+        return new Response(
+          JSON.stringify({
+            logs: [
+              {
+                id: 'event-1',
+                timestamp: '2026-03-09T20:00:00Z',
+                type: 'model_gateway_call',
+                payload: {
+                  outcome: 'success',
+                  model_alias: 'anthropic/claude-sonnet-4',
+                  prompt_tokens: 1200,
+                  completion_tokens: 100,
+                  total_tokens: 5000,
+                  estimated_cost: 0.42,
+                  conversation_preview: {
+                    messages: [
+                      {
+                        role: 'user',
+                        text: 'Build a widget that replays agent sessions',
+                      },
+                      {
+                        role: 'assistant',
+                        text: 'I will inspect the existing session views.',
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/activity')) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                activity_type: 'model_interaction',
+                timestamp: '2026-03-09T20:00:00Z',
+                title: 'Duplicate model summary',
+                summary: 'POST /anthropic/v1/messages',
+                status: 'success',
+              },
+              {
+                activity_type: 'model_gateway_call',
+                timestamp: '2026-03-09T20:00:00Z',
+                title: 'Duplicate stored gateway call',
+                status: 'success',
+              },
+              {
+                activity_type: 'session_started',
+                timestamp: '2026-03-09T18:00:00Z',
+                title: 'Session started',
+                summary: 'Claude Workspace',
+                status: 'info',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/summaries')) {
+        return new Response(
+          JSON.stringify({
+            title: 'Widget implementation session',
+            description: 'Model summary from the fast-model endpoint.',
+            risk_level: 'low',
+            highlights: ['1 model request', '1300 total tokens'],
+            next_action: null,
+            generated_by: 'local',
+            fast_model_name: 'fast-model',
+            estimated_summary_cost: 0,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.includes('/optimizations')) {
+        return new Response(
+          JSON.stringify({
+            generated_by: 'model',
+            fast_model_name: 'fast-model',
+            model_id: 'model-1',
+            model_name: 'fast-model',
+            token_usage: {
+              prompt_tokens: 120,
+              completion_tokens: 20,
+              total_tokens: 140,
+            },
+            estimated_optimization_cost: 0.004,
+            suggestions: [
+              {
+                id: 'trim-context',
+                title: 'Trim prompt context',
+                description: 'Most tokens were prompt-side.',
+                expected_savings_tokens: 300,
+                expected_savings_usd: 0.08,
+                confidence: 'medium',
+                action_label: 'Review context segments',
+                evidence: ['1200 prompt tokens'],
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+  });
+
+  afterEach(() => {
+    fetchStub.restore();
+    connectStub.restore();
+    subscribeStub.restore();
+    localStorage.clear();
+  });
+
+  function deepText(el: Element | ShadowRoot | null | undefined): string {
+    if (!el) return '';
+    let text = el.textContent || '';
+    el.querySelectorAll('*').forEach((child) => {
+      const shadow = (child as HTMLElement).shadowRoot;
+      if (shadow) text += ` ${deepText(shadow)}`;
+    });
+    return text;
+  }
+
+  it('renders normalized sessions and keeps optimizations opt-in', async () => {
+    const el = (await fixture(
+      html`<preloop-session-observer
+        .sessions=${[session]}
+      ></preloop-session-observer>`
+    )) as PreloopSessionObserver;
+
+    await waitUntil(
+      () => deepText(el.shadowRoot).includes('Build a widget'),
+      '',
+      {
+        timeout: 3000,
+      }
+    );
+    const text = deepText(el.shadowRoot);
+    expect(text).to.include('Claude Workspace');
+    expect(text).to.include('Supporting activity (1)');
+    expect(text).to.not.include('Duplicate model summary');
+    expect(text).to.include('Open replay');
+    expect(text).to.include('Summarize');
+    expect(
+      fetchStub.calledWithMatch(
+        '/api/v1/runtime-sessions/runtime-session-1/optimizations'
+      )
+    ).to.be.false;
+  });
+
+  it('switches replay layout to chat transcript', async () => {
+    const el = (await fixture(
+      html`<preloop-session-observer
+        .sessions=${[session]}
+      ></preloop-session-observer>`
+    )) as PreloopSessionObserver;
+
+    await waitUntil(
+      () => deepText(el.shadowRoot).includes('Build a widget'),
+      '',
+      {
+        timeout: 3000,
+      }
+    );
+    const chatButton = Array.from(
+      el.shadowRoot?.querySelectorAll('sl-button') || []
+    ).find((button) => button.textContent?.trim() === 'chat');
+    expect(chatButton).to.exist;
+    chatButton!.click();
+    await el.updateComplete;
+
+    expect(deepText(el.shadowRoot)).to.include(
+      'I will inspect the existing session views.'
+    );
+  });
+
+  it('opens replay in a dialog with time controls', async () => {
+    const el = (await fixture(
+      html`<preloop-session-observer
+        .sessions=${[session]}
+      ></preloop-session-observer>`
+    )) as PreloopSessionObserver;
+
+    await waitUntil(() => deepText(el.shadowRoot).includes('Open replay'), '', {
+      timeout: 3000,
+    });
+    const replayPanel = el.shadowRoot?.querySelector('session-replay-panel');
+    const openButton = Array.from(
+      replayPanel?.shadowRoot?.querySelectorAll('sl-button') || []
+    ).find((button) => button.textContent?.trim() === 'Open replay');
+    expect(openButton).to.exist;
+    openButton!.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, composed: true })
+    );
+    await el.updateComplete;
+    await replayPanel?.updateComplete;
+
+    const dialog = replayPanel?.shadowRoot?.querySelector('sl-dialog') as
+      | HTMLElement
+      | undefined;
+    expect((dialog as any)?.open).to.equal(true);
+    const replayText = deepText(replayPanel?.shadowRoot);
+    expect(replayText).to.include('Start');
+    expect(
+      replayPanel?.shadowRoot?.querySelector('sl-button[title="Jump to start"]')
+    ).to.exist;
+    expect(
+      replayPanel?.shadowRoot?.querySelector(
+        'sl-button[title="Previous event"]'
+      )
+    ).to.exist;
+    expect(
+      replayPanel?.shadowRoot?.querySelector('sl-button[title="Next event"]')
+    ).to.exist;
+    expect(
+      replayPanel?.shadowRoot?.querySelector('sl-button[title="Jump to end"]')
+    ).to.exist;
+    expect(replayPanel?.shadowRoot?.querySelector('select.speed-select-native'))
+      .to.exist;
+    expect(replayText).to.include('Optimize');
+    expect(replayText).to.include('Tool call');
+    expect(replayText).to.not.include('Loaded');
+    expect(replayText).to.not.include('Comic');
+    expect(replayText).to.include('1x');
+  });
+
+  it('summarizes long visible interactions when enabled', async () => {
+    localStorage.setItem(
+      'preloop.sessionObserver.summarizeCostAcknowledged',
+      'true'
+    );
+    const el = (await fixture(
+      html`<preloop-session-observer
+        .sessions=${[session]}
+      ></preloop-session-observer>`
+    )) as PreloopSessionObserver;
+
+    await waitUntil(
+      () => deepText(el.shadowRoot).includes('Build a widget'),
+      '',
+      {
+        timeout: 3000,
+      }
+    );
+    const summarizeButton = Array.from(
+      el.shadowRoot?.querySelectorAll('sl-button') || []
+    ).find((button) => button.textContent?.trim() === 'Summarize');
+    summarizeButton!.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, composed: true })
+    );
+    await el.updateComplete;
+
+    await waitUntil(
+      () => deepText(el.shadowRoot).includes('The user asked the agent'),
+      '',
+      { timeout: 3000 }
+    );
+    expect(
+      fetchStub.calledWithMatch(
+        '/api/v1/runtime-sessions/runtime-session-1/gateway-events/event-1/summary'
+      )
+    ).to.be.true;
+  });
+});

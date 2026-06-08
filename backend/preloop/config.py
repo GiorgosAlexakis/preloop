@@ -46,8 +46,8 @@ class DatabaseSettings(BaseModel):
     """Database configuration."""
 
     url: str = Field(..., description="Database URL")
-    pool_size: int = Field(5, description="Database connection pool size")
-    max_overflow: int = Field(10, description="Maximum number of overflow connections")
+    pool_size: int = Field(20, description="Database connection pool size")
+    max_overflow: int = Field(40, description="Maximum number of overflow connections")
     pool_timeout: int = Field(30, description="Pool timeout in seconds")
     pool_recycle: int = Field(1800, description="Pool recycle time in seconds")
 
@@ -299,8 +299,8 @@ class Settings(BaseSettings):
         # Create database settings
         database = DatabaseSettings(
             url=database_url,
-            pool_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
-            max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "10")),
+            pool_size=int(os.getenv("DATABASE_POOL_SIZE", "20")),
+            max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "40")),
             pool_timeout=int(os.getenv("DATABASE_POOL_TIMEOUT", "30")),
             pool_recycle=int(os.getenv("DATABASE_POOL_RECYCLE", "1800")),
         )

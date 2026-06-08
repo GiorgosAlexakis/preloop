@@ -38,6 +38,110 @@ def test_runtime_session_touch_skips_recent_activity_without_flush():
     db.flush.assert_not_called()
 
 
+def test_runtime_session_summary_refreshes_when_missing():
+    """First gateway request for a session should persist a model-generated summary."""
+    observed_at = datetime.now(timezone.utc)
+    runtime_session = SimpleNamespace(
+        id=uuid4(),
+        summary=None,
+        summary_updated_at=None,
+    )
+    usage = SimpleNamespace(
+        model_alias="openai/gpt-test",
+        provider_name="openai",
+        status_code=200,
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        estimated_cost=0.01,
+    )
+    service = OpenAIGatewayService(
+        db=MagicMock(),
+        auth_context=ModelGatewayAuthContext(
+            token="token",
+            user=SimpleNamespace(id=uuid4(), account_id=uuid4()),
+        ),
+    )
+
+    with (
+        patch(
+            "preloop.services.openai_gateway.crud_ai_model.get_default_active_model",
+            return_value=SimpleNamespace(name="Default model"),
+        ),
+        patch.object(
+            service,
+            "_runtime_session_summary_columns_available",
+            return_value=True,
+        ),
+        patch.object(
+            service,
+            "_runtime_session_summary_state",
+            return_value={"summary": None, "summary_updated_at": None},
+        ),
+        patch.object(
+            service,
+            "_generate_runtime_session_summary",
+            return_value="Agent reviewed pricing changes",
+        ),
+    ):
+        service._maybe_refresh_runtime_session_summary(
+            runtime_session=runtime_session,
+            usage=usage,
+            request_payload={"messages": [{"role": "user", "content": "hello"}]},
+            response_payload={"choices": []},
+            observed_at=observed_at,
+        )
+
+    service.db.execute.assert_called_once()
+    service.db.commit.assert_called_once()
+
+
+def test_runtime_session_summary_skips_recent_refresh():
+    """Summary refresh should be occasional after the initial generated value."""
+    observed_at = datetime.now(timezone.utc)
+    runtime_session = SimpleNamespace(
+        id=uuid4(),
+        summary="Existing summary",
+        summary_updated_at=observed_at - timedelta(minutes=10),
+    )
+    service = OpenAIGatewayService(
+        db=MagicMock(),
+        auth_context=ModelGatewayAuthContext(
+            token="token",
+            user=SimpleNamespace(id=uuid4(), account_id=uuid4()),
+        ),
+    )
+
+    with (
+        patch.object(
+            service,
+            "_runtime_session_summary_columns_available",
+            return_value=True,
+        ),
+        patch.object(
+            service,
+            "_runtime_session_summary_state",
+            return_value={
+                "summary": "Existing summary",
+                "summary_updated_at": observed_at - timedelta(minutes=10),
+            },
+        ),
+        patch(
+            "preloop.services.openai_gateway.crud_ai_model.get_default_active_model"
+        ) as get_default,
+    ):
+        service._maybe_refresh_runtime_session_summary(
+            runtime_session=runtime_session,
+            usage=SimpleNamespace(),
+            request_payload=None,
+            response_payload=None,
+            observed_at=observed_at,
+        )
+
+    get_default.assert_not_called()
+    service.db.execute.assert_not_called()
+
+
 def test_gateway_request_recording_survives_activity_touch_timeout():
     """A best-effort runtime-session touch must not fail a logged gateway request."""
     account_id = uuid4()

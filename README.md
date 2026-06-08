@@ -9,7 +9,7 @@ Use Preloop to **onboard existing agents** with one command, and to **deploy eve
 
 **Works with [OpenClaw](https://github.com/openclaw/openclaw), Claude Code, Codex CLI, Cursor, Gemini CLI, [Hermes](https://github.com/nousresearch/hermes-agent), [OpenCode](https://github.com/sst/opencode), Windsurf, and any MCP-compatible agent or managed runtime.**
 
-Run `preloop agents discover` and Preloop will find local agent configs, import representable MCP servers and model metadata, and transparently rewrite those agents to route tool calls through the **Preloop MCP Firewall** and model traffic through the **Preloop Gateway**. No SDK changes and no agent code changes required.
+Run `preloop agents discover` and Preloop will find local agent configs, import representable MCP servers and model metadata, mint managed runtime credentials, and rewrite supported agents to route tool calls through the **Preloop MCP Firewall** and model traffic through the **Preloop Gateway**. For Agent Control, the CLI provisions the credential/config contract and can delegate plugin installation to the runtime marketplace, but the plugin is what keeps the live control channel connected.
 
 
 Build automations with templates like the [Pull Request Reviewer](./backend/presets/002-pull-request-reviewer.yaml), or write your own.
@@ -33,6 +33,7 @@ Preloop is a single open-source platform that covers the five jobs teams otherwi
 |---|---|---|
 | **MCP Firewall** | Govern every tool call an agent makes. Allow, deny, require approval, require justification. YAML + CEL policies. | MintMCP, Lunar.dev MCPX, TrueFoundry MCP Gateway |
 | **AI Model Gateway** | OpenAI- and Anthropic-compatible gateway with per-account/flow budgets, allowed-model lists, token accounting, and runtime attribution. | Portkey, Helicone, LiteLLM, Kong AI |
+| **Cost Analytics & Budgets** | Explain model spend by model, agent, session, API key, flow, and user; enforce budgets and inspect optimization opportunities. | FinOps dashboards, vendor billing exports |
 | **Human Approvals** | Mobile, watch, Slack, Mattermost, email, or webhook notifications with one-tap decisions and full context. Async-safe. | Custom Slack bots, Peta Desk |
 | **Runtime Observability** | Session-level timeline of tool calls, model calls, policy decisions, approvals, spend, and outcomes across agents. | AgentOps, Langfuse, LangSmith |
 | **Audit & AI Act Evidence** | Durable logs with matched policy, approver, inputs, timestamps, and outcome. Ready for security review and EU AI Act work. | Credo AI, IBM watsonx.governance |
@@ -66,7 +67,30 @@ One command discovers and enrolls existing local agents into your control plane.
 preloop agents discover
 ```
 
-Preloop inspects local configurations for **Claude Code**, **Codex CLI**, **Cursor**, **Gemini CLI**, **[Hermes](https://github.com/nousresearch/hermes-agent)**, **[OpenClaw](https://github.com/openclaw/openclaw)**, **[OpenCode](https://github.com/sst/opencode)**, and other MCP-compatible runtimes, imports representable MCP servers and model metadata into your account, mints a durable credential, backs up the existing config, and rewrites the local agent to use Preloop-managed endpoints. Legacy and current config locations are supported, JSON5/YAML parsing included. No SDK. No agent code changes.
+Preloop inspects local configurations for **Claude Code**, **Codex CLI**, **Cursor**, **Gemini CLI**, **[Hermes](https://github.com/nousresearch/hermes-agent)**, **[OpenClaw](https://github.com/openclaw/openclaw)**, **[OpenCode](https://github.com/sst/opencode)**, and other MCP-compatible runtimes, imports representable MCP servers and model metadata into your account, mints a durable credential, backs up the existing config, and rewrites supported local endpoints to Preloop-managed MCP and gateway URLs. Legacy and current config locations are supported, JSON5/YAML parsing included.
+
+Managed onboarding has two layers: CLI provisioning and runtime behavior. The CLI can create credentials, write `preloop.control` configuration, and invoke runtime-native plugin installation where the target runtime supports that workflow. It cannot, by itself, make an unmodified agent process stay online for Agent Control. Live OpenClaw/Hermes Agent Control requires the standalone Preloop runtime plugin to be loaded in the agent process.
+
+To make Talk appear for OpenClaw or Hermes, the agent must be active, have a
+`preloop.control` block with a valid runtime bearer token, and have the Preloop
+runtime plugin online. The normal CLI path is:
+
+```bash
+preloop agents onboard openclaw
+preloop agents install-plugin openclaw
+preloop agents validate openclaw
+
+preloop agents onboard hermes
+preloop agents install-plugin hermes
+preloop agents validate hermes
+```
+
+After installing the plugin, restart the agent runtime. When the plugin connects
+to `WS /api/v1/agents/control/ws` and advertises capabilities, Preloop marks the
+Agent Control channel verified and the web/mobile Talk controls become available.
+The plugin-only path uses the same contract: install `@preloop/openclaw-plugin`
+or `preloop-hermes-plugin`, provide a valid `preloop.control` block, start the
+runtime, and let the plugin connect.
 
 <p align="center">
   <img alt="Preloop dashboard with live agent and gateway usage" src="frontend/public/assets/screenshots/quickstart/dark/dashboard.png" style="width: 100%; max-width: 1135px; border-radius: 12px;" />
@@ -119,8 +143,34 @@ Preloop safely routes model traffic on behalf of managed runtimes instead of han
 - **Usage accounting** persisted as a canonical `ApiUsage` ledger — token usage, estimated cost, runtime-principal attribution, and provider-neutral conversation previews.
 - **Secret custody** — provider API keys stay with Preloop; runtimes receive short-lived gateway tokens instead of raw credentials.
 
+### Cost Analytics & Budgets
+Preloop should make model spend explainable, not just counted. The Console should have a dedicated **Cost** area with subviews that help operators answer:
+
+- **How much have we spent?** Spend, token volume, and request counts over time by model, provider, account, flow, managed agent, runtime session, API key, and user.
+- **Who or what spent it?** Attribution from `ApiUsage`, runtime principals, subject-scoped governance, and session timelines.
+- **Why was it spent?** Drill-down from aggregate charts into session transcripts, model-call previews, tool calls, approvals, and flow outcomes.
+- **Was the outcome worth it?** Enterprise analysis can use the account's default AI model to summarize sessions, compare spend against observed outcome, and flag low-value or failed runs.
+- **How could it be optimized?** Enterprise recommendations can suggest cheaper models, prompt reductions, caching, batching, retry suppression, budget policy changes, or approval gates for expensive workflows.
+
+The open-source edition should include a practical Cost Overview, usage drill-downs, and budget-health alerts from gateway account/flow limits. Enterprise Edition adds budget policy configuration and enforcement, negotiated provider pricing overrides, session optimization recommendations, FinOps workflows, AI-generated session value reviews, anomaly detection, chargeback/showback, credits and promotions, forecasting, approval escalations, and export/reporting features through backend plugins. The frontend remains shared and should expose advanced panels through feature flags.
+
 ### Runtime Session Observability
 A durable `RuntimeSession` layer gives you one timeline per managed runtime — flow executions today, and any onboarded CLI/desktop agent session going forward. Operator-scoped endpoints expose recent sessions plus captured gateway interactions so the console can drill from aggregate usage into a single session timeline. Operators can end a session explicitly; doing so updates runtime state, emits audit events, and refreshes managed-agent summaries.
+
+### Agent Control
+Preloop is evolving from an approval and gateway layer into **Agent Control** for long-running autonomous agents.
+
+- **Implemented today:** account-scoped realtime topics, runtime-session identity, managed-agent enrollment, OpenClaw and Hermes config rewrites, MCP proxying, model-gateway routing, session timelines, operator lifecycle actions, `WS /api/v1/agents/control/ws`, and `POST /api/v1/agents/{agent_id}/control/commands`.
+- **Scaffolded today:** console views for runtime sessions and managed agents, mobile/watch approval clients, WebSocket delivery for account events and approval updates, and native voice/dictation surfaces that can submit operator text turns.
+- **Runtime-plugin dependent:** live OpenClaw and Hermes command delivery requires their native runtime plugin to honor `preloop.control.control_ws_url`, own reconnect/backoff and heartbeat/status loops, advertise capabilities, receive `send_message` envelopes, execute or inject operator messages into the active agent session, and keep any resulting tool/model work on the governed MCP and gateway paths. Without that plugin loaded, the agent can still be onboarded for MCP/gateway routing, but Agent Control is not enabled.
+- **Voice surfaces:** the web console now supports inline Talk controls with browser-native STT/TTS first and server STT/TTS fallback through speech-capable `AIModel` rows. Mobile/watch apps should continue to prefer vendor-native speech APIs and submit normalized voice transcripts through the same Agent Control surface.
+- **Planned next:** hardened command persistence/recovery, interruption semantics, richer status streaming, and production voice UX on mobile and watch.
+
+Agent Control surfaces are intentionally layered: the web console is the primary operator surface for managed-agent presence, session context, and text commands; mobile apps add push-to-talk or typed handoff for urgent operator messages; Apple Watch favors short dictated replies and quick status/approval actions.
+
+Agent Control messages are auditable user/operator turns for a selected runtime session. They are not hidden system prompts or policy overrides; any tool or model work they trigger still flows through the MCP firewall, model gateway, budget checks, and approval policies.
+
+Siri and Google Assistant should be treated as invocation and handoff surfaces, not reliable arbitrary background agent transports. Native app code can capture intent, permissions, and user confirmation; Preloop keeps the authoritative control, audit, and agent-message state on the server.
 
 
 
@@ -194,12 +244,17 @@ Preloop Enterprise Edition extends the core open-source components with centrali
 | Basic approval workflows | ✅ | ✅ |
 | Issue tracker integrations | ✅ | ✅ |
 | Agentic flows & Vector search | ✅ | ✅ |
+| **Cost overview, usage drill-downs & budget-health tracking** | ✅ | ✅ |
+| **Budget policy configuration & enforcement** | ❌ | ✅ |
+| **Per-account model price overrides** | ❌ | ✅ |
 | **Role-Based Access Control (RBAC)** | ❌ | ✅ |
 | **Team management & Admin Dashboard** | ❌ | ✅ |
 | **CEL conditional approval workflows** | ❌ | ✅ |
 | **AI-driven approval logic** | ❌ | ✅ |
 | **Team-based approvals with quorum** | ❌ | ✅ |
 | **Approval escalation** | ❌ | ✅ |
+| **AI session value reviews & spend optimization recommendations** | ❌ | ✅ |
+| **Credits, promotions, chargeback/showback & forecasting** | ❌ | ✅ |
 
 Contact sales@preloop.ai for Enterprise Edition licensing requests.
 

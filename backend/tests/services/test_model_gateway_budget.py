@@ -63,3 +63,40 @@ def test_enforce_or_raise_reports_trial_hosted_model_limit(db_session, test_user
         "Preloop trial limit for hosted model reached. Please configure your own "
         "OpenAI/Anthropic API key."
     )
+
+
+def test_budget_preflight_uses_account_model_price_override(
+    db_session, test_user, monkeypatch
+):
+    """Account-scoped pricing overrides should drive preflight cost estimates."""
+    ai_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Negotiated GPT",
+            "provider_name": "openai",
+            "model_identifier": "gpt-4o",
+            "meta_data": {"gateway": {"model_alias": "openai/gpt-4o"}},
+        },
+        account_id=test_user.account_id,
+    )
+    service = ModelGatewayBudgetService(
+        db_session,
+        ModelGatewayAuthContext(token="override-token", user=test_user),
+    )
+    monkeypatch.setattr(
+        service,
+        "_pricing_override_for_request",
+        lambda *_args, **_kwargs: {
+            "currency": "USD",
+            "input_price_per_1k": 1.0,
+            "output_price_per_1k": 2.0,
+        },
+    )
+
+    result = service.preflight_check(
+        ai_model,
+        {"model": "openai/gpt-4o", "input": "hello", "max_tokens": 1000},
+    )
+
+    assert result.pricing_available is True
+    assert result.estimated_request_cost_usd == 2.002

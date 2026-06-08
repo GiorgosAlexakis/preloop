@@ -1,13 +1,44 @@
 """Service for fetching available models from AI providers."""
 
 import logging
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
+ModelKind = Literal["llm", "stt", "tts"]
+
+OPENAI_STT_MODELS = [
+    "gpt-4o-transcribe",
+    "gpt-4o-mini-transcribe",
+    "whisper-1",
+]
+
+OPENAI_TTS_MODELS = [
+    "gpt-4o-mini-tts",
+    "tts-1",
+    "tts-1-hd",
+]
+
+GOOGLE_STT_MODELS = [
+    "latest_short",
+    "latest_long",
+    "command_and_search",
+    "default",
+]
+
+SUPPORTED_AUDIO_PROVIDER_KINDS: dict[str, set[ModelKind]] = {
+    "openai": {"llm", "stt", "tts"},
+    "custom": {"llm", "stt", "tts"},
+    "openai-compatible": {"llm", "stt", "tts"},
+    "anthropic": {"llm"},
+    "google": {"llm", "stt"},
+    "qwen": {"llm"},
+    "deepseek": {"llm"},
+}
+
 
 async def get_available_models_for_provider(
-    provider: str, api_key: Optional[str] = None
+    provider: str, api_key: Optional[str] = None, model_kind: ModelKind = "llm"
 ) -> List[str]:
     """
     Fetch available models from the specified AI provider.
@@ -15,10 +46,25 @@ async def get_available_models_for_provider(
     Args:
         provider: The provider name (openai, anthropic, google, qwen, deepseek)
         api_key: Optional API key for authentication
+        model_kind: Service kind to fetch (llm, stt, or tts)
 
     Returns:
         List of model identifiers/names
     """
+    provider = provider.lower()
+    normalized_model_kind = model_kind.lower()
+    if normalized_model_kind not in {"llm", "stt", "tts"}:
+        raise ValueError("model_kind must be one of llm, stt, or tts")
+
+    supported_kinds = SUPPORTED_AUDIO_PROVIDER_KINDS.get(provider, {"llm"})
+    if normalized_model_kind not in supported_kinds:
+        return []
+
+    if normalized_model_kind == "stt":
+        return _get_stt_models(provider)
+    if normalized_model_kind == "tts":
+        return _get_tts_models(provider)
+
     if provider == "openai":
         return await _get_openai_models(api_key)
     elif provider == "anthropic":
@@ -32,6 +78,22 @@ async def get_available_models_for_provider(
     else:
         # For custom providers, return empty list
         return []
+
+
+def _get_stt_models(provider: str) -> List[str]:
+    """Return known speech-to-text model identifiers for supported providers."""
+    if provider in {"openai", "custom", "openai-compatible"}:
+        return OPENAI_STT_MODELS
+    if provider == "google":
+        return GOOGLE_STT_MODELS
+    return []
+
+
+def _get_tts_models(provider: str) -> List[str]:
+    """Return known text-to-speech model identifiers for supported providers."""
+    if provider in {"openai", "custom", "openai-compatible"}:
+        return OPENAI_TTS_MODELS
+    return []
 
 
 async def _get_openai_models(api_key: Optional[str] = None) -> List[str]:
@@ -77,11 +139,7 @@ async def _get_openai_models(api_key: Optional[str] = None) -> List[str]:
     except Exception as e:
         logger.warning(f"Failed to fetch OpenAI models: {e}")
         # Return fallback list for other errors (network issues, etc.)
-        return [
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.4-codex",
-        ]
+        return ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"]
 
 
 async def _get_anthropic_models(api_key: Optional[str] = None) -> List[str]:
@@ -150,10 +208,12 @@ async def _get_anthropic_models(api_key: Optional[str] = None) -> List[str]:
 async def _get_google_models(api_key: Optional[str] = None) -> List[str]:
     """Return list of known Google Gemini models and validate API key if provided."""
 
-    # List of known Google Gemini models (as of January 2025)
+    # List of current Google Gemini models. Avoid deprecated preview/exp names.
     known_models = [
-        "gemini-2.5-pro-exp",
-        "gemini-2.5-flash-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
     ]
 
     # If API key is provided, validate it
@@ -170,9 +230,26 @@ async def _get_google_models(api_key: Optional[str] = None) -> List[str]:
 
             genai.configure(api_key=api_key)
 
+            list_models = getattr(genai, "list_models", None)
+            if callable(list_models):
+                fetched_models = []
+                for model in list_models():
+                    model_name = getattr(model, "name", "")
+                    supported_methods = set(
+                        getattr(model, "supported_generation_methods", []) or []
+                    )
+                    if model_name.startswith("models/"):
+                        model_name = model_name.removeprefix("models/")
+                    if model_name and (
+                        not supported_methods or "generateContent" in supported_methods
+                    ):
+                        fetched_models.append(model_name)
+                if fetched_models:
+                    return sorted(set(fetched_models), reverse=True)
+
             # Make a minimal request to validate the key
             # Use the cheapest/fastest model with minimal tokens
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-2.0-flash")
             response = model.generate_content(
                 "Hi", generation_config=genai.GenerationConfig(max_output_tokens=1)
             )

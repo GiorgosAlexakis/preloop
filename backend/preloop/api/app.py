@@ -27,9 +27,12 @@ from fastapi.encoders import jsonable_encoder
 from preloop.api.auth import auth_router, get_current_active_user
 from preloop.api.endpoints import (
     account,
+    agent_control,
     anthropic_gateway,
+    audio,
     approval_requests,
     comments,
+    cost,
     features,
     gemini_gateway,
     health,
@@ -190,31 +193,35 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
                 # Ignore errors in token decoding
                 pass
 
-        # Log usage in database
+        # Log usage in database in a background thread to prevent pool starvation
         if user_id and status_code < 500:  # Only log successful API calls
-            try:
-                session_factory = get_session_factory()
-                session = session_factory()
+            import threading
+
+            def log_usage_sync() -> None:
                 try:
-                    usage_entry = ApiUsage(
-                        user_id=user_id,
-                        endpoint=path,
-                        method=method,
-                        status_code=status_code,
-                        duration=duration,
-                        action_type=action_type,
-                        timestamp=start_time,
-                    )
-                    session.add(usage_entry)
-                    session.commit()
-                except Exception:
-                    session.rollback()
-                    raise
-                finally:
-                    session.close()
-            except Exception as e:
-                # Don't let tracking issues affect the response
-                logger.error(f"Error logging API usage: {str(e)}")
+                    session_factory = get_session_factory()
+                    session = session_factory()
+                    try:
+                        usage_entry = ApiUsage(
+                            user_id=user_id,
+                            endpoint=path,
+                            method=method,
+                            status_code=status_code,
+                            duration=duration,
+                            action_type=action_type,
+                            timestamp=start_time,
+                        )
+                        session.add(usage_entry)
+                        session.commit()
+                    except Exception:
+                        session.rollback()
+                        raise
+                    finally:
+                        session.close()
+                except Exception as e:
+                    logger.error(f"Error logging API usage: {str(e)}")
+
+            threading.Thread(target=log_usage_sync, daemon=True).start()
 
         return response
 
@@ -867,6 +874,18 @@ def create_app() -> FastAPI:
             tags=["AI Models"],
             dependencies=[Depends(get_current_active_user)],
         )
+        app.include_router(
+            audio.router,
+            prefix="/api/v1",
+            tags=["Audio"],
+            dependencies=[Depends(get_current_active_user)],
+        )
+        app.include_router(
+            cost.router,
+            prefix="/api/v1",
+            tags=["Cost Analytics"],
+            dependencies=[Depends(get_current_active_user)],
+        )
         # Public AI models endpoints (no auth required)
         app.include_router(
             ai_models.public_router,
@@ -915,6 +934,11 @@ def create_app() -> FastAPI:
 
         # WebSocket router
         app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
+        app.include_router(
+            agent_control.router,
+            prefix="/api/v1",
+            tags=["Agent Control"],
+        )
 
         # Impersonation router - Enterprise feature (loaded via admin plugin)
         # No longer loaded from core - handled by plugins/admin

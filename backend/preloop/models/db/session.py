@@ -39,8 +39,8 @@ def _env_int(name: str, default: int) -> int:
 def _database_pool_kwargs() -> dict:
     """Return shared SQLAlchemy pool settings for sync and async engines."""
     return {
-        "pool_size": _env_int("DATABASE_POOL_SIZE", 10),
-        "max_overflow": _env_int("DATABASE_MAX_OVERFLOW", 20),
+        "pool_size": _env_int("DATABASE_POOL_SIZE", 20),
+        "max_overflow": _env_int("DATABASE_MAX_OVERFLOW", 40),
         "pool_pre_ping": True,
         # Keep pooled connections younger than typical proxy/LB idle timeouts.
         "pool_recycle": _env_int("DATABASE_POOL_RECYCLE", 1800),
