@@ -31,6 +31,7 @@ from preloop.models.db.session import get_db_session
 from preloop.schemas.agent_control import (
     AgentControlCommandResponse,
     AgentControlEnvelope,
+    AgentControlEnvelopeType,
     AgentControlInboundEnvelope,
     AgentControlSendMessageRequest,
     AgentControlSessionMode,
@@ -192,13 +193,13 @@ def _extract_bearer_token(websocket: WebSocket) -> Optional[str]:
 def _connection_envelope(
     connection: AgentControlConnectionContext,
     *,
-    envelope_type: str,
+    envelope_type: AgentControlEnvelopeType,
     name: str,
     message_id: Optional[str] = None,
     payload: Optional[dict[str, Any]] = None,
 ) -> AgentControlEnvelope:
     return AgentControlEnvelope(
-        type=envelope_type,  # type: ignore[arg-type]
+        type=envelope_type,
         name=name,
         message_id=message_id or str(uuid.uuid4()),
         account_id=connection.account_id,

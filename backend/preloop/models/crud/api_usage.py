@@ -769,8 +769,19 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
                 ApiUsage.action_type == "model_gateway",
                 ApiUsage.flow_execution_id == execution_id,
             )
-            .one()
+            .first()
         )
+        if row is None:
+            return {
+                "api_requests": 0,
+                "token_usage": {
+                    "total_tokens": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                },
+                "estimated_cost": 0.0,
+                "has_pricing": False,
+            }
 
         return {
             "api_requests": int(row.api_requests or 0),

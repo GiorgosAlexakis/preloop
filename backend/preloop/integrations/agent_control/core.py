@@ -10,12 +10,15 @@ reply/status envelopes back to Preloop.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Callable, Literal, Protocol
 from uuid import uuid4
 
 import aiohttp
+
+logger = logging.getLogger(__name__)
 
 InputMode = Literal["text", "voice", "voice_transcript"]
 SessionMode = Literal["current", "existing", "new"]
@@ -173,6 +176,16 @@ class AgentControlRuntimeHooks(Protocol):
         """Attach to an existing session or start a new one and send text."""
 
 
+def _is_permanent_control_connection_error(exc: BaseException) -> bool:
+    """Return True when reconnecting would not recover from this failure."""
+    status: int | None = None
+    if isinstance(exc, aiohttp.ClientResponseError):
+        status = exc.status
+    elif isinstance(exc, aiohttp.WSServerHandshakeError):
+        status = exc.status
+    return status in {401, 403}
+
+
 class AgentControlClient:
     """Maintain the runtime-side WebSocket and dispatch commands to hooks."""
 
@@ -211,9 +224,18 @@ class AgentControlClient:
                 await self._connect_once()
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
+                if _is_permanent_control_connection_error(exc):
+                    logger.warning(
+                        "Agent control connection failed with non-retryable error: %s",
+                        exc,
+                    )
+                    raise
                 # Transient disconnects are retried on the next loop iteration.
-                pass
+                logger.debug(
+                    "Agent control connection dropped; retrying",
+                    exc_info=True,
+                )
             if not self._stopped.is_set():
                 await _maybe_await(self._sleep(self.reconnect_delay_seconds))
 

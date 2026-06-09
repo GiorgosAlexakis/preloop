@@ -102,6 +102,7 @@ class ModelGatewayEventEmitter:
         ):
             latest_session = crud_runtime_session.get_latest_by_principal(
                 self.db,
+                account_id=str(usage.account_id),
                 principal_type=usage.runtime_principal_type,
                 principal_id=usage.runtime_principal_id,
             )

@@ -580,7 +580,7 @@ export class CostView extends AuthedElement {
     const summary = this.summary;
     const projectedPeriodCost = this.getProjectedPeriodCost();
     return html`
-      <div class="metric-grid">
+      <div class="metric-grid" role="region" aria-label="Cost summary metrics">
         <div class="metric-card">
           <div class="metric-label">
             ${this.selectedRange === 'this-month'
@@ -637,14 +637,14 @@ export class CostView extends AuthedElement {
         ${rows.length
           ? html`
               <div class="analytics-table-wrap">
-                <table class="styled-table">
+                <table class="styled-table" aria-label="Spend by model">
                   <thead>
                     <tr>
-                      <th>Model</th>
-                      <th>Provider</th>
-                      <th>Requests</th>
-                      <th>Tokens</th>
-                      <th>Cost</th>
+                      <th scope="col">Model</th>
+                      <th scope="col">Provider</th>
+                      <th scope="col">Requests</th>
+                      <th scope="col">Tokens</th>
+                      <th scope="col">Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -679,14 +679,14 @@ export class CostView extends AuthedElement {
         ${this.summary?.usage_by_session?.length
           ? html`
               <div class="analytics-table-wrap">
-                <table class="styled-table">
+                <table class="styled-table" aria-label="Recent session spend">
                   <thead>
                     <tr>
-                      <th>Session</th>
-                      <th>Agent</th>
-                      <th>Model</th>
-                      <th>Requests</th>
-                      <th>Cost</th>
+                      <th scope="col">Session</th>
+                      <th scope="col">Agent</th>
+                      <th scope="col">Model</th>
+                      <th scope="col">Requests</th>
+                      <th scope="col">Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1018,11 +1018,22 @@ export class CostView extends AuthedElement {
         </div>
 
         ${this.error
-          ? html`<sl-alert variant="danger" open>${this.error}</sl-alert>`
+          ? html`<sl-alert
+              variant="danger"
+              open
+              role="alert"
+              aria-live="assertive"
+              >${this.error}</sl-alert
+            >`
           : null}
         ${this.loading
           ? html`<sl-card>
-              <div class="loading-state">
+              <div
+                class="loading-state"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+              >
                 <sl-spinner></sl-spinner>
                 <span>Loading cost analytics...</span>
               </div>

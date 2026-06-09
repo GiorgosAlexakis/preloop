@@ -31,6 +31,7 @@ def test_google_speech_backend_posts_recognize_payload(monkeypatch):
 
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
+        captured["headers"] = dict(request.header_items())
         captured["timeout"] = timeout
         captured["body"] = json.loads(request.data.decode())
         return FakeResponse()
@@ -56,7 +57,9 @@ def test_google_speech_backend_posts_recognize_payload(monkeypatch):
     )
 
     assert transcript == "hello hermes"
-    assert captured["url"].endswith("?key=google-key")
+    assert captured["url"] == ("https://speech.googleapis.com/v1/speech:recognize")
+    assert captured["headers"]["X-goog-api-key"] == "google-key"
+    assert "key=" not in captured["url"]
     assert captured["timeout"] == 60
     assert captured["body"]["config"]["model"] == "latest_short"
     assert captured["body"]["config"]["encoding"] == "WEBM_OPUS"

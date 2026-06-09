@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+import aiohttp
+
 from preloop.integrations.agent_control import (
     AgentControlCapabilities,
     AgentControlConfig,
@@ -14,6 +16,29 @@ from preloop.integrations.agent_control import (
     dispatch_operator_command,
     load_openclaw_control_config,
 )
+from preloop.integrations.agent_control.core import (
+    _is_permanent_control_connection_error,
+)
+
+
+def test_permanent_control_connection_error_detects_auth_failures() -> None:
+    assert _is_permanent_control_connection_error(
+        aiohttp.ClientResponseError(
+            request_info=None,
+            history=(),
+            status=401,
+            message="Unauthorized",
+        )
+    )
+    assert _is_permanent_control_connection_error(
+        aiohttp.WSServerHandshakeError(
+            request_info=None,
+            history=(),
+            status=403,
+            message="Forbidden",
+        )
+    )
+    assert not _is_permanent_control_connection_error(RuntimeError("temporary"))
 
 
 def test_control_config_reads_cli_document() -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -280,7 +281,7 @@ class RuntimeSessionExplorerService:
             estimated_summary_cost=0.0,
         )
 
-    def summarize_account_runtime_session_interaction(
+    async def summarize_account_runtime_session_interaction(
         self,
         *,
         account: Account,
@@ -321,7 +322,8 @@ class RuntimeSessionExplorerService:
             return fallback
 
         try:
-            generated = self._call_interaction_summary_model(
+            generated = await asyncio.to_thread(
+                self._call_interaction_summary_model,
                 model=model,
                 payload=payload,
             )
@@ -692,7 +694,11 @@ class RuntimeSessionExplorerService:
             from preloop.models.crud.flow_execution import CRUDFlowExecution
 
             crud_flow_execution = CRUDFlowExecution()
-            execution = crud_flow_execution.get(self.db, id=UUID(flow_execution_id))
+            execution = crud_flow_execution.get(
+                self.db,
+                id=UUID(flow_execution_id),
+                account_id=str(summary_row["account_id"]),
+            )
             if execution and isinstance(execution.mcp_usage_logs, list):
                 for log in execution.mcp_usage_logs:
                     timestamp = self._parse_timestamp(log.get("timestamp"))

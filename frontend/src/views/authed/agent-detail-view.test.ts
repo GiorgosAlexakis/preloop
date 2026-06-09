@@ -7,6 +7,25 @@ import type { AgentDetailView } from './agent-detail-view';
 describe('AgentDetailView', () => {
   let fetchStub: sinon.SinonStub;
 
+  function getDeepText(el: Element | null | undefined): string {
+    if (!el) return '';
+    let text = el.textContent || '';
+    if (el.shadowRoot) {
+      text += ' ' + getDeepText(el.shadowRoot);
+    }
+    const children = Array.from(el.children);
+    for (const child of children) {
+      text += ' ' + getDeepText(child);
+    }
+    if (el.shadowRoot) {
+      const shadowChildren = Array.from(el.shadowRoot.children);
+      for (const child of shadowChildren) {
+        text += ' ' + getDeepText(child);
+      }
+    }
+    return text;
+  }
+
   beforeEach(() => {
     localStorage.setItem('accessToken', 'test-access-token');
     localStorage.setItem('refreshToken', 'test-refresh-token');
@@ -15,7 +34,10 @@ describe('AgentDetailView', () => {
     fetchStub.callsFake(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
 
-      if (url === '/api/v1/agents/agent-1') {
+      if (
+        url.startsWith('/api/v1/agents/agent-1') &&
+        !url.includes('/governance')
+      ) {
         return new Response(
           JSON.stringify({
             agent: {
@@ -274,6 +296,76 @@ describe('AgentDetailView', () => {
         });
       }
 
+      if (url === '/api/v1/flows') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (
+        url.includes(
+          '/api/v1/runtime-sessions/runtime-session-2/gateway-events'
+        )
+      ) {
+        return new Response(
+          JSON.stringify({
+            logs: [
+              {
+                id: 'event-1',
+                timestamp: '2026-03-10T09:58:00Z',
+                type: 'model_gateway_call',
+                payload: {
+                  api_usage_id: 'usage-1',
+                  model_alias: 'openai/gpt-5',
+                  provider_name: 'openai',
+                  outcome: 'success',
+                  estimated_cost: 0.12,
+                  total_tokens: 120,
+                  prompt_tokens: 100,
+                  completion_tokens: 20,
+                  status_code: 200,
+                  method: 'POST',
+                  endpoint: '/openai/v1/responses',
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      if (url.includes('/api/v1/runtime-sessions/runtime-session-2/activity')) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                activity_type: 'tool_call',
+                timestamp: '2026-03-10T09:59:00Z',
+                title: 'github / search_issues',
+                summary: 'Completed successfully',
+                status: 'success',
+                api_usage_id: null,
+                tool_name: 'search_issues',
+                server_name: 'github',
+                auth_subject_type: null,
+                api_key_id: null,
+                api_key_name: null,
+                estimated_cost: null,
+                total_tokens: null,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
       if (url === '/api/v1/ai-models') {
         return new Response(JSON.stringify([]), {
           status: 200,
@@ -298,10 +390,19 @@ describe('AgentDetailView', () => {
       html`<agent-detail-view agentId="agent-1"></agent-detail-view>`
     );
 
-    await waitUntil(
-      () => !(element as any).loading && (element as any).agent !== null,
-      'Agent detail view did not finish loading'
-    );
+    await waitUntil(() => {
+      const obs = element.shadowRoot?.querySelector(
+        'preloop-session-observer'
+      ) as any;
+      return (
+        !(element as any).loading &&
+        (element as any).agent !== null &&
+        obs &&
+        !obs.loading &&
+        obs.activeSessionId === 'runtime-session-2' &&
+        !obs.loadingSessionId
+      );
+    }, 'Agent detail view did not finish loading');
     await element.updateComplete;
 
     const viewHeader = element.shadowRoot?.querySelector('view-header');
@@ -309,12 +410,16 @@ describe('AgentDetailView', () => {
       'Claude Code Workspace'
     );
 
-    const content = element.shadowRoot?.textContent || '';
+    const content = getDeepText(element).replace(/\s+/g, ' ');
     expect(content).to.contain('Live validated');
     expect(content).to.contain('openai/gpt-5');
     expect(
       element.shadowRoot?.querySelector('sl-tooltip')?.getAttribute('content')
     ).to.contain('Tool calls and model traffic both flow through Preloop.');
+
+    (element as any).activeTab = 'models';
+    await element.updateComplete;
+
     const modelLink = element.shadowRoot?.querySelector(
       'a.session-link[href="/console/ai-models/configured-model-1"]'
     );

@@ -24,6 +24,29 @@ from ..models.runtime_session import RuntimeSession
 from .base import CRUDBase
 
 
+def _gateway_usage_base_query(
+    db: Session,
+    *,
+    account_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    ai_model_id: Optional[str] = None,
+):
+    """Build the shared gateway-usage query used for latest-per-session lookups."""
+    query = db.query(ApiUsage).filter(
+        ApiUsage.account_id == account_id,
+        ApiUsage.action_type == "model_gateway",
+        ApiUsage.runtime_session_id.isnot(None),
+    )
+    if start_date is not None:
+        query = query.filter(ApiUsage.timestamp >= start_date)
+    if end_date is not None:
+        query = query.filter(ApiUsage.timestamp < end_date)
+    if ai_model_id is not None:
+        query = query.filter(ApiUsage.ai_model_id == ai_model_id)
+    return query
+
+
 def _latest_gateway_usage_for_session(
     db: Session,
     *,
@@ -34,22 +57,68 @@ def _latest_gateway_usage_for_session(
     ai_model_id: Optional[str] = None,
 ):
     """Return the latest gateway usage row for one runtime session."""
-    query = db.query(
-        ApiUsage.model_alias.label("latest_model_alias"),
-        ApiUsage.provider_name.label("latest_provider_name"),
-        ApiUsage.timestamp.label("last_request_at"),
-    ).filter(
-        ApiUsage.account_id == account_id,
-        ApiUsage.action_type == "model_gateway",
-        ApiUsage.runtime_session_id == runtime_session_id,
+    return (
+        _gateway_usage_base_query(
+            db,
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            ai_model_id=ai_model_id,
+        )
+        .filter(ApiUsage.runtime_session_id == runtime_session_id)
+        .with_entities(
+            ApiUsage.model_alias.label("latest_model_alias"),
+            ApiUsage.provider_name.label("latest_provider_name"),
+            ApiUsage.timestamp.label("last_request_at"),
+        )
+        .order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc())
+        .first()
     )
-    if start_date is not None:
-        query = query.filter(ApiUsage.timestamp >= start_date)
-    if end_date is not None:
-        query = query.filter(ApiUsage.timestamp < end_date)
-    if ai_model_id is not None:
-        query = query.filter(ApiUsage.ai_model_id == ai_model_id)
-    return query.order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc()).first()
+
+
+def _latest_gateway_usage_for_sessions(
+    db: Session,
+    *,
+    account_id: str,
+    runtime_session_ids: list[str],
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    ai_model_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Return the latest gateway usage row for many runtime sessions."""
+    if not runtime_session_ids:
+        return {}
+
+    rows = (
+        _gateway_usage_base_query(
+            db,
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            ai_model_id=ai_model_id,
+        )
+        .filter(ApiUsage.runtime_session_id.in_(runtime_session_ids))
+        .with_entities(
+            ApiUsage.runtime_session_id,
+            ApiUsage.model_alias,
+            ApiUsage.provider_name,
+            ApiUsage.timestamp,
+        )
+        .order_by(
+            ApiUsage.runtime_session_id.asc(),
+            ApiUsage.timestamp.desc(),
+            ApiUsage.id.desc(),
+        )
+        .all()
+    )
+
+    latest_by_session: dict[str, Any] = {}
+    for row in rows:
+        session_id = str(row.runtime_session_id)
+        if session_id in latest_by_session:
+            continue
+        latest_by_session[session_id] = row
+    return latest_by_session
 
 
 class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
@@ -329,21 +398,24 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             .all()
         )
 
+        session_ids = [str(row.id) for row in rows]
+        latest_usage_by_session = _latest_gateway_usage_for_sessions(
+            db,
+            account_id=account_id,
+            runtime_session_ids=session_ids,
+            start_date=start_date,
+            end_date=end_date,
+            ai_model_id=ai_model_id,
+        )
+
         items = []
         for row in rows:
             summary = self._row_to_summary(row)
-            latest_usage = _latest_gateway_usage_for_session(
-                db,
-                account_id=account_id,
-                runtime_session_id=str(row.id),
-                start_date=start_date,
-                end_date=end_date,
-                ai_model_id=ai_model_id,
-            )
+            latest_usage = latest_usage_by_session.get(str(row.id))
             if latest_usage is not None:
-                summary["latest_model_alias"] = latest_usage.latest_model_alias
-                summary["latest_provider_name"] = latest_usage.latest_provider_name
-                summary["last_request_at"] = latest_usage.last_request_at
+                summary["latest_model_alias"] = latest_usage.model_alias
+                summary["latest_provider_name"] = latest_usage.provider_name
+                summary["last_request_at"] = latest_usage.timestamp
             items.append(summary)
 
         return {"total": total, "items": items}
@@ -453,6 +525,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         self,
         db: Session,
         *,
+        account_id: str,
         principal_type: str,
         principal_id: str,
     ) -> Optional[RuntimeSession]:
@@ -460,6 +533,7 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         return (
             db.query(self.model)
             .filter(
+                self.model.account_id == account_id,
                 self.model.session_source_type == principal_type,
                 self.model.session_source_id.startswith(f"{principal_id}-")
                 | (self.model.session_source_id == principal_id),

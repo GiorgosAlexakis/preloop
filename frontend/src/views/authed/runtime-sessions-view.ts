@@ -1867,7 +1867,7 @@ export class RuntimeSessionsView extends LitElement {
                         endSession: true,
                       }}
                       @session-selected=${(event: CustomEvent) => {
-                        this.selectedSessionId = event.detail.sessionId;
+                        this.selectSession(event.detail.sessionId);
                       }}
                     ></preloop-session-observer>
                   </sl-card>

@@ -1,7 +1,10 @@
 import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import type { BudgetPolicy } from '../api';
-import type { AccountGatewayUsageSummaryResponse } from '../types';
+import type {
+  AccountGatewayUsageSummaryResponse,
+  ManagedAgentSummary,
+} from '../types';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/card/card.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -22,7 +25,7 @@ export class BudgetHealthCard extends LitElement {
   summary: AccountGatewayUsageSummaryResponse | null = null;
   @property({ type: Array }) policies: BudgetPolicy[] = [];
   @property({ type: Boolean }) configurable = false;
-  @property({ type: Array }) agents: any[] = [];
+  @property({ type: Array }) agents: ManagedAgentSummary[] = [];
   @property({ type: Boolean }) loading = false;
   @property({ type: String }) timeRange = 'month';
   @property({ type: Boolean }) showRangeSelector = false;
@@ -329,11 +332,13 @@ export class BudgetHealthCard extends LitElement {
         ? fillPercent - softPercent
         : 0;
 
+    const ariaLabel = `${label} budget usage`;
+
     return html`
       <div class="budget-row">
         <div class="row-header">
           <span class="row-label">
-            <sl-icon name=${icon}></sl-icon>
+            <sl-icon name=${icon} aria-hidden="true"></sl-icon>
             ${label}
           </span>
           <span class="row-value">
@@ -347,7 +352,14 @@ export class BudgetHealthCard extends LitElement {
         </div>
         ${maxLimit > 0
           ? html`
-              <div class="budget-track">
+              <div
+                class="budget-track"
+                role="progressbar"
+                aria-label=${ariaLabel}
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow=${Math.round(fillPercent)}
+              >
                 <div
                   class="budget-track-fill"
                   style="--budget-fill-width: ${successFillPercent}%;"
@@ -421,7 +433,7 @@ export class BudgetHealthCard extends LitElement {
     return html`
       <sl-card class="content-card">
         <div slot="header" class="header">
-          <div class="title">
+          <div class="title" id="budget-health-title">
             Budget health
             ${this.loading
               ? html`<sl-spinner style="font-size: 1rem;"></sl-spinner>`
@@ -430,6 +442,7 @@ export class BudgetHealthCard extends LitElement {
           ${this.showRangeSelector
             ? html`
                 <select
+                  aria-label="Budget time range"
                   .value=${this.timeRange}
                   @change=${this.handleRangeChange}
                 >
@@ -441,7 +454,11 @@ export class BudgetHealthCard extends LitElement {
               `
             : nothing}
         </div>
-        <div class="content">
+        <div
+          class="content"
+          role="region"
+          aria-labelledby="budget-health-title"
+        >
           <div class="rows">
             ${this.renderBudgetLimitRow(
               `Global spend · ${this.formatBudgetPeriod(selectedPeriod)}`,
@@ -471,9 +488,14 @@ export class BudgetHealthCard extends LitElement {
                 <sl-button
                   size="small"
                   variant="default"
+                  aria-label="Configure budget limits"
                   @click=${this.handleConfigure}
                 >
-                  <sl-icon slot="prefix" name="gear"></sl-icon>
+                  <sl-icon
+                    slot="prefix"
+                    name="gear"
+                    aria-hidden="true"
+                  ></sl-icon>
                   Configure Limits
                 </sl-button>
               `

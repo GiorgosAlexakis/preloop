@@ -266,6 +266,7 @@ describe('PreloopSessionObserver', () => {
     const el = (await fixture(
       html`<preloop-session-observer
         .sessions=${[session]}
+        .features=${{ optimization: true }}
       ></preloop-session-observer>`
     )) as PreloopSessionObserver;
 

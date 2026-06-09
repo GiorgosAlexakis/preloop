@@ -33,5 +33,6 @@ export default {
       timeout: '240000',
     },
   },
+  filterBrowserLogs: () => true,
   nodeResolve: true,
 };

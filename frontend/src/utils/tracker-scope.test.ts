@@ -44,9 +44,9 @@ describe('describeTrackerScope', () => {
       projects
     );
 
-    expect(summary).toContain('Platform Team');
-    expect(summary).toContain('2 synced so far');
-    expect(summary).not.toContain('ORGANIZATION: 3');
+    expect(summary).to.contain('Platform Team');
+    expect(summary).to.contain('2 synced so far');
+    expect(summary).to.not.contain('ORGANIZATION: 3');
   });
 
   it('describes selected projects using synced project names', () => {
@@ -67,8 +67,8 @@ describe('describeTrackerScope', () => {
       projects
     );
 
-    expect(summary).toContain('API Service');
-    expect(summary).toContain('Platform Team');
+    expect(summary).to.contain('API Service');
+    expect(summary).to.contain('Platform Team');
   });
 });
 
@@ -86,8 +86,11 @@ describe('groupProjectsByOrganization', () => {
 
     const groups = groupProjectsByOrganization(orgs, projects);
 
-    expect(groups.map((g) => g.organization.name)).toEqual(['Alpha', 'Beta']);
-    expect(groups[0].projects.map((p) => p.name)).toEqual([
+    expect(groups.map((g) => g.organization.name)).to.deep.equal([
+      'Alpha',
+      'Beta',
+    ]);
+    expect(groups[0].projects.map((p) => p.name)).to.deep.equal([
       'Alpha App',
       'Zeta',
     ]);

@@ -764,6 +764,13 @@ paths:
           - type: string
           - type: 'null'
           title: Runtime Principal Id
+      - name: include_breakdown
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Include Breakdown
       responses:
         '200':
           description: Successful Response
@@ -990,6 +997,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/control:
+    get:
+      tags:
+      - Account
+      summary: List Account Controllable Agents
+      description: List agents that expose the Agent Control product surface.
+      operationId: list_account_controllable_agents_api_v1_agents_control_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: online_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Online Only
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountManagedAgentListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/agents/extract-name:
     post:
       tags:
@@ -1039,6 +1093,24 @@ paths:
         schema:
           type: string
           title: Agent Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
       responses:
         '200':
           description: Successful Response
@@ -1763,12 +1835,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/summaries:
+    post:
+      tags:
+      - Account
+      summary: Summarize Account Runtime Session
+      description: Summarize one runtime session without hidden inspection spend.
+      operationId: summarize_account_runtime_session_api_v1_runtime_sessions__runtime_session_id__summaries_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionSummaryInsight'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/runtime-sessions/{runtime_session_id}/gateway-events:
     get:
       tags:
       - Account
       summary: Get Account Runtime Session Gateway Events
-      description: Return stored gateway events (chat histories) for one runtime session.
+      description: Return one compact page of stored gateway event metadata for a
+        session.
       operationId: get_account_runtime_session_gateway_events_api_v1_runtime_sessions__runtime_session_id__gateway_events_get
       security:
       - bearerAuth: []
@@ -1787,6 +1889,30 @@ paths:
           - type: integer
           - type: 'null'
           title: Tail
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 5000
+          minimum: 1
+          default: 25
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: metadata_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Metadata Only
       responses:
         '200':
           description: Successful Response
@@ -1837,6 +1963,42 @@ paths:
                 title: Response Get Account Runtime Session Gateway Event Detail Api
                   V1 Runtime Sessions  Runtime Session Id  Gateway Events  Activity
                   Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/runtime-sessions/{runtime_session_id}/gateway-events/{activity_id}/summary:
+    post:
+      tags:
+      - Account
+      summary: Summarize Account Runtime Session Gateway Event
+      description: Summarize one gateway interaction on demand using the account default
+        model.
+      operationId: summarize_account_runtime_session_gateway_event_api_v1_runtime_sessions__runtime_session_id__gateway_events__activity_id__summary_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: runtime_session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Runtime Session Id
+      - name: activity_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Activity Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSessionInteractionSummary'
         '422':
           description: Validation Error
           content:
@@ -2042,6 +2204,39 @@ paths:
                 additionalProperties:
                   type: string
                 title: Response Delete Tracker Api V1 Trackers  Tracker Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/trackers/{tracker_id}/sync:
+    post:
+      tags:
+      - Trackers
+      summary: Sync Tracker
+      description: Queue a background sync for an existing tracker.
+      operationId: sync_tracker_api_v1_trackers__tracker_id__sync_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: tracker_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid4
+          title: Tracker Id
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Sync Tracker Api V1 Trackers  Tracker Id  Sync Post
         '422':
           description: Validation Error
           content:
@@ -5097,6 +5292,114 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/audio/transcriptions:
+    post:
+      tags:
+      - Audio
+      - Audio
+      summary: Transcribe Audio
+      description: Transcribe an uploaded audio blob using the resolved account STT
+        model.
+      operationId: transcribe_audio_api_v1_audio_transcriptions_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_transcribe_audio_api_v1_audio_transcriptions_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpeechToTextResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/audio/speech:
+    post:
+      tags:
+      - Audio
+      - Audio
+      summary: Synthesize Speech
+      description: Synthesize speech bytes using the resolved account TTS model.
+      operationId: synthesize_speech_api_v1_audio_speech_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextToSpeechRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+  /api/v1/cost/summary:
+    get:
+      tags:
+      - Cost Analytics
+      - Cost Analytics
+      summary: Get Cost Summary
+      description: Return the OSS cost overview using gateway usage and pricing metadata.
+      operationId: get_cost_summary_api_v1_cost_summary_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Date
+      - name: runtime_principal_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostAnalyticsSummaryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/ai-models/providers/{provider}/available-models:
     get:
       tags:
@@ -5134,6 +5437,19 @@ paths:
           description: Optional API key for fetching models
           title: Api Key
         description: Optional API key for fetching models
+      - name: model_kind
+        in: query
+        required: false
+        schema:
+          enum:
+          - llm
+          - stt
+          - tts
+          type: string
+          description: Model service kind to fetch
+          default: llm
+          title: Model Kind
+        description: Model service kind to fetch
       responses:
         '200':
           description: Successful Response
@@ -6442,6 +6758,111 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - bearerAuth: []
+  /api/v1/agents/{agent_id}/control/commands:
+    post:
+      tags:
+      - Agent Control
+      summary: Send Managed Agent Command
+      description: Backward-compatible route for sending text commands to an agent.
+      operationId: send_managed_agent_command_api_v1_agents__agent_id__control_commands_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentControlSendMessageRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentControlCommandResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/control/prompts:
+    post:
+      tags:
+      - Agent Control
+      summary: Send Managed Agent Prompt
+      description: Route a text prompt to the current, existing, or next agent session.
+      operationId: send_managed_agent_prompt_api_v1_agents__agent_id__control_prompts_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentControlSendMessageRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentControlCommandResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/agents/{agent_id}/control/voice-transcripts:
+    post:
+      tags:
+      - Agent Control
+      summary: Send Managed Agent Voice Transcript
+      description: Mobile-friendly alias that routes a voice transcript as a prompt.
+      operationId: send_managed_agent_voice_transcript_api_v1_agents__agent_id__control_voice_transcripts_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: agent_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Agent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentControlVoiceTranscriptRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentControlCommandResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/roles:
     get:
       tags:
@@ -6481,6 +6902,16 @@ components:
           type: string
           title: Model Identifier
           description: Standardized identifier, e.g., 'gpt-5.4-turbo'
+        model_kind:
+          type: string
+          enum:
+          - llm
+          - stt
+          - tts
+          title: Model Kind
+          description: 'Service kind for this model configuration: inference, STT,
+            or TTS'
+          default: llm
         api_endpoint:
           anyOf:
           - type: string
@@ -6634,6 +7065,14 @@ components:
         model_identifier:
           type: string
           title: Model Identifier
+        model_kind:
+          type: string
+          enum:
+          - llm
+          - stt
+          - tts
+          title: Model Kind
+          default: llm
         api_endpoint:
           anyOf:
           - type: string
@@ -6721,6 +7160,15 @@ components:
           - type: string
           - type: 'null'
           title: Model Identifier
+        model_kind:
+          anyOf:
+          - type: string
+            enum:
+            - llm
+            - stt
+            - tts
+          - type: 'null'
+          title: Model Kind
         api_endpoint:
           anyOf:
           - type: string
@@ -7188,6 +7636,179 @@ components:
       - period_end
       title: AccountRuntimeSessionListResponse
       description: Account-scoped runtime session explorer list response.
+    AgentControlCommandResponse:
+      properties:
+        command_id:
+          type: string
+          title: Command Id
+        managed_agent_id:
+          type: string
+          format: uuid
+          title: Managed Agent Id
+        runtime_session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Runtime Session Id
+        target_session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Target Session Id
+        session_mode:
+          type: string
+          enum:
+          - existing
+          - new
+          - current
+          title: Session Mode
+        subject:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Subject
+        local_delivery:
+          type: boolean
+          title: Local Delivery
+          default: false
+        published:
+          type: boolean
+          title: Published
+          default: false
+        command_envelope:
+          $ref: '#/components/schemas/AgentControlEnvelope'
+      type: object
+      required:
+      - command_id
+      - managed_agent_id
+      - session_mode
+      - command_envelope
+      title: AgentControlCommandResponse
+      description: Result of routing an operator command to a managed agent.
+    AgentControlEnvelope:
+      properties:
+        type:
+          type: string
+          enum:
+          - command
+          - event
+          - presence
+          - ack
+          - error
+          title: Type
+        name:
+          type: string
+          title: Name
+        message_id:
+          type: string
+          title: Message Id
+        account_id:
+          type: string
+          format: uuid
+          title: Account Id
+        managed_agent_id:
+          type: string
+          format: uuid
+          title: Managed Agent Id
+        runtime_session_id:
+          type: string
+          format: uuid
+          title: Runtime Session Id
+        session_source_type:
+          type: string
+          title: Session Source Type
+        session_source_id:
+          type: string
+          title: Session Source Id
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - type
+      - name
+      - message_id
+      - account_id
+      - managed_agent_id
+      - runtime_session_id
+      - session_source_type
+      - session_source_id
+      - timestamp
+      title: AgentControlEnvelope
+      description: Typed envelope exchanged over the shared managed-agent control
+        plane.
+    AgentControlSendMessageRequest:
+      properties:
+        message:
+          type: string
+          minLength: 1
+          title: Message
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+        target_session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Target Session Id
+        start_new_session:
+          type: boolean
+          title: Start New Session
+          default: false
+        input_mode:
+          type: string
+          enum:
+          - text
+          - voice_transcript
+          title: Input Mode
+          default: text
+        voice:
+          additionalProperties: true
+          type: object
+          title: Voice
+      type: object
+      required:
+      - message
+      title: AgentControlSendMessageRequest
+      description: Operator request for routing a prompt to an online managed agent.
+    AgentControlVoiceTranscriptRequest:
+      properties:
+        transcript:
+          type: string
+          minLength: 1
+          title: Transcript
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+        voice:
+          additionalProperties: true
+          type: object
+          title: Voice
+        target_session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Target Session Id
+        start_new_session:
+          type: boolean
+          title: Start New Session
+          default: false
+      type: object
+      required:
+      - transcript
+      title: AgentControlVoiceTranscriptRequest
+      description: Mobile-friendly request for routing a spoken prompt transcript.
     AgentNameExtractionRequest:
       properties:
         identity_content:
@@ -8181,6 +8802,22 @@ components:
       - username
       - password
       title: Body_login_form_api_v1_auth_token_post
+    Body_transcribe_audio_api_v1_audio_transcriptions_post:
+      properties:
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+        ai_model_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Ai Model Id
+      type: object
+      required:
+      - audio
+      title: Body_transcribe_audio_api_v1_audio_transcriptions_post
     Body_upload_policy_api_v1_policies_upload_post:
       properties:
         file:
@@ -8381,6 +9018,64 @@ components:
       - evaluation_context
       title: ConditionTestResponse
       description: Schema for condition test result.
+    CostAnalyticsSummaryResponse:
+      properties:
+        period_start:
+          type: string
+          format: date-time
+          title: Period Start
+        period_end:
+          type: string
+          format: date-time
+          title: Period End
+        total_requests:
+          type: integer
+          title: Total Requests
+          default: 0
+        successful_requests:
+          type: integer
+          title: Successful Requests
+          default: 0
+        failed_requests:
+          type: integer
+          title: Failed Requests
+          default: 0
+        token_usage:
+          $ref: '#/components/schemas/GatewayTokenUsage'
+        estimated_cost:
+          type: number
+          title: Estimated Cost
+          default: 0.0
+        budget:
+          $ref: '#/components/schemas/GatewayBudgetSummary'
+        requests_by_day:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByDay'
+          type: array
+          title: Requests By Day
+        usage_by_model:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByModel'
+          type: array
+          title: Usage By Model
+        usage_by_flow:
+          items:
+            $ref: '#/components/schemas/GatewayUsageByFlow'
+          type: array
+          title: Usage By Flow
+        usage_by_session:
+          items:
+            $ref: '#/components/schemas/GatewayUsageBySession'
+          type: array
+          title: Usage By Session
+      type: object
+      required:
+      - period_start
+      - period_end
+      - token_usage
+      - budget
+      title: CostAnalyticsSummaryResponse
+      description: Open-source cost overview response.
     CreateVersionRequest:
       properties:
         description:
@@ -9428,6 +10123,42 @@ components:
           - type: string
           - type: 'null'
           title: Session Source Id
+        session_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Summary
+        session_summary_updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Session Summary Updated At
+        runtime_principal_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Type
+        runtime_principal_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Id
+        runtime_principal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Runtime Principal Name
+        agent_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Id
+        agent_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Agent Name
         flow_execution_id:
           anyOf:
           - type: string
@@ -11019,6 +11750,53 @@ components:
             type: string
           type: object
           title: Tags
+        control_feature_name:
+          type: string
+          title: Control Feature Name
+          default: Agent Control
+        control_capabilities:
+          items:
+            type: string
+          type: array
+          title: Control Capabilities
+        control_state:
+          type: string
+          title: Control State
+          default: unsupported
+        control_enabled:
+          type: boolean
+          title: Control Enabled
+          default: false
+        control_online:
+          type: boolean
+          title: Control Online
+          default: false
+        supports_new_session:
+          type: boolean
+          title: Supports New Session
+          default: false
+        supports_existing_session:
+          type: boolean
+          title: Supports Existing Session
+          default: false
+        supports_voice:
+          type: boolean
+          title: Supports Voice
+          default: false
+        supports_interrupt:
+          type: boolean
+          title: Supports Interrupt
+          default: false
+        supported_input_modes:
+          items:
+            type: string
+          type: array
+          title: Supported Input Modes
+        supported_output_modes:
+          items:
+            type: string
+          type: array
+          title: Supported Output Modes
       type: object
       required:
       - id
@@ -12057,6 +12835,29 @@ components:
           - type: integer
           - type: 'null'
           title: Total Tokens
+        request_fingerprint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Request Fingerprint
+        gateway_attempt:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Gateway Attempt
+        is_retry:
+          type: boolean
+          title: Is Retry
+          default: false
+        retry_of_api_usage_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Retry Of Api Usage Id
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
       type: object
       required:
       - activity_type
@@ -12074,6 +12875,51 @@ components:
       type: object
       title: RuntimeSessionActivityListResponse
       description: List of activity items for a runtime session.
+    RuntimeSessionInteractionSummary:
+      properties:
+        event_id:
+          type: string
+          title: Event Id
+        title:
+          type: string
+          title: Title
+        summary:
+          type: string
+          title: Summary
+        key_points:
+          items:
+            type: string
+          type: array
+          title: Key Points
+        risk_level:
+          type: string
+          title: Risk Level
+          default: low
+        next_action:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Action
+        generated_by:
+          type: string
+          title: Generated By
+          default: local
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+        estimated_summary_cost:
+          type: number
+          title: Estimated Summary Cost
+          default: 0.0
+      type: object
+      required:
+      - event_id
+      - title
+      - summary
+      title: RuntimeSessionInteractionSummary
+      description: Generated or locally derived summary for one gateway interaction.
     RuntimeSessionSummary:
       properties:
         id:
@@ -12105,6 +12951,17 @@ components:
           - type: string
           - type: 'null'
           title: Runtime Principal Name
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+        summary_updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Summary Updated At
         started_at:
           type: string
           format: date-time
@@ -12187,6 +13044,47 @@ components:
       - token_usage
       title: RuntimeSessionSummary
       description: Aggregated runtime session summary for explorer views.
+    RuntimeSessionSummaryInsight:
+      properties:
+        title:
+          type: string
+          title: Title
+        description:
+          type: string
+          title: Description
+        risk_level:
+          type: string
+          title: Risk Level
+          default: low
+        highlights:
+          items:
+            type: string
+          type: array
+          title: Highlights
+        next_action:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Action
+        generated_by:
+          type: string
+          title: Generated By
+          default: local
+        fast_model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Fast Model Name
+        estimated_summary_cost:
+          type: number
+          title: Estimated Summary Cost
+          default: 0.0
+      type: object
+      required:
+      - title
+      - description
+      title: RuntimeSessionSummaryInsight
+      description: Generated or locally derived summary for one runtime session.
     RuntimeSessionTokenCreate:
       properties:
         session_source_type:
@@ -12335,6 +13233,29 @@ components:
       - item
       - similarity
       title: SearchResultItem
+    SpeechToTextResponse:
+      properties:
+        text:
+          type: string
+          title: Text
+        ai_model_id:
+          type: string
+          format: uuid
+          title: Ai Model Id
+        provider_name:
+          type: string
+          title: Provider Name
+        model_identifier:
+          type: string
+          title: Model Identifier
+      type: object
+      required:
+      - text
+      - ai_model_id
+      - provider_name
+      - model_identifier
+      title: SpeechToTextResponse
+      description: Transcript returned from a resolved STT model.
     SubjectGovernanceConfig:
       properties:
         allowed_models:
@@ -12418,6 +13339,41 @@ components:
       - message
       title: TestConnectionResponse
       description: Response model for testing a project connection.
+    TextToSpeechRequest:
+      properties:
+        input:
+          type: string
+          maxLength: 16000
+          minLength: 1
+          title: Input
+        voice:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Voice
+          default: alloy
+        response_format:
+          type: string
+          enum:
+          - mp3
+          - opus
+          - aac
+          - flac
+          - wav
+          - pcm
+          title: Response Format
+          default: mp3
+        ai_model_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Ai Model Id
+      type: object
+      required:
+      - input
+      title: TextToSpeechRequest
+      description: Text payload for server-side TTS fallback.
     Token:
       properties:
         access_token:

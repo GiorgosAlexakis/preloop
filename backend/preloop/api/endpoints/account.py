@@ -1705,7 +1705,7 @@ async def delete_account_managed_agent(
 
 
 @router.get("/runtime-sessions", response_model=AccountRuntimeSessionListResponse)
-def list_account_runtime_sessions(
+async def list_account_runtime_sessions(
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
     query: Optional[str] = Query(None, min_length=1),
@@ -1733,7 +1733,7 @@ def list_account_runtime_sessions(
     "/runtime-sessions/{runtime_session_id}",
     response_model=AccountRuntimeSessionDetailResponse,
 )
-def get_account_runtime_session_detail(
+async def get_account_runtime_session_detail(
     runtime_session_id: str,
     account: Annotated[Account, Depends(get_account_for_user)],
     db: Session = Depends(get_db_session),
@@ -1925,7 +1925,7 @@ async def summarize_account_runtime_session_gateway_event(
     db: Session = Depends(get_db_session),
 ):
     """Summarize one gateway interaction on demand using the account default model."""
-    return RuntimeSessionExplorerService(
+    return await RuntimeSessionExplorerService(
         db
     ).summarize_account_runtime_session_interaction(
         account=account,

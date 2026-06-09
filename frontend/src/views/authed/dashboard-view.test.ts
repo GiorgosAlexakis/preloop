@@ -442,6 +442,10 @@ describe('DashboardView', () => {
           return json(budgetPoliciesResponse);
         }
 
+        if (url === '/api/v1/features') {
+          return json({ features: { billing: true } });
+        }
+
         return json({ detail: `Unhandled ${url}` });
       });
 

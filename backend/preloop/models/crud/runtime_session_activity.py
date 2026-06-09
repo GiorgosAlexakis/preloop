@@ -17,6 +17,45 @@ from .base import CRUDBase
 class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
     """CRUD helpers for normalized runtime-session activity."""
 
+    def _touch_runtime_session_and_agent(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        activity_timestamp: datetime,
+    ) -> None:
+        """Update session last-activity and linked managed-agent presence."""
+        runtime_session = db.get(RuntimeSession, runtime_session_id)
+        if runtime_session is None:
+            return
+
+        runtime_session.last_activity_at = activity_timestamp
+        db.add(runtime_session)
+
+        if (
+            not runtime_session.runtime_principal_type
+            or not runtime_session.runtime_principal_id
+        ):
+            return
+
+        managed_agent = (
+            db.query(ManagedAgent)
+            .filter(
+                ManagedAgent.account_id == account_id,
+                ManagedAgent.session_source_type
+                == runtime_session.runtime_principal_type,
+                ManagedAgent.session_source_id == runtime_session.runtime_principal_id,
+            )
+            .first()
+        )
+        if managed_agent is None or managed_agent.lifecycle_state != "active":
+            return
+
+        managed_agent.runtime_session_id = runtime_session.id
+        managed_agent.last_seen_at = activity_timestamp
+        db.add(managed_agent)
+
     def log_tool_call(
         self,
         db: Session,
@@ -49,32 +88,12 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             timestamp=activity_timestamp,
         )
         db.add(db_obj)
-
-        runtime_session = db.get(RuntimeSession, runtime_session_id)
-        if runtime_session is not None:
-            runtime_session.last_activity_at = activity_timestamp
-            db.add(runtime_session)
-
-            if (
-                runtime_session.runtime_principal_type
-                and runtime_session.runtime_principal_id
-            ):
-                managed_agent = (
-                    db.query(ManagedAgent)
-                    .filter(
-                        ManagedAgent.account_id == account_id,
-                        ManagedAgent.session_source_type
-                        == runtime_session.runtime_principal_type,
-                        ManagedAgent.session_source_id
-                        == runtime_session.runtime_principal_id,
-                    )
-                    .first()
-                )
-                if managed_agent is not None:
-                    if managed_agent.lifecycle_state == "active":
-                        managed_agent.runtime_session_id = runtime_session.id
-                        managed_agent.last_seen_at = activity_timestamp
-                        db.add(managed_agent)
+        self._touch_runtime_session_and_agent(
+            db,
+            account_id=account_id,
+            runtime_session_id=runtime_session_id,
+            activity_timestamp=activity_timestamp,
+        )
 
         if commit:
             db.commit()
@@ -109,32 +128,12 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             timestamp=activity_timestamp,
         )
         db.add(db_obj)
-
-        runtime_session = db.get(RuntimeSession, runtime_session_id)
-        if runtime_session is not None:
-            runtime_session.last_activity_at = activity_timestamp
-            db.add(runtime_session)
-
-            if (
-                runtime_session.runtime_principal_type
-                and runtime_session.runtime_principal_id
-            ):
-                managed_agent = (
-                    db.query(ManagedAgent)
-                    .filter(
-                        ManagedAgent.account_id == account_id,
-                        ManagedAgent.session_source_type
-                        == runtime_session.runtime_principal_type,
-                        ManagedAgent.session_source_id
-                        == runtime_session.runtime_principal_id,
-                    )
-                    .first()
-                )
-                if managed_agent is not None:
-                    if managed_agent.lifecycle_state == "active":
-                        managed_agent.runtime_session_id = runtime_session.id
-                        managed_agent.last_seen_at = activity_timestamp
-                        db.add(managed_agent)
+        self._touch_runtime_session_and_agent(
+            db,
+            account_id=account_id,
+            runtime_session_id=runtime_session_id,
+            activity_timestamp=activity_timestamp,
+        )
 
         if commit:
             db.commit()

@@ -2217,6 +2217,7 @@ export class DashboardView extends AuthedElement {
         .loading=${this.fetchingBudget}
         .timeRange=${this.budgetTimeRange}
         .showRangeSelector=${true}
+        configurable
         @range-change=${(event: CustomEvent<{ value: string }>) => {
           this.budgetTimeRange = event.detail.value as any;
           this.fetchBudgetSummary();

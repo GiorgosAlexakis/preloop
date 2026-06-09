@@ -149,11 +149,13 @@ class GoogleSpeechAudioProviderBackend:
             "config": recognition_config,
             "audio": {"content": base64.b64encode(audio).decode("ascii")},
         }
-        url = f"{GOOGLE_SPEECH_RECOGNIZE_URL}?key={resolution.api_key}"
         request = urllib_request.Request(
-            url,
+            GOOGLE_SPEECH_RECOGNIZE_URL,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": resolution.api_key,
+            },
             method="POST",
         )
         try:

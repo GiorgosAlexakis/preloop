@@ -470,6 +470,9 @@ export class PreloopSessionObserver extends LitElement {
     sessionId: string,
     options: { force?: boolean } = {}
   ): Promise<void> {
+    if (sessionId === this.activeSessionId && !options.force) {
+      return;
+    }
     this.activeSessionId = sessionId;
     this.dispatchEvent(
       new CustomEvent('session-selected', {

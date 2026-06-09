@@ -60,8 +60,8 @@ class TestGetExecutionMetrics:
 
         mock_db.query.return_value.filter.return_value.first.side_effect = [
             mock_execution,
+            None,
             mock_flow,
-            mock_account,
         ]
         mock_db.query.return_value.filter.return_value.one.return_value = MagicMock(
             api_requests=0,
