@@ -1724,10 +1724,51 @@ export async function cloneFlowPreset(presetId: string): Promise<any> {
   return response.json();
 }
 
-export async function listProjects(): Promise<Project[]> {
-  const response = await fetchWithAuth('/api/v1/projects');
+export async function listProjects(options?: {
+  organizationId?: string;
+  limit?: number;
+}): Promise<Project[]> {
+  const params = new URLSearchParams();
+  if (options?.organizationId) {
+    params.set('organization_id', options.organizationId);
+  }
+  if (options?.limit) {
+    params.set('limit', String(options.limit));
+  } else {
+    params.set('limit', '1000');
+  }
+  const query = params.toString();
+  const response = await fetchWithAuth(
+    query ? `/api/v1/projects?${query}` : '/api/v1/projects'
+  );
   if (!response.ok) {
     throw new Error('Failed to fetch projects');
+  }
+  const projects: Project[] = await response.json();
+  return projects.map((project) => ({
+    ...project,
+    key: project.key || project.identifier,
+  }));
+}
+
+export async function syncTracker(
+  trackerId: string
+): Promise<{ status: string }> {
+  const response = await fetchWithAuth(`/api/v1/trackers/${trackerId}/sync`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    let detail = 'Failed to queue tracker sync';
+    try {
+      const body = await response.json();
+      detail =
+        (typeof body.detail === 'string' && body.detail) ||
+        body.message ||
+        detail;
+    } catch {
+      detail = `${detail} (${response.status})`;
+    }
+    throw new Error(detail);
   }
   return response.json();
 }
@@ -1764,7 +1805,11 @@ export async function listOrganizations(): Promise<Organization[]> {
     throw new Error('Failed to fetch organizations');
   }
   const data: any = await response.json();
-  return data.items;
+  return (data.items || []).map((org: Organization) => ({
+    ...org,
+    key: org.key || org.identifier,
+    identifier: org.identifier || org.key,
+  }));
 }
 
 export async function listIssueDuplicates(

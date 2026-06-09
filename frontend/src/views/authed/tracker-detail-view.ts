@@ -9,13 +9,21 @@ import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 import '../../components/view-header.ts';
+import '../../components/resource-actions.ts';
 import {
   fetchWithAuth,
   getFeatures,
   deleteTracker,
+  listOrganizations,
+  listProjects,
+  syncTracker,
   type FeaturesResponse,
 } from '../../api';
-import type { Project } from '../../types';
+import type { Organization, Project } from '../../types';
+import {
+  describeTrackerScope,
+  groupProjectsByOrganization,
+} from '../../utils/tracker-scope';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface TrackerDetail {
@@ -43,6 +51,9 @@ export class TrackerDetailView extends LitElement {
   private _projects: Project[] = [];
 
   @state()
+  private _organizations: Organization[] = [];
+
+  @state()
   private _loading = true;
 
   @state()
@@ -56,6 +67,12 @@ export class TrackerDetailView extends LitElement {
 
   @state()
   private _featuresLoaded = false;
+
+  @state()
+  private _syncing = false;
+
+  @state()
+  private _syncMessage: string | null = null;
 
   private _trackerId = '';
 
@@ -74,16 +91,11 @@ export class TrackerDetailView extends LitElement {
         color: var(--sl-color-primary-600);
       }
 
-      .tracker-title {
-        margin: 0;
-        font-size: var(--sl-font-size-2x-large);
-      }
-
       .tracker-meta {
         display: flex;
         flex-wrap: wrap;
         gap: var(--sl-spacing-medium);
-        margin-bottom: var(--sl-spacing-large);
+        margin-bottom: var(--sl-spacing-medium);
         color: var(--sl-color-neutral-600);
         font-size: var(--sl-font-size-small);
       }
@@ -94,10 +106,36 @@ export class TrackerDetailView extends LitElement {
         gap: var(--sl-spacing-x-small);
       }
 
+      .scope-summary {
+        margin: 0 0 var(--sl-spacing-large) 0;
+        padding: var(--sl-spacing-medium);
+        background: var(--sl-color-neutral-50);
+        border-radius: var(--sl-border-radius-medium);
+        font-size: var(--sl-font-size-small);
+        color: var(--sl-color-neutral-700);
+        line-height: 1.5;
+      }
+
+      .scope-summary strong {
+        color: var(--sl-color-neutral-900);
+      }
+
+      .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sl-spacing-medium);
+        flex-wrap: wrap;
+        margin: var(--sl-spacing-large) 0 var(--sl-spacing-medium) 0;
+      }
+
       .section-title {
         font-size: var(--sl-font-size-large);
         font-weight: var(--sl-font-weight-semibold);
-        margin: var(--sl-spacing-large) 0 var(--sl-spacing-medium) 0;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-x-small);
       }
 
       .analytics-grid {
@@ -138,6 +176,24 @@ export class TrackerDetailView extends LitElement {
         font-size: var(--sl-font-size-small);
       }
 
+      .org-group {
+        margin-bottom: var(--sl-spacing-large);
+      }
+
+      .org-group:last-child {
+        margin-bottom: 0;
+      }
+
+      .org-header {
+        display: flex;
+        align-items: center;
+        gap: var(--sl-spacing-x-small);
+        margin-bottom: var(--sl-spacing-small);
+        font-size: var(--sl-font-size-small);
+        font-weight: var(--sl-font-weight-semibold);
+        color: var(--sl-color-neutral-700);
+      }
+
       .projects-list {
         display: flex;
         flex-direction: column;
@@ -147,54 +203,57 @@ export class TrackerDetailView extends LitElement {
       .project-row {
         display: flex;
         align-items: center;
-        gap: var(--sl-spacing-small);
+        justify-content: space-between;
+        gap: var(--sl-spacing-medium);
         padding: var(--sl-spacing-small) var(--sl-spacing-medium);
         background: var(--sl-color-neutral-50);
         border-radius: var(--sl-border-radius-medium);
         font-size: var(--sl-font-size-small);
       }
 
+      .project-info {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--sl-spacing-small);
+        min-width: 0;
+      }
+
+      .project-text {
+        min-width: 0;
+      }
+
       .project-name {
         font-weight: var(--sl-font-weight-semibold);
+        color: var(--sl-color-neutral-900);
       }
 
-      .project-key {
+      .project-description {
         color: var(--sl-color-neutral-500);
+        font-size: var(--sl-font-size-x-small);
+        margin-top: 2px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
-      .scope-rules {
+      .header-actions {
         display: flex;
-        flex-wrap: wrap;
-        gap: var(--sl-spacing-x-small);
-      }
-
-      .back-link {
-        display: inline-flex;
+        justify-content: flex-end;
         align-items: center;
-        gap: var(--sl-spacing-x-small);
-        margin-bottom: var(--sl-spacing-medium);
-        color: var(--sl-color-neutral-600);
-        font-size: var(--sl-font-size-small);
-        text-decoration: none;
+        gap: var(--sl-spacing-small);
+        flex: 1;
+        min-width: min(100%, 360px);
       }
 
-      .back-link:hover {
-        color: var(--sl-color-primary-600);
-        text-decoration: none;
-      }
-
-      .no-analytics {
+      .no-analytics,
+      .no-projects {
         padding: var(--sl-spacing-large);
         text-align: center;
         color: var(--sl-color-neutral-500);
         background: var(--sl-color-neutral-50);
         border-radius: var(--sl-border-radius-medium);
-      }
-
-      .no-projects {
-        padding: var(--sl-spacing-medium);
-        color: var(--sl-color-neutral-500);
         font-size: var(--sl-font-size-small);
+        line-height: 1.5;
       }
     `,
   ];
@@ -205,14 +264,27 @@ export class TrackerDetailView extends LitElement {
     this._loadData();
   }
 
+  private async _loadProjectsForTracker() {
+    const [organizations, allProjects] = await Promise.all([
+      listOrganizations().catch(() => []),
+      listProjects().catch(() => []),
+    ]);
+    this._organizations = organizations.filter(
+      (org) => org.tracker_id === this._trackerId
+    );
+    const orgIds = new Set(this._organizations.map((org) => org.id));
+    this._projects = allProjects.filter((project) =>
+      orgIds.has(project.organization_id)
+    );
+  }
+
   private async _loadData() {
     this._loading = true;
     this._error = null;
 
     try {
-      const [trackerRes, projectsRes, featuresRes] = await Promise.all([
+      const [trackerRes, featuresRes] = await Promise.all([
         fetchWithAuth(`/api/v1/trackers/${this._trackerId}`),
-        fetchWithAuth('/api/v1/projects'),
         getFeatures(),
       ]);
 
@@ -223,19 +295,25 @@ export class TrackerDetailView extends LitElement {
       this._tracker = await trackerRes.json();
       this._features = featuresRes.features;
       this._featuresLoaded = true;
-
-      if (projectsRes.ok) {
-        const allProjects: Project[] = await projectsRes.json();
-        this._projects = allProjects.filter(
-          (p) => p.tracker_id === this._trackerId
-        );
-      }
+      await this._loadProjectsForTracker();
     } catch (error) {
       this._error =
         error instanceof Error ? error.message : 'Failed to load tracker';
     } finally {
       this._loading = false;
     }
+  }
+
+  private _describeScope(): string {
+    return describeTrackerScope(
+      this._tracker?.scope_rules,
+      this._organizations,
+      this._projects
+    );
+  }
+
+  private _projectsByOrganization() {
+    return groupProjectsByOrganization(this._organizations, this._projects);
   }
 
   private _hasAnyAnalyticsFeature(): boolean {
@@ -254,8 +332,21 @@ export class TrackerDetailView extends LitElement {
     return 'box-seam';
   }
 
+  private _shortProjectId(projectId: string): string {
+    return projectId.split('-')[0];
+  }
+
   private _getProjectIds(): string {
-    return this._projects.map((p) => p.id.split('-')[0]).join(',');
+    return this._projects.map((p) => this._shortProjectId(p.id)).join(',');
+  }
+
+  private _buildIssuesUrl(subpath: string, projectIds?: string[]): string {
+    const ids =
+      projectIds && projectIds.length > 0
+        ? projectIds.map((id) => this._shortProjectId(id)).join(',')
+        : this._getProjectIds();
+    const base = `/console/issues${subpath}`;
+    return ids ? `${base}?projects=${ids}` : base;
   }
 
   private handleEdit() {
@@ -285,8 +376,25 @@ export class TrackerDetailView extends LitElement {
     }
   }
 
-  private handleSync() {
-    console.log('Sync tracker functionality not yet implemented in backend.');
+  private async handleSync() {
+    if (!this._tracker || this._syncing) return;
+
+    this._syncing = true;
+    this._error = null;
+    this._syncMessage = null;
+
+    try {
+      await syncTracker(this._trackerId);
+      this._syncMessage =
+        'Sync queued. Projects will refresh as the tracker finishes scanning.';
+      window.setTimeout(() => void this._loadProjectsForTracker(), 3000);
+      window.setTimeout(() => void this._loadProjectsForTracker(), 10000);
+    } catch (error) {
+      this._error =
+        error instanceof Error ? error.message : 'Failed to sync tracker';
+    } finally {
+      this._syncing = false;
+    }
   }
 
   private _handleTrackerUpdated() {
@@ -298,10 +406,60 @@ export class TrackerDetailView extends LitElement {
     this._editingTracker = null;
   }
 
-  private _buildIssuesUrl(subpath: string): string {
-    const projectIds = this._getProjectIds();
-    const base = `/console/issues${subpath}`;
-    return projectIds ? `${base}?projects=${projectIds}` : base;
+  private _renderProjectGroups() {
+    const groups = this._projectsByOrganization();
+    if (groups.length === 0) {
+      return html`<div class="no-projects">
+        No projects synced yet. Run <strong>Sync Now</strong> or edit the
+        tracker to choose groups and projects, then sync again.
+      </div>`;
+    }
+
+    return html`
+      ${groups.map(
+        (group) => html`
+          <div class="org-group">
+            <div class="org-header">
+              <sl-icon name="collection"></sl-icon>
+              ${group.organization.name}
+              <sl-badge variant="neutral" pill
+                >${group.projects.length}</sl-badge
+              >
+            </div>
+            <div class="projects-list">
+              ${group.projects.map(
+                (project) => html`
+                  <div class="project-row">
+                    <div class="project-info">
+                      <sl-icon
+                        name="folder"
+                        style="color: var(--sl-color-primary-500); flex-shrink: 0;"
+                      ></sl-icon>
+                      <div class="project-text">
+                        <div class="project-name">${project.name}</div>
+                        ${project.description
+                          ? html`<div class="project-description">
+                              ${project.description}
+                            </div>`
+                          : ''}
+                      </div>
+                    </div>
+                    <sl-button
+                      size="small"
+                      variant="default"
+                      href=${this._buildIssuesUrl('', [project.id])}
+                    >
+                      View issues
+                      <sl-icon slot="suffix" name="arrow-right"></sl-icon>
+                    </sl-button>
+                  </div>
+                `
+              )}
+            </div>
+          </div>
+        `
+      )}
+    `;
   }
 
   render() {
@@ -369,6 +527,7 @@ export class TrackerDetailView extends LitElement {
         </div>
         <div slot="main-column" class="header-actions">
           <resource-actions
+            .collapseOverflow=${false}
             .actions=${[
               {
                 id: 'edit',
@@ -380,6 +539,8 @@ export class TrackerDetailView extends LitElement {
                 id: 'sync',
                 label: 'Sync Now',
                 icon: 'arrow-repeat',
+                loading: this._syncing,
+                disabled: this._syncing,
                 onClick: () => this.handleSync(),
               },
               {
@@ -423,24 +584,57 @@ export class TrackerDetailView extends LitElement {
               : ''}
           </div>
 
-          ${tracker.scope_rules && tracker.scope_rules.length > 0
-            ? html`
-                <div class="scope-rules">
-                  ${tracker.scope_rules.map(
-                    (rule) => html`
-                      <sl-badge variant="neutral" pill>
-                        ${rule.rule_type === 'INCLUDE' ? '+' : '-'}
-                        ${rule.scope_type}: ${rule.identifier}
-                      </sl-badge>
-                    `
-                  )}
-                </div>
-              `
+          <p class="scope-summary">
+            <strong>Scope:</strong> ${this._describeScope()}
+            ${tracker.scope_rules && tracker.scope_rules.length > 0
+              ? html` Use <strong>Edit</strong> to change which groups and
+                  projects are scanned.`
+              : ''}
+          </p>
+
+          ${this._syncMessage
+            ? html`<sl-alert
+                variant="success"
+                open
+                style="margin-bottom: 1rem;"
+              >
+                <sl-icon slot="icon" name="check-circle"></sl-icon>
+                ${this._syncMessage}
+              </sl-alert>`
             : ''}
+          ${this._error
+            ? html`<sl-alert variant="danger" open style="margin-bottom: 1rem;">
+                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
+                ${this._error}
+              </sl-alert>`
+            : ''}
+
+          <div class="section-header">
+            <h2 class="section-title">
+              Synced projects
+              ${hasProjects
+                ? html`<sl-badge variant="neutral" pill
+                    >${this._projects.length}</sl-badge
+                  >`
+                : ''}
+            </h2>
+            ${hasProjects
+              ? html`<sl-button
+                  variant="primary"
+                  size="small"
+                  href=${this._buildIssuesUrl('')}
+                >
+                  View all issues
+                  <sl-icon slot="suffix" name="arrow-right"></sl-icon>
+                </sl-button>`
+              : ''}
+          </div>
+
+          ${this._renderProjectGroups()}
 
           <sl-divider></sl-divider>
 
-          <h2 class="section-title">Issue Analytics</h2>
+          <h2 class="section-title">Issue analytics</h2>
 
           ${hasAnalytics && hasProjects
             ? html`
@@ -457,8 +651,9 @@ export class TrackerDetailView extends LitElement {
                               <h3>Similarity</h3>
                             </div>
                             <p>
-                              Find duplicate and overlapping issues using vector
-                              similarity search.
+                              Find duplicate and overlapping issues across
+                              ${this._projects.length} synced
+                              project${this._projects.length === 1 ? '' : 's'}.
                             </p>
                           </sl-card>
                         </a>
@@ -477,7 +672,7 @@ export class TrackerDetailView extends LitElement {
                             </div>
                             <p>
                               Evaluate issue quality against compliance metrics
-                              and get improvement suggestions.
+                              for synced projects.
                             </p>
                           </sl-card>
                         </a>
@@ -495,8 +690,8 @@ export class TrackerDetailView extends LitElement {
                               <h3>Dependencies</h3>
                             </div>
                             <p>
-                              Detect unmapped dependencies between issues and
-                              visualize relationships.
+                              Detect unmapped dependencies between issues in
+                              synced projects.
                             </p>
                           </sl-card>
                         </a>
@@ -507,47 +702,10 @@ export class TrackerDetailView extends LitElement {
             : html`
                 <div class="no-analytics">
                   ${!hasProjects
-                    ? 'No projects synced yet. Issues will appear after the first sync completes.'
+                    ? 'Issue analytics become available after projects sync. Run Sync Now once scope is configured.'
                     : 'Issue analytics features are not enabled for this instance.'}
                 </div>
               `}
-
-          <sl-divider></sl-divider>
-
-          <h2 class="section-title">
-            Projects
-            ${hasProjects
-              ? html`<sl-badge variant="neutral" pill
-                  >${this._projects.length}</sl-badge
-                >`
-              : ''}
-          </h2>
-
-          ${hasProjects
-            ? html`
-                <div class="projects-list">
-                  ${this._projects.map(
-                    (project) => html`
-                      <div class="project-row">
-                        <sl-icon
-                          name="folder"
-                          style="color: var(--sl-color-primary-500);"
-                        ></sl-icon>
-                        <span class="project-name">${project.name}</span>
-                        ${project.key
-                          ? html`<span class="project-key"
-                              >(${project.key})</span
-                            >`
-                          : ''}
-                      </div>
-                    `
-                  )}
-                </div>
-              `
-            : html`<div class="no-projects">
-                No projects synced yet. Projects will appear after the tracker
-                completes its first sync.
-              </div>`}
         </div>
       </div>
     `;

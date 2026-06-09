@@ -6,6 +6,7 @@ preloop/api/endpoints/tools.py to ensure consistency between MCP and REST API.
 
 import logging
 from typing import Literal, Optional
+from uuid import UUID
 
 from fastmcp import Context
 
@@ -799,6 +800,23 @@ def initialize_mcp_with_tools() -> DynamicFastMCP:
 
         if not user_context:
             return json.dumps({"error": "No user context available"})
+
+        try:
+            UUID(str(request_id))
+        except (ValueError, TypeError, AttributeError):
+            logger.warning(
+                "Invalid approval request_id %r for account %s",
+                request_id,
+                user_context.account_id,
+            )
+            return json.dumps(
+                {
+                    "error": (
+                        f"Invalid approval request id '{request_id}'. "
+                        "Expected a UUID returned by a pending approval tool call."
+                    )
+                }
+            )
 
         try:
             async with get_async_db_session() as db:

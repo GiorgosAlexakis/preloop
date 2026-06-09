@@ -1,6 +1,8 @@
 import os
 import logging
 
+from preloop.utils.sentry_filters import sentry_before_send
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,5 +39,6 @@ def init_sentry():
                 profiles_sample_rate=1.0,
                 enable_tracing=True,
                 environment=sentry_env,
+                before_send=sentry_before_send,
             )
             logger.info("Sentry SDK initialized.")

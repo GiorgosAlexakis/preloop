@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from preloop.services.policy.loader import (
+    PolicyApplier,
     compute_policy_diff,
     export_policy_to_json,
     export_policy_to_yaml,
@@ -14,11 +15,13 @@ from preloop.services.policy.loader import (
 )
 from preloop.services.policy.schema import (
     ApprovalWorkflowDefinition,
+    DefaultsDefinition,
     MCPServerDefinition,
     PolicyDocument,
     PolicyMetadata,
     PolicyVersion,
     ToolDefinition,
+    UnknownToolsPolicy,
 )
 
 
@@ -363,3 +366,24 @@ class TestResolveEnvVars:
         assert resolve_env_vars(123) == 123
         assert resolve_env_vars(True) is True
         assert resolve_env_vars(None) is None
+
+
+class TestPolicyApplierDefaults:
+    """Regression tests for restrictive default validation."""
+
+    def test_restrictive_defaults_return_validation_error_without_exception(
+        self, db_session, test_user
+    ):
+        """Unsupported defaults should fail cleanly without BaseModel errors."""
+        applier = PolicyApplier(db_session, account_id=str(test_user.account_id))
+        defaults = DefaultsDefinition.model_construct(
+            unknown_tools=UnknownToolsPolicy.REQUIRE_APPROVAL,
+            require_approval_for_new_tools=True,
+            default_approval_workflow="david-approval",
+        )
+
+        assert applier._apply_defaults(defaults, dry_run=True) is False
+        assert len(applier._result.errors) == 1
+        assert "restrictive default settings" in applier._result.errors[0]
+        assert "unknown_tools='require_approval'" in applier._result.errors[0]
+        assert "BaseModel.__init__" not in applier._result.errors[0]

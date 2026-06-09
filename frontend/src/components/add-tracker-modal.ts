@@ -572,13 +572,14 @@ export class AddTrackerModal extends LitElement {
         if (!this.includeFutureProjects) {
           this.selectedProjects[orgId] = projects.reduce(
             (acc: Record<string, boolean>, proj: any) => {
+              const scopeId = this.projectScopeIdentifier(proj);
               acc[proj.id] =
-                this.tracker?.scope_rules.filter(
-                  (x: any) =>
-                    x.rule_type == 'INCLUDE' &&
-                    x.scope_type == 'PROJECT' &&
-                    x.identifier == proj.id
-                ).length > 0;
+                this.tracker?.scope_rules.some(
+                  (rule: any) =>
+                    rule.rule_type === 'INCLUDE' &&
+                    rule.scope_type === 'PROJECT' &&
+                    String(rule.identifier) === scopeId
+                ) ?? false;
               return acc;
             },
             {} as Record<string, boolean>
@@ -586,13 +587,13 @@ export class AddTrackerModal extends LitElement {
         } else {
           this.selectedProjects[orgId] = projects.reduce(
             (acc: Record<string, boolean>, proj: any) => {
-              acc[proj.id] =
-                this.tracker?.scope_rules.filter(
-                  (x: any) =>
-                    x.rule_type == 'EXCLUDE' &&
-                    x.scope_type == 'PROJECT' &&
-                    x.identifier == proj.id
-                ).length == 0;
+              const scopeId = this.projectScopeIdentifier(proj);
+              acc[proj.id] = !this.tracker?.scope_rules.some(
+                (rule: any) =>
+                  rule.rule_type === 'EXCLUDE' &&
+                  rule.scope_type === 'PROJECT' &&
+                  String(rule.identifier) === scopeId
+              );
               return acc;
             },
             {} as Record<string, boolean>
@@ -689,6 +690,13 @@ export class AddTrackerModal extends LitElement {
     this.areAllProjectsSelected = allSelected;
   }
 
+  private projectScopeIdentifier(project: {
+    id: string;
+    identifier?: string;
+  }): string {
+    return String(project.identifier ?? project.id);
+  }
+
   async handleSave() {
     this.isLoading = true;
     this.errorMessage = '';
@@ -698,27 +706,36 @@ export class AddTrackerModal extends LitElement {
         scopeRules.push({
           rule_type: 'INCLUDE',
           scope_type: 'ORGANIZATION',
-          identifier: org.id,
+          identifier: String(org.id),
         });
         if (this.includeFutureProjects) {
           for (const proj of this.projects[org.id] || []) {
+            const projectIdentifier = this.projectScopeIdentifier(proj);
             if (!this.selectedProjects[org.id]?.[proj.id]) {
               scopeRules.push({
                 rule_type: 'EXCLUDE',
                 scope_type: 'PROJECT',
-                identifier: proj.id,
+                identifier: projectIdentifier,
               });
             }
           }
         } else {
-          for (const proj of this.projects[org.id] || []) {
-            if (this.selectedProjects[org.id]?.[proj.id]) {
-              scopeRules.push({
-                rule_type: 'INCLUDE',
-                scope_type: 'PROJECT',
-                identifier: proj.id,
-              });
+          for (const [projectId, selected] of Object.entries(
+            this.selectedProjects[org.id] || {}
+          )) {
+            if (!selected) {
+              continue;
             }
+            const project = (this.projects[org.id] || []).find(
+              (candidate) => candidate.id === projectId
+            );
+            scopeRules.push({
+              rule_type: 'INCLUDE',
+              scope_type: 'PROJECT',
+              identifier: project
+                ? this.projectScopeIdentifier(project)
+                : String(projectId),
+            });
           }
         }
       }

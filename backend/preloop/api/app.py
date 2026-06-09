@@ -8,6 +8,7 @@ import logging
 import os
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -69,6 +70,11 @@ from preloop.sync.services.event_bus import connect_nats, close_nats  # NATS int
 
 
 logger = logging.getLogger(__name__)
+
+_api_usage_executor = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="api_usage_",
+)
 
 
 class PyinstrumentMiddleware(BaseHTTPMiddleware):
@@ -193,9 +199,8 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
                 # Ignore errors in token decoding
                 pass
 
-        # Log usage in database in a background thread to prevent pool starvation
+        # Log usage in database on a shared executor to avoid pool starvation
         if user_id and status_code < 500:  # Only log successful API calls
-            import threading
 
             def log_usage_sync() -> None:
                 try:
@@ -221,7 +226,7 @@ class ApiUsageMiddleware(BaseHTTPMiddleware):
                 except Exception as e:
                     logger.error(f"Error logging API usage: {str(e)}")
 
-            threading.Thread(target=log_usage_sync, daemon=True).start()
+            _api_usage_executor.submit(log_usage_sync)
 
         return response
 

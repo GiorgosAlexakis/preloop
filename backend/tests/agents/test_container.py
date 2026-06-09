@@ -740,6 +740,138 @@ class TestPrepareInitCommands:
         assert "npm run build" in result
 
 
+class TestExtractBranchFromTrigger:
+    """Tests for branch extraction helpers used during git clone."""
+
+    def test_extract_source_branch_from_gitlab_mr(self, container_executor):
+        """GitLab MR payloads should expose the source branch."""
+        trigger_data = {
+            "payload": {
+                "object_attributes": {
+                    "source_branch": "feature/foo",
+                    "target_branch": "main",
+                }
+            }
+        }
+        assert (
+            container_executor._extract_source_branch_from_trigger(trigger_data)
+            == "feature/foo"
+        )
+
+    def test_extract_target_branch_from_gitlab_mr(self, container_executor):
+        """GitLab MR payloads should expose the target branch."""
+        trigger_data = {
+            "payload": {
+                "object_attributes": {
+                    "source_branch": "control-plane",
+                    "target_branch": "main",
+                }
+            }
+        }
+        assert (
+            container_executor._extract_target_branch_from_trigger(trigger_data)
+            == "main"
+        )
+
+    def test_extract_target_branch_from_github_pr(self, container_executor):
+        """GitHub PR payloads should expose the base branch."""
+        trigger_data = {
+            "payload": {
+                "pull_request": {
+                    "head": {"ref": "feature/foo"},
+                    "base": {"ref": "develop"},
+                }
+            }
+        }
+        assert (
+            container_executor._extract_target_branch_from_trigger(trigger_data)
+            == "develop"
+        )
+
+    def test_git_clone_uses_target_branch_when_commit_sha_present(
+        self, container_executor
+    ):
+        """MR review clones should avoid unavailable source branch refs."""
+        context = {
+            "flow_id": "flow-1",
+            "execution_id": "exec-12345678",
+            "flow_name": "Merge Request Reviewer",
+            "trigger_project_id": "project-1",
+            "trigger_event_data": {
+                "payload": {
+                    "object_attributes": {
+                        "source_branch": "control-plane",
+                        "target_branch": "main",
+                        "last_commit": {
+                            "id": "91f578b058c4d0426067f7f28632d77d2c2c374b"
+                        },
+                    },
+                    "project": {
+                        "http_url": "https://gitlab.example.com/group/repo.git"
+                    },
+                }
+            },
+            "git_clone_config": {
+                "enabled": True,
+                "repositories": [
+                    {
+                        "repository_url": "https://gitlab.example.com/group/repo.git",
+                        "clone_path": "/workspace",
+                    }
+                ],
+            },
+        }
+
+        with patch.object(
+            container_executor,
+            "_get_token_from_project",
+            return_value=(None, None),
+        ):
+            command = container_executor._prepare_git_clone_command(context)
+
+        assert "git clone -b main" in command
+        assert "git clone -b control-plane" not in command
+        assert "91f578b058c4d0426067f7f28632d77d2c2c374b" in command
+        assert "refs/merge-requests/2/head" not in command  # no iid in payload
+
+    def test_git_clone_fetches_gitlab_mr_ref_when_iid_present(self, container_executor):
+        """GitLab MR review should fetch merge request refs for commit checkout."""
+        context = {
+            "flow_id": "flow-1",
+            "execution_id": "exec-12345678",
+            "flow_name": "Merge Request Reviewer",
+            "trigger_event_data": {
+                "payload": {
+                    "object_attributes": {
+                        "iid": 2,
+                        "source_branch": "control-plane",
+                        "target_branch": "main",
+                        "last_commit": {
+                            "id": "91f578b058c4d0426067f7f28632d77d2c2c374b"
+                        },
+                    },
+                    "project": {
+                        "http_url": "https://gitlab.example.com/group/repo.git"
+                    },
+                }
+            },
+            "git_clone_config": {
+                "enabled": True,
+                "repositories": [
+                    {
+                        "repository_url": "https://gitlab.example.com/group/repo.git",
+                        "clone_path": "/workspace",
+                    }
+                ],
+            },
+        }
+
+        command = container_executor._prepare_git_clone_command(context)
+
+        assert "refs/merge-requests/2/head:preloop-mr-head" in command
+        assert "FATAL ERROR: Could not checkout commit" in command
+
+
 class TestExtractRepoUrlFromTrigger:
     """Tests for _extract_repo_url_from_trigger method."""
 

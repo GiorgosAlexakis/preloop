@@ -12,6 +12,7 @@ import {
 } from '../api';
 import type { Flow } from '../types';
 import { getAgentControlState } from '../utils/agent-control';
+import { getTrackerEventOptions } from '../constants/tracker-event-types';
 import consoleStyles from '../styles/console-styles.css?inline';
 import './add-tracker-modal';
 import './add-ai-model-modal';
@@ -185,10 +186,14 @@ export class PreloopFlowForm extends LitElement {
 
   private orgPollingInterval?: number;
   private projectPollingInterval?: number;
+  private lastSyncedTriggerKey?: string;
 
   willUpdate(changedProperties: Map<string | number | symbol, unknown>) {
-    if (changedProperties.has('flow') && this.flow && this.flow.id) {
-      this.creationMode = 'scratch';
+    if (changedProperties.has('flow')) {
+      if (this.flow?.id) {
+        this.creationMode = 'scratch';
+      }
+      void this.syncTriggerStateFromFlow();
     }
   }
 
@@ -316,33 +321,8 @@ export class PreloopFlowForm extends LitElement {
         }
       }
 
-      // Determine trigger type
-      if (this.flow && this.flow.trigger_event_source) {
-        this.triggerType =
-          this.flow.trigger_event_source === 'webhook' ? 'webhook' : 'tracker';
-      } else if (this.flow && this.flow.webhook_config) {
-        this.triggerType = 'webhook';
-      }
-
-      // Load organizations if a tracker is already selected
-      if (
-        this.flow.trigger_event_source &&
-        this.flow.trigger_event_source !== 'webhook'
-      ) {
-        const allOrgs = await listOrganizations().catch(() => []);
-        this.organizations = allOrgs.filter(
-          (org: any) => org.tracker_id === this.flow.trigger_event_source
-        );
-
-        if (this.organizations.length === 0) {
-          this.startPollingOrganizations(this.flow.trigger_event_source);
-        }
-
-        if (this.flow.trigger_organization_id) {
-          const allProjs = await listProjects().catch(() => []);
-          this.projects = allProjs;
-        }
-      }
+      // Determine trigger type and load tracker scope data
+      await this.syncTriggerStateFromFlow(true);
 
       if (this.flowExecutionPath === 'persistent') {
         if (!this.targetAgentId && this.longRunningAgents.length > 0) {
@@ -361,6 +341,58 @@ export class PreloopFlowForm extends LitElement {
       this._loadingReferenceData = false;
       this.requestUpdate();
     }
+  }
+
+  private async syncTriggerStateFromFlow(force = false) {
+    const flowId = this.flow?.id;
+    const source = this.flow?.trigger_event_source;
+    const orgId = this.flow?.trigger_organization_id;
+    const syncKey = `${flowId ?? 'new'}:${source ?? ''}:${orgId ?? ''}:${this.trackers.length}`;
+
+    if (!force && syncKey === this.lastSyncedTriggerKey) {
+      return;
+    }
+
+    if (source === 'webhook') {
+      this.triggerType = 'webhook';
+    } else if (source) {
+      this.triggerType = 'tracker';
+    } else if (this.flow?.webhook_config) {
+      this.triggerType = 'webhook';
+    }
+
+    if (this.triggerType === 'tracker' && source) {
+      const allOrgs = await listOrganizations().catch(() => []);
+      this.organizations = allOrgs.filter(
+        (org: any) => org.tracker_id === source
+      );
+
+      if (this.organizations.length === 0) {
+        this.startPollingOrganizations(source);
+      } else if (this.orgPollingInterval) {
+        clearInterval(this.orgPollingInterval);
+        this.isPollingOrganizations = false;
+      }
+
+      if (this.flow.trigger_organization_id) {
+        const allProjs = await listProjects().catch(() => []);
+        this.projects = allProjs;
+
+        const orgProjects = allProjs.filter(
+          (project: any) =>
+            project.organization_id === this.flow.trigger_organization_id
+        );
+        if (orgProjects.length === 0) {
+          this.startPollingProjects(this.flow.trigger_organization_id);
+        } else if (this.projectPollingInterval) {
+          clearInterval(this.projectPollingInterval);
+          this.isPollingProjects = false;
+        }
+      }
+    }
+
+    this.lastSyncedTriggerKey = syncKey;
+    this.requestUpdate();
   }
 
   private updateModelSelectionForAgent() {
@@ -476,34 +508,7 @@ export class PreloopFlowForm extends LitElement {
       (t) => t.id === this.flow.trigger_event_source
     );
     if (!tracker) return [];
-
-    switch (tracker.tracker_type) {
-      case 'github':
-        return [
-          { name: 'Issue Opened', value: 'issue_opened' },
-          { name: 'Issue Updated', value: 'issue_updated' },
-          { name: 'Issue Closed', value: 'issue_closed' },
-          { name: 'Pull Request Opened', value: 'pull_request_opened' },
-          { name: 'Pull Request Closed', value: 'pull_request_closed' },
-          { name: 'Comment Created', value: 'comment_created' },
-          { name: 'Push to Repository', value: 'push' },
-        ];
-      case 'gitlab':
-        return [
-          { name: 'Issue Opened', value: 'issue_opened' },
-          { name: 'Merge Request Opened', value: 'merge_request_opened' },
-          { name: 'Comment Created', value: 'comment_created' },
-          { name: 'Push', value: 'push' },
-        ];
-      case 'jira':
-        return [
-          { name: 'Issue Opened', value: 'issue_opened' },
-          { name: 'Issue Updated', value: 'issue_updated' },
-          { name: 'Comment Created', value: 'comment_created' },
-        ];
-      default:
-        return [];
-    }
+    return getTrackerEventOptions(tracker.tracker_type);
   }
 
   private isToolSelected(serverName: string, toolName: string): boolean {
@@ -1001,7 +1006,9 @@ export class PreloopFlowForm extends LitElement {
                       )
                       .map(
                         (p) =>
-                          html`<sl-option .value=${p.id}>${p.name}</sl-option>`
+                          html`<sl-option .value=${p.id}
+                            >${p.name || p.identifier || p.key}</sl-option
+                          >`
                       )}
                   </sl-select>
 

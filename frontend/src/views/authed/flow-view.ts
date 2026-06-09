@@ -1,4 +1,5 @@
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import {
@@ -41,6 +42,7 @@ import '../../components/icon-selector.ts';
 import '../../components/resource-actions.ts';
 import type { ResourceAction } from '../../components/resource-actions.ts';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import { getTrackerEventOptions } from '../../constants/tracker-event-types';
 
 interface GitCloneRepository {
   tracker_id: string;
@@ -99,9 +101,27 @@ interface Flow {
 
 @customElement('flow-view')
 export class FlowView extends LitElement {
-  // Vaadin Router lifecycle callback
+  private initialized = false;
+  private _formInstanceId = 0;
+  private _routeSearch = '';
+
   onBeforeEnter(location: any) {
-    this.flowId = location.params.flowId;
+    const nextFlowId = location.params.flowId as string | undefined;
+    const nextSearch = location.search || '';
+    const nextIsEditing =
+      new URLSearchParams(nextSearch).get('edit') === 'true';
+    const changed =
+      this.flowId !== nextFlowId ||
+      this._routeSearch !== nextSearch ||
+      this.isEditing !== nextIsEditing;
+
+    this.flowId = nextFlowId;
+    this._routeSearch = nextSearch;
+    this.isEditing = nextIsEditing;
+
+    if (this.initialized && changed) {
+      void this.loadFlowData(new URLSearchParams(nextSearch));
+    }
   }
 
   static styles = [
@@ -197,6 +217,9 @@ export class FlowView extends LitElement {
   private isEditing = false;
 
   @state()
+  private flowReady = false;
+
+  @state()
   private trackers: any[] = [];
 
   @state()
@@ -261,7 +284,6 @@ export class FlowView extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
 
-    // Check if current user is admin
     try {
       const { getUserProfile } = await import('../../api');
       const currentUser = await getUserProfile();
@@ -271,26 +293,28 @@ export class FlowView extends LitElement {
       this.isAdmin = false;
     }
 
-    const urlParams = new URLSearchParams(window.location.search);
+    if (!this.initialized) {
+      this.initialized = true;
+      const urlParams = new URLSearchParams(window.location.search);
+      this.isEditing = urlParams.get('edit') === 'true';
+      this._routeSearch = window.location.search || '';
+      await this.loadFlowData(urlParams);
+    }
+  }
+
+  private async loadFlowData(urlParams: URLSearchParams) {
+    this.flowReady = false;
+    this._formInstanceId += 1;
+
     const presetId = urlParams.get('preset_id');
-    this.isEditing = urlParams.get('edit') === 'true';
 
     if (this.flowId) {
-      // Viewing or editing an existing flow
       this.isNew = false;
-      this.creationMode = 'scratch';
       this.flow = await getFlow(this.flowId);
 
-      console.log(
-        'DEBUG: Loaded flow git_clone_config:',
-        this.flow.git_clone_config
-      );
-
-      // Set trigger type based on flow
       this.triggerType =
         this.flow.trigger_event_source === 'webhook' ? 'webhook' : 'tracker';
 
-      // Load recent executions for this flow
       const allExecutions = await import('../../api').then((m) =>
         m.getFlowExecutions({ flowId: this.flowId, limit: 10 })
       );
@@ -302,7 +326,6 @@ export class FlowView extends LitElement {
         )
         .slice(0, 10);
 
-      // Load all necessary data for editing (in parallel)
       this._loadingReferenceData = true;
       try {
         const [
@@ -332,9 +355,7 @@ export class FlowView extends LitElement {
         this._loadingReferenceData = false;
       }
 
-      // Additional trigger-specific setup if this is a tracker-based flow
       if (this.triggerType === 'tracker' && this.flow.trigger_event_source) {
-        // Start polling if no organizations for this tracker yet
         const trackerOrgs = (this.organizations || []).filter(
           (org: any) => org.tracker_id === this.flow.trigger_event_source
         );
@@ -342,7 +363,6 @@ export class FlowView extends LitElement {
           this.startPollingOrganizations(this.flow.trigger_event_source);
         }
 
-        // Start polling projects if we have a trigger organization but no projects
         if (this.flow.trigger_organization_id) {
           const orgProjects = (this.projects || []).filter(
             (proj: any) =>
@@ -357,15 +377,12 @@ export class FlowView extends LitElement {
         }
       }
 
-      // Ensure preloop-mcp is always in allowed_mcp_servers
       if (!this.flow.allowed_mcp_servers?.includes('preloop-mcp')) {
         this.flow.allowed_mcp_servers = ['preloop-mcp'];
       }
 
-      // Connect to WebSocket for real-time flow execution updates
       this.connectToFlowUpdates();
     } else {
-      // Creating new flow
       this.isNew = true;
       this.flow = {
         name: '',
@@ -375,12 +392,10 @@ export class FlowView extends LitElement {
       };
     }
 
-    // Load long-running agents to choose from in flow configurations
     try {
       const agentsRes = await getAccountAgents({ limit: 100 });
       this.longRunningAgents = agentsRes.items || [];
 
-      // Determine initial execution path and target agent from agent_config
       if (this.flow && this.flow.agent_config) {
         const cfg =
           typeof this.flow.agent_config === 'string'
@@ -393,6 +408,12 @@ export class FlowView extends LitElement {
       }
     } catch (e) {
       console.error('Failed to load long-running agents', e);
+    } finally {
+      this.flowReady = true;
+    }
+
+    if (presetId) {
+      // preset handling remains in preloop-flow-form loadReferenceData
     }
   }
 
@@ -481,6 +502,16 @@ export class FlowView extends LitElement {
   }
 
   render() {
+    if (!this.flowReady) {
+      return html`
+        <div
+          style="display: flex; justify-content: center; padding: var(--sl-spacing-2x-large);"
+        >
+          <sl-spinner style="font-size: 2rem;"></sl-spinner>
+        </div>
+      `;
+    }
+
     if (!this.isNew && !this.isEditing) {
       // View mode - show flow details
       return this.renderFlowDetails();
@@ -1025,36 +1056,40 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   renderForm() {
-    return html`
-      <preloop-flow-form
-        .flow=${this.flow}
-        @flow-submit=${async (e: CustomEvent) => {
-          const payload = e.detail.flow;
-          try {
-            if (this.isNew) {
-              if (this.sourcePresetId) {
-                payload.source_preset_id = this.sourcePresetId;
-                payload.prompt_customized = false;
-                payload.tools_customized = false;
-                payload.preset_update_available = false;
+    return repeat(
+      this.flowReady ? [this._formInstanceId] : [],
+      (instanceId) => instanceId,
+      () => html`
+        <preloop-flow-form
+          .flow=${this.flow}
+          @flow-submit=${async (e: CustomEvent) => {
+            const payload = e.detail.flow;
+            try {
+              if (this.isNew) {
+                if (this.sourcePresetId) {
+                  payload.source_preset_id = this.sourcePresetId;
+                  payload.prompt_customized = false;
+                  payload.tools_customized = false;
+                  payload.preset_update_available = false;
+                }
+                const newFlow = await createFlow(payload);
+                Router.go(`/console/flows/${newFlow.id}`);
+              } else {
+                await updateFlow(this.flowId!, payload);
+                Router.go(`/console/flows/${this.flowId}`);
               }
-              const newFlow = await createFlow(payload);
-              Router.go(`/console/flows/${newFlow.id}`);
-            } else {
-              await updateFlow(this.flowId!, payload);
-              Router.go(`/console/flows/${this.flowId}`);
+            } catch (error: any) {
+              e.target.formError =
+                error?.message || 'Failed to save flow. Please try again.';
             }
-          } catch (error: any) {
-            e.target.formError =
-              error?.message || 'Failed to save flow. Please try again.';
-          }
-        }}
-        @flow-cancel=${() =>
-          Router.go(
-            this.isNew ? '/console/flows' : `/console/flows/${this.flowId}`
-          )}
-      ></preloop-flow-form>
-    `;
+          }}
+          @flow-cancel=${() =>
+            Router.go(
+              this.isNew ? '/console/flows' : `/console/flows/${this.flowId}`
+            )}
+        ></preloop-flow-form>
+      `
+    );
   }
 
   handleInputChange(field: keyof Flow, e: Event) {
@@ -1249,57 +1284,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     const tracker = this.trackers.find(
       (t) => t.id === this.flow.trigger_event_source
     );
-    if (tracker) {
-      switch (tracker.tracker_type) {
-        case 'github':
-          return [
-            { name: 'Issue Opened', value: 'issue_opened' },
-            { name: 'Issue Updated', value: 'issue_updated' },
-            { name: 'Issue Closed', value: 'issue_closed' },
-            { name: 'Issue Reopened', value: 'issue_reopened' },
-            { name: 'Pull Request Opened', value: 'pull_request_opened' },
-            { name: 'Pull Request Updated', value: 'pull_request_updated' },
-            { name: 'Pull Request Closed', value: 'pull_request_closed' },
-            { name: 'Pull Request Merged', value: 'pull_request_merged' },
-            { name: 'Pull Request Reopened', value: 'pull_request_reopened' },
-            { name: 'Comment Created', value: 'comment_created' },
-            { name: 'Comment Updated', value: 'comment_updated' },
-            { name: 'Push to Repository', value: 'push' },
-            { name: 'Release Published', value: 'release' },
-          ];
-        case 'gitlab':
-          return [
-            { name: 'Issue Opened', value: 'issue_opened' },
-            { name: 'Issue Updated', value: 'issue_updated' },
-            { name: 'Issue Closed', value: 'issue_closed' },
-            { name: 'Issue Reopened', value: 'issue_reopened' },
-            { name: 'Merge Request Opened', value: 'merge_request_opened' },
-            { name: 'Merge Request Updated', value: 'merge_request_updated' },
-            { name: 'Merge Request Closed', value: 'merge_request_closed' },
-            { name: 'Merge Request Merged', value: 'merge_request_merged' },
-            { name: 'Merge Request Approved', value: 'merge_request_approved' },
-            { name: 'Merge Request Reopened', value: 'merge_request_reopened' },
-            { name: 'Comment Created', value: 'comment_created' },
-            { name: 'Comment Updated', value: 'comment_updated' },
-            { name: 'Push to Repository', value: 'push' },
-            { name: 'Tag Push', value: 'tag_push' },
-            { name: 'Pipeline Event', value: 'pipeline' },
-            { name: 'Release Published', value: 'release' },
-          ];
-        case 'jira':
-          return [
-            { name: 'Issue Opened', value: 'issue_opened' },
-            { name: 'Issue Updated', value: 'issue_updated' },
-            { name: 'Issue Deleted', value: 'issue_deleted' },
-            { name: 'Comment Created', value: 'comment_created' },
-            { name: 'Comment Updated', value: 'comment_updated' },
-            { name: 'Comment Deleted', value: 'comment_deleted' },
-          ];
-        default:
-          return [];
-      }
-    }
-    return [];
+    if (!tracker) return [];
+    return getTrackerEventOptions(tracker.tracker_type);
   }
 
   handleEventChange(e: any) {

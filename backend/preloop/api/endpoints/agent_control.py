@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
@@ -47,6 +48,34 @@ router = APIRouter()
 
 HEARTBEAT_TOUCH_INTERVAL = timedelta(seconds=15)
 SUPPORTED_CONTROL_AGENT_KINDS = {"hermes", "openclaw"}
+
+
+@dataclass(frozen=True)
+class AgentControlConnectionContext:
+    """Stable connection identifiers that survive managed-agent deletion."""
+
+    account_id: str
+    managed_agent_id: str
+    runtime_session_id: str
+    session_source_type: str
+    session_source_id: str
+    managed_agent_session_source_type: str
+    managed_agent_session_source_id: str
+
+
+def _connection_context_from_auth(
+    context: RuntimeBearerAuthContext,
+) -> AgentControlConnectionContext:
+    """Capture connection identifiers before ORM rows can be deleted."""
+    return AgentControlConnectionContext(
+        account_id=str(context.runtime_session.account_id),
+        managed_agent_id=str(context.managed_agent.id),
+        runtime_session_id=str(context.runtime_session.id),
+        session_source_type=context.runtime_session.session_source_type,
+        session_source_id=context.runtime_session.session_source_id,
+        managed_agent_session_source_type=context.managed_agent.session_source_type,
+        managed_agent_session_source_id=context.managed_agent.session_source_id,
+    )
 
 
 def _agent_has_control_config(db: Session, *, account_id: str, agent: Any) -> bool:
@@ -161,7 +190,7 @@ def _extract_bearer_token(websocket: WebSocket) -> Optional[str]:
 
 
 def _connection_envelope(
-    context: RuntimeBearerAuthContext,
+    connection: AgentControlConnectionContext,
     *,
     envelope_type: str,
     name: str,
@@ -172,11 +201,11 @@ def _connection_envelope(
         type=envelope_type,  # type: ignore[arg-type]
         name=name,
         message_id=message_id or str(uuid.uuid4()),
-        account_id=context.runtime_session.account_id,
-        managed_agent_id=context.managed_agent.id,
-        runtime_session_id=context.runtime_session.id,
-        session_source_type=context.runtime_session.session_source_type,
-        session_source_id=context.runtime_session.session_source_id,
+        account_id=connection.account_id,
+        managed_agent_id=connection.managed_agent_id,
+        runtime_session_id=connection.runtime_session_id,
+        session_source_type=connection.session_source_type,
+        session_source_id=connection.session_source_id,
         timestamp=datetime.now(UTC),
         payload=payload or {},
     )
@@ -403,6 +432,7 @@ def _persist_agent_control_result(
 async def _emit_agent_message(
     db: Session,
     context: RuntimeBearerAuthContext,
+    connection: AgentControlConnectionContext,
     inbound: AgentControlInboundEnvelope,
 ) -> None:
     if inbound.type == "heartbeat":
@@ -411,7 +441,7 @@ async def _emit_agent_message(
     event_type = f"agent_control_{inbound.type}"
     emit_account_event(
         build_account_event(
-            account_id=str(context.runtime_session.account_id),
+            account_id=connection.account_id,
             topic=ACCOUNT_TOPIC_AGENT_CONTROL,
             event_type=event_type,
             payload={
@@ -419,10 +449,10 @@ async def _emit_agent_message(
                 "message_id": inbound.message_id,
                 "agent_payload": inbound.payload,
             },
-            managed_agent_id=str(context.managed_agent.id),
-            runtime_session_id=str(context.runtime_session.id),
-            session_source_type=context.runtime_session.session_source_type,
-            session_source_id=context.runtime_session.session_source_id,
+            managed_agent_id=connection.managed_agent_id,
+            runtime_session_id=connection.runtime_session_id,
+            session_source_type=connection.session_source_type,
+            session_source_id=connection.session_source_id,
         )
     )
 
@@ -449,19 +479,20 @@ async def managed_agent_control_websocket(
         return
 
     await websocket.accept()
+    connection = _connection_context_from_auth(context)
     connection_id = await agent_control_manager.connect(
-        managed_agent_id=str(context.managed_agent.id),
+        managed_agent_id=connection.managed_agent_id,
         websocket=websocket,
     )
     command_subscription = await _subscribe_to_commands(
-        managed_agent_id=str(context.managed_agent.id),
+        managed_agent_id=connection.managed_agent_id,
         websocket=websocket,
     )
 
     now = datetime.now(UTC)
     _touch_presence(db, context, observed_at=now)
     connected = _connection_envelope(
-        context,
+        connection,
         envelope_type="presence",
         name="connected",
         payload={"status": "online"},
@@ -469,12 +500,12 @@ async def managed_agent_control_websocket(
     await websocket.send_json(connected.model_dump(mode="json"))
     emit_account_event(
         build_account_event(
-            account_id=str(context.runtime_session.account_id),
+            account_id=connection.account_id,
             topic=ACCOUNT_TOPIC_AGENT_CONTROL,
             event_type="managed_agent_online",
             payload=connected.model_dump(mode="json"),
-            managed_agent_id=str(context.managed_agent.id),
-            runtime_session_id=str(context.runtime_session.id),
+            managed_agent_id=connection.managed_agent_id,
+            runtime_session_id=connection.runtime_session_id,
         )
     )
 
@@ -500,12 +531,19 @@ async def managed_agent_control_websocket(
                 )
                 continue
 
-            _touch_presence(db, context, observed_at=datetime.now(UTC))
-            _mark_control_verified_from_capabilities(db, context, inbound)
-            await _emit_agent_message(db, context, inbound)
+            try:
+                _touch_presence(db, context, observed_at=datetime.now(UTC))
+                _mark_control_verified_from_capabilities(db, context, inbound)
+            except Exception:
+                logger.info(
+                    "Managed agent %s deleted during control websocket; closing",
+                    connection.managed_agent_id,
+                )
+                break
+            await _emit_agent_message(db, context, connection, inbound)
             if inbound.type == "heartbeat":
                 ack = _connection_envelope(
-                    context,
+                    connection,
                     envelope_type="ack",
                     name="heartbeat",
                     message_id=inbound.message_id,
@@ -524,23 +562,23 @@ async def managed_agent_control_websocket(
         if removed_active:
             crud_managed_agent.clear_runtime_session_binding(
                 db,
-                account_id=str(context.runtime_session.account_id),
-                session_source_type=context.managed_agent.session_source_type,
-                session_source_id=context.managed_agent.session_source_id,
-                runtime_session_id=context.runtime_session.id,
+                account_id=connection.account_id,
+                session_source_type=connection.managed_agent_session_source_type,
+                session_source_id=connection.managed_agent_session_source_id,
+                runtime_session_id=connection.runtime_session_id,
                 commit=True,
             )
             emit_account_event(
                 build_account_event(
-                    account_id=str(context.runtime_session.account_id),
+                    account_id=connection.account_id,
                     topic=ACCOUNT_TOPIC_AGENT_CONTROL,
                     event_type="managed_agent_offline",
                     payload={
-                        "managed_agent_id": str(context.managed_agent.id),
-                        "runtime_session_id": str(context.runtime_session.id),
+                        "managed_agent_id": connection.managed_agent_id,
+                        "runtime_session_id": connection.runtime_session_id,
                     },
-                    managed_agent_id=str(context.managed_agent.id),
-                    runtime_session_id=str(context.runtime_session.id),
+                    managed_agent_id=connection.managed_agent_id,
+                    runtime_session_id=connection.runtime_session_id,
                 )
             )
 

@@ -701,17 +701,19 @@ export interface ApiKey {
 export interface Project {
   id: string;
   name: string;
-  key: string;
-  description: string;
-  url: string;
+  key?: string;
+  identifier?: string;
+  description?: string;
+  url?: string;
   organization_id: string;
-  tracker_id: string;
+  tracker_id?: string;
 }
 
 export interface Organization {
   id: string;
   name: string;
-  key: string;
+  key?: string;
+  identifier?: string;
   tracker_id: string;
 }
 

@@ -376,9 +376,11 @@ async def upload_policy(
     )
 
     if not result.success:
-        logger.error(
-            f"Failed to apply policy '{policy.metadata.name}' for account {account.id}: "
-            f"{result.errors}"
+        logger.warning(
+            "Policy apply rejected for account %s policy '%s': %s",
+            account.id,
+            policy.metadata.name,
+            result.errors,
         )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

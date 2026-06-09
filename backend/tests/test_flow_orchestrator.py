@@ -1372,6 +1372,32 @@ class TestFlowExecutionOrchestrator:
         assert execution_context["model_api_key"] is None
         assert "model_gateway_disabled_reason" not in execution_context
 
+    def test_resolve_trigger_project_id_prefers_event_project(
+        self, db_session: Session, test_flow: Flow, mock_nats_client
+    ):
+        """Webhook project should win over flow.trigger_project_ids[0]."""
+        android_id = str(uuid4())
+        ios_id = str(uuid4())
+        test_flow.trigger_project_ids = [ios_id, android_id]
+
+        orchestrator = FlowExecutionOrchestrator(
+            db=db_session,
+            flow_id=test_flow.id,
+            trigger_event_data={
+                "source": "gitlab",
+                "account_id": str(test_flow.account_id),
+                "tracker_id": str(uuid4()),
+                "project_id": android_id,
+                "payload": {
+                    "project": {"path_with_namespace": "spacecode/preloop-android"}
+                },
+            },
+            nats_client=mock_nats_client,
+        )
+        orchestrator._get_flow_details()
+
+        assert orchestrator._resolve_trigger_project_id() == android_id
+
     @pytest.mark.skip(
         reason="FK constraint prevents creating flow with non-existent AI model. "
         "This edge case cannot occur in production. Coverage tested via code review."

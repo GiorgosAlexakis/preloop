@@ -35,6 +35,7 @@ class TestInitSentry:
                     call_kw = mock_sdk.init.call_args[1]
                     assert call_kw["dsn"] == "https://key@sentry.io/1"
                     assert call_kw["environment"] == "production"
+                    assert call_kw["before_send"] is not None
 
     def test_staging_env_detected(self):
         """Staging URL sets environment to staging."""

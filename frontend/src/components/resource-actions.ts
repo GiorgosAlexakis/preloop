@@ -39,6 +39,10 @@ export class ResourceActions extends LitElement {
   /** Render all actions behind the overflow menu, useful inside clickable cards. */
   @property({ type: Boolean, attribute: 'menu-only' }) menuOnly = false;
 
+  /** When false, always show every action instead of collapsing into overflow. */
+  @property({ type: Boolean, attribute: 'collapse-overflow' })
+  collapseOverflow = true;
+
   @state() private containerWidth = 0;
   private resizeObserver!: ResizeObserver;
 
@@ -203,7 +207,7 @@ export class ResourceActions extends LitElement {
     }
 
     // We can do a rudimentary calculation based on container width.
-    if (!this.menuOnly && this.containerWidth > 0) {
+    if (!this.menuOnly && this.collapseOverflow && this.containerWidth > 0) {
       // Let's assume average button width + gap is 120px
       const estimatedTotalWidth = effectiveActions.length * 120;
 
