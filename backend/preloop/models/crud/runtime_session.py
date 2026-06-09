@@ -23,6 +23,8 @@ from ..models.flow import Flow
 from ..models.runtime_session import RuntimeSession
 from .base import CRUDBase
 
+_summary_columns_cache: dict[int, bool] = {}
+
 
 def _gateway_usage_base_query(
     db: Session,
@@ -650,17 +652,22 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
     @staticmethod
     def _summary_columns_available(db: Session) -> bool:
         """Return whether the runtime session summary migration has been applied."""
+        bind = db.get_bind()
+        if bind is None:
+            return False
+        cache_key = id(bind)
+        if cache_key in _summary_columns_cache:
+            return _summary_columns_cache[cache_key]
         try:
-            bind = db.get_bind()
-            if bind is None:
-                return False
             columns = {
                 column["name"]
                 for column in inspect(bind).get_columns("runtime_session")
             }
+            available = {"summary", "summary_updated_at"}.issubset(columns)
         except Exception:
-            return False
-        return {"summary", "summary_updated_at"}.issubset(columns)
+            available = False
+        _summary_columns_cache[cache_key] = available
+        return available
 
     @staticmethod
     def _usage_join_conditions(

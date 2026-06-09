@@ -763,7 +763,7 @@ async def _route_managed_agent_prompt(
     return AgentControlCommandResponse(
         command_id=envelope.message_id,
         managed_agent_id=agent.id,
-        runtime_session_id=agent.runtime_session_id,
+        runtime_session_id=envelope.runtime_session_id,
         target_session_id=(
             history_session.id
             if request.start_new_session and history_session is not None

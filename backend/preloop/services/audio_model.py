@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol
 from urllib import error as urllib_error
@@ -24,6 +25,8 @@ SUPPORTED_MODEL_KINDS = {MODEL_KIND_LLM, MODEL_KIND_STT, MODEL_KIND_TTS}
 OPENAI_AUDIO_PROVIDERS = {"openai", "custom", "openai-compatible"}
 GOOGLE_AUDIO_PROVIDERS = {"google"}
 GOOGLE_SPEECH_RECOGNIZE_URL = "https://speech.googleapis.com/v1/speech:recognize"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -163,9 +166,15 @@ class GoogleSpeechAudioProviderBackend:
                 response_payload = json.loads(response.read().decode("utf-8"))
         except urllib_error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise ValueError(f"Google STT request failed: {detail}") from exc
+            logger.warning(
+                "Google STT request failed with HTTP %s: %s",
+                exc.code,
+                detail[:500],
+            )
+            raise ValueError("Google STT request failed") from exc
         except urllib_error.URLError as exc:
-            raise ValueError(f"Google STT request failed: {exc.reason}") from exc
+            logger.warning("Google STT request failed: %s", exc.reason)
+            raise ValueError("Google STT request failed") from exc
 
         transcripts = [
             alternative.get("transcript", "")

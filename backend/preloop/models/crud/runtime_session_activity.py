@@ -13,6 +13,8 @@ from ..models.runtime_session import RuntimeSession
 from ..models.runtime_session_activity import RuntimeSessionActivity
 from .base import CRUDBase
 
+MAX_AGENT_CONTROL_MESSAGE_SUMMARY_LEN = 2000
+
 
 class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
     """CRUD helpers for normalized runtime-session activity."""
@@ -154,21 +156,23 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
     ) -> RuntimeSessionActivity:
         """Persist one operator-to-agent control message."""
         activity_timestamp = timestamp or datetime.now(timezone.utc)
+        summary = message[:MAX_AGENT_CONTROL_MESSAGE_SUMMARY_LEN]
         db_obj = RuntimeSessionActivity(
             account_id=account_id,
             runtime_session_id=runtime_session_id,
             activity_type="agent_control_message",
             status=status,
-            summary=message,
+            summary=summary,
             metadata_=metadata,
             timestamp=activity_timestamp,
         )
         db.add(db_obj)
-
-        runtime_session = db.get(RuntimeSession, runtime_session_id)
-        if runtime_session is not None:
-            runtime_session.last_activity_at = activity_timestamp
-            db.add(runtime_session)
+        self._touch_runtime_session_and_agent(
+            db,
+            account_id=account_id,
+            runtime_session_id=runtime_session_id,
+            activity_timestamp=activity_timestamp,
+        )
 
         if commit:
             db.commit()
@@ -214,6 +218,13 @@ class CRUDRuntimeSessionActivity(CRUDBase[RuntimeSessionActivity]):
             db.add(original)
 
         if not message:
+            activity_timestamp = timestamp or datetime.now(timezone.utc)
+            self._touch_runtime_session_and_agent(
+                db,
+                account_id=account_id,
+                runtime_session_id=runtime_session_id,
+                activity_timestamp=activity_timestamp,
+            )
             if commit:
                 db.commit()
             return original

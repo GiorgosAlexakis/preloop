@@ -52,6 +52,7 @@ AGENT_EXEC_START_MARKER = "PRELOOP_AGENT_EXEC_START"
 MCP_TOOL_LOOP_PATTERN_MAX_LENGTH = 3
 MCP_TOOL_LOOP_MIN_REPETITIONS = 3
 MCP_TOOL_LOOP_SINGLE_CALL_REPETITIONS = 4
+MCP_TOOL_LOOP_DUPLICATE_WINDOW_SECONDS = 0.5
 
 # Instruction appended to prompts to have agents signal success.
 # IMPORTANT: The sentinel is kept INLINE (not on its own line) so that when
@@ -1619,6 +1620,7 @@ class FlowExecutionOrchestrator:
         )
 
         signatures: list[str] = []
+        timestamps: list[datetime] = []
         for activity in reversed(activities):
             metadata = activity.metadata_ or {}
             signatures.append(
@@ -1632,11 +1634,43 @@ class FlowExecutionOrchestrator:
                     default=str,
                 )
             )
-        return signatures
+            timestamps.append(activity.timestamp)
+        return self._dedupe_rapid_duplicate_signatures(signatures, timestamps)
+
+    @staticmethod
+    def _dedupe_rapid_duplicate_signatures(
+        signatures: list[str],
+        timestamps: list[datetime],
+        *,
+        max_delta_seconds: float = MCP_TOOL_LOOP_DUPLICATE_WINDOW_SECONDS,
+    ) -> list[str]:
+        """Drop paired duplicate signatures that arrive within a short window."""
+        if not signatures:
+            return []
+
+        deduped_signatures: list[str] = [signatures[0]]
+        last_kept_timestamp = timestamps[0] if timestamps else None
+        for signature, timestamp in zip(signatures[1:], timestamps[1:], strict=False):
+            if (
+                signature == deduped_signatures[-1]
+                and last_kept_timestamp is not None
+                and timestamp is not None
+                and abs((timestamp - last_kept_timestamp).total_seconds())
+                <= max_delta_seconds
+            ):
+                continue
+            deduped_signatures.append(signature)
+            last_kept_timestamp = timestamp
+        return deduped_signatures
 
     @staticmethod
     def _detect_repeated_tool_cycle(signatures: list[str]) -> Optional[Dict[str, Any]]:
-        """Detect obviously looping tool cycles like A,A,A,A or A,B,A,B,A,B."""
+        """Detect tight loops where the same tool+arguments repeat without progress.
+
+        Legitimate flows (for example PR review) may call the same tool name several
+        times with different arguments. Only identical consecutive signatures count
+        toward a loop after rapid duplicate invocations are deduplicated.
+        """
         if len(signatures) < MCP_TOOL_LOOP_MIN_REPETITIONS:
             return None
 
@@ -1924,7 +1958,9 @@ class FlowExecutionOrchestrator:
                     )
                     error_message = (
                         "Execution stopped after detecting a repeated MCP tool loop: "
-                        f"{repeated_tools} repeated {loop_detection['repetitions']} times."
+                        f"{repeated_tools} repeated "
+                        f"{loop_detection['repetitions']} times with identical "
+                        "arguments."
                     )
                     logger.warning(error_message)
                     self.execution_logger.log_milestone(

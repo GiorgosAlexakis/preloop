@@ -756,7 +756,7 @@ def test_agent_control_prompt_can_request_new_session(
     existing_activity = crud_runtime_session_activity.list_for_runtime_session(
         db_session,
         account_id=test_user.account_id,
-        runtime_session_id=managed_agent.runtime_session_id,
+        runtime_session_id=body["runtime_session_id"],
     )
     assert all(
         item.summary != "Start a fresh investigation" for item in existing_activity

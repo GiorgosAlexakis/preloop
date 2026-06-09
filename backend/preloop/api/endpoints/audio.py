@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from io import BytesIO
@@ -29,6 +30,25 @@ TTS_RESPONSE_MEDIA_TYPES = {
     "wav": "audio/wav",
     "pcm": "audio/L16",
 }
+MAX_AUDIO_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+async def _read_upload_with_limit(upload: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks and reject payloads larger than max_bytes."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"audio upload exceeds {max_bytes} byte limit",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _audio_model_error(exc: Exception) -> HTTPException:
@@ -63,7 +83,7 @@ async def transcribe_audio(
     current_user: User = Depends(get_current_active_user),
 ) -> SpeechToTextResponse:
     """Transcribe an uploaded audio blob using the resolved account STT model."""
-    audio_bytes = await audio.read()
+    audio_bytes = await _read_upload_with_limit(audio, MAX_AUDIO_UPLOAD_BYTES)
     if not audio_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -71,7 +91,8 @@ async def transcribe_audio(
         )
 
     try:
-        transcript, resolution = AudioModelService(db).transcribe(
+        transcript, resolution = await asyncio.to_thread(
+            AudioModelService(db).transcribe,
             account_id=current_user.account_id,
             audio=audio_bytes,
             filename=audio.filename or "audio.webm",

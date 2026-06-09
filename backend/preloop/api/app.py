@@ -505,6 +505,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Skipping NATS shutdown for %s role.", service_role)
 
     logger.info("Shutting down application...")
+    logger.info("Shutting down API usage executor...")
+    _api_usage_executor.shutdown(wait=False, cancel_futures=True)
     # Restore the original jsonable_encoder
     import fastapi.encoders
 

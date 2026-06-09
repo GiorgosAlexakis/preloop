@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from preloop.models.crud.runtime_session import (
     _latest_gateway_usage_for_sessions,
+    _summary_columns_cache,
     crud_runtime_session,
 )
 from preloop.models.models.api_usage import ApiUsage
@@ -151,3 +153,25 @@ def test_latest_gateway_usage_for_sessions_returns_latest_per_session(
     assert set(latest) == {str(session_a), str(session_b)}
     assert latest[str(session_a)].model_alias == "new-model"
     assert latest[str(session_b)].model_alias == "session-b-model"
+
+
+def test_summary_columns_available_caches_per_bind(db_session) -> None:
+    """Summary-column detection should introspect the schema only once per bind."""
+    _summary_columns_cache.clear()
+    bind = db_session.get_bind()
+    inspector = MagicMock()
+    inspector.get_columns.return_value = [
+        {"name": "summary"},
+        {"name": "summary_updated_at"},
+        {"name": "id"},
+    ]
+
+    with patch(
+        "preloop.models.crud.runtime_session.inspect",
+        return_value=inspector,
+    ):
+        assert crud_runtime_session._summary_columns_available(db_session) is True
+        assert crud_runtime_session._summary_columns_available(db_session) is True
+
+    assert inspector.get_columns.call_count == 1
+    assert id(bind) in _summary_columns_cache

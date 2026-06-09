@@ -504,3 +504,26 @@ def test_default_model_exists(db_session: Session):
 
     # Verify a default exists
     assert crud_ai_model.default_model_exists(db=db_session) is True
+
+
+def test_normalize_model_kind_fields_does_not_mutate_caller_dict():
+    """model_kind normalization should return a new dict without mutating input."""
+    obj_data = {
+        "name": "Whisper",
+        "model_kind": "stt",
+        "provider_name": "openai",
+        "meta_data": {"region": "us"},
+    }
+    original = dict(obj_data)
+    original_meta = obj_data["meta_data"]
+
+    normalized = ai_model_crud_module.CRUDAIModel._normalize_model_kind_fields(obj_data)
+
+    assert obj_data == original
+    assert "model_kind" in obj_data
+    assert "model_kind" not in normalized
+    assert normalized["name"] == "Whisper"
+    assert normalized["provider_name"] == "openai"
+    assert normalized["meta_data"]["service_kind"] == "stt"
+    assert normalized["meta_data"]["region"] == "us"
+    assert original_meta["region"] == "us"

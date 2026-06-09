@@ -1,5 +1,6 @@
 """Tests for server-side audio fallback endpoints."""
 
+from preloop.api.endpoints import audio as audio_endpoint
 from preloop.models.crud import crud_ai_model
 from preloop.services import audio_model as audio_model_module
 
@@ -152,3 +153,16 @@ def test_transcribe_audio_returns_404_without_stt_model(client):
 
     assert response.status_code == 404
     assert "No STT model is available" in response.json()["detail"]
+
+
+def test_transcribe_audio_rejects_oversized_upload(client, monkeypatch):
+    """STT uploads larger than the configured limit should be rejected."""
+    monkeypatch.setattr(audio_endpoint, "MAX_AUDIO_UPLOAD_BYTES", 8)
+
+    response = client.post(
+        "/api/v1/audio/transcriptions",
+        files={"audio": ("clip.webm", b"0123456789", "audio/webm")},
+    )
+
+    assert response.status_code == 413
+    assert "byte limit" in response.json()["detail"]
