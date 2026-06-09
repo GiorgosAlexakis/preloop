@@ -27,6 +27,35 @@ class TestGetAvailableModelsForProvider:
             mock_get.assert_called_once_with("test_key")
 
     @pytest.mark.asyncio
+    async def test_get_openai_stt_models(self):
+        """Test OpenAI speech-to-text model catalog."""
+        result = await get_available_models_for_provider(
+            "openai", "test_key", model_kind="stt"
+        )
+        assert result == ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"]
+
+    @pytest.mark.asyncio
+    async def test_get_openai_tts_models(self):
+        """Test OpenAI text-to-speech model catalog."""
+        result = await get_available_models_for_provider(
+            "openai", "test_key", model_kind="tts"
+        )
+        assert result == ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"]
+
+    @pytest.mark.asyncio
+    async def test_audio_models_only_for_supported_providers(self):
+        """Non-audio providers should not offer STT/TTS choices."""
+        assert await get_available_models_for_provider(
+            "google", "test_key", model_kind="stt"
+        ) == ["latest_short", "latest_long", "command_and_search", "default"]
+        assert (
+            await get_available_models_for_provider(
+                "google", "test_key", model_kind="tts"
+            )
+            == []
+        )
+
+    @pytest.mark.asyncio
     async def test_get_anthropic_models(self):
         """Test routing to Anthropic provider."""
         with patch(
@@ -41,9 +70,9 @@ class TestGetAvailableModelsForProvider:
     async def test_get_google_models(self):
         """Test routing to Google provider."""
         with patch("preloop.services.ai_model_provider._get_google_models") as mock_get:
-            mock_get.return_value = ["gemini-2.5-pro-exp"]
+            mock_get.return_value = ["gemini-2.5-pro"]
             result = await get_available_models_for_provider("google", "test_key")
-            assert result == ["gemini-2.5-pro-exp"]
+            assert result == ["gemini-2.5-pro"]
             mock_get.assert_called_once_with("test_key")
 
     @pytest.mark.asyncio
@@ -111,7 +140,7 @@ class TestGetOpenAIModels:
         for model_id in [
             "gpt-5.4",
             "gpt-5.4-audio-preview",  # Should be filtered
-            "gpt-5.4-codex",  # Should be filtered
+            "gpt-5.4-codex",
             "text-similarity-ada-001",  # Should be filtered
             "text-search-ada-doc-001",  # Should be filtered
             "gpt-5.4-mini",
@@ -167,9 +196,9 @@ class TestGetOpenAIModels:
             result = await _get_openai_models("test_key")
 
             # Should return fallback list
-            assert "gpt-5.4" in result
-            assert "gpt-5.4-mini" in result
-            assert "gpt-5.4-codex" in result
+            assert "gpt-4.1" in result
+            assert "gpt-4.1-mini" in result
+            assert "gpt-4o" in result
 
     @pytest.mark.asyncio
     async def test_get_openai_models_without_api_key(self):
@@ -260,8 +289,8 @@ class TestGetGoogleModels:
     async def test_get_google_models_without_key(self):
         """Test getting Google models without API key."""
         result = await _get_google_models(None)
-        assert "gemini-2.5-pro-exp" in result
-        assert "gemini-2.5-flash-preview" in result
+        assert "gemini-2.5-pro" in result
+        assert "gemini-2.5-flash" in result
 
     @pytest.mark.asyncio
     async def test_get_google_models_with_valid_key(self):
@@ -282,7 +311,7 @@ class TestGetGoogleModels:
         ):
             result = await _get_google_models("valid_key")
 
-            assert "gemini-2.5-pro-exp" in result
+            assert "gemini-2.5-pro" in result
             mock_genai.configure.assert_called_once_with(api_key="valid_key")
 
     @pytest.mark.asyncio
@@ -326,7 +355,7 @@ class TestGetGoogleModels:
             with patch("builtins.__import__", side_effect=mock_import):
                 result = await _get_google_models("test_key")
                 # Should return known models even if package not installed
-                assert "gemini-2.5-pro-exp" in result
+                assert "gemini-2.5-pro" in result
         finally:
             # Restore google.generativeai if it was there
             if genai_module is not None:
@@ -346,7 +375,7 @@ class TestGetGoogleModels:
         with patch.dict(sys.modules, {"google.generativeai": mock_genai}):
             result = await _get_google_models("test_key")
             # Should return known models even on network error
-            assert "gemini-2.5-pro-exp" in result
+            assert "gemini-2.5-pro" in result
 
 
 class TestGetQwenModels:

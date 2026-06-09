@@ -579,6 +579,7 @@ class FlowTriggerService:
             # Extract project_id from the event payload for project-based filtering
             project_id = self._extract_project_id(event_data)
             if project_id:
+                event_data["project_id"] = project_id
                 logger.info(f"Extracted project_id for filtering: {project_id}")
 
             # Query for flows that match the event source and type

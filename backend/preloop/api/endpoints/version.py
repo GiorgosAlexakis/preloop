@@ -52,7 +52,7 @@ async def get_version_info(
         token = auth_header.replace("Bearer ", "")
         try:
             # Manually attempt to get user if token exists
-            current_user = await get_current_user(token=token)
+            current_user = get_current_user(token=token, db=db)
             account_id = current_user.account_id
         except HTTPException:
             # Ignore auth errors (invalid token, inactive user, etc.)

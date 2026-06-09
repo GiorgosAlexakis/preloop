@@ -42,6 +42,52 @@ def test_create_ai_model(db_session: Session, create_account):
     assert ai_model.account_id == account.id
 
 
+def test_audio_model_kind_is_stored_in_metadata_and_has_separate_defaults(
+    db_session: Session, create_account
+):
+    """Audio model defaults should not displace the LLM default."""
+    account: Account = create_account()
+
+    llm_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Default Chat",
+            "provider_name": "openai",
+            "model_identifier": "gpt-5.4-mini",
+            "api_key": "llm-key",
+            "model_kind": "llm",
+            "is_default": True,
+        },
+        account_id=account.id,
+    )
+    stt_model = crud_ai_model.create_with_account(
+        db=db_session,
+        obj_in={
+            "name": "Default STT",
+            "provider_name": "openai",
+            "model_identifier": "whisper-1",
+            "api_key": "stt-key",
+            "model_kind": "stt",
+            "is_default": True,
+        },
+        account_id=account.id,
+    )
+
+    assert llm_model.model_kind == "llm"
+    assert stt_model.model_kind == "stt"
+    assert stt_model.meta_data["service_kind"] == "stt"
+    assert (
+        crud_ai_model.get_default_active_model(db_session, account_id=account.id).id
+        == llm_model.id
+    )
+    assert (
+        crud_ai_model.get_default_active_model(
+            db_session, account_id=account.id, model_kind="stt"
+        ).id
+        == stt_model.id
+    )
+
+
 def test_ai_model_with_ambient_credentials_counts_as_configured(
     db_session: Session, create_account
 ):
@@ -458,3 +504,26 @@ def test_default_model_exists(db_session: Session):
 
     # Verify a default exists
     assert crud_ai_model.default_model_exists(db=db_session) is True
+
+
+def test_normalize_model_kind_fields_does_not_mutate_caller_dict():
+    """model_kind normalization should return a new dict without mutating input."""
+    obj_data = {
+        "name": "Whisper",
+        "model_kind": "stt",
+        "provider_name": "openai",
+        "meta_data": {"region": "us"},
+    }
+    original = dict(obj_data)
+    original_meta = obj_data["meta_data"]
+
+    normalized = ai_model_crud_module.CRUDAIModel._normalize_model_kind_fields(obj_data)
+
+    assert obj_data == original
+    assert "model_kind" in obj_data
+    assert "model_kind" not in normalized
+    assert normalized["name"] == "Whisper"
+    assert normalized["provider_name"] == "openai"
+    assert normalized["meta_data"]["service_kind"] == "stt"
+    assert normalized["meta_data"]["region"] == "us"
+    assert original_meta["region"] == "us"

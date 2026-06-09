@@ -19,28 +19,28 @@ except ImportError as e:
     sys.exit(1)
 
 
-def generate_openapi_schema():
-    """Generates the OpenAPI schema and writes it to docs/openapi.yaml."""
+def generate_openapi_schema() -> None:
+    """Generates the OpenAPI schema and writes it to openapi.yaml."""
     print("Generating OpenAPI schema...")
     app = create_app()  # Create the app instance using the factory
     openapi_schema = app.openapi()
 
-    output_path = project_root / "openapi.yaml"
-    print(f"Writing schema to {output_path}...")
+    output_paths = [project_root / "openapi.yaml"]
+    docs_output = project_root.parent / "docs" / "guide" / "assets" / "openapi.yaml"
+    if docs_output.parent.exists():
+        output_paths.append(docs_output)
 
-    try:
-        # Ensure the docs directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+    for output_path in output_paths:
+        print(f"Writing schema to {output_path}...")
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                yaml.dump(openapi_schema, f, sort_keys=False, allow_unicode=True)
+        except OSError as e:
+            print(f"Error writing OpenAPI schema to file: {e}", file=sys.stderr)
+            sys.exit(1)
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            yaml.dump(openapi_schema, f, sort_keys=False, allow_unicode=True)
-        print("Successfully generated openapi.yaml")
-    except IOError as e:
-        print(f"Error writing OpenAPI schema to file: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
+    print("Successfully generated openapi.yaml")
 
 
 if __name__ == "__main__":

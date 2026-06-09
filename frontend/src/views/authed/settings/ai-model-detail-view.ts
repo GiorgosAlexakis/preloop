@@ -14,6 +14,7 @@ import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
 import '../../../components/view-header.ts';
 import '../../../components/resource-actions.ts';
 import '../../../components/budget-policy-editor.ts';
+import '../../../components/preloop-session-observer.ts';
 import {
   extractErrorMessage,
   fetchWithAuth,
@@ -648,6 +649,9 @@ export class AIModelDetailView extends LitElement {
   }
 
   private get gatewayModelAlias(): string {
+    if (this.model?.model_kind && this.model.model_kind !== 'llm') {
+      return '';
+    }
     const gatewayAlias = this.getGatewayConfig()?.model_alias?.trim();
     if (gatewayAlias) {
       return gatewayAlias;
@@ -1115,6 +1119,17 @@ export class AIModelDetailView extends LitElement {
                   ${this.model?.is_default
                     ? html`<sl-badge variant="success">Default</sl-badge>`
                     : ''}
+                  ${this.model?.model_kind
+                    ? html`
+                        <sl-badge variant="neutral">
+                          ${this.model.model_kind === 'stt'
+                            ? 'Speech to text'
+                            : this.model.model_kind === 'tts'
+                              ? 'Text to speech'
+                              : 'Inference'}
+                        </sl-badge>
+                      `
+                    : ''}
                 </div>
               </div>
               ${this.model
@@ -1134,7 +1149,11 @@ export class AIModelDetailView extends LitElement {
                       <div class="model-metadata">
                         <span>
                           <strong>Gateway:</strong>
-                          ${this.gatewayEnabled ? 'Enabled' : 'Disabled'}
+                          ${this.model.model_kind === 'llm'
+                            ? this.gatewayEnabled
+                              ? 'Enabled'
+                              : 'Disabled'
+                            : 'Not used for audio fallback'}
                         </span>
                         ${this.gatewayModelAlias
                           ? html`
@@ -1272,24 +1291,23 @@ export class AIModelDetailView extends LitElement {
 
                   <sl-card>
                     <div slot="header" class="model-title">
-                      Runtime Sessions
+                      Session Observer
                     </div>
                     <div class="meta-line" style="margin-bottom: 0.75rem;">
-                      Recent sessions that used this model during the selected
-                      period
+                      Recent sessions, replay, cost breakdown, and optimization
+                      suggestions scoped to this model.
                     </div>
-                    ${this.renderSessions()}
-                  </sl-card>
-
-                  <sl-card>
-                    <div slot="header" class="model-title">
-                      Captured Interactions
-                    </div>
-                    <div class="meta-line" style="margin-bottom: 0.75rem;">
-                      Indexed prompts, outputs, and metadata scoped to this
-                      model
-                    </div>
-                    ${this.renderInteractions()}
+                    <preloop-session-observer
+                      scope="ai_model"
+                      .scopeId=${this.modelId}
+                      .sessions=${this.sessions?.items || []}
+                      layout="embedded"
+                      defaultReplayMode="timeline"
+                      .features=${{
+                        summaries: true,
+                        auditLinks: true,
+                      }}
+                    ></preloop-session-observer>
                   </sl-card>
                 `}
           </div>

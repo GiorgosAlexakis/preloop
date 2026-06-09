@@ -95,6 +95,19 @@ class ContainerAgentExecutor(AgentExecutor):
             self._k8s_core_api = client.CoreV1Api(self._k8s_api_client)
             self._k8s_initialized = True
 
+    async def aclose(self) -> None:
+        """Release Docker and Kubernetes client connections."""
+        if self._docker_client is not None:
+            await self._docker_client.close()
+            self._docker_client = None
+
+        if self._k8s_api_client is not None:
+            await self._k8s_api_client.close()
+            self._k8s_api_client = None
+            self._k8s_batch_api = None
+            self._k8s_core_api = None
+            self._k8s_initialized = False
+
     async def start(self, execution_context: Dict[str, Any]) -> str:
         """
         Start the agent in a Docker container or K8s pod.
@@ -1523,9 +1536,25 @@ class ContainerAgentExecutor(AgentExecutor):
                     # Relative path - prepend /workspace/
                     full_path = f"/workspace/{clone_path}"
 
-                # Get branch - prioritize source_branch from config, fall back to repo-specific branch
+                # Get branch for clone. When a trigger commit SHA is available, clone the
+                # MR/PR target (or default) branch instead of the source branch — the
+                # source ref may not exist yet (GitLab MR race) or may live on a fork.
                 repo_branch = repo_config.get("branch")
-                clone_branch = repo_branch if repo_branch else source_branch
+                if repo_branch:
+                    clone_branch = repo_branch
+                elif commit_sha:
+                    clone_branch = (
+                        self._extract_target_branch_from_trigger(trigger_data) or "main"
+                    )
+                    self.logger.info(
+                        "Commit SHA %s available; cloning branch '%s' "
+                        "instead of source branch '%s'",
+                        commit_sha[:8],
+                        clone_branch,
+                        source_branch,
+                    )
+                else:
+                    clone_branch = source_branch
                 branch_arg = f" -b {clone_branch}" if clone_branch else ""
 
                 # Build repository setup commands with robust error handling
@@ -1567,8 +1596,55 @@ if ! git clone{branch_arg} {repo_url} {full_path}; then
 fi
 """.strip()
 
-                # Branch setup commands with explicit error handling
-                branch_setup_cmd = f"""
+                mr_fetch_ref = self._extract_merge_request_ref_from_trigger(
+                    trigger_data
+                )
+
+                # Branch setup: when we have a trigger commit, fetch MR/PR refs first,
+                # then create the agent target branch from the checked-out commit.
+                if commit_sha:
+                    mr_fetch_line = ""
+                    if mr_fetch_ref:
+                        mr_fetch_line = (
+                            f'echo "Fetching merge request ref {mr_fetch_ref}..."\n'
+                            f"git fetch origin {mr_fetch_ref}:preloop-mr-head "
+                            f"2>/dev/null || true"
+                        )
+                    branch_setup_cmd = f"""
+cd {full_path}
+echo "========================================="
+echo "Checking out specific commit: {commit_sha}"
+echo "========================================="
+if ! git checkout {commit_sha} 2>/dev/null; then
+    echo "Direct checkout failed, fetching commit..."
+    git fetch origin {commit_sha} 2>/dev/null || true
+fi
+if ! git checkout {commit_sha} 2>/dev/null; then
+    echo "Commit fetch failed, trying source branch {source_branch}..."
+    git fetch origin {source_branch}:preloop-source-head 2>/dev/null || true
+fi
+if ! git checkout {commit_sha} 2>/dev/null; then
+{mr_fetch_line}
+    if ! git checkout {commit_sha} 2>/dev/null; then
+        echo "========================================="
+        echo "FATAL ERROR: Could not checkout commit {commit_sha[:8]}"
+        echo "Tried direct checkout, commit fetch, source branch, and MR ref."
+        echo "========================================="
+        exit 1
+    fi
+fi
+echo "Creating agent target branch {target_branch} from commit {commit_sha[:8]}"
+if ! git checkout -b {target_branch}; then
+    echo "========================================="
+    echo "FATAL ERROR: Could not create target branch '{target_branch}'"
+    echo "========================================="
+    exit 1
+fi
+cd /workspace
+""".strip()
+                    sha_checkout_cmd = ""
+                else:
+                    branch_setup_cmd = f"""
 cd {full_path}
 echo "Setting up branches: source={source_branch}, target={target_branch}"
 # Checkout source branch (create if it doesn't exist remotely)
@@ -1585,24 +1661,7 @@ if ! git checkout -b {target_branch}; then
 fi
 cd /workspace
 """.strip()
-
-                # SHA checkout command (if we have a specific commit from the trigger event)
-                sha_checkout_cmd = ""
-                if commit_sha:
-                    sha_checkout_cmd = f"""
-cd {full_path}
-echo "========================================="
-echo "Checking out specific commit: {commit_sha}"
-echo "========================================="
-if ! git checkout {commit_sha} 2>/dev/null; then
-    echo "Direct checkout failed, fetching commit..."
-    git fetch origin {commit_sha} 2>/dev/null || true
-    if ! git checkout {commit_sha} 2>/dev/null; then
-        echo "WARNING: Could not checkout commit {commit_sha[:8]}, staying on branch {source_branch}"
-    fi
-fi
-cd /workspace
-""".strip()
+                    sha_checkout_cmd = ""
 
                 # Validation command
                 sha_display = ""
@@ -2128,6 +2187,76 @@ MREOF
         except Exception as e:
             self.logger.warning(f"Error getting token from project {project_id}: {e}")
             return None, None
+
+    def _extract_merge_request_ref_from_trigger(
+        self, trigger_data: Dict[str, Any]
+    ) -> Optional[str]:
+        """Extract a git fetch ref for the MR/PR head commit.
+
+        Supports:
+        - GitLab: refs/merge-requests/{iid}/head
+        - GitHub: pull/{number}/head
+        """
+        try:
+            payload = trigger_data.get("payload", trigger_data)
+            if not isinstance(payload, dict):
+                return None
+
+            obj_attrs = payload.get("object_attributes")
+            if isinstance(obj_attrs, dict) and obj_attrs.get("iid") is not None:
+                ref = f"refs/merge-requests/{obj_attrs['iid']}/head"
+                self.logger.info(f"Extracted GitLab MR fetch ref: {ref}")
+                return ref
+
+            pr = payload.get("pull_request")
+            if isinstance(pr, dict) and pr.get("number") is not None:
+                ref = f"pull/{pr['number']}/head"
+                self.logger.info(f"Extracted GitHub PR fetch ref: {ref}")
+                return ref
+
+            return None
+        except Exception as e:
+            self.logger.debug(f"Error extracting merge request ref from trigger: {e}")
+            return None
+
+    def _extract_target_branch_from_trigger(
+        self, trigger_data: Dict[str, Any]
+    ) -> Optional[str]:
+        """Extract the PR/MR target/base branch name from trigger event data.
+
+        Supports:
+        - GitHub: payload.pull_request.base.ref
+        - GitLab: payload.object_attributes.target_branch
+        """
+        try:
+            payload = trigger_data.get("payload", trigger_data)
+            if not isinstance(payload, dict):
+                return None
+
+            pr = payload.get("pull_request")
+            if isinstance(pr, dict):
+                base = pr.get("base")
+                if isinstance(base, dict) and base.get("ref"):
+                    branch = base["ref"]
+                    self.logger.info(
+                        f"Extracted target branch from GitHub PR: {branch}"
+                    )
+                    return branch
+
+            obj_attrs = payload.get("object_attributes")
+            if isinstance(obj_attrs, dict) and obj_attrs.get("target_branch"):
+                branch = obj_attrs["target_branch"]
+                self.logger.info(f"Extracted target branch from GitLab MR: {branch}")
+                return branch
+
+            project = payload.get("project")
+            if isinstance(project, dict) and project.get("default_branch"):
+                return project["default_branch"]
+
+            return None
+        except Exception as e:
+            self.logger.debug(f"Error extracting target branch from trigger: {e}")
+            return None
 
     def _extract_source_branch_from_trigger(
         self, trigger_data: Dict[str, Any]

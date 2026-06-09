@@ -19,6 +19,9 @@ import type {
   FlowGatewayEventsResponse,
   FlowGatewayEvent,
   AccountManagedAgentListResponse,
+  AgentControlCommandRequest,
+  AgentControlCommandResponse,
+  AgentControlVoiceTranscriptRequest,
   ManagedAgentDetailResponse,
   ManagedAgentSummary,
   ManagedAgentUpdateRequest,
@@ -30,6 +33,9 @@ import type {
   RuntimeSessionSummary,
   RuntimeSessionUpdateRequest,
   RuntimeSessionActivityListResponse,
+  RuntimeSessionSummaryInsight,
+  RuntimeSessionInteractionSummary,
+  RuntimeSessionOptimizationResponse,
   AccountGatewayUsageSummaryResponse,
   FlowGatewayUsageSummaryResponse,
   AIModelGatewayUsageSummaryResponse,
@@ -38,6 +44,12 @@ import type {
   AIModelGatewayUsageSearchResponse,
   AIModel,
   DashboardTelemetryResponse,
+  CostAnalyticsSummaryResponse,
+  ModelPriceOverride,
+  ModelPriceOverrideCreate,
+  ModelPriceOverrideUpdate,
+  SpeechToTextResponse,
+  TextToSpeechRequest,
 } from './types';
 
 // Global refresh promise to prevent concurrent refresh requests
@@ -265,6 +277,7 @@ export interface GatewayUsageSummaryParams {
   startDate?: string;
   endDate?: string;
   runtimePrincipalId?: string;
+  includeBreakdown?: boolean;
 }
 
 export interface GatewayUsageSearchParams extends GatewayUsageSummaryParams {
@@ -342,6 +355,10 @@ function buildGatewayUsageQuery(params: GatewayUsageSearchParams = {}): string {
 
   if (params.sessionSourceType) {
     queryParams.set('session_source_type', params.sessionSourceType);
+  }
+
+  if (params.includeBreakdown !== undefined) {
+    queryParams.set('include_breakdown', String(params.includeBreakdown));
   }
 
   if (typeof params.limit === 'number') {
@@ -433,6 +450,88 @@ export async function getAccountGatewayUsageSummary(
   return response.json();
 }
 
+export async function getCostAnalyticsSummary(
+  params: GatewayUsageSummaryParams = {}
+): Promise<CostAnalyticsSummaryResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/cost/summary${buildGatewayUsageQuery(params)}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch cost analytics summary');
+  }
+  return response.json();
+}
+
+export async function getModelPriceOverrides(options?: {
+  modelAlias?: string;
+  activeOnly?: boolean;
+}): Promise<ModelPriceOverride[]> {
+  const params = new URLSearchParams();
+  if (options?.modelAlias) params.set('model_alias', options.modelAlias);
+  if (options?.activeOnly) params.set('active_only', 'true');
+  const query = params.toString();
+  const response = await fetchWithAuth(
+    `/api/v1/billing/cost/pricing-overrides${query ? `?${query}` : ''}`
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch model price overrides');
+  }
+  return response.json();
+}
+
+export async function createModelPriceOverride(
+  data: ModelPriceOverrideCreate
+): Promise<ModelPriceOverride> {
+  const response = await fetchWithAuth(
+    '/api/v1/billing/cost/pricing-overrides',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(errorData, 'Failed to create model price override')
+    );
+  }
+  return response.json();
+}
+
+export async function updateModelPriceOverride(
+  id: string,
+  data: ModelPriceOverrideUpdate
+): Promise<ModelPriceOverride> {
+  const response = await fetchWithAuth(
+    `/api/v1/billing/cost/pricing-overrides/${id}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }
+  );
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(errorData, 'Failed to update model price override')
+    );
+  }
+  return response.json();
+}
+
+export async function deleteModelPriceOverride(id: string): Promise<void> {
+  const response = await fetchWithAuth(
+    `/api/v1/billing/cost/pricing-overrides/${id}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to delete model price override');
+  }
+}
+
 export async function getDashboardTelemetry(): Promise<DashboardTelemetryResponse> {
   const response = await fetchWithAuth('/api/v1/account/telemetry/dashboard');
   if (!response.ok) {
@@ -491,9 +590,16 @@ export async function getAccountAgents(
 }
 
 export async function getAccountAgent(
-  agentId: string
+  agentId: string,
+  params: { start_date?: string; end_date?: string } = {}
 ): Promise<ManagedAgentDetailResponse> {
-  const response = await fetchWithAuth(`/api/v1/agents/${agentId}`);
+  const queryParams = new URLSearchParams();
+  if (params.start_date) queryParams.set('start_date', params.start_date);
+  if (params.end_date) queryParams.set('end_date', params.end_date);
+  const queryStr = queryParams.toString();
+  const response = await fetchWithAuth(
+    `/api/v1/agents/${agentId}${queryStr ? `?${queryStr}` : ''}`
+  );
   if (!response.ok) {
     throw new Error('Failed to fetch managed agent');
   }
@@ -525,6 +631,86 @@ export async function removeAccountAgent(
     throw new Error('Failed to remove managed agent');
   }
   return response.json();
+}
+
+export async function sendAgentControlCommand(
+  agentId: string,
+  payload: AgentControlCommandRequest
+): Promise<AgentControlCommandResponse> {
+  const url = `/api/v1/agents/${agentId}/control/commands`;
+  const response = await fetchWithAuth(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (response.ok) {
+    return response.json().catch(() => ({}));
+  }
+
+  // Older backends only accept { message, metadata }. If the new shape is
+  // rejected, retry once with session targeting folded into metadata.
+  if (
+    (response.status === 400 || response.status === 422) &&
+    (payload.target_session_id || payload.session_mode)
+  ) {
+    const legacyResponse = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: payload.message,
+        metadata: {
+          ...(payload.metadata || {}),
+          target_session_id: payload.target_session_id ?? null,
+          session_mode: payload.session_mode ?? null,
+          start_new_session: payload.start_new_session ?? false,
+        },
+      }),
+    });
+
+    if (legacyResponse.ok) {
+      return legacyResponse.json().catch(() => ({}));
+    }
+
+    const legacyErrorData = await legacyResponse.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(
+        legacyErrorData,
+        'Failed to send Agent Control command'
+      )
+    );
+  }
+
+  const errorData = await response.json().catch(() => ({}));
+  throw new Error(
+    extractErrorMessage(errorData, 'Failed to send Agent Control command')
+  );
+}
+
+export async function sendAgentControlVoiceTranscript(
+  agentId: string,
+  payload: AgentControlVoiceTranscriptRequest
+): Promise<AgentControlCommandResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/agents/${agentId}/control/voice-transcripts`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (response.ok) {
+    return response.json().catch(() => ({}));
+  }
+
+  const errorData = await response.json().catch(() => ({}));
+  throw new Error(
+    extractErrorMessage(
+      errorData,
+      'Failed to send Agent Control voice transcript'
+    )
+  );
 }
 
 export async function getAgentGovernance(
@@ -603,6 +789,51 @@ export async function getAccountRuntimeSessionActivityTimeline(
   return response.json();
 }
 
+export async function summarizeRuntimeSession(
+  runtimeSessionId: string
+): Promise<RuntimeSessionSummaryInsight> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${runtimeSessionId}/summaries`,
+    { method: 'POST' }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to summarize runtime session');
+  }
+  return response.json();
+}
+
+export async function optimizeRuntimeSession(
+  runtimeSessionId: string,
+  options: {
+    regenerate?: boolean;
+    modelId?: string | null;
+    eventIds?: string[];
+    sourceKinds?: string[];
+    fromIndex?: number;
+    toIndex?: number;
+  } = {}
+): Promise<RuntimeSessionOptimizationResponse> {
+  const response = await fetchWithAuth(
+    `/api/v1/billing/cost/runtime-sessions/${runtimeSessionId}/optimizations`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        regenerate: Boolean(options.regenerate),
+        model_id: options.modelId || null,
+        event_ids: options.eventIds || [],
+        source_kinds: options.sourceKinds || [],
+        from_index: options.fromIndex ?? null,
+        to_index: options.toIndex ?? null,
+      }),
+    }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to optimize runtime session');
+  }
+  return response.json();
+}
+
 export async function updateAccountRuntimeSession(
   runtimeSessionId: string,
   payload: RuntimeSessionUpdateRequest
@@ -623,9 +854,28 @@ export async function updateAccountRuntimeSession(
 
 export async function getRuntimeSessionGatewayEvents(
   sessionId: string,
-  tail?: number
+  options:
+    | number
+    | {
+        tail?: number;
+        limit?: number;
+        offset?: number;
+        metadataOnly?: boolean;
+      } = {}
 ): Promise<FlowGatewayEventsResponse> {
-  const params = tail !== undefined ? `?tail=${tail}` : '';
+  const searchParams = new URLSearchParams();
+  if (typeof options === 'number') {
+    searchParams.set('tail', String(options));
+  } else {
+    if (options.tail !== undefined)
+      searchParams.set('tail', String(options.tail));
+    if (options.limit !== undefined)
+      searchParams.set('limit', String(options.limit));
+    if (options.offset !== undefined)
+      searchParams.set('offset', String(options.offset));
+    if (options.metadataOnly) searchParams.set('metadata_only', 'true');
+  }
+  const params = searchParams.toString() ? `?${searchParams.toString()}` : '';
   const response = await fetchWithAuth(
     `/api/v1/runtime-sessions/${sessionId}/gateway-events${params}`
   );
@@ -644,6 +894,20 @@ export async function getRuntimeSessionGatewayEventDetail(
   );
   if (!response.ok) {
     throw new Error('Failed to fetch runtime session gateway event detail');
+  }
+  return response.json();
+}
+
+export async function summarizeRuntimeSessionGatewayEvent(
+  sessionId: string,
+  eventId: string
+): Promise<RuntimeSessionInteractionSummary> {
+  const response = await fetchWithAuth(
+    `/api/v1/runtime-sessions/${sessionId}/gateway-events/${eventId}/summary`,
+    { method: 'POST' }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to summarize runtime session gateway event');
   }
   return response.json();
 }
@@ -1106,6 +1370,45 @@ export async function updateAIModel(modelId: string, model: any) {
   return response.json();
 }
 
+export async function transcribeAudio(
+  audio: Blob,
+  options: { aiModelId?: string | null; filename?: string } = {}
+): Promise<SpeechToTextResponse> {
+  const formData = new FormData();
+  formData.append('audio', audio, options.filename || 'audio.webm');
+  if (options.aiModelId) {
+    formData.append('ai_model_id', options.aiModelId);
+  }
+  const response = await fetchWithAuth('/api/v1/audio/transcriptions', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(errorData, 'Failed to transcribe audio')
+    );
+  }
+  return response.json();
+}
+
+export async function synthesizeSpeech(
+  request: TextToSpeechRequest
+): Promise<Blob> {
+  const response = await fetchWithAuth('/api/v1/audio/speech', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      extractErrorMessage(errorData, 'Failed to synthesize speech')
+    );
+  }
+  return response.blob();
+}
+
 export async function deleteAIModel(modelId: string) {
   const response = await fetchWithAuth(`/api/v1/ai-models/${modelId}`, {
     method: 'DELETE',
@@ -1120,12 +1423,14 @@ export async function deleteAIModel(modelId: string) {
 
 export async function getAvailableModelsForProvider(
   provider: string,
-  apiKey?: string
+  apiKey?: string,
+  modelKind: 'llm' | 'stt' | 'tts' = 'llm'
 ): Promise<string[]> {
-  let url = `/api/v1/ai-models/providers/${provider}/available-models`;
+  const params = new URLSearchParams({ model_kind: modelKind });
   if (apiKey) {
-    url += `?api_key=${encodeURIComponent(apiKey)}`;
+    params.set('api_key', apiKey);
   }
+  const url = `/api/v1/ai-models/providers/${provider}/available-models?${params.toString()}`;
   // Use fetch instead of fetchWithAuth since this endpoint doesn't require authentication
   const response = await fetch(url);
   if (!response.ok) {
@@ -1419,10 +1724,51 @@ export async function cloneFlowPreset(presetId: string): Promise<any> {
   return response.json();
 }
 
-export async function listProjects(): Promise<Project[]> {
-  const response = await fetchWithAuth('/api/v1/projects');
+export async function listProjects(options?: {
+  organizationId?: string;
+  limit?: number;
+}): Promise<Project[]> {
+  const params = new URLSearchParams();
+  if (options?.organizationId) {
+    params.set('organization_id', options.organizationId);
+  }
+  if (options?.limit) {
+    params.set('limit', String(options.limit));
+  } else {
+    params.set('limit', '1000');
+  }
+  const query = params.toString();
+  const response = await fetchWithAuth(
+    query ? `/api/v1/projects?${query}` : '/api/v1/projects'
+  );
   if (!response.ok) {
     throw new Error('Failed to fetch projects');
+  }
+  const projects: Project[] = await response.json();
+  return projects.map((project) => ({
+    ...project,
+    key: project.key || project.identifier,
+  }));
+}
+
+export async function syncTracker(
+  trackerId: string
+): Promise<{ status: string }> {
+  const response = await fetchWithAuth(`/api/v1/trackers/${trackerId}/sync`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    let detail = 'Failed to queue tracker sync';
+    try {
+      const body = await response.json();
+      detail =
+        (typeof body.detail === 'string' && body.detail) ||
+        body.message ||
+        detail;
+    } catch {
+      detail = `${detail} (${response.status})`;
+    }
+    throw new Error(detail);
   }
   return response.json();
 }
@@ -1459,7 +1805,11 @@ export async function listOrganizations(): Promise<Organization[]> {
     throw new Error('Failed to fetch organizations');
   }
   const data: any = await response.json();
-  return data.items;
+  return (data.items || []).map((org: Organization) => ({
+    ...org,
+    key: org.key || org.identifier,
+    identifier: org.identifier || org.key,
+  }));
 }
 
 export async function listIssueDuplicates(

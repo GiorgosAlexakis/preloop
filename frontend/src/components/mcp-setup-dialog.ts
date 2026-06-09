@@ -40,7 +40,10 @@ export class MCPSetupDialog extends LitElement {
               prerequisites: [],
               setup_instructions:
                 'Install the CLI to onboard existing agents or connect them manually.',
-              code: 'curl -fsSL https://preloop.ai/install/cli | sh\n\npreloop login\n\npreloop agents discover',
+              code:
+                window.location.hostname === 'preloop.ai'
+                  ? 'curl -fsSL https://preloop.ai/install/cli | sh\n\npreloop login\n\npreloop agents discover'
+                  : `curl -fsSL https://preloop.ai/install/cli | sh\n\nexport PRELOOP_URL=${window.location.origin}\npreloop login\n\npreloop agents discover`,
             },
           ]}
           defaultTab="cli"

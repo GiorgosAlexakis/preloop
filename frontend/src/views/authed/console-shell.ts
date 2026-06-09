@@ -369,6 +369,12 @@ export class ConsoleShell extends LitElement {
                   <span class="sidebar-label">Sessions</span>
                 </sl-menu-item>
               </a>
+              <a href="/console/cost" @click=${this._closeSidebar}>
+                <sl-menu-item>
+                  <sl-icon name="cash-coin" slot="prefix"></sl-icon>
+                  <span class="sidebar-label">Cost</span>
+                </sl-menu-item>
+              </a>
               <a href="/console/approvals" @click=${this._closeSidebar}>
                 <sl-menu-item>
                   <sl-icon name="shield-check" slot="prefix"></sl-icon>

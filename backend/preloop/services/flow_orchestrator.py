@@ -52,6 +52,7 @@ AGENT_EXEC_START_MARKER = "PRELOOP_AGENT_EXEC_START"
 MCP_TOOL_LOOP_PATTERN_MAX_LENGTH = 3
 MCP_TOOL_LOOP_MIN_REPETITIONS = 3
 MCP_TOOL_LOOP_SINGLE_CALL_REPETITIONS = 4
+MCP_TOOL_LOOP_DUPLICATE_WINDOW_SECONDS = 0.5
 
 # Instruction appended to prompts to have agents signal success.
 # IMPORTANT: The sentinel is kept INLINE (not on its own line) so that when
@@ -937,10 +938,21 @@ class FlowExecutionOrchestrator:
             clone_path = git_config.get("clone_path", "./workspace")
             full_clone_path = f"{work_dir}/{clone_path}"
 
-            # Get branch from config or try to extract from trigger event (for PRs)
+            # Get branch from config or trigger event. When a commit SHA is available,
+            # clone the MR/PR target branch — the source ref may not exist yet.
             branch = git_config.get("branch")
+            commit_sha = self._extract_commit_sha()
             if not branch:
-                branch = self._extract_pr_branch_from_trigger()
+                if commit_sha:
+                    branch = self._extract_pr_target_branch_from_trigger() or "main"
+                    logger.info(
+                        "Commit SHA %s available; cloning branch '%s' "
+                        "instead of source branch",
+                        commit_sha[:8],
+                        branch,
+                    )
+                else:
+                    branch = self._extract_pr_branch_from_trigger()
 
             branch_arg = f" -b {branch}" if branch else ""
 
@@ -979,7 +991,6 @@ class FlowExecutionOrchestrator:
 
             # Checkout the specific commit SHA from trigger event if available
             # This ensures we're reviewing the exact code from the PR/push event
-            commit_sha = self._extract_commit_sha()
             if commit_sha:
                 logger.info(
                     f"Checking out specific commit SHA from trigger event: {commit_sha[:8]}"
@@ -993,19 +1004,28 @@ class FlowExecutionOrchestrator:
                 checkout_stdout, checkout_stderr = await checkout_process.communicate()
 
                 if checkout_process.returncode != 0:
-                    # If checkout fails, try fetching first (commit might not be in cloned branch)
+                    # If checkout fails, try fetching commit, source branch, then MR ref
                     logger.warning(
                         f"Direct checkout failed, trying fetch first: {checkout_stderr.decode()}"
                     )
-                    fetch_process = await asyncio.create_subprocess_shell(
-                        f"git fetch origin {commit_sha}",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        cwd=full_clone_path,
-                    )
-                    await fetch_process.communicate()
+                    source_branch = self._extract_pr_branch_from_trigger()
+                    mr_ref = self._extract_merge_request_ref_from_trigger()
+                    fetch_cmds = [f"git fetch origin {commit_sha}"]
+                    if source_branch:
+                        fetch_cmds.append(
+                            f"git fetch origin {source_branch}:preloop-source-head"
+                        )
+                    if mr_ref:
+                        fetch_cmds.append(f"git fetch origin {mr_ref}:preloop-mr-head")
+                    for fetch_cmd in fetch_cmds:
+                        fetch_process = await asyncio.create_subprocess_shell(
+                            fetch_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            cwd=full_clone_path,
+                        )
+                        await fetch_process.communicate()
 
-                    # Retry checkout after fetch
                     checkout_process = await asyncio.create_subprocess_shell(
                         f"git checkout {commit_sha}",
                         stdout=asyncio.subprocess.PIPE,
@@ -1021,7 +1041,6 @@ class FlowExecutionOrchestrator:
                         logger.error(
                             f"Failed to checkout commit {commit_sha[:8]}: {checkout_stderr.decode()}"
                         )
-                        # Continue anyway - we at least have the branch cloned
                     else:
                         logger.info(
                             f"Successfully checked out commit {commit_sha[:8]} after fetch"
@@ -1037,6 +1056,58 @@ class FlowExecutionOrchestrator:
 
         except Exception as e:
             logger.error(f"Error during git clone: {e}", exc_info=True)
+            return None
+
+    def _extract_merge_request_ref_from_trigger(self) -> Optional[str]:
+        """Extract a git fetch ref for the MR/PR head commit."""
+        try:
+            payload = self.trigger_event_data.get("payload", {})
+
+            if not isinstance(payload, dict):
+                return None
+
+            object_attrs = payload.get("object_attributes", {})
+            if object_attrs and object_attrs.get("iid") is not None:
+                return f"refs/merge-requests/{object_attrs['iid']}/head"
+
+            if "pull_request" in payload:
+                pr = payload["pull_request"]
+                if pr.get("number") is not None:
+                    return f"pull/{pr['number']}/head"
+
+            return None
+        except Exception as e:
+            logger.debug(f"Error extracting merge request ref: {e}")
+            return None
+
+    def _extract_pr_target_branch_from_trigger(self) -> Optional[str]:
+        """Extract the PR/MR target/base branch name from the trigger event."""
+        try:
+            payload = self.trigger_event_data.get("payload", {})
+
+            if not isinstance(payload, dict):
+                return None
+
+            if "pull_request" in payload:
+                pr = payload["pull_request"]
+                if "base" in pr and "ref" in pr["base"]:
+                    branch = pr["base"]["ref"]
+                    logger.debug(f"Extracted PR base branch: {branch}")
+                    return branch
+
+            object_attrs = payload.get("object_attributes", {})
+            if object_attrs and "target_branch" in object_attrs:
+                branch = object_attrs["target_branch"]
+                logger.debug(f"Extracted MR target branch: {branch}")
+                return branch
+
+            project = payload.get("project")
+            if isinstance(project, dict) and project.get("default_branch"):
+                return project["default_branch"]
+
+            return None
+        except Exception as e:
+            logger.debug(f"Error extracting PR target branch: {e}")
             return None
 
     def _extract_pr_branch_from_trigger(self) -> Optional[str]:
@@ -1070,6 +1141,36 @@ class FlowExecutionOrchestrator:
         except Exception as e:
             logger.debug(f"Error extracting PR branch: {e}")
             return None
+
+    def _resolve_trigger_project_id(self) -> Optional[str]:
+        """Resolve the project that triggered this execution.
+
+        Prefer the repository from the webhook payload (e.g. the MR's project)
+        over the first entry in flow.trigger_project_ids, which may be a
+        different repo when the flow watches multiple projects.
+        """
+        project_id = self.trigger_event_data.get("project_id")
+        if project_id:
+            return str(project_id)
+
+        from preloop.services.flow_trigger_service import FlowTriggerService
+
+        resolved = FlowTriggerService(self.db)._extract_project_id(
+            self.trigger_event_data
+        )
+        if resolved:
+            logger.info(f"Resolved trigger project from event payload: {resolved}")
+            return resolved
+
+        if self.flow.trigger_project_ids:
+            fallback = str(self.flow.trigger_project_ids[0])
+            logger.info(
+                "No project in trigger event; using first flow trigger_project_id: "
+                f"{fallback}"
+            )
+            return fallback
+
+        return None
 
     def _resolve_repository_url_from_trigger(self) -> Optional[str]:
         """Extract repository URL from trigger event data."""
@@ -1275,9 +1376,7 @@ class FlowExecutionOrchestrator:
             if self.flow.trigger_project_ids
             else None,  # For git clone fallback
             # Singular form used by container.py for git clone and credential lookup
-            "trigger_project_id": str(self.flow.trigger_project_ids[0])
-            if self.flow.trigger_project_ids
-            else None,
+            "trigger_project_id": self._resolve_trigger_project_id(),
         }
 
         # Prepare git credentials if repositories are configured
@@ -1521,6 +1620,7 @@ class FlowExecutionOrchestrator:
         )
 
         signatures: list[str] = []
+        timestamps: list[datetime] = []
         for activity in reversed(activities):
             metadata = activity.metadata_ or {}
             signatures.append(
@@ -1534,11 +1634,43 @@ class FlowExecutionOrchestrator:
                     default=str,
                 )
             )
-        return signatures
+            timestamps.append(activity.timestamp)
+        return self._dedupe_rapid_duplicate_signatures(signatures, timestamps)
+
+    @staticmethod
+    def _dedupe_rapid_duplicate_signatures(
+        signatures: list[str],
+        timestamps: list[datetime],
+        *,
+        max_delta_seconds: float = MCP_TOOL_LOOP_DUPLICATE_WINDOW_SECONDS,
+    ) -> list[str]:
+        """Drop paired duplicate signatures that arrive within a short window."""
+        if not signatures:
+            return []
+
+        deduped_signatures: list[str] = [signatures[0]]
+        last_kept_timestamp = timestamps[0] if timestamps else None
+        for signature, timestamp in zip(signatures[1:], timestamps[1:], strict=False):
+            if (
+                signature == deduped_signatures[-1]
+                and last_kept_timestamp is not None
+                and timestamp is not None
+                and abs((timestamp - last_kept_timestamp).total_seconds())
+                <= max_delta_seconds
+            ):
+                continue
+            deduped_signatures.append(signature)
+            last_kept_timestamp = timestamp
+        return deduped_signatures
 
     @staticmethod
     def _detect_repeated_tool_cycle(signatures: list[str]) -> Optional[Dict[str, Any]]:
-        """Detect obviously looping tool cycles like A,A,A,A or A,B,A,B,A,B."""
+        """Detect tight loops where the same tool+arguments repeat without progress.
+
+        Legitimate flows (for example PR review) may call the same tool name several
+        times with different arguments. Only identical consecutive signatures count
+        toward a loop after rapid duplicate invocations are deduplicated.
+        """
         if len(signatures) < MCP_TOOL_LOOP_MIN_REPETITIONS:
             return None
 
@@ -1826,7 +1958,9 @@ class FlowExecutionOrchestrator:
                     )
                     error_message = (
                         "Execution stopped after detecting a repeated MCP tool loop: "
-                        f"{repeated_tools} repeated {loop_detection['repetitions']} times."
+                        f"{repeated_tools} repeated "
+                        f"{loop_detection['repetitions']} times with identical "
+                        "arguments."
                     )
                     logger.warning(error_message)
                     self.execution_logger.log_milestone(

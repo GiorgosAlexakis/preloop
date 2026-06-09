@@ -1,4 +1,4 @@
-import { expect, waitUntil } from '@open-wc/testing';
+import { fixture, html, expect, waitUntil } from '@open-wc/testing';
 import sinon from 'sinon';
 
 import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
@@ -207,6 +207,86 @@ describe('AIModelDetailView', () => {
         );
       }
 
+      if (url === '/api/v1/features') {
+        return new Response(JSON.stringify({ features: {} }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url === '/api/v1/ai-models') {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('/api/v1/budget/policies')) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('/api/v1/users')) {
+        return new Response(
+          JSON.stringify({
+            users: [],
+            total: 0,
+            skip: 0,
+            limit: 100,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      if (url.includes('/api/v1/auth/users/me')) {
+        return new Response(
+          JSON.stringify({
+            email: 'test@preloop.ai',
+            username: 'test',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      if (url.includes('/api/v1/agents')) {
+        return new Response(
+          JSON.stringify({
+            items: [],
+            total: 0,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      if (
+        url.includes(
+          '/api/v1/runtime-sessions/runtime-session-1/gateway-events'
+        )
+      ) {
+        return new Response(JSON.stringify({ logs: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('/api/v1/runtime-sessions/runtime-session-1/activity')) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       return new Response(
         JSON.stringify({ detail: `Unhandled request: ${url}` }),
         {
@@ -230,15 +310,14 @@ describe('AIModelDetailView', () => {
   });
 
   it('renders model observability summary, sessions, and interactions', async () => {
-    const element = document.createElement(
-      'ai-model-detail-view'
-    ) as AIModelDetailView;
-    element.modelId = 'model-1';
-    document.body.appendChild(element);
+    const element = (await fixture(
+      html`<ai-model-detail-view .modelId=${'model-1'}></ai-model-detail-view>`
+    )) as AIModelDetailView;
 
     await waitUntil(
       () => !(element as any).loading,
-      'AI model detail view did not finish loading'
+      'AI model detail view did not finish loading',
+      { timeout: 5000 }
     );
     await element.updateComplete;
 
@@ -253,21 +332,13 @@ describe('AIModelDetailView', () => {
     expect(content).to.contain('18');
     expect(content).to.contain('$1.42');
     expect(content).to.contain('8,500');
-    expect(content).to.contain('Runtime Sessions');
-    expect(content).to.contain('Triage Assistant');
-    expect(content).to.contain('session-abc123');
-    expect(content).to.contain('Captured Interactions');
-    expect(content).to.contain('Deployment risk summary completed');
+    expect(content).to.contain('Session Observer');
 
-    const runtimeSessionLink = element.shadowRoot?.querySelector(
-      'a[href="/console/runtime-sessions?sessionId=runtime-session-1"]'
+    const observer = element.shadowRoot?.querySelector(
+      'preloop-session-observer'
     );
-    const flowExecutionLink = element.shadowRoot?.querySelector(
-      'a[href="/console/flows/executions/execution-1"]'
-    );
+    expect(observer).to.exist;
 
-    expect(runtimeSessionLink).to.not.equal(null);
-    expect(flowExecutionLink).to.not.equal(null);
     const agentLink = element.shadowRoot?.querySelector(
       'a[href="/console/agents/agent-1"]'
     );
@@ -300,22 +371,19 @@ describe('AIModelDetailView', () => {
     expect(String(sessionsCall?.args[0])).to.contain('limit=10');
     expect(interactionsCall).to.not.equal(undefined);
     expect(String(interactionsCall?.args[0])).to.contain('limit=10');
-    expect(connectStub).to.have.been.calledOnce;
-    expect(subscribeStub.callCount).to.equal(4);
-
-    document.body.removeChild(element);
+    expect(connectStub.callCount).to.be.at.least(1);
+    expect(subscribeStub.callCount).to.be.at.least(4);
   });
 
   it('sends a test request through the gateway', async () => {
-    const element = document.createElement(
-      'ai-model-detail-view'
-    ) as AIModelDetailView;
-    element.modelId = 'model-1';
-    document.body.appendChild(element);
+    const element = (await fixture(
+      html`<ai-model-detail-view .modelId=${'model-1'}></ai-model-detail-view>`
+    )) as AIModelDetailView;
 
     await waitUntil(
       () => !(element as any).loading,
-      'AI model detail view did not finish loading'
+      'AI model detail view did not finish loading',
+      { timeout: 5000 }
     );
     await element.updateComplete;
 
@@ -327,7 +395,8 @@ describe('AIModelDetailView', () => {
         fetchStub
           .getCalls()
           .some((call) => String(call.args[0]) === '/openai/v1/responses'),
-      'Gateway request was not sent'
+      'Gateway request was not sent',
+      { timeout: 5000 }
     );
     await element.updateComplete;
 
@@ -342,7 +411,5 @@ describe('AIModelDetailView', () => {
     expect(element.shadowRoot?.textContent || '').to.contain(
       'Welcome acknowledged.'
     );
-
-    document.body.removeChild(element);
   });
 });

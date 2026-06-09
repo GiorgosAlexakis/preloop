@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1030,6 +1031,7 @@ func runDeferredLiveValidationsParallel(
 	}()
 
 	for result := range resultCh {
+		recoverDeferredGatewayValidationFailure(output, result)
 		// Persist the outcome to the managed enrollment so the UI surfaces
 		// the new status immediately. Persistence failures are non-fatal:
 		// the on-disk validation_result has already been computed and we
@@ -1042,6 +1044,57 @@ func runDeferredLiveValidationsParallel(
 	}
 
 	return results
+}
+
+func recoverDeferredGatewayValidationFailure(
+	output interface{ Write(p []byte) (int, error) },
+	result deferredLiveValidationResult,
+) {
+	if result.Err == nil {
+		return
+	}
+	if !isClaudeCodeAgent(result.Agent) &&
+		!isCodexCLIAgent(result.Agent) &&
+		!isGeminiCLIAgent(result.Agent) {
+		return
+	}
+	state, err := loadLocalEnrollmentState(result.Agent)
+	if err != nil || strings.TrimSpace(state.BackupPath) == "" {
+		return
+	}
+	originalBytes, err := os.ReadFile(state.BackupPath)
+	if err != nil {
+		fmt.Fprintf(
+			output,
+			"      Warning: failed to read local gateway backup for recovery: %v\n",
+			err,
+		) //nolint:errcheck
+		return
+	}
+	if err := recoverManagedGatewayAfterLiveValidationFailure(
+		result.Agent,
+		originalBytes,
+		output,
+	); err != nil {
+		fmt.Fprintf(
+			output,
+			"      Warning: failed to restore local model gateway settings after live validation failure: %v\n",
+			err,
+		) //nolint:errcheck
+		return
+	}
+	if result.Outcome != nil && result.Outcome.ValidationResult != nil {
+		clearManagedGatewayValidationFlags(result.Outcome.ValidationResult)
+	}
+}
+
+func clearManagedGatewayValidationFlags(validationResult map[string]interface{}) {
+	validationResult["gateway_provider_ok"] = false
+	validationResult["gateway_base_url_ok"] = false
+	validationResult["gateway_token_ok"] = false
+	validationResult["gateway_model_configured"] = false
+	validationResult["model_provider_rewritten"] = false
+	validationResult["gateway_model_alias"] = ""
 }
 
 // persistDeferredLiveValidationResult records “result.Outcome“ against the

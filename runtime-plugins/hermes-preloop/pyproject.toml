@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "preloop-hermes-plugin"
+version = "0.1.0"
+description = "Preloop exposure and Agent Control plugin for Hermes"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Preloop" }]
+dependencies = [
+  "aiohttp>=3.9",
+  "PyYAML>=6.0",
+  "preloop>=0.9.3",
+]
+keywords = ["preloop", "hermes", "agent-control", "autonomous-agents"]
+
+[project.urls]
+Homepage = "https://preloop.ai"
+Repository = "https://github.com/spacecode-ai/preloop"
+Documentation = "https://docs.preloop.ai"
+
+[project.entry-points."hermes.plugins"]
+preloop = "preloop_hermes_plugin:plugin"
+
+[project.scripts]
+preloop-hermes-plugin = "preloop_hermes_plugin.plugin:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

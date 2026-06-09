@@ -444,7 +444,7 @@ BUILTIN_TOOLS = [
 
 
 @router.get("/tools", response_model=List[Dict])
-async def list_all_tools(
+def list_all_tools(
     account: Account = Depends(get_account_for_user),
     db: Session = Depends(get_db_session),
 ) -> List[Dict]:

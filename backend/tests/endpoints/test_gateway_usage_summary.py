@@ -87,6 +87,205 @@ def test_account_gateway_usage_summary_endpoint(client, db_session, test_user):
     assert body["usage_by_session"][0]["session_reference"] == "session-123"
 
 
+def test_runtime_session_summary_and_optimization_endpoints(
+    client, db_session, test_user
+):
+    """Runtime session observer endpoints should expose zero-spend insights."""
+    now = datetime.now(UTC)
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-42",
+        session_reference="claude-session-42",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-42",
+        runtime_principal_name="Claude Workspace",
+        started_at=now,
+        last_activity_at=now,
+    )
+    db_session.commit()
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/anthropic/v1/messages",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="anthropic/claude-sonnet-4",
+        provider_name="anthropic",
+        prompt_tokens=900,
+        completion_tokens=100,
+        total_tokens=1000,
+        estimated_cost=0.5,
+    )
+
+    summary_response = client.post(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/summaries"
+    )
+
+    assert summary_response.status_code == 200
+    summary_body = summary_response.json()
+    assert summary_body["generated_by"] == "local"
+    assert summary_body["estimated_summary_cost"] == 0
+    assert "1000 total tokens" in summary_body["highlights"]
+
+
+def test_runtime_session_gateway_events_include_preview_without_raw_payloads(
+    client, db_session, test_user
+):
+    """Gateway event list should include small previews and strip massive payloads."""
+    now = datetime.now(UTC)
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-preview",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-preview",
+        runtime_principal_name="Claude Workspace",
+        started_at=now,
+        last_activity_at=now,
+    )
+    db_session.commit()
+    crud_runtime_session_activity.log_model_gateway_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=runtime_session.id,
+        status="success",
+        timestamp=now,
+        metadata={
+            "model_alias": "openai/gpt-5.5",
+            "request": {"messages": ["massive raw request"]},
+            "response": {"choices": ["massive raw response"]},
+            "messages": ["raw messages"],
+            "conversation_preview": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "text": "Summarize the staging timeline issue",
+                    }
+                ]
+            },
+        },
+    )
+    for index in range(2):
+        crud_runtime_session_activity.log_model_gateway_call(
+            db_session,
+            account_id=test_user.account_id,
+            runtime_session_id=runtime_session.id,
+            status="success",
+            timestamp=now + timedelta(seconds=index + 1),
+            metadata={
+                "model_alias": "openai/gpt-5.5",
+                "request": {"messages": [f"massive raw request {index}"]},
+                "conversation_preview": {
+                    "messages": [{"role": "user", "text": f"Preview {index}"}]
+                },
+            },
+        )
+
+    response = client.get(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/gateway-events?limit=2"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["logs"]) == 2
+    assert body["pagination"]["total"] == 3
+    assert body["pagination"]["next_offset"] == 2
+    assert body["pagination"]["has_more"] is True
+    payloads = [event["payload"] for event in body["logs"]]
+    assert [
+        payload["conversation_preview"]["messages"][0]["text"] for payload in payloads
+    ] == [
+        "Preview 1",
+        "Preview 0",
+    ]
+    for payload in payloads:
+        assert "request" not in payload
+        assert "response" not in payload
+        assert "messages" not in payload
+
+    metadata_response = client.get(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/gateway-events"
+        "?limit=3&metadata_only=true"
+    )
+    assert metadata_response.status_code == 200
+    metadata_body = metadata_response.json()
+    assert [event["payload"]["metadata_only"] for event in metadata_body["logs"]] == [
+        True,
+        True,
+        True,
+    ]
+    assert all(
+        "conversation_preview" not in event["payload"]
+        for event in metadata_body["logs"]
+    )
+
+
+def test_runtime_session_gateway_event_summary_endpoint_returns_local_fallback(
+    client, db_session, test_user, monkeypatch
+):
+    """Interaction summary endpoint should be opt-in and useful without a model."""
+    now = datetime.now(UTC)
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-summary",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-summary",
+        runtime_principal_name="Claude Workspace",
+        started_at=now,
+        last_activity_at=now,
+    )
+    db_session.commit()
+    activity = crud_runtime_session_activity.log_model_gateway_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=runtime_session.id,
+        status="success",
+        metadata={
+            "model_alias": "openai/gpt-5.5",
+            "endpoint_kind": "chat_completions",
+            "outcome": "success",
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "request": {
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Long personality file",
+                    },
+                    {
+                        "role": "user",
+                        "content": "Please debug why session replay is unreadable.",
+                    },
+                ]
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "preloop.services.runtime_session_explorer.crud_ai_model.get_default_active_model",
+        lambda *args, **kwargs: None,
+    )
+
+    response = client.post(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/gateway-events/{activity.id}/summary"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["event_id"] == str(activity.id)
+    assert body["generated_by"] == "local"
+    assert "Please debug" in body["summary"]
+    assert "120 tokens" in body["key_points"]
+
+
 def test_flow_gateway_usage_summary_endpoint(client, db_session, test_user):
     """Flow usage summary endpoint should scope to one flow."""
     flow = crud_flow.create(
@@ -682,6 +881,87 @@ def test_runtime_session_detail_includes_flow_activity_timeline(
         and item["auth_subject_type"] == "api_key"
         for item in activity_body["items"]
     )
+
+
+def test_runtime_session_activity_dedupes_gateway_activity_rows(
+    client, db_session, test_user
+):
+    """Session logs should show each gateway request once while preserving retries."""
+    runtime_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="managed_agent",
+        session_source_id="agent-hermes-test",
+        session_reference="hermes-test-session",
+        runtime_principal_type="managed_agent",
+        runtime_principal_id="agent-hermes-test",
+        runtime_principal_name="Hermes",
+        started_at=datetime.now(UTC),
+        last_activity_at=datetime.now(UTC),
+    )
+    db_session.commit()
+    api_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/anthropic/v1/messages",
+        method="POST",
+        status_code=502,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(runtime_session.id),
+        model_alias="anthropic/claude-sonnet-4",
+        provider_name="anthropic",
+        prompt_tokens=20,
+        completion_tokens=0,
+        total_tokens=20,
+        estimated_cost=0.02,
+        auth_subject_type="api_key",
+        meta_data={
+            "request_fingerprint": "fingerprint-1",
+            "gateway_attempt": 2,
+            "is_retry": True,
+            "retry_of_api_usage_id": "first-usage-id",
+        },
+    )
+    GatewayUsageSearchService(db_session).index_interaction(
+        usage=api_usage,
+        request_payload={"messages": [{"role": "user", "content": "hello"}]},
+        response_payload={"error": "provider timeout"},
+    )
+    crud_runtime_session_activity.log_model_gateway_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=runtime_session.id,
+        status="error",
+        summary="anthropic/claude-sonnet-4 error",
+        metadata={
+            "api_usage_id": str(api_usage.id),
+            "request_fingerprint": "fingerprint-1",
+            "gateway_attempt": 2,
+            "is_retry": True,
+            "retry_of_api_usage_id": "first-usage-id",
+            "total_tokens": 20,
+            "estimated_cost": 0.02,
+        },
+    )
+
+    activity_response = client.get(
+        f"/api/v1/runtime-sessions/{runtime_session.id}/activity"
+    )
+
+    assert activity_response.status_code == 200
+    activity_body = activity_response.json()
+    model_items = [
+        item
+        for item in activity_body["items"]
+        if item["activity_type"] in {"model_interaction", "model_gateway_call"}
+    ]
+    assert len(model_items) == 1
+    assert model_items[0]["activity_type"] == "model_interaction"
+    assert model_items[0]["api_usage_id"] == str(api_usage.id)
+    assert model_items[0]["gateway_attempt"] == 2
+    assert model_items[0]["is_retry"] is True
+    assert model_items[0]["retry_of_api_usage_id"] == "first-usage-id"
 
 
 def test_runtime_session_detail_falls_back_to_flow_execution_gateway_usage(

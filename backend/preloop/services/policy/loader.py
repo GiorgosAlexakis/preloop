@@ -690,8 +690,8 @@ class PolicyApplier:
             if policy.tools:
                 self._apply_tools(policy.tools, dry_run, skip_missing_servers)
 
-            if policy.defaults:
-                self._apply_defaults(policy.defaults, dry_run)
+            if policy.defaults and not self._apply_defaults(policy.defaults, dry_run):
+                return self._result
 
             if not dry_run:
                 self.db.commit()
@@ -1317,7 +1317,7 @@ class PolicyApplier:
         self,
         defaults: DefaultsDefinition,
         dry_run: bool,
-    ) -> None:
+    ) -> bool:
         """Apply default behavior settings.
 
         NOTE: Default settings are not yet implemented. This method will raise
@@ -1366,13 +1366,14 @@ class PolicyApplier:
                 "Remove these settings or wait for implementation."
             )
             self._result.errors.append(error_msg)
-            raise PolicyValidationError(error_msg)
+            return False
 
         # Safe defaults - just log and continue
         logger.info(
             f"Default settings validated (using built-in defaults): "
             f"unknown_tools={unknown_tools_value}"
         )
+        return True
 
 
 def export_current_policy(

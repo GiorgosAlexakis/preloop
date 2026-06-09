@@ -9,6 +9,25 @@ describe('RuntimeSessionsView', () => {
   let fetchStub: sinon.SinonStub;
   let wsStub: sinon.SinonStub;
 
+  function getDeepText(el: Element | null | undefined): string {
+    if (!el) return '';
+    let text = el.textContent || '';
+    if (el.shadowRoot) {
+      text += ' ' + getDeepText(el.shadowRoot);
+    }
+    const children = Array.from(el.children);
+    for (const child of children) {
+      text += ' ' + getDeepText(child);
+    }
+    if (el.shadowRoot) {
+      const shadowChildren = Array.from(el.shadowRoot.children);
+      for (const child of shadowChildren) {
+        text += ' ' + getDeepText(child);
+      }
+    }
+    return text;
+  }
+
   beforeEach(() => {
     wsStub = sinon.stub(unifiedWebSocketManager, 'send').returns(true);
     localStorage.setItem('accessToken', 'test-access-token');
@@ -470,10 +489,7 @@ describe('RuntimeSessionsView', () => {
     );
     await element.updateComplete;
 
-    const content = (element.shadowRoot?.textContent || '').replace(
-      /\s+/g,
-      ' '
-    );
+    const content = getDeepText(element).replace(/\s+/g, ' ');
     expect(content).to.contain('Claude Workspace');
     expect(content).to.contain('anthropic/claude-sonnet-4');
 
@@ -504,22 +520,27 @@ describe('RuntimeSessionsView', () => {
       'Runtime sessions view did not finish loading'
     );
 
+    const observer = element.shadowRoot?.querySelector(
+      'preloop-session-observer'
+    );
+    const listPanel = observer?.shadowRoot?.querySelector('session-list-panel');
     const sessionButtons =
-      element.shadowRoot?.querySelectorAll('.session-item');
+      listPanel?.shadowRoot?.querySelectorAll('.session-card');
     (sessionButtons?.[1] as HTMLButtonElement).click();
 
-    await waitUntil(
-      () =>
+    await waitUntil(() => {
+      const obs = element.shadowRoot?.querySelector(
+        'preloop-session-observer'
+      ) as any;
+      return (
         (element as any).detail?.session?.id === 'runtime-session-2' &&
-        !(element as any).gatewayEventsLoading,
-      'Flow-backed session detail did not finish loading'
-    );
+        obs?.activeSessionId === 'runtime-session-2' &&
+        !obs?.loadingSessionId
+      );
+    }, 'Flow-backed session detail did not finish loading');
     await element.updateComplete;
 
-    const content = (element.shadowRoot?.textContent || '').replace(
-      /\s+/g,
-      ' '
-    );
+    const content = getDeepText(element).replace(/\s+/g, ' ');
     expect(content).to.contain('openai/gpt-5');
   });
 });

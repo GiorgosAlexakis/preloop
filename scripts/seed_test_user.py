@@ -37,6 +37,21 @@ def assign_owner_role_if_available(db_session, user):
             .first()
         )
 
+        if not owner_role:
+            click.echo("Owner role not found - trying to initialize system roles...")
+            try:
+                # Import dynamically to support OS fallback cleanly
+                from preloop.scripts.init_system_roles import initialize_system_roles
+
+                initialize_system_roles(db_session)
+                owner_role = (
+                    db_session.query(Role)
+                    .filter(Role.name == "owner", Role.is_system_role.is_(True))
+                    .first()
+                )
+            except Exception as e:
+                click.echo(f"Warning: Could not initialize system roles: {e}")
+
         if owner_role:
             crud_user_role.assign_role(
                 db_session,
@@ -48,7 +63,7 @@ def assign_owner_role_if_available(db_session, user):
             click.echo("Assigned 'owner' role to user.")
             return True
         else:
-            click.echo("Owner role not found - RBAC may not be initialized.")
+            click.echo("Owner role not found - RBAC could not be initialized.")
             return False
 
     except ImportError:

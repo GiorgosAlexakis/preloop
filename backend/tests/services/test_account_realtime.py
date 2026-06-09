@@ -1,50 +1,43 @@
-"""Tests for account-scoped realtime event publishing helpers."""
+"""Tests for account-scoped realtime event encoding."""
 
-import json
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
-from preloop.services.account_realtime import (
-    MAX_NATS_PAYLOAD_BYTES,
-    encode_realtime_event_for_nats,
-)
+from preloop.services.account_realtime import encode_realtime_event_for_nats
 
 
-def test_encode_realtime_event_for_nats_truncates_heavy_payload_fields():
+def test_encode_realtime_event_serializes_datetime_payload() -> None:
+    """Managed-agent summaries include datetime fields that must JSON-encode."""
+    observed_at = datetime(2026, 6, 9, 12, 30, tzinfo=UTC)
     event = {
-        "account_id": "account-1",
-        "topic": "gateway_activity",
-        "type": "model_gateway_call",
+        "account_id": str(uuid4()),
+        "topic": "managed_agents",
+        "type": "managed_agent_updated",
+        "timestamp": observed_at.isoformat(),
         "payload": {
-            "request": "x" * (MAX_NATS_PAYLOAD_BYTES + 1),
-            "response": "y" * (MAX_NATS_PAYLOAD_BYTES + 1),
-            "conversation_preview": {
-                "messages": [{"content": "z" * 1000}],
-                "metadata": {"has_truncated_content": False},
-            },
+            "id": str(uuid4()),
+            "last_seen_at": observed_at,
+            "lifecycle_updated_at": observed_at,
         },
     }
 
-    payload_bytes = encode_realtime_event_for_nats(event, context="account account-1")
-
+    payload_bytes = encode_realtime_event_for_nats(event, context="test account")
     assert payload_bytes is not None
-    assert len(payload_bytes) <= MAX_NATS_PAYLOAD_BYTES
-    encoded = json.loads(payload_bytes)
-    assert "request" not in encoded["payload"]
-    assert "response" not in encoded["payload"]
-    assert encoded["payload"]["conversation_preview"]["messages"] == []
-    assert (
-        encoded["payload"]["conversation_preview"]["metadata"]["has_truncated_content"]
-        is True
-    )
+    assert b"2026-06-09T12:30:00" in payload_bytes
 
 
-def test_encode_realtime_event_for_nats_drops_payload_if_still_too_large():
+def test_encode_realtime_event_serializes_uuid_values() -> None:
+    """Nested UUID values should be converted to strings."""
+    agent_id = uuid4()
     event = {
-        "account_id": "account-1",
-        "topic": "gateway_activity",
-        "type": "model_gateway_call",
-        "payload": {
-            "already_minimal_but_huge": "x" * (MAX_NATS_PAYLOAD_BYTES + 1),
-        },
+        "account_id": str(uuid4()),
+        "topic": "managed_agents",
+        "type": "managed_agent_updated",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "payload": {"agent_id": agent_id},
     }
 
-    assert encode_realtime_event_for_nats(event, context="account account-1") is None
+    payload_bytes = encode_realtime_event_for_nats(event, context="test account")
+    assert payload_bytes is not None
+    assert str(agent_id).encode() in payload_bytes
+    assert UUID(str(agent_id))

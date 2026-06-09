@@ -1,4 +1,4 @@
-import { LitElement, css, html, unsafeCSS } from 'lit';
+import { LitElement, css, html, unsafeCSS, nothing } from 'lit';
 import { Router } from '@vaadin/router';
 import { styleMap } from 'lit/directives/style-map.js';
 import { customElement, state } from 'lit/decorators.js';
@@ -20,7 +20,10 @@ import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 import '@shoelace-style/shoelace/dist/components/copy-button/copy-button.js';
 import '../../components/view-header.ts';
+import '../../components/preloop-agent-deployer.ts';
+import '../../components/preloop-deploy-wizard.ts';
 import '../../components/resource-actions.ts';
+import '../../components/agent-talk-composer.ts';
 import type { ResourceAction } from '../../components/resource-actions.ts';
 import {
   fetchWithAuth,
@@ -32,6 +35,7 @@ import {
   getAIModels,
   getFeatures,
   updateAccountAgent,
+  getUserProfile,
   type ManagedAgentListParams,
 } from '../../api';
 import type {
@@ -42,6 +46,7 @@ import type {
 } from '../../types';
 import consoleStyles from '../../styles/console-styles.css?inline';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
+import { getAgentControlState } from '../../utils/agent-control';
 import { renderAgentIcon } from '../../utils/agent-icons';
 
 const AVAILABLE_AGENT_KINDS = [
@@ -59,6 +64,12 @@ const AVAILABLE_AGENT_KINDS = [
 const DEFAULT_AGENT_KINDS = AVAILABLE_AGENT_KINDS.map((k) => k.value).filter(
   (k) => k !== 'flows'
 );
+
+const CANVAS_LAYOUT_VERSION = 'polygon-rings-v1';
+const CANVAS_CARD_HALF_WIDTH = 160;
+const CANVAS_CARD_HALF_HEIGHT = 118;
+const CANVAS_CARD_GAP = 48;
+const CANVAS_RING_MAX_SLOTS = 8;
 
 @customElement('agents-view')
 export class AgentsView extends LitElement {
@@ -110,6 +121,12 @@ export class AgentsView extends LitElement {
   // Switcher state
   @state() private currentView: 'cards' | 'canvas' = 'canvas';
 
+  // VM Provisioning state variables
+  @state() private computeFeatureEnabled = false;
+  @state() private isEnterprise = false;
+  @state() private isAdmin = false;
+  @state() private showDeployDialog = false;
+
   // Canvas Viewport State
   @state() private scale = 1;
   @state() private translateX = 0;
@@ -133,7 +150,21 @@ export class AgentsView extends LitElement {
   private initialPinchDistance = 0;
   private initialPinchScale = 1;
   private activePointers = new Map<number, PointerEvent>();
-  private resizeObserver = new ResizeObserver(() => this.resetView());
+  private hasLoadedPositions = false;
+  private resizeObserver = new ResizeObserver(() => {
+    if (Object.keys(this.nodePositions).length > 0) {
+      this.fitViewportToPositions(this.nodePositions);
+    } else {
+      const bounds = this.shadowRoot
+        ?.querySelector('.canvas-viewport')
+        ?.getBoundingClientRect();
+      if (bounds && bounds.width > 0) {
+        this.scale = 1;
+        this.translateX = bounds.width / 2;
+        this.translateY = bounds.height / 2;
+      }
+    }
+  });
 
   private unsubscribeRealtime?: () => void;
   private refreshTimer: number | null = null;
@@ -144,6 +175,19 @@ export class AgentsView extends LitElement {
       :host {
         display: block;
         height: 100%;
+      }
+      .canvas-bubbles-overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1000;
+        overflow: visible;
+      }
+      .canvas-bubbles-overlay .agent-speech-bubble {
+        bottom: 107px;
+        left: 0;
+        transform: translateX(-50%);
+        z-index: 1000;
       }
       .page {
         display: flex;
@@ -206,6 +250,17 @@ export class AgentsView extends LitElement {
         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
         gap: var(--sl-spacing-large);
         padding: 1rem 1rem 0 2rem;
+      }
+      .deploy-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--sl-spacing-large);
+        margin-bottom: var(--sl-spacing-large);
+      }
+      @media (max-width: 768px) {
+        .deploy-grid {
+          grid-template-columns: 1fr;
+        }
       }
       .agent-card::part(base) {
         height: 100%;
@@ -286,6 +341,53 @@ export class AgentsView extends LitElement {
         right: -8px;
         z-index: 2;
       }
+      .identity-stack {
+        min-width: 0;
+      }
+      .identity-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sl-spacing-2x-small);
+        margin-top: var(--sl-spacing-x-small);
+      }
+      .identity-badges sl-badge {
+        max-width: 100%;
+      }
+      .top-action {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-shrink: 0;
+      }
+      .agent-control-strip {
+        border: 1px solid var(--sl-color-primary-200);
+        border-radius: var(--sl-border-radius-medium);
+        padding: var(--sl-spacing-small);
+        background: var(--sl-color-primary-50);
+        display: flex;
+        justify-content: space-between;
+        gap: var(--sl-spacing-small);
+        align-items: center;
+      }
+      .agent-control-copy {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sl-spacing-2x-small);
+        min-width: 0;
+      }
+      .agent-control-title {
+        color: var(--sl-color-neutral-900);
+        font-size: var(--sl-font-size-small);
+        font-weight: var(--sl-font-weight-semibold);
+      }
+      .agent-control-detail {
+        color: var(--sl-color-neutral-600);
+        font-size: var(--sl-font-size-small);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
       .empty-state {
         border: 1px dashed var(--sl-color-neutral-300);
         border-radius: var(--sl-border-radius-medium);
@@ -313,7 +415,7 @@ export class AgentsView extends LitElement {
         pointer-events: none;
         opacity: 0;
         transition: opacity 0.5s ease;
-        z-index: 200;
+        z-index: 250;
       }
       .agent-speech-bubble::after {
         content: '';
@@ -483,11 +585,14 @@ export class AgentsView extends LitElement {
         position: absolute;
         transform: translate(-50%, -50%);
         z-index: 5;
-        width: 250px;
+        width: 300px;
         touch-action: none;
         cursor: pointer;
         opacity: 1;
         transition: opacity 220ms ease;
+      }
+      .agent-node.has-bubble {
+        z-index: 150;
       }
       .agent-node.entering {
         animation: node-fade-in 240ms ease-out both;
@@ -579,7 +684,10 @@ export class AgentsView extends LitElement {
       const savedPositions = localStorage.getItem(
         'preloop.agents.canvas_positions'
       );
-      if (savedPositions) {
+      const savedLayoutVersion = localStorage.getItem(
+        'preloop.agents.canvas_layout_version'
+      );
+      if (savedPositions && savedLayoutVersion === CANVAS_LAYOUT_VERSION) {
         this.nodePositions = JSON.parse(savedPositions);
       }
     } catch (e) {
@@ -587,10 +695,42 @@ export class AgentsView extends LitElement {
     }
 
     void this.loadAgents();
+    void this.fetchAdminStatus();
+    void this.fetchFeatures();
+    void this.fetchAIModels();
     this.connectRealtime();
     requestAnimationFrame(() => {
       this.resizeObserver.observe(this);
     });
+  }
+
+  private async fetchAdminStatus() {
+    try {
+      const user = await getUserProfile();
+      this.isAdmin = user?.is_superuser || false;
+    } catch (error) {
+      console.error('Failed to fetch user profile:', error);
+      this.isAdmin = false;
+    }
+  }
+
+  private async fetchFeatures() {
+    try {
+      const res = await getFeatures();
+      this.computeFeatureEnabled = !!res.features?.['compute'];
+      this.isEnterprise = Array.isArray(res.plugins) && res.plugins.length > 0;
+    } catch {
+      this.computeFeatureEnabled = false;
+      this.isEnterprise = false;
+    }
+  }
+
+  private async fetchAIModels() {
+    try {
+      this.aiModels = await getAIModels();
+    } catch {
+      this.aiModels = [];
+    }
   }
 
   updated(changedProperties: Map<string, unknown>) {
@@ -634,6 +774,7 @@ export class AgentsView extends LitElement {
     const scheduleRefresh = () => this.scheduleRefresh();
     const unsubscribers = [
       unifiedWebSocketManager.subscribe('managed_agents', scheduleRefresh),
+      unifiedWebSocketManager.subscribe('agent_control', scheduleRefresh),
       unifiedWebSocketManager.subscribe('runtime_sessions', scheduleRefresh),
       unifiedWebSocketManager.subscribe('gateway_activity', (message) =>
         this.handleGatewayActivity(message)
@@ -852,17 +993,62 @@ export class AgentsView extends LitElement {
   private initializeNodePositions(forceReset = false) {
     if (!this.agents) return;
     const items = this.getCanvasItems({ includeExiting: false });
+    // Sort items by last active timestamp descending so active nodes get closer slots
+    items.sort((a, b) => {
+      const aTime = new Date(
+        a.execution_stats?.last_seen_at || a.last_seen_at || a.created_at || 0
+      ).getTime();
+      const bTime = new Date(
+        b.execution_stats?.last_seen_at || b.last_seen_at || b.created_at || 0
+      ).getTime();
+      if (bTime !== aTime) {
+        return bTime - aTime;
+      }
+      return a.id.localeCompare(b.id);
+    });
     let newPositions = forceReset ? {} : { ...this.nodePositions };
-    const compactStaleLayout =
-      !forceReset && this.shouldCompactCanvasLayout(items, newPositions);
-    if (compactStaleLayout) {
+
+    // Clean up any stale positions for items that are no longer active
+    const activeIds = new Set(items.map((item) => item.id));
+    let cleanedAny = false;
+    for (const key of Object.keys(newPositions)) {
+      if (!activeIds.has(key)) {
+        delete newPositions[key];
+        cleanedAny = true;
+      }
+    }
+
+    if (cleanedAny) {
+      this.nodePositions = newPositions;
+      localStorage.setItem(
+        'preloop.agents.canvas_positions',
+        JSON.stringify(newPositions)
+      );
+    }
+
+    const compactStaleLayout = false;
+    const lopsidedCompactLayout = false;
+    if (compactStaleLayout || lopsidedCompactLayout) {
       newPositions = {};
+      this.nodePositions = {};
+      localStorage.setItem(
+        'preloop.agents.canvas_positions',
+        JSON.stringify({})
+      );
     }
 
     const unpositionedAgents = items.filter((a) => !newPositions[a.id]);
 
     // If nothing to position and not forcing reset, do nothing
     if (!forceReset && unpositionedAgents.length === 0) {
+      if (!this.hasLoadedPositions) {
+        requestAnimationFrame(() => {
+          const success = this.fitViewportToPositions(newPositions);
+          if (success) {
+            this.hasLoadedPositions = true;
+          }
+        });
+      }
       return;
     }
 
@@ -882,13 +1068,18 @@ export class AgentsView extends LitElement {
       'preloop.agents.canvas_positions',
       JSON.stringify(newPositions)
     );
+    localStorage.setItem(
+      'preloop.agents.canvas_layout_version',
+      CANVAS_LAYOUT_VERSION
+    );
     this.animateNodePositions(newPositions);
 
-    if (isFullLayout || unpositionedAgents.length > 0) {
-      // Make sure the nodes are actually visible: pick a scale/translate
-      // that frames every card without moving existing card positions.
-      requestAnimationFrame(() => this.fitViewportToPositions(newPositions));
-    }
+    requestAnimationFrame(() => {
+      const success = this.fitViewportToPositions(newPositions);
+      if (success) {
+        this.hasLoadedPositions = true;
+      }
+    });
   }
 
   private getCanvasItems(options: { includeExiting?: boolean } = {}) {
@@ -973,14 +1164,12 @@ export class AgentsView extends LitElement {
   private findBestBlankCanvasPosition(
     positions: Record<string, { x: number; y: number }>
   ): { x: number; y: number } {
-    const cardHalfWidth = 130;
-    const cardHalfHeight = 95;
-    const gap = 36;
-    const stepX = cardHalfWidth * 2 + gap;
-    const stepY = cardHalfHeight * 2 + gap;
+    const stepX = CANVAS_CARD_HALF_WIDTH * 2 + CANVAS_CARD_GAP;
+    const stepY = CANVAS_CARD_HALF_HEIGHT * 2 + CANVAS_CARD_GAP;
     const occupied = Object.values(positions);
     const candidates = this.getCompactCanvasCandidates(
-      occupied.length + 12
+      occupied.length + 12,
+      occupied.length + 1
     ).sort(
       (a, b) =>
         this.canvasCandidateScore(a, occupied) -
@@ -1014,30 +1203,84 @@ export class AgentsView extends LitElement {
   }
 
   private getCompactCanvasCandidates(
-    desiredCount: number
+    desiredCount: number,
+    visibleCount = desiredCount
   ): Array<{ x: number; y: number }> {
     const candidates: Array<{ x: number; y: number }> = [];
-    const rings = [
-      { rx: 360, ry: 220, slots: 6 },
-      { rx: 620, ry: 380, slots: 10 },
-      { rx: 880, ry: 540, slots: 14 },
-      { rx: 1140, ry: 700, slots: 18 },
-      { rx: 1400, ry: 860, slots: 22 },
-    ];
+    const minDx = 2 * CANVAS_CARD_HALF_WIDTH + CANVAS_CARD_GAP;
+    const minDy = 2 * CANVAS_CARD_HALF_HEIGHT + CANVAS_CARD_GAP;
+    const aspect = minDx / minDy;
 
-    for (const ring of rings) {
-      const angleStep = (2 * Math.PI) / ring.slots;
-      for (let i = 0; i < ring.slots; i++) {
-        const angle = -Math.PI / 2 + i * angleStep;
-        candidates.push({
-          x: Math.round(Math.cos(angle) * ring.rx),
-          y: Math.round(Math.sin(angle) * ring.ry),
-        });
+    const minRFromGateway = 240; // Safe distance to avoid overlapping gateway
+
+    let remainingVisible = visibleCount > 0 ? visibleCount : desiredCount;
+    let layerIdx = 0;
+    let prevR = 0;
+
+    while (candidates.length < desiredCount) {
+      const N = remainingVisible > 0 ? Math.min(8, remainingVisible) : 8;
+      remainingVisible -= N;
+
+      let R = layerIdx === 0 ? minRFromGateway : prevR + minDy;
+
+      while (true) {
+        let overlap = false;
+        const currentLayerPts: Array<{ x: number; y: number }> = [];
+        const thetaOffset = -Math.PI / 2;
+
+        for (let i = 0; i < N; i++) {
+          const theta = thetaOffset + (2 * Math.PI * i) / N;
+          currentLayerPts.push({
+            x: Math.round(R * aspect * Math.cos(theta)),
+            y: Math.round(R * Math.sin(theta)),
+          });
+        }
+
+        // Same-layer overlap check
+        for (let i = 0; i < N; i++) {
+          for (let j = i + 1; j < N; j++) {
+            if (
+              Math.abs(currentLayerPts[i].x - currentLayerPts[j].x) < minDx &&
+              Math.abs(currentLayerPts[i].y - currentLayerPts[j].y) < minDy
+            ) {
+              overlap = true;
+              break;
+            }
+          }
+          if (overlap) break;
+        }
+
+        // Cross-layer overlap check
+        if (!overlap) {
+          for (const pt of currentLayerPts) {
+            for (const cand of candidates) {
+              if (
+                Math.abs(cand.x - pt.x) < minDx &&
+                Math.abs(cand.y - pt.y) < minDy
+              ) {
+                overlap = true;
+                break;
+              }
+            }
+            if (overlap) break;
+          }
+        }
+
+        if (!overlap) {
+          for (const pt of currentLayerPts) {
+            candidates.push(pt);
+          }
+          prevR = R;
+          break;
+        }
+
+        R += 10;
       }
-      if (candidates.length >= desiredCount) break;
+
+      layerIdx++;
     }
 
-    return candidates;
+    return candidates.slice(0, desiredCount);
   }
 
   private shouldCompactCanvasLayout(
@@ -1055,6 +1298,7 @@ export class AgentsView extends LitElement {
     }
 
     const compactCandidates = this.getCompactCanvasCandidates(
+      positionedItems.length,
       positionedItems.length
     );
     const expectedMaxDistance = Math.max(
@@ -1066,18 +1310,49 @@ export class AgentsView extends LitElement {
     return maxDistance > expectedMaxDistance + 220;
   }
 
+  private shouldRebalanceCompactCanvasLayout(
+    items: Array<{ id: string }>,
+    positions: Record<string, { x: number; y: number }>
+  ): boolean {
+    if (items.length < 4) return false;
+    const positionedItems = items.filter((item) => positions[item.id]);
+    if (positionedItems.length !== items.length) return false;
+
+    let leftCount = 0;
+    let rightCount = 0;
+    let topCount = 0;
+    let bottomCount = 0;
+    let maxDistance = 0;
+    for (const item of positionedItems) {
+      const pos = positions[item.id];
+      if (pos.x < -40) leftCount += 1;
+      if (pos.x > 40) rightCount += 1;
+      if (pos.y < -40) topCount += 1;
+      if (pos.y > 40) bottomCount += 1;
+      maxDistance = Math.max(maxDistance, Math.hypot(pos.x, pos.y));
+    }
+
+    // Only auto-rebalance compact generated layouts. Very distant layouts are
+    // likely hand-arranged by the user and should be left alone.
+    return (
+      (Math.abs(leftCount - rightCount) > 1 ||
+        Math.abs(topCount - bottomCount) > 2) &&
+      maxDistance < 1400
+    );
+  }
+
   private computeFittedLayout(
     items: Array<{ id: string }>
   ): Record<string, { x: number; y: number }> {
     const positions: Record<string, { x: number; y: number }> = {};
     if (items.length === 0) return positions;
 
-    const cardHalfWidth = 130;
-    const cardHalfHeight = 95;
-    const gap = 36;
-    const minDx = 2 * cardHalfWidth + gap;
-    const minDy = 2 * cardHalfHeight + gap;
-    const candidates = this.getCompactCanvasCandidates(items.length + 16);
+    const minDx = 2 * CANVAS_CARD_HALF_WIDTH + CANVAS_CARD_GAP;
+    const minDy = 2 * CANVAS_CARD_HALF_HEIGHT + CANVAS_CARD_GAP;
+    const candidates = this.getCompactCanvasCandidates(
+      items.length + 16,
+      items.length
+    );
 
     for (const item of items) {
       const occupied = Object.values(positions);
@@ -1104,59 +1379,97 @@ export class AgentsView extends LitElement {
    */
   private fitViewportToPositions(
     positions: Record<string, { x: number; y: number }>
-  ) {
+  ): boolean {
     const viewport = this.shadowRoot?.querySelector(
       '.canvas-viewport'
     ) as HTMLElement | null;
     const bounds = viewport?.getBoundingClientRect();
-    if (!bounds || bounds.width === 0 || bounds.height === 0) return;
+    if (!bounds || bounds.width === 0 || bounds.height === 0) return false;
 
-    const ids = Object.keys(positions);
+    const items = this.getCanvasItems({ includeExiting: false });
+    const itemMap = new Map(items.map((item) => [item.id, item]));
+    const ids = Object.keys(positions).filter((id) => itemMap.has(id));
+
     if (ids.length === 0) {
       this.scale = 1;
       this.translateX = bounds.width / 2;
       this.translateY = bounds.height / 2;
-      return;
+      return true;
     }
 
-    let minX = 0;
-    let maxX = 0;
-    let minY = 0;
-    let maxY = 0;
-    for (const id of ids) {
-      const pos = positions[id];
-      if (!pos) continue;
-      if (pos.x < minX) minX = pos.x;
-      if (pos.x > maxX) maxX = pos.x;
-      if (pos.y < minY) minY = pos.y;
-      if (pos.y > maxY) maxY = pos.y;
+    const getTimestamp = (id: string) => {
+      const item = itemMap.get(id);
+      if (!item) return 0;
+      return new Date(
+        item.execution_stats?.last_seen_at ||
+          item.last_seen_at ||
+          item.created_at ||
+          0
+      ).getTime();
+    };
+
+    const sortedIds = ids
+      .filter((id) => positions[id])
+      .sort((a, b) => getTimestamp(b) - getTimestamp(a));
+
+    const MIN_READABLE_SCALE = 0.75;
+    const MIN_ITEMS_TO_FIT = Math.min(sortedIds.length, 6);
+
+    let targetScale = 0.5;
+    let finalMinX = 0;
+    let finalMaxX = 0;
+    let finalMinY = 0;
+    let finalMaxY = 0;
+
+    for (let k = sortedIds.length; k >= MIN_ITEMS_TO_FIT; k--) {
+      const subsetIds = sortedIds.slice(0, k);
+
+      let minX = 0;
+      let maxX = 0;
+      let minY = 0;
+      let maxY = 0;
+      for (const id of subsetIds) {
+        const pos = positions[id];
+        if (pos.x < minX) minX = pos.x;
+        if (pos.x > maxX) maxX = pos.x;
+        if (pos.y < minY) minY = pos.y;
+        if (pos.y > maxY) maxY = pos.y;
+      }
+
+      const cardHalfW = CANVAS_CARD_HALF_WIDTH;
+      const cardHalfH = CANVAS_CARD_HALF_HEIGHT;
+      const sideMargin = 56;
+      const topMargin = 44;
+      const bottomMargin = 44;
+
+      const paddedMinX = minX - (cardHalfW + sideMargin);
+      const paddedMaxX = maxX + (cardHalfW + sideMargin);
+      const paddedMinY = minY - (cardHalfH + topMargin);
+      const paddedMaxY = maxY + (cardHalfH + bottomMargin);
+
+      const halfWidth = Math.max(Math.abs(paddedMinX), Math.abs(paddedMaxX), 1);
+      const scaleX = bounds.width / 2 / halfWidth;
+      const contentHeight = Math.max(paddedMaxY - paddedMinY, 1);
+      const scaleY = bounds.height / contentHeight;
+
+      const maxAutoScale = 1.25;
+      const currentScale = Math.min(scaleX, scaleY, maxAutoScale);
+
+      if (currentScale >= MIN_READABLE_SCALE || k === MIN_ITEMS_TO_FIT) {
+        targetScale = currentScale;
+        finalMinX = paddedMinX;
+        finalMaxX = paddedMaxX;
+        finalMinY = paddedMinY;
+        finalMaxY = paddedMaxY;
+        break;
+      }
     }
-
-    // Account for the actual rendered card footprint plus speech bubbles
-    // above the card. The layout reserves matching top clearance so this
-    // should rarely force a scale-down for normal fleet sizes.
-    const cardHalfW = 130;
-    const cardHalfH = 95;
-    const sideMargin = 56;
-    const speechBubbleHeight = 132;
-    const bottomMargin = 44;
-    minX -= cardHalfW + sideMargin;
-    maxX += cardHalfW + sideMargin;
-    minY -= cardHalfH + speechBubbleHeight;
-    maxY += cardHalfH + bottomMargin;
-
-    const halfWidth = Math.max(Math.abs(minX), Math.abs(maxX), 1);
-    const halfHeight = Math.max(Math.abs(minY), Math.abs(maxY), 1);
-    const scaleX = bounds.width / 2 / halfWidth;
-    const scaleY = bounds.height / 2 / halfHeight;
-    // Keep the gateway pinned at viewport center. Only scale the surrounding
-    // agents down when the compact rings truly need the room.
-    const maxAutoScale = 1.25;
-    const targetScale = Math.min(scaleX, scaleY, maxAutoScale);
 
     this.scale = targetScale;
     this.translateX = bounds.width / 2;
-    this.translateY = bounds.height / 2;
+    const contentCenterY = (finalMinY + finalMaxY) / 2;
+    this.translateY = bounds.height / 2 - contentCenterY * targetScale;
+    return true;
   }
 
   private animatePositionFrameId: number | null = null;
@@ -1928,18 +2241,16 @@ export class AgentsView extends LitElement {
       return;
     }
 
-    // Recompute layout to fit the current canvas, then frame the result.
-    // initializeNodePositions(true) will trigger a fit pass on the next
-    // animation frame; we also fit immediately against the freshly
-    // computed positions so the user sees the framing happen in lockstep
-    // with the position animation.
     this.initializeNodePositions(true);
-    this.fitViewportToPositions(this.nodePositions);
   }
 
   firstUpdated() {
     setTimeout(() => {
-      this.resetView();
+      if (Object.keys(this.nodePositions).length > 0) {
+        this.fitViewportToPositions(this.nodePositions);
+      } else {
+        this.resetView();
+      }
     }, 50);
   }
 
@@ -2098,6 +2409,59 @@ export class AgentsView extends LitElement {
     return actions;
   }
 
+  private renderAgentIdentityBadges(agent: ManagedAgentSummary) {
+    const tags = Object.entries(agent.tags || {});
+    return html`
+      <div class="identity-badges">
+        <sl-badge variant="${this.getLifecycleVariant(agent)}" pill>
+          ${this.getLifecycleLabel(agent)}
+        </sl-badge>
+        ${agent.owner_username
+          ? html`<sl-badge variant="primary" pill
+              >Owner: ${agent.owner_username}</sl-badge
+            >`
+          : null}
+        ${tags.map(
+          ([key, value]) => html`
+            <sl-badge variant="neutral" pill>
+              <span style="opacity: 0.7">${key}</span>${value &&
+              value !== 'true'
+                ? html`<span style="opacity: 0.4; margin: 0 4px;">=</span
+                    >${value}`
+                : ''}
+            </sl-badge>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderAgentTalkButton(
+    agent: ManagedAgentSummary | null,
+    sourceContext: string
+  ) {
+    const controlState = agent ? getAgentControlState(agent) : null;
+    if (!agent || !controlState?.visible) {
+      return null;
+    }
+    return html`
+      <div
+        class="top-action"
+        @click=${(event: Event) => event.stopPropagation()}
+        @keydown=${(event: Event) => event.stopPropagation()}
+        @pointerdown=${(event: Event) => event.stopPropagation()}
+      >
+        <agent-talk-composer
+          .agent=${agent}
+          .sessions=${[]}
+          sourceContext=${sourceContext}
+          compact
+          @agent-control-sent=${() => this.loadAgents()}
+        ></agent-talk-composer>
+      </div>
+    `;
+  }
+
   private renderAgentCard(item: any) {
     const isFlow =
       'flow_status' in item || ('name' in item && !('display_name' in item));
@@ -2132,7 +2496,6 @@ export class AgentsView extends LitElement {
     const lastSeen = isFlow
       ? flowNode?.execution_stats?.last_seen_at
       : agent?.last_seen_at;
-
     return html`
       <sl-card
         class="agent-card ${liveTotal > 0 ? 'live' : ''} ${isGlowing
@@ -2172,7 +2535,7 @@ export class AgentsView extends LitElement {
                     agentKind,
                     'font-size: 24px; color: var(--sl-color-neutral-800); margin-top: 2px;'
                   )}
-              <div>
+              <div class="identity-stack">
                 <div class="agent-name">${displayName}</div>
                 <div
                   class="agent-meta"
@@ -2181,21 +2544,14 @@ export class AgentsView extends LitElement {
                   ${isFlow ? 'Flow' : this.getSourceLabel(agentKind)}
                   ${sessionSourceId ? ` · ${sessionSourceId}` : ''}
                 </div>
+                ${!isFlow && agent
+                  ? this.renderAgentIdentityBadges(agent)
+                  : null}
               </div>
             </div>
             <div class="badges">
               ${!isFlow
-                ? html`
-                    <sl-badge variant="${this.getOnboardingVariant(agent!)}"
-                      >${this.getOnboardingLabel(agent!)}</sl-badge
-                    >
-                    <sl-badge variant="${this.getLifecycleVariant(agent!)}"
-                      >${this.getLifecycleLabel(agent!)}</sl-badge
-                    >
-                    <sl-badge variant="${this.getLiveValidationVariant(agent!)}"
-                      >${this.getLiveValidationLabel(agent!)}</sl-badge
-                    >
-                  `
+                ? this.renderAgentTalkButton(agent, 'agents-card')
                 : html`
                     <sl-badge
                       variant=${!isFlow
@@ -2273,44 +2629,6 @@ export class AgentsView extends LitElement {
                 </div>
               `
             : ''}
-          ${!isFlow && agent?.owner_username
-            ? html`
-                <div
-                  style="font-size: 0.85rem; color: var(--sl-color-neutral-700); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"
-                >
-                  <sl-icon
-                    name="person-circle"
-                    style="color: var(--sl-color-primary-500);"
-                  ></sl-icon>
-                  <strong>Owner:</strong> ${agent!.owner_username}
-                </div>
-              `
-            : ''}
-          ${!isFlow && agent?.tags && Object.keys(agent!.tags).length > 0
-            ? html`
-                <div
-                  style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;"
-                >
-                  ${Object.entries(agent!.tags).map(
-                    ([k, v]) => html`
-                      <sl-badge
-                        variant="neutral"
-                        pill
-                        style="font-weight: normal; max-width: 100%; overflow: hidden; text-overflow: ellipsis;"
-                      >
-                        <span style="opacity: 0.7">${k}</span>${v &&
-                        v !== 'true'
-                          ? html`<span style="opacity: 0.4; margin: 0 4px;"
-                                >=</span
-                              >${v}`
-                          : ''}
-                      </sl-badge>
-                    `
-                  )}
-                </div>
-              `
-            : ''}
-
           <div
             style="font-size: 0.85rem; color: var(--sl-color-neutral-600); margin-bottom: 12px;"
           >
@@ -2380,441 +2698,508 @@ export class AgentsView extends LitElement {
   }
 
   private renderCanvas() {
+    const items = this.getCanvasItems({ includeExiting: false });
     return html`
-      <div class="canvas-container">
-        ${this.loading && !this.agents
-          ? html`
-              <div
-                style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; background: var(--sl-panel-background-color); backdrop-filter: blur(4px);"
-              >
-                <sl-spinner style="font-size: 2rem;"></sl-spinner>
+      <div
+        style="position: relative; flex: 1; min-height: 500px; display: flex; flex-direction: column; overflow: visible; z-index: 10;"
+      >
+        <div
+          class="canvas-container"
+          style="flex: 1; width: 100%; height: 100%;"
+        >
+          ${this.loading && !this.agents
+            ? html`
                 <div
-                  style="margin-top: 16px; font-family: monospace; color: var(--sl-color-neutral-600);"
+                  style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; background: var(--sl-panel-background-color); backdrop-filter: blur(4px);"
                 >
-                  Loading topology data...
+                  <sl-spinner style="font-size: 2rem;"></sl-spinner>
+                  <div
+                    style="margin-top: 16px; font-family: monospace; color: var(--sl-color-neutral-600);"
+                  >
+                    Loading topology data...
+                  </div>
+                </div>
+              `
+            : ''}
+
+          <div class="controls-overlay">
+            <sl-tooltip content="Zoom In" placement="left">
+              <sl-button
+                size="medium"
+                circle
+                @click=${() =>
+                  this.zoom(0.2, window.innerWidth / 2, window.innerHeight / 2)}
+              >
+                <sl-icon name="plus"></sl-icon>
+              </sl-button>
+            </sl-tooltip>
+            <sl-tooltip content="Reset View" placement="left">
+              <sl-button size="medium" circle @click=${this.resetView}>
+                <sl-icon name="arrows-collapse"></sl-icon>
+              </sl-button>
+            </sl-tooltip>
+            <sl-tooltip content="Zoom Out" placement="left">
+              <sl-button
+                size="medium"
+                circle
+                @click=${() =>
+                  this.zoom(
+                    -0.2,
+                    window.innerWidth / 2,
+                    window.innerHeight / 2
+                  )}
+              >
+                <sl-icon name="dash"></sl-icon>
+              </sl-button>
+            </sl-tooltip>
+          </div>
+
+          <div
+            style="position: absolute; left: 20px; bottom: 20px; z-index: 20; background: color-mix(in srgb, var(--sl-panel-background-color) 92%, transparent); border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); padding: 10px 12px; font-size: 0.8rem; color: var(--sl-color-neutral-700); display: flex; gap: 16px;"
+          >
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span
+                style="display: inline-block; width: 20px; height: 0; border-top: 2px solid var(--sl-color-primary-500);"
+              ></span>
+              <span>Model traffic</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span
+                style="display: inline-block; width: 20px; height: 0; border-top: 2px dashed var(--sl-color-warning-500);"
+              ></span>
+              <span>Tool traffic</span>
+            </div>
+          </div>
+
+          <div
+            class="canvas-viewport"
+            @wheel=${this.handleWheel}
+            @pointerdown=${this.handlePointerDown}
+            @pointermove=${this.handlePointerMove}
+            @pointerup=${this.handlePointerUp}
+            @pointercancel=${this.handlePointerUp}
+            @pointerleave=${this.handlePointerUp}
+          >
+            <div
+              style=${styleMap({
+                transform: `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`,
+              })}
+              class="canvas-content"
+            >
+              <div class="gateway-node">
+                <div
+                  class="gateway-icon ${Object.values(this.liveActivity).some(
+                    (v) =>
+                      v.lastActivityAt &&
+                      Date.now() - new Date(v.lastActivityAt).getTime() < 2000
+                  )
+                    ? 'pulsing'
+                    : ''}"
+                >
+                  <sl-icon
+                    src="/assets/preloop-badge.svg"
+                    style="margin-left: -5px;margin-bottom: -4px;"
+                  ></sl-icon>
+                </div>
+                <div class="gateway-label" style="text-align: center;">
+                  <div>PRELOOP GATEWAY</div>
+                  ${this.gatewaySummary
+                    ? html`
+                        <div
+                          style="font-size: 0.75rem; color: var(--sl-color-primary-500); margin-top: 4px; font-weight: 500; font-family: monospace;"
+                        >
+                          ${this.gatewaySummary.token_usage.total_tokens.toLocaleString()}
+                          Tokens ·
+                          ${this.gatewaySummary.requests_by_day?.length > 0
+                            ? (
+                                this.gatewaySummary.token_usage.total_tokens /
+                                this.gatewaySummary.requests_by_day.length
+                              ).toFixed(0)
+                            : '0'}
+                          / day
+                        </div>
+                      `
+                    : ''}
                 </div>
               </div>
-            `
-          : ''}
 
-        <div class="controls-overlay">
-          <sl-tooltip content="Zoom In" placement="left">
-            <sl-button
-              size="medium"
-              circle
-              @click=${() =>
-                this.zoom(0.2, window.innerWidth / 2, window.innerHeight / 2)}
-            >
-              <sl-icon name="plus"></sl-icon>
-            </sl-button>
-          </sl-tooltip>
-          <sl-tooltip content="Reset View" placement="left">
-            <sl-button size="medium" circle @click=${this.resetView}>
-              <sl-icon name="arrows-collapse"></sl-icon>
-            </sl-button>
-          </sl-tooltip>
-          <sl-tooltip content="Zoom Out" placement="left">
-            <sl-button
-              size="medium"
-              circle
-              @click=${() =>
-                this.zoom(-0.2, window.innerWidth / 2, window.innerHeight / 2)}
-            >
-              <sl-icon name="dash"></sl-icon>
-            </sl-button>
-          </sl-tooltip>
+              ${this.getCanvasItems({ includeExiting: true }).map(
+                (item: any) => {
+                  const isFlow =
+                    'flow_status' in item ||
+                    ('name' in item && !('display_name' in item));
+                  const agent = isFlow ? null : (item as ManagedAgentSummary);
+                  const flowName = isFlow ? item.name : '';
+                  const flowNode = isFlow ? (item as any) : null;
+                  const liveExecs = isFlow
+                    ? item.execution_stats?.running_execs || 0
+                    : 0;
+                  const totalExecs = isFlow
+                    ? item.execution_stats?.total_execs || 0
+                    : 0;
+                  const totalSpend = isFlow
+                    ? item.execution_stats?.estimated_cost || 0
+                    : agent?.estimated_cost || 0;
+                  const estimatedCost = totalSpend;
+                  const lastSeenFlow = isFlow
+                    ? item.execution_stats?.last_seen_at
+                    : null;
+                  const pos = this.nodePositions[item.id] || { x: 250, y: 250 };
+                  const liveActivity = this.liveActivity[item.id];
+                  const liveTotal = liveActivity
+                    ? liveActivity.modelCalls + liveActivity.toolCalls
+                    : 0;
+                  const mcpEnabled = isFlow
+                    ? true
+                    : this.isMcpConfigured(agent as any);
+                  const modelEnabled = isFlow
+                    ? true
+                    : this.isModelConfigured(agent as any);
+                  const modelActive = !!(
+                    liveActivity?.modelCalls &&
+                    liveActivity?.lastActivityAt &&
+                    Date.now() -
+                      new Date(liveActivity.lastActivityAt).getTime() <
+                      2000
+                  );
+                  const toolActive = !!(
+                    liveActivity?.toolCalls &&
+                    liveActivity?.lastActivityAt &&
+                    Date.now() -
+                      new Date(liveActivity.lastActivityAt).getTime() <
+                      2000
+                  );
+                  const isGlowing =
+                    liveTotal > 0 &&
+                    liveActivity &&
+                    Date.now() -
+                      new Date(liveActivity.lastActivityAt || 0).getTime() <
+                      2000;
+                  const distance = Math.max(
+                    Math.sqrt(pos.x * pos.x + pos.y * pos.y),
+                    1
+                  );
+                  const offsetX = (-pos.y / distance) * 8;
+                  const offsetY = (pos.x / distance) * 8;
+
+                  return html`
+                    <svg
+                      class="connection-line ${this.nodeAnimationState[
+                        item.id
+                      ] || ''} ${this.draggingNodeId === item.id
+                        ? 'dragging'
+                        : ''}"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <line
+                        x1="${offsetX}"
+                        y1="${offsetY}"
+                        x2="${pos.x + offsetX}"
+                        y2="${pos.y + offsetY}"
+                        stroke="${isFlow
+                          ? 'var(--sl-color-primary-500)'
+                          : modelEnabled
+                            ? modelActive
+                              ? 'var(--sl-color-success-500)'
+                              : 'var(--sl-color-primary-500)'
+                            : 'var(--sl-color-neutral-300)'}"
+                        stroke-width="${isFlow
+                          ? '2'
+                          : modelActive
+                            ? '3'
+                            : modelEnabled
+                              ? '2'
+                              : '1.25'}"
+                        stroke-dasharray="${modelEnabled ? '0' : '6 6'}"
+                        opacity="${modelEnabled ? '1' : '0.55'}"
+                      />
+                      <line
+                        x1="${-offsetX}"
+                        y1="${-offsetY}"
+                        x2="${pos.x - offsetX}"
+                        y2="${pos.y - offsetY}"
+                        stroke="${mcpEnabled
+                          ? toolActive
+                            ? 'var(--sl-color-warning-300)'
+                            : 'var(--sl-color-warning-500)'
+                          : 'var(--sl-color-neutral-300)'}"
+                        stroke-width="${toolActive
+                          ? '3'
+                          : mcpEnabled
+                            ? '2'
+                            : '1.25'}"
+                        stroke-dasharray="${mcpEnabled ? '5 4' : '6 6'}"
+                        opacity="${mcpEnabled ? '1' : '0.55'}"
+                      />
+                    </svg>
+
+                    <div
+                      class="agent-node ${this.nodeAnimationState[item.id] ||
+                      ''} ${this.draggingNodeId === item.id
+                        ? 'dragging'
+                        : ''} ${liveActivity?.currentBubble &&
+                      Date.now() - liveActivity.currentBubble.timestamp < 6000
+                        ? 'has-bubble'
+                        : ''}"
+                      style=${styleMap({
+                        left: `${pos.x}px`,
+                        top: `${pos.y}px`,
+                      })}
+                      @pointerdown=${(e: PointerEvent) =>
+                        this.handleNodePointerDown(e, item.id)}
+                      @pointermove=${(e: PointerEvent) =>
+                        this.handleNodePointerMove(e, item.id)}
+                      @pointerup=${(e: PointerEvent) =>
+                        this.handleNodePointerUp(e, item.id)}
+                      @pointercancel=${(e: PointerEvent) =>
+                        this.handleNodePointerUp(e, item.id)}
+                    >
+                      ${html`
+                        <sl-card>
+                          <div
+                            slot="header"
+                            style="display: flex; justify-content: space-between; align-items: center;"
+                          >
+                            <div
+                              style="display: flex; gap: 8px; overflow: hidden;"
+                            >
+                              ${isFlow
+                                ? html`<img
+                                    src="/images/flow.svg"
+                                    class="flow-icon"
+                                    style="width: 20px; height: 20px; flex-shrink: 0;"
+                                    alt="Flow"
+                                  />`
+                                : renderAgentIcon(
+                                    agent?.agent_kind ||
+                                      agent?.session_source_type,
+                                    'flex-shrink: 0; color: var(--sl-color-neutral-900); width: 20px; height: 20px;'
+                                  )}
+                              <strong
+                                style="font-size: 1rem; word-break: break-word; line-height: 1.2;"
+                                >${isFlow
+                                  ? flowName
+                                  : agent?.display_name}</strong
+                              >
+                            </div>
+                            ${!isFlow
+                              ? this.renderAgentTalkButton(
+                                  agent,
+                                  'agents-canvas'
+                                )
+                              : liveTotal > 0
+                                ? html`<sl-badge variant="success" pulse
+                                    >Live</sl-badge
+                                  >`
+                                : isFlow
+                                  ? html`<sl-badge variant="success"
+                                      >Active</sl-badge
+                                    >`
+                                  : ''}
+                          </div>
+                          <div
+                            style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; word-break: break-word;"
+                            title="${isFlow
+                              ? flowNode?.description || ''
+                              : agent?.session_source_id || ''}"
+                          >
+                            ${isFlow
+                              ? flowNode?.description || ''
+                              : agent?.session_source_id}
+                          </div>
+                          ${!isFlow && agent
+                            ? this.renderAgentIdentityBadges(agent)
+                            : null}
+                          ${isFlow && flowNode?.agent_type
+                            ? html` <div
+                                style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                              >
+                                ${renderAgentIcon(
+                                  flowNode.agent_type,
+                                  'color: var(--sl-color-primary-500); width: 14px; height: 14px;'
+                                )}
+                                ${flowNode.agent_type}
+                              </div>`
+                            : ''}
+                          ${!isFlow && (agent as any)?.ai_model_id
+                            ? html` <div
+                                style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                              >
+                                <sl-icon
+                                  name="cpu"
+                                  style="color: var(--sl-color-primary-500);"
+                                ></sl-icon>
+                                <a
+                                  href="/console/ai-models/${encodeURIComponent(
+                                    (agent as any).ai_model_id
+                                  )}"
+                                  style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
+                                  @click=${(e: Event) => e.stopPropagation()}
+                                  >${(agent as any).ai_model_id}</a
+                                >
+                              </div>`
+                            : ''}
+                          ${isFlow && flowNode?.ai_model_id
+                            ? html` <div
+                                style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
+                              >
+                                <sl-icon
+                                  name="cpu"
+                                  style="color: var(--sl-color-primary-500);"
+                                ></sl-icon>
+                                <a
+                                  href="/console/ai-models/${encodeURIComponent(
+                                    flowNode.ai_model_id
+                                  )}"
+                                  style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
+                                  @click=${(e: Event) => e.stopPropagation()}
+                                  >${flowNode.ai_model_id}</a
+                                >
+                              </div>`
+                            : ''}
+                          ${!isFlow &&
+                          agent?.tags &&
+                          Object.keys(agent.tags).length > 0
+                            ? html` <div
+                                style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"
+                              >
+                                ${Object.entries(agent.tags)
+                                  .slice(0, 3)
+                                  .map(
+                                    ([k, v]) => html`
+                                      <div
+                                        style="font-size: 0.65rem; background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 10px; color: var(--sl-color-neutral-700); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                                      >
+                                        <span style="opacity: 0.7">${k}</span
+                                        >${v && v !== 'true'
+                                          ? html`<span
+                                                style="opacity: 0.4; margin: 0 2px;"
+                                                >=</span
+                                              >${v}`
+                                          : ''}
+                                      </div>
+                                    `
+                                  )}
+                                ${Object.keys(agent.tags).length > 3
+                                  ? html`<div
+                                      style="font-size: 0.65rem; padding: 2px;"
+                                    >
+                                      +${Object.keys(agent.tags).length - 3}
+                                    </div>`
+                                  : ''}
+                              </div>`
+                            : ''}
+                          ${!isFlow && agent
+                            ? html` <div
+                                style="font-size: 0.78rem; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
+                              >
+                                ${this.getOnboardingDescription(agent)}
+                              </div>`
+                            : ''}
+                          <div
+                            style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; border-top: 1px solid var(--sl-color-neutral-200); padding-top: 8px;"
+                          >
+                            <div style="display: flex; flex-direction: column;">
+                              <span
+                                style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                                >${isFlow ? 'Execs' : 'Reqs'}</span
+                              >
+                              <strong
+                                >${isFlow
+                                  ? totalExecs
+                                  : agent?.total_requests}</strong
+                              >
+                            </div>
+                            <div
+                              style="display: flex; flex-direction: column; text-align: center;"
+                            >
+                              <span
+                                style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                                >Spend</span
+                              >
+                              <strong
+                                >${this.formatMoney(
+                                  isFlow
+                                    ? totalSpend
+                                    : agent?.estimated_cost || 0
+                                )}</strong
+                              >
+                            </div>
+                            <div
+                              style="display: flex; flex-direction: column; text-align: right;"
+                            >
+                              <span
+                                style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
+                                >Last Seen</span
+                              >
+                              <span style="font-weight: 600;"
+                                >${new Date(
+                                  liveActivity?.lastActivityAt ||
+                                    (isFlow
+                                      ? lastSeenFlow
+                                      : agent?.last_seen_at) ||
+                                    0
+                                ).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}</span
+                              >
+                            </div>
+                          </div>
+                        </sl-card>
+                      `}
+                    </div>
+                  `;
+                }
+              )}
+            </div>
+          </div>
         </div>
 
-        <div
-          style="position: absolute; left: 20px; bottom: 20px; z-index: 20; background: color-mix(in srgb, var(--sl-panel-background-color) 92%, transparent); border: 1px solid var(--sl-color-neutral-200); border-radius: var(--sl-border-radius-medium); padding: 10px 12px; font-size: 0.8rem; color: var(--sl-color-neutral-700); display: flex; gap: 16px;"
-        >
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span
-              style="display: inline-block; width: 20px; height: 0; border-top: 2px solid var(--sl-color-primary-500);"
-            ></span>
-            <span>Model traffic</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span
-              style="display: inline-block; width: 20px; height: 0; border-top: 2px dashed var(--sl-color-warning-500);"
-            ></span>
-            <span>Tool traffic</span>
-          </div>
-        </div>
-
-        <div
-          class="canvas-viewport"
-          @wheel=${this.handleWheel}
-          @pointerdown=${this.handlePointerDown}
-          @pointermove=${this.handlePointerMove}
-          @pointerup=${this.handlePointerUp}
-          @pointercancel=${this.handlePointerUp}
-          @pointerleave=${this.handlePointerUp}
-        >
+        <!-- Speech bubbles overlay container outside the overflow-hidden boundary -->
+        <div class="canvas-bubbles-overlay">
           <div
             style=${styleMap({
+              position: 'absolute',
+              inset: '0',
               transform: `translate(${this.translateX}px, ${this.translateY}px) scale(${this.scale})`,
+              transformOrigin: '0 0',
+              overflow: 'visible',
             })}
-            class="canvas-content"
           >
-            <div class="gateway-node">
-              <div
-                class="gateway-icon ${Object.values(this.liveActivity).some(
-                  (v) =>
-                    v.lastActivityAt &&
-                    Date.now() - new Date(v.lastActivityAt).getTime() < 2000
-                )
-                  ? 'pulsing'
-                  : ''}"
-              >
-                <sl-icon
-                  src="/assets/preloop-badge.svg"
-                  style="margin-left: -5px;margin-bottom: -4px;"
-                ></sl-icon>
-              </div>
-              <div class="gateway-label" style="text-align: center;">
-                <div>PRELOOP GATEWAY</div>
-                ${this.gatewaySummary
-                  ? html`
-                      <div
-                        style="font-size: 0.75rem; color: var(--sl-color-primary-500); margin-top: 4px; font-weight: 500; font-family: monospace;"
-                      >
-                        ${this.gatewaySummary.token_usage.total_tokens.toLocaleString()}
-                        Tokens ·
-                        ${this.gatewaySummary.requests_by_day?.length > 0
-                          ? (
-                              this.gatewaySummary.token_usage.total_tokens /
-                              this.gatewaySummary.requests_by_day.length
-                            ).toFixed(0)
-                          : '0'}
-                        / day
-                      </div>
-                    `
-                  : ''}
-              </div>
-            </div>
-
-            ${this.getCanvasItems({ includeExiting: true }).map((item: any) => {
-              const isFlow =
-                'flow_status' in item ||
-                ('name' in item && !('display_name' in item));
-              const agent = isFlow ? null : (item as ManagedAgentSummary);
-              const flowName = isFlow ? item.name : '';
-              const flowNode = isFlow ? (item as any) : null;
-              const liveExecs = isFlow
-                ? item.execution_stats?.running_execs || 0
-                : 0;
-              const totalExecs = isFlow
-                ? item.execution_stats?.total_execs || 0
-                : 0;
-              const totalSpend = isFlow
-                ? item.execution_stats?.estimated_cost || 0
-                : agent?.estimated_cost || 0;
-              const estimatedCost = totalSpend;
-              const lastSeenFlow = isFlow
-                ? item.execution_stats?.last_seen_at
-                : null;
-
-              const pos = this.nodePositions[item.id] || { x: 250, y: 250 };
+            ${items.map((item) => {
+              const pos = this.nodePositions[item.id];
+              if (!pos) return '';
               const liveActivity = this.liveActivity[item.id];
-              const liveTotal = liveActivity
-                ? liveActivity.modelCalls + liveActivity.toolCalls
-                : 0;
-              const mcpEnabled = isFlow
-                ? true
-                : this.isMcpConfigured(agent as any);
-              const modelEnabled = isFlow
-                ? true
-                : this.isModelConfigured(agent as any);
-              const modelActive = !!(
-                liveActivity?.modelCalls &&
-                liveActivity?.lastActivityAt &&
-                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
-                  2000
-              );
-              const toolActive = !!(
-                liveActivity?.toolCalls &&
-                liveActivity?.lastActivityAt &&
-                Date.now() - new Date(liveActivity.lastActivityAt).getTime() <
-                  2000
-              );
-              const isGlowing =
-                liveTotal > 0 &&
-                liveActivity &&
-                Date.now() -
-                  new Date(liveActivity.lastActivityAt || 0).getTime() <
-                  2000;
-              const distance = Math.max(
-                Math.sqrt(pos.x * pos.x + pos.y * pos.y),
-                1
-              );
-              const offsetX = (-pos.y / distance) * 8;
-              const offsetY = (pos.x / distance) * 8;
+              const isVisible =
+                liveActivity?.currentBubble &&
+                Date.now() - liveActivity.currentBubble.timestamp < 6000;
+              if (!isVisible) return '';
 
               return html`
-                <svg
-                  class="connection-line ${this.nodeAnimationState[item.id] ||
-                  ''} ${this.draggingNodeId === item.id ? 'dragging' : ''}"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <line
-                    x1="${offsetX}"
-                    y1="${offsetY}"
-                    x2="${pos.x + offsetX}"
-                    y2="${pos.y + offsetY}"
-                    stroke="${isFlow
-                      ? 'var(--sl-color-primary-500)'
-                      : modelEnabled
-                        ? modelActive
-                          ? 'var(--sl-color-success-500)'
-                          : 'var(--sl-color-primary-500)'
-                        : 'var(--sl-color-neutral-300)'}"
-                    stroke-width="${isFlow
-                      ? '2'
-                      : modelActive
-                        ? '3'
-                        : modelEnabled
-                          ? '2'
-                          : '1.25'}"
-                    stroke-dasharray="${modelEnabled ? '0' : '6 6'}"
-                    opacity="${modelEnabled ? '1' : '0.55'}"
-                  />
-                  <line
-                    x1="${-offsetX}"
-                    y1="${-offsetY}"
-                    x2="${pos.x - offsetX}"
-                    y2="${pos.y - offsetY}"
-                    stroke="${mcpEnabled
-                      ? toolActive
-                        ? 'var(--sl-color-warning-300)'
-                        : 'var(--sl-color-warning-500)'
-                      : 'var(--sl-color-neutral-300)'}"
-                    stroke-width="${toolActive
-                      ? '3'
-                      : mcpEnabled
-                        ? '2'
-                        : '1.25'}"
-                    stroke-dasharray="${mcpEnabled ? '5 4' : '6 6'}"
-                    opacity="${mcpEnabled ? '1' : '0.55'}"
-                  />
-                </svg>
-
                 <div
-                  class="agent-node ${this.nodeAnimationState[item.id] ||
-                  ''} ${this.draggingNodeId === item.id ? 'dragging' : ''}"
-                  style=${styleMap({ left: `${pos.x}px`, top: `${pos.y}px` })}
-                  @pointerdown=${(e: PointerEvent) =>
-                    this.handleNodePointerDown(e, item.id)}
-                  @pointermove=${(e: PointerEvent) =>
-                    this.handleNodePointerMove(e, item.id)}
-                  @pointerup=${(e: PointerEvent) =>
-                    this.handleNodePointerUp(e, item.id)}
-                  @pointercancel=${(e: PointerEvent) =>
-                    this.handleNodePointerUp(e, item.id)}
+                  style=${styleMap({
+                    position: 'absolute',
+                    left: `${pos.x}px`,
+                    top: `${pos.y}px`,
+                    width: '0',
+                    height: '0',
+                    overflow: 'visible',
+                  })}
                 >
-                  ${html`
-                    <div
-                      class="agent-speech-bubble ${liveActivity?.currentBubble &&
-                      Date.now() - liveActivity.currentBubble.timestamp < 6000
-                        ? 'visible'
-                        : ''} ${liveActivity?.currentBubble?.source === 'Tool'
-                        ? 'tool-bubble'
-                        : ''}"
-                    >
-                      <div class="speech-source">
-                        ${liveActivity?.currentBubble?.source || 'Agent'}
-                      </div>
-                      <div class="speech-text">
-                        ${liveActivity?.currentBubble?.text || ''}
-                      </div>
+                  <div
+                    class="agent-speech-bubble visible ${liveActivity
+                      ?.currentBubble?.source === 'Tool'
+                      ? 'tool-bubble'
+                      : ''}"
+                  >
+                    <div class="speech-source">
+                      ${liveActivity?.currentBubble?.source || 'Agent'}
                     </div>
-                    <sl-card>
-                      <div
-                        slot="header"
-                        style="display: flex; justify-content: space-between; align-items: center;"
-                      >
-                        <div style="display: flex; gap: 8px; overflow: hidden;">
-                          ${isFlow
-                            ? html`<img
-                                src="/images/flow.svg"
-                                class="flow-icon"
-                                style="width: 20px; height: 20px; flex-shrink: 0;"
-                                alt="Flow"
-                              />`
-                            : renderAgentIcon(
-                                agent?.agent_kind || agent?.session_source_type,
-                                'flex-shrink: 0; color: var(--sl-color-neutral-900); width: 20px; height: 20px;'
-                              )}
-                          <strong
-                            style="font-size: 1rem; word-break: break-word; line-height: 1.2;"
-                            >${isFlow ? flowName : agent?.display_name}</strong
-                          >
-                        </div>
-                        ${liveTotal > 0
-                          ? html`<sl-badge variant="success" pulse
-                              >Live</sl-badge
-                            >`
-                          : agent?.activity_status === 'active_now' || isFlow
-                            ? html`<sl-badge variant="success"
-                                >Active</sl-badge
-                              >`
-                            : ''}
-                      </div>
-                      <div
-                        style="font-size: var(--sl-font-size-small); color: var(--sl-color-neutral-500); margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; word-break: break-word;"
-                        title="${isFlow
-                          ? flowNode?.description || ''
-                          : agent?.session_source_id || ''}"
-                      >
-                        ${isFlow
-                          ? flowNode?.description || ''
-                          : agent?.session_source_id}
-                      </div>
-                      ${!isFlow && agent?.owner_username
-                        ? html` <div
-                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                          >
-                            <sl-icon
-                              name="person-circle"
-                              style="color: var(--sl-color-primary-500);"
-                            ></sl-icon>
-                            ${agent.owner_username}
-                          </div>`
-                        : ''}
-                      ${isFlow && flowNode?.agent_type
-                        ? html` <div
-                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                          >
-                            ${renderAgentIcon(
-                              flowNode.agent_type,
-                              'color: var(--sl-color-primary-500); width: 14px; height: 14px;'
-                            )}
-                            ${flowNode.agent_type}
-                          </div>`
-                        : ''}
-                      ${!isFlow && (agent as any)?.ai_model_id
-                        ? html` <div
-                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                          >
-                            <sl-icon
-                              name="cpu"
-                              style="color: var(--sl-color-primary-500);"
-                            ></sl-icon>
-                            <a
-                              href="/console/ai-models/${encodeURIComponent(
-                                (agent as any).ai_model_id
-                              )}"
-                              style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
-                              @click=${(e: Event) => e.stopPropagation()}
-                              >${(agent as any).ai_model_id}</a
-                            >
-                          </div>`
-                        : ''}
-                      ${isFlow && flowNode?.ai_model_id
-                        ? html` <div
-                            style="font-size: 0.75rem; color: var(--sl-color-neutral-600); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;"
-                          >
-                            <sl-icon
-                              name="cpu"
-                              style="color: var(--sl-color-primary-500);"
-                            ></sl-icon>
-                            <a
-                              href="/console/ai-models/${encodeURIComponent(
-                                flowNode.ai_model_id
-                              )}"
-                              style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: underline;"
-                              @click=${(e: Event) => e.stopPropagation()}
-                              >${flowNode.ai_model_id}</a
-                            >
-                          </div>`
-                        : ''}
-                      ${!isFlow &&
-                      agent?.tags &&
-                      Object.keys(agent.tags).length > 0
-                        ? html` <div
-                            style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"
-                          >
-                            ${Object.entries(agent.tags)
-                              .slice(0, 3)
-                              .map(
-                                ([k, v]) => html`
-                                  <div
-                                    style="font-size: 0.65rem; background: var(--sl-color-neutral-100); padding: 2px 6px; border-radius: 10px; color: var(--sl-color-neutral-700); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                                  >
-                                    <span style="opacity: 0.7">${k}</span>${v &&
-                                    v !== 'true'
-                                      ? html`<span
-                                            style="opacity: 0.4; margin: 0 2px;"
-                                            >=</span
-                                          >${v}`
-                                      : ''}
-                                  </div>
-                                `
-                              )}
-                            ${Object.keys(agent.tags).length > 3
-                              ? html`<div
-                                  style="font-size: 0.65rem; padding: 2px;"
-                                >
-                                  +${Object.keys(agent.tags).length - 3}
-                                </div>`
-                              : ''}
-                          </div>`
-                        : ''}
-                      ${!isFlow && agent
-                        ? html` <div
-                            style="font-size: 0.78rem; color: var(--sl-color-neutral-600); margin-bottom: 8px;"
-                          >
-                            ${this.getOnboardingDescription(agent)}
-                          </div>`
-                        : ''}
-                      <div
-                        style="display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; border-top: 1px solid var(--sl-color-neutral-200); padding-top: 8px;"
-                      >
-                        <div style="display: flex; flex-direction: column;">
-                          <span
-                            style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                            >${isFlow ? 'Execs' : 'Reqs'}</span
-                          >
-                          <strong
-                            >${isFlow
-                              ? totalExecs
-                              : agent?.total_requests}</strong
-                          >
-                        </div>
-                        <div
-                          style="display: flex; flex-direction: column; text-align: center;"
-                        >
-                          <span
-                            style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                            >Spend</span
-                          >
-                          <strong
-                            >${this.formatMoney(
-                              isFlow ? totalSpend : agent?.estimated_cost || 0
-                            )}</strong
-                          >
-                        </div>
-                        <div
-                          style="display: flex; flex-direction: column; text-align: right;"
-                        >
-                          <span
-                            style="opacity: 0.7; font-size: 0.75rem; text-transform: uppercase;"
-                            >Last Seen</span
-                          >
-                          <span style="font-weight: 600;"
-                            >${new Date(
-                              liveActivity?.lastActivityAt ||
-                                (isFlow ? lastSeenFlow : agent?.last_seen_at) ||
-                                0
-                            ).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}</span
-                          >
-                        </div>
-                      </div>
-                    </sl-card>
-                  `}
+                    <div class="speech-text">
+                      ${liveActivity?.currentBubble?.text || ''}
+                    </div>
+                  </div>
                 </div>
               `;
             })}
@@ -2834,70 +3219,47 @@ export class AgentsView extends LitElement {
             this.showOnboardingDialog = false;
           }
         }}
+        style="--width: 760px;"
       >
-        <div
-          style="display: flex; flex-direction: column; gap: var(--sl-spacing-medium);"
-        >
-          <div style="line-height: 1.6;">
-            Welcome! The fastest way to onboard a local agent is using the
-            Preloop CLI.<br />
-            It will automatically discover and register your agents, and
-            securely route their traffic through the Preloop gateway.
-          </div>
-
-          <div style="margin-top: var(--sl-spacing-small);">
-            <strong>1. Install the CLI:</strong>
-          </div>
-          <div
-            style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
-          >
-            <code
-              style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;"
-            >
-              curl -fsSL https://preloop.ai/install/cli | sh
-            </code>
-            <sl-copy-button
-              value="curl -fsSL https://preloop.ai/install/cli | sh"
-            ></sl-copy-button>
-          </div>
-
-          <div style="margin-top: var(--sl-spacing-small);">
-            <strong>2. Authenticate:</strong>
-          </div>
-          <div
-            style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
-          >
-            <code
-              style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;"
-            >
-              preloop login
-            </code>
-            <sl-copy-button value="preloop login"></sl-copy-button>
-          </div>
-
-          <div style="margin-top: var(--sl-spacing-small);">
-            <strong>3. Discover Agents:</strong>
-          </div>
-          <div
-            style="display: flex; align-items: center; gap: var(--sl-spacing-small);"
-          >
-            <code
-              style="flex: 1; background: var(--sl-color-neutral-100); padding: 8px 12px; border-radius: var(--sl-border-radius-medium); font-size: 0.9rem;"
-            >
-              preloop agents discover
-            </code>
-            <sl-copy-button value="preloop agents discover"></sl-copy-button>
-          </div>
-        </div>
-        <sl-button
-          slot="footer"
-          variant="primary"
-          @click=${() => (this.showOnboardingDialog = false)}
-        >
-          Close
-        </sl-button>
+        <preloop-deploy-wizard
+          .aiModels=${this.aiModels}
+          .computeFeatureEnabled=${this.computeFeatureEnabled}
+          .isEnterprise=${this.isEnterprise}
+          .isAdmin=${this.isAdmin}
+          @deploy-agent-success=${this.handleDeployAgentSuccess}
+          @deploy-wizard-done=${() => {
+            this.showOnboardingDialog = false;
+            void this.loadAgents();
+          }}
+          @deploy-cancel=${() => {
+            this.showOnboardingDialog = false;
+          }}
+        ></preloop-deploy-wizard>
       </sl-dialog>
     `;
+  }
+
+  private handleDeployAgentSuccess(event: CustomEvent): void {
+    const mockAgent = event.detail.agent;
+    if (this.agents) {
+      this.agents = {
+        ...this.agents,
+        items: [mockAgent, ...this.agents.items],
+        total: this.agents.total + 1,
+      };
+    } else {
+      this.agents = {
+        query: null,
+        agent_kind: null,
+        last_seen_after: null,
+        status: 'all',
+        items: [mockAgent],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      };
+    }
+    this.requestUpdate();
   }
 
   render() {
@@ -2908,27 +3270,63 @@ export class AgentsView extends LitElement {
           : ''}"
       >
         ${this.renderOnboardingDialog()}
+
+        <sl-dialog
+          label="Deploy Governed Agent"
+          ?open=${this.showDeployDialog}
+          @sl-after-hide=${(e: Event) => {
+            if (e.target === e.currentTarget) {
+              this.showDeployDialog = false;
+            }
+          }}
+          style="--width: 650px;"
+        >
+          <preloop-agent-deployer
+            .aiModels=${this.aiModels}
+            .computeFeatureEnabled=${this.computeFeatureEnabled}
+            .isEnterprise=${this.isEnterprise}
+            .isAdmin=${this.isAdmin}
+            hide-back-button
+            @deploy-agent-success=${(e: CustomEvent) => {
+              this.handleDeployAgentSuccess(e);
+              this.showDeployDialog = false;
+            }}
+            @deploy-cancel=${() => {
+              this.showDeployDialog = false;
+            }}
+          ></preloop-agent-deployer>
+        </sl-dialog>
+
         <div class="content-bounds">
-          <div
-            class="header"
-            style="display: flex; flex-wrap: wrap; gap: var(--sl-spacing-medium); align-items: flex-start; justify-content: space-between; margin-bottom: var(--sl-spacing-large);"
-          >
-            <div>
-              <h1>Agents</h1>
-              <div
-                style="color: var(--sl-color-neutral-500); font-size: 0.9rem; margin-top: 4px;"
-              >
-                Connections, telemetry, and live sessions managed by the Preloop
-                gateway.
-              </div>
-            </div>
-            <sl-button
-              variant="primary"
-              @click=${() => (this.showOnboardingDialog = true)}
+          <view-header headerText="Agents" width="extra-wide">
+            <div
+              slot="main-column"
+              style="display: flex; gap: var(--sl-spacing-small); align-items: center;"
             >
-              <sl-icon slot="prefix" name="plus"></sl-icon>
-              Onboard agents
-            </sl-button>
+              <sl-button
+                variant="default"
+                @click=${() => {
+                  this.showDeployDialog = true;
+                }}
+              >
+                <sl-icon slot="prefix" name="cloud-arrow-up"></sl-icon>
+                Deploy Agent
+              </sl-button>
+              <sl-button
+                variant="primary"
+                @click=${() => (this.showOnboardingDialog = true)}
+              >
+                <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+                Onboard Agents
+              </sl-button>
+            </div>
+          </view-header>
+
+          <div
+            style="color: var(--sl-color-neutral-500); font-size: 0.9rem; margin-top: -12px; margin-bottom: var(--sl-spacing-large);"
+          >
+            Connections, telemetry, and live sessions managed by the Preloop
+            gateway.
           </div>
 
           <div class="agents-toolbar">
@@ -3010,13 +3408,13 @@ export class AgentsView extends LitElement {
               </sl-radio-group>
             </div>
           </div>
-
           ${this.error
             ? html`<sl-alert open variant="danger" class="mx-6 mb-4"
                 >${this.error}</sl-alert
               >`
             : null}
         </div>
+
         ${this.currentView === 'canvas'
           ? this.renderCanvas()
           : html`

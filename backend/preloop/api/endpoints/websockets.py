@@ -623,19 +623,33 @@ async def unified_websocket(websocket: WebSocket, db: Session = Depends(get_db))
             duration_str = f"{duration}s"
         else:
             duration_str = "unknown"
+        username = getattr(user, "username", None) if user else None
         logger.info(
             f"Session {session.id} disconnected - "
-            f"User: {user.username if user else 'anonymous'}, "
+            f"User: {username or 'anonymous'}, "
             f"Duration: {duration_str}, "
             f"Reason: {e}"
         )
     except Exception as e:
-        logger.error(
-            f"Error in unified WebSocket session {session.id}: {e}, "
-            f"User: {user.username if user else 'anonymous'}, "
-            f"IP: {client_ip}",
-            exc_info=True,
-        )
+        from sqlalchemy.exc import OperationalError
+
+        username = getattr(user, "username", None) if user else None
+        if isinstance(e, OperationalError):
+            logger.warning(
+                "Unified WebSocket session %s lost database connection: %s "
+                "(User: %s, IP: %s)",
+                session.id,
+                e,
+                username or "anonymous",
+                client_ip,
+            )
+        else:
+            logger.error(
+                f"Error in unified WebSocket session {session.id}: {e}, "
+                f"User: {username or 'anonymous'}, "
+                f"IP: {client_ip}",
+                exc_info=True,
+            )
     finally:
         # Cleanup
         if heartbeat_task:

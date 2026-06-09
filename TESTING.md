@@ -27,6 +27,53 @@ pytest backend/tests/utils backend/tests/schemas backend/tests/models/test_db_se
 cd frontend && npm run test
 ```
 
+### Agent Control Validation
+
+Use these targeted checks when changing Agent Control, managed-agent onboarding,
+runtime sessions, account realtime, or mobile/watch approval and voice surfaces.
+The checklist separates implemented backend/CLI behavior from mobile and native
+runtime scaffolds so the slice is clear about what is shipped versus dependent
+on OpenClaw/Hermes adapters.
+
+```bash
+# Backend Agent Control WebSocket/command routing and realtime plumbing.
+# Add/keep test_agent_control.py with the Agent Control slice.
+pytest backend/tests/endpoints/test_agent_control.py backend/tests/endpoints/test_websockets.py backend/tests/services/test_websocket_manager.py -v
+
+# Backend managed-agent, gateway, approvals, and session-adjacent services
+pytest backend/tests/agents backend/tests/services/test_approval_service.py backend/tests/services/test_mcp_client_pool.py backend/tests/endpoints/test_gateway_usage_summary.py -v
+
+# CLI adapters, including OpenClaw and Hermes enrollment/gateway rewrites.
+# These validate provisioning/configuration, not live Agent Control delivery.
+(cd cli && go test -v -race -count=1 ./...)
+
+# Hermes deployed integration smoke, from backend with integration deps installed
+(cd backend && pytest --confcutdir=tests/integration tests/integration/test_hermes_onboarding.py -v -s)
+
+# Frontend runtime-session/managed-agent views
+(cd frontend && npm run test && npm run build)
+
+# iOS app/watch Agent Control and approval validation
+(cd ../ios && xcodebuild \
+  -project Preloop.xcodeproj \
+  -scheme Preloop \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  build test)
+
+# Android local validation
+(cd ../android && ./gradlew test assembleDebug)
+```
+
+For runtime-plugin validation, pair the backend and CLI checks with native
+OpenClaw/Hermes adapter smoke tests once those projects implement Agent Control.
+The plugin should load from the CLI-written `preloop.control` config, connect to
+`WS /api/v1/agents/control/ws`, own reconnect/backoff, send heartbeat and status
+envelopes, advertise capabilities, receive a `send_message` command from
+`POST /api/v1/agents/{agent_id}/control/commands`, execute it or inject it as a
+normal user/operator turn, and keep resulting tool/model calls on the governed
+MCP and gateway paths. Without that loaded plugin, MCP/gateway onboarding can be
+valid while Agent Control remains disabled.
+
 ### Current Status & Progress
 
 Significant progress has been made in increasing unit test coverage for the backend.

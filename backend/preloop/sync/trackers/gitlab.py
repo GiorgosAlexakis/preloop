@@ -44,6 +44,18 @@ from preloop.schemas.tracker_models import (
 )
 
 
+def _discussion_notes(discussion: Any) -> List[Any]:
+    """Return discussion notes from python-gitlab list or manager objects."""
+    notes = getattr(discussion, "notes", [])
+    if hasattr(notes, "list") and callable(notes.list):
+        return list(notes.list())
+    if isinstance(notes, list):
+        return notes
+    if notes:
+        return list(notes)
+    return []
+
+
 class GitLabTracker(BaseTracker):
     """GitLab tracker implementation using python-gitlab."""
 
@@ -1819,8 +1831,7 @@ class GitLabTracker(BaseTracker):
                 }
 
                 # Get notes from discussion
-                notes = getattr(discussion, "notes", [])
-                for note in notes:
+                for note in _discussion_notes(discussion):
                     note_author = None
                     if isinstance(note, dict):
                         note_author = note.get("author", {}).get("username")
@@ -1868,7 +1879,7 @@ class GitLabTracker(BaseTracker):
             return result
 
         except Exception as e:
-            logger.error(f"Error getting MR discussions for {mr_iid}: {e}")
+            logger.warning("Error getting MR discussions for %s: %s", mr_iid, e)
             raise TrackerResponseError(f"Failed to get MR discussions: {e}")
 
     async def update_mr_note(

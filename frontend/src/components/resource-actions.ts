@@ -1,4 +1,4 @@
-import { LitElement, html, css, unsafeCSS } from 'lit';
+import { LitElement, html, css, unsafeCSS, type TemplateResult } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -25,6 +25,7 @@ export interface ResourceAction {
   tooltip?: string;
   href?: string;
   onClick?: () => void;
+  render?: () => TemplateResult;
 }
 
 @customElement('resource-actions')
@@ -37,6 +38,10 @@ export class ResourceActions extends LitElement {
 
   /** Render all actions behind the overflow menu, useful inside clickable cards. */
   @property({ type: Boolean, attribute: 'menu-only' }) menuOnly = false;
+
+  /** When false, always show every action instead of collapsing into overflow. */
+  @property({ type: Boolean, attribute: 'collapse-overflow' })
+  collapseOverflow = true;
 
   @state() private containerWidth = 0;
   private resizeObserver!: ResizeObserver;
@@ -123,6 +128,10 @@ export class ResourceActions extends LitElement {
   }
 
   private renderButton(action: ResourceAction) {
+    if (action.render) {
+      return action.render();
+    }
+
     const button = html`
       <sl-button
         variant=${action.variant || 'default'}
@@ -198,7 +207,7 @@ export class ResourceActions extends LitElement {
     }
 
     // We can do a rudimentary calculation based on container width.
-    if (!this.menuOnly && this.containerWidth > 0) {
+    if (!this.menuOnly && this.collapseOverflow && this.containerWidth > 0) {
       // Let's assume average button width + gap is 120px
       const estimatedTotalWidth = effectiveActions.length * 120;
 

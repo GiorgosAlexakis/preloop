@@ -102,6 +102,7 @@ class ModelGatewayEventEmitter:
         ):
             latest_session = crud_runtime_session.get_latest_by_principal(
                 self.db,
+                account_id=str(usage.account_id),
                 principal_type=usage.runtime_principal_type,
                 principal_id=usage.runtime_principal_id,
             )
@@ -239,6 +240,10 @@ class ModelGatewayEventEmitter:
                 "gateway_provider": meta_data.get("gateway_provider"),
                 "requested_model": meta_data.get("requested_model"),
                 "upstream_request_id": usage.upstream_request_id,
+                "request_fingerprint": meta_data.get("request_fingerprint"),
+                "gateway_attempt": meta_data.get("gateway_attempt"),
+                "is_retry": meta_data.get("is_retry"),
+                "retry_of_api_usage_id": meta_data.get("retry_of_api_usage_id"),
                 "finish_reason": meta_data.get("finish_reason"),
                 "prompt_tokens": usage.prompt_tokens,
                 "completion_tokens": usage.completion_tokens,

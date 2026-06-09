@@ -827,7 +827,7 @@ async def refresh_token(
 
 
 @router.get("/users/me", response_model=AuthUserResponse)
-async def read_users_me(current_user: User = Depends(get_current_active_user)) -> User:
+def read_users_me(current_user: User = Depends(get_current_active_user)) -> User:
     """Get the current user.
 
     Args:
@@ -840,7 +840,7 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)) -
 
 
 @router.put("/users/me", response_model=AuthUserResponse)
-async def update_user_me(
+def update_user_me(
     *,
     db: Session = Depends(get_db_session),
     user_update: AuthUserUpdate,
@@ -852,7 +852,7 @@ async def update_user_me(
 
 
 @router.put("/users/me/password", status_code=status.HTTP_204_NO_CONTENT)
-async def change_current_user_password(
+def change_current_user_password(
     passwords: PasswordChangeRequest,
     current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -872,7 +872,7 @@ async def change_current_user_password(
 @router.post(
     "/api-keys", response_model=ApiKeyResponse, status_code=status.HTTP_201_CREATED
 )
-async def create_api_key(
+def create_api_key(
     key_data: ApiKeyCreate,
     current_user: UserModel = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -1194,7 +1194,7 @@ async def create_runtime_session_token(
 
 
 @router.get("/api-keys", response_model=List[ApiKeySummary])
-async def list_api_keys(
+def list_api_keys(
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[ApiKeySummary]:
@@ -1215,7 +1215,7 @@ async def list_api_keys(
 
 
 @router.get("/api-keys/{key_id}", response_model=ApiKeySummary)
-async def get_api_key(
+def get_api_key(
     key_id: UUID,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -1241,7 +1241,7 @@ async def get_api_key(
 
 
 @router.get("/api-keys/{key_id}/activity")
-async def get_api_key_activity(
+def get_api_key_activity(
     key_id: UUID,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -1271,7 +1271,7 @@ async def get_api_key_activity(
 
 
 @router.get("/api-keys/{key_id}/gateway-usage/summary")
-async def get_api_key_gateway_usage_summary(
+def get_api_key_gateway_usage_summary(
     key_id: UUID,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -1298,7 +1298,7 @@ async def get_api_key_gateway_usage_summary(
     "/api-keys/{key_id}/governance",
     response_model=SubjectGovernanceResponse,
 )
-async def get_api_key_governance(
+def get_api_key_governance(
     key_id: UUID,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -1326,7 +1326,7 @@ async def get_api_key_governance(
     "/api-keys/{key_id}/governance",
     response_model=SubjectGovernanceResponse,
 )
-async def update_api_key_governance(
+def update_api_key_governance(
     key_id: UUID,
     payload: SubjectGovernanceConfig,
     current_user: AuthUserResponse = Depends(get_current_active_user),
@@ -1363,7 +1363,7 @@ async def update_api_key_governance(
 
 
 @router.get("/api-keys/debug", response_model=List[ApiKeyResponse])
-async def debug_api_keys(
+def debug_api_keys(
     username: str,
     api_key: Optional[str] = None,
     current_user: AuthUserResponse = Depends(get_current_active_user),
@@ -1432,7 +1432,7 @@ async def debug_api_keys(
 
 
 @router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_api_key(
+def delete_api_key(
     key_id: UUID,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -1473,7 +1473,7 @@ async def delete_api_key(
 
 
 @router.get("/api-usage", response_model=ApiUsageStatistics)
-async def get_api_usage(
+def get_api_usage(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     current_user: AuthUserResponse = Depends(get_current_active_user),

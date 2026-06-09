@@ -402,6 +402,10 @@ export class AuditView extends AuthedElement {
       'gateway_provider',
       'auth_subject_type',
       'upstream_request_id',
+      'gateway_attempt',
+      'is_retry',
+      'retry_of_api_usage_id',
+      'request_fingerprint',
       'error_type',
       'error_detail',
       'approval_workflow_id',
@@ -479,6 +483,21 @@ export class AuditView extends AuthedElement {
 
     return html`
       <div class="event-details">
+        ${details.runtime_session_id
+          ? html`
+              <div class="detail-block">
+                <span class="detail-label">Session observer</span>
+                <a
+                  class="detail-value"
+                  href=${`/console/runtime-sessions?sessionId=${encodeURIComponent(
+                    details.runtime_session_id
+                  )}`}
+                >
+                  Open replay, costs, and optimization suggestions
+                </a>
+              </div>
+            `
+          : nothing}
         ${preferredItems} ${remainingItems} ${recipientChips}
         ${this._renderJsonDetail('Arguments', details.tool_args)}
         ${this._renderJsonDetail('Result preview', details.result_preview)}

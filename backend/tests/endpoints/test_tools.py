@@ -67,7 +67,7 @@ class TestListAllTools:
             return_value=[],
         )
 
-        result = await tools.list_all_tools(account=mock_account, db=mock_db)
+        result = tools.list_all_tools(account=mock_account, db=mock_db)
 
         # Should return all builtin tools with defaults
         assert len(result) == len(tools.BUILTIN_TOOLS)
@@ -98,7 +98,7 @@ class TestListAllTools:
             return_value=[],
         )
 
-        result = await tools.list_all_tools(account=mock_account, db=mock_db)
+        result = tools.list_all_tools(account=mock_account, db=mock_db)
 
         # Find the configured tool
         get_issue_tool = next(t for t in result if t["name"] == "get_issue")
@@ -135,7 +135,7 @@ class TestListAllTools:
             return_value=[mcp_tool],
         )
 
-        result = await tools.list_all_tools(account=mock_account, db=mock_db)
+        result = tools.list_all_tools(account=mock_account, db=mock_db)
 
         # Should have builtin tools + MCP tool
         assert len(result) == len(tools.BUILTIN_TOOLS) + 1

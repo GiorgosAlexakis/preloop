@@ -23,6 +23,7 @@ import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
 import '@shoelace-style/shoelace/dist/components/select/select.js';
 import '@shoelace-style/shoelace/dist/components/option/option.js';
+import '../../../components/preloop-invite-dialog';
 
 @customElement('invitation-management-view')
 export class InvitationManagementView extends LitElement {
@@ -322,63 +323,16 @@ export class InvitationManagementView extends LitElement {
       </sl-tab-group>
 
       <!-- Create Invitation Modal -->
-      <sl-dialog
-        label="Send Invitation"
+      <preloop-invite-dialog
         ?open=${this.isCreateModalOpen}
-        @sl-request-close=${() => (this.isCreateModalOpen = false)}
-      >
-        <div class="form-grid">
-          <sl-input
-            label="Email Address"
-            type="email"
-            placeholder="Enter email address"
-            value=${this.newInvitation.email || ''}
-            @sl-input=${(e: any) => (this.newInvitation.email = e.target.value)}
-          ></sl-input>
-          <sl-select
-            label="Teams (Optional)"
-            placeholder="Select teams to add user to"
-            multiple
-            clearable
-            value=${(this.newInvitation.team_ids || []).join(' ')}
-            @sl-change=${(e: any) => {
-              const selectedValues = e.target.value;
-              this.newInvitation.team_ids =
-                selectedValues.length > 0 ? selectedValues : undefined;
-            }}
-            ?disabled=${this.isLoadingTeams}
-          >
-            ${this.teams.map(
-              (team) => html`
-                <sl-option value=${team.id}>${team.name}</sl-option>
-              `
-            )}
-          </sl-select>
-          <sl-alert variant="primary" open>
-            <sl-icon slot="icon" name="info-circle"></sl-icon>
-            The user will receive an email with a link to accept the invitation
-            and create their
-            account${this.newInvitation.team_ids &&
-            this.newInvitation.team_ids.length > 0
-              ? ', and will be automatically added to the selected teams'
-              : ''}.
-          </sl-alert>
-        </div>
-        <sl-button
-          slot="footer"
-          variant="primary"
-          @click=${this.handleCreateInvitation}
-        >
-          Send Invitation
-        </sl-button>
-        <sl-button
-          slot="footer"
-          variant="default"
-          @click=${() => (this.isCreateModalOpen = false)}
-        >
-          Cancel
-        </sl-button>
-      </sl-dialog>
+        @close=${() => {
+          this.isCreateModalOpen = false;
+        }}
+        @invitations-sent=${() => {
+          this.isCreateModalOpen = false;
+          this.fetchInvitations();
+        }}
+      ></preloop-invite-dialog>
     `;
   }
 

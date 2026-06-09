@@ -8,7 +8,7 @@ import os
 import fastapi
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from unittest.mock import patch, MagicMock
 
@@ -84,9 +84,20 @@ def db_engine():
 @pytest.fixture(scope="function")
 def db_session(db_engine) -> Generator[Session, None, None]:
     """Create a database session for each test function, and clean up afterwards."""
+    from sqlalchemy import event
+
     connection = db_engine.connect()
     transaction = connection.begin()
-    session = sessionmaker(autocommit=False, autoflush=False, bind=connection)()
+    session = Session(bind=connection)
+
+    # Start a nested transaction (savepoint) so that app-level commits are nested
+    nested = connection.begin_nested()
+
+    @event.listens_for(session, "after_transaction_end")
+    def end_savepoint(session, transaction):
+        nonlocal nested
+        if not nested.is_active:
+            nested = connection.begin_nested()
 
     # Explicitly flush to ensure roles are visible in this transaction
     session.flush()

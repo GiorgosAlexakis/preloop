@@ -61,74 +61,89 @@ def _latest_gateway_usage_for_runtime_session(
 
 
 def _latest_gateway_usage_for_principal(
-    db: Session, *, account_id: str, principal_type: str, principal_id: str
+    db: Session,
+    *,
+    account_id: str,
+    principal_type: str,
+    principal_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
 ):
     """Return the latest gateway usage row for one durable agent principal."""
-    return (
-        db.query(
-            ApiUsage.model_alias.label("latest_model_alias"),
-            ApiUsage.provider_name.label("latest_provider_name"),
-            ApiUsage.timestamp.label("last_request_at"),
-        )
-        .filter(
-            ApiUsage.account_id == account_id,
-            ApiUsage.action_type == "model_gateway",
-            ApiUsage.runtime_principal_type == principal_type,
-            ApiUsage.runtime_principal_id == principal_id,
-        )
-        .order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc())
-        .first()
+    q = db.query(
+        ApiUsage.model_alias.label("latest_model_alias"),
+        ApiUsage.provider_name.label("latest_provider_name"),
+        ApiUsage.timestamp.label("last_request_at"),
+    ).filter(
+        ApiUsage.account_id == account_id,
+        ApiUsage.action_type == "model_gateway",
+        ApiUsage.runtime_principal_type == principal_type,
+        ApiUsage.runtime_principal_id == principal_id,
     )
+    if start_date:
+        q = q.filter(ApiUsage.timestamp >= start_date)
+    if end_date:
+        q = q.filter(ApiUsage.timestamp <= end_date)
+    return q.order_by(ApiUsage.timestamp.desc(), ApiUsage.id.desc()).first()
 
 
 def _usage_aggregate_for_principal(
-    db: Session, *, account_id: str, principal_type: str, principal_id: str
+    db: Session,
+    *,
+    account_id: str,
+    principal_type: str,
+    principal_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
 ) -> dict[str, Any]:
     """Return principal-scoped usage totals across all runtime sessions."""
-    session_count = (
-        db.query(func.count(RuntimeSession.id))
-        .filter(
-            RuntimeSession.account_id == account_id,
-            RuntimeSession.runtime_principal_type == principal_type,
-            RuntimeSession.runtime_principal_id == principal_id,
-        )
-        .scalar()
-        or 0
+    session_count_q = db.query(func.count(RuntimeSession.id)).filter(
+        RuntimeSession.account_id == account_id,
+        RuntimeSession.runtime_principal_type == principal_type,
+        RuntimeSession.runtime_principal_id == principal_id,
     )
+    if start_date:
+        session_count_q = session_count_q.filter(
+            RuntimeSession.started_at >= start_date
+        )
+    if end_date:
+        session_count_q = session_count_q.filter(RuntimeSession.started_at <= end_date)
+    session_count = session_count_q.scalar() or 0
 
-    usage_row = (
-        db.query(
-            func.count(ApiUsage.id).label("request_count"),
-            func.coalesce(
-                func.sum(case((ApiUsage.status_code < 400, 1), else_=0)), 0
-            ).label("success_count"),
-            func.coalesce(
-                func.sum(case((ApiUsage.status_code >= 400, 1), else_=0)), 0
-            ).label("error_count"),
-            func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label("prompt_tokens"),
-            func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
-                "completion_tokens"
-            ),
-            func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
-            func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
-                "estimated_cost"
-            ),
-            func.max(ApiUsage.timestamp).label("last_request_at"),
-        )
-        .filter(
-            ApiUsage.account_id == account_id,
-            ApiUsage.action_type == "model_gateway",
-            ApiUsage.runtime_principal_type == principal_type,
-            ApiUsage.runtime_principal_id == principal_id,
-        )
-        .one()
+    usage_q = db.query(
+        func.count(ApiUsage.id).label("request_count"),
+        func.coalesce(
+            func.sum(case((ApiUsage.status_code < 400, 1), else_=0)), 0
+        ).label("success_count"),
+        func.coalesce(
+            func.sum(case((ApiUsage.status_code >= 400, 1), else_=0)), 0
+        ).label("error_count"),
+        func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label("prompt_tokens"),
+        func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+            "completion_tokens"
+        ),
+        func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+        func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label("estimated_cost"),
+        func.max(ApiUsage.timestamp).label("last_request_at"),
+    ).filter(
+        ApiUsage.account_id == account_id,
+        ApiUsage.action_type == "model_gateway",
+        ApiUsage.runtime_principal_type == principal_type,
+        ApiUsage.runtime_principal_id == principal_id,
     )
+    if start_date:
+        usage_q = usage_q.filter(ApiUsage.timestamp >= start_date)
+    if end_date:
+        usage_q = usage_q.filter(ApiUsage.timestamp <= end_date)
+    usage_row = usage_q.one()
 
     latest_usage = _latest_gateway_usage_for_principal(
         db,
         account_id=account_id,
         principal_type=principal_type,
         principal_id=principal_id,
+        start_date=start_date,
+        end_date=end_date,
     )
 
     return {
@@ -141,9 +156,9 @@ def _usage_aggregate_for_principal(
         "total_tokens": int(usage_row.total_tokens or 0),
         "estimated_cost": float(usage_row.estimated_cost or 0.0),
         "latest_model_alias": latest_usage.latest_model_alias if latest_usage else None,
-        "latest_provider_name": (
-            latest_usage.latest_provider_name if latest_usage else None
-        ),
+        "latest_provider_name": latest_usage.latest_provider_name
+        if latest_usage
+        else None,
         "last_request_at": latest_usage.last_request_at if latest_usage else None,
     }
 
@@ -587,7 +602,13 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
         return summary
 
     def get_usage_aggregate_for_account(
-        self, db: Session, *, account_id: str, agent_id: str
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        agent_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
     ) -> Optional[dict[str, Any]]:
         """Return historical usage totals across all sessions for one agent."""
         agent = self.get_for_account(db, account_id=account_id, agent_id=agent_id)
@@ -599,41 +620,52 @@ class CRUDManagedAgent(CRUDBase[ManagedAgent]):
             account_id=account_id,
             principal_type=agent.session_source_type,
             principal_id=agent.session_source_id,
+            start_date=start_date,
+            end_date=end_date,
         )
 
     def get_usage_by_model_for_account(
-        self, db: Session, *, account_id: str, agent_id: str, limit: int = 10
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        agent_id: str,
+        limit: int = 10,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
     ) -> list[dict[str, Any]]:
         """Return historical model usage grouped across all sessions for one agent."""
         agent = self.get_for_account(db, account_id=account_id, agent_id=agent_id)
         if agent is None:
             return []
 
+        q = db.query(
+            ApiUsage.ai_model_id,
+            ApiUsage.model_alias,
+            ApiUsage.provider_name,
+            func.count(ApiUsage.id).label("request_count"),
+            func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label("prompt_tokens"),
+            func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
+                "completion_tokens"
+            ),
+            func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
+                "estimated_cost"
+            ),
+            func.max(ApiUsage.timestamp).label("last_request_at"),
+        ).filter(
+            ApiUsage.account_id == account_id,
+            ApiUsage.action_type == "model_gateway",
+            ApiUsage.runtime_principal_type == agent.session_source_type,
+            ApiUsage.runtime_principal_id == agent.session_source_id,
+        )
+        if start_date:
+            q = q.filter(ApiUsage.timestamp >= start_date)
+        if end_date:
+            q = q.filter(ApiUsage.timestamp <= end_date)
+
         rows = (
-            db.query(
-                ApiUsage.ai_model_id,
-                ApiUsage.model_alias,
-                ApiUsage.provider_name,
-                func.count(ApiUsage.id).label("request_count"),
-                func.coalesce(func.sum(ApiUsage.prompt_tokens), 0).label(
-                    "prompt_tokens"
-                ),
-                func.coalesce(func.sum(ApiUsage.completion_tokens), 0).label(
-                    "completion_tokens"
-                ),
-                func.coalesce(func.sum(ApiUsage.total_tokens), 0).label("total_tokens"),
-                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0).label(
-                    "estimated_cost"
-                ),
-                func.max(ApiUsage.timestamp).label("last_request_at"),
-            )
-            .filter(
-                ApiUsage.account_id == account_id,
-                ApiUsage.action_type == "model_gateway",
-                ApiUsage.runtime_principal_type == agent.session_source_type,
-                ApiUsage.runtime_principal_id == agent.session_source_id,
-            )
-            .group_by(
+            q.group_by(
                 ApiUsage.ai_model_id, ApiUsage.model_alias, ApiUsage.provider_name
             )
             .order_by(

@@ -8,10 +8,18 @@ import math
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
+from sqlalchemy import inspect
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from preloop.config import settings
-from preloop.models.crud import crud_account, crud_ai_model, crud_api_usage, crud_flow
+from preloop.models.crud import (
+    crud_account,
+    crud_ai_model,
+    crud_api_usage,
+    crud_flow,
+    crud_model_price_override,
+)
 from preloop.models.crud.plan import subscription as crud_subscription
 from preloop.models.models.ai_model import AIModel
 from preloop.models.models.flow import Flow
@@ -68,7 +76,11 @@ class ModelGatewayBudgetService:
             else {}
         )
 
-        estimated_request_cost = self._estimate_request_cost(ai_model, payload)
+        estimated_request_cost = self._estimate_request_cost(
+            ai_model,
+            payload,
+            pricing_override=self._pricing_override_for_request(ai_model, payload),
+        )
         pricing_available = estimated_request_cost is not None
 
         hard_limit_exceeded = False
@@ -290,9 +302,11 @@ class ModelGatewayBudgetService:
             account_id=self.auth_context.user.account_id,
         )
 
-    @staticmethod
     def _estimate_request_cost(
-        ai_model: AIModel, payload: Dict[str, Any]
+        self,
+        ai_model: AIModel,
+        payload: Dict[str, Any],
+        pricing_override: Optional[Dict[str, Any]] = None,
     ) -> Optional[float]:
         estimated_input_tokens = ModelGatewayBudgetService._estimate_input_tokens(
             payload
@@ -308,7 +322,40 @@ class ModelGatewayBudgetService:
             prompt_tokens=estimated_input_tokens,
             completion_tokens=estimated_output_tokens,
             total_tokens=estimated_input_tokens + estimated_output_tokens,
+            pricing_override=pricing_override,
         )
+
+    def _pricing_override_for_request(
+        self, ai_model: AIModel, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Return account pricing override for preflight cost estimates."""
+        meta_data = ai_model.meta_data if isinstance(ai_model.meta_data, dict) else {}
+        gateway_config = (
+            meta_data.get("gateway")
+            if isinstance(meta_data.get("gateway"), dict)
+            else {}
+        )
+        model_alias = (
+            payload.get("model")
+            or gateway_config.get("model_alias")
+            or ai_model.model_identifier
+        )
+        try:
+            bind = self.db.get_bind()
+            if bind is not None and not inspect(bind).has_table(
+                "model_price_overrides"
+            ):
+                return None
+            override = crud_model_price_override.get_active_for_model(
+                self.db,
+                account_id=self.auth_context.user.account_id,
+                ai_model_id=ai_model.id,
+                model_alias=str(model_alias).strip() if model_alias else None,
+                provider_name=ai_model.provider_name,
+            )
+        except SQLAlchemyError:
+            return None
+        return override.to_pricing_dict() if override is not None else None
 
     @staticmethod
     def _estimate_input_tokens(payload: Dict[str, Any]) -> int:

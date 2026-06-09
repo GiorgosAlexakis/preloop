@@ -1,8 +1,10 @@
 """Authentication for the API, including JWT tokens and API keys."""
 
+import hashlib
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
 from typing import Any, Dict, Optional
 
@@ -42,6 +44,24 @@ oauth2_scheme_optional = OAuth2PasswordBearer(
 
 # Logger
 logger = logging.getLogger(__name__)
+
+
+def _token_log_fingerprint(token: str) -> str:
+    """Return a non-reversible fingerprint for auth debug logs."""
+
+    if not token:
+        return "empty"
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+
+
+@dataclass(frozen=True)
+class RuntimeBearerAuthContext:
+    """Authenticated runtime bearer identity bound to a managed agent."""
+
+    user: User
+    api_key: Any
+    runtime_session: RuntimeSession
+    managed_agent: ManagedAgent
 
 
 def _runtime_session_id_from_api_key(api_key: Any) -> Optional[uuid.UUID]:
@@ -186,6 +206,67 @@ def _authenticate_with_api_key(session: Any, api_key: Any) -> User:
     return user
 
 
+def authenticate_runtime_bearer_token(
+    session: Any, token: str, *, enforce_current_binding: bool = True
+) -> RuntimeBearerAuthContext:
+    """Validate a runtime API key and return its managed-agent binding."""
+    if not token or "." in token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Runtime bearer token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    api_key = crud_api_key.get_by_key(session, key=token)
+    user = _authenticate_with_api_key(session, api_key)
+
+    context_data = (
+        api_key.context_data if isinstance(api_key.context_data, dict) else {}
+    )
+    runtime_session_id = _runtime_session_id_from_api_key(api_key)
+    managed_agent_id = context_data.get("managed_agent_id")
+    if runtime_session_id is None or not managed_agent_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Runtime bearer token is not bound to a managed agent",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    runtime_session = crud_runtime_session.get_account_session(
+        session,
+        account_id=api_key.account_id,
+        runtime_session_id=runtime_session_id,
+    )
+    managed_agent = crud_managed_agent.get_for_account(
+        session,
+        account_id=api_key.account_id,
+        agent_id=managed_agent_id,
+    )
+    if runtime_session is None or managed_agent is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Runtime bearer token binding is invalid",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if (
+        enforce_current_binding
+        and managed_agent.runtime_session_id is not None
+        and str(managed_agent.runtime_session_id) != str(runtime_session.id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Managed agent is not bound to this runtime session",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return RuntimeBearerAuthContext(
+        user=user,
+        api_key=api_key,
+        runtime_session=runtime_session,
+        managed_agent=managed_agent,
+    )
+
+
 def get_password_hash(password: str) -> str:
     """Hash a password.
 
@@ -276,7 +357,7 @@ def decode_token(token: str) -> TokenData:
         )
 
 
-async def get_current_user(
+def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db_session),
 ) -> User:
@@ -292,7 +373,7 @@ async def get_current_user(
     Raises:
         HTTPException: If the token is invalid or the user doesn't exist.
     """
-    logger.info(f"Authenticating token: {token[:10]}...")
+    logger.info(f"Authenticating token fingerprint: {_token_log_fingerprint(token)}")
     # If token looks like an API key (no periods, which JWT has), try API key first
     # Most API keys are random alphanumeric strings without dots
     if token and "." not in token:
@@ -301,7 +382,9 @@ async def get_current_user(
         )
         try:
             # Look up the API key using CRUD
-            logger.info(f"Looking up API key: {token[:10]}...")
+            logger.info(
+                f"Looking up API key fingerprint: {_token_log_fingerprint(token)}"
+            )
             api_key = crud_api_key.get_by_key(db, key=token)
 
             if api_key:
@@ -396,11 +479,15 @@ async def get_current_user(
             )
             try:
                 # Look up the API key using CRUD
-                logger.info(f"Looking up API key: {token[:10]}...")
+                logger.info(
+                    f"Looking up API key fingerprint: {_token_log_fingerprint(token)}"
+                )
                 api_key = crud_api_key.get_by_key(db, key=token)
 
                 if not api_key:
-                    logger.warning(f"API key not found: {token[:10]}...")
+                    logger.warning(
+                        f"API key not found: {_token_log_fingerprint(token)}"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Invalid API key",
@@ -437,7 +524,7 @@ async def get_current_user(
             )
 
 
-async def get_current_active_user(
+def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """Get the current active user.
@@ -455,8 +542,9 @@ async def get_current_active_user(
     return current_user
 
 
-async def get_current_active_user_optional(
+def get_current_active_user_optional(
     token: str = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db_session),
 ) -> Optional[User]:
     """
     Get the current active user if a valid token is provided, otherwise return None.
@@ -467,7 +555,7 @@ async def get_current_active_user_optional(
     try:
         # We must call get_current_user with the token parameter, not as a dependency,
         # to bypass the strict oauth2_scheme it depends on.
-        user = await get_current_user(token=token)
+        user = get_current_user(token=token, db=db)
         if user and user.is_active:
             return user
         return None

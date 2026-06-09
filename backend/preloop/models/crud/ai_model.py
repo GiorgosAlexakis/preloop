@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -15,6 +15,25 @@ from .base import CRUDBase
 
 class CRUDAIModel(CRUDBase[AIModel]):
     """CRUD class for AIModel operations."""
+
+    @staticmethod
+    def _model_kind(ai_model: AIModel) -> str:
+        return getattr(ai_model, "model_kind", "llm")
+
+    @staticmethod
+    def _normalize_model_kind_fields(obj_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a copy with service-kind stored in metadata (no schema migration)."""
+        normalized = dict(obj_data)
+        if "model_kind" not in normalized:
+            return normalized
+        model_kind = str(normalized.pop("model_kind") or "llm").strip().lower()
+        if model_kind not in {"llm", "stt", "tts"}:
+            raise ValueError("model_kind must be one of: llm, stt, tts")
+        meta_data = normalized.get("meta_data")
+        normalized_meta = dict(meta_data) if isinstance(meta_data, dict) else {}
+        normalized_meta["service_kind"] = model_kind
+        normalized["meta_data"] = normalized_meta
+        return normalized
 
     @staticmethod
     def _apply_secret_reference_fields(
@@ -81,13 +100,18 @@ class CRUDAIModel(CRUDBase[AIModel]):
             obj_data["api_key"] = None
 
     def get_default_active_model(
-        self, db: Session, *, account_id: Optional[str] = None
+        self,
+        db: Session,
+        *,
+        account_id: Optional[str] = None,
+        model_kind: str = "llm",
     ) -> Optional[AIModel]:
         """
         Get the default, active AIModel for a given account.
         If account_id is None, gets the system-wide default.
         If account_id is provided, returns account-specific default or falls back to system-wide default.
         """
+        normalized_model_kind = model_kind.strip().lower()
         query = db.query(self.model).filter(self.model.is_default)
         if account_id is not None:
             query = query.filter(
@@ -98,7 +122,10 @@ class CRUDAIModel(CRUDBase[AIModel]):
         else:
             query = query.filter(self.model.account_id.is_(None))
 
-        return query.order_by(self.model.account_id).first()
+        for ai_model in query.order_by(self.model.account_id).all():
+            if self._model_kind(ai_model) == normalized_model_kind:
+                return ai_model
+        return None
 
     def create_with_account(
         self,
@@ -108,11 +135,17 @@ class CRUDAIModel(CRUDBase[AIModel]):
         account_id: Optional[str] = None,
     ) -> AIModel:
         """Create a new AIModel, assigning it to an account."""
-        obj_data = dict(obj_in)
+        obj_data = self._normalize_model_kind_fields(dict(obj_in))
         if obj_in.get("is_default"):
-            db.query(self.model).filter(
-                self.model.account_id == account_id, self.model.is_default
-            ).update({"is_default": False})
+            for existing_model in (
+                db.query(self.model)
+                .filter(self.model.account_id == account_id, self.model.is_default)
+                .all()
+            ):
+                if self._model_kind(existing_model) == (
+                    obj_data.get("meta_data") or {}
+                ).get("service_kind", "llm"):
+                    existing_model.is_default = False
 
         self._apply_secret_reference_fields(
             db,
@@ -127,11 +160,15 @@ class CRUDAIModel(CRUDBase[AIModel]):
         db.refresh(db_obj)
         return db_obj
 
-    def get_by_account(self, db: Session, *, account_id: str) -> list[AIModel]:
+    def get_by_account(
+        self, db: Session, *, account_id: uuid.UUID | str
+    ) -> list[AIModel]:
         """Get all AIModels for a specific account."""
         return db.query(self.model).filter(self.model.account_id == account_id).all()
 
-    def get_all_for_account(self, db: Session, *, account_id: str) -> list[AIModel]:
+    def get_all_for_account(
+        self, db: Session, *, account_id: uuid.UUID | str
+    ) -> list[AIModel]:
         """Get all configured AIModels available to the account, including system defaults."""
         return (
             db.query(self.model)
@@ -151,15 +188,24 @@ class CRUDAIModel(CRUDBase[AIModel]):
         obj_in: Dict,
     ) -> AIModel:
         """Update an AIModel. If setting a model as default, ensure others are not."""
+        obj_data = self._normalize_model_kind_fields(dict(obj_in))
+        target_model_kind = (obj_data.get("meta_data") or {}).get(
+            "service_kind"
+        ) or db_obj.model_kind
         if obj_in.get("is_default") and not db_obj.is_default:
             # Set all other models for this account to not be default
-            db.query(self.model).filter(
-                self.model.account_id == db_obj.account_id,
-                self.model.id != db_obj.id,
-                self.model.is_default,
-            ).update({"is_default": False})
+            for existing_model in (
+                db.query(self.model)
+                .filter(
+                    self.model.account_id == db_obj.account_id,
+                    self.model.id != db_obj.id,
+                    self.model.is_default,
+                )
+                .all()
+            ):
+                if self._model_kind(existing_model) == target_model_kind:
+                    existing_model.is_default = False
 
-        obj_data = dict(obj_in)
         self._apply_secret_reference_fields(
             db,
             obj_data=obj_data,

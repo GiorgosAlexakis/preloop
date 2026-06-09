@@ -76,6 +76,138 @@ class TestLogStreaming:
         assert detection["pattern"][0]["tool_name"] == "update_pull_request"
         assert detection["pattern"][1]["tool_name"] == "get_pull_request"
 
+    def test_detect_repeated_tool_cycle_allows_distinct_update_pull_request_calls(
+        self,
+    ):
+        """PR review flows may call update_pull_request multiple times with new args."""
+        signatures = [
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "update_pull_request",
+                    "arguments": {
+                        "pull_request": "https://github.com/org/repo/pull/49",
+                        "add_reaction": "eyes",
+                    },
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "update_pull_request",
+                    "arguments": {
+                        "pull_request": "https://github.com/org/repo/pull/49",
+                        "review_action": "comment",
+                    },
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "update_pull_request",
+                    "arguments": {
+                        "pull_request": "https://github.com/org/repo/pull/49",
+                        "description": "updated body",
+                    },
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {
+                    "server_name": "preloop-mcp",
+                    "tool_name": "update_pull_request",
+                    "arguments": {
+                        "pull_request": "https://github.com/org/repo/pull/49",
+                        "remove_reaction": "eyes",
+                    },
+                },
+                sort_keys=True,
+            ),
+        ]
+
+        detection = FlowExecutionOrchestrator._detect_repeated_tool_cycle(signatures)
+
+        assert detection is None
+
+    def test_dedupe_rapid_duplicate_signatures_ignores_paired_mcp_calls(self):
+        """Paired duplicate MCP calls inside a short window count once."""
+        from datetime import UTC, datetime, timedelta
+
+        base = datetime(2026, 6, 9, 21, 14, 0, tzinfo=UTC)
+        remove_reaction = json.dumps(
+            {
+                "server_name": "preloop-mcp",
+                "tool_name": "update_pull_request",
+                "arguments": {
+                    "pull_request": "https://github.com/org/repo/pull/49",
+                    "remove_reaction": "eyes",
+                },
+            },
+            sort_keys=True,
+        )
+        resolve_comment = json.dumps(
+            {
+                "server_name": "preloop-mcp",
+                "tool_name": "update_comment",
+                "arguments": {
+                    "target": "https://github.com/org/repo/pull/49",
+                    "comment_id": "123",
+                    "resolved": True,
+                    "comment_type": "review_comment",
+                },
+            },
+            sort_keys=True,
+        )
+        signatures = [
+            resolve_comment,
+            resolve_comment,
+            remove_reaction,
+            remove_reaction,
+            remove_reaction,
+            remove_reaction,
+        ]
+        timestamps = [
+            base,
+            base + timedelta(milliseconds=7),
+            base + timedelta(seconds=16),
+            base + timedelta(seconds=16, milliseconds=7),
+            base + timedelta(seconds=23),
+            base + timedelta(seconds=23, milliseconds=7),
+        ]
+
+        deduped = FlowExecutionOrchestrator._dedupe_rapid_duplicate_signatures(
+            signatures,
+            timestamps,
+        )
+
+        assert deduped == [resolve_comment, remove_reaction, remove_reaction]
+        assert FlowExecutionOrchestrator._detect_repeated_tool_cycle(deduped) is None
+
+    def test_detect_repeated_tool_cycle_flags_identical_payload_retries(self):
+        """True loops repeat the same tool call with identical arguments."""
+        signature = json.dumps(
+            {
+                "server_name": "preloop-mcp",
+                "tool_name": "get_pull_request",
+                "arguments": {
+                    "pull_request": "https://github.com/org/repo/pull/49",
+                    "include_diff": True,
+                },
+            },
+            sort_keys=True,
+        )
+
+        detection = FlowExecutionOrchestrator._detect_repeated_tool_cycle(
+            [signature] * 4
+        )
+
+        assert detection is not None
+        assert detection["pattern_length"] == 1
+        assert detection["repetitions"] == 4
+        assert detection["pattern"][0]["tool_name"] == "get_pull_request"
+
     @pytest.mark.asyncio
     async def test_sync_runtime_tool_activity_metrics_updates_count_and_detects_loop(
         self, orchestrator

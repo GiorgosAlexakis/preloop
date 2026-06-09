@@ -1,0 +1,40 @@
+{
+  "name": "@preloop/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "Preloop exposure and Agent Control plugin for OpenClaw",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "verify": "node dist/index.js verify"
+  },
+  "keywords": [
+    "preloop",
+    "openclaw",
+    "agent-control",
+    "voice",
+    "autonomous-agents"
+  ],
+  "bin": {
+    "preloop-openclaw-plugin": "dist/index.js"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -619,6 +621,26 @@ func TestBuildOpenClawManagedMCPEnrollmentPlanRewritesGateway(t *testing.T) {
 	if preloopServer["transport"] != "streamable-http" {
 		t.Fatalf("expected OpenClaw managed MCP transport streamable-http, got %#v", preloopServer)
 	}
+	control := ensureObjectPath(
+		plan.ManagedDocument,
+		"plugins",
+		"entries",
+		openClawPreloopPluginID,
+		"config",
+	)
+	if control["control_ws_url"] != "wss://preloop.example/api/v1/agents/control/ws" {
+		t.Fatalf("unexpected OpenClaw control WebSocket URL: %#v", control)
+	}
+	if control["bearer_token"] != "managed-token" {
+		t.Fatalf("unexpected OpenClaw control bearer token: %#v", control)
+	}
+	if control["adapter_package"] != "@preloop/openclaw-plugin" ||
+		control["runtime"] != "openclaw" {
+		t.Fatalf("unexpected OpenClaw control adapter metadata: %#v", control)
+	}
+	if control["runtime_principal_id"] != runtimePrincipalIDForAgent(agent) {
+		t.Fatalf("unexpected OpenClaw runtime principal in control config: %#v", control)
+	}
 
 	providers := ensureObjectPath(plan.ManagedDocument, "models", "providers")
 	managedProvider, ok := providers[openClawManagedProviderID].(map[string]interface{})
@@ -653,6 +675,333 @@ func TestBuildOpenClawManagedMCPEnrollmentPlanRewritesGateway(t *testing.T) {
 	)
 	if passed, _ := validation["validation_passed"].(bool); !passed {
 		t.Fatalf("expected rewritten config to validate, got %#v", validation)
+	}
+	if validation["control_config_written"] != true ||
+		validation["control_ws_url_ok"] != true ||
+		validation["control_bearer_token_ok"] != true ||
+		validation["control_adapter_package_ok"] != true {
+		t.Fatalf("expected OpenClaw control config validation to pass, got %#v", validation)
+	}
+	if validation["control_plugin_installed"] != false ||
+		validation["control_plugin_verified"] != false ||
+		validation["control_channel_configured"] != false {
+		t.Fatalf("expected OpenClaw runtime plugin to remain unverified, got %#v", validation)
+	}
+}
+
+func TestApplyManagedAgentControlConfigAddsRuntimeMetadata(t *testing.T) {
+	agent := AgentConfig{
+		Name:        "OpenClaw",
+		DisplayName: "Octavia",
+		ConfigPath:  filepath.Join(t.TempDir(), "openclaw.json"),
+	}
+	plan := managedMCPEnrollmentPlan{
+		Agent:           agent,
+		ManagedDocument: map[string]interface{}{},
+	}
+
+	updated, err := applyManagedAgentControlConfig(
+		plan,
+		"http://localhost:8000",
+		"durable-token",
+		&managedAgentSummary{ID: "agent-123"},
+		&managedAgentCredentialSummary{ID: "cred-123", Name: "octavia-mcp"},
+		&runtimeSessionTokenResponse{
+			RuntimeSessionID:  "session-123",
+			SessionSourceType: "openclaw",
+			SessionSourceID:   "octavia-session",
+			SessionReference:  agent.ConfigPath,
+		},
+	)
+	if err != nil {
+		t.Fatalf("applyManagedAgentControlConfig returned error: %v", err)
+	}
+
+	control := ensureObjectPath(
+		updated.ManagedDocument,
+		"plugins",
+		"entries",
+		openClawPreloopPluginID,
+		"config",
+	)
+	if control["control_ws_url"] != "ws://localhost:8000/api/v1/agents/control/ws" {
+		t.Fatalf("unexpected control URL: %#v", control)
+	}
+	if control["managed_agent_id"] != "agent-123" ||
+		control["credential_id"] != "cred-123" ||
+		control["runtime_session_id"] != "session-123" {
+		t.Fatalf("expected runtime metadata in control config, got %#v", control)
+	}
+	sanitizedControl := ensureObjectPath(
+		updated.SanitizedManaged,
+		"plugins",
+		"entries",
+		openClawPreloopPluginID,
+		"config",
+	)
+	if sanitizedControl["bearer_token"] != "<redacted>" {
+		t.Fatalf("expected sanitized control bearer token, got %#v", sanitizedControl)
+	}
+}
+
+func TestValidateAgentControlConfigVerifiesInstalledRuntimePlugin(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create bin dir: %v", err)
+	}
+	verifyPath := filepath.Join(binDir, "preloop-openclaw-plugin")
+	if err := os.WriteFile(
+		verifyPath,
+		[]byte("#!/bin/sh\n[ \"$1\" = verify ] && [ \"$2\" = --config ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake plugin: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	agent := AgentConfig{
+		Name:       "OpenClaw",
+		ConfigPath: filepath.Join(dir, "openclaw.json"),
+	}
+	doc := map[string]interface{}{}
+	applyAgentControlConfigToDocument(
+		agent,
+		doc,
+		buildManagedAgentControlConfig(agent, "https://preloop.example", "token", nil, nil, nil),
+	)
+
+	result := validateAgentControlConfig(agent, doc, "https://preloop.example")
+	if result["control_plugin_installed"] != true ||
+		result["control_plugin_verified"] != true ||
+		result["control_channel_configured"] != true {
+		t.Fatalf("expected installed runtime plugin to verify, got %#v", result)
+	}
+}
+
+func TestValidateAgentControlConfigRejectsStaleOpenClawSidecarStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	statusDir := filepath.Join(home, ".preloop-agent-control")
+	if err := os.MkdirAll(statusDir, 0755); err != nil {
+		t.Fatalf("failed to create sidecar status dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(statusDir, "openclaw.status.json"),
+		[]byte(`{"state":"connected","runtime_session_id":"old-session"}`),
+		0644,
+	); err != nil {
+		t.Fatalf("failed to write stale sidecar status: %v", err)
+	}
+
+	agent := AgentConfig{
+		Name:       "OpenClaw",
+		ConfigPath: filepath.Join(home, ".openclaw", "openclaw.json"),
+	}
+	doc := map[string]interface{}{}
+	applyAgentControlConfigToDocument(
+		agent,
+		doc,
+		buildManagedAgentControlConfig(
+			agent,
+			"https://preloop.example",
+			"token",
+			nil,
+			nil,
+			&runtimeSessionTokenResponse{RuntimeSessionID: "new-session"},
+		),
+	)
+	if err := os.MkdirAll(filepath.Dir(agent.ConfigPath), 0755); err != nil {
+		t.Fatalf("failed to create OpenClaw config dir: %v", err)
+	}
+	configBytes, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("failed to marshal OpenClaw config: %v", err)
+	}
+	if err := os.WriteFile(agent.ConfigPath, configBytes, 0644); err != nil {
+		t.Fatalf("failed to write OpenClaw config: %v", err)
+	}
+
+	result := validateAgentControlConfig(agent, doc, "https://preloop.example")
+	if result["control_plugin_verified"] == true ||
+		result["control_plugin_verification"] != "managed_sidecar_stale_status" {
+		t.Fatalf("expected stale OpenClaw sidecar status to fail validation, got %#v", result)
+	}
+	if result["control_channel_configured"] == true {
+		t.Fatalf("expected stale sidecar to keep channel unconfigured, got %#v", result)
+	}
+}
+
+func TestAgentControlPluginInstallCommandUsesStandaloneOpenClawSource(t *testing.T) {
+	pluginsRoot := t.TempDir()
+	sourcePath := filepath.Join(pluginsRoot, "openclaw-preloop")
+	if err := os.MkdirAll(sourcePath, 0755); err != nil {
+		t.Fatalf("failed to create plugin source dir: %v", err)
+	}
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+
+	command, args, err := agentControlPluginInstallCommand("OpenClaw")
+	if err != nil {
+		t.Fatalf("unexpected install command error: %v", err)
+	}
+	if command != "openclaw" {
+		t.Fatalf("expected openclaw installer, got %q", command)
+	}
+	if len(args) != 3 || args[0] != "plugins" || args[1] != "install" || args[2] != sourcePath {
+		t.Fatalf("unexpected install args: %#v", args)
+	}
+}
+
+func TestAgentControlPluginInstallCommandFallsBackToMarketplacePackage(t *testing.T) {
+	pluginsRoot := t.TempDir()
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+
+	command, args, err := agentControlPluginInstallCommand("OpenClaw")
+	if err != nil {
+		t.Fatalf("unexpected install command error: %v", err)
+	}
+	if command != "openclaw" {
+		t.Fatalf("expected openclaw installer, got %q", command)
+	}
+	if len(args) != 3 ||
+		args[0] != "plugins" ||
+		args[1] != "install" ||
+		args[2] != "@preloop/openclaw-plugin" {
+		t.Fatalf("unexpected marketplace install args: %#v", args)
+	}
+}
+
+func TestInstallAgentControlRuntimePluginInstallsAndVerifiesOpenClaw(t *testing.T) {
+	dir := t.TempDir()
+	pluginsRoot := filepath.Join(dir, "runtime-plugins")
+	sourcePath := filepath.Join(pluginsRoot, "openclaw-preloop")
+	if err := os.MkdirAll(sourcePath, 0755); err != nil {
+		t.Fatalf("failed to create plugin source dir: %v", err)
+	}
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create bin dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(binDir, "openclaw"),
+		[]byte("#!/bin/sh\n[ \"$1\" = plugins ] && [ \"$2\" = install ] && [ -d \"$3\" ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake OpenClaw installer: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(binDir, "preloop-openclaw-plugin"),
+		[]byte("#!/bin/sh\n[ \"$1\" = verify ] && [ \"$2\" = --config ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake OpenClaw verifier: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	result := installAgentControlRuntimePlugin(
+		AgentConfig{Name: "OpenClaw", ConfigPath: filepath.Join(dir, "openclaw.json")},
+		io.Discard,
+	)
+	if result["control_plugin_install_status"] != "installed_and_verified" ||
+		result["control_plugin_installed"] != true ||
+		result["control_plugin_verified"] != true {
+		t.Fatalf("expected install and verify success, got %#v", result)
+	}
+}
+
+func TestInstallAgentControlRuntimePluginReportsOpenClawNodeMismatch(t *testing.T) {
+	dir := t.TempDir()
+	pluginsRoot := filepath.Join(dir, "runtime-plugins")
+	sourcePath := filepath.Join(pluginsRoot, "openclaw-preloop")
+	if err := os.MkdirAll(sourcePath, 0755); err != nil {
+		t.Fatalf("failed to create plugin source dir: %v", err)
+	}
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create bin dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(binDir, "openclaw"),
+		[]byte("#!/bin/sh\necho 'openclaw requires Node >=22.16.0. Detected: node 22.13.1 (exec: /usr/local/bin/node).' >&2\nexit 1\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake OpenClaw installer: %v", err)
+	}
+	t.Setenv("PATH", binDir)
+
+	var output bytes.Buffer
+	result := installAgentControlRuntimePlugin(
+		AgentConfig{Name: "OpenClaw", ConfigPath: filepath.Join(dir, "openclaw.json")},
+		&output,
+	)
+	if result["control_plugin_install_status"] != "runtime_node_unsupported" {
+		t.Fatalf("expected Node mismatch status, got %#v", result)
+	}
+	if remediation, _ := result["control_plugin_install_remediation"].(string); !strings.Contains(remediation, "Upgrade Node") {
+		t.Fatalf("expected Node upgrade remediation, got %#v", result)
+	}
+	if !strings.Contains(output.String(), "Upgrade Node") {
+		t.Fatalf("expected remediation in CLI output, got %q", output.String())
+	}
+}
+
+func TestEnsureAgentControlRuntimePluginsInstallsSupportedDiscoveredAgents(t *testing.T) {
+	dir := t.TempDir()
+	pluginsRoot := filepath.Join(dir, "runtime-plugins")
+	sourcePath := filepath.Join(pluginsRoot, "openclaw-preloop")
+	if err := os.MkdirAll(sourcePath, 0755); err != nil {
+		t.Fatalf("failed to create plugin source dir: %v", err)
+	}
+	t.Setenv("PRELOOP_RUNTIME_PLUGINS_DIR", pluginsRoot)
+
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create bin dir: %v", err)
+	}
+	installLog := filepath.Join(dir, "install.log")
+	t.Setenv("PRELOOP_INSTALL_LOG", installLog)
+	if err := os.WriteFile(
+		filepath.Join(binDir, "openclaw"),
+		[]byte("#!/bin/sh\necho \"$@\" >> \"$PRELOOP_INSTALL_LOG\"\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake OpenClaw installer: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(binDir, "preloop-openclaw-plugin"),
+		[]byte("#!/bin/sh\n[ \"$1\" = verify ] && [ \"$2\" = --config ]\n"),
+		0755,
+	); err != nil {
+		t.Fatalf("failed to write fake OpenClaw verifier: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var output bytes.Buffer
+	ensureAgentControlRuntimePlugins(
+		nil,
+		[]AgentConfig{
+			{Name: "OpenClaw", ConfigPath: filepath.Join(dir, "openclaw.json")},
+			{Name: "OpenClaw", ConfigPath: filepath.Join(dir, "openclaw.json")},
+			{Name: "Codex CLI", ConfigPath: filepath.Join(dir, "codex.toml")},
+		},
+		&output,
+	)
+
+	logBytes, err := os.ReadFile(installLog)
+	if err != nil {
+		t.Fatalf("expected plugin installer to run: %v", err)
+	}
+	log := strings.TrimSpace(string(logBytes))
+	want := "plugins install " + sourcePath
+	if log != want {
+		t.Fatalf("expected one OpenClaw plugin install %q, got %q", want, log)
+	}
+	if strings.Contains(output.String(), "Codex") {
+		t.Fatalf("did not expect unsupported Codex plugin ensure output: %s", output.String())
 	}
 }
 
@@ -1020,6 +1369,26 @@ func TestBuildCodexLiveValidationPayload_IncludesGatewayRequiredFields(t *testin
 	}
 	if _, present := decoded["max_completion_tokens"]; present {
 		t.Fatalf("expected 'max_completion_tokens' to be absent, got %#v", decoded["max_completion_tokens"])
+	}
+}
+
+func TestManagedAPIKeyIDForTokenMatchesCredentialPrefix(t *testing.T) {
+	credentials := []managedAgentCredentialSummary{
+		{
+			APIKeyID:  "new-key",
+			KeyPrefix: "agt_new",
+			Status:    "active",
+		},
+		{
+			APIKeyID:  "configured-key",
+			KeyPrefix: "agt_config",
+			Status:    "active",
+		},
+	}
+
+	got := managedAPIKeyIDForToken(credentials, "agt_config_secret")
+	if got != "configured-key" {
+		t.Fatalf("expected configured token API key id, got %q", got)
 	}
 }
 

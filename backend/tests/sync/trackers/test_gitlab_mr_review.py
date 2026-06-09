@@ -277,6 +277,45 @@ class TestGetMrDiscussions(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Failed to get MR discussions", str(context.exception))
 
     @patch("preloop.sync.trackers.gitlab.gitlab.Gitlab")
+    async def test_get_mr_discussions_with_notes_manager(self, mock_gitlab_constructor):
+        """Notes managers from python-gitlab should be listed, not iterated directly."""
+        mock_gl_instance = MagicMock()
+        mock_gitlab_constructor.return_value = mock_gl_instance
+        mock_gl_instance.auth.return_value = None
+
+        mock_project = MagicMock()
+        mock_gl_instance.projects.get.return_value = mock_project
+
+        mock_mr = MagicMock()
+        mock_project.mergerequests.get.return_value = mock_mr
+
+        mock_discussion = MagicMock()
+        mock_discussion.id = "discussion-1"
+        mock_discussion.individual_note = False
+        mock_notes_manager = MagicMock()
+        mock_notes_manager.list.return_value = [
+            {
+                "id": 201,
+                "author": {"username": "reviewer"},
+                "body": "Please update tests",
+                "created_at": "2023-01-02T10:00:00Z",
+                "updated_at": "2023-01-02T10:00:00Z",
+                "resolvable": True,
+                "resolved": False,
+                "system": False,
+            }
+        ]
+        mock_discussion.notes = mock_notes_manager
+        mock_mr.discussions.list.return_value = [mock_discussion]
+
+        tracker = GitLabTracker("tracker-1", "api-key", {"project_id": "proj-1"})
+        result = await tracker.get_mr_discussions("10")
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["notes"][0]["author"], "reviewer")
+        mock_notes_manager.list.assert_called_once()
+
+    @patch("preloop.sync.trackers.gitlab.gitlab.Gitlab")
     async def test_get_mr_discussions_empty(self, mock_gitlab_constructor):
         """Test get discussions with no discussions."""
         mock_gl_instance = MagicMock()

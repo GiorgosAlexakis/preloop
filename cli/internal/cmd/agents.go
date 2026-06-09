@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -178,6 +179,13 @@ var agentsValidateCmd = &cobra.Command{
 	RunE:  runAgentsValidate,
 }
 
+var agentsInstallPluginCmd = &cobra.Command{
+	Use:   "install-plugin <agent>",
+	Short: "Install the standalone Preloop runtime plugin for an agent",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAgentsInstallPlugin,
+}
+
 var agentsRestoreCmd = &cobra.Command{
 	Use:   "restore <agent>",
 	Short: "Restore the most recent local backup for an enrolled agent",
@@ -244,6 +252,11 @@ type mcpServerResponse struct {
 	Transport  string                 `json:"transport,omitempty"`
 	AuthType   string                 `json:"auth_type,omitempty"`
 	AuthConfig map[string]interface{} `json:"auth_config,omitempty"`
+}
+
+type agentOnboardingFailure struct {
+	Agent AgentConfig
+	Err   error
 }
 
 type flowSummaryResponse struct {
@@ -345,6 +358,7 @@ type managedMCPEnrollmentPlan struct {
 	SanitizedManaged    map[string]interface{}
 	ManagedServerName   string
 	ManagedServerURL    string
+	ManagedControlWSURL string
 	ManagedModelAlias   string
 	ManagedProviderName string
 	Notes               []string
@@ -359,19 +373,20 @@ type remoteServerSyncResult struct {
 }
 
 type localEnrollmentState struct {
-	AgentName          string                 `json:"agent_name"`
-	DisplayName        string                 `json:"display_name,omitempty"`
-	RuntimePrincipalID string                 `json:"runtime_principal_id"`
-	EnrollmentID       string                 `json:"enrollment_id,omitempty"`
-	ConfigPath         string                 `json:"config_path"`
-	ConfigExisted      bool                   `json:"config_existed"`
-	BackupPath         string                 `json:"backup_path"`
-	ManagedServerName  string                 `json:"managed_server_name"`
-	ManagedServerURL   string                 `json:"managed_server_url"`
-	AppliedAt          time.Time              `json:"applied_at"`
-	RestoredAt         *time.Time             `json:"restored_at,omitempty"`
-	DiscoveredConfig   map[string]interface{} `json:"discovered_config,omitempty"`
-	ManagedConfig      map[string]interface{} `json:"managed_config,omitempty"`
+	AgentName           string                 `json:"agent_name"`
+	DisplayName         string                 `json:"display_name,omitempty"`
+	RuntimePrincipalID  string                 `json:"runtime_principal_id"`
+	EnrollmentID        string                 `json:"enrollment_id,omitempty"`
+	ConfigPath          string                 `json:"config_path"`
+	ConfigExisted       bool                   `json:"config_existed"`
+	BackupPath          string                 `json:"backup_path"`
+	ManagedServerName   string                 `json:"managed_server_name"`
+	ManagedServerURL    string                 `json:"managed_server_url"`
+	ManagedControlWSURL string                 `json:"managed_control_ws_url,omitempty"`
+	AppliedAt           time.Time              `json:"applied_at"`
+	RestoredAt          *time.Time             `json:"restored_at,omitempty"`
+	DiscoveredConfig    map[string]interface{} `json:"discovered_config,omitempty"`
+	ManagedConfig       map[string]interface{} `json:"managed_config,omitempty"`
 }
 
 type managedMCPAdapter interface {
@@ -408,6 +423,7 @@ func init() {
 	agentsCmd.AddCommand(agentsStatusCmd)
 	agentsCmd.AddCommand(agentsListCmd)
 	agentsCmd.AddCommand(agentsValidateCmd)
+	agentsCmd.AddCommand(agentsInstallPluginCmd)
 	agentsCmd.AddCommand(agentsRestoreCmd)
 	agentsCmd.AddCommand(agentsOffboardCmd)
 	agentsCmd.AddCommand(agentsStarterPolicyCmd)
@@ -428,6 +444,7 @@ func init() {
 	agentsListCmd.Flags().Bool("json", false, "output managed agents as JSON")
 	agentsStatusCmd.Flags().Bool("json", false, "output managed status as JSON")
 	agentsValidateCmd.Flags().Bool("live", false, "run a supported live validation prompt in addition to config validation")
+	agentsInstallPluginCmd.Flags().Bool("dry-run", false, "print the runtime plugin installation command without running it")
 	agentsRestoreCmd.Flags().BoolP("yes", "y", false, "skip the restore confirmation prompt")
 	agentsRestoreCmd.Flags().BoolP("force", "f", false, "alias for --yes")
 	agentsOffboardCmd.Flags().BoolP("yes", "y", false, "skip offboarding and cleanup confirmations")
@@ -619,6 +636,72 @@ func promptToOnboardCandidates(
 	return nil
 }
 
+func onboardCandidatesBestEffort(
+	reader io.Reader,
+	writer io.Writer,
+	candidates []AgentConfig,
+	opts managedEnrollmentOptions,
+	deferLiveValidate bool,
+	enroll func(AgentConfig, managedEnrollmentOptions) error,
+) ([]AgentConfig, []agentOnboardingFailure) {
+	bufferedReader := bufio.NewReader(reader)
+	var enrolled []AgentConfig
+	var failures []agentOnboardingFailure
+
+	for _, agent := range candidates {
+		prepared, err := prepareAgentForEnrollment(
+			bufferedReader,
+			writer,
+			agent,
+			true,
+		)
+		if err != nil {
+			failures = append(failures, agentOnboardingFailure{
+				Agent: agent,
+				Err:   err,
+			})
+			continue
+		}
+
+		agentOpts := opts
+		agentOpts.AutoApprove = true
+		agentOpts.SkipConfirmation = true
+		agentOpts.DeferLiveValidate = deferLiveValidate
+		if err := enroll(prepared, agentOpts); err != nil {
+			failures = append(failures, agentOnboardingFailure{
+				Agent: prepared,
+				Err:   err,
+			})
+			continue
+		}
+		enrolled = append(enrolled, prepared)
+	}
+
+	return enrolled, failures
+}
+
+func printAgentOnboardingFailures(
+	writer io.Writer,
+	failures []agentOnboardingFailure,
+) {
+	if len(failures) == 0 {
+		return
+	}
+	fmt.Fprintln(writer, "\nSome agents could not be onboarded:") //nolint:errcheck
+	for _, failure := range failures {
+		fmt.Fprintf( //nolint:errcheck
+			writer,
+			"  - %s: %v\n",
+			resolveAgentDisplayName(failure.Agent),
+			failure.Err,
+		)
+	}
+	fmt.Fprintln( //nolint:errcheck
+		writer,
+		"Re-run `preloop agents onboard <agent> -y` after fixing the listed agent environment.",
+	)
+}
+
 func prepareAgentForEnrollment(
 	reader *bufio.Reader,
 	writer io.Writer,
@@ -686,13 +769,26 @@ func filterAgentsPendingEnrollment(client *api.Client, discovered []AgentConfig)
 			continue
 		}
 		if client != nil {
-			if _, err := getManagedAgentForDiscovered(client, agent); err == nil {
+			if managed, err := getManagedAgentForDiscovered(client, agent); err == nil &&
+				managedAgentIsLocallyComplete(managed) {
 				continue
 			}
 		}
 		candidates = append(candidates, agent)
 	}
 	return candidates, nil
+}
+
+func managedAgentIsLocallyComplete(managed *managedAgentSummary) bool {
+	if managed == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(managed.OnboardingState)) {
+	case "fully_onboarded", "mcp_proxy_only":
+		return true
+	default:
+		return false
+	}
 }
 
 func isAutoApprove(cmd *cobra.Command) bool {
@@ -745,6 +841,11 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if len(candidates) == 0 {
+			if runAll {
+				if err := ensureAgentControlOnboarding(client, discovered, opts); err != nil {
+					return err
+				}
+			}
 			fmt.Println("No unenrolled agents found.")
 			return nil
 		}
@@ -777,23 +878,25 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 					return nil
 				}
 			}
-			var enrolled []AgentConfig
-			err := promptToOnboardCandidates(os.Stdin, os.Stdout, candidates, true, func(a AgentConfig) error {
-				agentOpts := opts
-				agentOpts.AutoApprove = true
-				agentOpts.SkipConfirmation = true
-				agentOpts.DeferLiveValidate = deferLiveValidate
-				if enrollErr := executeManagedEnrollment(a, agentOpts); enrollErr != nil {
-					return enrollErr
-				}
-				enrolled = append(enrolled, a)
-				return nil
-			})
-			if err != nil {
-				return err
-			}
+			enrolled, failures := onboardCandidatesBestEffort(
+				os.Stdin,
+				os.Stdout,
+				candidates,
+				opts,
+				deferLiveValidate,
+				executeManagedEnrollment,
+			)
 			if deferLiveValidate && len(enrolled) > 0 {
 				runDeferredLiveValidationsParallel(client, enrolled, os.Stdout)
+			}
+			if err := ensureAgentControlOnboarding(client, discovered, opts); err != nil {
+				return err
+			}
+			if len(failures) > 0 {
+				printAgentOnboardingFailures(os.Stdout, failures)
+				if len(enrolled) == 0 {
+					return fmt.Errorf("failed to onboard all discovered agents")
+				}
 			}
 			return nil
 		}
@@ -824,6 +927,149 @@ func runAgentsEnroll(cmd *cobra.Command, args []string) error {
 	}
 
 	return executeManagedEnrollment(agent, opts)
+}
+
+func ensureAgentControlOnboarding(
+	client *api.Client,
+	agents []AgentConfig,
+	opts managedEnrollmentOptions,
+) error {
+	if client == nil || !client.IsAuthenticated() {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, agent := range agents {
+		agent = normalizeDiscoveredAgent(agent)
+		if !supportsAgentControlChannel(agent) {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(agent.Name)) + "\x00" + filepath.Clean(agent.ConfigPath)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if !agentControlNeedsOnboardingRefresh(agent) {
+			continue
+		}
+		fmt.Fprintf(
+			opts.Output,
+			"Refreshing Agent Control config for %s...\n",
+			resolveAgentDisplayName(agent),
+		) //nolint:errcheck
+		agentOpts := opts
+		agentOpts.AutoApprove = true
+		agentOpts.SkipConfirmation = true
+		agentOpts.DeferLiveValidate = false
+		if err := executeManagedEnrollment(agent, agentOpts); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func agentControlNeedsOnboardingRefresh(agent AgentConfig) bool {
+	document, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return true
+	}
+	validation := managedMCPAdapterForAgent(agent).ValidateManagedConfig(
+		document,
+		clientBaseURLForFlags(),
+	)
+	configured, _ := validation["control_channel_configured"].(bool)
+	return !configured
+}
+
+func ensureAgentControlRuntimePlugins(
+	client *api.Client,
+	agents []AgentConfig,
+	writer io.Writer,
+) {
+	seen := map[string]bool{}
+	for _, agent := range agents {
+		agent = normalizeDiscoveredAgent(agent)
+		if !supportsAgentControlChannel(agent) {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(agent.Name)) + "\x00" + filepath.Clean(agent.ConfigPath)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		fmt.Fprintf(
+			writer,
+			"Ensuring Agent Control runtime plugin for %s...\n",
+			resolveAgentDisplayName(agent),
+		) //nolint:errcheck
+		pluginResult := installAgentControlRuntimePlugin(agent, writer)
+		persistAgentControlPluginValidation(client, agent, pluginResult, writer)
+	}
+}
+
+func persistAgentControlPluginValidation(
+	client *api.Client,
+	agent AgentConfig,
+	pluginResult map[string]interface{},
+	writer io.Writer,
+) {
+	if client == nil || !client.IsAuthenticated() {
+		return
+	}
+	detail, err := getManagedAgentDetailForDiscovered(client, agent)
+	if err != nil {
+		fmt.Fprintf(
+			writer,
+			"  Warning: could not persist Agent Control plugin status for %s: %v\n",
+			resolveAgentDisplayName(agent),
+			err,
+		) //nolint:errcheck
+		return
+	}
+
+	enrollmentID := ""
+	existingValidation := map[string]interface{}{}
+	for _, enrollment := range detail.Enrollments {
+		if enrollment.EnrollmentType == "cli_managed_config" {
+			enrollmentID = enrollment.ID
+			existingValidation = cloneStringMap(enrollment.ValidationResult)
+			break
+		}
+	}
+	if enrollmentID == "" {
+		return
+	}
+
+	validationResult := existingValidation
+	if document, err := loadAgentConfigDocument(agent); err == nil {
+		validationResult = mergeStringMaps(
+			validationResult,
+			managedMCPAdapterForAgent(agent).ValidateManagedConfig(
+				document,
+				clientBaseURLForFlags(),
+			),
+		)
+	}
+	validationResult = mergeStringMaps(validationResult, pluginResult)
+
+	status := "validated"
+	if configured, _ := validationResult["control_channel_configured"].(bool); !configured {
+		status = "validation_failed"
+	}
+	if _, err := validateManagedEnrollmentRecord(
+		client,
+		agent,
+		enrollmentID,
+		validationResult,
+		status,
+	); err != nil {
+		fmt.Fprintf(
+			writer,
+			"  Warning: could not persist Agent Control plugin status for %s: %v\n",
+			resolveAgentDisplayName(agent),
+			err,
+		) //nolint:errcheck
+	}
 }
 
 func runAgentsStatus(cmd *cobra.Command, args []string) error {
@@ -1019,13 +1265,6 @@ func runAgentsValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("Validation status for %s: %s\n", resolveAgentDisplayName(agent), status)
-	for _, key := range []string{"config_path", "config_parse_ok", "preloop_server_present", "error"} {
-		if value, ok := result[key]; ok {
-			fmt.Printf("  %s: %v\n", key, value)
-		}
-	}
-
 	client, err := api.NewClient(FlagToken, FlagURL)
 	if err == nil && client.IsAuthenticated() {
 		enrollmentID := ""
@@ -1057,8 +1296,13 @@ func runAgentsValidate(cmd *cobra.Command, args []string) error {
 				status = "validation_failed"
 				result["live_validation_error"] = liveErr.Error()
 			}
+		} else if runLiveValidation {
+			result = mergeStringMaps(existingValidation, result)
 		} else if !runLiveValidation {
 			result = mergeStringMaps(existingValidation, result)
+		}
+		if runLiveValidation && onboardingStateFromValidation(result) != "fully_onboarded" {
+			status = "validation_failed"
 		}
 		if enrollmentID != "" {
 			if _, err := validateManagedEnrollmentRecord(client, agent, enrollmentID, result, status); err != nil {
@@ -1067,10 +1311,100 @@ func runAgentsValidate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	fmt.Printf("Validation status for %s: %s\n", resolveAgentDisplayName(agent), status)
+	for _, key := range []string{
+		"config_path",
+		"config_parse_ok",
+		"preloop_server_present",
+		"gateway_provider_ok",
+		"gateway_base_url_ok",
+		"gateway_token_ok",
+		"model_provider_rewritten",
+		"live_validation_status",
+		"live_validation_passed",
+		"live_validation_skip_reason",
+		"control_config_written",
+		"control_plugin_installed",
+		"control_plugin_verified",
+		"control_channel_configured",
+		"error",
+	} {
+		if value, ok := result[key]; ok {
+			fmt.Printf("  %s: %v\n", key, value)
+		}
+	}
+	fmt.Printf("  onboarding_mode: %s\n", onboardingStateLabel(onboardingStateFromValidation(result)))
+	fmt.Printf("  routing: %s\n", onboardingStateNote(onboardingStateFromValidation(result)))
+
 	if status != "validated" {
 		return fmt.Errorf("managed enrollment validation failed")
 	}
 	return nil
+}
+
+func runAgentsInstallPlugin(cmd *cobra.Command, args []string) error {
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	agentName := strings.Join(args, " ")
+	installCommand, installArgs, err := agentControlPluginInstallCommand(agentName)
+	if err != nil {
+		return err
+	}
+	if dryRun {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", installCommand, strings.Join(installArgs, " "))
+		return nil
+	}
+	executable, err := resolveRuntimeExecutable(installCommand)
+	if err != nil {
+		return fmt.Errorf(
+			"%s was not found on %s: %w",
+			installCommand,
+			runtimeExecutableSearchDescription(installCommand),
+			err,
+		)
+	}
+	command := exec.Command(executable, installArgs...)
+	output, err := command.CombinedOutput()
+	if len(output) > 0 {
+		_, _ = cmd.ErrOrStderr().Write(output)
+	}
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			message = err.Error()
+		}
+		_, remediation := classifyRuntimePluginInstallFailure(installCommand, message)
+		if remediation != "" {
+			return fmt.Errorf(
+				"failed to install Preloop runtime plugin: %s\n%s",
+				message,
+				remediation,
+			)
+		}
+		return fmt.Errorf("failed to install Preloop runtime plugin: %s", message)
+	}
+	fmt.Fprintf(
+		cmd.OutOrStdout(),
+		"\nInstalled %s. Run `preloop agents validate %s` to verify plugin load and control readiness.\n",
+		agentControlPluginPackageName(AgentConfig{Name: agentName}),
+		agentName,
+	)
+	return nil
+}
+
+func agentControlPluginInstallCommand(agentName string) (string, []string, error) {
+	agent := AgentConfig{Name: agentName}
+	installer := agentControlPluginInstallerCommand(agent)
+	if installer == "" {
+		return "", nil, fmt.Errorf("agent %q does not support standalone Preloop runtime plugins", agentName)
+	}
+	installTarget := agentControlPluginInstallTarget(agent)
+	if installTarget == "" {
+		return "", nil, fmt.Errorf(
+			"standalone Preloop runtime plugin target for %s was not found",
+			agentName,
+		)
+	}
+	return installer, []string{"plugins", "install", installTarget}, nil
 }
 
 func mergeStringMaps(base map[string]interface{}, overlays ...map[string]interface{}) map[string]interface{} {
@@ -2399,6 +2733,10 @@ func printEnrollmentPlan(plan managedMCPEnrollmentPlan, dryRun bool) {
 	fmt.Printf("  Agent type: %s\n", plan.Agent.Name)
 	fmt.Printf("  Config: %s\n", plan.Agent.ConfigPath)
 	fmt.Printf("  Managed server: %s -> %s\n", plan.ManagedServerName, plan.ManagedServerURL)
+	if plan.ManagedControlWSURL != "" {
+		fmt.Printf("  Agent Control config target: %s\n", plan.ManagedControlWSURL)
+		fmt.Println("  Agent Control runtime plugin: install/verify when supported")
+	}
 	discoveredNames := sortedServerNames(plan.Agent.MCPServers)
 	if len(discoveredNames) > 0 {
 		fmt.Printf("  Existing MCP servers: %s\n", strings.Join(discoveredNames, ", "))
@@ -2435,7 +2773,21 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 	}
 	removedPreloopServers := prunePreloopOwnedMCPServersFromDocument(managedDoc)
 	container["preloop"] = adapter.BuildManagedServer(baseURL, token)
-	ensureLegacyCodexMCPServer(agent, managedDoc, baseURL)
+	ensureLegacyCodexMCPServer(agent, managedDoc, baseURL, token)
+	if supportsAgentControlChannel(agent) {
+		applyAgentControlConfigToDocument(
+			agent,
+			managedDoc,
+			buildManagedAgentControlConfig(
+				agent,
+				baseURL,
+				token,
+				nil,
+				nil,
+				nil,
+			),
+		)
+	}
 
 	sanitizedDiscovered, err := deepCopyMap(discoveredDoc)
 	if err != nil {
@@ -2459,6 +2811,11 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 		)
 	}
 
+	controlWSURL := ""
+	if supportsAgentControlChannel(agent) {
+		controlWSURL = managedAgentControlWebSocketURL(baseURL)
+	}
+
 	return managedMCPEnrollmentPlan{
 		Agent:               agent,
 		DiscoveredDocument:  discoveredDoc,
@@ -2467,6 +2824,7 @@ func buildManagedMCPEnrollmentPlan(agent AgentConfig, baseURL, token string) (ma
 		SanitizedManaged:    sanitizedManaged,
 		ManagedServerName:   "preloop",
 		ManagedServerURL:    strings.TrimRight(baseURL, "/") + "/mcp/v1",
+		ManagedControlWSURL: controlWSURL,
 		Notes:               notes,
 	}, nil
 }
@@ -2533,6 +2891,58 @@ func applyCodexManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, mod
 		plan.Notes,
 		fmt.Sprintf("Model traffic will route through Preloop using %s.", modelAlias),
 	)
+	return refreshManagedPlanSnapshots(plan)
+}
+
+func normalizeCodexTOMLDocument(doc map[string]interface{}) map[string]interface{} {
+	normalized, err := deepCopyMap(doc)
+	if err != nil {
+		return doc
+	}
+	nux, ok := asObjectMap(lookupValue(normalized, "tui", "model_availability_nux"))
+	if !ok {
+		return normalized
+	}
+	for key, raw := range nux {
+		switch value := raw.(type) {
+		case float64:
+			if value >= 0 && value <= float64(^uint32(0)) && value == float64(uint32(value)) {
+				nux[key] = uint32(value)
+			}
+		case float32:
+			if value >= 0 && value <= float32(^uint32(0)) && value == float32(uint32(value)) {
+				nux[key] = uint32(value)
+			}
+		}
+	}
+	return normalized
+}
+
+func removeCodexManagedGatewaySelection(
+	plan managedMCPEnrollmentPlan,
+) (managedMCPEnrollmentPlan, error) {
+	if strings.EqualFold(strings.TrimSpace(lookupString(plan.ManagedDocument, "model_provider")), "preloop") {
+		delete(plan.ManagedDocument, "model_provider")
+		delete(plan.ManagedDocument, "model_providers")
+		plan.ManagedDocument["model"] = normalizeCodexDirectModelValue(plan.ManagedDocument["model"])
+	}
+	plan.ManagedModelAlias = ""
+	plan.ManagedProviderName = ""
+	return refreshManagedPlanSnapshots(plan)
+}
+
+func removeGeminiManagedGatewaySelection(
+	plan managedMCPEnrollmentPlan,
+) (managedMCPEnrollmentPlan, error) {
+	if strings.Contains(
+		strings.ToLower(strings.TrimSpace(lookupString(plan.ManagedDocument, "baseUrl"))),
+		"preloop",
+	) {
+		delete(plan.ManagedDocument, "baseUrl")
+		delete(plan.ManagedDocument, "apiKey")
+	}
+	plan.ManagedModelAlias = ""
+	plan.ManagedProviderName = ""
 	return refreshManagedPlanSnapshots(plan)
 }
 
@@ -2654,6 +3064,224 @@ func applyClaudeManagedGateway(plan managedMCPEnrollmentPlan, baseURL, token, mo
 	return refreshManagedPlanSnapshots(plan)
 }
 
+func restoreClaudeGatewayEnvFromOriginal(
+	agent AgentConfig,
+	originalBytes []byte,
+	writer io.Writer,
+) error {
+	if !isClaudeCodeAgent(agent) {
+		return nil
+	}
+	current, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return err
+	}
+	original := map[string]interface{}{}
+	if len(bytes.TrimSpace(originalBytes)) > 0 {
+		if err := json.Unmarshal(originalBytes, &original); err != nil {
+			return fmt.Errorf("failed to parse original Claude Code config: %w", err)
+		}
+	}
+
+	currentEnv, ok := asObjectMap(current["env"])
+	if !ok {
+		currentEnv = map[string]interface{}{}
+		current["env"] = currentEnv
+	}
+	originalEnv, _ := asObjectMap(original["env"])
+	for _, key := range claudeManagedGatewayEnvKeys() {
+		if originalValue, exists := originalEnv[key]; exists {
+			currentEnv[key] = originalValue
+		} else {
+			delete(currentEnv, key)
+		}
+	}
+	if originalModel, exists := original["model"]; exists {
+		current["model"] = originalModel
+	} else {
+		delete(current, "model")
+	}
+	if len(currentEnv) == 0 {
+		delete(current, "env")
+	}
+	if err := writeAgentConfigDocument(agent, current); err != nil {
+		return err
+	}
+	if writer != nil {
+		fmt.Fprintf(
+			writer,
+			"  Note: Restored Claude Code's local Anthropic auth/model settings because Preloop gateway live validation failed. MCP remains onboarded; set ANTHROPIC_API_KEY and rerun onboarding to use stable API billing.\n",
+		) //nolint:errcheck
+	}
+	return nil
+}
+
+func recoverManagedGatewayAfterLiveValidationFailure(
+	agent AgentConfig,
+	originalBytes []byte,
+	writer io.Writer,
+) error {
+	if isClaudeCodeAgent(agent) {
+		return restoreClaudeGatewayEnvFromOriginal(agent, originalBytes, writer)
+	}
+	if isCodexCLIAgent(agent) {
+		return restoreCodexGatewaySelectionFromOriginal(agent, originalBytes, writer)
+	}
+	if isGeminiCLIAgent(agent) {
+		return restoreGeminiGatewaySelectionFromOriginal(agent, originalBytes, writer)
+	}
+	return nil
+}
+
+func restoreCodexGatewaySelectionFromOriginal(
+	agent AgentConfig,
+	originalBytes []byte,
+	writer io.Writer,
+) error {
+	if !isCodexCLIAgent(agent) {
+		return nil
+	}
+	current, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return err
+	}
+	original := map[string]interface{}{}
+	if len(bytes.TrimSpace(originalBytes)) > 0 {
+		if err := toml.Unmarshal(originalBytes, &original); err != nil {
+			return fmt.Errorf("failed to parse original Codex CLI config: %w", err)
+		}
+	}
+	originalProvider := strings.TrimSpace(lookupString(original, "model_provider"))
+	originalProviderIsPreloop := strings.EqualFold(originalProvider, "preloop")
+	if originalModel, exists := original["model"]; exists {
+		current["model"] = normalizeCodexDirectModelValue(originalModel)
+	} else {
+		current["model"] = normalizeCodexDirectModelValue(current["model"])
+	}
+	if originalProviderIsPreloop {
+		delete(current, "model_provider")
+		delete(current, "model_providers")
+	} else {
+		if originalProvider != "" {
+			current["model_provider"] = originalProvider
+		} else {
+			delete(current, "model_provider")
+		}
+		if originalProviders, exists := original["model_providers"]; exists {
+			current["model_providers"] = originalProviders
+		} else {
+			delete(current, "model_providers")
+		}
+	}
+	if err := writeAgentConfigDocument(agent, current); err != nil {
+		return err
+	}
+	if writer != nil {
+		fmt.Fprintf(
+			writer,
+			"  Note: Restored Codex CLI's local model provider because Preloop gateway live validation failed. MCP remains onboarded; run codex login or configure a working OpenAI/Codex credential and rerun onboarding to enable model gateway routing.\n",
+		) //nolint:errcheck
+	}
+	return nil
+}
+
+func normalizeCodexDirectModelValue(value interface{}) interface{} {
+	model := strings.TrimSpace(fmt.Sprint(value))
+	if provider, modelID, ok := strings.Cut(model, "/"); ok &&
+		strings.EqualFold(provider, "openai") &&
+		strings.TrimSpace(modelID) != "" {
+		return strings.TrimSpace(modelID)
+	}
+	if model == "" {
+		return value
+	}
+	return model
+}
+
+func restoreGeminiGatewaySelectionFromOriginal(
+	agent AgentConfig,
+	originalBytes []byte,
+	writer io.Writer,
+) error {
+	if !isGeminiCLIAgent(agent) {
+		return nil
+	}
+	current, err := loadAgentConfigDocument(agent)
+	if err != nil {
+		return err
+	}
+	original := map[string]interface{}{}
+	if len(bytes.TrimSpace(originalBytes)) > 0 {
+		if err := json.Unmarshal(originalBytes, &original); err != nil {
+			return fmt.Errorf("failed to parse original Gemini CLI config: %w", err)
+		}
+	}
+
+	originalBaseURL := strings.TrimSpace(lookupString(original, "baseUrl"))
+	if originalBaseURL != "" &&
+		!strings.Contains(strings.ToLower(originalBaseURL), "preloop") {
+		current["baseUrl"] = original["baseUrl"]
+	} else {
+		delete(current, "baseUrl")
+	}
+	if originalAPIKey := original["apiKey"]; originalAPIKey != nil &&
+		!strings.Contains(strings.ToLower(originalBaseURL), "preloop") {
+		current["apiKey"] = originalAPIKey
+	} else {
+		delete(current, "apiKey")
+	}
+	if originalModel, exists := original["model"]; exists {
+		current["model"] = originalModel
+	}
+	if err := writeAgentConfigDocument(agent, current); err != nil {
+		return err
+	}
+	if writer != nil {
+		fmt.Fprintf(
+			writer,
+			"  Note: Restored Gemini CLI's local model provider because Preloop gateway live validation failed. MCP remains onboarded; configure GEMINI_API_KEY or GOOGLE_API_KEY and rerun onboarding to enable model gateway routing.\n",
+		) //nolint:errcheck
+	}
+	return nil
+}
+
+func isClaudeCodeAgent(agent AgentConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(agent.Name), "Claude Code")
+}
+
+func isCodexCLIAgent(agent AgentConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(agent.Name), "Codex CLI")
+}
+
+func isGeminiCLIAgent(agent AgentConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(agent.Name), "Gemini CLI")
+}
+
+func claudeManagedGatewayEnvKeys() []string {
+	return []string{
+		"ANTHROPIC_BASE_URL",
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_AUTH_TOKEN",
+		"CLAUDE_CODE_OAUTH_TOKEN",
+		"CLAUDE_CODE_USE_BEDROCK",
+		"ANTHROPIC_MODEL",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
+	}
+}
+
 func clearClaudePinnedModelEnv(env map[string]interface{}) {
 	for _, key := range []string{
 		"ANTHROPIC_DEFAULT_OPUS_MODEL",
@@ -2687,19 +3315,27 @@ func claudePinnedModelSelection(modelAlias string) (string, string) {
 	}
 }
 
-func ensureLegacyCodexMCPServer(agent AgentConfig, doc map[string]interface{}, baseURL string) {
+func ensureLegacyCodexMCPServer(agent AgentConfig, doc map[string]interface{}, baseURL string, token string) {
 	if !strings.EqualFold(strings.TrimSpace(agent.Name), "codex cli") {
 		return
 	}
+	token = strings.TrimSpace(token)
 	servers, ok := asObjectMap(doc["mcp_servers"])
 	if !ok {
 		servers = make(map[string]interface{})
 		doc["mcp_servers"] = servers
 	}
-	servers["preloop"] = map[string]interface{}{
-		"url":                  strings.TrimRight(baseURL, "/") + "/mcp/v1",
-		"bearer_token_env_var": "PRELOOP_TOKEN",
+	entry := map[string]interface{}{
+		"url": strings.TrimRight(baseURL, "/") + "/mcp/v1",
 	}
+	if token != "" {
+		entry["http_headers"] = map[string]interface{}{
+			"Authorization": "Bearer " + token,
+		}
+	} else {
+		entry["bearer_token_env_var"] = "PRELOOP_TOKEN"
+	}
+	servers["preloop"] = entry
 }
 
 func ensureDiscoveredRemoteServers(client *api.Client, agent AgentConfig, publicURL string) (*remoteServerSyncResult, error) {
@@ -2956,17 +3592,18 @@ func createLocalEnrollmentBackup(agent AgentConfig, configExisted bool, original
 					discoveredConfig = plan.SanitizedDiscovered
 				}
 				return &localEnrollmentState{
-					AgentName:          agent.Name,
-					DisplayName:        resolveAgentDisplayName(agent),
-					RuntimePrincipalID: runtimePrincipalIDForAgent(agent),
-					ConfigPath:         agent.ConfigPath,
-					ConfigExisted:      existingState.ConfigExisted,
-					BackupPath:         existingState.BackupPath,
-					ManagedServerName:  plan.ManagedServerName,
-					ManagedServerURL:   plan.ManagedServerURL,
-					AppliedAt:          time.Now().UTC(),
-					DiscoveredConfig:   discoveredConfig,
-					ManagedConfig:      plan.SanitizedManaged,
+					AgentName:           agent.Name,
+					DisplayName:         resolveAgentDisplayName(agent),
+					RuntimePrincipalID:  runtimePrincipalIDForAgent(agent),
+					ConfigPath:          agent.ConfigPath,
+					ConfigExisted:       existingState.ConfigExisted,
+					BackupPath:          existingState.BackupPath,
+					ManagedServerName:   plan.ManagedServerName,
+					ManagedServerURL:    plan.ManagedServerURL,
+					ManagedControlWSURL: plan.ManagedControlWSURL,
+					AppliedAt:           time.Now().UTC(),
+					DiscoveredConfig:    discoveredConfig,
+					ManagedConfig:       plan.SanitizedManaged,
 				}, nil
 			}
 		}
@@ -2988,17 +3625,18 @@ func createLocalEnrollmentBackup(agent AgentConfig, configExisted bool, original
 		return nil, fmt.Errorf("failed to write backup: %w", err)
 	}
 	return &localEnrollmentState{
-		AgentName:          agent.Name,
-		DisplayName:        resolveAgentDisplayName(agent),
-		RuntimePrincipalID: runtimePrincipalID,
-		ConfigPath:         agent.ConfigPath,
-		ConfigExisted:      configExisted,
-		BackupPath:         backupPath,
-		ManagedServerName:  plan.ManagedServerName,
-		ManagedServerURL:   plan.ManagedServerURL,
-		AppliedAt:          time.Now().UTC(),
-		DiscoveredConfig:   plan.SanitizedDiscovered,
-		ManagedConfig:      plan.SanitizedManaged,
+		AgentName:           agent.Name,
+		DisplayName:         resolveAgentDisplayName(agent),
+		RuntimePrincipalID:  runtimePrincipalID,
+		ConfigPath:          agent.ConfigPath,
+		ConfigExisted:       configExisted,
+		BackupPath:          backupPath,
+		ManagedServerName:   plan.ManagedServerName,
+		ManagedServerURL:    plan.ManagedServerURL,
+		ManagedControlWSURL: plan.ManagedControlWSURL,
+		AppliedAt:           time.Now().UTC(),
+		DiscoveredConfig:    plan.SanitizedDiscovered,
+		ManagedConfig:       plan.SanitizedManaged,
 	}, nil
 }
 
@@ -3326,7 +3964,11 @@ func (a genericManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface
 					result["preloop_url_ok"] = true
 					result["transport_ok"] = true
 				}
+				legacyHeaders, _ := asObjectMap(legacy["http_headers"])
 				if envKey, _ := legacy["bearer_token_env_var"].(string); strings.TrimSpace(envKey) != "" {
+					result["authorization_header_ok"] = true
+				}
+				if authorization, _ := legacyHeaders["Authorization"].(string); strings.HasPrefix(strings.TrimSpace(authorization), "Bearer ") {
 					result["authorization_header_ok"] = true
 				}
 			}
@@ -3431,14 +4073,20 @@ func (a genericManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface
 			result["gateway_token_ok"] = true
 			result["gateway_provider_ok"] = true
 		}
+		gatewayConfigured := result["gateway_base_url_ok"] == true &&
+			result["gateway_token_ok"] == true
 		if modelConfig, ok := asObjectMap(doc["model"]); ok {
 			if modelAlias, _ := modelConfig["name"].(string); strings.TrimSpace(modelAlias) != "" {
-				result["model_provider_rewritten"] = true
 				result["gateway_model_alias"] = normalizeGeminiGatewayModelAlias(modelAlias)
+				if gatewayConfigured {
+					result["model_provider_rewritten"] = true
+				}
 			}
 		} else if modelAlias, _ := doc["model"].(string); strings.TrimSpace(modelAlias) != "" {
-			result["model_provider_rewritten"] = true
 			result["gateway_model_alias"] = normalizeGeminiGatewayModelAlias(modelAlias)
+			if gatewayConfigured {
+				result["model_provider_rewritten"] = true
+			}
 		}
 	}
 	return result
@@ -3492,6 +4140,13 @@ func (a openClawManagedMCPAdapter) ValidateManagedConfig(doc map[string]interfac
 		"gateway_api_ok":           false,
 		"model_provider_rewritten": false,
 		"validation_passed":        false,
+	}
+	for key, value := range validateAgentControlConfig(
+		AgentConfig{Name: "OpenClaw"},
+		doc,
+		baseURL,
+	) {
+		result[key] = value
 	}
 	mcp, ok := asObjectMap(doc["mcp"])
 	if !ok {
@@ -3570,22 +4225,49 @@ func usesNestedMCPServers(agent AgentConfig) bool {
 }
 
 func lookupMCPServerContainer(doc map[string]interface{}) map[string]interface{} {
+	var fallback map[string]interface{}
 	if servers, ok := asObjectMap(doc["mcpServers"]); ok {
-		return servers
+		if _, hasPreloop := servers["preloop"]; hasPreloop {
+			return servers
+		}
+		fallback = servers
 	}
 	if servers, ok := asObjectMap(doc["servers"]); ok {
-		return servers
+		if _, hasPreloop := servers["preloop"]; hasPreloop {
+			return servers
+		}
+		if fallback == nil {
+			fallback = servers
+		}
 	}
 	if mcp, ok := asObjectMap(doc["mcp"]); ok {
 		if servers, ok := asObjectMap(mcp["servers"]); ok {
-			return servers
+			if _, hasPreloop := servers["preloop"]; hasPreloop {
+				return servers
+			}
+			if fallback == nil {
+				fallback = servers
+			}
 		}
 		if looksLikeMCPServerContainer(mcp) {
-			return mcp
+			if _, hasPreloop := mcp["preloop"]; hasPreloop {
+				return mcp
+			}
+			if fallback == nil {
+				fallback = mcp
+			}
 		}
 	}
 	if servers, ok := asObjectMap(doc["mcp_servers"]); ok {
-		return servers
+		if _, hasPreloop := servers["preloop"]; hasPreloop {
+			return servers
+		}
+		if fallback == nil {
+			fallback = servers
+		}
+	}
+	if fallback != nil {
+		return fallback
 	}
 	return map[string]interface{}{}
 }
@@ -3663,7 +4345,7 @@ func sanitizeConfigSnapshot(value interface{}) {
 
 func isSensitiveKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "authorization", "token", "api_key", "apikey", "password", "secret":
+	case "authorization", "token", "bearer_token", "api_key", "apikey", "password", "secret":
 		return true
 	default:
 		return false

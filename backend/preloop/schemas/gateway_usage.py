@@ -108,6 +108,13 @@ class GatewayUsageBySession(BaseModel):
     runtime_session_id: Optional[str] = None
     session_source_type: Optional[str] = None
     session_source_id: Optional[str] = None
+    session_summary: Optional[str] = None
+    session_summary_updated_at: Optional[datetime] = None
+    runtime_principal_type: Optional[str] = None
+    runtime_principal_id: Optional[str] = None
+    runtime_principal_name: Optional[str] = None
+    agent_id: Optional[str] = None
+    agent_name: Optional[str] = None
     flow_execution_id: Optional[str] = None
     flow_id: Optional[str] = None
     flow_name: Optional[str] = None
@@ -173,6 +180,8 @@ class RuntimeSessionSummary(BaseModel):
     runtime_principal_type: Optional[str] = None
     runtime_principal_id: Optional[str] = None
     runtime_principal_name: Optional[str] = None
+    summary: Optional[str] = None
+    summary_updated_at: Optional[datetime] = None
     started_at: datetime
     last_activity_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
@@ -247,6 +256,17 @@ class ManagedAgentSummary(BaseModel):
     live_validation_status: str = "unsupported"
     last_validated_at: Optional[datetime] = None
     tags: dict[str, str] = Field(default_factory=dict)
+    control_feature_name: str = "Agent Control"
+    control_capabilities: List[str] = Field(default_factory=list)
+    control_state: str = "unsupported"
+    control_enabled: bool = False
+    control_online: bool = False
+    supports_new_session: bool = False
+    supports_existing_session: bool = False
+    supports_voice: bool = False
+    supports_interrupt: bool = False
+    supported_input_modes: List[str] = Field(default_factory=list)
+    supported_output_modes: List[str] = Field(default_factory=list)
 
 
 class ManagedAgentUsageAggregate(BaseModel):
@@ -439,12 +459,82 @@ class RuntimeSessionActivityItem(BaseModel):
     api_key_name: Optional[str] = None
     estimated_cost: Optional[float] = None
     total_tokens: Optional[int] = None
+    request_fingerprint: Optional[str] = None
+    gateway_attempt: Optional[int] = None
+    is_retry: bool = False
+    retry_of_api_usage_id: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
 
 
 class RuntimeSessionActivityListResponse(BaseModel):
     """List of activity items for a runtime session."""
 
     items: List[RuntimeSessionActivityItem] = Field(default_factory=list)
+
+
+class RuntimeSessionSummaryInsight(BaseModel):
+    """Generated or locally derived summary for one runtime session."""
+
+    title: str
+    description: str
+    risk_level: str = "low"
+    highlights: List[str] = Field(default_factory=list)
+    next_action: Optional[str] = None
+    generated_by: str = "local"
+    fast_model_name: Optional[str] = None
+    estimated_summary_cost: float = 0.0
+
+
+class RuntimeSessionInteractionSummary(BaseModel):
+    """Generated or locally derived summary for one gateway interaction."""
+
+    event_id: str
+    title: str
+    summary: str
+    key_points: List[str] = Field(default_factory=list)
+    risk_level: str = "low"
+    next_action: Optional[str] = None
+    generated_by: str = "local"
+    model_name: Optional[str] = None
+    estimated_summary_cost: float = 0.0
+
+
+class RuntimeSessionOptimizationSuggestion(BaseModel):
+    """One actionable optimization suggestion for a runtime session."""
+
+    id: str
+    title: str
+    description: str
+    expected_savings_tokens: int = 0
+    expected_savings_usd: float = 0.0
+    confidence: str = "medium"
+    action_label: str
+    evidence: List[str] = Field(default_factory=list)
+
+
+class RuntimeSessionOptimizationRequest(BaseModel):
+    """Generation controls for runtime-session optimization suggestions."""
+
+    model_id: Optional[str] = None
+    event_ids: List[str] = Field(default_factory=list)
+    source_kinds: List[str] = Field(default_factory=list)
+    from_index: Optional[int] = None
+    to_index: Optional[int] = None
+    regenerate: bool = False
+
+
+class RuntimeSessionOptimizationResponse(BaseModel):
+    """Optimization suggestions for a runtime session."""
+
+    generated_by: str = "local"
+    fast_model_name: Optional[str] = None
+    model_id: Optional[str] = None
+    model_name: Optional[str] = None
+    token_usage: GatewayTokenUsage = Field(default_factory=GatewayTokenUsage)
+    estimated_optimization_cost: float = 0.0
+    suggestions: List[RuntimeSessionOptimizationSuggestion] = Field(
+        default_factory=list
+    )
 
 
 class AccountRuntimeSessionDetailResponse(BaseModel):

@@ -2,23 +2,32 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import threading
 import time
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, Iterator, List, Optional, Protocol
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 import litellm
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from preloop.config import settings
-from preloop.models.crud import crud_api_usage, crud_managed_agent, crud_runtime_session
+from preloop.models.crud import (
+    crud_ai_model,
+    crud_api_usage,
+    crud_managed_agent,
+    crud_model_price_override,
+    crud_runtime_session,
+    crud_runtime_session_activity,
+)
 from preloop.models.models.ai_model import AIModel
 from preloop.services.account_realtime import (
     ACCOUNT_TOPIC_MANAGED_AGENTS,
@@ -62,6 +71,7 @@ _PROVIDER_PREFIX: Dict[str, str] = {
 
 logger = logging.getLogger(__name__)
 _RUNTIME_SESSION_ACTIVITY_TOUCH_MIN_INTERVAL = timedelta(seconds=30)
+_RUNTIME_SESSION_SUMMARY_REFRESH_EVERY_REQUESTS = 10
 
 
 def _supports_ambient_provider_credentials(ai_model: AIModel) -> bool:
@@ -3211,6 +3221,32 @@ class OpenAIGatewayService:
             "total_tokens": total_tokens,
         }
 
+    def _pricing_override_for_request(
+        self, *, ai_model: AIModel, model_alias: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Resolve account-scoped pricing metadata for a gateway usage row."""
+        try:
+            bind = self.db.get_bind()
+            if bind is not None and not inspect(bind).has_table(
+                "model_price_overrides"
+            ):
+                return None
+            override = crud_model_price_override.get_active_for_model(
+                self.db,
+                account_id=self.auth_context.user.account_id,
+                ai_model_id=ai_model.id,
+                model_alias=model_alias,
+                provider_name=ai_model.provider_name,
+            )
+        except SQLAlchemyError:
+            logger.debug("Pricing override lookup failed", exc_info=True)
+            return None
+        if override is None:
+            return None
+        pricing = override.to_pricing_dict()
+        pricing["id"] = str(override.id)
+        return pricing
+
     def _record_gateway_request(
         self,
         *,
@@ -3253,6 +3289,28 @@ class OpenAIGatewayService:
         runtime_principal = runtime_context.get("runtime_principal") or {}
         runtime_session_id = self._resolve_runtime_session()
 
+        model_alias = runtime.model_gateway_model_alias or requested_model
+        request_fingerprint = self._gateway_request_fingerprint(
+            endpoint_kind=endpoint_kind,
+            model_alias=model_alias,
+            request_payload=request_payload,
+        )
+        attempt_summary = crud_api_usage.get_gateway_attempt_summary(
+            self.db,
+            account_id=str(self.auth_context.user.account_id),
+            runtime_session_id=runtime_session_id,
+            request_fingerprint=request_fingerprint,
+        )
+        previous_attempt_count = int(attempt_summary.get("count") or 0)
+        gateway_attempt = previous_attempt_count + 1
+        is_retry = previous_attempt_count > 0
+        retry_of_api_usage_id = (
+            attempt_summary.get("first_api_usage_id") if is_retry else None
+        )
+        pricing_override = self._pricing_override_for_request(
+            ai_model=ai_model,
+            model_alias=model_alias,
+        )
         usage_row = crud_api_usage.log_gateway_request(
             self.db,
             endpoint=endpoint,
@@ -3275,7 +3333,7 @@ class OpenAIGatewayService:
             flow_id=runtime_context.get("flow_id"),
             flow_execution_id=runtime_context.get("flow_execution_id"),
             runtime_session_id=runtime_session_id,
-            model_alias=runtime.model_gateway_model_alias or requested_model,
+            model_alias=model_alias,
             provider_name=ai_model.provider_name,
             upstream_request_id=(
                 upstream_response.get("id") if upstream_response else None
@@ -3289,6 +3347,7 @@ class OpenAIGatewayService:
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens or 0,
                 usage_details=usage_details,
+                pricing_override=pricing_override,
             ),
             runtime_principal_type=runtime_principal.get("type"),
             runtime_principal_id=runtime_principal.get("id"),
@@ -3303,6 +3362,13 @@ class OpenAIGatewayService:
                 if upstream_response
                 else None,
                 "usage_details": usage_details or None,
+                "pricing_override_id": pricing_override.get("id")
+                if pricing_override
+                else None,
+                "request_fingerprint": request_fingerprint,
+                "gateway_attempt": gateway_attempt,
+                "is_retry": is_retry,
+                "retry_of_api_usage_id": retry_of_api_usage_id,
             },
         )
         observed_at = usage_row.timestamp
@@ -3346,6 +3412,10 @@ class OpenAIGatewayService:
                 else None
             ),
             upstream_request_id=usage_row.upstream_request_id,
+            request_fingerprint=request_fingerprint,
+            gateway_attempt=gateway_attempt,
+            is_retry=is_retry,
+            retry_of_api_usage_id=retry_of_api_usage_id,
             error_detail=error_detail,
             error_type=(
                 self._audit_error_type(status_code, error_detail)
@@ -3382,6 +3452,13 @@ class OpenAIGatewayService:
                     commit=True,
                 )
                 if runtime_session is not None:
+                    self._maybe_refresh_runtime_session_summary(
+                        runtime_session=runtime_session,
+                        usage=usage_row,
+                        request_payload=request_payload,
+                        response_payload=response_payload,
+                        observed_at=observed_at,
+                    )
                     emit_account_event(
                         build_account_event(
                             account_id=str(self.auth_context.user.account_id),
@@ -3461,6 +3538,234 @@ class OpenAIGatewayService:
                 usage_row.id,
                 exc_info=True,
             )
+
+    def _maybe_refresh_runtime_session_summary(
+        self,
+        *,
+        runtime_session: Any,
+        usage: Any,
+        request_payload: Optional[Dict[str, Any]],
+        response_payload: Optional[Dict[str, Any]],
+        observed_at: datetime,
+    ) -> None:
+        """Refresh the persisted session summary on first request, then occasionally."""
+        if not self._runtime_session_summary_columns_available():
+            return
+        summary_state = self._runtime_session_summary_state(runtime_session.id)
+        if summary_state is None:
+            return
+        existing_summary = summary_state.get("summary")
+        request_count = (
+            crud_runtime_session_activity.count_model_gateway_calls_for_session(
+                self.db,
+                account_id=self.auth_context.user.account_id,
+                runtime_session_id=runtime_session.id,
+            )
+        )
+        if existing_summary and not isinstance(request_count, int):
+            return
+        if existing_summary and (
+            request_count < 1
+            or request_count % _RUNTIME_SESSION_SUMMARY_REFRESH_EVERY_REQUESTS != 0
+        ):
+            return
+
+        default_model = crud_ai_model.get_default_active_model(
+            self.db,
+            account_id=self.auth_context.user.account_id,
+        )
+        if default_model is None:
+            return
+
+        try:
+            summary = self._generate_runtime_session_summary(
+                summary_model=default_model,
+                existing_summary=existing_summary,
+                usage=usage,
+                request_payload=request_payload,
+                response_payload=response_payload,
+                recent_interactions=crud_runtime_session_activity.list_recent_model_gateway_call_payloads_for_session(
+                    self.db,
+                    account_id=self.auth_context.user.account_id,
+                    runtime_session_id=runtime_session.id,
+                    limit=_RUNTIME_SESSION_SUMMARY_REFRESH_EVERY_REQUESTS,
+                ),
+            )
+        except Exception:
+            logger.info(
+                "Skipping runtime session summary refresh for %s",
+                runtime_session.id,
+                exc_info=True,
+            )
+            return
+
+        if not summary:
+            return
+
+        self.db.execute(
+            text(
+                "UPDATE runtime_session "
+                "SET summary = :summary, summary_updated_at = :summary_updated_at "
+                "WHERE id = :runtime_session_id"
+            ),
+            {
+                "summary": summary[:1000],
+                "summary_updated_at": observed_at,
+                "runtime_session_id": runtime_session.id,
+            },
+        )
+        self.db.commit()
+
+    def _runtime_session_summary_state(
+        self, runtime_session_id: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch persisted summary state without requiring mapped columns."""
+        try:
+            row = (
+                self.db.execute(
+                    text(
+                        "SELECT summary, summary_updated_at "
+                        "FROM runtime_session WHERE id = :runtime_session_id"
+                    ),
+                    {"runtime_session_id": runtime_session_id},
+                )
+                .mappings()
+                .first()
+            )
+        except Exception:
+            return None
+        return dict(row) if row is not None else None
+
+    def _runtime_session_summary_columns_available(self) -> bool:
+        """Return whether the runtime session summary migration has been applied."""
+        try:
+            bind = self.db.get_bind()
+            if bind is None:
+                return False
+            columns = {
+                column["name"]
+                for column in inspect(bind).get_columns("runtime_session")
+            }
+        except Exception:
+            return False
+        return {"summary", "summary_updated_at"}.issubset(columns)
+
+    def _generate_runtime_session_summary(
+        self,
+        *,
+        summary_model: AIModel,
+        existing_summary: Optional[str],
+        usage: Any,
+        request_payload: Optional[Dict[str, Any]],
+        response_payload: Optional[Dict[str, Any]],
+        recent_interactions: Optional[list[dict[str, Any]]] = None,
+    ) -> Optional[str]:
+        """Use the account default AI model to produce a compact session summary."""
+        context = {
+            "existing_summary": existing_summary,
+            "latest_request": self._compact_gateway_payload(request_payload),
+            "latest_response": self._compact_gateway_payload(response_payload),
+            "recent_interactions": [
+                self._compact_gateway_event_payload(payload)
+                for payload in (recent_interactions or [])
+            ],
+            "usage": {
+                "model": usage.model_alias,
+                "provider": usage.provider_name,
+                "status_code": usage.status_code,
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "estimated_cost": usage.estimated_cost,
+            },
+        }
+        summary_provider: GatewayProvider = (
+            "anthropic"
+            if (summary_model.provider_name or "").strip().lower() == "anthropic"
+            else "openai"
+        )
+        response = self._call_litellm(
+            summary_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Write one concise runtime session summary for a cost "
+                        "analytics table. Return only the summary text. Mention "
+                        "the agent's apparent goal and latest meaningful work. "
+                        "Keep it under 140 characters. Do not include prices."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(context, ensure_ascii=False),
+                },
+            ],
+            payload={"temperature": 0.1, "max_tokens": 80},
+            provider=summary_provider,
+        )
+        content = response.choices[0].message.content if response else None
+        return str(content).strip() if content else None
+
+    @classmethod
+    def _compact_gateway_event_payload(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Trim persisted gateway metadata down to the content useful for titles."""
+        preview = payload.get("conversation_preview")
+        messages = []
+        if isinstance(preview, dict) and isinstance(preview.get("messages"), list):
+            for message in preview["messages"][-4:]:
+                if not isinstance(message, dict):
+                    continue
+                text_value = message.get("text")
+                messages.append(
+                    {
+                        "role": message.get("role") or message.get("source"),
+                        "text": str(text_value)[:1200]
+                        if text_value is not None
+                        else None,
+                    }
+                )
+        return {
+            "model": payload.get("model_alias") or payload.get("requested_model"),
+            "provider": payload.get("provider_name") or payload.get("gateway_provider"),
+            "outcome": payload.get("outcome"),
+            "messages": messages,
+        }
+
+    @staticmethod
+    def _compact_gateway_payload(payload: Optional[Dict[str, Any]]) -> Any:
+        if not isinstance(payload, dict):
+            return None
+        compact: Dict[str, Any] = {}
+        for key in ("model", "messages", "input", "output", "output_text"):
+            value = payload.get(key)
+            if value is None:
+                continue
+            text = json.dumps(value, ensure_ascii=False, default=str)
+            compact[key] = text[:3000]
+        return compact
+
+    @staticmethod
+    def _gateway_request_fingerprint(
+        *,
+        endpoint_kind: str,
+        model_alias: Optional[str],
+        request_payload: Optional[Dict[str, Any]],
+    ) -> str:
+        """Hash stable request content for retry grouping without storing raw text."""
+        payload = dict(request_payload or {})
+        payload.pop("stream", None)
+        serialized = json.dumps(
+            {
+                "endpoint_kind": endpoint_kind,
+                "model_alias": model_alias,
+                "request": payload,
+            },
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     def _check_budget(
         self, ai_model: AIModel, payload: Dict[str, Any]

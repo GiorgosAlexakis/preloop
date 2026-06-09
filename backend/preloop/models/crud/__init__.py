@@ -21,6 +21,7 @@ from ..models import (
     ManagedAgentAIModelBinding,
     ManagedAgentCredential,
     ManagedAgentEnrollment,
+    ModelPriceOverride,
     RuntimeSession,
     RuntimeSessionActivity,
 )
@@ -51,6 +52,7 @@ from .managed_agent import CRUDManagedAgent
 from .managed_agent_ai_model_binding import CRUDManagedAgentAIModelBinding
 from .managed_agent_credential import CRUDManagedAgentCredential
 from .managed_agent_enrollment import CRUDManagedAgentEnrollment
+from .model_price_override import CRUDModelPriceOverride
 from .tool_configuration import CRUDToolConfiguration
 from .mcp_server import CRUDMCPServer
 from .mcp_tool import CRUDMCPTool
@@ -128,6 +130,7 @@ crud_managed_agent_ai_model_binding = CRUDManagedAgentAIModelBinding(
 )
 crud_managed_agent_credential = CRUDManagedAgentCredential(ManagedAgentCredential)
 crud_managed_agent_enrollment = CRUDManagedAgentEnrollment(ManagedAgentEnrollment)
+crud_model_price_override = CRUDModelPriceOverride(ModelPriceOverride)
 crud_runtime_session = CRUDRuntimeSession(RuntimeSession)
 crud_runtime_session_activity = CRUDRuntimeSessionActivity(RuntimeSessionActivity)
 crud_tool_configuration = CRUDToolConfiguration()  # Instantiate CRUDToolConfiguration
@@ -163,6 +166,7 @@ __all__ = [
     "CRUDManagedAgentAIModelBinding",
     "CRUDManagedAgentCredential",
     "CRUDManagedAgentEnrollment",
+    "CRUDModelPriceOverride",
     "CRUDToolConfiguration",
     "CRUDMCPServer",
     "CRUDMCPTool",
@@ -207,6 +211,7 @@ __all__ = [
     "crud_managed_agent_ai_model_binding",
     "crud_managed_agent_credential",
     "crud_managed_agent_enrollment",
+    "crud_model_price_override",
     "crud_tool_configuration",
     "crud_mcp_server",
     "crud_mcp_tool",

@@ -9,10 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Agent Control backend**: WebSocket control channel, operator command endpoint, runtime adapter scaffolding, audio transcription endpoint, and mobile/web Talk UI foundations for audited operator messages to managed agents.
+- **Cost analytics (OSS)**: Dedicated Console Cost view with spend overview, grouped usage drill-downs, and budget-health alerts backed by `/api/v1/cost/*` endpoints. Enterprise billing plugin owns budget policy CRUD and enforcement.
+- **Runtime session observer**: Shared session replay, timeline/chat views, gateway event inspection, and opt-in session summaries in the Console.
 - **OSS hosted trial path**: Added a self-contained Railway trial deployment map for Preloop OSS, including private API/gateway, worker/scheduler, Postgres/pgvector, and NATS services, generated Railway variable guidance, README onboarding, and teardown documentation.
 
 ### Changed
 
+- **Enterprise cost features**: Moved model price override CRUD and runtime-session optimization recommendations into the billing plugin (`/api/v1/billing/cost/*`) with `model_price_overrides` and `session_optimization` feature flags gating the shared frontend.
 - **Service role deployment modes**: API startup and route registration now respect `PRELOOP_SERVICE_ROLE` so API-only, gateway-only, and combined trial deployments can run the right surface area.
 - **Release changelog generation**: AI-authored changelog drafting is now opt-in via `--generate-changelog-ai`, keeping deterministic release prep from depending on a local AI CLI.
 

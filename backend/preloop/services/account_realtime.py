@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any, Optional
+from uuid import UUID
 
 from preloop.sync.services.event_bus import get_nats_client
 
@@ -17,6 +19,7 @@ ACCOUNT_TOPIC_APPROVALS = "approvals"
 ACCOUNT_TOPIC_ACTIVITY = "activity"
 ACCOUNT_TOPIC_RUNTIME_SESSIONS = "runtime_sessions"
 ACCOUNT_TOPIC_MANAGED_AGENTS = "managed_agents"
+ACCOUNT_TOPIC_AGENT_CONTROL = "agent_control"
 ACCOUNT_TOPIC_GATEWAY_ACTIVITY = "gateway_activity"
 ACCOUNT_TOPIC_BUDGET_HEALTH = "budget_health"
 ACCOUNT_TOPIC_AUDIT = "audit"
@@ -28,6 +31,7 @@ ACCOUNT_REALTIME_TOPICS = {
     ACCOUNT_TOPIC_ACTIVITY,
     ACCOUNT_TOPIC_RUNTIME_SESSIONS,
     ACCOUNT_TOPIC_MANAGED_AGENTS,
+    ACCOUNT_TOPIC_AGENT_CONTROL,
     ACCOUNT_TOPIC_GATEWAY_ACTIVITY,
     ACCOUNT_TOPIC_BUDGET_HEALTH,
     ACCOUNT_TOPIC_AUDIT,
@@ -75,13 +79,30 @@ def emit_account_event(event: dict[str, Any]) -> None:
     loop.create_task(_publish_account_event(event))
 
 
+def _json_safe(value: Any) -> Any:
+    """Recursively convert realtime event values to JSON-serializable forms."""
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def encode_realtime_event_for_nats(
     event: dict[str, Any],
     *,
     context: str,
 ) -> bytes | None:
     """Encode a realtime event, truncating heavy payload fields if needed."""
-    payload_bytes = json.dumps(event).encode()
+    payload_bytes = json.dumps(_json_safe(event)).encode()
     if len(payload_bytes) <= MAX_NATS_PAYLOAD_BYTES:
         return payload_bytes
 
@@ -91,7 +112,7 @@ def encode_realtime_event_for_nats(
         context,
     )
     event = _truncate_realtime_event(event)
-    payload_bytes = json.dumps(event).encode()
+    payload_bytes = json.dumps(_json_safe(event)).encode()
     if len(payload_bytes) <= MAX_NATS_PAYLOAD_BYTES:
         return payload_bytes
 

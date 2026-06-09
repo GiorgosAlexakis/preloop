@@ -29,6 +29,7 @@ import '../views/authed/issues-dependencies-view';
 import '../views/authed/issues/duplicates-view';
 import '../views/authed/issues/assignments-view';
 import '../views/authed/api-usage-view';
+import '../views/authed/cost-view';
 import '../views/authed/settings-view';
 import '../views/authed/settings/api-keys-view';
 import '../views/authed/settings/api-key-view';
@@ -488,6 +489,7 @@ export class LitApp extends LitElement {
           { path: '/agents', component: 'agents-view' },
           { path: '/agents/:agentId', component: 'agent-detail-view' },
           { path: '/onboarding', component: 'onboarding-view' },
+          { path: 'cost', component: 'cost-view' },
           { path: '/api-usage', component: 'api-usage-view' },
           { path: 'settings', redirect: '/console/settings/profile' },
           { path: 'settings/profile', component: 'profile-view' },

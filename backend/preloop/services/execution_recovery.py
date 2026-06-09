@@ -121,37 +121,46 @@ class ExecutionRecoveryService:
                 agent_executor = create_agent_executor(
                     flow.agent_type, {"agent_config": flow.agent_config or {}}
                 )
-                status = await agent_executor.get_status(
-                    execution.agent_session_reference
-                )
+                try:
+                    status = await agent_executor.get_status(
+                        execution.agent_session_reference
+                    )
 
-                # If container is already in terminal state, update DB and skip monitoring
-                from preloop.agents.base import AgentStatus
+                    # If container is already in terminal state, update DB and skip monitoring
+                    from preloop.agents.base import AgentStatus
 
-                if status in (AgentStatus.FAILED, AgentStatus.STOPPED):
-                    logger.warning(
-                        f"Execution {execution.id} container is {status.value} - marking as FAILED"
-                    )
-                    update_data = FlowExecutionUpdate(
-                        status="FAILED",
-                        error_message=f"Container was {status.value} on recovery (likely cleaned up during deploy)",
-                        end_time=datetime.now(timezone.utc),
-                    )
-                    crud_flow_execution.update(db, db_obj=execution, obj_in=update_data)
-                    db.commit()
-                    return
-                elif status == AgentStatus.SUCCEEDED:
-                    logger.info(
-                        f"Execution {execution.id} container succeeded - marking as SUCCEEDED"
-                    )
-                    update_data = FlowExecutionUpdate(
-                        status="SUCCEEDED",
-                        end_time=datetime.now(timezone.utc),
-                    )
-                    crud_flow_execution.update(db, db_obj=execution, obj_in=update_data)
-                    db.commit()
-                    return
-                # Container is RUNNING/STARTING - proceed with monitoring below
+                    if status in (AgentStatus.FAILED, AgentStatus.STOPPED):
+                        logger.warning(
+                            f"Execution {execution.id} container is {status.value} - marking as FAILED"
+                        )
+                        update_data = FlowExecutionUpdate(
+                            status="FAILED",
+                            error_message=f"Container was {status.value} on recovery (likely cleaned up during deploy)",
+                            end_time=datetime.now(timezone.utc),
+                        )
+                        crud_flow_execution.update(
+                            db, db_obj=execution, obj_in=update_data
+                        )
+                        db.commit()
+                        return
+                    elif status == AgentStatus.SUCCEEDED:
+                        logger.info(
+                            f"Execution {execution.id} container succeeded - marking as SUCCEEDED"
+                        )
+                        update_data = FlowExecutionUpdate(
+                            status="SUCCEEDED",
+                            end_time=datetime.now(timezone.utc),
+                        )
+                        crud_flow_execution.update(
+                            db, db_obj=execution, obj_in=update_data
+                        )
+                        db.commit()
+                        return
+                    # Container is RUNNING/STARTING - proceed with monitoring below
+                finally:
+                    close_client = getattr(agent_executor, "aclose", None)
+                    if callable(close_client):
+                        await close_client()
 
         except Exception as check_error:
             check_error_message = _exception_message(check_error)

@@ -247,6 +247,14 @@ export class UnifiedWebSocketManager {
         return;
       }
 
+      // Handle subscription acknowledgements internally to prevent triggering redundant view updates
+      if (message.type === 'subscription_ack') {
+        console.log(
+          `[UnifiedWebSocketManager] Subscribed to topic: ${message.topic}`
+        );
+        return;
+      }
+
       // Handle ping
       if (message.type === 'ping') {
         this.send({ type: 'pong' });

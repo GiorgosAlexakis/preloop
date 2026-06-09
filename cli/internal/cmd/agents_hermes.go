@@ -215,6 +215,9 @@ func (a hermesManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface{
 		"authorization_header_ok": false,
 		"validation_passed":       false,
 	}
+	for key, value := range validateAgentControlConfig(a.agent, doc, baseURL) {
+		result[key] = value
+	}
 	servers, ok := asObjectMap(doc["mcp_servers"])
 	if !ok {
 		return result
@@ -259,7 +262,7 @@ func (a hermesManagedMCPAdapter) ValidateManagedConfig(doc map[string]interface{
 		if strings.TrimSpace(baseURLValue) == expectedGatewayBaseURL {
 			gatewayBaseURLOK = true
 		}
-		if gatewayProviderOK || gatewayBaseURLOK || modelAlias != "" {
+		if gatewayProviderOK || gatewayBaseURLOK {
 			gatewayPresent = true
 		}
 		gatewayAlias = modelAlias
@@ -668,11 +671,54 @@ func extractHermesProviderAuthBlob(data []byte, providerName string) []byte {
 	}
 	provider, ok := asObjectMap(providers[providerName])
 	if !ok {
-		return nil
+		return extractHermesCredentialPoolAuthBlob(document, providerName)
+	}
+	if tokens, _ := asObjectMap(provider["tokens"]); len(tokens) == 0 {
+		if pooled := extractHermesCredentialPoolAuthBlob(document, providerName); len(pooled) > 0 {
+			return pooled
+		}
 	}
 	encoded, err := json.Marshal(provider)
 	if err != nil {
 		return nil
 	}
 	return encoded
+}
+
+func extractHermesCredentialPoolAuthBlob(
+	document map[string]interface{},
+	providerName string,
+) []byte {
+	pool, ok := asObjectMap(document["credential_pool"])
+	if !ok {
+		return nil
+	}
+	entries, ok := pool[providerName].([]interface{})
+	if !ok {
+		return nil
+	}
+	for _, entry := range entries {
+		credential, ok := asObjectMap(entry)
+		if !ok {
+			continue
+		}
+		accessToken := strings.TrimSpace(lookupString(credential, "access_token"))
+		refreshToken := strings.TrimSpace(lookupString(credential, "refresh_token"))
+		if accessToken == "" || refreshToken == "" {
+			continue
+		}
+		blob := map[string]interface{}{
+			"tokens": map[string]interface{}{
+				"access_token":  accessToken,
+				"refresh_token": refreshToken,
+			},
+			"last_refresh": credential["last_refresh"],
+		}
+		encoded, err := json.Marshal(blob)
+		if err != nil {
+			return nil
+		}
+		return encoded
+	}
+	return nil
 }

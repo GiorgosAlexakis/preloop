@@ -49,6 +49,7 @@ from preloop.schemas.ai_model import (
     AIModelRead,
     AIModelUpdate,
 )
+from preloop.schemas.audio import SpeechToTextResponse, TextToSpeechRequest
 from preloop.schemas.issue_duplicate import (
     IssueDuplicateProjectStats,
     IssueDuplicateStats,
@@ -125,6 +126,8 @@ __all__ = [
     "AIModelCreate",
     "AIModelRead",
     "AIModelUpdate",
+    "SpeechToTextResponse",
+    "TextToSpeechRequest",
     # IssueDuplicate schemas
     "IssueDuplicateStats",
     "IssueDuplicateProjectStats",

@@ -41,6 +41,12 @@ def capture_screenshot_on_failure(
 def _login(page: Page) -> None:
     """Helper to perform login. Assumes page can navigate to login."""
     assert USERNAME is not None and PASSWORD is not None
+    # Pre-set localStorage to dismiss the welcome card onboarding flow,
+    # ensuring the main dashboard view is rendered immediately.
+    page.add_init_script(
+        "window.localStorage.setItem('dashboard_welcome_dismissed', 'true')"
+    )
+
     page.goto(f"{BASE_URL}/login", timeout=15000)
     lit_app_shell = page.locator("lit-app")
     expect(lit_app_shell).to_be_visible(timeout=10000)

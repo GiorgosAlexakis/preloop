@@ -44,6 +44,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _unique_tracker_name(db: Session, *, base_name: str, account_id: str) -> str:
+    """Return a tracker name that is unique within the account."""
+    candidate = base_name
+    suffix = 2
+    while crud_tracker.get_by_name(
+        db, name=candidate, account_id=account_id, include_deleted=False
+    ):
+        candidate = f"{base_name} ({suffix})"
+        suffix += 1
+    return candidate
+
+
 class TrackerCreateResponse(BaseModel):
     """Response model for tracker creation."""
 
@@ -284,19 +296,34 @@ async def register_tracker(
                 detail="User account not found",
             )
 
-        # Check if a tracker with the same name already exists for this account using CRUD layer
-        existing_tracker = crud_tracker.get_by_name(
-            db, name=name, account_id=account.id, include_deleted=False
-        )
-
-        if existing_tracker:
-            logger.warning(
-                f"Tracker with name '{name}' already exists for account {account.id}"
+        # OAuth tracker registrations may reuse a default display name; pick a
+        # unique variant instead of failing when names collide.
+        if auth_type in ("github_app", "oauth_app"):
+            unique_name = _unique_tracker_name(
+                db, base_name=name, account_id=str(account.id)
             )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"A tracker with name '{name}' already exists for your account",
+            if unique_name != name:
+                logger.info(
+                    "Renamed tracker from '%s' to '%s' for account %s",
+                    name,
+                    unique_name,
+                    account.id,
+                )
+                name = unique_name
+        else:
+            existing_tracker = crud_tracker.get_by_name(
+                db, name=name, account_id=account.id, include_deleted=False
             )
+            if existing_tracker:
+                logger.warning(
+                    f"Tracker with name '{name}' already exists for account {account.id}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"A tracker with name '{name}' already exists for your account"
+                    ),
+                )
 
         # Log information before attempting to create the tracker
         logger.info(
@@ -420,7 +447,7 @@ async def register_tracker(
 
 @router.get("/trackers", response_model=List[TrackerResponse])
 @require_permission("view_trackers")
-async def list_trackers(
+def list_trackers(
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
 ) -> List[Tracker]:
@@ -438,7 +465,7 @@ async def list_trackers(
 
 @router.get("/trackers/{tracker_id}", response_model=TrackerResponse)
 @require_permission("view_trackers")
-async def get_tracker(
+def get_tracker(
     tracker_id: UUID4,
     current_user: AuthUserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db_session),
@@ -574,6 +601,33 @@ async def update_tracker(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error updating tracker.",
         )
+
+
+@router.post("/trackers/{tracker_id}/sync", status_code=status.HTTP_202_ACCEPTED)
+@require_permission("edit_trackers")
+async def sync_tracker(
+    tracker_id: UUID4,
+    current_user: AuthUserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db_session),
+) -> Dict[str, str]:
+    """Queue a background sync for an existing tracker."""
+    account = crud_account.get(db, id=current_user.account_id)
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account not found"
+        )
+
+    tracker = crud_tracker.get_by_id_and_account(
+        db, id=str(tracker_id), account_id=account.id, include_deleted=False
+    )
+    if not tracker:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tracker not found or access denied",
+        )
+
+    await event_bus_service.publish_task("poll_tracker", str(tracker.id))
+    return {"status": "queued", "tracker_id": str(tracker.id)}
 
 
 @router.delete("/trackers/{tracker_id}", status_code=status.HTTP_200_OK)

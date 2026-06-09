@@ -141,6 +141,8 @@ export class PreloopGatewayEvent extends LitElement {
       font-size: 0.85rem;
       color: var(--sl-color-neutral-800);
       background: var(--sl-color-neutral-0);
+      max-height: min(40vh, 360px);
+      overflow: auto;
       white-space: pre-wrap;
       word-break: break-all;
     }
@@ -160,8 +162,9 @@ export class PreloopGatewayEvent extends LitElement {
     .payload-block {
       background: var(--sl-color-neutral-100);
       border-radius: var(--sl-border-radius-medium);
+      max-height: min(55vh, 520px);
       padding: 12px;
-      overflow-x: auto;
+      overflow: auto;
       margin-bottom: 16px;
     }
 
@@ -512,6 +515,20 @@ ${previewText}</pre
               ? `${payload.method || 'POST'} ${payload.status_code}`
               : payload.method || 'n/a'
           )}
+          ${payload.gateway_attempt
+            ? this.renderGatewayField(
+                'Gateway Attempt',
+                payload.is_retry
+                  ? `Retry #${payload.gateway_attempt}`
+                  : `#${payload.gateway_attempt}`
+              )
+            : ''}
+          ${payload.retry_of_api_usage_id
+            ? this.renderGatewayField(
+                'Retry Of',
+                String(payload.retry_of_api_usage_id)
+              )
+            : ''}
           ${this.renderGatewayField(
             'Endpoint',
             payload.endpoint_kind || payload.endpoint || 'n/a'

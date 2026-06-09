@@ -123,17 +123,25 @@ preloop agents discover --yes           # Auto-onboard newly discovered agents
 preloop agents enroll openclaw        # Apply managed enrollment for OpenClaw
 preloop agents enroll openclaw --dry-run
 preloop agents enroll openclaw --yes   # Skip the confirmation prompt
+preloop agents enroll hermes          # Apply managed enrollment for Hermes
+preloop agents enroll hermes --dry-run
 preloop agents status openclaw         # Show local/remote managed state
+preloop agents status hermes
 preloop agents validate openclaw       # Validate the managed config
+preloop agents validate hermes
 preloop agents restore openclaw        # Restore the most recent local backup
+preloop agents restore hermes
 preloop agents offboard openclaw       # Offboard and restore the local backup
+preloop agents offboard hermes
 preloop agents offboard openclaw --yes --remove-model no --remove-mcp-servers no
 preloop agents offboard openclaw --yes --remove-model yes
 ```
 
 `preloop agents discover` is the starting point for agent onboarding. In interactive terminals it can prompt to onboard newly discovered agents one by one. Use `--no-onboard-prompt` to keep discovery read-only in scripts/CI, or `--yes` to auto-onboard all new candidates. `preloop agents enroll openclaw` remains the explicit mutating command.
 
-Managed OpenClaw onboarding creates a durable managed credential, backs up the local config, replaces the local MCP config with a managed `preloop` entry, and may also import existing MCP servers plus rewrite supported model settings to Preloop's OpenAI-compatible gateway. Use `--dry-run` to preview changes first.
+Managed OpenClaw and Hermes onboarding creates a durable managed credential, backs up the local config, adds or replaces the local MCP config with a managed `preloop` entry, writes a `preloop.control.control_ws_url` contract plus the standalone runtime plugin package name (`preloop-hermes-plugin` or `@preloop/openclaw-plugin`), and may also import existing MCP servers plus rewrite supported model settings to Preloop's OpenAI-compatible gateway. Use `--dry-run` to preview changes first. `preloop agents onboard --all -y` also ensures every discovered OpenClaw/Hermes runtime plugin available to the CLI is installed and verified, including agents that were already onboarded locally and would otherwise be skipped by the config rewrite step.
+
+The CLI provisions credentials and configuration, and `preloop agents install-plugin <agent>` delegates to the runtime's own plugin marketplace installer. The runtime plugin, not the CLI, owns the long-lived WebSocket connection to `/api/v1/agents/control/ws`, reconnect/backoff, heartbeat and status events, capability advertisement, command receipt, and command execution or message injection into the active agent session. Runtime builds that have not loaded the native Agent Control plugin can ignore the control block safely; MCP firewall and gateway routing can still work, but Agent Control is not enabled. `preloop agents validate` reports `control_config_written`, `control_plugin_installed`, `control_plugin_verified`, and `control_channel_configured` separately so a metadata block is not mistaken for a live control channel.
 
 `preloop agents offboard` restores the last local backup and removes the managed agent from Preloop. Cleanup of account-level resources is controlled separately:
 

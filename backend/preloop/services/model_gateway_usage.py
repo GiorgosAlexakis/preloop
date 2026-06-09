@@ -40,6 +40,7 @@ class ModelGatewayUsageService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         runtime_principal_id: Optional[str] = None,
+        include_breakdown: bool = True,
     ) -> AccountGatewayUsageSummaryResponse:
         start_date, end_date = self._normalize_period(start_date, end_date)
         totals = crud_api_usage.get_gateway_usage_summary(
@@ -49,34 +50,40 @@ class ModelGatewayUsageService:
             end_date=end_date,
             runtime_principal_id=runtime_principal_id,
         )
-        usage_by_model = crud_api_usage.get_gateway_usage_by_model(
-            self.db,
-            account_id=str(account.id),
-            start_date=start_date,
-            end_date=end_date,
-            runtime_principal_id=runtime_principal_id,
-        )
-        usage_by_flow = crud_api_usage.get_gateway_usage_by_flow(
-            self.db,
-            account_id=str(account.id),
-            start_date=start_date,
-            end_date=end_date,
-            runtime_principal_id=runtime_principal_id,
-        )
-        usage_by_session = crud_api_usage.get_gateway_usage_by_session(
-            self.db,
-            account_id=str(account.id),
-            start_date=start_date,
-            end_date=end_date,
-            runtime_principal_id=runtime_principal_id,
-        )
-        requests_by_day = crud_api_usage.get_gateway_usage_timeseries(
-            self.db,
-            account_id=str(account.id),
-            start_date=start_date,
-            end_date=end_date,
-            runtime_principal_id=runtime_principal_id,
-        )
+        if include_breakdown:
+            usage_by_model = crud_api_usage.get_gateway_usage_by_model(
+                self.db,
+                account_id=str(account.id),
+                start_date=start_date,
+                end_date=end_date,
+                runtime_principal_id=runtime_principal_id,
+            )
+            usage_by_flow = crud_api_usage.get_gateway_usage_by_flow(
+                self.db,
+                account_id=str(account.id),
+                start_date=start_date,
+                end_date=end_date,
+                runtime_principal_id=runtime_principal_id,
+            )
+            usage_by_session = crud_api_usage.get_gateway_usage_by_session(
+                self.db,
+                account_id=str(account.id),
+                start_date=start_date,
+                end_date=end_date,
+                runtime_principal_id=runtime_principal_id,
+            )
+            requests_by_day = crud_api_usage.get_gateway_usage_timeseries(
+                self.db,
+                account_id=str(account.id),
+                start_date=start_date,
+                end_date=end_date,
+                runtime_principal_id=runtime_principal_id,
+            )
+        else:
+            usage_by_model = []
+            usage_by_flow = []
+            usage_by_session = []
+            requests_by_day = []
 
         budget_cfg = self._normalize_budget_config(
             (account.meta_data or {}).get("model_gateway_budget")
@@ -425,6 +432,13 @@ class ModelGatewayUsageService:
             runtime_session_id=row["runtime_session_id"],
             session_source_type=row["session_source_type"],
             session_source_id=row["session_source_id"],
+            session_summary=row.get("session_summary"),
+            session_summary_updated_at=row.get("session_summary_updated_at"),
+            runtime_principal_type=row.get("runtime_principal_type"),
+            runtime_principal_id=row.get("runtime_principal_id"),
+            runtime_principal_name=row.get("runtime_principal_name"),
+            agent_id=row.get("agent_id"),
+            agent_name=row.get("agent_name"),
             flow_execution_id=row["flow_execution_id"],
             flow_id=row["flow_id"],
             flow_name=row["flow_name"],

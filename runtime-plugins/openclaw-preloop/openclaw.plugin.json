@@ -1,0 +1,26 @@
+{
+  "id": "openclaw-plugin",
+  "name": "@preloop/openclaw-plugin",
+  "displayName": "Preloop",
+  "description": "Expose OpenClaw to Preloop for discovery, status, Agent Control, and voice-transcript delivery.",
+  "version": "0.1.0",
+  "runtime": "openclaw",
+  "license": "Apache-2.0",
+  "homepage": "https://preloop.ai",
+  "repository": "https://github.com/spacecode-ai/preloop/tree/main/runtime-plugins/openclaw-preloop",
+  "keywords": ["preloop", "agent-control", "openclaw", "voice", "observability"],
+  "entrypoint": "dist/index.js",
+  "permissions": [
+    "read_config:plugins.entries.openclaw-plugin.config",
+    "network:wss",
+    "agent:send_message",
+    "agent:session_status"
+  ],
+  "configSchema": {
+    "path": "plugins.entries.openclaw-plugin.config",
+    "required": ["control_ws_url", "bearer_token", "runtime_principal_id"]
+  },
+  "verification": {
+    "command": "preloop-openclaw-plugin verify --config ~/.openclaw/openclaw.json"
+  }
+}

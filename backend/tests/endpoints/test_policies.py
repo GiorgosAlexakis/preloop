@@ -598,7 +598,7 @@ class TestListPolicyVersions:
             mock_crud,
         )
 
-        result = await policies.list_policy_versions(
+        result = policies.list_policy_versions(
             limit=100,
             offset=0,
             include_snapshots=False,
@@ -627,7 +627,7 @@ class TestListPolicyVersions:
             mock_crud,
         )
 
-        result = await policies.list_policy_versions(
+        result = policies.list_policy_versions(
             limit=100,
             offset=0,
             include_snapshots=False,
@@ -658,7 +658,7 @@ class TestListPolicyVersions:
             mock_crud,
         )
 
-        result = await policies.list_policy_versions(
+        result = policies.list_policy_versions(
             limit=10,
             offset=5,
             include_snapshots=False,
@@ -689,7 +689,7 @@ class TestGetPolicyVersion:
             return_value=mock_service,
         )
 
-        result = await policies.get_policy_version(
+        result = policies.get_policy_version(
             version_id=mock_snapshot.id,
             account=mock_account,
             db=mock_db,
@@ -709,7 +709,7 @@ class TestGetPolicyVersion:
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await policies.get_policy_version(
+            policies.get_policy_version(
                 version_id=uuid.uuid4(),
                 account=mock_account,
                 db=mock_db,

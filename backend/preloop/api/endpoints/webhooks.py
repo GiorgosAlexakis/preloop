@@ -678,8 +678,17 @@ async def receive_webhook(
         # These are common when webhooks arrive for issues not yet synced
         if http_exc.status_code == 404:
             logger.warning(f"HTTP 404 during webhook processing: {http_exc.detail}")
+        elif http_exc.status_code == 400 and http_exc.detail in {
+            "Issue data missing from payload",
+            "Missing data to construct GitLab issue key.",
+        }:
+            logger.warning(
+                "Ignored webhook payload without issue data: %s", http_exc.detail
+            )
         else:
-            logger.error(f"HTTP exception during webhook processing: {http_exc.detail}")
+            logger.warning(
+                "HTTP exception during webhook processing: %s", http_exc.detail
+            )
         # Don't raise yet - publish to NATS first
     except Exception as e:
         db.rollback()

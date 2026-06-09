@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
+from preloop.api.endpoints.trackers import _unique_tracker_name
 from preloop.models.models.tracker import Tracker
 
 
@@ -207,3 +208,46 @@ async def test_update_tracker_success(
 
     # UUID is converted to string for JSON serialization
     mock_publish_task.assert_called_once_with("poll_tracker", str(tracker.id))
+
+
+@pytest.mark.asyncio
+@patch("preloop.api.endpoints.trackers.event_bus_service.publish_task")
+async def test_sync_tracker_success(
+    mock_publish_task, client: TestClient, db_session, test_user
+):
+    """Test queuing a tracker sync."""
+    tracker = Tracker(
+        name="Tracker to Sync",
+        tracker_type="gitlab",
+        url="https://gitlab.example.com",
+        account_id=test_user.account_id,
+        api_key="sync_key",
+    )
+    db_session.add(tracker)
+    db_session.commit()
+
+    response = client.post(f"/api/v1/trackers/{tracker.id}/sync")
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    mock_publish_task.assert_called_once_with("poll_tracker", str(tracker.id))
+
+
+def test_unique_tracker_name_appends_suffix(db_session, test_user):
+    """OAuth tracker registration should pick a unique display name."""
+    existing = Tracker(
+        name="GitHub - preloop-agent",
+        tracker_type="github",
+        url="https://github.com/preloop-agent",
+        account_id=test_user.account_id,
+        api_key="oauth",
+    )
+    db_session.add(existing)
+    db_session.commit()
+
+    unique_name = _unique_tracker_name(
+        db_session,
+        base_name="GitHub - preloop-agent",
+        account_id=str(test_user.account_id),
+    )
+
+    assert unique_name == "GitHub - preloop-agent (2)"

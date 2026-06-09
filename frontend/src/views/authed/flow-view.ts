@@ -1,4 +1,5 @@
-import { LitElement, html, css, unsafeCSS } from 'lit';
+import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import {
@@ -14,6 +15,7 @@ import {
   listProjects,
   getAllTools,
   getMCPServers,
+  getAccountAgents,
 } from '../../api';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
 import {
@@ -32,15 +34,15 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
 import '@shoelace-style/shoelace/dist/components/radio/radio.js';
+import '../../components/preloop-flow-form';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '../../components/icon-selector.ts';
-import '../../components/add-tracker-modal.ts';
-import '../../components/add-ai-model-modal.ts';
 import '../../components/resource-actions.ts';
 import type { ResourceAction } from '../../components/resource-actions.ts';
 import consoleStyles from '../../styles/console-styles.css?inline';
+import { getTrackerEventOptions } from '../../constants/tracker-event-types';
 
 interface GitCloneRepository {
   tracker_id: string;
@@ -99,9 +101,27 @@ interface Flow {
 
 @customElement('flow-view')
 export class FlowView extends LitElement {
-  // Vaadin Router lifecycle callback
+  private initialized = false;
+  private _formInstanceId = 0;
+  private _routeSearch = '';
+
   onBeforeEnter(location: any) {
-    this.flowId = location.params.flowId;
+    const nextFlowId = location.params.flowId as string | undefined;
+    const nextSearch = location.search || '';
+    const nextIsEditing =
+      new URLSearchParams(nextSearch).get('edit') === 'true';
+    const changed =
+      this.flowId !== nextFlowId ||
+      this._routeSearch !== nextSearch ||
+      this.isEditing !== nextIsEditing;
+
+    this.flowId = nextFlowId;
+    this._routeSearch = nextSearch;
+    this.isEditing = nextIsEditing;
+
+    if (this.initialized && changed) {
+      void this.loadFlowData(new URLSearchParams(nextSearch));
+    }
   }
 
   static styles = [
@@ -186,11 +206,18 @@ export class FlowView extends LitElement {
     is_enabled: true,
   };
 
+  @state() private longRunningAgents: any[] = [];
+  @state() private flowExecutionPath: 'ephemeral' | 'persistent' = 'ephemeral';
+  @state() private targetAgentId = '';
+
   @state()
   private isNew = true;
 
   @state()
   private isEditing = false;
+
+  @state()
+  private flowReady = false;
 
   @state()
   private trackers: any[] = [];
@@ -203,15 +230,6 @@ export class FlowView extends LitElement {
 
   @state()
   private availableTools: any[] = [];
-
-  @state()
-  private presets: any[] = [];
-
-  @state()
-  private creationMode: 'scratch' | 'preset' = 'scratch';
-
-  @state()
-  private sourcePresetId: string | null = null;
 
   @state()
   private organizations: any[] = [];
@@ -229,16 +247,10 @@ export class FlowView extends LitElement {
   private triggerType: 'webhook' | 'tracker' = 'webhook';
 
   @state()
-  private isAddingTracker = false;
-
-  @state()
   private isPollingOrganizations = false;
 
   @state()
   private isPollingProjects = false;
-
-  @state()
-  private isAddingAIModel = false;
 
   @state()
   private showTestRunModal = false;
@@ -272,7 +284,6 @@ export class FlowView extends LitElement {
   async connectedCallback() {
     super.connectedCallback();
 
-    // Check if current user is admin
     try {
       const { getUserProfile } = await import('../../api');
       const currentUser = await getUserProfile();
@@ -282,26 +293,28 @@ export class FlowView extends LitElement {
       this.isAdmin = false;
     }
 
-    const urlParams = new URLSearchParams(window.location.search);
+    if (!this.initialized) {
+      this.initialized = true;
+      const urlParams = new URLSearchParams(window.location.search);
+      this.isEditing = urlParams.get('edit') === 'true';
+      this._routeSearch = window.location.search || '';
+      await this.loadFlowData(urlParams);
+    }
+  }
+
+  private async loadFlowData(urlParams: URLSearchParams) {
+    this.flowReady = false;
+    this._formInstanceId += 1;
+
     const presetId = urlParams.get('preset_id');
-    this.isEditing = urlParams.get('edit') === 'true';
 
     if (this.flowId) {
-      // Viewing or editing an existing flow
       this.isNew = false;
-      this.creationMode = 'scratch';
       this.flow = await getFlow(this.flowId);
 
-      console.log(
-        'DEBUG: Loaded flow git_clone_config:',
-        this.flow.git_clone_config
-      );
-
-      // Set trigger type based on flow
       this.triggerType =
         this.flow.trigger_event_source === 'webhook' ? 'webhook' : 'tracker';
 
-      // Load recent executions for this flow
       const allExecutions = await import('../../api').then((m) =>
         m.getFlowExecutions({ flowId: this.flowId, limit: 10 })
       );
@@ -313,7 +326,6 @@ export class FlowView extends LitElement {
         )
         .slice(0, 10);
 
-      // Load all necessary data for editing (in parallel)
       this._loadingReferenceData = true;
       try {
         const [
@@ -343,9 +355,7 @@ export class FlowView extends LitElement {
         this._loadingReferenceData = false;
       }
 
-      // Additional trigger-specific setup if this is a tracker-based flow
       if (this.triggerType === 'tracker' && this.flow.trigger_event_source) {
-        // Start polling if no organizations for this tracker yet
         const trackerOrgs = (this.organizations || []).filter(
           (org: any) => org.tracker_id === this.flow.trigger_event_source
         );
@@ -353,7 +363,6 @@ export class FlowView extends LitElement {
           this.startPollingOrganizations(this.flow.trigger_event_source);
         }
 
-        // Start polling projects if we have a trigger organization but no projects
         if (this.flow.trigger_organization_id) {
           const orgProjects = (this.projects || []).filter(
             (proj: any) =>
@@ -368,40 +377,43 @@ export class FlowView extends LitElement {
         }
       }
 
-      // Ensure preloop-mcp is always in allowed_mcp_servers
       if (!this.flow.allowed_mcp_servers?.includes('preloop-mcp')) {
         this.flow.allowed_mcp_servers = ['preloop-mcp'];
       }
 
-      // Connect to WebSocket for real-time flow execution updates
       this.connectToFlowUpdates();
-    } else if (presetId) {
-      // Creating from preset
-      this.trackers = await getTrackers();
-      this.models = await getAIModels();
-      this.presets = await getFlowPresets();
-      this.availableTools = await getAllTools();
-      this.mcpServers = await getMCPServers();
-      const preset = this.presets.find((p) => p.id === presetId);
-      if (preset) {
-        this.selectPreset(preset);
-        // Ensure preloop-mcp is in allowed_mcp_servers
-        if (!this.flow.allowed_mcp_servers?.includes('preloop-mcp')) {
-          this.flow.allowed_mcp_servers = ['preloop-mcp'];
+    } else {
+      this.isNew = true;
+      this.flow = {
+        name: '',
+        agent_type: 'codex',
+        allowed_mcp_servers: ['preloop-mcp'],
+        allowed_mcp_tools: [],
+      };
+    }
+
+    try {
+      const agentsRes = await getAccountAgents({ limit: 100 });
+      this.longRunningAgents = agentsRes.items || [];
+
+      if (this.flow && this.flow.agent_config) {
+        const cfg =
+          typeof this.flow.agent_config === 'string'
+            ? JSON.parse(this.flow.agent_config)
+            : this.flow.agent_config;
+        if (cfg && cfg.execution_path === 'persistent') {
+          this.flowExecutionPath = 'persistent';
+          this.targetAgentId = cfg.target_agent_id || '';
         }
       }
-    } else {
-      // Creating new flow - initialize with preloop-mcp by default
-      this.trackers = await getTrackers();
-      this.models = await getAIModels();
-      this.presets = await getFlowPresets();
-      this.availableTools = await getAllTools();
-      this.mcpServers = await getMCPServers();
+    } catch (e) {
+      console.error('Failed to load long-running agents', e);
+    } finally {
+      this.flowReady = true;
+    }
 
-      // Initialize with preloop-mcp server but no tools selected by default
-      this.flow.allowed_mcp_servers = ['preloop-mcp'];
-      this.flow.allowed_mcp_tools = [];
-      this.creationMode = 'scratch';
+    if (presetId) {
+      // preset handling remains in preloop-flow-form loadReferenceData
     }
   }
 
@@ -490,6 +502,16 @@ export class FlowView extends LitElement {
   }
 
   render() {
+    if (!this.flowReady) {
+      return html`
+        <div
+          style="display: flex; justify-content: center; padding: var(--sl-spacing-2x-large);"
+        >
+          <sl-spinner style="font-size: 2rem;"></sl-spinner>
+        </div>
+      `;
+    }
+
     if (!this.isNew && !this.isEditing) {
       // View mode - show flow details
       return this.renderFlowDetails();
@@ -497,17 +519,6 @@ export class FlowView extends LitElement {
 
     // Edit/Create mode - show form
     return html`
-      ${this.isAddingTracker
-        ? html`<add-tracker-modal
-            @tracker-added=${this.handleTrackerAdded}
-            @close-modal=${this.closeAddTrackerDialog}
-          ></add-tracker-modal>`
-        : ''}
-      <add-ai-model-modal
-        ?open=${this.isAddingAIModel}
-        @model-created=${this.handleAIModelCreated}
-        @close-modal=${this.closeAIModelDialog}
-      ></add-ai-model-modal>
       <view-header
         headerText="${this.isNew ? 'Create Flow' : 'Edit Flow'}"
         width="wide"
@@ -524,12 +535,7 @@ export class FlowView extends LitElement {
         </div>
       </view-header>
       <div class="column-layout wide">
-        <div class="main-column">
-          ${this.isNew ? this.renderCreationModeSelector() : ''}
-          ${this.isNew && this.creationMode === 'preset'
-            ? this.renderPresets()
-            : this.renderForm()}
-        </div>
+        <div class="main-column">${this.renderForm()}</div>
       </div>
     `;
   }
@@ -1025,158 +1031,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     });
   }
 
-  renderCreationModeSelector() {
-    return html`
-      <div class="creation-mode-toggle">
-        <h3>How would you like to start?</h3>
-        <p
-          style="margin: 0 0 var(--sl-spacing-small) 0; color: var(--sl-color-neutral-600);"
-        >
-          Choose whether to build a flow from scratch or start from a preset
-          template.
-        </p>
-        <sl-radio-group
-          value=${this.creationMode}
-          @sl-change=${(event: CustomEvent) =>
-            (this.creationMode = (event.target as HTMLInputElement).value as
-              | 'scratch'
-              | 'preset')}
-        >
-          <sl-radio value="scratch">Create from scratch</sl-radio>
-          <sl-radio value="preset">Use a preset</sl-radio>
-        </sl-radio-group>
-      </div>
-    `;
-  }
-
-  renderPresets() {
-    const sortedPresets = [...this.presets].sort((a, b) => {
-      const aIsPR = a.name?.toLowerCase().includes('pull request reviewer')
-        ? 0
-        : 1;
-      const bIsPR = b.name?.toLowerCase().includes('pull request reviewer')
-        ? 0
-        : 1;
-      return aIsPR - bIsPR;
-    });
-    return html`
-      <h2>Select a Preset</h2>
-      <div class="form-grid">
-        ${sortedPresets.map(
-          (preset) => html`
-            <sl-card
-              class="preset-card"
-              @click=${() => this.selectPreset(preset)}
-            >
-              <div slot="header">${preset.name}</div>
-              ${preset.description}
-            </sl-card>
-          `
-        )}
-      </div>
-      <sl-button
-        variant="default"
-        @click=${() => (this.creationMode = 'scratch')}
-      >
-        Back to form
-      </sl-button>
-    `;
-  }
-
-  selectPreset(preset: any) {
-    // Copy preset to flow
-    this.flow = { ...preset };
-
-    // Store the source preset ID for template tracking
-    // This links the new flow to the preset for auto-updates
-    this.sourcePresetId = preset.id;
-
-    // Transform allowed_mcp_tools from preset format [{name: "tool"}] to flow format [{server_name, tool_name}]
-    if (preset.allowed_mcp_tools && Array.isArray(preset.allowed_mcp_tools)) {
-      this.flow.allowed_mcp_tools = preset.allowed_mcp_tools.map(
-        (tool: { name: string }) => ({
-          server_name: 'preloop-mcp',
-          tool_name: tool.name,
-        })
-      );
-    } else {
-      this.flow.allowed_mcp_tools = [];
-    }
-
-    // Ensure preloop-mcp is in allowed_mcp_servers
-    if (!this.flow.allowed_mcp_servers?.includes('preloop-mcp')) {
-      this.flow.allowed_mcp_servers = ['preloop-mcp'];
-    }
-
-    // New flows should be enabled by default (presets are stored as disabled)
-    this.flow.is_enabled = true;
-
-    // Auto-populate fields to reduce friction for new users
-    this._autoPopulatePresetFields();
-
-    this.creationMode = 'scratch';
-  }
-
-  private async _autoPopulatePresetFields() {
-    // Auto-select the most recently added tracker (last in the list)
-    if (this.trackers.length > 0 && !this.flow.trigger_event_source) {
-      const tracker = this.trackers[this.trackers.length - 1];
-      this.flow.trigger_event_source = tracker.id;
-      this.triggerType = 'tracker';
-
-      // Auto-select PR/MR events based on tracker type
-      if (tracker.tracker_type === 'github') {
-        this.flow.trigger_event_types = [
-          'pull_request_opened',
-          'pull_request_updated',
-        ];
-      } else if (tracker.tracker_type === 'gitlab') {
-        this.flow.trigger_event_types = [
-          'merge_request_opened',
-          'merge_request_updated',
-        ];
-      }
-
-      // Load organizations for this tracker
-      const allOrganizations = await listOrganizations();
-      this.organizations = allOrganizations.filter(
-        (org: any) => org.tracker_id === tracker.id
-      );
-
-      if (this.organizations.length > 0) {
-        // Auto-select the first organization
-        const org = this.organizations[0];
-        this.flow.trigger_organization_id = org.id;
-
-        // Load and auto-select all projects for this organization
-        const allProjects = await listProjects();
-        this.projects = allProjects;
-        const orgProjects = allProjects.filter(
-          (proj: any) => proj.organization_id === org.id
-        );
-        if (orgProjects.length > 0) {
-          this.flow.trigger_project_ids = orgProjects.map(
-            (proj: any) => proj.id
-          );
-        }
-      } else {
-        // Start polling for organizations (they may still be syncing)
-        this.startPollingOrganizations(tracker.id);
-      }
-    }
-
-    // Auto-select the most recently added AI model
-    if (!this.flow.ai_model_id) {
-      const selectableModels = this.getSelectableModels();
-      if (selectableModels.length > 0) {
-        this.flow.ai_model_id =
-          selectableModels[selectableModels.length - 1].id;
-      }
-    }
-
-    this.requestUpdate();
-  }
-
   /**
    * Get AI models selectable for the selected agent type.
    *
@@ -1202,475 +1056,40 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
   }
 
   renderForm() {
-    return html`
-      <form @submit=${this.handleSubmit}>
-        <sl-card>
-          <sl-input
-            label="Name"
-            .value=${this.flow.name}
-            @sl-input=${(e: Event) => this.handleInputChange('name', e)}
-            required
-          ></sl-input>
-          <sl-textarea
-            label="Description"
-            .value=${this.flow.description || ''}
-            @sl-input=${(e: Event) => this.handleInputChange('description', e)}
-          ></sl-textarea>
-        </sl-card>
-
-        <sl-card>
-          <div slot="header">
-            <sl-icon name="calendar-event"></sl-icon>
-            Trigger
-          </div>
-
-          <!-- Trigger Type Selection -->
-          <div style="margin-bottom: 1.5rem;">
-            <label
-              style="display: block; margin-bottom: 0.5rem; font-weight: 500;"
-            >
-              Trigger Type
-            </label>
-            <sl-radio-group
-              value=${this.triggerType}
-              @sl-change=${(e: any) =>
-                this.handleTriggerTypeChange(e.target.value)}
-              style="display: flex; gap: 1rem;"
-            >
-              <sl-radio value="webhook">Webhook</sl-radio>
-              <sl-radio value="tracker">Tracker Event</sl-radio>
-            </sl-radio-group>
-          </div>
-
-          ${this.triggerType === 'webhook'
-            ? this.renderWebhookTriggerFields()
-            : this._loadingReferenceData
-              ? html`
-                  <div
-                    style="display: flex; align-items: center; gap: var(--sl-spacing-small); padding: var(--sl-spacing-medium); color: var(--sl-color-neutral-500);"
-                  >
-                    <sl-spinner style="font-size: 1rem;"></sl-spinner>
-                    Loading trackers...
-                  </div>
-                `
-              : this.renderTrackerTriggerFields()}
-        </sl-card>
-
-        <sl-card>
-          <div slot="header">
-            <sl-icon name="robot"></sl-icon>
-            AI Agent
-          </div>
-
-          <sl-select
-            label="Agent Type"
-            .value=${this.flow.agent_type || 'codex'}
-            @sl-change=${(e: any) => {
-              this.flow.agent_type = e.target.value;
-              this.requestUpdate();
-            }}
-            help-text="Choose which AI agent to use for executing this flow"
-          >
-            <sl-option value="codex">Codex CLI</sl-option>
-            <sl-option value="gemini">Gemini CLI</sl-option>
-            <sl-option value="opencode">OpenCode</sl-option>
-          </sl-select>
-
-          ${this._loadingReferenceData
-            ? html`
-                <div
-                  style="display: flex; align-items: center; gap: var(--sl-spacing-small); padding: var(--sl-spacing-medium); color: var(--sl-color-neutral-500);"
-                >
-                  <sl-spinner style="font-size: 1rem;"></sl-spinner>
-                  Loading AI models...
-                </div>
-              `
-            : this.models.length === 0
-              ? html`
-                  <div
-                    style="text-align: center; padding: var(--sl-spacing-2x-large); background: var(--sl-color-neutral-50); border-radius: var(--sl-border-radius-medium); margin-bottom: var(--sl-spacing-medium);"
-                  >
-                    <p
-                      style="margin-bottom: var(--sl-spacing-medium); color: var(--sl-color-neutral-600);"
-                    >
-                      No AI models configured yet.
-                    </p>
-                    <sl-button
-                      variant="primary"
-                      @click=${this.openAddAIModelDialog}
-                    >
-                      <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                      Add AI Model
-                    </sl-button>
-                  </div>
-                `
-              : (() => {
-                  const selectableModels = this.getSelectableModels();
-                  const agentType = this.flow.agent_type || 'codex';
-                  const protocolLabel = this.getAgentProtocolLabel(agentType);
-
-                  return html`
-                    <div>
-                      <sl-select
-                        label="AI Model"
-                        .value=${this.flow.ai_model_id || ''}
-                        @sl-change=${(e: any) =>
-                          (this.flow.ai_model_id = e.target.value)}
-                        help-text="All configured models are available. Gateway-backed runs will use the ${protocolLabel} for ${agentType}."
-                      >
-                        ${selectableModels.length === 0
-                          ? html`<sl-option value="" disabled>
-                              No AI models available
-                            </sl-option>`
-                          : selectableModels.map(
-                              (model) =>
-                                html`<sl-option value=${model.id}
-                                  >${model.name}</sl-option
-                                >`
-                            )}
-                      </sl-select>
-                      <sl-button
-                        size="small"
-                        variant="text"
-                        @click=${this.openAddAIModelDialog}
-                        style="margin-top: 0.5rem;"
-                      >
-                        <sl-icon slot="prefix" name="plus-lg"></sl-icon>
-                        Add New AI Model
-                      </sl-button>
-                    </div>
-                  `;
-                })()}
-          <sl-textarea
-            class="prompt"
-            label="Prompt"
-            resize="auto"
-            .value=${this.flow.prompt_template || ''}
-            @sl-input=${(e: Event) =>
-              this.handleInputChange('prompt_template', e)}
-            help-text="The prompt that will be sent to the AI agent. You can use template variables like {{trigger_event.*}}"
-          ></sl-textarea>
-        </sl-card>
-
-        <sl-card>
-          <div slot="header">
-            <sl-icon name="tools"></sl-icon>
-            Tools
-          </div>
-
-          <span
-            style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);"
-          >
-            Select which tools the agent can use during flow execution.
-          </span>
-
-          ${this.renderToolSelection()}
-        </sl-card>
-
-        ${this.getGitTrackers().length > 0
-          ? html`
-              <sl-card>
-                <div slot="header">
-                  <sl-icon name="git"></sl-icon>
-                  Git Clone Configuration
-                </div>
-                <p
-                  style="margin-bottom: 1rem; color: var(--sl-color-neutral-600);"
-                >
-                  Automatically clone repositories before the agent starts.
-                  ${this.getGitTrackers().length === 1
-                    ? 'Your GitHub/GitLab tracker will be used automatically.'
-                    : 'Select which repositories to clone.'}
-                </p>
-                <sl-checkbox
-                  .checked=${this.flow.git_clone_config?.enabled || false}
-                  @sl-change=${(e: any) =>
-                    this.handleGitCloneToggle(e.target.checked)}
-                  >Enable Git Clone</sl-checkbox
-                >
-
-                ${this.flow.git_clone_config?.enabled
-                  ? html`
-                      <div style="margin-top: 1rem;">
-                        <div class="form-grid">
-                          <sl-input
-                            label="Git User Name"
-                            .value=${this.flow.git_clone_config
-                              ?.git_user_name || 'Preloop'}
-                            @sl-input=${(e: any) => {
-                              if (!this.flow.git_clone_config) return;
-                              this.flow = {
-                                ...this.flow,
-                                git_clone_config: {
-                                  ...this.flow.git_clone_config,
-                                  git_user_name: e.target.value,
-                                },
-                              };
-                            }}
-                            help-text="Name to use for git commits"
-                          ></sl-input>
-                          <sl-input
-                            label="Git User Email"
-                            .value=${this.flow.git_clone_config
-                              ?.git_user_email || 'git@preloop.ai'}
-                            @sl-input=${(e: any) => {
-                              if (!this.flow.git_clone_config) return;
-                              this.flow = {
-                                ...this.flow,
-                                git_clone_config: {
-                                  ...this.flow.git_clone_config,
-                                  git_user_email: e.target.value,
-                                },
-                              };
-                            }}
-                            help-text="Email to use for git commits"
-                          ></sl-input>
-                          <sl-input
-                            label="Source Branch"
-                            .value=${this.flow.git_clone_config
-                              ?.source_branch || 'main'}
-                            @sl-input=${(e: any) => {
-                              if (!this.flow.git_clone_config) return;
-                              this.flow = {
-                                ...this.flow,
-                                git_clone_config: {
-                                  ...this.flow.git_clone_config,
-                                  source_branch: e.target.value,
-                                },
-                              };
-                            }}
-                            help-text="Branch to checkout for base code"
-                          ></sl-input>
-                          <sl-input
-                            label="Target Branch (optional)"
-                            .value=${this.flow.git_clone_config
-                              ?.target_branch || ''}
-                            @sl-input=${(e: any) => {
-                              if (!this.flow.git_clone_config) return;
-                              this.flow = {
-                                ...this.flow,
-                                git_clone_config: {
-                                  ...this.flow.git_clone_config,
-                                  target_branch: e.target.value,
-                                },
-                              };
-                            }}
-                            help-text="Branch to create for commits (auto-generated if empty)"
-                          ></sl-input>
-                        </div>
-                        <sl-checkbox
-                          .checked=${this.flow.git_clone_config
-                            ?.create_pull_request || false}
-                          @sl-change=${(e: any) => {
-                            if (!this.flow.git_clone_config) return;
-                            // Create new object reference for proper reactivity
-                            this.flow = {
-                              ...this.flow,
-                              git_clone_config: {
-                                ...this.flow.git_clone_config,
-                                create_pull_request: e.target.checked,
-                              },
-                            };
-                            this.requestUpdate();
-                          }}
-                          style="margin-top: 1rem;"
-                          >${this.getGitTrackers().some(
-                            (t) => t.tracker_type === 'gitlab'
-                          )
-                            ? 'Create Merge Request'
-                            : 'Create Pull Request'}</sl-checkbox
-                        >
-                        ${this.flow.git_clone_config?.create_pull_request
-                          ? html`
-                              <div style="margin-top: 0.5rem;">
-                                <sl-input
-                                  label="${this.getGitTrackers().some(
-                                    (t) => t.tracker_type === 'gitlab'
-                                  )
-                                    ? 'MR Title (optional)'
-                                    : 'PR Title (optional)'}"
-                                  .value=${this.flow.git_clone_config
-                                    ?.pull_request_title || ''}
-                                  @sl-input=${(e: any) => {
-                                    if (!this.flow.git_clone_config) return;
-                                    this.flow = {
-                                      ...this.flow,
-                                      git_clone_config: {
-                                        ...this.flow.git_clone_config,
-                                        pull_request_title: e.target.value,
-                                      },
-                                    };
-                                  }}
-                                  help-text="Title for the Pull/Merge Request (defaults to flow name)"
-                                ></sl-input>
-                                <sl-textarea
-                                  label="${this.getGitTrackers().some(
-                                    (t) => t.tracker_type === 'gitlab'
-                                  )
-                                    ? 'MR Description (optional)'
-                                    : 'PR Description (optional)'}"
-                                  .value=${this.flow.git_clone_config
-                                    ?.pull_request_description || ''}
-                                  @sl-input=${(e: any) => {
-                                    if (!this.flow.git_clone_config) return;
-                                    this.flow = {
-                                      ...this.flow,
-                                      git_clone_config: {
-                                        ...this.flow.git_clone_config,
-                                        pull_request_description:
-                                          e.target.value,
-                                      },
-                                    };
-                                  }}
-                                  rows="3"
-                                  help-text="Description for the Pull/Merge Request"
-                                ></sl-textarea>
-                              </div>
-                            `
-                          : ''}
-                        <div style="margin-top: 1rem;">
-                          <h4
-                            style="margin-bottom: 0.5rem; font-size: 0.875rem;"
-                          >
-                            Repositories
-                          </h4>
-                          ${this.renderGitRepositories()}
-                          <sl-button
-                            size="small"
-                            @click=${this.addGitRepository}
-                            style="margin-top: 0.5rem;"
-                          >
-                            <sl-icon name="plus"></sl-icon>
-                            Add Repository
-                          </sl-button>
-                        </div>
-                      </div>
-                    `
-                  : ''}
-              </sl-card>
-            `
-          : ''}
-        ${this.isAdmin
-          ? html`
-              <sl-card>
-                <div slot="header">
-                  <sl-icon name="terminal"></sl-icon>
-                  Custom Commands
-                  <sl-badge
-                    variant="warning"
-                    size="small"
-                    style="margin-left: 8px;"
-                    >Admin Only</sl-badge
-                  >
-                </div>
-                <p
-                  style="margin-bottom: 1rem; color: var(--sl-color-warning-600);"
-                >
-                  <strong>Security Warning:</strong> Custom commands execute
-                  with full container privileges. Only use trusted commands.
-                  This feature is restricted to administrators.
-                </p>
-                <sl-checkbox
-                  .checked=${this.flow.custom_commands?.enabled || false}
-                  @sl-change=${(e: any) => {
-                    if (!this.flow.custom_commands) {
-                      this.flow.custom_commands = {
-                        enabled: false,
-                        commands: [],
-                      };
-                    }
-                    this.flow.custom_commands.enabled = e.target.checked;
-                    this.requestUpdate();
-                  }}
-                  >Enable Custom Commands</sl-checkbox
-                >
-
-                ${this.flow.custom_commands?.enabled
-                  ? html`
-                      <div style="margin-top: 1rem;">
-                        <label
-                          style="display: block; margin-bottom: 0.5rem; font-weight: 500;"
-                        >
-                          Commands (one per line)
-                        </label>
-                        <sl-textarea
-                          placeholder="pip install -r requirements.txt&#10;npm install&#10;./setup.sh"
-                          rows="5"
-                          .value=${(
-                            this.flow.custom_commands.commands || []
-                          ).join('\n')}
-                          @sl-input=${(e: any) => {
-                            if (this.flow.custom_commands) {
-                              const commands = e.target.value
-                                .split('\n')
-                                .map((cmd: string) => cmd.trim())
-                                .filter((cmd: string) => cmd.length > 0);
-                              this.flow.custom_commands.commands = commands;
-                            }
-                          }}
-                          help-text="Commands will execute sequentially before the agent starts. Any command failure will stop execution."
-                        ></sl-textarea>
-                      </div>
-                    `
-                  : ''}
-              </sl-card>
-            `
-          : ''}
-
-        <!-- <sl-card>
-          <div slot="header">
-            <sl-icon name="speedometer"></sl-icon>
-            Limits
-          </div>
-          <div class="form-grid">
-            <sl-input
-              label="Max Iterations"
-              type="number"
-              .value=${String(this.flow.max_iterations || '')}
-              @sl-input=${(e: Event) =>
-          this.handleInputChange('max_iterations', e)}
-            ></sl-input>
-            <sl-input
-              label="Max Budget"
-              type="number"
-              .value=${String(this.flow.max_budget || '')}
-              @sl-input=${(e: Event) => this.handleInputChange('max_budget', e)}
-            ></sl-input>
-          </div>
-        </sl-card> -->
-
-        <div>
-          <sl-checkbox
-            ?checked=${this.flow.is_preset}
-            @sl-change=${(e: any) => (this.flow.is_preset = e.target.checked)}
-            >Save as Preset</sl-checkbox
-          >
-        </div>
-
-        ${this.formError
-          ? html`
-              <sl-alert
-                variant="danger"
-                open
-                closable
-                @sl-after-hide=${() => (this.formError = null)}
-              >
-                <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>
-                ${this.formError}
-              </sl-alert>
-            `
-          : ''}
-
-        <div style="display: flex; gap: var(--sl-spacing-small);">
-          <sl-button type="submit" variant="primary"
-            >${this.isNew ? 'Create' : 'Update'}</sl-button
-          >
-          <sl-button @click=${() => Router.go('/console/flows')}
-            >Cancel</sl-button
-          >
-        </div>
-      </form>
-    `;
+    return repeat(
+      this.flowReady ? [this._formInstanceId] : [],
+      (instanceId) => instanceId,
+      () => html`
+        <preloop-flow-form
+          .flow=${this.flow}
+          @flow-submit=${async (e: CustomEvent) => {
+            const payload = e.detail.flow;
+            try {
+              if (this.isNew) {
+                if (this.sourcePresetId) {
+                  payload.source_preset_id = this.sourcePresetId;
+                  payload.prompt_customized = false;
+                  payload.tools_customized = false;
+                  payload.preset_update_available = false;
+                }
+                const newFlow = await createFlow(payload);
+                Router.go(`/console/flows/${newFlow.id}`);
+              } else {
+                await updateFlow(this.flowId!, payload);
+                Router.go(`/console/flows/${this.flowId}`);
+              }
+            } catch (error: any) {
+              e.target.formError =
+                error?.message || 'Failed to save flow. Please try again.';
+            }
+          }}
+          @flow-cancel=${() =>
+            Router.go(
+              this.isNew ? '/console/flows' : `/console/flows/${this.flowId}`
+            )}
+        ></preloop-flow-form>
+      `
+    );
   }
 
   handleInputChange(field: keyof Flow, e: Event) {
@@ -1691,7 +1110,16 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
       name: this.flow.name,
       prompt_template: this.flow.prompt_template || '',
       agent_type: this.flow.agent_type || 'codex',
-      agent_config: this.flow.agent_config || {},
+      agent_config:
+        this.longRunningAgents.length > 0
+          ? {
+              execution_path: this.flowExecutionPath,
+              target_agent_id:
+                this.flowExecutionPath === 'persistent'
+                  ? this.targetAgentId
+                  : undefined,
+            }
+          : this.flow.agent_config || {},
       allowed_mcp_servers: this.flow.allowed_mcp_servers || [],
       allowed_mcp_tools: this.flow.allowed_mcp_tools || [],
     };
@@ -1856,57 +1284,8 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
     const tracker = this.trackers.find(
       (t) => t.id === this.flow.trigger_event_source
     );
-    if (tracker) {
-      switch (tracker.tracker_type) {
-        case 'github':
-          return [
-            { name: 'Issue Opened', value: 'issue_opened' },
-            { name: 'Issue Updated', value: 'issue_updated' },
-            { name: 'Issue Closed', value: 'issue_closed' },
-            { name: 'Issue Reopened', value: 'issue_reopened' },
-            { name: 'Pull Request Opened', value: 'pull_request_opened' },
-            { name: 'Pull Request Updated', value: 'pull_request_updated' },
-            { name: 'Pull Request Closed', value: 'pull_request_closed' },
-            { name: 'Pull Request Merged', value: 'pull_request_merged' },
-            { name: 'Pull Request Reopened', value: 'pull_request_reopened' },
-            { name: 'Comment Created', value: 'comment_created' },
-            { name: 'Comment Updated', value: 'comment_updated' },
-            { name: 'Push to Repository', value: 'push' },
-            { name: 'Release Published', value: 'release' },
-          ];
-        case 'gitlab':
-          return [
-            { name: 'Issue Opened', value: 'issue_opened' },
-            { name: 'Issue Updated', value: 'issue_updated' },
-            { name: 'Issue Closed', value: 'issue_closed' },
-            { name: 'Issue Reopened', value: 'issue_reopened' },
-            { name: 'Merge Request Opened', value: 'merge_request_opened' },
-            { name: 'Merge Request Updated', value: 'merge_request_updated' },
-            { name: 'Merge Request Closed', value: 'merge_request_closed' },
-            { name: 'Merge Request Merged', value: 'merge_request_merged' },
-            { name: 'Merge Request Approved', value: 'merge_request_approved' },
-            { name: 'Merge Request Reopened', value: 'merge_request_reopened' },
-            { name: 'Comment Created', value: 'comment_created' },
-            { name: 'Comment Updated', value: 'comment_updated' },
-            { name: 'Push to Repository', value: 'push' },
-            { name: 'Tag Push', value: 'tag_push' },
-            { name: 'Pipeline Event', value: 'pipeline' },
-            { name: 'Release Published', value: 'release' },
-          ];
-        case 'jira':
-          return [
-            { name: 'Issue Opened', value: 'issue_opened' },
-            { name: 'Issue Updated', value: 'issue_updated' },
-            { name: 'Issue Deleted', value: 'issue_deleted' },
-            { name: 'Comment Created', value: 'comment_created' },
-            { name: 'Comment Updated', value: 'comment_updated' },
-            { name: 'Comment Deleted', value: 'comment_deleted' },
-          ];
-        default:
-          return [];
-      }
-    }
-    return [];
+    if (!tracker) return [];
+    return getTrackerEventOptions(tracker.tracker_type);
   }
 
   handleEventChange(e: any) {
@@ -2362,65 +1741,6 @@ ${(this.flow.custom_commands.commands || []).join('\n')}</pre
         </p>
       </div>
     `;
-  }
-
-  openAddTrackerDialog() {
-    this.isAddingTracker = true;
-  }
-
-  private closeAddTrackerDialog() {
-    this.isAddingTracker = false;
-  }
-
-  private async handleTrackerAdded(event: CustomEvent) {
-    // Don't close modal if there are warnings to display
-    if (!event.detail?.hasWarnings) {
-      this.isAddingTracker = false;
-    }
-    // Reload trackers list
-    this.trackers = await getTrackers();
-
-    // Auto-select the newly added tracker if we're in tracker mode
-    if (this.triggerType === 'tracker' && this.trackers.length > 0) {
-      // The newest tracker should be the last one
-      const newestTracker = this.trackers[this.trackers.length - 1];
-      this.flow.trigger_event_source = newestTracker.id;
-
-      // Load organizations for the new tracker
-      const allOrganizations = await listOrganizations();
-      this.organizations = allOrganizations.filter(
-        (org: any) => org.tracker_id === newestTracker.id
-      );
-
-      // Start polling for orgs if none exist yet
-      if (this.organizations.length === 0) {
-        this.startPollingOrganizations(newestTracker.id);
-      }
-    }
-
-    this.requestUpdate();
-  }
-
-  openAddAIModelDialog() {
-    this.isAddingAIModel = true;
-  }
-
-  closeAIModelDialog() {
-    this.isAddingAIModel = false;
-  }
-
-  async handleAIModelCreated(event: CustomEvent) {
-    const newModel = event.detail.model;
-
-    // Reload models list
-    this.models = await getAIModels();
-
-    // Auto-select the newly created model
-    if (newModel && newModel.id) {
-      this.flow.ai_model_id = newModel.id;
-    }
-
-    this.requestUpdate();
   }
 
   renderTrackerTriggerFields() {

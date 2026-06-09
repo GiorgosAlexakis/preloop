@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   BudgetPolicy,
@@ -12,6 +12,7 @@ import {
   ManagedAgentSummary,
   fetchWithAuth,
 } from '../api.js';
+import type { User, UserListResponse } from '../types.js';
 import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -34,8 +35,8 @@ export class BudgetPolicyEditor extends LitElement {
   @state() private models: AIModel[] = [];
   @state() private agents: ManagedAgentSummary[] = [];
   @state() private loadingSubjects = false;
-  @state() private features: any = {};
-  @state() private availableUsers: any[] = [];
+  @state() private features: Record<string, boolean> = {};
+  @state() private availableUsers: User[] = [];
 
   // New Policy Form State
   @state() private newSubjectType = 'global';
@@ -105,6 +106,13 @@ export class BudgetPolicyEditor extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
+    const featuresRes = await fetchWithAuth('/api/v1/features')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    this.features = featuresRes?.features || {};
+    if (this.features.billing !== true) {
+      return;
+    }
     await this.loadPolicies();
     this.loadSubjects();
   }
@@ -123,32 +131,43 @@ export class BudgetPolicyEditor extends LitElement {
 
   async loadSubjects() {
     this.loadingSubjects = true;
+    this.error = '';
     try {
       const [models, agentsResponse, userProfile, featuresRes, usersRes] =
         await Promise.all([
-          getAIModels().catch(() => [] as AIModel[]),
-          getAccountAgents({ status: 'all', limit: 100 }).catch(() => ({
-            items: [] as ManagedAgentSummary[],
-          })),
-          fetchWithAuth('/api/v1/auth/users/me')
-            .then((r) => (r.ok ? r.json() : null))
-            .catch(() => null),
-          fetchWithAuth('/api/v1/features')
-            .then((r) => (r.ok ? r.json() : null))
-            .catch(() => null),
-          fetchWithAuth('/api/v1/users?limit=100')
-            .then((r) => (r.ok ? r.json() : null))
-            .catch(() => ({ users: [] })),
+          getAIModels(),
+          getAccountAgents({ status: 'all', limit: 100 }),
+          fetchWithAuth('/api/v1/auth/users/me').then((r) =>
+            r.ok ? r.json() : null
+          ),
+          fetchWithAuth('/api/v1/features').then((r) =>
+            r.ok ? r.json() : null
+          ),
+          fetchWithAuth('/api/v1/users?limit=100').then((r) =>
+            r.ok
+              ? r.json()
+              : ({
+                  users: [],
+                  total: 0,
+                  skip: 0,
+                  limit: 100,
+                } satisfies UserListResponse)
+          ),
         ]);
       this.models = models;
-      this.agents = (agentsResponse as any).items || [];
+      this.agents = agentsResponse.items || [];
       this.features = featuresRes?.features || {};
-      this.availableUsers = (usersRes as any).users || [];
+      this.availableUsers = (usersRes as UserListResponse).users || [];
       if (userProfile && !this.newEmails) {
         this.newEmails = userProfile.email;
       }
     } catch (e) {
       console.error('Failed to load subjects', e);
+      this.error =
+        'Failed to load budget policy subjects. Some selectors may be empty.';
+      this.models = [];
+      this.agents = [];
+      this.availableUsers = [];
     } finally {
       this.loadingSubjects = false;
     }
@@ -241,12 +260,17 @@ export class BudgetPolicyEditor extends LitElement {
   }
 
   render() {
+    if (this.features.billing !== true) {
+      return nothing;
+    }
+
     return html`
-      <div>
+      <div role="region" aria-labelledby="budget-policy-editor-title">
         <div
           style="display: flex; justify-content: space-between; align-items: center;"
         >
           <h4
+            id="budget-policy-editor-title"
             style="margin: 0; font-size: var(--sl-font-size-large); font-weight: var(--sl-font-weight-semibold); color: var(--sl-color-neutral-900);"
           >
             Budget Policies
@@ -270,6 +294,8 @@ export class BudgetPolicyEditor extends LitElement {
               <sl-alert
                 variant="danger"
                 open
+                role="alert"
+                aria-live="assertive"
                 style="margin-top: var(--sl-spacing-medium);"
               >
                 <sl-icon slot="icon" name="exclamation-octagon"></sl-icon>

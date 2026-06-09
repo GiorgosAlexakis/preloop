@@ -44,6 +44,12 @@ def test_lit_app_successful_login(page: Page):
     login form within the web components, and asserts that the dashboard
     is visible after a successful login.
     """
+    # Pre-set localStorage to dismiss the welcome card onboarding flow,
+    # ensuring the main dashboard view is rendered immediately.
+    page.add_init_script(
+        "window.localStorage.setItem('dashboard_welcome_dismissed', 'true')"
+    )
+
     # 1. Navigate directly to the login page to avoid any landing page routing issues
     page.goto(f"{BASE_URL}/login", wait_until="domcontentloaded")
 

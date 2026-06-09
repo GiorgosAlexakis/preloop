@@ -10,7 +10,7 @@ import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/format-date/format-date.js';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 
-import '../../../components/unified-session-history';
+import '../../../components/preloop-session-observer';
 import '../../../components/budget-policy-editor';
 import '../../../components/tools-editor-component';
 import '../../../components/view-header';
@@ -517,10 +517,20 @@ export class ApiKeyView extends LitElement {
             </sl-card>
 
             <sl-card>
-              <h2 class="section-header">Interactions Timeline</h2>
-              <unified-session-history
+              <h2 class="section-header">Session Observer</h2>
+              <preloop-session-observer
+                scope="api_key"
+                .scopeId=${this.keyId || ''}
                 .sessions=${this.usageSummary?.usage_by_session || []}
-              ></unified-session-history>
+                layout="embedded"
+                defaultReplayMode="timeline"
+                .features=${{
+                  summaries: true,
+                  optimization: this.featureFlags.session_optimization === true,
+                  auditLinks: true,
+                  liveFollow: true,
+                }}
+              ></preloop-session-observer>
             </sl-card>
           </div>
 

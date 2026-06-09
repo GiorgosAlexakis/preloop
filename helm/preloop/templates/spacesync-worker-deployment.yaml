@@ -127,6 +127,61 @@ spec:
             - name: MATTERMOST_WEBHOOK_URL
               value: {{ $.Values.notifications.mattermostWebhookUrl | quote }}
             {{- end }}
+            {{- if $.Values.computeBackend.provider }}
+            - name: COMPUTE_PROVIDER
+              value: {{ $.Values.computeBackend.provider | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.kubevirt.kubeconfigPath }}
+            - name: KUBEVIRT_KUBECONFIG_PATH
+              value: {{ $.Values.computeBackend.kubevirt.kubeconfigPath | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.kubevirt.namespace }}
+            - name: KUBEVIRT_NAMESPACE
+              value: {{ $.Values.computeBackend.kubevirt.namespace | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.kubevirt.vmImage }}
+            - name: KUBEVIRT_VM_IMAGE
+              value: {{ $.Values.computeBackend.kubevirt.vmImage | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.aws.accessKeyId }}
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ $.Values.computeBackend.aws.accessKeyId | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.aws.secretAccessKey }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "preloop.fullname" $ }}
+                  key: aws-secret-access-key
+            {{- end }}
+            {{- if $.Values.computeBackend.aws.defaultRegion }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ $.Values.computeBackend.aws.defaultRegion | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.aws.amiId }}
+            - name: AWS_AMI_ID
+              value: {{ $.Values.computeBackend.aws.amiId | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.aws.instanceType }}
+            - name: AWS_INSTANCE_TYPE
+              value: {{ $.Values.computeBackend.aws.instanceType | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.gcp.projectId }}
+            - name: GCP_PROJECT_ID
+              value: {{ $.Values.computeBackend.gcp.projectId | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.gcp.credentialsJsonPath }}
+            - name: GCP_CREDENTIALS_JSON_PATH
+              value: {{ $.Values.computeBackend.gcp.credentialsJsonPath | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.gcp.zone }}
+            - name: GCP_ZONE
+              value: {{ $.Values.computeBackend.gcp.zone | quote }}
+            {{- end }}
+            {{- if $.Values.computeBackend.gcp.machineType }}
+            - name: GCP_MACHINE_TYPE
+              value: {{ $.Values.computeBackend.gcp.machineType | quote }}
+            {{- end }}
             {{- if $.Values.githubApp.enabled }}
             - name: GITHUB_APP_ID
               value: {{ $.Values.githubApp.appId | quote }}

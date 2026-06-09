@@ -176,6 +176,34 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
         db.refresh(db_obj)
         return db_obj
 
+    def get_gateway_attempt_summary(
+        self,
+        db: Session,
+        *,
+        account_id: Any,
+        runtime_session_id: Any,
+        request_fingerprint: str,
+    ) -> Dict[str, Any]:
+        """Return prior attempts for the same logical gateway request."""
+        if not account_id or not runtime_session_id or not request_fingerprint:
+            return {"count": 0, "first_api_usage_id": None}
+
+        rows = (
+            db.query(ApiUsage.id)
+            .filter(
+                ApiUsage.account_id == account_id,
+                ApiUsage.runtime_session_id == runtime_session_id,
+                ApiUsage.action_type == "model_gateway",
+                ApiUsage.meta_data["request_fingerprint"].astext == request_fingerprint,
+            )
+            .order_by(ApiUsage.timestamp.asc())
+            .all()
+        )
+        return {
+            "count": len(rows),
+            "first_api_usage_id": str(rows[0].id) if rows else None,
+        }
+
     def get_user_usage(
         self,
         db: Session,
@@ -741,8 +769,19 @@ class CRUDApiUsage(CRUDBase[ApiUsage]):
                 ApiUsage.action_type == "model_gateway",
                 ApiUsage.flow_execution_id == execution_id,
             )
-            .one()
+            .first()
         )
+        if row is None:
+            return {
+                "api_requests": 0,
+                "token_usage": {
+                    "total_tokens": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                },
+                "estimated_cost": 0.0,
+                "has_pricing": False,
+            }
 
         return {
             "api_requests": int(row.api_requests or 0),

@@ -101,6 +101,12 @@ def test_index_interaction_upserts_gateway_search_document(db_session, test_user
         "model_alias": "openai/gpt-5",
         "request_payload_present": True,
         "response_payload_present": True,
+        "request_fingerprint": None,
+        "gateway_attempt": None,
+        "is_retry": None,
+        "retry_of_api_usage_id": None,
+        "error_detail": None,
+        "upstream_request_id": None,
     }
     assert (
         created.content_hash

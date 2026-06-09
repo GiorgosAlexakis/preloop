@@ -166,7 +166,6 @@ export class WelcomeView extends LitElement {
         padding: 0.75rem 1.25rem;
         margin-bottom: 1rem;
         border-radius: 0.25rem;
-        text-align: center;
       }
     `,
   ];

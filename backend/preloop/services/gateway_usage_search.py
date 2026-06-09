@@ -83,6 +83,7 @@ class GatewayUsageSearchService:
         response_payload: Optional[dict[str, Any]],
     ) -> dict[str, Any]:
         """Build compact metadata describing the corpus source."""
+        usage_meta = usage.meta_data or {}
         return {
             "source": "gateway_interaction",
             "endpoint": usage.endpoint,
@@ -90,6 +91,12 @@ class GatewayUsageSearchService:
             "status_code": usage.status_code,
             "provider_name": usage.provider_name,
             "model_alias": usage.model_alias,
+            "request_fingerprint": usage_meta.get("request_fingerprint"),
+            "gateway_attempt": usage_meta.get("gateway_attempt"),
+            "is_retry": usage_meta.get("is_retry"),
+            "retry_of_api_usage_id": usage_meta.get("retry_of_api_usage_id"),
+            "error_detail": usage_meta.get("error_detail"),
+            "upstream_request_id": usage.upstream_request_id,
             "request_payload_present": request_payload is not None,
             "response_payload_present": response_payload is not None,
         }
