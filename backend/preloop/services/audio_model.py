@@ -48,7 +48,8 @@ class AudioProviderBackend(Protocol):
         audio: bytes,
         filename: str,
         content_type: str,
-    ) -> str: ...
+    ) -> str:
+        pass
 
     def synthesize(
         self,
@@ -57,7 +58,8 @@ class AudioProviderBackend(Protocol):
         text: str,
         voice: str,
         response_format: str,
-    ) -> bytes: ...
+    ) -> bytes:
+        pass
 
 
 class OpenAIAudioProviderBackend:

@@ -212,6 +212,7 @@ class AgentControlClient:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                # Transient disconnects are retried on the next loop iteration.
                 pass
             if not self._stopped.is_set():
                 await _maybe_await(self._sleep(self.reconnect_delay_seconds))

@@ -151,6 +151,12 @@ def _extract_bearer_token(websocket: WebSocket) -> Optional[str]:
     if auth_header.startswith("Bearer "):
         return auth_header[7:]
     query_token = websocket.query_params.get("token")
+    if query_token:
+        logger.warning(
+            "Agent Control WebSocket authenticated via ?token= query parameter; "
+            "prefer Authorization: Bearer and redact token query params from "
+            "reverse-proxy access logs"
+        )
     return query_token or None
 
 

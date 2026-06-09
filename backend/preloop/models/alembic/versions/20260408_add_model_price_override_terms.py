@@ -11,6 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
+# revision identifiers, used by Alembic.
 revision: str = "20260408_price_override_terms"
 down_revision: Union[str, None] = "20260407_model_price_overrides"
 branch_labels: Union[str, Sequence[str], None] = None

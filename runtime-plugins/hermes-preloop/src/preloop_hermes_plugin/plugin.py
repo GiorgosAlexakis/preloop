@@ -16,7 +16,8 @@ from preloop.integrations.agent_control import (
     AgentControlCapabilities,
     AgentControlClient,
     AgentControlConfig,
-    AgentControlRuntimeHooks,
+    AgentControlResult,
+    OperatorCommand,
     create_hermes_agent_control_client,
     load_hermes_control_config,
 )
@@ -38,26 +39,54 @@ class HermesPreloopPlugin:
     def capabilities(self) -> AgentControlCapabilities:
         """Advertise the Hermes control surface exposed by this plugin."""
         return AgentControlCapabilities(
-            send_text_prompt=True,
-            send_voice_transcript=True,
             supports_new_session=True,
             supports_existing_session=True,
+            supports_text=True,
+            supports_voice=True,
             supports_interrupt=True,
         )
 
     async def start(self, hermes_runtime: Any | None = None) -> AgentControlClient:
         """Create and connect the Preloop WebSocket client."""
-        hooks = AgentControlRuntimeHooks(
-            send_text_prompt=self._build_text_handler(hermes_runtime),
-            send_voice_transcript=self._build_voice_handler(hermes_runtime),
-            interrupt=self._build_interrupt_handler(hermes_runtime),
-        )
+        config_path = self.config_path or Path.home() / ".hermes" / "config.yaml"
+
+        async def send_message(command: OperatorCommand) -> AgentControlResult:
+            metadata = dict(command.metadata)
+            if command.input_mode in {"voice", "voice_transcript"}:
+                if hermes_runtime and hasattr(hermes_runtime, "send_voice_transcript"):
+                    reply = await hermes_runtime.send_voice_transcript(
+                        command.text,
+                        metadata,
+                    )
+                elif hermes_runtime and hasattr(hermes_runtime, "send_prompt"):
+                    reply = await hermes_runtime.send_prompt(command.text, metadata)
+                else:
+                    raise RuntimeError("Hermes runtime voice hook is not available")
+            elif hermes_runtime and hasattr(hermes_runtime, "send_prompt"):
+                reply = await hermes_runtime.send_prompt(command.text, metadata)
+            else:
+                raise RuntimeError("Hermes runtime hook send_prompt is not available")
+            reply_text = str(reply) if reply is not None else ""
+            return AgentControlResult(
+                reply_text=reply_text,
+                session_reference=command.session_reference,
+            )
+
+        async def interrupt_session(session_reference: str | None) -> None:
+            if hermes_runtime and hasattr(hermes_runtime, "interrupt"):
+                await hermes_runtime.interrupt({"session_reference": session_reference})
+                return
+            raise RuntimeError("Hermes runtime interrupt hook is not available")
+
+        caps = self.capabilities()
         self.client = create_hermes_agent_control_client(
-            self.config_path,
-            runtime_hooks=hooks,
-            capabilities=self.capabilities(),
+            config_path,
+            send_message=send_message,
+            interrupt_session=interrupt_session,
+            supports_interrupt=caps.supports_interrupt,
+            supports_voice=caps.supports_voice,
         )
-        await self.client.connect_forever()
+        await self.client.run_forever()
         return self.client
 
     def verify(self) -> None:
@@ -138,39 +167,6 @@ class HermesPreloopPlugin:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(yaml.safe_dump(document, sort_keys=False))
         print(f"Wrote Preloop Agent Control config to {config_path}")
-
-    def _build_text_handler(self, hermes_runtime: Any | None) -> Any:
-        async def send_text_prompt(command: Any) -> Any:
-            if hermes_runtime and hasattr(hermes_runtime, "send_prompt"):
-                return await hermes_runtime.send_prompt(
-                    command.message, command.metadata
-                )
-            raise RuntimeError("Hermes runtime hook send_prompt is not available")
-
-        return send_text_prompt
-
-    def _build_voice_handler(self, hermes_runtime: Any | None) -> Any:
-        async def send_voice_transcript(command: Any) -> Any:
-            if hermes_runtime and hasattr(hermes_runtime, "send_voice_transcript"):
-                return await hermes_runtime.send_voice_transcript(
-                    command.message,
-                    command.metadata,
-                )
-            if hermes_runtime and hasattr(hermes_runtime, "send_prompt"):
-                return await hermes_runtime.send_prompt(
-                    command.message, command.metadata
-                )
-            raise RuntimeError("Hermes runtime voice hook is not available")
-
-        return send_voice_transcript
-
-    def _build_interrupt_handler(self, hermes_runtime: Any | None) -> Any:
-        async def interrupt(command: Any) -> Any:
-            if hermes_runtime and hasattr(hermes_runtime, "interrupt"):
-                return await hermes_runtime.interrupt(command.metadata)
-            raise RuntimeError("Hermes runtime interrupt hook is not available")
-
-        return interrupt
 
 
 plugin = HermesPreloopPlugin()

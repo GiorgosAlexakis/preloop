@@ -3570,13 +3570,25 @@ func ensureManagedAgentControlSidecar(
 		result["control_plugin_verification"] = fmt.Sprintf("failed to open managed sidecar log: %v", err)
 		return result
 	}
-	defer stdout.Close() //nolint:errcheck
+	defer func() {
+		if closeErr := stdout.Close(); closeErr != nil {
+			if msg, ok := result["control_plugin_verification"].(string); !ok || !strings.HasPrefix(msg, "failed to") {
+				result["control_plugin_verification"] = fmt.Sprintf("failed to close managed sidecar log: %v", closeErr)
+			}
+		}
+	}()
 	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		result["control_plugin_verification"] = fmt.Sprintf("failed to open managed sidecar error log: %v", err)
 		return result
 	}
-	defer stderr.Close() //nolint:errcheck
+	defer func() {
+		if closeErr := stderr.Close(); closeErr != nil {
+			if msg, ok := result["control_plugin_verification"].(string); !ok || !strings.HasPrefix(msg, "failed to") {
+				result["control_plugin_verification"] = fmt.Sprintf("failed to close managed sidecar error log: %v", closeErr)
+			}
+		}
+	}()
 
 	cmd := exec.Command(pythonPath, scriptPath, runtimeKey)
 	cmd.Stdout = stdout

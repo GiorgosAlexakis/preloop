@@ -862,8 +862,6 @@ export class PreloopFlowForm extends LitElement {
         );
       }
     }
-    const protocolLabel =
-      this.flow.agent_type === 'gemini' ? 'Gemini endpoint' : 'OpenAI endpoint';
     const builtinTools = this.availableTools.filter(
       (t) => t.source === 'builtin'
     );

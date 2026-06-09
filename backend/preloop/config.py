@@ -46,8 +46,22 @@ class DatabaseSettings(BaseModel):
     """Database configuration."""
 
     url: str = Field(..., description="Database URL")
-    pool_size: int = Field(20, description="Database connection pool size")
-    max_overflow: int = Field(40, description="Maximum number of overflow connections")
+    pool_size: int = Field(
+        20,
+        description=(
+            "Database connection pool size per worker process. With default "
+            "max_overflow this allows up to 60 concurrent connections per worker "
+            "(pool_size + max_overflow). Reduce both values on small Postgres "
+            "instances or when running many workers."
+        ),
+    )
+    max_overflow: int = Field(
+        40,
+        description=(
+            "Maximum overflow connections beyond pool_size for each worker. "
+            "Total peak connections per worker is pool_size + max_overflow."
+        ),
+    )
     pool_timeout: int = Field(30, description="Pool timeout in seconds")
     pool_recycle: int = Field(1800, description="Pool recycle time in seconds")
 

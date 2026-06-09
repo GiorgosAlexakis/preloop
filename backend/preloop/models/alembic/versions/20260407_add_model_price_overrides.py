@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
+# revision identifiers, used by Alembic.
 revision: str = "20260407_model_price_overrides"
 down_revision: Union[str, None] = "20260406_agent_model_bindings"
 branch_labels: Union[str, Sequence[str], None] = None

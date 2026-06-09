@@ -1,5 +1,6 @@
 """Authentication for the API, including JWT tokens and API keys."""
 
+import hashlib
 import logging
 import os
 import uuid
@@ -43,6 +44,14 @@ oauth2_scheme_optional = OAuth2PasswordBearer(
 
 # Logger
 logger = logging.getLogger(__name__)
+
+
+def _token_log_fingerprint(token: str) -> str:
+    """Return a non-reversible fingerprint for auth debug logs."""
+
+    if not token:
+        return "empty"
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
 
 
 @dataclass(frozen=True)
@@ -364,7 +373,7 @@ def get_current_user(
     Raises:
         HTTPException: If the token is invalid or the user doesn't exist.
     """
-    logger.info(f"Authenticating token: {token[:10]}...")
+    logger.info(f"Authenticating token fingerprint: {_token_log_fingerprint(token)}")
     # If token looks like an API key (no periods, which JWT has), try API key first
     # Most API keys are random alphanumeric strings without dots
     if token and "." not in token:
@@ -373,7 +382,9 @@ def get_current_user(
         )
         try:
             # Look up the API key using CRUD
-            logger.info(f"Looking up API key: {token[:10]}...")
+            logger.info(
+                f"Looking up API key fingerprint: {_token_log_fingerprint(token)}"
+            )
             api_key = crud_api_key.get_by_key(db, key=token)
 
             if api_key:
@@ -468,11 +479,15 @@ def get_current_user(
             )
             try:
                 # Look up the API key using CRUD
-                logger.info(f"Looking up API key: {token[:10]}...")
+                logger.info(
+                    f"Looking up API key fingerprint: {_token_log_fingerprint(token)}"
+                )
                 api_key = crud_api_key.get_by_key(db, key=token)
 
                 if not api_key:
-                    logger.warning(f"API key not found: {token[:10]}...")
+                    logger.warning(
+                        f"API key not found: {_token_log_fingerprint(token)}"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Invalid API key",
