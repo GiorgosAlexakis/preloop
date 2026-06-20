@@ -208,6 +208,13 @@ class AccountRuntimeSessionListResponse(BaseModel):
     query: Optional[str] = None
     session_source_type: Optional[str] = None
     status: str = "all"
+    min_tokens: Optional[int] = None
+    max_tokens: Optional[int] = None
+    min_cost: Optional[float] = None
+    max_cost: Optional[float] = None
+    tool_name: Optional[str] = None
+    sort_by: str = "last_activity"
+    sort_dir: str = "desc"
     total: int = 0
     limit: int = 20
     offset: int = 0

@@ -21,9 +21,20 @@ from sqlalchemy.orm import Session
 from ..models.api_usage import ApiUsage
 from ..models.flow import Flow
 from ..models.runtime_session import RuntimeSession
+from ..models.runtime_session_activity import RuntimeSessionActivity
 from .base import CRUDBase
 
 _summary_columns_cache: dict[int, bool] = {}
+
+SESSION_LIST_SORT_FIELDS = frozenset(
+    {
+        "last_activity",
+        "total_tokens",
+        "estimated_cost",
+        "total_requests",
+        "started_at",
+    }
+)
 
 
 def _gateway_usage_base_query(
@@ -47,6 +58,49 @@ def _gateway_usage_base_query(
     if ai_model_id is not None:
         query = query.filter(ApiUsage.ai_model_id == ai_model_id)
     return query
+
+
+def _usage_aggregate_filter_subquery(
+    db: Session,
+    *,
+    account_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    ai_model_id: Optional[str] = None,
+    min_tokens: Optional[int] = None,
+    max_tokens: Optional[int] = None,
+    min_cost: Optional[float] = None,
+    max_cost: Optional[float] = None,
+) -> Any:
+    """Return sessions whose gateway usage aggregates satisfy token/cost bounds."""
+    query = db.query(ApiUsage.runtime_session_id).filter(
+        ApiUsage.account_id == account_id,
+        ApiUsage.runtime_session_id.isnot(None),
+        ApiUsage.action_type == "model_gateway",
+    )
+    if start_date is not None:
+        query = query.filter(ApiUsage.timestamp >= start_date)
+    if end_date is not None:
+        query = query.filter(ApiUsage.timestamp < end_date)
+    if ai_model_id is not None:
+        query = query.filter(ApiUsage.ai_model_id == ai_model_id)
+
+    total_tokens_expr = func.coalesce(func.sum(ApiUsage.total_tokens), 0)
+    estimated_cost_expr = func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
+    having_clauses: list[Any] = []
+    if min_tokens is not None:
+        having_clauses.append(total_tokens_expr >= min_tokens)
+    if max_tokens is not None:
+        having_clauses.append(total_tokens_expr <= max_tokens)
+    if min_cost is not None:
+        having_clauses.append(estimated_cost_expr >= min_cost)
+    if max_cost is not None:
+        having_clauses.append(estimated_cost_expr <= max_cost)
+
+    query = query.group_by(ApiUsage.runtime_session_id)
+    if having_clauses:
+        query = query.having(and_(*having_clauses))
+    return query.subquery()
 
 
 def _latest_gateway_usage_for_session(
@@ -289,6 +343,13 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         runtime_principal_type: Optional[str] = None,
         runtime_principal_id: Optional[str] = None,
         min_requests: Optional[int] = None,
+        min_tokens: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+        min_cost: Optional[float] = None,
+        max_cost: Optional[float] = None,
+        tool_name: Optional[str] = None,
+        sort_by: str = "last_activity",
+        sort_dir: str = "desc",
         status: str = "all",
         limit: int = 20,
         offset: int = 0,
@@ -360,6 +421,38 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             session_query = session_query.filter(
                 self.model.id.in_(usage_count_subq.select())
             )
+        if any(
+            value is not None
+            for value in (min_tokens, max_tokens, min_cost, max_cost)
+        ):
+            usage_filter_subq = _usage_aggregate_filter_subquery(
+                db,
+                account_id=account_id,
+                start_date=start_date,
+                end_date=end_date,
+                ai_model_id=ai_model_id,
+                min_tokens=min_tokens,
+                max_tokens=max_tokens,
+                min_cost=min_cost,
+                max_cost=max_cost,
+            )
+            session_query = session_query.filter(
+                self.model.id.in_(db.query(usage_filter_subq.c.runtime_session_id))
+            )
+        if tool_name:
+            normalized_tool_name = f"%{' '.join(tool_name.strip().split())}%"
+            matching_session_ids = (
+                db.query(RuntimeSessionActivity.runtime_session_id)
+                .filter(
+                    RuntimeSessionActivity.account_id == account_id,
+                    RuntimeSessionActivity.activity_type == "tool_call",
+                    RuntimeSessionActivity.tool_name.ilike(normalized_tool_name),
+                )
+                .distinct()
+            )
+            session_query = session_query.filter(
+                self.model.id.in_(matching_session_ids)
+            )
         if session_source_type:
             session_query = session_query.filter(
                 self.model.session_source_type == session_source_type
@@ -382,6 +475,11 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             start_date=start_date, end_date=end_date, ai_model_id=ai_model_id
         )
 
+        normalized_sort_by = (
+            sort_by if sort_by in SESSION_LIST_SORT_FIELDS else "last_activity"
+        )
+        normalized_sort_dir = "asc" if sort_dir == "asc" else "desc"
+
         rows = (
             self._account_sessions_query(
                 session_query=session_query,
@@ -389,11 +487,9 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
                 summary_columns_available=self._summary_columns_available(db),
             )
             .order_by(
-                func.coalesce(
-                    func.max(ApiUsage.timestamp),
-                    self.model.last_activity_at,
-                    self.model.started_at,
-                ).desc()
+                self._session_list_order_by(
+                    normalized_sort_by, normalized_sort_dir
+                )
             )
             .limit(limit)
             .offset(offset)
@@ -421,6 +517,32 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             items.append(summary)
 
         return {"total": total, "items": items}
+
+    def _session_list_order_by(self, sort_by: str, sort_dir: str) -> Any:
+        """Return the ORDER BY clause for runtime session list queries."""
+        descending = sort_dir != "asc"
+
+        def _apply_direction(expression: Any) -> Any:
+            return expression.desc() if descending else expression.asc()
+
+        if sort_by == "total_tokens":
+            return _apply_direction(func.coalesce(func.sum(ApiUsage.total_tokens), 0))
+        if sort_by == "estimated_cost":
+            return _apply_direction(
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
+            )
+        if sort_by == "total_requests":
+            return _apply_direction(func.count(ApiUsage.id))
+        if sort_by == "started_at":
+            return _apply_direction(self.model.started_at)
+
+        return _apply_direction(
+            func.coalesce(
+                func.max(ApiUsage.timestamp),
+                self.model.last_activity_at,
+                self.model.started_at,
+            )
+        )
 
     def _account_sessions_query(
         self,
