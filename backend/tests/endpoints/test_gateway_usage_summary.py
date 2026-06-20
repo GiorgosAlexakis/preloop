@@ -555,6 +555,110 @@ def test_account_runtime_sessions_endpoints(client, db_session, test_user):
     assert "deployment risk" in interactions_body["items"][0]["excerpt"].lower()
 
 
+def test_account_runtime_sessions_filter_and_sort_usage_tool_fields(
+    client, db_session, test_user
+):
+    """Runtime session lists should filter by usage/tool fields and sort aggregates."""
+    matching_low = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-filter-low",
+        session_reference="filter-low",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-filter-low",
+        runtime_principal_name="Low Token Workspace",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
+    )
+    matching_high = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-filter-high",
+        session_reference="filter-high",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-filter-high",
+        runtime_principal_name="High Token Workspace",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
+    )
+    non_matching_tool = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-filter-other",
+        session_reference="filter-other",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-filter-other",
+        runtime_principal_name="Other Tool Workspace",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
+    )
+    db_session.commit()
+
+    for runtime_session, tokens, cost, tool_name in (
+        (matching_low, 100, 0.5, "search_issues"),
+        (matching_high, 800, 0.55, "search_issues"),
+        (non_matching_tool, 900, 0.52, "create_issue"),
+    ):
+        crud_api_usage.log_gateway_request(
+            db_session,
+            endpoint="/anthropic/v1/messages",
+            method="POST",
+            status_code=200,
+            duration=0.1,
+            user_id=str(test_user.id),
+            account_id=str(test_user.account_id),
+            runtime_session_id=str(runtime_session.id),
+            model_alias="anthropic/claude-sonnet-4",
+            provider_name="anthropic",
+            prompt_tokens=tokens,
+            completion_tokens=0,
+            total_tokens=tokens,
+            estimated_cost=cost,
+            runtime_principal_type="claude_code",
+            runtime_principal_id=str(runtime_session.session_source_id),
+            runtime_principal_name=runtime_session.runtime_principal_name,
+        )
+        crud_runtime_session_activity.log_tool_call(
+            db_session,
+            account_id=test_user.account_id,
+            runtime_session_id=runtime_session.id,
+            server_name="github",
+            tool_name=tool_name,
+            status="success",
+        )
+
+    response = client.get(
+        "/api/v1/runtime-sessions",
+        params={
+            "tool_name": "search",
+            "min_total_tokens": 50,
+            "min_estimated_cost": 0.4,
+            "max_estimated_cost": 0.6,
+            "sort_by": "total_tokens",
+            "sort_order": "desc",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tool_name"] == "search"
+    assert body["min_total_tokens"] == 50
+    assert body["min_estimated_cost"] == 0.4
+    assert body["max_estimated_cost"] == 0.6
+    assert body["sort_by"] == "total_tokens"
+    assert body["sort_order"] == "desc"
+    assert body["total"] == 2
+    assert [item["id"] for item in body["items"]] == [
+        str(matching_high.id),
+        str(matching_low.id),
+    ]
+    assert body["items"][0]["token_usage"]["total_tokens"] == 800
+    assert body["items"][0]["tools_used"] == ["search_issues"]
+
+
 def test_account_runtime_sessions_use_most_recent_model_alias(
     client, db_session, test_user
 ):

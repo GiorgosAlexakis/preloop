@@ -198,6 +198,7 @@ class RuntimeSessionSummary(BaseModel):
     token_usage: GatewayTokenUsage
     estimated_cost: float = 0.0
     last_request_at: Optional[datetime] = None
+    tools_used: List[str] = Field(default_factory=list)
 
 
 class AccountRuntimeSessionListResponse(BaseModel):
@@ -208,6 +209,13 @@ class AccountRuntimeSessionListResponse(BaseModel):
     query: Optional[str] = None
     session_source_type: Optional[str] = None
     status: str = "all"
+    tool_name: Optional[str] = None
+    min_total_tokens: Optional[int] = None
+    max_total_tokens: Optional[int] = None
+    min_estimated_cost: Optional[float] = None
+    max_estimated_cost: Optional[float] = None
+    sort_by: str = "last_activity"
+    sort_order: str = "desc"
     total: int = 0
     limit: int = 20
     offset: int = 0

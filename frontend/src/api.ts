@@ -291,10 +291,26 @@ export interface GatewayUsageSearchParams extends GatewayUsageSummaryParams {
   offset?: number;
 }
 
+export type RuntimeSessionSortBy =
+  | 'last_activity'
+  | 'total_tokens'
+  | 'estimated_cost'
+  | 'request_count'
+  | 'tool_name';
+
+export type RuntimeSessionSortOrder = 'asc' | 'desc';
+
 export interface RuntimeSessionListParams extends GatewayUsageSummaryParams {
   query?: string;
   sessionSourceType?: string;
   status?: 'all' | 'active' | 'ended';
+  toolName?: string;
+  minTotalTokens?: number;
+  maxTotalTokens?: number;
+  minEstimatedCost?: number;
+  maxEstimatedCost?: number;
+  sortBy?: RuntimeSessionSortBy;
+  sortOrder?: RuntimeSessionSortOrder;
   limit?: number;
   offset?: number;
 }
@@ -392,6 +408,27 @@ function buildRuntimeSessionListQuery(
   }
   if (params.status) {
     queryParams.set('status', params.status);
+  }
+  if (params.toolName) {
+    queryParams.set('tool_name', params.toolName);
+  }
+  if (typeof params.minTotalTokens === 'number') {
+    queryParams.set('min_total_tokens', String(params.minTotalTokens));
+  }
+  if (typeof params.maxTotalTokens === 'number') {
+    queryParams.set('max_total_tokens', String(params.maxTotalTokens));
+  }
+  if (typeof params.minEstimatedCost === 'number') {
+    queryParams.set('min_estimated_cost', String(params.minEstimatedCost));
+  }
+  if (typeof params.maxEstimatedCost === 'number') {
+    queryParams.set('max_estimated_cost', String(params.maxEstimatedCost));
+  }
+  if (params.sortBy) {
+    queryParams.set('sort_by', params.sortBy);
+  }
+  if (params.sortOrder) {
+    queryParams.set('sort_order', params.sortOrder);
   }
   if (typeof params.limit === 'number') {
     queryParams.set('limit', String(params.limit));

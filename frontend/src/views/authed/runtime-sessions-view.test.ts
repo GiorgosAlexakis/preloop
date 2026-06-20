@@ -45,6 +45,13 @@ describe('RuntimeSessionsView', () => {
             query: null,
             session_source_type: null,
             status: 'all',
+            tool_name: null,
+            min_total_tokens: null,
+            max_total_tokens: null,
+            min_estimated_cost: null,
+            max_estimated_cost: null,
+            sort_by: 'last_activity',
+            sort_order: 'desc',
             total: 2,
             limit: 50,
             offset: 0,
@@ -77,6 +84,7 @@ describe('RuntimeSessionsView', () => {
                 },
                 estimated_cost: 0.42,
                 last_request_at: '2026-03-09T20:00:00Z',
+                tools_used: ['search_issues'],
               },
               {
                 id: 'runtime-session-2',
@@ -106,6 +114,7 @@ describe('RuntimeSessionsView', () => {
                 },
                 estimated_cost: 0.11,
                 last_request_at: '2026-03-09T19:15:00Z',
+                tools_used: ['get_issue', 'search_issues'],
               },
             ],
           }),
@@ -508,6 +517,44 @@ describe('RuntimeSessionsView', () => {
 
     expect(listCall).to.not.equal(undefined);
     expect(detailCall).to.not.equal(undefined);
+  });
+
+  it('passes usage, tool, and sort filters to the session list API', async () => {
+    const element = (await fixture(
+      html`<runtime-sessions-view></runtime-sessions-view>`
+    )) as RuntimeSessionsView;
+
+    await waitUntil(
+      () => !(element as any).loading && !(element as any).detailLoading,
+      'Runtime sessions view did not finish loading'
+    );
+
+    fetchStub.resetHistory();
+    (element as any).toolName = 'search_issues';
+    (element as any).minTotalTokens = '100';
+    (element as any).maxTotalTokens = '2000';
+    (element as any).minEstimatedCost = '0.10';
+    (element as any).maxEstimatedCost = '1.25';
+    (element as any).sortBy = 'estimated_cost';
+    (element as any).sortOrder = 'asc';
+
+    await (element as any).applyFilters();
+
+    const listCall = fetchStub
+      .getCalls()
+      .find((call) =>
+        String(call.args[0]).startsWith('/api/v1/runtime-sessions?')
+      );
+    expect(listCall).to.not.equal(undefined);
+
+    const url = new URL(String(listCall?.args[0]), 'http://localhost');
+    expect(url.searchParams.get('tool_name')).to.equal('search_issues');
+    expect(url.searchParams.get('min_total_tokens')).to.equal('100');
+    expect(url.searchParams.get('max_total_tokens')).to.equal('2000');
+    expect(url.searchParams.get('min_estimated_cost')).to.equal('0.1');
+    expect(url.searchParams.get('max_estimated_cost')).to.equal('1.25');
+    expect(url.searchParams.get('sort_by')).to.equal('estimated_cost');
+    expect(url.searchParams.get('sort_order')).to.equal('asc');
   });
 
   it('shows flow-backed session content from execution gateway events', async () => {

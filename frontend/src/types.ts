@@ -258,6 +258,7 @@ export interface RuntimeSessionSummary {
   token_usage: GatewayTokenUsage;
   estimated_cost: number;
   last_request_at: string | null;
+  tools_used?: string[];
 }
 
 export interface AccountRuntimeSessionListResponse {
@@ -266,6 +267,18 @@ export interface AccountRuntimeSessionListResponse {
   query: string | null;
   session_source_type: string | null;
   status: 'all' | 'active' | 'ended';
+  tool_name: string | null;
+  min_total_tokens: number | null;
+  max_total_tokens: number | null;
+  min_estimated_cost: number | null;
+  max_estimated_cost: number | null;
+  sort_by:
+    | 'last_activity'
+    | 'total_tokens'
+    | 'estimated_cost'
+    | 'request_count'
+    | 'tool_name';
+  sort_order: 'asc' | 'desc';
   total: number;
   limit: number;
   offset: number;

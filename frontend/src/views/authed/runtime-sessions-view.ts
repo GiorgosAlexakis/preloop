@@ -26,6 +26,8 @@ import {
   type RuntimeSessionDetailParams,
   type RuntimeSessionInteractionsParams,
   type RuntimeSessionListParams,
+  type RuntimeSessionSortBy,
+  type RuntimeSessionSortOrder,
 } from '../../api';
 import type {
   AccountGatewayUsageSearchResponse,
@@ -93,6 +95,27 @@ export class RuntimeSessionsView extends LitElement {
 
   @state()
   private status = 'all';
+
+  @state()
+  private toolName = '';
+
+  @state()
+  private minTotalTokens = '';
+
+  @state()
+  private maxTotalTokens = '';
+
+  @state()
+  private minEstimatedCost = '';
+
+  @state()
+  private maxEstimatedCost = '';
+
+  @state()
+  private sortBy: RuntimeSessionSortBy = 'last_activity';
+
+  @state()
+  private sortOrder: RuntimeSessionSortOrder = 'desc';
 
   @state()
   private interactionQuery = '';
@@ -618,6 +641,8 @@ export class RuntimeSessionsView extends LitElement {
     const params: RuntimeSessionListParams = {
       limit: 50,
       status: this.status as 'all' | 'active' | 'ended',
+      sortBy: this.sortBy,
+      sortOrder: this.sortOrder,
     };
 
     if (this.startDate) {
@@ -632,8 +657,37 @@ export class RuntimeSessionsView extends LitElement {
     if (this.sessionSourceType !== 'all') {
       params.sessionSourceType = this.sessionSourceType;
     }
+    if (this.toolName.trim()) {
+      params.toolName = this.toolName.trim();
+    }
+
+    const minTotalTokens = this.parseNumberFilter(this.minTotalTokens);
+    const maxTotalTokens = this.parseNumberFilter(this.maxTotalTokens);
+    const minEstimatedCost = this.parseNumberFilter(this.minEstimatedCost);
+    const maxEstimatedCost = this.parseNumberFilter(this.maxEstimatedCost);
+    if (minTotalTokens !== undefined) {
+      params.minTotalTokens = minTotalTokens;
+    }
+    if (maxTotalTokens !== undefined) {
+      params.maxTotalTokens = maxTotalTokens;
+    }
+    if (minEstimatedCost !== undefined) {
+      params.minEstimatedCost = minEstimatedCost;
+    }
+    if (maxEstimatedCost !== undefined) {
+      params.maxEstimatedCost = maxEstimatedCost;
+    }
 
     return params;
+  }
+
+  private parseNumberFilter(value: string): number | undefined {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
   }
 
   private buildDetailParams(): RuntimeSessionDetailParams {
@@ -850,6 +904,46 @@ export class RuntimeSessionsView extends LitElement {
     this.status = (event.target as HTMLInputElement & { value: string }).value;
   }
 
+  private handleToolNameChange(event: Event) {
+    this.toolName = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleMinTotalTokensChange(event: Event) {
+    this.minTotalTokens = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleMaxTotalTokensChange(event: Event) {
+    this.maxTotalTokens = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleMinEstimatedCostChange(event: Event) {
+    this.minEstimatedCost = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleMaxEstimatedCostChange(event: Event) {
+    this.maxEstimatedCost = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleSortByChange(event: Event) {
+    this.sortBy = (event.target as HTMLInputElement & { value: string })
+      .value as RuntimeSessionSortBy;
+  }
+
+  private handleSortOrderChange(event: Event) {
+    this.sortOrder = (event.target as HTMLInputElement & { value: string })
+      .value as RuntimeSessionSortOrder;
+  }
+
   private handleInteractionQueryChange(event: Event) {
     this.interactionQuery = (
       event.target as HTMLInputElement & { value: string }
@@ -880,6 +974,13 @@ export class RuntimeSessionsView extends LitElement {
     this.searchQuery = '';
     this.sessionSourceType = 'all';
     this.status = 'all';
+    this.toolName = '';
+    this.minTotalTokens = '';
+    this.maxTotalTokens = '';
+    this.minEstimatedCost = '';
+    this.maxEstimatedCost = '';
+    this.sortBy = 'last_activity';
+    this.sortOrder = 'desc';
     this.interactionQuery = '';
     await this.loadSessions();
   }
@@ -1100,6 +1201,17 @@ export class RuntimeSessionsView extends LitElement {
                 ${this.formatNumber(session.token_usage.total_tokens)} tokens ·
                 ${this.formatCost(session.estimated_cost)}
               </div>
+              ${session.tools_used?.length
+                ? html`
+                    <div class="session-item-meta">
+                      Tools
+                      ${session.tools_used.slice(0, 3).join(', ')}${session
+                        .tools_used.length > 3
+                        ? ` +${session.tools_used.length - 3} more`
+                        : ''}
+                    </div>
+                  `
+                : ''}
               <div class="session-item-meta">
                 Last activity
                 ${this.formatDateTime(
@@ -1818,6 +1930,61 @@ export class RuntimeSessionsView extends LitElement {
                   <sl-option value="all">All</sl-option>
                   <sl-option value="active">Active</sl-option>
                   <sl-option value="ended">Ended</sl-option>
+                </sl-select>
+                <sl-input
+                  label="Tool name"
+                  placeholder="search_issues"
+                  .value=${this.toolName}
+                  @sl-input=${this.handleToolNameChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  label="Min tokens"
+                  .value=${this.minTotalTokens}
+                  @sl-input=${this.handleMinTotalTokensChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  label="Max tokens"
+                  .value=${this.maxTotalTokens}
+                  @sl-input=${this.handleMaxTotalTokensChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  label="Min cost"
+                  .value=${this.minEstimatedCost}
+                  @sl-input=${this.handleMinEstimatedCostChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  label="Max cost"
+                  .value=${this.maxEstimatedCost}
+                  @sl-input=${this.handleMaxEstimatedCostChange}
+                ></sl-input>
+                <sl-select
+                  label="Sort by"
+                  value=${this.sortBy}
+                  @sl-change=${this.handleSortByChange}
+                >
+                  <sl-option value="last_activity">Last activity</sl-option>
+                  <sl-option value="total_tokens">Token usage</sl-option>
+                  <sl-option value="estimated_cost">Cost</sl-option>
+                  <sl-option value="request_count">Requests</sl-option>
+                  <sl-option value="tool_name">Tool name</sl-option>
+                </sl-select>
+                <sl-select
+                  label="Sort order"
+                  value=${this.sortOrder}
+                  @sl-change=${this.handleSortOrderChange}
+                >
+                  <sl-option value="desc">Descending</sl-option>
+                  <sl-option value="asc">Ascending</sl-option>
                 </sl-select>
                 <div class="filters-actions">
                   <sl-button variant="primary" @click=${this.applyFilters}>

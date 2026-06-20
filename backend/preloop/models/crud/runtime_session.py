@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from ..models.api_usage import ApiUsage
 from ..models.flow import Flow
 from ..models.runtime_session import RuntimeSession
+from ..models.runtime_session_activity import RuntimeSessionActivity
 from .base import CRUDBase
 
 _summary_columns_cache: dict[int, bool] = {}
@@ -289,6 +290,13 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         runtime_principal_type: Optional[str] = None,
         runtime_principal_id: Optional[str] = None,
         min_requests: Optional[int] = None,
+        tool_name: Optional[str] = None,
+        min_total_tokens: Optional[int] = None,
+        max_total_tokens: Optional[int] = None,
+        min_estimated_cost: Optional[float] = None,
+        max_estimated_cost: Optional[float] = None,
+        sort_by: str = "last_activity",
+        sort_order: str = "desc",
         status: str = "all",
         limit: int = 20,
         offset: int = 0,
@@ -377,28 +385,48 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         elif status == "ended":
             session_query = session_query.filter(self.model.ended_at.isnot(None))
 
-        total = session_query.count()
+        if tool_name:
+            normalized_tool_name = f"%{' '.join(tool_name.strip().split())}%"
+            matching_tool_session_ids = (
+                db.query(RuntimeSessionActivity.runtime_session_id)
+                .filter(
+                    RuntimeSessionActivity.account_id == account_id,
+                    RuntimeSessionActivity.activity_type == "tool_call",
+                    RuntimeSessionActivity.tool_name.isnot(None),
+                    RuntimeSessionActivity.tool_name.ilike(normalized_tool_name),
+                )
+                .distinct()
+            )
+            session_query = session_query.filter(
+                self.model.id.in_(matching_tool_session_ids)
+            )
+
         usage_join = self._usage_join_conditions(
             start_date=start_date, end_date=end_date, ai_model_id=ai_model_id
         )
 
-        rows = (
-            self._account_sessions_query(
-                session_query=session_query,
-                usage_join=usage_join,
-                summary_columns_available=self._summary_columns_available(db),
-            )
-            .order_by(
-                func.coalesce(
-                    func.max(ApiUsage.timestamp),
-                    self.model.last_activity_at,
-                    self.model.started_at,
-                ).desc()
-            )
-            .limit(limit)
-            .offset(offset)
-            .all()
+        aggregate_query = self._account_sessions_query(
+            session_query=session_query,
+            usage_join=usage_join,
+            summary_columns_available=self._summary_columns_available(db),
         )
+        aggregate_query = self._apply_aggregate_filters(
+            aggregate_query,
+            min_total_tokens=min_total_tokens,
+            max_total_tokens=max_total_tokens,
+            min_estimated_cost=min_estimated_cost,
+            max_estimated_cost=max_estimated_cost,
+        )
+        aggregate_query, sort_clauses = self._apply_session_sort(
+            db,
+            aggregate_query=aggregate_query,
+            account_id=account_id,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+
+        total = aggregate_query.order_by(None).count()
+        rows = aggregate_query.order_by(*sort_clauses).limit(limit).offset(offset).all()
 
         session_ids = [str(row.id) for row in rows]
         latest_usage_by_session = _latest_gateway_usage_for_sessions(
@@ -409,10 +437,16 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             end_date=end_date,
             ai_model_id=ai_model_id,
         )
+        tools_by_session = self._tools_used_for_sessions(
+            db,
+            account_id=account_id,
+            runtime_session_ids=session_ids,
+        )
 
         items = []
         for row in rows:
             summary = self._row_to_summary(row)
+            summary["tools_used"] = tools_by_session.get(str(row.id), [])
             latest_usage = latest_usage_by_session.get(str(row.id))
             if latest_usage is not None:
                 summary["latest_model_alias"] = latest_usage.model_alias
@@ -421,6 +455,157 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             items.append(summary)
 
         return {"total": total, "items": items}
+
+    def _apply_aggregate_filters(
+        self,
+        aggregate_query: Any,
+        *,
+        min_total_tokens: Optional[int],
+        max_total_tokens: Optional[int],
+        min_estimated_cost: Optional[float],
+        max_estimated_cost: Optional[float],
+    ) -> Any:
+        """Apply filters that depend on session-level gateway aggregates."""
+        total_tokens = self._total_tokens_expression()
+        estimated_cost = self._estimated_cost_expression()
+
+        if min_total_tokens is not None:
+            aggregate_query = aggregate_query.having(total_tokens >= min_total_tokens)
+        if max_total_tokens is not None:
+            aggregate_query = aggregate_query.having(total_tokens <= max_total_tokens)
+        if min_estimated_cost is not None:
+            aggregate_query = aggregate_query.having(
+                estimated_cost >= min_estimated_cost
+            )
+        if max_estimated_cost is not None:
+            aggregate_query = aggregate_query.having(
+                estimated_cost <= max_estimated_cost
+            )
+        return aggregate_query
+
+    def _apply_session_sort(
+        self,
+        db: Session,
+        *,
+        aggregate_query: Any,
+        account_id: str,
+        sort_by: str,
+        sort_order: str,
+    ) -> tuple[Any, list[Any]]:
+        """Attach the requested session sort expression and stable tie-breakers."""
+        normalized_sort_by = (
+            sort_by if sort_by in self._allowed_sort_fields() else "last_activity"
+        )
+        normalized_sort_order = "asc" if sort_order == "asc" else "desc"
+
+        if normalized_sort_by == "total_tokens":
+            primary_sort = self._total_tokens_expression()
+        elif normalized_sort_by == "estimated_cost":
+            primary_sort = self._estimated_cost_expression()
+        elif normalized_sort_by == "request_count":
+            primary_sort = func.count(ApiUsage.id)
+        elif normalized_sort_by == "tool_name":
+            tool_sort_subq = (
+                db.query(
+                    RuntimeSessionActivity.runtime_session_id.label(
+                        "runtime_session_id"
+                    ),
+                    func.min(func.lower(RuntimeSessionActivity.tool_name)).label(
+                        "tool_sort_key"
+                    ),
+                )
+                .filter(
+                    RuntimeSessionActivity.account_id == account_id,
+                    RuntimeSessionActivity.activity_type == "tool_call",
+                    RuntimeSessionActivity.tool_name.isnot(None),
+                )
+                .group_by(RuntimeSessionActivity.runtime_session_id)
+                .subquery()
+            )
+            aggregate_query = aggregate_query.outerjoin(
+                tool_sort_subq,
+                self.model.id == tool_sort_subq.c.runtime_session_id,
+            )
+            primary_sort = func.min(tool_sort_subq.c.tool_sort_key)
+        else:
+            primary_sort = self._last_activity_expression()
+
+        primary_clause = (
+            primary_sort.asc()
+            if normalized_sort_order == "asc"
+            else primary_sort.desc()
+        )
+        primary_clause = primary_clause.nullslast()
+
+        sort_clauses = [primary_clause]
+        if normalized_sort_by != "last_activity":
+            sort_clauses.append(self._last_activity_expression().desc())
+        sort_clauses.append(self.model.id.asc())
+        return aggregate_query, sort_clauses
+
+    @staticmethod
+    def _allowed_sort_fields() -> set[str]:
+        return {
+            "last_activity",
+            "total_tokens",
+            "estimated_cost",
+            "request_count",
+            "tool_name",
+        }
+
+    @staticmethod
+    def _last_activity_expression() -> Any:
+        return func.coalesce(
+            func.max(ApiUsage.timestamp),
+            RuntimeSession.last_activity_at,
+            RuntimeSession.started_at,
+        )
+
+    @staticmethod
+    def _total_tokens_expression() -> Any:
+        return func.coalesce(func.sum(ApiUsage.total_tokens), 0)
+
+    @staticmethod
+    def _estimated_cost_expression() -> Any:
+        return func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
+
+    def _tools_used_for_sessions(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        runtime_session_ids: list[str],
+    ) -> dict[str, list[str]]:
+        """Return distinct tool names used by each runtime session."""
+        if not runtime_session_ids:
+            return {}
+
+        tools_by_session: dict[str, list[str]] = {
+            runtime_session_id: [] for runtime_session_id in runtime_session_ids
+        }
+        rows = (
+            db.query(
+                RuntimeSessionActivity.runtime_session_id,
+                RuntimeSessionActivity.tool_name,
+            )
+            .filter(
+                RuntimeSessionActivity.account_id == account_id,
+                RuntimeSessionActivity.runtime_session_id.in_(runtime_session_ids),
+                RuntimeSessionActivity.activity_type == "tool_call",
+                RuntimeSessionActivity.tool_name.isnot(None),
+            )
+            .distinct()
+            .order_by(
+                RuntimeSessionActivity.runtime_session_id.asc(),
+                RuntimeSessionActivity.tool_name.asc(),
+            )
+            .all()
+        )
+        for row in rows:
+            session_id = str(row.runtime_session_id)
+            if row.tool_name:
+                tools_by_session.setdefault(session_id, []).append(row.tool_name)
+        return tools_by_session
 
     def _account_sessions_query(
         self,
@@ -647,6 +832,11 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             summary["latest_model_alias"] = latest_usage.latest_model_alias
             summary["latest_provider_name"] = latest_usage.latest_provider_name
             summary["last_request_at"] = latest_usage.last_request_at
+        summary["tools_used"] = self._tools_used_for_sessions(
+            db,
+            account_id=account_id,
+            runtime_session_ids=[str(runtime_session_id)],
+        ).get(str(runtime_session_id), [])
         return summary
 
     @staticmethod
