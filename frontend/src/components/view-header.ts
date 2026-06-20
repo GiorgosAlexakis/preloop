@@ -21,6 +21,10 @@ export class ViewHeader extends LitElement {
       }
       h1 {
         margin: 0;
+        color: hsl(var(--foreground));
+        font-size: clamp(1.75rem, 2vw, 2.25rem);
+        font-weight: 700;
+        letter-spacing: -0.035em;
       }
     `,
   ];

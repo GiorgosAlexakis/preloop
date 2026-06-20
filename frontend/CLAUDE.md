@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Preloop Console is a modern web application frontend for Preloop, built with:
 - **Lit** (Web Components framework)
 - **TypeScript** for type safety
-- **Vaadin components** for UI (Vaadin router, forms, layouts)
-- **Shoelace components** for additional UI elements
+- **shadcn-style design tokens** for app-wide color, radius, shadow, and typography
+- **Shoelace components** as the Lit-compatible component layer
+- **Vaadin Router** for client-side navigation
 - **Vite** for build tooling and development server
 - **Chart.js** for data visualization
 
@@ -54,6 +55,7 @@ npm run docker:test   # Run tests in container
 - Authenticated components should extend `AuthedElement` from `api.ts` for built-in auth handling
 - Components use `@customElement` decorator for registration
 - TypeScript decorators are enabled (`experimentalDecorators: true`)
+- Shared UI styling is token-driven. Prefer the shadcn-compatible CSS variables in `src/main.css` (`--background`, `--foreground`, `--card`, `--primary`, `--border`, etc.) and let Shoelace inherit through the mapped `--sl-*` variables.
 
 ### Authentication Flow
 - JWT-based authentication with access/refresh tokens stored in localStorage

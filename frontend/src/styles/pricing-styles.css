@@ -9,16 +9,17 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--sl-color-neutral-300);
-    border-radius: 20px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--sl-border-radius-x-large);
     padding: 1.5rem;
+    background: hsl(var(--card));
+    box-shadow: var(--shadow-shadcn-sm);
   }
 
   .plan-card.popular {
-    border: none;
-    background: linear-gradient(
-      45deg,
-      hsl(220, 60%, 40%),
-      hsl(260, 65%, 38%)
-    );
+    border: 1px solid hsl(var(--primary) / 0.35);
+    background:
+      radial-gradient(circle at top left, hsl(var(--primary) / 0.24), transparent 16rem),
+      linear-gradient(135deg, hsl(var(--card)), hsl(var(--muted)));
+    box-shadow: var(--shadow-shadcn-lg);
   }

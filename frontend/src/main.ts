@@ -20,6 +20,7 @@ Sentry.init({
   environment: env,
 });
 
+import './shoelace';
 import './components/lit-app.ts';
 import { Theme, DEFAULT_THEME } from './theme';
 import { unifiedWebSocketManager } from './services/unified-websocket-manager';
@@ -29,16 +30,22 @@ import { router } from './router';
 function applyTheme(theme: Theme) {
   const darkTheme = 'sl-theme-dark';
   const lightTheme = 'sl-theme-light';
+  const shadcnDarkTheme = 'dark';
+
+  const applyResolvedTheme = (isDark: boolean) => {
+    document.documentElement.classList.toggle(darkTheme, isDark);
+    document.documentElement.classList.toggle(lightTheme, !isDark);
+    document.documentElement.classList.toggle(shadcnDarkTheme, isDark);
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+  };
 
   if (theme === 'system') {
     const prefersDark = window.matchMedia(
       '(prefers-color-scheme: dark)'
     ).matches;
-    document.documentElement.classList.toggle(darkTheme, prefersDark);
-    document.documentElement.classList.toggle(lightTheme, !prefersDark);
+    applyResolvedTheme(prefersDark);
   } else {
-    document.documentElement.classList.toggle(darkTheme, theme === 'dark');
-    document.documentElement.classList.toggle(lightTheme, theme === 'light');
+    applyResolvedTheme(theme === 'dark');
   }
 }
 
