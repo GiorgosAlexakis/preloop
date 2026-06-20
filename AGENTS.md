@@ -48,3 +48,18 @@ To use pre-commit:
 3. The hooks will run automatically on git commit
 4. To run hooks manually: `pre-commit run --all-files`
 5. Activate venv before committing or running pre-commit
+
+## Cursor Cloud specific instructions
+
+The startup update script installs Python deps into `.venv` and frontend deps into `frontend/node_modules`. PostgreSQL 16 (+pgvector), the NATS server binary, and a dev `.env` (gitignored, with a generated `SECRET_KEY`) are baked into the VM snapshot. Services are NOT auto-started — start them each session:
+
+- **PostgreSQL** (port 5432, db `preloop`, user/pass `postgres`/`postgres`): `sudo pg_ctlcluster 16 main start`. Schema + roles are already migrated; re-run `python scripts/init_db.py --force` only after a DB reset.
+- **NATS + JetStream** (4222 client, 8222 monitoring): `nats-server -js -m 8222` (run detached, e.g. in tmux).
+- **Backend API** (port 8000): from repo root with venv active, `./start.sh`. Health: `curl localhost:8000/api/v1/health`. Swagger at `/docs/api`.
+- **Frontend console** (port 5173): `npm run dev` in `frontend/`; Vite proxies `/api` → `127.0.0.1:8000`.
+- **Model gateway** (optional, port 8001): same image with `PRELOOP_SERVICE_ROLE=gateway`; only needed for gateway/model-proxy testing.
+
+Gotchas:
+- **Do not set `INIT_TEST_DATA=true`** for the running server — the test-data seeder calls `asyncio.run()` inside the live event loop and crashes startup (`./start.sh --init-test-data` triggers this). Leave it `false` and create users via the UI or `POST /api/v1/auth/register` (`username`, `email`, `password`, optional `full_name`; username must be alphanumeric).
+- Without `OPENAI_API_KEY`, `init_db.py` skips embedding/AI-model seeding (expected); core auth/console flows still work.
+- 3 tests fail under the latest unpinned dependency versions (`backend/tests/test_app.py::test_gateway_role_mounts_only_gateway_surface`, `::test_api_role_excludes_model_gateway_surface`, and `backend/tests/integration/test_flow_execution.py::TestFlowExecution::test_flow_execution_orchestrator`) due to a FastAPI router-internals change (`'_IncludedRouter' object has no attribute 'path'`); ~3065 pass. These are pre-existing and unrelated to environment setup.
