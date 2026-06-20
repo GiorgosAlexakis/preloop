@@ -49,6 +49,14 @@ export class ConsoleShell extends LitElement {
       :host {
         display: block;
         height: 100vh;
+        background:
+          radial-gradient(
+            circle at top right,
+            hsl(var(--primary) / 0.08),
+            transparent 26rem
+          ),
+          hsl(var(--background));
+        color: hsl(var(--foreground));
       }
 
       a:hover {
@@ -59,6 +67,7 @@ export class ConsoleShell extends LitElement {
         display: flex;
         flex-direction: row;
         height: 100%;
+        background: transparent;
       }
 
       .sidebar {
@@ -69,8 +78,11 @@ export class ConsoleShell extends LitElement {
         transition:
           width 0.2s ease,
           transform 0.25s ease;
-        background-color: var(--sl-color-neutral-100);
+        background: hsl(var(--card) / 0.96);
+        border-right: 1px solid hsl(var(--border));
+        box-shadow: 1px 0 0 hsl(var(--background) / 0.4);
         z-index: 100;
+        backdrop-filter: blur(16px);
       }
 
       /* Desktop: when closed, sidebar is fully hidden (hamburger only) */
@@ -129,13 +141,13 @@ export class ConsoleShell extends LitElement {
       }
 
       .sign-out-menu sl-menu-item::part(base) {
-        background-color: var(--sl-color-neutral-100);
-        color: var(--sl-color-primary-500);
+        background-color: transparent;
+        color: hsl(var(--primary));
       }
 
       .sign-out-menu sl-menu-item:hover::part(base) {
-        background-color: var(--sl-color-neutral-100);
-        color: var(--sl-color-primary-700);
+        background-color: hsl(var(--accent));
+        color: hsl(var(--accent-foreground));
       }
 
       .main-view {
@@ -147,10 +159,13 @@ export class ConsoleShell extends LitElement {
 
       .main-content {
         overflow-y: auto;
-        padding: 1rem 2rem 2rem 2rem;
+        padding: 1.5rem 2rem 2rem 2rem;
         display: flex;
         flex-direction: column;
         align-items: center;
+        background:
+          linear-gradient(180deg, hsl(var(--muted) / 0.45), transparent 16rem),
+          hsl(var(--background));
       }
 
       .main-content.full-bleed {
@@ -179,10 +194,11 @@ export class ConsoleShell extends LitElement {
 
       .logo {
         margin-left: 2px;
-        padding: 1rem;
-        background-color: var(--sl-color-neutral-100);
+        padding: 1.1rem 1rem;
+        background: transparent;
         display: flex;
         align-items: center;
+        border-bottom: 1px solid hsl(var(--border));
       }
 
       .logo img {
@@ -196,15 +212,16 @@ export class ConsoleShell extends LitElement {
       sl-menu {
         flex-grow: 1;
         border-width: 0;
-        background-color: var(--sl-color-neutral-100);
-        padding: 0;
-        margin-left: -2px;
+        background: transparent;
+        padding: 0.75rem;
+        margin-left: 0;
+        --indent-guide-color: transparent;
       }
 
       sl-details::part(base) {
         width: 100%;
         border-width: 0;
-        background-color: var(--sl-color-neutral-100);
+        background-color: transparent;
       }
 
       sl-details::part(content) {
@@ -213,11 +230,44 @@ export class ConsoleShell extends LitElement {
       }
 
       sl-menu-item {
-        padding: 0.25em;
+        padding: 0.15rem 0;
+      }
+
+      sl-menu-item::part(base) {
+        border-radius: calc(var(--radius) - 4px);
+        color: hsl(var(--muted-foreground));
+        font-weight: 500;
+        transition:
+          background-color 0.15s ease,
+          color 0.15s ease;
+      }
+
+      sl-menu-item:hover::part(base),
+      sl-menu-item:focus-visible::part(base) {
+        background-color: hsl(var(--accent));
+        color: hsl(var(--accent-foreground));
+      }
+
+      sl-menu-item::part(prefix) {
+        color: hsl(var(--muted-foreground));
       }
 
       sl-details {
-        padding-left: 1em;
+        padding-left: 0;
+        color: hsl(var(--muted-foreground));
+      }
+
+      sl-details [slot='summary'] {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        border-radius: calc(var(--radius) - 4px);
+        font-weight: 500;
+      }
+
+      sl-details::part(summary) {
+        border-radius: calc(var(--radius) - 4px);
+        color: hsl(var(--muted-foreground));
       }
     `,
   ];

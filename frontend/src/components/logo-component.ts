@@ -56,7 +56,10 @@ export class LogoComponent extends LitElement {
   }
 
   private setThemeFromClass() {
-    if (document.documentElement.classList.contains('sl-theme-dark')) {
+    if (
+      document.documentElement.classList.contains('dark') ||
+      document.documentElement.classList.contains('sl-theme-dark')
+    ) {
       this.theme = 'dark';
     } else if (document.documentElement.classList.contains('sl-theme-light')) {
       this.theme = 'light';

@@ -41,6 +41,7 @@ export class AppHeader extends LitElement {
     :host {
       display: block;
       position: relative;
+      color: hsl(var(--foreground));
     }
     .header-container {
       display: flex;
@@ -48,12 +49,22 @@ export class AppHeader extends LitElement {
       align-items: center;
       max-width: 1200px;
       margin: 0 auto;
-      padding: 1.5rem 1rem;
+      padding: 1rem;
+    }
+    header {
+      position: relative;
+      z-index: 20;
     }
     nav {
       display: flex;
       align-items: center;
       gap: 0.5rem;
+    }
+    .flex {
+      display: flex;
+    }
+    .items-center {
+      align-items: center;
     }
     .logo {
       display: flex;
@@ -64,6 +75,16 @@ export class AppHeader extends LitElement {
     }
     sl-icon-button::part(base) {
       font-size: 1.5rem;
+      border-radius: calc(var(--radius) - 4px);
+      color: hsl(var(--muted-foreground));
+    }
+    sl-icon-button:hover::part(base) {
+      background: hsl(var(--accent));
+      color: hsl(var(--accent-foreground));
+    }
+    nav sl-button::part(base) {
+      border-radius: calc(var(--radius) - 4px);
+      font-weight: 500;
     }
 
     .mobile-menu-button {
@@ -79,14 +100,17 @@ export class AppHeader extends LitElement {
         display: none;
         position: absolute;
         top: 100%;
-        left: 0;
-        right: 0;
-        background-color: #161b24;
+        left: 1rem;
+        right: 1rem;
+        background: hsl(var(--popover) / 0.96);
         flex-direction: column;
         align-items: stretch;
         padding: 1rem;
-        border-top: 1px solid #30363d;
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--sl-border-radius-large);
+        box-shadow: var(--sl-shadow-large);
         z-index: 100;
+        backdrop-filter: blur(16px);
       }
 
       nav.mobile-menu-open {

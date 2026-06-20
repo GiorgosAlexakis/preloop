@@ -1,15 +1,75 @@
+:host {
+  color: hsl(var(--foreground));
+}
+
 a {
-    color: var(--sl-color-primary-600);
-    text-decoration: none;
+  color: var(--sl-color-primary-600);
+  text-decoration: none;
+  text-underline-offset: 4px;
 }
+
 a:hover {
-    text-decoration: underline;
+  text-decoration: underline;
 }
+
+sl-card::part(base),
+.table-card::part(base) {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--sl-border-radius-large);
+  box-shadow: var(--shadow-shadcn-sm);
+}
+
+sl-card::part(body) {
+  color: hsl(var(--card-foreground));
+}
+
+sl-button::part(base),
+sl-icon-button::part(base) {
+  border-radius: calc(var(--radius) - 4px);
+  font-weight: 500;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+sl-button[variant='primary']::part(base) {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: var(--shadow-shadcn-sm);
+}
+
+sl-button[variant='primary']:hover::part(base) {
+  background: hsl(var(--primary) / 0.92);
+  border-color: hsl(var(--primary) / 0.92);
+}
+
+sl-input::part(base),
+sl-select::part(combobox),
+sl-textarea::part(base) {
+  background: hsl(var(--background));
+  border-color: hsl(var(--input));
+  border-radius: calc(var(--radius) - 4px);
+  box-shadow: var(--shadow-shadcn-sm);
+}
+
+sl-dialog::part(panel) {
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) + 0.25rem);
+  box-shadow: var(--shadow-shadcn-lg);
+  color: hsl(var(--popover-foreground));
+}
+
 .column-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--sl-spacing-large);
-    align-items: start;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
 }
 
 @media (min-width: 992px) {
@@ -40,10 +100,10 @@ a:hover {
 
 .main-column,
 .side-column {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sl-spacing-large);
-    min-width: 0; /* Allow columns to shrink below content width */
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0; /* Allow columns to shrink below content width */
 }
 
 /* Ensure cards and content resize with columns */
@@ -55,21 +115,22 @@ a:hover {
 
 /* Proxy notice component */
 .proxy-notice {
-    background: var(--sl-color-primary-50);
-    border-left: 3px solid var(--sl-color-primary-600);
+    background: hsl(var(--primary) / 0.08);
+    border: 1px solid hsl(var(--primary) / 0.18);
+    border-left: 3px solid hsl(var(--primary));
     padding: 1rem;
     margin-bottom: 1.5rem;
-    border-radius: 4px;
+    border-radius: var(--sl-border-radius-large);
 }
 
 .proxy-notice-title {
     font-weight: 600;
-    color: var(--sl-color-primary-900);
+    color: hsl(var(--foreground));
     margin-bottom: 0.5rem;
 }
 
 .proxy-notice-text {
-    color: var(--sl-color-primary-800);
+    color: hsl(var(--muted-foreground));
     font-size: var(--sl-font-size-small);
     line-height: 1.5;
 }
@@ -81,19 +142,20 @@ a:hover {
 
 .container.large {
     max-width: var(--console-container-max-width);
-    padding: var(--sl-spacing-x-large);
+    padding: clamp(1rem, 2vw, 2rem);
 }
 
 .container.x-large {
     max-width: var(--console-container-large-max-width);
-    padding: var(--sl-spacing-x-large);
+    padding: clamp(1rem, 2vw, 2rem);
 }
 
 .header h1 {
     text-align: left;
-    font-size: 1.75rem;
-    font-weight: 600;
-    color: var(--sl-color-neutral-900);
+    font-size: clamp(1.75rem, 2vw, 2.25rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    color: hsl(var(--foreground));
     margin: 0;
 }
 
@@ -114,6 +176,7 @@ a:hover {
     width: 100%;
     --padding: 0;
     border-spacing: 0;
+    overflow: hidden;
 }
 
 .table-card::part(body) {
@@ -121,29 +184,42 @@ a:hover {
 }
 
 sl-card::part(header) {
-    background-color: var(--sl-color-neutral-100);
+    background-color: hsl(var(--muted) / 0.7);
+    border-bottom: 1px solid hsl(var(--border));
 }
 
 .styled-table {
     width: 100%;
     border-collapse: collapse;
-    color: var(--sl-color-neutral-900);
+    color: hsl(var(--foreground));
 }
 
 .styled-table th,
 .styled-table td {
   padding: var(--sl-spacing-medium);
   text-align: left;
-  border-bottom: 1px solid var(--sl-color-neutral-200);
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .styled-table th {
-    background-color: var(--sl-color-neutral-100);
+    background-color: hsl(var(--muted) / 0.65);
     font-weight: var(--sl-font-weight-semibold);
+    color: hsl(var(--muted-foreground));
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .styled-table tr {
-    border-bottom: 1px solid var(--sl-color-neutral-200);
+    border-bottom: 1px solid hsl(var(--border));
+}
+
+.styled-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.styled-table tbody tr:hover {
+    background-color: hsl(var(--muted) / 0.55);
 }
 
 .styled-table tr:last-child td {
@@ -203,19 +279,24 @@ sl-dialog.large::part(panel) {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--sl-spacing-small);
-    background: var(--sl-color-neutral-50);
-    border-radius: var(--sl-border-radius-medium);
+    gap: var(--sl-spacing-medium);
+    padding: var(--sl-spacing-medium);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
     border-left: 3px solid var(--sl-color-neutral-300);
+    border-radius: var(--sl-border-radius-large);
+    box-shadow: var(--shadow-shadcn-sm);
 }
 
 .item-card.warning {
-    background: var(--sl-color-warning-50);
+    background: color-mix(in srgb, var(--sl-color-warning-50) 72%, hsl(var(--card)));
+    border-color: color-mix(in srgb, var(--sl-color-warning-500) 24%, hsl(var(--border)));
     border-left-color: var(--sl-color-warning-600);
 }
 
 .item-card.danger {
-    background: var(--sl-color-danger-50);
+    background: color-mix(in srgb, var(--sl-color-danger-50) 72%, hsl(var(--card)));
+    border-color: color-mix(in srgb, var(--sl-color-danger-500) 24%, hsl(var(--border)));
     border-left-color: var(--sl-color-danger-600);
 }
 
@@ -232,7 +313,7 @@ sl-dialog.large::part(panel) {
 
 .item-secondary {
     font-size: var(--sl-font-size-small);
-    color: var(--sl-color-neutral-600);
+    color: hsl(var(--muted-foreground));
 }
 
 .item-error {
@@ -244,8 +325,11 @@ sl-dialog.large::part(panel) {
 /* Empty state */
 .empty-state {
     text-align: center;
-    padding: var(--sl-spacing-large);
-    color: var(--sl-color-neutral-600);
+    padding: 2.5rem 1.5rem;
+    color: hsl(var(--muted-foreground));
+    background: hsl(var(--muted) / 0.35);
+    border: 1px dashed hsl(var(--border));
+    border-radius: var(--sl-border-radius-large);
 }
 
 .empty-state sl-icon {
@@ -272,7 +356,7 @@ sl-dialog.large::part(panel) {
     color: var(--sl-color-primary-600);
     text-decoration: none;
     font-size: var(--sl-font-size-small);
-    font-weight: 500;
+    font-weight: 600;
     margin-left: auto;
 }
 
@@ -292,7 +376,7 @@ sl-dialog.large::part(panel) {
     justify-content: space-between;
     align-items: center;
     padding: var(--sl-spacing-small) 0;
-    border-bottom: 1px solid var(--sl-color-neutral-200);
+    border-bottom: 1px solid hsl(var(--border));
 }
 
 .summary-item:last-child {
@@ -326,7 +410,7 @@ sl-dialog.large::part(panel) {
 }
 
 .stat-value.neutral {
-    color: var(--sl-color-neutral-600);
+    color: hsl(var(--muted-foreground));
 }
 
 .stat-value.primary {
@@ -335,13 +419,13 @@ sl-dialog.large::part(panel) {
 
 .stat-label {
     font-size: var(--sl-font-size-small);
-    color: var(--sl-color-neutral-600);
+    color: hsl(var(--muted-foreground));
     margin-top: var(--sl-spacing-x-small);
 }
 
 .stat-subtext {
     font-size: var(--sl-font-size-x-small);
-    color: var(--sl-color-neutral-500);
+    color: hsl(var(--muted-foreground));
     margin-top: var(--sl-spacing-2x-small);
 }
 

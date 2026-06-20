@@ -89,8 +89,12 @@ export class ConsoleHeader extends LitElement {
       display: flex;
       justify-content: flex-end;
       align-items: center;
-      padding: 0.4rem;
-      border-bottom: 1px solid var(--sl-color-neutral-200);
+      gap: 0.35rem;
+      min-height: 64px;
+      padding: 0.55rem 1rem;
+      background: hsl(var(--background) / 0.86);
+      border-bottom: 1px solid hsl(var(--border));
+      backdrop-filter: blur(16px);
     }
     .nav-toggle {
       display: flex;
@@ -104,6 +108,14 @@ export class ConsoleHeader extends LitElement {
       display: flex;
       align-items: center;
       gap: 0.5rem;
+    }
+    sl-icon-button::part(base) {
+      border-radius: calc(var(--radius) - 4px);
+      color: hsl(var(--muted-foreground));
+    }
+    sl-icon-button:hover::part(base) {
+      background: hsl(var(--accent));
+      color: hsl(var(--accent-foreground));
     }
     .user-menu sl-icon-button {
       font-size: 1.8rem;
@@ -144,13 +156,14 @@ export class ConsoleHeader extends LitElement {
       max-width: 420px;
       max-height: 500px;
       overflow-y: auto;
-      background: var(--sl-color-neutral-0);
-      border: 1px solid var(--sl-color-neutral-200);
-      border-radius: var(--sl-border-radius-medium);
+      background: hsl(var(--popover));
+      border: 1px solid hsl(var(--border));
+      border-radius: var(--sl-border-radius-large);
       box-shadow: var(--sl-shadow-large);
+      color: hsl(var(--popover-foreground));
     }
     .notification-section {
-      border-bottom: 1px solid var(--sl-color-neutral-100);
+      border-bottom: 1px solid hsl(var(--border));
     }
     .notification-section:last-child {
       border-bottom: none;
@@ -160,8 +173,8 @@ export class ConsoleHeader extends LitElement {
       align-items: center;
       justify-content: space-between;
       padding: 0.75rem 1rem;
-      background-color: var(--sl-color-neutral-50);
-      border-bottom: 1px solid var(--sl-color-neutral-100);
+      background-color: hsl(var(--muted) / 0.62);
+      border-bottom: 1px solid hsl(var(--border));
     }
     .section-title {
       display: flex;
@@ -169,11 +182,11 @@ export class ConsoleHeader extends LitElement {
       gap: 0.5rem;
       font-weight: 600;
       font-size: 0.875rem;
-      color: var(--sl-color-neutral-700);
+      color: hsl(var(--foreground));
     }
     .section-count {
       font-size: 0.75rem;
-      color: var(--sl-color-neutral-500);
+      color: hsl(var(--muted-foreground));
     }
     .section-link {
       font-size: 0.75rem;
@@ -195,7 +208,7 @@ export class ConsoleHeader extends LitElement {
     .notification-item {
       padding: 0.75rem 1rem;
       cursor: pointer;
-      border-bottom: 1px solid var(--sl-color-neutral-50);
+      border-bottom: 1px solid hsl(var(--border));
     }
     .execution-item:last-child,
     .approval-item:last-child,
@@ -205,7 +218,7 @@ export class ConsoleHeader extends LitElement {
     .execution-item:hover,
     .approval-item:hover,
     .notification-item:hover {
-      background-color: var(--sl-color-neutral-50);
+      background-color: hsl(var(--muted) / 0.55);
     }
     .execution-name,
     .approval-name,
@@ -218,7 +231,7 @@ export class ConsoleHeader extends LitElement {
     .approval-time,
     .notification-time {
       font-size: 0.75rem;
-      color: var(--sl-color-neutral-500);
+      color: hsl(var(--muted-foreground));
     }
     .approval-actions {
       display: flex;
@@ -229,7 +242,7 @@ export class ConsoleHeader extends LitElement {
       font-size: 0.75rem;
     }
     .notification-item.unread {
-      background-color: var(--sl-color-primary-50);
+      background-color: hsl(var(--primary) / 0.08);
     }
     .notification-item.unread::before {
       content: '';
@@ -238,7 +251,7 @@ export class ConsoleHeader extends LitElement {
       top: 0;
       bottom: 0;
       width: 3px;
-      background-color: var(--sl-color-primary-500);
+      background-color: hsl(var(--primary));
     }
     .notification-item {
       position: relative;
@@ -246,13 +259,13 @@ export class ConsoleHeader extends LitElement {
     .no-items {
       padding: 1rem;
       text-align: center;
-      color: var(--sl-color-neutral-500);
+      color: hsl(var(--muted-foreground));
       font-size: 0.875rem;
     }
     .empty-state {
       padding: 2rem 1rem;
       text-align: center;
-      color: var(--sl-color-neutral-500);
+      color: hsl(var(--muted-foreground));
     }
     .empty-state sl-icon {
       font-size: 2rem;
