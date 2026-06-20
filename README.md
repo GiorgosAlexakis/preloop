@@ -16,6 +16,9 @@ Build automations with templates like the [Pull Request Reviewer](./backend/pres
 
 > **Official documentation:** Full guides and tutorials at [docs.preloop.ai](https://docs.preloop.ai).
 
+For a route-by-route Console and public UI feature inventory, see
+[`FEATURES.md`](FEATURES.md).
+
 ```bash
 # Install the standalone CLI
 curl -fsSL https://preloop.ai/install/cli | sh
