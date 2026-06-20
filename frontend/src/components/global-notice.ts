@@ -1,8 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { router } from '../router';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 @customElement('global-notice')
 export class GlobalNotice extends LitElement {

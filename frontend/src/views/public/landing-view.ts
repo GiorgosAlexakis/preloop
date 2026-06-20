@@ -6,12 +6,6 @@ import landingStyles from '../../styles/landing.css?inline';
 import './../../components/news-capsule';
 import './../../components/ide-setup-tabs';
 import { getIdeConfigs } from '../../utils/ide-configs';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
-import '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
-import type SlCarousel from '@shoelace-style/shoelace/dist/components/carousel/carousel.js';
-import type SlCarouselItem from '@shoelace-style/shoelace/dist/components/carousel-item/carousel-item.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import { getFeatures } from '../../api';
 
 interface FeatureSlide {
@@ -23,7 +17,7 @@ interface FeatureSlide {
 
 @customElement('landing-view')
 export class LandingView extends LitElement {
-  @query('.feature-carousel') private _carousel!: SlCarousel;
+  @query('.feature-carousel') private _carousel!: HTMLElement;
   @state() private _showVideo: boolean[] = [false, false, false];
   @state() private _activeSlideIndex = 0;
   @state() private _svgTimestamps: number[] = [
@@ -595,13 +589,13 @@ export class LandingView extends LitElement {
   }
 
   private _handleSlideChange(
-    e: CustomEvent<{ index: number; slide: SlCarouselItem }>
+    e: CustomEvent<{ index: number; slide: HTMLElement }>
   ) {
     this._activeSlideIndex = e.detail.index;
   }
 
   private _handleSvgSlideChange(
-    e: CustomEvent<{ index: number; slide: SlCarouselItem }>
+    e: CustomEvent<{ index: number; slide: HTMLElement }>
   ) {
     const index = e.detail.index;
     const newTimestamps = [...this._svgTimestamps];

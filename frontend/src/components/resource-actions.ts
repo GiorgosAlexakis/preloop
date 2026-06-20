@@ -1,11 +1,5 @@
 import { LitElement, html, css, unsafeCSS, type TemplateResult } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
-import '@shoelace-style/shoelace/dist/components/menu/menu.js';
-import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import consoleStyles from '../styles/console-styles.css?inline';
 
 export interface ResourceAction {

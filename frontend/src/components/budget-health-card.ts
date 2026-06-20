@@ -5,10 +5,6 @@ import type {
   AccountGatewayUsageSummaryResponse,
   ManagedAgentSummary,
 } from '../types';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
 type BudgetPolicyUsage = {
   policy: BudgetPolicy;

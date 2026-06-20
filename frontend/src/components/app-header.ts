@@ -4,9 +4,6 @@ import { Router } from '@vaadin/router';
 import { getUserProfile, getFeatures } from '../api';
 import { getBrandConfig, isSaaS } from '../brand-config';
 
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import './logo-component';
 
 interface User {
@@ -42,18 +39,22 @@ export class AppHeader extends LitElement {
       display: block;
       position: relative;
     }
+    header {
+      border-bottom: 1px solid var(--border);
+      background-color: var(--background);
+    }
     .header-container {
       display: flex;
       justify-content: space-between;
       align-items: center;
       max-width: 1200px;
       margin: 0 auto;
-      padding: 1.5rem 1rem;
+      padding: 1rem;
     }
     nav {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.25rem;
     }
     .logo {
       display: flex;
@@ -62,16 +63,9 @@ export class AppHeader extends LitElement {
     .logo logo-component {
       height: 36px;
     }
-    sl-icon-button::part(base) {
-      font-size: 1.5rem;
-    }
 
     .mobile-menu-button {
       display: none;
-    }
-
-    .mobile-menu-button sl-icon-button {
-      color: var(--sl-color-primary-500);
     }
 
     @media (max-width: 768px) {
@@ -81,12 +75,14 @@ export class AppHeader extends LitElement {
         top: 100%;
         left: 0;
         right: 0;
-        background-color: #161b24;
+        background-color: var(--background);
         flex-direction: column;
         align-items: stretch;
         padding: 1rem;
-        border-top: 1px solid #30363d;
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
         z-index: 100;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
       }
 
       nav.mobile-menu-open {
@@ -99,10 +95,6 @@ export class AppHeader extends LitElement {
 
       nav sl-button {
         width: 100%;
-        justify-content: flex-start;
-      }
-
-      nav sl-button::part(base) {
         justify-content: flex-start;
       }
     }

@@ -37,8 +37,7 @@
   },
   "dependencies": {
     "@sentry/browser": "^10.5.0",
-    "@shoelace-style/shoelace": "^2.20.1",
-    "dompurify": "^3.1.5",
+    "@tailwindcss/vite": "^4.3.1",
     "@vaadin/accordion": "^24.8.0",
     "@vaadin/app-layout": "^24.3.0",
     "@vaadin/button": "^24.8.0",
@@ -64,12 +63,18 @@
     "@vaadin/vertical-layout": "^24.8.0",
     "ansi_up": "^6.0.2",
     "chart.js": "^4.5.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "deck.gl": "^9.1.12",
+    "dompurify": "^3.1.5",
     "events": "^3.3.0",
     "js-yaml": "^4.1.1",
     "lit": "^3.1.0",
+    "lucide": "^1.21.0",
     "marked": "^16.4.1",
     "mermaid": "^10.9.5",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.1",
     "tsne-js": "^1.0.3"
   },
   "devDependencies": {

@@ -1,13 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import * as api from '../api';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-import type SlInput from '@shoelace-style/shoelace/dist/components/input/input.js';
 
 @customElement('mcp-server-form')
 export class MCPServerForm extends LitElement {
@@ -78,7 +71,7 @@ export class MCPServerForm extends LitElement {
   updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('opened') && this.opened) {
       requestAnimationFrame(() => {
-        const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
+        const input = this.shadowRoot?.querySelector<HTMLElement>('sl-input');
         input?.focus();
       });
     }

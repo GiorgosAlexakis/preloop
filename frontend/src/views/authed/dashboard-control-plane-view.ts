@@ -2,13 +2,6 @@ import { css, html, nothing, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/agent-talk-composer.ts';
 import '../../components/mcp-setup-dialog.ts';
 import '../../components/budget-policy-editor.ts';

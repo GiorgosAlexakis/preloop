@@ -20,6 +20,8 @@ Sentry.init({
   environment: env,
 });
 
+import './styles/globals.css';
+import './components/ui/index.ts';
 import './components/lit-app.ts';
 import { Theme, DEFAULT_THEME } from './theme';
 import { unifiedWebSocketManager } from './services/unified-websocket-manager';
@@ -27,18 +29,13 @@ import { activityTracker } from './services/activity-tracker';
 import { router } from './router';
 
 function applyTheme(theme: Theme) {
-  const darkTheme = 'sl-theme-dark';
-  const lightTheme = 'sl-theme-light';
-
   if (theme === 'system') {
     const prefersDark = window.matchMedia(
       '(prefers-color-scheme: dark)'
     ).matches;
-    document.documentElement.classList.toggle(darkTheme, prefersDark);
-    document.documentElement.classList.toggle(lightTheme, !prefersDark);
+    document.documentElement.classList.toggle('dark', prefersDark);
   } else {
-    document.documentElement.classList.toggle(darkTheme, theme === 'dark');
-    document.documentElement.classList.toggle(lightTheme, theme === 'light');
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   }
 }
 

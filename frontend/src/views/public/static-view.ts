@@ -2,9 +2,6 @@ import { LitElement, html, css, PropertyValues, unsafeCSS } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { customElement, property, state } from 'lit/decorators.js';
 import { marked } from 'marked';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import landingStyles from '../../styles/landing.css?inline';
 
 @customElement('static-view')

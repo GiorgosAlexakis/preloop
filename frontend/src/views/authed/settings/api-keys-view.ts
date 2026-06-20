@@ -13,21 +13,6 @@ import {
 } from '../../../api';
 import type { ApiKey, SubjectGovernanceConfig } from '../../../types';
 import type { AccessRuleSummary } from '../../../components/governance-rule-set-editor';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/textarea/textarea.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/menu/menu.js';
-import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import type SlMenuItem from '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/dropdown/dropdown.js';
 import '../../../components/governance-rule-set-editor.ts';
 import '../../../components/budget-policy-editor.ts';
 import consoleStyles from '../../../styles/console-styles.css?inline';
@@ -520,7 +505,7 @@ export class ApiKeysView extends LitElement {
   }
 
   private _handleExpirySelect(e: CustomEvent) {
-    const item = e.detail.item as SlMenuItem;
+    const item = e.detail.item as HTMLElement;
     this.newKeyExpiry = item.value;
     this.newKeyExpiryLabel = item.textContent?.trim() ?? 'Never';
   }

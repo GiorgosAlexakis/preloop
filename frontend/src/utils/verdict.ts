@@ -1,7 +1,4 @@
 import { html, TemplateResult } from 'lit';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
 export interface AIModelVerdict {
   decision:

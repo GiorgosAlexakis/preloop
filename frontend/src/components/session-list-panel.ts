@@ -1,8 +1,6 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import type { ObservedSession } from '../utils/session-observer';
 import { formatCost, formatNumber } from '../utils/session-observer';
 

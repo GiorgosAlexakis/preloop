@@ -1,7 +1,6 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import landingStyles from '../../styles/landing.css?inline';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/app-header';
 import '../../components/app-footer';
 import { getBrandConfig } from '../../brand-config';

@@ -2,9 +2,6 @@ import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import '../../components/view-header.ts';
 
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/copy-button/copy-button.js';
 import { state } from 'lit/decorators.js';
 
 @customElement('onboarding-view')

@@ -4,8 +4,6 @@ import { Router } from '@vaadin/router';
 import * as api from '../../api';
 import { formStyles } from '../../styles/form-styles';
 import { getBrandConfig } from '../../brand-config';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/logo-component';
 
 @customElement('welcome-view')

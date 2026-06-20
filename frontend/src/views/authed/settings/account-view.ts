@@ -12,11 +12,6 @@ import consoleStyles from '../../../styles/console-styles.css?inline';
 import pricingStyles from '../../../styles/pricing-styles.css?inline';
 import '../../../components/billing-toggle';
 import '../../../components/pricing-card';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
 interface Plan {
   id: string;

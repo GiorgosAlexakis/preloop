@@ -1,12 +1,5 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/menu/menu.js';
-import '@shoelace-style/shoelace/dist/components/menu-item/menu-item.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/details/details.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '../../components/logo-component';
 import '../../components/global-notice';
 import '../../components/console-header';
@@ -69,7 +62,8 @@ export class ConsoleShell extends LitElement {
         transition:
           width 0.2s ease,
           transform 0.25s ease;
-        background-color: var(--sl-color-neutral-100);
+        background-color: var(--sidebar);
+        border-right: 1px solid var(--sidebar-border);
         z-index: 100;
       }
 
@@ -180,9 +174,10 @@ export class ConsoleShell extends LitElement {
       .logo {
         margin-left: 2px;
         padding: 1rem;
-        background-color: var(--sl-color-neutral-100);
+        background-color: var(--sidebar);
         display: flex;
         align-items: center;
+        border-bottom: 1px solid var(--sidebar-border);
       }
 
       .logo img {
@@ -196,15 +191,15 @@ export class ConsoleShell extends LitElement {
       sl-menu {
         flex-grow: 1;
         border-width: 0;
-        background-color: var(--sl-color-neutral-100);
-        padding: 0;
-        margin-left: -2px;
+        background-color: var(--sidebar);
+        padding: 0.5rem;
+        margin-left: 0;
       }
 
       sl-details::part(base) {
         width: 100%;
         border-width: 0;
-        background-color: var(--sl-color-neutral-100);
+        background-color: var(--sidebar);
       }
 
       sl-details::part(content) {

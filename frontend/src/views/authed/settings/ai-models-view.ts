@@ -14,13 +14,6 @@ import type {
   AIModelGatewayUsageSummaryResponse,
 } from '../../../types';
 
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '../../../components/add-ai-model-modal';
 import { unifiedWebSocketManager } from '../../../services/unified-websocket-manager';
 import consoleStyles from '../../../styles/console-styles.css?inline';

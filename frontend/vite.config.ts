@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import tailwindcss from '@tailwindcss/vite';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import { brandPlugin } from './vite-plugin-brand';
 
@@ -34,6 +35,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    tailwindcss(),
     cssInjectedByJsPlugin({
       jsAssetsFilterFunction: (chunk) => {
         return /main/.test(chunk.fileName);
@@ -47,16 +49,12 @@ export default defineConfig({
       // Ensure packages resolve from frontend's node_modules for plugins outside this package
       { find: /^lit($|\/)/, replacement: resolve(__dirname, 'node_modules/lit$1') },
       {
-        find: /^@shoelace-style\/shoelace(\/.*)?$/,
-        replacement: resolve(__dirname, 'node_modules/@shoelace-style/shoelace$1'),
-      },
-      {
         find: /^@lit\/reactive-element(\/.*)?$/,
         replacement: resolve(__dirname, 'node_modules/@lit/reactive-element$1'),
       },
     ],
     // Dedupe ensures only one copy of these packages is used
-    dedupe: ['lit', '@lit/reactive-element', 'lit-element', 'lit-html', '@shoelace-style/shoelace'],
+    dedupe: ['lit', '@lit/reactive-element', 'lit-element', 'lit-html'],
   },
   optimizeDeps: {
     include: ['lit', 'lit/decorators.js'],

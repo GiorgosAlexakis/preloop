@@ -5,9 +5,6 @@ import { post, getFeatures } from '../../api';
 import { formStyles } from '../../styles/form-styles';
 import { getBrandConfig } from '../../brand-config';
 
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '../../components/logo-component';
 
 const OAUTH_PROVIDER_CONFIG: Record<string, { label: string; icon: string }> = {

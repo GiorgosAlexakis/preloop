@@ -21,16 +21,6 @@ import consoleStyles from '../../styles/console-styles.css?inline';
 import '../../components/view-header.ts';
 import '../../components/budget-policy-editor.ts';
 import '../../components/budget-health-card.ts';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 
 type DateRangePreset =
   | 'today'

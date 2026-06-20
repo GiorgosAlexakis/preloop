@@ -1,8 +1,5 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/radio-group/radio-group.js';
-import '@shoelace-style/shoelace/dist/components/radio-button/radio-button.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 import { DEFAULT_THEME, Theme } from '../../../theme';
 

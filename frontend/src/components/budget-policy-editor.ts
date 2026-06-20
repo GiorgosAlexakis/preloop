@@ -13,15 +13,7 @@ import {
   fetchWithAuth,
 } from '../api.js';
 import type { User, UserListResponse } from '../types.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
-import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
 @customElement('budget-policy-editor')
 export class BudgetPolicyEditor extends LitElement {

@@ -6,11 +6,6 @@ import type {
   FlowGatewayConversationPreviewMessage,
 } from '../types';
 import { formatLocalTime, formatUTCDateTime } from '../utils/date';
-import '@shoelace-style/shoelace/dist/components/details/details.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import './json-tree.js';
 
 @customElement('preloop-gateway-event')

@@ -3,18 +3,6 @@ import { customElement, state } from 'lit/decorators.js';
 import { AuthedElement } from '../../api';
 import { parseUTCDate } from '../../utils/date';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/tag/tag.js';
-import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
-import '@shoelace-style/shoelace/dist/components/divider/divider.js';
-import '@shoelace-style/shoelace/dist/components/progress-bar/progress-bar.js';
 import consoleStyles from '../../styles/console-styles.css?inline';
 
 interface ApprovalRequest {

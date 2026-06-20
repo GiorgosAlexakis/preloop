@@ -1,7 +1,5 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import type { FlowGatewayEvent, RuntimeSessionActivityItem } from '../types';
 import type { ObservedSession } from '../utils/session-observer';
 import { summarizeSessionLocally } from '../utils/session-observer';

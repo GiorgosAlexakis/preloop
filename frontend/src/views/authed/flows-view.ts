@@ -1,10 +1,5 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/divider/divider.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import { router } from '../../router';
 import { Router } from '@vaadin/router';
 import { unifiedWebSocketManager } from '../../services/unified-websocket-manager';

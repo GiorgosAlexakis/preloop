@@ -4,9 +4,6 @@ import { when } from 'lit/directives/when.js';
 import { listIssueDuplicates, checkAIVerdict } from '../api';
 import type { DuplicatePair } from '../types';
 import { AIModelVerdict, renderVerdict } from '../utils/verdict';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/badge/badge.js';
 
 @customElement('similar-issues-widget')
 export class SimilarIssuesWidget extends LitElement {

@@ -1,19 +1,6 @@
 import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import * as api from '../api';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import type SlInput from '@shoelace-style/shoelace/dist/components/input/input.js';
-import type SlTreeItem from '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
-import '@shoelace-style/shoelace/dist/components/tree/tree.js';
-import '@shoelace-style/shoelace/dist/components/tree-item/tree-item.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/card/card.js';
 
 @customElement('add-tracker-modal')
 export class AddTrackerModal extends LitElement {
@@ -186,7 +173,7 @@ export class AddTrackerModal extends LitElement {
       setTimeout(() => this.testConnection(), 200);
     } else {
       setTimeout(() => {
-        const input = this.shadowRoot?.querySelector<SlInput>('sl-input');
+        const input = this.shadowRoot?.querySelector<HTMLElement>('sl-input');
         input?.focus();
       }, 100);
     }
@@ -449,7 +436,7 @@ export class AddTrackerModal extends LitElement {
               ?lazy=${!isGitHubApp && !this.projects[org.id]}
               ?loading=${this.isLoading}
               ?expanded=${!isGitHubApp && this.selectedOrgs[org.id]}
-              @sl-lazy-load=${(e: { target: SlTreeItem }) =>
+              @sl-lazy-load=${(e: { target: HTMLElement }) =>
                 this.loadProjects(org.id, e.target)}
             >
               ${org.name}
@@ -545,7 +532,7 @@ export class AddTrackerModal extends LitElement {
     }
   }
 
-  async loadProjects(orgId: string, item?: SlTreeItem) {
+  async loadProjects(orgId: string, item?: HTMLElement) {
     if (this.projects[orgId]) {
       // Projects already loaded
       return;
@@ -613,7 +600,7 @@ export class AddTrackerModal extends LitElement {
   }
 
   handleSelectionChange(event: CustomEvent) {
-    const selectedItems = event.detail.selection as SlTreeItem[];
+    const selectedItems = event.detail.selection as HTMLElement[];
     const newSelectedOrgs: Record<string, boolean> = {};
     const newSelectedProjects: Record<string, Record<string, boolean>> = {};
     // Initialize projects map

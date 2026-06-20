@@ -2,9 +2,6 @@ import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { Router } from '@vaadin/router';
 import { fetchWithAuth } from '../../api';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/divider/divider.js';
 
 @customElement('oauth-consent-view')
 export class OAuthConsentView extends LitElement {

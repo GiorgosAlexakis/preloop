@@ -8,18 +8,7 @@ import {
   updateAIModel,
 } from '../api';
 import type { AIModel } from '../types';
-import type SlSelect from '@shoelace-style/shoelace/dist/components/select/select.js';
-import type SlInput from '@shoelace-style/shoelace/dist/components/input/input.js';
 
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/select/select.js';
-import '@shoelace-style/shoelace/dist/components/option/option.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
-import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
 
 type ServiceKind = 'llm' | 'stt' | 'tts';
 
@@ -201,7 +190,7 @@ export class AddAIModelModal extends LitElement {
     }
     const serviceKindSelect = this.shadowRoot?.querySelector(
       'sl-select[label="Service Kind"]'
-    ) as SlSelect | null;
+    ) as HTMLElement | null;
     if (serviceKindSelect?.value) {
       this._currentModel.model_kind = serviceKindSelect.value as
         | 'llm'
@@ -226,7 +215,7 @@ export class AddAIModelModal extends LitElement {
   // ── provider / model fetching ────────────────────────
 
   private async _handleProviderChange(e: Event) {
-    const provider = (e.target as SlSelect).value as string;
+    const provider = (e.target as HTMLElement & { value: string }).value as string;
 
     const defaultUrls: Record<string, string> = {
       openai: 'https://api.openai.com/v1',
@@ -275,7 +264,7 @@ export class AddAIModelModal extends LitElement {
   }
 
   private _handleServiceKindChange(e: Event) {
-    const modelKind = (e.target as SlSelect).value as ServiceKind;
+    const modelKind = (e.target as HTMLElement & { value: string }).value as ServiceKind;
     const provider = this._currentModel.provider_name;
     const providerSupported = PROVIDER_OPTIONS.some(
       (option) =>
@@ -340,7 +329,7 @@ export class AddAIModelModal extends LitElement {
   }
 
   private _handleModelNameChange(e: Event) {
-    const selectedValue = (e.target as SlSelect).value as string;
+    const selectedValue = (e.target as HTMLElement & { value: string }).value as string;
     if (selectedValue === 'other') {
       this._isOtherModel = true;
       this._currentModel.model_identifier = '';
@@ -351,7 +340,7 @@ export class AddAIModelModal extends LitElement {
   }
 
   private _handleCustomModelInput(e: Event) {
-    this._currentModel.model_identifier = (e.target as SlInput).value;
+    this._currentModel.model_identifier = (e.target as HTMLElement & { value: string }).value;
   }
 
   // ── submit ───────────────────────────────────────────

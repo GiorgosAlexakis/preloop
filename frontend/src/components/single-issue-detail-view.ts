@@ -4,7 +4,6 @@ import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { when } from 'lit/directives/when.js';
 import { getStatusVariant, getComplianceVariant } from '../utils/verdict';
 import { Issue, IssueComplianceResult } from '../types';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 
 @customElement('single-issue-detail-view')
 export class SingleIssueDetailView extends LitElement {

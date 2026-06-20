@@ -1,8 +1,6 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { changePassword } from '../../../api';
-import '@shoelace-style/shoelace/dist/components/input/input.js';
-import '@shoelace-style/shoelace/dist/components/button/button.js';
 import consoleStyles from '../../../styles/console-styles.css?inline';
 
 @customElement('security-view')

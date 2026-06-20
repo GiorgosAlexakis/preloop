@@ -3,9 +3,6 @@ import { customElement, state } from 'lit/decorators.js';
 import { formStyles } from '../../styles/form-styles';
 import { post } from '../../api';
 import { router } from '../../router';
-import '@shoelace-style/shoelace/dist/components/alert/alert.js';
-import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '../../components/logo-component';
 
 @customElement('verify-email-view')

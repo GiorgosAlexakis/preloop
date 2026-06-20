@@ -1,6 +1,5 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import './ide-setup-tabs';
 
 @customElement('mcp-setup-dialog')

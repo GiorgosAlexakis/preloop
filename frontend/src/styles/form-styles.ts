@@ -13,21 +13,28 @@ export const formStyles = css`
   }
 
   .error-message {
-    color: var(--sl-color-danger-700);
+    color: var(--destructive);
     margin-bottom: 1rem;
     text-align: center;
+    font-size: 0.875rem;
   }
 
   .form-container {
     max-width: 400px;
     margin: 2rem auto;
     padding: 2rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
   }
 
   .form-container h2 {
     text-align: center;
     margin-bottom: 1.5rem;
-    color: var(--sl-color-neutral-800);
+    color: var(--foreground);
+    font-size: 1.5rem;
+    font-weight: 600;
   }
 
   .form-group {
@@ -46,11 +53,12 @@ export const formStyles = css`
   .form-links {
     margin-top: 2rem;
     text-align: center;
-    color: var(--sl-color-primary-600);
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
   }
 
   .form-links a {
-    color: var(--sl-color-primary-600);
+    color: var(--primary);
     text-decoration: none;
   }
 
