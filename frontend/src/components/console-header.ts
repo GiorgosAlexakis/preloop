@@ -89,7 +89,8 @@ export class ConsoleHeader extends LitElement {
       display: flex;
       justify-content: flex-end;
       align-items: center;
-      padding: 0.4rem;
+      padding: 0.5rem 1.25rem;
+      background-color: var(--sl-color-neutral-0);
       border-bottom: 1px solid var(--sl-color-neutral-200);
     }
     .nav-toggle {
