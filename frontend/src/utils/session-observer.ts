@@ -194,14 +194,17 @@ export function normalizeObservedSession(
 export function normalizeObservedSessions(
   sessions: Array<
     RuntimeSessionSummary | GatewayUsageBySession | Record<string, unknown>
-  >
+  >,
+  options: { preserveOrder?: boolean } = {}
 ): ObservedSession[] {
   const byId = new Map<string, ObservedSession>();
+  const orderedIds: string[] = [];
   for (const row of sessions || []) {
     const session = normalizeObservedSession(row);
     const existing = byId.get(session.id);
     if (!existing) {
       byId.set(session.id, session);
+      orderedIds.push(session.id);
       continue;
     }
     existing.totalRequests += session.totalRequests;
@@ -226,15 +229,20 @@ export function normalizeObservedSessions(
       existing.lastActivityAt = session.lastActivityAt;
     }
   }
-  return Array.from(byId.values()).sort((left, right) => {
-    const leftTime = new Date(
-      left.lastActivityAt || left.startedAt || 0
-    ).getTime();
-    const rightTime = new Date(
-      right.lastActivityAt || right.startedAt || 0
-    ).getTime();
-    return rightTime - leftTime;
-  });
+  const values = options.preserveOrder
+    ? orderedIds
+        .map((id) => byId.get(id))
+        .filter((session): session is ObservedSession => Boolean(session))
+    : Array.from(byId.values()).sort((left, right) => {
+        const leftTime = new Date(
+          left.lastActivityAt || left.startedAt || 0
+        ).getTime();
+        const rightTime = new Date(
+          right.lastActivityAt || right.startedAt || 0
+        ).getTime();
+        return rightTime - leftTime;
+      });
+  return values;
 }
 
 export function getGatewayEventPreviewMessages(

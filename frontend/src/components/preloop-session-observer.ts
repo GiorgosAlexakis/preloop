@@ -91,6 +91,9 @@ export class PreloopSessionObserver extends LitElement {
   @property({ type: String })
   selectedSessionId: string | null = null;
 
+  @property({ type: Boolean })
+  preserveSessionOrder = false;
+
   @state()
   private observedSessions: ObservedSession[] = [];
 
@@ -451,7 +454,9 @@ export class PreloopSessionObserver extends LitElement {
   }
 
   private applySessions(rows: SessionInput[], preserveSelection = true): void {
-    this.observedSessions = normalizeObservedSessions(rows);
+    this.observedSessions = normalizeObservedSessions(rows, {
+      preserveOrder: this.preserveSessionOrder,
+    });
     const requested = this.selectedSessionId || this.activeSessionId;
     const nextActive =
       preserveSelection &&

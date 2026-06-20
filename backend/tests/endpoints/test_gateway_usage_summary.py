@@ -555,6 +555,154 @@ def test_account_runtime_sessions_endpoints(client, db_session, test_user):
     assert "deployment risk" in interactions_body["items"][0]["excerpt"].lower()
 
 
+def test_account_runtime_sessions_sort_and_filter(client, db_session, test_user):
+    """Runtime session list should support token, cost, tool, and sort filters."""
+    low_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-low",
+        session_reference="claude-session-low",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-low",
+        runtime_principal_name="Low Usage",
+        started_at=test_user.created_at,
+        last_activity_at=test_user.created_at,
+    )
+    high_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-high",
+        session_reference="claude-session-high",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-high",
+        runtime_principal_name="High Usage",
+        started_at=test_user.created_at + timedelta(minutes=5),
+        last_activity_at=test_user.created_at + timedelta(minutes=5),
+    )
+    tool_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-tools",
+        session_reference="claude-session-tools",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-tools",
+        runtime_principal_name="Tool User",
+        started_at=test_user.created_at + timedelta(minutes=10),
+        last_activity_at=test_user.created_at + timedelta(minutes=10),
+    )
+    db_session.commit()
+
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/anthropic/v1/messages",
+        method="POST",
+        status_code=200,
+        duration=0.2,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(low_session.id),
+        model_alias="anthropic/claude-sonnet-4",
+        provider_name="anthropic",
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        estimated_cost=0.01,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-low",
+        runtime_principal_name="Low Usage",
+    )
+    crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/anthropic/v1/messages",
+        method="POST",
+        status_code=200,
+        duration=0.2,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(high_session.id),
+        model_alias="anthropic/claude-sonnet-4",
+        provider_name="anthropic",
+        prompt_tokens=500,
+        completion_tokens=250,
+        total_tokens=750,
+        estimated_cost=1.25,
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-high",
+        runtime_principal_name="High Usage",
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=tool_session.id,
+        server_name="github",
+        tool_name="create_issue",
+        status="success",
+    )
+
+    sort_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={
+            "session_source_type": "claude_code",
+            "sort_by": "total_tokens",
+            "sort_dir": "desc",
+            "limit": 10,
+        },
+    )
+    assert sort_response.status_code == 200
+    sort_body = sort_response.json()
+    assert sort_body["sort_by"] == "total_tokens"
+    assert sort_body["sort_dir"] == "desc"
+    sorted_ids = [item["id"] for item in sort_body["items"]]
+    assert sorted_ids.index(str(high_session.id)) < sorted_ids.index(str(low_session.id))
+
+    cost_filter_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={
+            "session_source_type": "claude_code",
+            "min_cost": 1.0,
+            "sort_by": "estimated_cost",
+            "sort_dir": "desc",
+        },
+    )
+    assert cost_filter_response.status_code == 200
+    cost_filter_body = cost_filter_response.json()
+    assert cost_filter_body["min_cost"] == 1.0
+    assert cost_filter_body["total"] == 1
+    assert cost_filter_body["items"][0]["id"] == str(high_session.id)
+    assert cost_filter_body["items"][0]["estimated_cost"] == 1.25
+
+    token_filter_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={
+            "session_source_type": "claude_code",
+            "max_tokens": 100,
+            "sort_by": "total_tokens",
+            "sort_dir": "asc",
+        },
+    )
+    assert token_filter_response.status_code == 200
+    token_filter_body = token_filter_response.json()
+    assert token_filter_body["max_tokens"] == 100
+    assert token_filter_body["total"] == 1
+    assert token_filter_body["items"][0]["id"] == str(low_session.id)
+
+    tool_filter_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={
+            "session_source_type": "claude_code",
+            "tool_name": "create_issue",
+        },
+    )
+    assert tool_filter_response.status_code == 200
+    tool_filter_body = tool_filter_response.json()
+    assert tool_filter_body["tool_name"] == "create_issue"
+    assert tool_filter_body["total"] == 1
+    assert tool_filter_body["items"][0]["id"] == str(tool_session.id)
+
+
 def test_account_runtime_sessions_use_most_recent_model_alias(
     client, db_session, test_user
 ):

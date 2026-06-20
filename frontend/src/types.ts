@@ -266,6 +266,18 @@ export interface AccountRuntimeSessionListResponse {
   query: string | null;
   session_source_type: string | null;
   status: 'all' | 'active' | 'ended';
+  min_tokens: number | null;
+  max_tokens: number | null;
+  min_cost: number | null;
+  max_cost: number | null;
+  tool_name: string | null;
+  sort_by:
+    | 'last_activity'
+    | 'total_tokens'
+    | 'estimated_cost'
+    | 'total_requests'
+    | 'started_at';
+  sort_dir: 'asc' | 'desc';
   total: number;
   limit: number;
   offset: number;

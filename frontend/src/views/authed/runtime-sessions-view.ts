@@ -95,6 +95,32 @@ export class RuntimeSessionsView extends LitElement {
   private status = 'all';
 
   @state()
+  private minTokens = '';
+
+  @state()
+  private maxTokens = '';
+
+  @state()
+  private minCost = '';
+
+  @state()
+  private maxCost = '';
+
+  @state()
+  private toolName = '';
+
+  @state()
+  private sortBy:
+    | 'last_activity'
+    | 'total_tokens'
+    | 'estimated_cost'
+    | 'total_requests'
+    | 'started_at' = 'last_activity';
+
+  @state()
+  private sortDir: 'asc' | 'desc' = 'desc';
+
+  @state()
   private interactionQuery = '';
 
   @state()
@@ -632,8 +658,42 @@ export class RuntimeSessionsView extends LitElement {
     if (this.sessionSourceType !== 'all') {
       params.sessionSourceType = this.sessionSourceType;
     }
+    const minTokens = this.parseOptionalNumber(this.minTokens);
+    const maxTokens = this.parseOptionalNumber(this.maxTokens);
+    const minCost = this.parseOptionalNumber(this.minCost);
+    const maxCost = this.parseOptionalNumber(this.maxCost);
+    if (minTokens !== null) {
+      params.minTokens = minTokens;
+    }
+    if (maxTokens !== null) {
+      params.maxTokens = maxTokens;
+    }
+    if (minCost !== null) {
+      params.minCost = minCost;
+    }
+    if (maxCost !== null) {
+      params.maxCost = maxCost;
+    }
+    if (this.toolName.trim()) {
+      params.toolName = this.toolName.trim();
+    }
+    if (this.sortBy !== 'last_activity') {
+      params.sortBy = this.sortBy;
+    }
+    if (this.sortDir !== 'desc') {
+      params.sortDir = this.sortDir;
+    }
 
     return params;
+  }
+
+  private parseOptionalNumber(value: string): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private buildDetailParams(): RuntimeSessionDetailParams {
@@ -850,6 +910,38 @@ export class RuntimeSessionsView extends LitElement {
     this.status = (event.target as HTMLInputElement & { value: string }).value;
   }
 
+  private handleMinTokensChange(event: Event) {
+    this.minTokens = (event.target as HTMLInputElement & { value: string })
+      .value;
+  }
+
+  private handleMaxTokensChange(event: Event) {
+    this.maxTokens = (event.target as HTMLInputElement & { value: string })
+      .value;
+  }
+
+  private handleMinCostChange(event: Event) {
+    this.minCost = (event.target as HTMLInputElement & { value: string }).value;
+  }
+
+  private handleMaxCostChange(event: Event) {
+    this.maxCost = (event.target as HTMLInputElement & { value: string }).value;
+  }
+
+  private handleToolNameChange(event: Event) {
+    this.toolName = (event.target as HTMLInputElement & { value: string }).value;
+  }
+
+  private handleSortByChange(event: Event) {
+    this.sortBy = (event.target as HTMLInputElement & { value: string })
+      .value as RuntimeSessionsView['sortBy'];
+  }
+
+  private handleSortDirChange(event: Event) {
+    this.sortDir = (event.target as HTMLInputElement & { value: string })
+      .value as 'asc' | 'desc';
+  }
+
   private handleInteractionQueryChange(event: Event) {
     this.interactionQuery = (
       event.target as HTMLInputElement & { value: string }
@@ -880,6 +972,13 @@ export class RuntimeSessionsView extends LitElement {
     this.searchQuery = '';
     this.sessionSourceType = 'all';
     this.status = 'all';
+    this.minTokens = '';
+    this.maxTokens = '';
+    this.minCost = '';
+    this.maxCost = '';
+    this.toolName = '';
+    this.sortBy = 'last_activity';
+    this.sortDir = 'desc';
     this.interactionQuery = '';
     await this.loadSessions();
   }
@@ -1819,6 +1918,65 @@ export class RuntimeSessionsView extends LitElement {
                   <sl-option value="active">Active</sl-option>
                   <sl-option value="ended">Ended</sl-option>
                 </sl-select>
+                <sl-input
+                  type="number"
+                  min="0"
+                  label="Min tokens"
+                  placeholder="e.g. 1000"
+                  .value=${this.minTokens}
+                  @sl-input=${this.handleMinTokensChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  label="Max tokens"
+                  placeholder="e.g. 50000"
+                  .value=${this.maxTokens}
+                  @sl-input=${this.handleMaxTokensChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  label="Min cost (USD)"
+                  placeholder="e.g. 0.10"
+                  .value=${this.minCost}
+                  @sl-input=${this.handleMinCostChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  label="Max cost (USD)"
+                  placeholder="e.g. 5.00"
+                  .value=${this.maxCost}
+                  @sl-input=${this.handleMaxCostChange}
+                ></sl-input>
+                <sl-input
+                  label="Tool name"
+                  placeholder="Filter by tool used in session"
+                  .value=${this.toolName}
+                  @sl-input=${this.handleToolNameChange}
+                ></sl-input>
+                <sl-select
+                  label="Sort by"
+                  value=${this.sortBy}
+                  @sl-change=${this.handleSortByChange}
+                >
+                  <sl-option value="last_activity">Last activity</sl-option>
+                  <sl-option value="total_tokens">Token usage</sl-option>
+                  <sl-option value="estimated_cost">Cost</sl-option>
+                  <sl-option value="total_requests">Request count</sl-option>
+                  <sl-option value="started_at">Start time</sl-option>
+                </sl-select>
+                <sl-select
+                  label="Sort direction"
+                  value=${this.sortDir}
+                  @sl-change=${this.handleSortDirChange}
+                >
+                  <sl-option value="desc">Descending</sl-option>
+                  <sl-option value="asc">Ascending</sl-option>
+                </sl-select>
                 <div class="filters-actions">
                   <sl-button variant="primary" @click=${this.applyFilters}>
                     Apply
@@ -1856,6 +2014,7 @@ export class RuntimeSessionsView extends LitElement {
                       scope="account"
                       .sessions=${this.sessions?.items || []}
                       .selectedSessionId=${this.selectedSessionId}
+                      .preserveSessionOrder=${true}
                       layout="full"
                       defaultReplayMode="timeline"
                       .features=${{

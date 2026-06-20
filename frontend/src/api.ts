@@ -295,6 +295,18 @@ export interface RuntimeSessionListParams extends GatewayUsageSummaryParams {
   query?: string;
   sessionSourceType?: string;
   status?: 'all' | 'active' | 'ended';
+  minTokens?: number;
+  maxTokens?: number;
+  minCost?: number;
+  maxCost?: number;
+  toolName?: string;
+  sortBy?:
+    | 'last_activity'
+    | 'total_tokens'
+    | 'estimated_cost'
+    | 'total_requests'
+    | 'started_at';
+  sortDir?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
@@ -392,6 +404,27 @@ function buildRuntimeSessionListQuery(
   }
   if (params.status) {
     queryParams.set('status', params.status);
+  }
+  if (typeof params.minTokens === 'number') {
+    queryParams.set('min_tokens', String(params.minTokens));
+  }
+  if (typeof params.maxTokens === 'number') {
+    queryParams.set('max_tokens', String(params.maxTokens));
+  }
+  if (typeof params.minCost === 'number') {
+    queryParams.set('min_cost', String(params.minCost));
+  }
+  if (typeof params.maxCost === 'number') {
+    queryParams.set('max_cost', String(params.maxCost));
+  }
+  if (params.toolName) {
+    queryParams.set('tool_name', params.toolName);
+  }
+  if (params.sortBy) {
+    queryParams.set('sort_by', params.sortBy);
+  }
+  if (params.sortDir) {
+    queryParams.set('sort_dir', params.sortDir);
   }
   if (typeof params.limit === 'number') {
     queryParams.set('limit', String(params.limit));
