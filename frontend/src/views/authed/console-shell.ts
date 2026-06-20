@@ -69,7 +69,8 @@ export class ConsoleShell extends LitElement {
         transition:
           width 0.2s ease,
           transform 0.25s ease;
-        background-color: var(--sl-color-neutral-100);
+        background-color: var(--sl-color-neutral-50);
+        border-right: 1px solid var(--sl-color-neutral-200);
         z-index: 100;
       }
 
@@ -129,12 +130,12 @@ export class ConsoleShell extends LitElement {
       }
 
       .sign-out-menu sl-menu-item::part(base) {
-        background-color: var(--sl-color-neutral-100);
+        background-color: var(--sl-color-neutral-50);
         color: var(--sl-color-primary-500);
       }
 
       .sign-out-menu sl-menu-item:hover::part(base) {
-        background-color: var(--sl-color-neutral-100);
+        background-color: var(--sl-color-neutral-50);
         color: var(--sl-color-primary-700);
       }
 
@@ -179,8 +180,9 @@ export class ConsoleShell extends LitElement {
 
       .logo {
         margin-left: 2px;
-        padding: 1rem;
-        background-color: var(--sl-color-neutral-100);
+        padding: 1.1rem 1rem;
+        background-color: var(--sl-color-neutral-50);
+        border-bottom: 1px solid var(--sl-color-neutral-200);
         display: flex;
         align-items: center;
       }
@@ -196,15 +198,15 @@ export class ConsoleShell extends LitElement {
       sl-menu {
         flex-grow: 1;
         border-width: 0;
-        background-color: var(--sl-color-neutral-100);
-        padding: 0;
+        background-color: var(--sl-color-neutral-50);
+        padding: 0.5rem;
         margin-left: -2px;
       }
 
       sl-details::part(base) {
         width: 100%;
         border-width: 0;
-        background-color: var(--sl-color-neutral-100);
+        background-color: var(--sl-color-neutral-50);
       }
 
       sl-details::part(content) {
@@ -213,7 +215,27 @@ export class ConsoleShell extends LitElement {
       }
 
       sl-menu-item {
-        padding: 0.25em;
+        padding: 0.1em 0;
+      }
+
+      /* Rounded, hover-highlighted nav items (shadcn sidebar feel) */
+      sl-menu > a sl-menu-item::part(base),
+      sl-details sl-menu-item::part(base) {
+        border-radius: var(--sl-border-radius-medium);
+        font-weight: 500;
+        color: var(--sl-color-neutral-700);
+      }
+
+      sl-menu > a sl-menu-item::part(base):hover,
+      sl-details sl-menu-item::part(base):hover {
+        background-color: var(--sl-color-neutral-200);
+        color: var(--sl-color-neutral-900);
+      }
+
+      sl-details::part(header) {
+        border-radius: var(--sl-border-radius-medium);
+        font-weight: 500;
+        color: var(--sl-color-neutral-700);
       }
 
       sl-details {

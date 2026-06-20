@@ -48,30 +48,65 @@ export class AppHeader extends LitElement {
       align-items: center;
       max-width: 1200px;
       margin: 0 auto;
-      padding: 1.5rem 1rem;
+      padding: 1.25rem 1.5rem;
     }
     nav {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.25rem;
     }
     .logo {
       display: flex;
       align-items: center;
     }
     .logo logo-component {
-      height: 36px;
+      height: 32px;
     }
     sl-icon-button::part(base) {
       font-size: 1.5rem;
+      color: #d4d4d8;
+    }
+    sl-icon-button::part(base):hover {
+      color: #fafafa;
+    }
+
+    /* Header sits on the dark marketing canvas: light nav links, a crisp
+       white primary button (shadcn-on-dark). */
+    nav sl-button[variant='text']::part(base) {
+      color: #d4d4d8;
+      font-weight: 500;
+    }
+    nav sl-button[variant='text']::part(base):hover {
+      color: #fafafa;
+    }
+    nav sl-button[variant='primary']::part(base) {
+      background-color: #fafafa;
+      border-color: #fafafa;
+      color: #09090b;
+      font-weight: 600;
+      border-radius: 0.5rem;
+    }
+    nav sl-button[variant='primary']::part(base):hover {
+      background-color: #e4e4e7;
+      border-color: #e4e4e7;
+    }
+    nav sl-button[variant='default']::part(base) {
+      background-color: transparent;
+      border-color: rgba(255, 255, 255, 0.18);
+      color: #fafafa;
+      border-radius: 0.5rem;
+    }
+    nav sl-button[variant='default']::part(base):hover {
+      background-color: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.3);
     }
 
     .mobile-menu-button {
       display: none;
     }
 
-    .mobile-menu-button sl-icon-button {
-      color: var(--sl-color-primary-500);
+    .mobile-menu-button sl-icon-button::part(base) {
+      color: #fafafa;
     }
 
     @media (max-width: 768px) {
@@ -81,11 +116,11 @@ export class AppHeader extends LitElement {
         top: 100%;
         left: 0;
         right: 0;
-        background-color: #161b24;
+        background-color: #09090b;
         flex-direction: column;
         align-items: stretch;
         padding: 1rem;
-        border-top: 1px solid #30363d;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
         z-index: 100;
       }
 

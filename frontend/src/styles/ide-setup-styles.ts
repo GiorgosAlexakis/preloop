@@ -8,18 +8,18 @@ export const ideSetupStyles = css`
   .ide-setup-tabs-container {
     display: flex;
     flex-direction: column;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border-radius: 0.875rem;
     overflow: hidden;
-    background: var(--gradient-brand);
-    color: #fff;
+    background: #18181b;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #fafafa;
     margin-top: 2rem;
   }
 
   .global-prereq {
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(0, 0, 0, 0.15);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.02);
   }
 
   .global-prereq-content {
@@ -55,7 +55,7 @@ export const ideSetupStyles = css`
   .ide-tabs {
     display: flex;
     flex-direction: column;
-    border-right: 1px solid rgba(0, 0, 0, 0.2);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .ide-logo-container {
@@ -69,8 +69,8 @@ export const ideSetupStyles = css`
   }
 
   .ide-logo-container.active {
-    background-color: rgba(255, 255, 255, 0.1);
-    border-left: 3px solid #fff;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-left: 3px solid #fafafa;
   }
 
   .ide-logo-container img {
@@ -104,9 +104,10 @@ export const ideSetupStyles = css`
 
   .code-container {
     position: relative;
-    border-radius: 6px;
+    border-radius: 0.5rem;
     margin: 1rem 0;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .code-container pre {
@@ -114,9 +115,9 @@ export const ideSetupStyles = css`
     padding: 1rem;
     white-space: pre-wrap;
     word-break: break-all;
-    font-family: 'Fira Code', monospace;
+    font-family: var(--sl-font-mono, 'JetBrains Mono', 'Fira Code', monospace);
     font-size: 0.9rem;
-    color: #fff;
+    color: #fafafa;
   }
 
   .copy-btn {

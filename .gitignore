@@ -45,6 +45,9 @@ htmlcov/
 # Local development
 .DS_Store
 
+# Local Postgres data dir (created when running the dev DB locally)
+.pgdata/
+
 # Certificates and keys (SECURITY: Never commit these!)
 *.p8
 *.pem
