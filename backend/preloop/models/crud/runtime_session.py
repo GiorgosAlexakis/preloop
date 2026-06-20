@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from ..models.api_usage import ApiUsage
 from ..models.flow import Flow
 from ..models.runtime_session import RuntimeSession
+from ..models.runtime_session_activity import RuntimeSessionActivity
 from .base import CRUDBase
 
 _summary_columns_cache: dict[int, bool] = {}
@@ -286,10 +287,17 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         query: Optional[str] = None,
         ai_model_id: Optional[str] = None,
         session_source_type: Optional[str] = None,
+        tool_name: Optional[str] = None,
         runtime_principal_type: Optional[str] = None,
         runtime_principal_id: Optional[str] = None,
         min_requests: Optional[int] = None,
         status: str = "all",
+        min_total_tokens: Optional[int] = None,
+        max_total_tokens: Optional[int] = None,
+        min_estimated_cost: Optional[float] = None,
+        max_estimated_cost: Optional[float] = None,
+        sort_by: str = "last_activity",
+        sort_direction: str = "desc",
         limit: int = 20,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -364,6 +372,25 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
             session_query = session_query.filter(
                 self.model.session_source_type == session_source_type
             )
+        if tool_name:
+            normalized_tool_name = f"%{' '.join(tool_name.strip().split())}%"
+            matching_session_ids = db.query(RuntimeSessionActivity.runtime_session_id).filter(
+                RuntimeSessionActivity.account_id == account_id,
+                RuntimeSessionActivity.runtime_session_id.isnot(None),
+                RuntimeSessionActivity.activity_type == "tool_call",
+                RuntimeSessionActivity.tool_name.ilike(normalized_tool_name),
+            )
+            if start_date is not None:
+                matching_session_ids = matching_session_ids.filter(
+                    RuntimeSessionActivity.timestamp >= start_date
+                )
+            if end_date is not None:
+                matching_session_ids = matching_session_ids.filter(
+                    RuntimeSessionActivity.timestamp < end_date
+                )
+            session_query = session_query.filter(
+                self.model.id.in_(matching_session_ids.distinct())
+            )
         if runtime_principal_type:
             session_query = session_query.filter(
                 self.model.runtime_principal_type == runtime_principal_type
@@ -377,24 +404,56 @@ class CRUDRuntimeSession(CRUDBase[RuntimeSession]):
         elif status == "ended":
             session_query = session_query.filter(self.model.ended_at.isnot(None))
 
-        total = session_query.count()
         usage_join = self._usage_join_conditions(
             start_date=start_date, end_date=end_date, ai_model_id=ai_model_id
         )
+        query_with_usage = self._account_sessions_query(
+            session_query=session_query,
+            usage_join=usage_join,
+            summary_columns_available=self._summary_columns_available(db),
+        )
+        if min_total_tokens is not None:
+            query_with_usage = query_with_usage.having(
+                func.coalesce(func.sum(ApiUsage.total_tokens), 0) >= min_total_tokens
+            )
+        if max_total_tokens is not None:
+            query_with_usage = query_with_usage.having(
+                func.coalesce(func.sum(ApiUsage.total_tokens), 0) <= max_total_tokens
+            )
+        if min_estimated_cost is not None:
+            query_with_usage = query_with_usage.having(
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
+                >= min_estimated_cost
+            )
+        if max_estimated_cost is not None:
+            query_with_usage = query_with_usage.having(
+                func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
+                <= max_estimated_cost
+            )
+
+        if sort_by == "total_tokens":
+            order_expression = func.coalesce(func.sum(ApiUsage.total_tokens), 0)
+        elif sort_by == "estimated_cost":
+            order_expression = func.coalesce(func.sum(ApiUsage.estimated_cost), 0.0)
+        else:
+            order_expression = func.coalesce(
+                func.max(ApiUsage.timestamp),
+                self.model.last_activity_at,
+                self.model.started_at,
+            )
+
+        order_clause = (
+            order_expression.asc()
+            if sort_direction == "asc"
+            else order_expression.desc()
+        )
+        secondary_order_clause = (
+            self.model.id.asc() if sort_direction == "asc" else self.model.id.desc()
+        )
+        total = query_with_usage.count()
 
         rows = (
-            self._account_sessions_query(
-                session_query=session_query,
-                usage_join=usage_join,
-                summary_columns_available=self._summary_columns_available(db),
-            )
-            .order_by(
-                func.coalesce(
-                    func.max(ApiUsage.timestamp),
-                    self.model.last_activity_at,
-                    self.model.started_at,
-                ).desc()
-            )
+            query_with_usage.order_by(order_clause, secondary_order_clause)
             .limit(limit)
             .offset(offset)
             .all()
