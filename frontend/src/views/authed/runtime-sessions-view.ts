@@ -95,6 +95,28 @@ export class RuntimeSessionsView extends LitElement {
   private status = 'all';
 
   @state()
+  private toolName = '';
+
+  @state()
+  private minTotalTokens = '';
+
+  @state()
+  private maxTotalTokens = '';
+
+  @state()
+  private minEstimatedCost = '';
+
+  @state()
+  private maxEstimatedCost = '';
+
+  @state()
+  private sortBy: 'last_activity' | 'total_tokens' | 'estimated_cost' =
+    'last_activity';
+
+  @state()
+  private sortDirection: 'asc' | 'desc' = 'desc';
+
+  @state()
   private interactionQuery = '';
 
   @state()
@@ -618,6 +640,8 @@ export class RuntimeSessionsView extends LitElement {
     const params: RuntimeSessionListParams = {
       limit: 50,
       status: this.status as 'all' | 'active' | 'ended',
+      sortBy: this.sortBy,
+      sortDirection: this.sortDirection,
     };
 
     if (this.startDate) {
@@ -631,6 +655,25 @@ export class RuntimeSessionsView extends LitElement {
     }
     if (this.sessionSourceType !== 'all') {
       params.sessionSourceType = this.sessionSourceType;
+    }
+    if (this.toolName.trim()) {
+      params.toolName = this.toolName.trim();
+    }
+    const minTotalTokens = this.parseNonNegativeInteger(this.minTotalTokens);
+    if (minTotalTokens !== null) {
+      params.minTotalTokens = minTotalTokens;
+    }
+    const maxTotalTokens = this.parseNonNegativeInteger(this.maxTotalTokens);
+    if (maxTotalTokens !== null) {
+      params.maxTotalTokens = maxTotalTokens;
+    }
+    const minEstimatedCost = this.parseNonNegativeNumber(this.minEstimatedCost);
+    if (minEstimatedCost !== null) {
+      params.minEstimatedCost = minEstimatedCost;
+    }
+    const maxEstimatedCost = this.parseNonNegativeNumber(this.maxEstimatedCost);
+    if (maxEstimatedCost !== null) {
+      params.maxEstimatedCost = maxEstimatedCost;
     }
 
     return params;
@@ -850,6 +893,48 @@ export class RuntimeSessionsView extends LitElement {
     this.status = (event.target as HTMLInputElement & { value: string }).value;
   }
 
+  private handleToolNameChange(event: Event) {
+    this.toolName = (event.target as HTMLInputElement & { value: string }).value;
+  }
+
+  private handleMinTotalTokensChange(event: Event) {
+    this.minTotalTokens = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleMaxTotalTokensChange(event: Event) {
+    this.maxTotalTokens = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleMinEstimatedCostChange(event: Event) {
+    this.minEstimatedCost = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleMaxEstimatedCostChange(event: Event) {
+    this.maxEstimatedCost = (
+      event.target as HTMLInputElement & { value: string }
+    ).value;
+  }
+
+  private handleSortByChange(event: Event) {
+    this.sortBy = (
+      event.target as HTMLInputElement & {
+        value: 'last_activity' | 'total_tokens' | 'estimated_cost';
+      }
+    ).value;
+  }
+
+  private handleSortDirectionChange(event: Event) {
+    this.sortDirection = (
+      event.target as HTMLInputElement & { value: 'asc' | 'desc' }
+    ).value;
+  }
+
   private handleInteractionQueryChange(event: Event) {
     this.interactionQuery = (
       event.target as HTMLInputElement & { value: string }
@@ -880,8 +965,33 @@ export class RuntimeSessionsView extends LitElement {
     this.searchQuery = '';
     this.sessionSourceType = 'all';
     this.status = 'all';
+    this.toolName = '';
+    this.minTotalTokens = '';
+    this.maxTotalTokens = '';
+    this.minEstimatedCost = '';
+    this.maxEstimatedCost = '';
+    this.sortBy = 'last_activity';
+    this.sortDirection = 'desc';
     this.interactionQuery = '';
     await this.loadSessions();
+  }
+
+  private parseNonNegativeInteger(value: string): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  private parseNonNegativeNumber(value: string): number | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number.parseFloat(trimmed);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   }
 
   private applyInteractionSearch() {
@@ -1818,6 +1928,61 @@ export class RuntimeSessionsView extends LitElement {
                   <sl-option value="all">All</sl-option>
                   <sl-option value="active">Active</sl-option>
                   <sl-option value="ended">Ended</sl-option>
+                </sl-select>
+                <sl-input
+                  label="Tool name"
+                  placeholder="search_issues"
+                  .value=${this.toolName}
+                  @sl-input=${this.handleToolNameChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="1"
+                  label="Min tokens"
+                  .value=${this.minTotalTokens}
+                  @sl-input=${this.handleMinTotalTokensChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="1"
+                  label="Max tokens"
+                  .value=${this.maxTotalTokens}
+                  @sl-input=${this.handleMaxTotalTokensChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  label="Min cost"
+                  .value=${this.minEstimatedCost}
+                  @sl-input=${this.handleMinEstimatedCostChange}
+                ></sl-input>
+                <sl-input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  label="Max cost"
+                  .value=${this.maxEstimatedCost}
+                  @sl-input=${this.handleMaxEstimatedCostChange}
+                ></sl-input>
+                <sl-select
+                  label="Sort by"
+                  value=${this.sortBy}
+                  @sl-change=${this.handleSortByChange}
+                >
+                  <sl-option value="last_activity">Last activity</sl-option>
+                  <sl-option value="total_tokens">Total tokens</sl-option>
+                  <sl-option value="estimated_cost">Estimated cost</sl-option>
+                </sl-select>
+                <sl-select
+                  label="Sort direction"
+                  value=${this.sortDirection}
+                  @sl-change=${this.handleSortDirectionChange}
+                >
+                  <sl-option value="desc">Descending</sl-option>
+                  <sl-option value="asc">Ascending</sl-option>
                 </sl-select>
                 <div class="filters-actions">
                   <sl-button variant="primary" @click=${this.applyFilters}>

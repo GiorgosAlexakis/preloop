@@ -543,4 +543,42 @@ describe('RuntimeSessionsView', () => {
     const content = getDeepText(element).replace(/\s+/g, ' ');
     expect(content).to.contain('openai/gpt-5');
   });
+
+  it('passes token, tool, cost, and sort filters to the sessions endpoint', async () => {
+    const element = (await fixture(
+      html`<runtime-sessions-view></runtime-sessions-view>`
+    )) as RuntimeSessionsView;
+
+    await waitUntil(
+      () => !(element as any).loading && !(element as any).detailLoading,
+      'Runtime sessions view did not finish loading'
+    );
+
+    fetchStub.resetHistory();
+    (element as any).toolName = 'search_issues';
+    (element as any).minTotalTokens = '100';
+    (element as any).maxTotalTokens = '200';
+    (element as any).minEstimatedCost = '0.1';
+    (element as any).maxEstimatedCost = '0.5';
+    (element as any).sortBy = 'estimated_cost';
+    (element as any).sortDirection = 'asc';
+
+    await (element as any).applyFilters();
+
+    const listCall = fetchStub
+      .getCalls()
+      .find((call) =>
+        String(call.args[0]).startsWith('/api/v1/runtime-sessions?')
+      );
+
+    expect(listCall).to.not.equal(undefined);
+    const url = String(listCall!.args[0]);
+    expect(url).to.include('tool_name=search_issues');
+    expect(url).to.include('min_total_tokens=100');
+    expect(url).to.include('max_total_tokens=200');
+    expect(url).to.include('min_estimated_cost=0.1');
+    expect(url).to.include('max_estimated_cost=0.5');
+    expect(url).to.include('sort_by=estimated_cost');
+    expect(url).to.include('sort_direction=asc');
+  });
 });

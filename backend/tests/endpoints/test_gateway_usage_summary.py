@@ -1096,3 +1096,133 @@ def test_runtime_session_detail_includes_normalized_tool_activity_for_non_flow_s
         and item["status"] == "success"
         for item in activity_body["items"]
     )
+
+
+def test_runtime_sessions_support_tool_cost_token_filters_and_sort(
+    client, db_session, test_user
+):
+    """Runtime sessions should filter by tool usage and sort/filter by usage totals."""
+    now = datetime.now(UTC)
+    low_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-low",
+        session_reference="claude-low",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-low",
+        runtime_principal_name="Low Usage Workspace",
+        started_at=now - timedelta(minutes=20),
+        last_activity_at=now - timedelta(minutes=15),
+    )
+    high_session = crud_runtime_session.upsert_by_source(
+        db_session,
+        account_id=test_user.account_id,
+        session_source_type="claude_code",
+        session_source_id="workspace-high",
+        session_reference="claude-high",
+        runtime_principal_type="claude_code",
+        runtime_principal_id="workspace-high",
+        runtime_principal_name="High Usage Workspace",
+        started_at=now - timedelta(minutes=10),
+        last_activity_at=now - timedelta(minutes=5),
+    )
+    db_session.commit()
+
+    low_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/openai/v1/responses",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(low_session.id),
+        model_alias="openai/gpt-5-mini",
+        provider_name="openai",
+        prompt_tokens=15,
+        completion_tokens=10,
+        total_tokens=25,
+        estimated_cost=0.03,
+    )
+    high_usage = crud_api_usage.log_gateway_request(
+        db_session,
+        endpoint="/anthropic/v1/messages",
+        method="POST",
+        status_code=200,
+        duration=0.1,
+        user_id=str(test_user.id),
+        account_id=str(test_user.account_id),
+        runtime_session_id=str(high_session.id),
+        model_alias="anthropic/claude-sonnet-4",
+        provider_name="anthropic",
+        prompt_tokens=110,
+        completion_tokens=40,
+        total_tokens=150,
+        estimated_cost=0.45,
+    )
+    low_usage.timestamp = now - timedelta(minutes=12)
+    high_usage.timestamp = now - timedelta(minutes=2)
+    db_session.add(low_usage)
+    db_session.add(high_usage)
+
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=low_session.id,
+        server_name="github",
+        tool_name="read_file",
+        status="success",
+    )
+    crud_runtime_session_activity.log_tool_call(
+        db_session,
+        account_id=test_user.account_id,
+        runtime_session_id=high_session.id,
+        server_name="github",
+        tool_name="search_issues",
+        status="success",
+    )
+
+    filtered_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={
+            "tool_name": "search_issues",
+            "min_total_tokens": 100,
+            "min_estimated_cost": 0.1,
+            "sort_by": "estimated_cost",
+            "sort_direction": "desc",
+        },
+    )
+
+    assert filtered_response.status_code == 200
+    filtered_body = filtered_response.json()
+    assert filtered_body["total"] == 1
+    assert [item["id"] for item in filtered_body["items"]] == [str(high_session.id)]
+
+    sorted_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={"sort_by": "total_tokens", "sort_direction": "asc"},
+    )
+
+    assert sorted_response.status_code == 200
+    sorted_body = sorted_response.json()
+    assert [item["id"] for item in sorted_body["items"][:2]] == [
+        str(low_session.id),
+        str(high_session.id),
+    ]
+
+    bounded_response = client.get(
+        "/api/v1/runtime-sessions",
+        params={
+            "max_total_tokens": 30,
+            "max_estimated_cost": 0.05,
+            "sort_by": "estimated_cost",
+            "sort_direction": "asc",
+        },
+    )
+
+    assert bounded_response.status_code == 200
+    bounded_body = bounded_response.json()
+    assert bounded_body["total"] >= 1
+    assert any(item["id"] == str(low_session.id) for item in bounded_body["items"])
+    assert all(item["id"] != str(high_session.id) for item in bounded_body["items"])
